@@ -3,7 +3,6 @@
 //! `EntityBase` contains the core fields and methods that every entity needs.
 //! Entities embed this struct and delegate common `Entity` trait methods to it.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -349,6 +348,22 @@ pub struct EntityBaseLoad {
     pub world: Weak<World>,
 }
 
+/// Non-physical lifecycle state shared by every entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EntityLifecycleState {
+    removed: bool,
+    last_world_tick: i32,
+}
+
+impl EntityLifecycleState {
+    const fn new() -> Self {
+        Self {
+            removed: false,
+            last_world_tick: -1,
+        }
+    }
+}
+
 /// Common fields and methods shared by all entities.
 ///
 /// Entities embed this struct to avoid duplicating core identity, position,
@@ -383,13 +398,10 @@ pub struct EntityBase {
     world: SyncMutex<Weak<World>>,
     /// Current vanilla movement state.
     state: SyncMutex<EntityBaseState>,
-    /// Whether this entity has been removed.
-    removed: AtomicBool,
+    /// Removal and tick bookkeeping.
+    lifecycle: SyncMutex<EntityLifecycleState>,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
-    /// The server tick count when this entity was last ticked.
-    /// Used to prevent double-ticking when moving between chunks.
-    last_world_tick: AtomicI32,
 }
 
 impl EntityBase {
@@ -435,9 +447,8 @@ impl EntityBase {
             uuid,
             world: SyncMutex::new(world),
             state: SyncMutex::new(state),
-            removed: AtomicBool::new(false),
+            lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
-            last_world_tick: AtomicI32::new(-1),
         }
     }
 
@@ -574,14 +585,24 @@ impl EntityBase {
     /// Returns true if the entity has been marked for removal.
     #[inline]
     pub fn is_removed(&self) -> bool {
-        self.removed.load(Ordering::Relaxed)
+        self.lifecycle.lock().removed
     }
 
     /// Marks the entity as removed with the given reason.
     ///
     /// Notifies the level callback on first removal.
     pub fn set_removed(&self, reason: RemovalReason) {
-        if !self.removed.swap(true, Ordering::AcqRel) {
+        let should_notify = {
+            let mut lifecycle = self.lifecycle.lock();
+            if lifecycle.removed {
+                false
+            } else {
+                lifecycle.removed = true;
+                true
+            }
+        };
+
+        if should_notify {
             self.level_callback.lock().on_remove(reason);
         }
     }
@@ -592,7 +613,10 @@ impl EntityBase {
     /// constructs a fresh `ServerPlayer`, so player respawn needs an explicit
     /// way to reset this base lifecycle flag.
     pub fn clear_removed(&self) -> bool {
-        self.removed.swap(false, Ordering::AcqRel)
+        let mut lifecycle = self.lifecycle.lock();
+        let was_removed = lifecycle.removed;
+        lifecycle.removed = false;
+        was_removed
     }
 
     /// Sets the level callback for lifecycle events.
@@ -731,24 +755,26 @@ impl EntityBase {
     /// Checks if this entity was already ticked during the given server tick.
     #[inline]
     pub fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
-        self.last_world_tick.load(Ordering::Acquire) == server_tick
+        self.lifecycle.lock().last_world_tick == server_tick
     }
 
     /// Marks this entity as ticked for the given server tick.
     #[inline]
     pub fn mark_ticked(&self, server_tick: i32) {
-        self.last_world_tick.store(server_tick, Ordering::Release);
+        self.lifecycle.lock().last_world_tick = server_tick;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{EntityBase, EntityMovementFlags, EntityPistonMovement};
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityDimensions;
+    use steel_utils::locks::SyncMutex;
 
+    use crate::entity::{EntityLevelCallback, RemovalReason};
     use crate::world::World;
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -764,6 +790,19 @@ mod tests {
             (left - right).abs() < 1.0e-6,
             "expected {left:?} to equal {right:?}"
         );
+    }
+
+    #[derive(Default)]
+    struct CountingCallback {
+        removals: SyncMutex<Vec<RemovalReason>>,
+    }
+
+    impl EntityLevelCallback for CountingCallback {
+        fn on_move(&self, _old_pos: DVec3, _new_pos: DVec3) {}
+
+        fn on_remove(&self, reason: RemovalReason) {
+            self.removals.lock().push(reason);
+        }
     }
 
     #[test]
@@ -825,6 +864,33 @@ mod tests {
         assert!(!flags.horizontal_collision());
         assert!(!flags.vertical_collision());
         assert!(!flags.vertical_collision_below());
+    }
+
+    #[test]
+    fn lifecycle_state_tracks_removal_and_tick_guard() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        let callback = Arc::new(CountingCallback::default());
+        base.set_level_callback(callback.clone());
+
+        assert!(!base.is_removed());
+        assert!(!base.was_ticked_this_tick(12));
+
+        base.mark_ticked(12);
+        assert!(base.was_ticked_this_tick(12));
+        assert!(!base.was_ticked_this_tick(13));
+
+        base.set_removed(RemovalReason::Discarded);
+        base.set_removed(RemovalReason::Killed);
+        assert!(base.is_removed());
+        assert_eq!(*callback.removals.lock(), vec![RemovalReason::Discarded]);
+        assert!(base.clear_removed());
+        assert!(!base.clear_removed());
+        assert!(!base.is_removed());
     }
 
     #[test]
