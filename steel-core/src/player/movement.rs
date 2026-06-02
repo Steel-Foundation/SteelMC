@@ -75,11 +75,11 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
 }
 
 #[must_use]
-fn bottom_center(aabb: WorldAabb) -> DVec3 {
+const fn bottom_center(aabb: WorldAabb) -> DVec3 {
     DVec3::new(
-        (aabb.min_x() + aabb.max_x()) * 0.5,
+        f64::midpoint(aabb.min_x(), aabb.max_x()),
         aabb.min_y(),
-        (aabb.min_z() + aabb.max_z()) * 0.5,
+        f64::midpoint(aabb.min_z(), aabb.max_z()),
     )
 }
 
@@ -213,11 +213,11 @@ impl Player {
         }
 
         let current_rotation = self.rotation();
-        let target_y_rot = wrap_degrees(packet.get_y_rot(current_rotation.0));
-        let target_x_rot = wrap_degrees(packet.get_x_rot(current_rotation.1));
+        let target_yaw = wrap_degrees(packet.get_y_rot(current_rotation.0));
+        let target_pitch = wrap_degrees(packet.get_x_rot(current_rotation.1));
 
         if self.update_awaiting_teleport() {
-            self.set_rotation((target_y_rot, target_x_rot));
+            self.set_rotation((target_yaw, target_pitch));
             return;
         }
 
@@ -260,8 +260,8 @@ impl Player {
                         start_pos.x,
                         start_pos.y,
                         start_pos.z,
-                        target_y_rot,
-                        target_x_rot,
+                        target_yaw,
+                        target_pitch,
                     );
                     return;
                 }
@@ -319,8 +319,8 @@ impl Player {
                         start_pos.x,
                         start_pos.y,
                         start_pos.z,
-                        target_y_rot,
-                        target_x_rot,
+                        target_yaw,
+                        target_pitch,
                     );
                     return;
                 };
@@ -353,8 +353,8 @@ impl Player {
                         start_pos.x,
                         start_pos.y,
                         start_pos.z,
-                        target_y_rot,
-                        target_x_rot,
+                        target_yaw,
+                        target_pitch,
                     );
                     return;
                 }
@@ -381,7 +381,7 @@ impl Player {
         if packet.has_pos {
             self.set_position(accepted_pos);
         }
-        self.set_rotation((target_y_rot, target_x_rot));
+        self.set_rotation((target_yaw, target_pitch));
         self.base().set_on_ground_with_movement(
             packet.on_ground,
             packet.horizontal_collision,
@@ -393,7 +393,7 @@ impl Player {
         } else {
             prev_pos
         };
-        let (yaw, pitch) = (target_y_rot, target_x_rot);
+        let (yaw, pitch) = (target_yaw, target_pitch);
 
         if packet.has_pos || packet.has_rot {
             let new_chunk = ChunkPos::from_entity_pos(pos);

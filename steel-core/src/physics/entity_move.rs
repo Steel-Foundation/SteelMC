@@ -13,6 +13,11 @@ use crate::physics::{
 };
 use steel_utils::axis::Axis;
 
+const ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
+const EDGE_STEP: f64 = 0.05;
+const EDGE_COLLISION_EPSILON: f64 = 1.0e-7;
+const STEP_HEIGHT_COLLISION_EPSILON: f64 = 1.0e-5;
+
 /// Type of movement being performed.
 ///
 /// Affects how the entity interacts with the world during movement.
@@ -82,7 +87,10 @@ pub fn move_entity(
     world: &dyn CollisionWorld,
 ) -> MoveResult {
     // Early exit for zero movement
-    if delta.x.abs() < 1.0e-7 && delta.y.abs() < 1.0e-7 && delta.z.abs() < 1.0e-7 {
+    if delta.x.abs() < ZERO_MOVEMENT_EPSILON
+        && delta.y.abs() < ZERO_MOVEMENT_EPSILON
+        && delta.z.abs() < ZERO_MOVEMENT_EPSILON
+    {
         return MoveResult {
             final_position: state.position,
             actual_movement: DVec3::new(0.0, 0.0, 0.0),
@@ -100,9 +108,8 @@ pub fn move_entity(
     // which can create client-side desync where the client thinks the entity is falling.
     let aabb = state.bounding_box;
 
-    // Apply sneak-edge prevention if crouching and on ground
+    // Apply sneak-edge prevention if crouching.
     let movement = if state.is_crouching
-        && state.on_ground
         && matches!(mover_type, MoverType::SelfMovement | MoverType::Player)
     {
         apply_sneak_edge_prevention(state, delta, &aabb, world)
@@ -128,42 +135,95 @@ pub fn move_entity(
 ///
 /// Matches: `Player.maybeBackOffFromEdge(Vec3, MoverType)`
 fn apply_sneak_edge_prevention(
-    _state: &EntityPhysicsState,
+    state: &EntityPhysicsState,
     delta: DVec3,
     aabb: &WorldAabb,
     world: &dyn CollisionWorld,
 ) -> DVec3 {
-    // Only prevent edge falling for horizontal movement
-    if delta.x.abs() < 1.0e-7 && delta.z.abs() < 1.0e-7 {
+    if delta.y > 0.0 || !is_above_ground(state, aabb, world) {
         return delta;
     }
 
-    // Calculate position after movement
-    let new_aabb = aabb.move_vec(delta);
+    let max_down_step = f64::from(state.max_up_step);
+    let mut delta_x = delta.x;
+    let mut delta_z = delta.z;
+    let step_x = delta_x.signum() * EDGE_STEP;
+    let step_z = delta_z.signum() * EDGE_STEP;
 
-    // Check if there's ground below the new position
-    // We check down to 1 block below (vanilla checks maxUpStep + 1.0)
-    let check_down_aabb = WorldAabb::new(
-        new_aabb.min_x(),
-        new_aabb.min_y() - 1.0,
-        new_aabb.min_z(),
-        new_aabb.max_x(),
-        new_aabb.min_y(),
-        new_aabb.max_z(),
-    );
+    while delta_x != 0.0 && can_fall_at_least(aabb, delta_x, 0.0, max_down_step, world) {
+        if delta_x.abs() <= EDGE_STEP {
+            delta_x = 0.0;
+            break;
+        }
 
-    let ground_below = world.get_block_collisions(&check_down_aabb);
-
-    // If no ground below, prevent the movement
-    if ground_below.is_empty() {
-        return DVec3::new(0.0, delta.y, 0.0); // Allow Y movement but block X/Z
+        delta_x -= step_x;
     }
 
-    // Could add more sophisticated edge detection here (checking if we're
-    // moving away from a supporting block), but this basic version matches
-    // most of vanilla's behavior
+    while delta_z != 0.0 && can_fall_at_least(aabb, 0.0, delta_z, max_down_step, world) {
+        if delta_z.abs() <= EDGE_STEP {
+            delta_z = 0.0;
+            break;
+        }
 
-    delta
+        delta_z -= step_z;
+    }
+
+    while delta_x != 0.0
+        && delta_z != 0.0
+        && can_fall_at_least(aabb, delta_x, delta_z, max_down_step, world)
+    {
+        if delta_x.abs() <= EDGE_STEP {
+            delta_x = 0.0;
+        } else {
+            delta_x -= step_x;
+        }
+
+        if delta_z.abs() <= EDGE_STEP {
+            delta_z = 0.0;
+        } else {
+            delta_z -= step_z;
+        }
+    }
+
+    DVec3::new(delta_x, delta.y, delta_z)
+}
+
+fn is_above_ground(
+    state: &EntityPhysicsState,
+    aabb: &WorldAabb,
+    world: &dyn CollisionWorld,
+) -> bool {
+    if state.on_ground {
+        return true;
+    }
+
+    let max_down_step = f64::from(state.max_up_step);
+    let fall_distance = f64::from(state.fall_distance);
+    fall_distance < max_down_step
+        && !can_fall_at_least(aabb, 0.0, 0.0, max_down_step - fall_distance, world)
+}
+
+fn can_fall_at_least(
+    aabb: &WorldAabb,
+    delta_x: f64,
+    delta_z: f64,
+    min_height: f64,
+    world: &dyn CollisionWorld,
+) -> bool {
+    if min_height <= 0.0 {
+        return false;
+    }
+
+    let fall_aabb = WorldAabb::new(
+        aabb.min_x() + EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min_y() - min_height - EDGE_COLLISION_EPSILON,
+        aabb.min_z() + EDGE_COLLISION_EPSILON + delta_z,
+        aabb.max_x() - EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min_y(),
+        aabb.max_z() - EDGE_COLLISION_EPSILON + delta_z,
+    );
+
+    world.get_block_collisions(&fall_aabb).is_empty()
 }
 
 /// Returns the axis step order for collision resolution.
@@ -200,35 +260,7 @@ fn collide_with_world(
     let swept_aabb = sweep_aabb(aabb, movement);
     let collisions = world.get_block_collisions(&swept_aabb);
 
-    // Vanilla: collideWithShapes iterates in dynamic axis order
-    let axes = axis_step_order(movement);
-
-    // Track resolved movement per axis and current AABB position
-    let mut resolved = DVec3::new(0.0, 0.0, 0.0);
-    let mut current_aabb = *aabb;
-
-    for axis in axes {
-        let axis_movement = match axis {
-            Axis::X => movement.x,
-            Axis::Y => movement.y,
-            Axis::Z => movement.z,
-        };
-
-        if axis_movement != 0.0 {
-            let collision = collide(axis, &current_aabb, &collisions, axis_movement);
-
-            // Update resolved movement for this axis
-            match axis {
-                Axis::X => resolved.x = collision,
-                Axis::Y => resolved.y = collision,
-                Axis::Z => resolved.z = collision,
-            }
-
-            // Move AABB by the resolved amount (vanilla: boundingBox.move(resolvedMovement))
-            current_aabb = move_aabb(&current_aabb, axis, collision);
-        }
-    }
-
+    let (resolved, current_aabb) = collide_with_shapes(movement, aabb, &collisions);
     let final_position = state.position + resolved;
 
     // Check if on ground (touching block below with epsilon tolerance)
@@ -250,6 +282,44 @@ fn collide_with_world(
         z_collision,
         final_aabb: current_aabb,
     }
+}
+
+/// Resolves movement against a pre-collected shape set.
+fn collide_with_shapes(
+    movement: DVec3,
+    aabb: &WorldAabb,
+    collisions: &[WorldAabb],
+) -> (DVec3, WorldAabb) {
+    // Vanilla: collideWithShapes iterates in dynamic axis order
+    let axes = axis_step_order(movement);
+
+    // Track resolved movement per axis and current AABB position
+    let mut resolved = DVec3::new(0.0, 0.0, 0.0);
+    let mut current_aabb = *aabb;
+
+    for axis in axes {
+        let axis_movement = match axis {
+            Axis::X => movement.x,
+            Axis::Y => movement.y,
+            Axis::Z => movement.z,
+        };
+
+        if axis_movement != 0.0 {
+            let collision = collide(axis, &current_aabb, collisions, axis_movement);
+
+            // Update resolved movement for this axis
+            match axis {
+                Axis::X => resolved.x = collision,
+                Axis::Y => resolved.y = collision,
+                Axis::Z => resolved.z = collision,
+            }
+
+            // Move AABB by the resolved amount (vanilla: boundingBox.move(resolvedMovement))
+            current_aabb = move_aabb(&current_aabb, axis, collision);
+        }
+    }
+
+    (resolved, current_aabb)
 }
 
 /// Moves an AABB along a single axis by the given amount.
@@ -310,72 +380,121 @@ fn try_step_up(
     world: &dyn CollisionWorld,
 ) -> MoveResult {
     let max_step = f64::from(state.max_up_step);
+    let on_ground_after_collision = ground_result.vertical_collision && movement.y < 0.0;
+    let grounded_aabb = if on_ground_after_collision {
+        aabb.move_by(0.0, ground_result.actual_movement.y, 0.0)
+    } else {
+        *aabb
+    };
 
-    // Sweep for collisions during the entire step attempt
-    let step_sweep_aabb = aabb.expand_towards(DVec3::new(movement.x, max_step, movement.z));
-    let collisions = world.get_block_collisions(&step_sweep_aabb);
-
-    // Vanilla: collideWithShapes(Vec3(movement.x, maxUpStep, movement.z), groundedAABB, colliders)
-    // This uses the dynamic axis order based on movement.x vs movement.z
-    let step_movement = DVec3::new(movement.x, max_step, movement.z);
-    let axes = axis_step_order(step_movement);
-
-    let mut resolved = DVec3::new(0.0, 0.0, 0.0);
-    let mut current_aabb = *aabb;
-
-    for axis in axes {
-        let axis_movement = match axis {
-            Axis::X => step_movement.x,
-            Axis::Y => step_movement.y,
-            Axis::Z => step_movement.z,
-        };
-
-        if axis_movement != 0.0 {
-            let collision = collide(axis, &current_aabb, &collisions, axis_movement);
-
-            match axis {
-                Axis::X => resolved.x = collision,
-                Axis::Y => resolved.y = collision,
-                Axis::Z => resolved.z = collision,
-            }
-
-            current_aabb = move_aabb(&current_aabb, axis, collision);
-        }
+    let mut step_sweep_aabb =
+        grounded_aabb.expand_towards(DVec3::new(movement.x, max_step, movement.z));
+    if !on_ground_after_collision {
+        step_sweep_aabb =
+            step_sweep_aabb.expand_towards(DVec3::new(0.0, -STEP_HEIGHT_COLLISION_EPSILON, 0.0));
     }
+    let collisions = world.get_block_collisions(&step_sweep_aabb);
+    let candidates = collect_candidate_step_up_heights(
+        &grounded_aabb,
+        &collisions,
+        max_step,
+        ground_result.actual_movement.y,
+    );
 
-    // Check if we made more horizontal progress
     let ground_dist_sq =
         ground_result.actual_movement.x.powi(2) + ground_result.actual_movement.z.powi(2);
-    let step_dist_sq = resolved.x.powi(2) + resolved.z.powi(2);
 
-    if step_dist_sq <= ground_dist_sq {
-        // Step didn't help, use ground result
-        return ground_result.clone();
+    for candidate in candidates {
+        let step_movement = DVec3::new(movement.x, candidate, movement.z);
+        let (step_from_ground, stepped_aabb) =
+            collide_with_shapes(step_movement, &grounded_aabb, &collisions);
+        let step_dist_sq = step_from_ground.x.powi(2) + step_from_ground.z.powi(2);
+
+        if step_dist_sq <= ground_dist_sq {
+            continue;
+        }
+
+        let distance_to_ground = aabb.min_y() - grounded_aabb.min_y();
+        let actual_movement = step_from_ground - DVec3::new(0.0, distance_to_ground, 0.0);
+        let final_aabb = stepped_aabb.move_by(0.0, -distance_to_ground, 0.0);
+        let x_collision = actual_movement.x != movement.x;
+        let z_collision = actual_movement.z != movement.z;
+        let vertical_collision = actual_movement.y != movement.y;
+
+        return MoveResult {
+            final_position: state.position + actual_movement,
+            actual_movement,
+            on_ground: vertical_collision && movement.y < 0.0,
+            horizontal_collision: x_collision || z_collision,
+            vertical_collision,
+            x_collision,
+            z_collision,
+            final_aabb,
+        };
     }
-
-    // Vanilla subtracts the distance to ground from Y: stepFromGround.subtract(0.0, distanceToGround, 0.0)
-    // distanceToGround = aabb.minY - groundedAABB.minY (0 for our setup), so the final movement is just resolved.
-
-    let actual_movement = resolved;
-    let final_position = state.position + actual_movement;
-
-    // After stepping, we're on ground if we ended up at a position lower than max step height
-    // (i.e., we landed on something)
-    let on_ground = resolved.y < max_step && resolved.y > 0.0;
-
-    let x_collision = resolved.x != movement.x;
-    let z_collision = resolved.z != movement.z;
 
     MoveResult {
-        final_position,
-        actual_movement,
-        on_ground,
-        horizontal_collision: x_collision || z_collision,
-        vertical_collision: false, // Step-up resolved the vertical collision
-        x_collision,
-        z_collision,
-        final_aabb: current_aabb,
+        final_position: ground_result.final_position,
+        actual_movement: ground_result.actual_movement,
+        on_ground: ground_result.on_ground,
+        horizontal_collision: ground_result.horizontal_collision,
+        vertical_collision: ground_result.vertical_collision,
+        x_collision: ground_result.x_collision,
+        z_collision: ground_result.z_collision,
+        final_aabb: ground_result.final_aabb,
     }
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "intentional: vanilla candidate filtering uses exact float equality"
+)]
+fn collect_candidate_step_up_heights(
+    grounded_aabb: &WorldAabb,
+    collisions: &[WorldAabb],
+    max_step_height: f64,
+    step_height_to_skip: f64,
+) -> Vec<f64> {
+    let mut candidates = Vec::new();
+
+    for collider in collisions {
+        push_step_height_candidate(
+            &mut candidates,
+            collider.min_y() - grounded_aabb.min_y(),
+            max_step_height,
+            step_height_to_skip,
+        );
+        push_step_height_candidate(
+            &mut candidates,
+            collider.max_y() - grounded_aabb.min_y(),
+            max_step_height,
+            step_height_to_skip,
+        );
+    }
+
+    candidates.sort_by(f64::total_cmp);
+    candidates.dedup_by(|a, b| *a == *b);
+    candidates
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "intentional: vanilla candidate filtering uses exact float equality"
+)]
+fn push_step_height_candidate(
+    candidates: &mut Vec<f64>,
+    relative_height: f64,
+    max_step_height: f64,
+    step_height_to_skip: f64,
+) {
+    if relative_height < 0.0
+        || relative_height > max_step_height
+        || relative_height == step_height_to_skip
+    {
+        return;
+    }
+
+    candidates.push(relative_height);
 }
 
 /// Creates an AABB that encompasses the start and end positions of a movement.
@@ -416,6 +535,28 @@ mod tests {
             }
 
             collisions
+        }
+
+        fn get_pre_move_collisions(&self, _aabb: &WorldAabb, _old_pos: DVec3) -> Vec<WorldAabb> {
+            Vec::new()
+        }
+    }
+
+    struct BoxWorld {
+        boxes: Vec<WorldAabb>,
+    }
+
+    impl CollisionWorld for BoxWorld {
+        fn get_block_state(&self, _pos: BlockPos) -> steel_utils::BlockStateId {
+            REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
+        }
+
+        fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+            self.boxes
+                .iter()
+                .copied()
+                .filter(|collision| collision.intersects(*aabb))
+                .collect()
         }
 
         fn get_pre_move_collisions(&self, _aabb: &WorldAabb, _old_pos: DVec3) -> Vec<WorldAabb> {
@@ -525,5 +666,101 @@ mod tests {
             "Item should land on floor, but Y = {}",
             result.final_position.y
         );
+    }
+
+    #[test]
+    fn test_crouching_backs_off_from_edge_incrementally() {
+        let mut state =
+            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
+        state.on_ground = true;
+        state.is_crouching = true;
+
+        let world = BoxWorld {
+            boxes: vec![WorldAabb::new(-2.0, 0.0, -2.0, 0.5, 1.0, 2.0)],
+        };
+
+        let result = move_entity(&state, DVec3::new(1.0, 0.0, 0.0), MoverType::Player, &world);
+
+        assert!(
+            result.actual_movement.x > 0.0 && result.actual_movement.x < 1.0,
+            "sneak edge should trim movement instead of fully allowing or fully blocking it: {:?}",
+            result.actual_movement
+        );
+        assert!(result.actual_movement.y.abs() < ZERO_MOVEMENT_EPSILON);
+    }
+
+    #[test]
+    fn test_not_crouching_can_move_off_edge() {
+        let mut state =
+            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
+        state.on_ground = true;
+
+        let world = BoxWorld {
+            boxes: vec![WorldAabb::new(-2.0, 0.0, -2.0, 0.5, 1.0, 2.0)],
+        };
+        let movement = DVec3::new(1.0, 0.0, 0.0);
+
+        let result = move_entity(&state, movement, MoverType::Player, &world);
+
+        assert_eq!(result.actual_movement, movement);
+    }
+
+    #[test]
+    fn test_step_up_uses_obstacle_candidate_height() {
+        let mut state =
+            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
+        state.on_ground = true;
+        state.max_up_step = 0.6;
+
+        let world = BoxWorld {
+            boxes: vec![
+                WorldAabb::new(-10.0, 0.0, -10.0, 10.0, 1.0, 10.0),
+                WorldAabb::new(0.5, 1.0, -1.0, 1.5, 1.5, 1.0),
+            ],
+        };
+
+        let result = move_entity(
+            &state,
+            DVec3::new(1.0, 0.0, 0.0),
+            MoverType::SelfMovement,
+            &world,
+        );
+
+        assert!(
+            result.actual_movement.x > 0.9,
+            "step-up should preserve horizontal movement: {:?}",
+            result.actual_movement
+        );
+        assert!((result.actual_movement.y - 0.5).abs() < ZERO_MOVEMENT_EPSILON);
+    }
+
+    #[test]
+    fn test_step_up_rejects_obstacle_above_max_step() {
+        let mut state =
+            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
+        state.on_ground = true;
+        state.max_up_step = 0.6;
+
+        let world = BoxWorld {
+            boxes: vec![
+                WorldAabb::new(-10.0, 0.0, -10.0, 10.0, 1.0, 10.0),
+                WorldAabb::new(0.5, 1.0, -1.0, 1.5, 2.0, 1.0),
+            ],
+        };
+
+        let result = move_entity(
+            &state,
+            DVec3::new(1.0, 0.0, 0.0),
+            MoverType::SelfMovement,
+            &world,
+        );
+
+        assert!(
+            result.actual_movement.x < 0.3,
+            "movement should stay clipped by the tall obstacle: {:?}",
+            result.actual_movement
+        );
+        assert!(result.actual_movement.y.abs() < ZERO_MOVEMENT_EPSILON);
+        assert!(result.horizontal_collision);
     }
 }

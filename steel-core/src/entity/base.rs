@@ -96,6 +96,12 @@ impl EntityMovementFlags {
     }
 }
 
+impl Default for EntityMovementFlags {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Vanilla `Entity` movement state stored as one locked snapshot.
 ///
 /// Position, velocity, rotation, and ground contact are commonly read together

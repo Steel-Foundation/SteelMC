@@ -615,9 +615,7 @@ impl ItemEntity {
             // Vanilla stores the actual position, not the decoded position.
             // This works because encode() is deterministic - both server and client
             // compute the same encoded values.
-            let Some((dx, dy, dz)) = delta else {
-                return None;
-            };
+            let (dx, dy, dz) = delta?;
 
             sync_state
                 .position
@@ -699,11 +697,11 @@ impl Entity for ItemEntity {
                 state.pickup_delay -= 1;
             }
 
-            let should_despawn = if state.age != INFINITE_LIFETIME {
+            let should_despawn = if state.age == INFINITE_LIFETIME {
+                false
+            } else {
                 state.age += 1;
                 state.age >= LIFETIME
-            } else {
-                false
             };
 
             (state.tick_count, should_despawn)

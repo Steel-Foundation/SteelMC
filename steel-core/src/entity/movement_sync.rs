@@ -44,7 +44,7 @@ impl EntityPositionSyncState {
     }
 
     /// Increments the full-sync delay and returns the previous value.
-    pub fn advance_sync_delay(&mut self) -> i32 {
+    pub const fn advance_sync_delay(&mut self) -> i32 {
         let delay = self.sync_delay;
         self.sync_delay += 1;
         delay
@@ -73,13 +73,13 @@ impl EntityPositionSyncState {
     }
 
     /// Marks a delta movement packet as sent.
-    pub fn mark_delta_sent(&mut self, position: DVec3, on_ground: bool) {
+    pub const fn mark_delta_sent(&mut self, position: DVec3, on_ground: bool) {
         self.last_sent_position = position;
         self.last_sent_on_ground = on_ground;
     }
 
     /// Marks a full position sync packet as sent and resets the full-sync delay.
-    pub fn mark_full_sent(&mut self, position: DVec3, on_ground: bool) {
+    pub const fn mark_full_sent(&mut self, position: DVec3, on_ground: bool) {
         self.last_sent_position = position;
         self.last_sent_on_ground = on_ground;
         self.sync_delay = 0;
