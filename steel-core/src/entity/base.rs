@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
+use crate::physics::EntityPhysicsState;
 use crate::world::World;
 
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
@@ -620,6 +621,21 @@ impl EntityBase {
         self.state.lock().bounding_box
     }
 
+    /// Returns the vanilla movement physics snapshot from the current base state.
+    pub(crate) fn physics_state(
+        &self,
+        max_up_step: f32,
+        backs_off_from_edge: bool,
+        descending: bool,
+    ) -> EntityPhysicsState {
+        let state = self.state.lock();
+        EntityPhysicsState::new(state.position, state.bounding_box, max_up_step)
+            .with_on_ground(state.movement_flags.on_ground())
+            .with_backs_off_from_edge(backs_off_from_edge)
+            .with_fall_distance(state.fall_distance)
+            .with_descending(descending)
+    }
+
     /// Gets the entity's current pose.
     #[inline]
     pub fn pose(&self) -> EntityPose {
@@ -953,12 +969,14 @@ impl EntityBase {
 #[cfg(test)]
 mod tests {
     use super::{
-        EntityBase, EntityFluidContact, EntityMovement, EntityMovementFlags, EntityPistonMovement,
+        EntityBase, EntityBaseState, EntityFluidContact, EntityMovement, EntityMovementFlags,
+        EntityPistonMovement,
     };
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityDimensions;
+    use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
 
     use crate::entity::{EntityLevelCallback, RemovalReason};
@@ -1120,6 +1138,33 @@ mod tests {
         assert!(!base.no_physics());
         base.set_no_physics(true);
         assert!(base.no_physics());
+    }
+
+    #[test]
+    fn physics_state_uses_current_base_bounding_box() {
+        let position = DVec3::new(10.0, 64.0, -5.0);
+        let custom_box = WorldAabb::new(9.75, 64.0, -5.75, 10.75, 66.0, -4.75);
+        let base = EntityBase::new_with_state(
+            1,
+            EntityBaseState::new_with_bounding_box(
+                position,
+                EntityDimensions::new(0.25, 0.25, 0.125),
+                custom_box,
+            )
+            .with_on_ground(true)
+            .with_fall_distance(3.5),
+            Weak::<World>::new(),
+        );
+
+        let physics_state = base.physics_state(0.6, true, true);
+
+        assert_vec3_close(physics_state.position(), position);
+        assert_eq!(physics_state.bounding_box(), custom_box);
+        assert_eq!(physics_state.max_up_step().to_bits(), 0.6_f32.to_bits());
+        assert!(physics_state.backs_off_from_edge());
+        assert!(physics_state.on_ground());
+        assert_f64_close(physics_state.fall_distance(), 3.5);
+        assert!(physics_state.descending());
     }
 
     #[test]

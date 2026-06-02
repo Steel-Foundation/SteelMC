@@ -22,8 +22,7 @@ use uuid::Uuid;
 use crate::behavior::{BLOCK_BEHAVIORS, EntityFallOnContext, EntityLandingContext};
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
-    EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
-    move_entity as resolve_entity_movement,
+    MoveResult, MoverType, WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
@@ -829,10 +828,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "mirrors vanilla Entity.move control flow in one auditable path"
-    )]
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
@@ -865,18 +860,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .base()
             .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
-        let start_position = self.position();
-
-        // Build physics state
-        let physics_state = EntityPhysicsState::with_dimensions(
-            start_position,
-            self.base().dimensions(),
+        let physics_state = self.base().physics_state(
             self.max_up_step(),
-        )
-        .with_on_ground(self.on_ground())
-        .with_backs_off_from_edge(self.backs_off_from_edge())
-        .with_fall_distance(self.fall_distance())
-        .with_descending(self.is_descending());
+            self.backs_off_from_edge(),
+            self.is_descending(),
+        );
+        let start_position = physics_state.position();
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);

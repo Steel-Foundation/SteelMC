@@ -1,6 +1,7 @@
 //! Entity physics state representation.
 
 use glam::DVec3;
+#[cfg(test)]
 use steel_registry::entity_type::EntityDimensions;
 use steel_utils::WorldAabb;
 
@@ -34,15 +35,12 @@ pub(crate) struct EntityPhysicsState {
 }
 
 impl EntityPhysicsState {
-    /// Creates a new physics state with custom dimensions.
+    /// Creates a new physics state from the current entity bounding box.
+    ///
+    /// Vanilla `Entity.move` resolves movement from the entity's actual
+    /// `boundingBox`, not a box reconstructed from dimensions.
     #[must_use]
-    pub fn with_dimensions(
-        position: DVec3,
-        dimensions: EntityDimensions,
-        max_up_step: f32,
-    ) -> Self {
-        let bounding_box = Self::make_bounding_box(position, &dimensions);
-
+    pub const fn new(position: DVec3, bounding_box: WorldAabb, max_up_step: f32) -> Self {
         Self {
             position,
             bounding_box,
@@ -54,8 +52,22 @@ impl EntityPhysicsState {
         }
     }
 
+    /// Creates a new physics state with custom dimensions.
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_dimensions(
+        position: DVec3,
+        dimensions: EntityDimensions,
+        max_up_step: f32,
+    ) -> Self {
+        let bounding_box = Self::make_bounding_box(position, &dimensions);
+
+        Self::new(position, bounding_box, max_up_step)
+    }
+
     /// Creates a bounding box from position and dimensions.
     /// Box is centered on X/Z with Y at entity feet (vanilla behavior).
+    #[cfg(test)]
     #[must_use]
     fn make_bounding_box(position: DVec3, dimensions: &EntityDimensions) -> WorldAabb {
         let half_width = f64::from(dimensions.width) / 2.0;
