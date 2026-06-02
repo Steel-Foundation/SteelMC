@@ -89,6 +89,15 @@ fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
     DVec3::new(error_x, error_y, error_z)
 }
 
+#[must_use]
+fn vanilla_post_move_y_dist(target_y: f64, simulated_y: f64) -> f64 {
+    let mut y_dist = target_y - simulated_y;
+    if y_dist > -0.5 || y_dist < 0.5 {
+        y_dist = 0.0;
+    }
+    y_dist
+}
+
 #[derive(Debug, Clone, Copy)]
 struct AcceptedMovementBroadcast {
     has_pos: bool,
@@ -257,6 +266,7 @@ impl Player {
         let mut accepted_pos = prev_pos;
         let mut client_delta = DVec3::ZERO;
         let mut moved_upwards = false;
+        let mut floating_check = None;
 
         if packet.has_pos {
             let target_pos = DVec3::new(
@@ -321,6 +331,7 @@ impl Player {
                 let old_aabb = self.bounding_box();
                 let move_delta = target_pos - last_good;
                 moved_upwards = move_delta.y > 0.0;
+                let player_stands_on_something = self.vertical_collision_below();
 
                 if was_on_ground && !packet.on_ground && moved_upwards {
                     if self.is_sprinting() {
@@ -369,6 +380,10 @@ impl Player {
                     return;
                 }
 
+                floating_check = Some((
+                    player_stands_on_something,
+                    vanilla_post_move_y_dist(target_pos.y, self.position().y),
+                ));
                 self.movement.lock().mark_last_good_position(target_pos);
 
                 if packet.on_ground && self.is_sprinting() {
@@ -390,6 +405,15 @@ impl Player {
 
         if packet.has_pos {
             self.set_position(accepted_pos);
+        }
+        if let Some((player_stands_on_something, y_dist)) = floating_check {
+            self.record_client_floating(
+                &world,
+                y_dist,
+                player_stands_on_something,
+                is_spectator,
+                is_fall_flying,
+            );
         }
         self.set_rotation((target_yaw, target_pitch));
         self.set_on_ground_with_movement(
@@ -491,6 +515,37 @@ impl Player {
             .mark_rotation_sent((movement.yaw, movement.pitch));
     }
 
+    fn record_client_floating(
+        &self,
+        world: &World,
+        y_dist: f64,
+        player_stands_on_something: bool,
+        is_spectator: bool,
+        is_fall_flying: bool,
+    ) {
+        let may_fly = self.abilities.lock().may_fly;
+        // TODO: Add levitation and auto-spin exemptions when those systems exist.
+        let can_violate_floating = y_dist >= -0.03125
+            && !player_stands_on_something
+            && !is_spectator
+            && !self.config.allow_flight
+            && !may_fly
+            && !is_fall_flying;
+
+        let client_is_floating = can_violate_floating && self.no_blocks_around(world);
+        self.movement
+            .lock()
+            .record_client_floating(client_is_floating);
+    }
+
+    fn no_blocks_around(&self, world: &World) -> bool {
+        let block_query = self
+            .bounding_box()
+            .inflate(0.0625)
+            .expand_towards(DVec3::new(0.0, -0.55, 0.0));
+        world.block_states_in_aabb_are_air(block_query)
+    }
+
     /// Returns the player's current gravity value.
     ///
     /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
@@ -500,6 +555,42 @@ impl Player {
             .lock()
             .get_value(vanilla_attributes::GRAVITY)
             .unwrap_or(DEFAULT_GRAVITY)
+    }
+
+    /// Returns how long vanilla permits unsupported floating for this player's gravity.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "gravity threshold bounds the result far below i32::MAX"
+    )]
+    pub(super) fn maximum_flying_ticks(&self) -> i32 {
+        let gravity = self.get_gravity();
+        if gravity < 1.0E-5 {
+            return i32::MAX;
+        }
+
+        let gravity_modifier = DEFAULT_GRAVITY / gravity;
+        (80.0 * gravity_modifier.max(1.0)).ceil() as i32
+    }
+
+    /// Advances vanilla's floating violation tracker and disconnects when exceeded.
+    pub(super) fn disconnect_if_floating_too_long(&self) -> bool {
+        // TODO: Add the passenger exemption when the passenger system exists.
+        let should_count = !self.is_sleeping() && !self.is_dead_or_dying();
+        let maximum_flying_ticks = self.maximum_flying_ticks();
+        let should_disconnect = self
+            .movement
+            .lock()
+            .tick_client_floating(should_count, maximum_flying_ticks);
+
+        if should_disconnect {
+            log::warn!(
+                "{} was kicked for floating too long!",
+                self.gameprofile.name
+            );
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_FLYING.msg());
+        }
+
+        should_disconnect
     }
 
     /// Applies gravity to the player's velocity.
@@ -555,7 +646,11 @@ impl Player {
         self.set_position(pos);
         self.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
-        self.movement.lock().reset_last_known_client_movement();
+        {
+            let mut movement = self.movement.lock();
+            movement.reset_last_known_client_movement();
+            movement.reset_flying_ticks();
+        }
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }
@@ -572,6 +667,7 @@ impl Player {
             let mut movement = self.movement.lock();
             movement.mark_last_good_position(pos);
             movement.reset_last_known_client_movement();
+            movement.reset_flying_ticks();
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
@@ -704,5 +800,11 @@ mod tests {
         let delta = movement_error_delta(DVec3::new(10.0, 120.0, -5.0), DVec3::new(8.0, 0.0, -8.0));
 
         assert_eq!(delta, DVec3::new(2.0, 0.0, 3.0));
+    }
+
+    #[test]
+    fn post_move_y_dist_matches_vanilla_y_branch() {
+        assert_eq!(vanilla_post_move_y_dist(64.0, 63.0), 0.0);
+        assert_eq!(vanilla_post_move_y_dist(64.0, 65.0), 0.0);
     }
 }

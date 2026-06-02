@@ -408,6 +408,10 @@ impl Player {
             }
         }
 
+        if self.disconnect_if_floating_too_long() {
+            return;
+        }
+
         self.refresh_dirty_attributes();
 
         self.broadcast_inventory_changes();

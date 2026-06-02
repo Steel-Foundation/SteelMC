@@ -33,6 +33,11 @@ pub struct MovementState {
     ///
     /// Mirrors vanilla `ServerPlayer.lastKnownClientMovement`.
     last_known_client_movement: DVec3,
+
+    /// Whether the last accepted client move appeared to be unsupported in air.
+    client_is_floating: bool,
+    /// Number of consecutive ticks the client has appeared to be floating.
+    above_ground_tick_count: i32,
 }
 
 impl MovementState {
@@ -47,6 +52,8 @@ impl MovementState {
             known_move_packet_count: 0,
             last_impulse_tick: 0,
             last_known_client_movement: DVec3::new(0.0, 0.0, 0.0),
+            client_is_floating: false,
+            above_ground_tick_count: 0,
         }
     }
 
@@ -71,6 +78,7 @@ impl MovementState {
         self.received_move_packet_count = 0;
         self.known_move_packet_count = 0;
         self.last_known_client_movement = DVec3::ZERO;
+        self.reset_flying_ticks();
     }
 
     /// Returns the current vanilla first-good and last-good validation positions.
@@ -115,6 +123,34 @@ impl MovementState {
     #[must_use]
     pub(super) const fn last_known_client_movement(&self) -> DVec3 {
         self.last_known_client_movement
+    }
+
+    /// Records whether the latest accepted movement made the client appear to float.
+    pub(super) const fn record_client_floating(&mut self, client_is_floating: bool) {
+        self.client_is_floating = client_is_floating;
+    }
+
+    /// Resets the vanilla floating violation counter.
+    pub(super) const fn reset_flying_ticks(&mut self) {
+        self.above_ground_tick_count = 0;
+    }
+
+    /// Advances the vanilla floating violation tracker.
+    ///
+    /// Returns true once the client has exceeded the configured maximum flying ticks.
+    pub(super) const fn tick_client_floating(
+        &mut self,
+        should_count: bool,
+        maximum_flying_ticks: i32,
+    ) -> bool {
+        if self.client_is_floating && should_count {
+            self.above_ground_tick_count = self.above_ground_tick_count.saturating_add(1);
+            return self.above_ground_tick_count > maximum_flying_ticks;
+        }
+
+        self.client_is_floating = false;
+        self.above_ground_tick_count = 0;
+        false
     }
 
     /// Selects and records the player movement sync form.
@@ -177,5 +213,33 @@ mod tests {
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
+    }
+
+    #[test]
+    fn floating_tracker_counts_only_while_client_is_floating() {
+        let mut state = MovementState::new();
+        state.record_client_floating(true);
+
+        assert!(!state.tick_client_floating(true, 2));
+        assert!(!state.tick_client_floating(true, 2));
+        assert!(state.tick_client_floating(true, 2));
+
+        state.record_client_floating(false);
+        assert!(!state.tick_client_floating(true, 2));
+
+        state.record_client_floating(true);
+        assert!(!state.tick_client_floating(true, 2));
+    }
+
+    #[test]
+    fn floating_tracker_resets_when_tick_conditions_do_not_count() {
+        let mut state = MovementState::new();
+        state.record_client_floating(true);
+
+        assert!(!state.tick_client_floating(true, 1));
+        assert!(!state.tick_client_floating(false, 1));
+
+        state.record_client_floating(true);
+        assert!(!state.tick_client_floating(true, 1));
     }
 }

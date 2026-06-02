@@ -689,6 +689,33 @@ impl World {
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
+    /// Returns whether every block state in the vanilla AABB block range is air.
+    ///
+    /// Matches `BlockGetter.getBlockStates(AABB)` using
+    /// `BlockPos.betweenClosedStream(AABB)`: both min and max coordinates are
+    /// floored before iterating the inclusive block range.
+    #[must_use]
+    pub fn block_states_in_aabb_are_air(&self, aabb: WorldAabb) -> bool {
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().floor() as i32;
+        let max_y = aabb.max_y().floor() as i32;
+        let max_z = aabb.max_z().floor() as i32;
+
+        for y in min_y..=max_y {
+            for z in min_z..=max_z {
+                for x in min_x..=max_x {
+                    if !self.get_block_state(BlockPos::new(x, y, z)).is_air() {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
     /// Gets a block state for generation postprocessing.
     ///
     /// Vanilla delays `LevelChunk.postProcessGeneration` until neighboring
