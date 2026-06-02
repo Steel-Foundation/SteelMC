@@ -259,11 +259,16 @@ impl EntityTracker {
         entity_id: i32,
         old_chunk: ChunkPos,
         new_chunk: ChunkPos,
+        get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
         if old_chunk == new_chunk {
             return;
         }
+
+        let mut players_to_remove = Vec::new();
+        let mut players_to_add = Vec::new();
+        let mut entity_to_spawn = None;
 
         self.entities.update_sync(&entity_id, |_, tracked| {
             let range = tracked.range_chunks;
@@ -291,11 +296,36 @@ impl EntityTracker {
                 tracked.registered_chunks.insert(*chunk);
             }
 
-            // Update tracking for players - those who can no longer see need despawn
-            // For now, we rely on the player view change to handle this
-            // TODO: Could optimize by checking which players lost/gained visibility
-            let _ = get_player; // Suppress unused warning for now
+            let mut new_seen_by = FxHashSet::default();
+            for &chunk in &new_chunks {
+                for player_id in get_players_in_chunk(chunk) {
+                    if player_id != entity_id {
+                        new_seen_by.insert(player_id);
+                    }
+                }
+            }
+
+            let mut seen_by = tracked.seen_by.write();
+            players_to_remove.extend(seen_by.difference(&new_seen_by).copied());
+            players_to_add.extend(new_seen_by.difference(&seen_by).copied());
+            *seen_by = new_seen_by;
+            entity_to_spawn = tracked.entity.upgrade();
         });
+
+        for player_id in players_to_remove {
+            if let Some(player) = get_player(player_id) {
+                player.send_packet(CRemoveEntities::single(entity_id));
+            }
+        }
+
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+        for player_id in players_to_add {
+            if let Some(player) = get_player(player_id) {
+                send_spawn_packets(&entity, &player);
+            }
+        }
     }
 
     /// Cleans up dead entities (from unloaded chunks).
