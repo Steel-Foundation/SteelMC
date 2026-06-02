@@ -76,7 +76,8 @@ use text_components::{content::Resolvable, custom::CustomData};
 use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityPositionSyncState, LivingEntityBase, RemovalReason,
+    DEATH_DURATION, Entity, EntityBase, EntityPositionSyncState, EntitySyncedData,
+    LivingEntityBase, RemovalReason,
 };
 use crate::inventory::SyncPlayerInv;
 use crate::player::experience::Experience;
@@ -1153,6 +1154,10 @@ impl Entity for Player {
         self.movement.lock().last_known_client_movement
     }
 
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
     fn max_up_step(&self) -> f32 {
         self.attributes()
             .lock()
@@ -1162,10 +1167,6 @@ impl Entity for Player {
 
     fn backs_off_from_edge(&self) -> bool {
         self.is_crouching()
-    }
-
-    fn is_no_gravity(&self) -> bool {
-        *self.entity_data.lock().base().no_gravity.get()
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {

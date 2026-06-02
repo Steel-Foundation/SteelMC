@@ -56,6 +56,7 @@ mod living_base;
 mod movement_sync;
 mod registry;
 mod storage;
+mod synced_data;
 mod tracker;
 
 use crate::portal::TeleportTransition;
@@ -72,6 +73,7 @@ pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub use storage::EntityStorage;
+pub use synced_data::EntitySyncedData;
 pub use tracker::EntityTracker;
 
 /// Type alias for a shared entity reference.
@@ -159,14 +161,20 @@ pub trait Entity: Send + Sync {
     /// Returns `Some(values)` if there are dirty values to sync, `None` otherwise.
     /// Clears the dirty flags after packing.
     fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
-        None
+        self.synced_data().and_then(EntitySyncedData::pack_dirty)
     }
 
     /// Packs all non-default entity data for initial spawn.
     ///
     /// Used when sending entity data to a player who just started tracking this entity.
     fn pack_all_entity_data(&self) -> Vec<DataValue> {
-        Vec::new()
+        self.synced_data()
+            .map_or_else(Vec::new, EntitySyncedData::pack_all)
+    }
+
+    /// Returns the synchronized entity-data container for entities with vanilla data accessors.
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        None
     }
 
     /// Returns true if the entity has been marked for removal.
@@ -434,10 +442,9 @@ pub trait Entity: Send + Sync {
     }
 
     /// Returns true if gravity is disabled for this entity.
-    ///
-    /// Override to read from entity data's `no_gravity` field.
     fn is_no_gravity(&self) -> bool {
-        false
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_no_gravity)
     }
 
     /// Gets the current gravity value.

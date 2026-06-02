@@ -7,7 +7,6 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
-use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
@@ -20,7 +19,7 @@ use crate::entity::damage::DamageSource;
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityFluidContact,
-    EntityPositionSyncState, RemovalReason,
+    EntityPositionSyncState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -885,8 +884,8 @@ impl Entity for ItemEntity {
         DEFAULT_GRAVITY
     }
 
-    fn is_no_gravity(&self) -> bool {
-        *self.entity_data.lock().base().no_gravity.get()
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
@@ -895,14 +894,6 @@ impl Entity for ItemEntity {
 
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
         Some(self)
-    }
-
-    fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
-        self.entity_data.lock().pack_dirty()
-    }
-
-    fn pack_all_entity_data(&self) -> Vec<DataValue> {
-        self.entity_data.lock().pack_all()
     }
 
     fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {

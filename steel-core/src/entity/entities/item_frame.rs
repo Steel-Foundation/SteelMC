@@ -6,7 +6,6 @@ use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::data_components::vanilla_components::MAP_ID;
-use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
@@ -14,7 +13,7 @@ use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -174,12 +173,8 @@ impl Entity for ItemFrameEntity {
         direction_3d_data_value(*self.entity_data.lock().hanging_entity.direction.get())
     }
 
-    fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
-        self.entity_data.lock().pack_dirty()
-    }
-
-    fn pack_all_entity_data(&self) -> Vec<DataValue> {
-        self.entity_data.lock().pack_all()
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

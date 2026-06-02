@@ -5,13 +5,12 @@ use std::sync::Weak;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -122,12 +121,8 @@ impl Entity for EndCrystalEntity {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 
-    fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
-        self.entity_data.lock().pack_dirty()
-    }
-
-    fn pack_all_entity_data(&self) -> Vec<DataValue> {
-        self.entity_data.lock().pack_all()
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

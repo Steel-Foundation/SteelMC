@@ -3,11 +3,12 @@
 //! Generates composed data structs matching the vanilla class layers that declare
 //! synchronized entity data.
 
-use std::{collections::HashMap, fs};
+use std::fs;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -470,7 +471,7 @@ fn parent_field_ident(simple_name: &str) -> Ident {
 
 fn layer_accessor_methods(
     root_layer: &LayerDefinition,
-    layer_indices: &HashMap<&str, usize>,
+    layer_indices: &FxHashMap<&str, usize>,
     layers: &[LayerDefinition],
     root_expr: TokenStream,
     root_is_self: bool,
@@ -534,7 +535,7 @@ fn layer_accessor_methods(
 }
 
 fn collect_layers(entities: &[EntityEntry]) -> Vec<LayerDefinition> {
-    let mut layer_indices = HashMap::new();
+    let mut layer_indices = FxHashMap::default();
     let mut layers = Vec::new();
 
     for entity in entities {
@@ -593,7 +594,7 @@ fn field_path_for_layer(layers: &[&SynchedDataLayer], target_index: usize) -> To
 
 fn concrete_default_overrides(
     entity: &EntityEntry,
-    canonical_layers: &HashMap<&str, usize>,
+    canonical_layers: &FxHashMap<&str, usize>,
     layers: &[LayerDefinition],
 ) -> Vec<TokenStream> {
     let entity_layers: Vec<_> = entity
@@ -647,12 +648,12 @@ pub(crate) fn build() -> TokenStream {
     let entities: Vec<EntityEntry> = serde_json::from_str(&content)
         .unwrap_or_else(|e| panic!("Failed to parse entities.json: {e}"));
     let layers = collect_layers(&entities);
-    let layer_indices: HashMap<_, _> = layers
+    let layer_indices: FxHashMap<_, _> = layers
         .iter()
         .enumerate()
         .map(|(index, layer)| (layer.java_class.as_str(), index))
         .collect();
-    let mut layer_new_overrides = HashMap::new();
+    let mut layer_new_overrides = FxHashMap::default();
 
     for entity in &entities {
         let Some(last_layer) = entity
@@ -688,6 +689,24 @@ pub(crate) fn build() -> TokenStream {
         use text_components::TextComponent;
         use uuid::Uuid;
         use crate::RegistryEntry;
+
+        /// Common access to the vanilla synchronized entity data root layer.
+        pub trait VanillaEntityData {
+            /// Returns the shared vanilla base entity-data layer.
+            fn base(&self) -> &BaseEntityData;
+
+            /// Returns the mutable shared vanilla base entity-data layer.
+            fn base_mut(&mut self) -> &mut BaseEntityData;
+
+            /// Packs dirty values for network sync, clearing dirty flags.
+            fn pack_dirty(&mut self) -> Option<Vec<DataValue>>;
+
+            /// Packs all non-default values for initial entity spawn.
+            fn pack_all(&self) -> Vec<DataValue>;
+
+            /// Returns `true` if any field has been modified.
+            fn is_dirty(&self) -> bool;
+        }
     });
 
     for layer in &layers {
@@ -857,6 +876,28 @@ pub(crate) fn build() -> TokenStream {
                     Self::new()
                 }
             }
+
+            impl VanillaEntityData for #struct_ident {
+                fn base(&self) -> &BaseEntityData {
+                    #struct_ident::base(self)
+                }
+
+                fn base_mut(&mut self) -> &mut BaseEntityData {
+                    #struct_ident::base_mut(self)
+                }
+
+                fn pack_dirty(&mut self) -> Option<Vec<DataValue>> {
+                    #struct_ident::pack_dirty(self)
+                }
+
+                fn pack_all(&self) -> Vec<DataValue> {
+                    #struct_ident::pack_all(self)
+                }
+
+                fn is_dirty(&self) -> bool {
+                    #struct_ident::is_dirty(self)
+                }
+            }
         });
     }
 
@@ -948,6 +989,28 @@ pub(crate) fn build() -> TokenStream {
             impl Default for #concrete_ident {
                 fn default() -> Self {
                     Self::new()
+                }
+            }
+
+            impl VanillaEntityData for #concrete_ident {
+                fn base(&self) -> &BaseEntityData {
+                    #concrete_ident::base(self)
+                }
+
+                fn base_mut(&mut self) -> &mut BaseEntityData {
+                    #concrete_ident::base_mut(self)
+                }
+
+                fn pack_dirty(&mut self) -> Option<Vec<DataValue>> {
+                    #concrete_ident::pack_dirty(self)
+                }
+
+                fn pack_all(&self) -> Vec<DataValue> {
+                    #concrete_ident::pack_all(self)
+                }
+
+                fn is_dirty(&self) -> bool {
+                    #concrete_ident::is_dirty(self)
                 }
             }
         });
