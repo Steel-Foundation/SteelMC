@@ -1,12 +1,10 @@
 //! Entity lifecycle callbacks for movement and removal tracking.
 
-use std::sync::{
-    Weak,
-    atomic::{AtomicBool, AtomicI64, Ordering},
-};
+use std::sync::Weak;
 
 use glam::DVec3;
-use steel_utils::{ChunkPos, PackedChunkPos, PackedSectionPos, SectionPos};
+use steel_utils::locks::SyncMutex;
+use steel_utils::{ChunkPos, SectionPos};
 
 use super::SharedEntity;
 use crate::world::World;
@@ -68,20 +66,40 @@ impl EntityLevelCallback for NullEntityCallback {
 pub struct PlayerEntityCallback {
     entity_id: i32,
     world: Weak<World>,
-    /// Packed last known section position (for cache updates).
-    last_section: AtomicI64,
+    state: SyncMutex<PlayerEntityCallbackState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlayerEntityCallbackState {
+    last_section: SectionPos,
+}
+
+impl PlayerEntityCallbackState {
+    fn new(position: DVec3) -> Self {
+        Self {
+            last_section: SectionPos::from_entity_pos(position),
+        }
+    }
+
+    fn replace_section(&mut self, new_section: SectionPos) -> Option<SectionPos> {
+        if self.last_section == new_section {
+            return None;
+        }
+
+        let old_section = self.last_section;
+        self.last_section = new_section;
+        Some(old_section)
+    }
 }
 
 impl PlayerEntityCallback {
     /// Creates a new callback for a player.
     #[must_use]
     pub fn new(entity_id: i32, position: DVec3, world: Weak<World>) -> Self {
-        let section_pos = SectionPos::from_entity_pos(position);
-
         Self {
             entity_id,
             world,
-            last_section: AtomicI64::new(PackedSectionPos::from(section_pos).as_raw()),
+            state: SyncMutex::new(PlayerEntityCallbackState::new(position)),
         }
     }
 }
@@ -93,15 +111,10 @@ impl EntityLevelCallback for PlayerEntityCallback {
         };
 
         let new_section = SectionPos::from_entity_pos(new_pos);
-
-        let old_packed = self.last_section.swap(
-            PackedSectionPos::from(new_section).as_raw(),
-            Ordering::AcqRel,
-        );
-        let old_section = PackedSectionPos::from_raw(old_packed).to_section_pos();
+        let old_section = self.state.lock().replace_section(new_section);
 
         // Update section cache if section changed
-        if old_section != new_section {
+        if let Some(old_section) = old_section {
             world
                 .entity_cache()
                 .on_section_change(self.entity_id, old_section, new_section);
@@ -119,12 +132,53 @@ impl EntityLevelCallback for PlayerEntityCallback {
 pub struct EntityChunkCallback {
     entity_id: i32,
     world: Weak<World>,
-    /// Packed last known chunk position (for detecting chunk transitions).
-    last_chunk: AtomicI64,
-    /// Packed last known section position (for cache updates).
-    last_section: AtomicI64,
-    /// Whether we've already processed a removal.
-    removed: AtomicBool,
+    state: SyncMutex<EntityChunkCallbackState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EntityChunkCallbackState {
+    last_chunk: ChunkPos,
+    last_section: SectionPos,
+    removed: bool,
+}
+
+impl EntityChunkCallbackState {
+    fn new(position: DVec3) -> Self {
+        Self {
+            last_chunk: ChunkPos::from_entity_pos(position),
+            last_section: SectionPos::from_entity_pos(position),
+            removed: false,
+        }
+    }
+
+    fn replace_section(&mut self, new_section: SectionPos) -> Option<SectionPos> {
+        if self.last_section == new_section {
+            return None;
+        }
+
+        let old_section = self.last_section;
+        self.last_section = new_section;
+        Some(old_section)
+    }
+
+    fn replace_chunk(&mut self, new_chunk: ChunkPos) -> Option<ChunkPos> {
+        if self.last_chunk == new_chunk {
+            return None;
+        }
+
+        let old_chunk = self.last_chunk;
+        self.last_chunk = new_chunk;
+        Some(old_chunk)
+    }
+
+    const fn mark_removed(&mut self) -> Option<ChunkPos> {
+        if self.removed {
+            return None;
+        }
+
+        self.removed = true;
+        Some(self.last_chunk)
+    }
 }
 
 impl EntityChunkCallback {
@@ -132,82 +186,97 @@ impl EntityChunkCallback {
     #[must_use]
     pub fn new(entity: &SharedEntity, world: Weak<World>) -> Self {
         let pos = entity.position();
-        let chunk_pos = ChunkPos::from_entity_pos(pos);
-        let section_pos = SectionPos::from_entity_pos(pos);
 
         Self {
             entity_id: entity.id(),
             world,
-            last_chunk: AtomicI64::new(PackedChunkPos::from(chunk_pos).as_raw()),
-            last_section: AtomicI64::new(PackedSectionPos::from(section_pos).as_raw()),
-            removed: AtomicBool::new(false),
+            state: SyncMutex::new(EntityChunkCallbackState::new(pos)),
         }
-    }
-
-    /// Gets the current chunk position from stored state.
-    fn current_chunk(&self) -> ChunkPos {
-        PackedChunkPos::from_raw(self.last_chunk.load(Ordering::Acquire)).to_chunk_pos()
     }
 }
 
 impl EntityLevelCallback for EntityChunkCallback {
-    fn on_move(&self, old_pos: DVec3, new_pos: DVec3) {
+    fn on_move(&self, _old_pos: DVec3, new_pos: DVec3) {
         let Some(world) = self.world.upgrade() else {
             return;
         };
 
-        // Calculate section positions
-        let old_section = SectionPos::from_entity_pos(old_pos);
         let new_section = SectionPos::from_entity_pos(new_pos);
-
-        // Update section cache if section changed
-        if old_section != new_section {
-            let old_packed = self.last_section.swap(
-                PackedSectionPos::from(new_section).as_raw(),
-                Ordering::AcqRel,
-            );
-            let actual_old_section = PackedSectionPos::from_raw(old_packed).to_section_pos();
-
-            world
-                .entity_cache()
-                .on_section_change(self.entity_id, actual_old_section, new_section);
-        }
-
-        // Calculate chunk positions
-        let old_chunk = ChunkPos::from_entity_pos(old_pos);
         let new_chunk = ChunkPos::from_entity_pos(new_pos);
 
-        // Move Arc between chunks if chunk changed
-        if old_chunk != new_chunk {
-            let old_packed = self
-                .last_chunk
-                .swap(PackedChunkPos::from(new_chunk).as_raw(), Ordering::AcqRel);
-            let actual_old_chunk = PackedChunkPos::from_raw(old_packed).to_chunk_pos();
+        let (old_section, old_chunk) = {
+            let mut state = self.state.lock();
+            (
+                state.replace_section(new_section),
+                state.replace_chunk(new_chunk),
+            )
+        };
 
-            world.move_entity_between_chunks(self.entity_id, actual_old_chunk, new_chunk);
+        // Update section cache if section changed
+        if let Some(old_section) = old_section {
+            world
+                .entity_cache()
+                .on_section_change(self.entity_id, old_section, new_section);
+        }
+
+        // Move Arc between chunks if chunk changed
+        if let Some(old_chunk) = old_chunk {
+            world.move_entity_between_chunks(self.entity_id, old_chunk, new_chunk);
 
             // Mark both old and new chunks dirty for saving
             // (within-chunk movement is handled by LevelChunk::tick marking dirty after entity ticks)
-            world.mark_chunk_dirty(actual_old_chunk);
+            world.mark_chunk_dirty(old_chunk);
             world.mark_chunk_dirty(new_chunk);
         }
     }
 
     fn on_remove(&self, reason: RemovalReason) {
-        // Prevent double removal
-        if self.removed.swap(true, Ordering::AcqRel) {
+        let Some(chunk_pos) = self.state.lock().mark_removed() else {
             return;
-        }
+        };
 
         let Some(world) = self.world.upgrade() else {
             return;
         };
 
-        let chunk_pos = self.current_chunk();
-
         // Mark chunk dirty so removal is persisted
         world.mark_chunk_dirty(chunk_pos);
 
         world.remove_entity_internal(self.entity_id, chunk_pos, reason);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+    use steel_utils::{ChunkPos, SectionPos};
+
+    use super::{EntityChunkCallbackState, PlayerEntityCallbackState};
+
+    #[test]
+    fn player_callback_state_reports_section_changes_once() {
+        let mut state = PlayerEntityCallbackState::new(DVec3::new(1.0, 64.0, 1.0));
+        let start_section = SectionPos::from_entity_pos(DVec3::new(1.0, 64.0, 1.0));
+        let next_section = SectionPos::from_entity_pos(DVec3::new(1.0, 80.0, 1.0));
+
+        assert_eq!(state.replace_section(start_section), None);
+        assert_eq!(state.replace_section(next_section), Some(start_section));
+        assert_eq!(state.replace_section(next_section), None);
+    }
+
+    #[test]
+    fn chunk_callback_state_tracks_chunk_section_and_removal() {
+        let mut state = EntityChunkCallbackState::new(DVec3::new(1.0, 64.0, 1.0));
+        let start_chunk = ChunkPos::from_entity_pos(DVec3::new(1.0, 64.0, 1.0));
+        let next_chunk = ChunkPos::from_entity_pos(DVec3::new(17.0, 64.0, 1.0));
+        let start_section = SectionPos::from_entity_pos(DVec3::new(1.0, 64.0, 1.0));
+        let next_section = SectionPos::from_entity_pos(DVec3::new(17.0, 80.0, 1.0));
+
+        assert_eq!(state.replace_chunk(start_chunk), None);
+        assert_eq!(state.replace_section(start_section), None);
+        assert_eq!(state.replace_chunk(next_chunk), Some(start_chunk));
+        assert_eq!(state.replace_section(next_section), Some(start_section));
+        assert_eq!(state.mark_removed(), Some(next_chunk));
+        assert_eq!(state.mark_removed(), None);
     }
 }
