@@ -689,11 +689,6 @@ impl Player {
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).
-    // this is just temporary there because the logic is not yet implemented complete for the other branches
-    #[expect(
-        clippy::match_same_arms,
-        reason = "There is still a TODO there, this will eventually go away by itself."
-    )]
     pub fn handle_player_command(&self, packet: SPlayerCommand) {
         if !self.has_client_loaded() {
             return;
@@ -749,18 +744,10 @@ impl Player {
                     // Blocked on: bed block properties, sleeping pos entity data
                 }
             }
-            PlayerCommandAction::StartRidingJump => {
-                // TODO: horse jump — check getControlledVehicle() is PlayerRideableJumping,
-                //       validate canJump() && data > 0, call handleStartJump(data)
-                // Blocked on: vehicle/entity system
-            }
-            PlayerCommandAction::StopRidingJump => {
-                // TODO: stop horse jump — call handleStopJump() on controlled vehicle
-                // Blocked on: vehicle/entity system
-            }
-            PlayerCommandAction::OpenVehicleInventory => {
-                // TODO: open vehicle inventory — check getVehicle() is HasCustomInventoryScreen
-                // Blocked on: vehicle/entity system
+            PlayerCommandAction::StartRidingJump
+            | PlayerCommandAction::StopRidingJump
+            | PlayerCommandAction::OpenVehicleInventory => {
+                // TODO: Implement vehicle command handling once the passenger/vehicle system exists.
             }
         }
 
