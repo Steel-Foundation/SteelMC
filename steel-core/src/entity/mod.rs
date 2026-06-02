@@ -17,7 +17,7 @@ use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, EntityLandingContext};
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
@@ -56,6 +56,7 @@ mod fluid_contact;
 mod living_base;
 mod movement_sync;
 mod registry;
+mod shared_flags;
 mod storage;
 mod synced_data;
 mod tracker;
@@ -73,6 +74,7 @@ pub use fluid_contact::EntityFluidContact;
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
+pub(crate) use shared_flags::EntitySharedFlags;
 pub use storage::EntityStorage;
 pub use synced_data::EntitySyncedData;
 pub use tracker::EntityTracker;
@@ -211,6 +213,12 @@ pub trait Entity: Send + Sync {
     /// Returns true when movement is authored by a remote client.
     fn is_client_authoritative(&self) -> bool {
         false
+    }
+
+    /// Returns true when vanilla landing bounce should be suppressed.
+    fn is_suppressing_bounce(&self) -> bool {
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
     /// Returns the movement vector vanilla exposes for block-contact logic.
@@ -550,6 +558,11 @@ pub trait Entity: Send + Sync {
         }
         if result.vertical_collision {
             let velocity = self.velocity();
+            let landing_context = EntityLandingContext::new(
+                velocity,
+                self.is_living_entity(),
+                self.is_suppressing_bounce(),
+            );
             let next_velocity =
                 if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
                     let effect_state = world.get_block_state(effect_pos);
@@ -558,10 +571,10 @@ pub trait Entity: Send + Sync {
                         effect_state,
                         &world,
                         effect_pos,
-                        velocity,
+                        landing_context,
                     )
                 } else {
-                    DVec3::new(velocity.x, 0.0, velocity.z)
+                    landing_context.default_velocity_after_fall_on()
                 };
             self.set_velocity(next_velocity);
         }

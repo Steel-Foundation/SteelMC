@@ -1154,6 +1154,10 @@ impl Entity for Player {
         self.movement.lock().last_known_client_movement
     }
 
+    fn is_suppressing_bounce(&self) -> bool {
+        self.is_crouching()
+    }
+
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }

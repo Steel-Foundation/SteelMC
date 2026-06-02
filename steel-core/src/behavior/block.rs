@@ -28,6 +28,35 @@ pub struct PickupResult {
     pub sound: Option<i32>,
 }
 
+/// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityLandingContext {
+    /// Entity velocity before the block landing hook adjusts it.
+    pub velocity: DVec3,
+    /// Whether the entity uses vanilla living-entity bounce behavior.
+    pub is_living_entity: bool,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+}
+
+impl EntityLandingContext {
+    /// Creates a landing context for a vertical movement collision.
+    #[must_use]
+    pub const fn new(velocity: DVec3, is_living_entity: bool, suppresses_bounce: bool) -> Self {
+        Self {
+            velocity,
+            is_living_entity,
+            suppresses_bounce,
+        }
+    }
+
+    /// Vanilla default `Block.updateEntityMovementAfterFallOn` result.
+    #[must_use]
+    pub const fn default_velocity_after_fall_on(self) -> DVec3 {
+        DVec3::new(self.velocity.x, 0.0, self.velocity.z)
+    }
+}
+
 /// Trait defining the behavior of a block.
 ///
 /// This trait handles all dynamic/functional aspects of blocks:
@@ -364,9 +393,9 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        velocity: DVec3,
+        context: EntityLandingContext,
     ) -> DVec3 {
-        DVec3::new(velocity.x, 0.0, velocity.z)
+        context.default_velocity_after_fall_on()
     }
 
     // === Block Entity Methods ===

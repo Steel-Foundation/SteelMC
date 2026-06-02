@@ -1,6 +1,8 @@
 use steel_registry::{entity_data::DataValue, vanilla_entity_data::VanillaEntityData};
 use steel_utils::locks::SyncMutex;
 
+use crate::entity::EntitySharedFlags;
+
 /// Thread-safe access to an entity's vanilla synchronized data.
 pub trait EntitySyncedData: Send + Sync {
     /// Packs dirty values for network sync, clearing dirty flags.
@@ -11,6 +13,9 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Returns the shared vanilla `NoGravity` flag.
     fn is_no_gravity(&self) -> bool;
+
+    /// Returns the shared vanilla shift-key-down flag.
+    fn is_shift_key_down(&self) -> bool;
 }
 
 impl<T> EntitySyncedData for SyncMutex<T>
@@ -27,6 +32,13 @@ where
 
     fn is_no_gravity(&self) -> bool {
         *VanillaEntityData::base(&*self.lock()).no_gravity.get()
+    }
+
+    fn is_shift_key_down(&self) -> bool {
+        EntitySharedFlags::from_metadata_byte(
+            *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
+        )
+        .contains(EntitySharedFlags::SHIFT_KEY_DOWN)
     }
 }
 
@@ -52,5 +64,18 @@ mod tests {
         assert_eq!(values[0].serializer_id, 8);
         assert!(matches!(values[0].value, EntityData::Boolean(true)));
         assert!(EntitySyncedData::pack_dirty(&data).is_none());
+    }
+
+    #[test]
+    fn synced_data_reads_shift_key_down_from_generated_base_layer() {
+        let data = SyncMutex::new(ItemEntityData::new());
+        assert!(!EntitySyncedData::is_shift_key_down(&data));
+
+        data.lock()
+            .base_mut()
+            .shared_flags
+            .set(EntitySharedFlags::SHIFT_KEY_DOWN.metadata_byte());
+
+        assert!(EntitySyncedData::is_shift_key_down(&data));
     }
 }
