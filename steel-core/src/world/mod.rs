@@ -2391,6 +2391,24 @@ impl World {
         self.entity_cache.get_entities_in_aabb(aabb)
     }
 
+    /// Gets entities matching vanilla's pushable entity selector for `pusher`.
+    ///
+    /// Vanilla also checks team collision rules; Steel has no teams yet, so this
+    /// currently matches the null-team path where collision is allowed.
+    #[must_use]
+    pub fn get_pushable_entities(
+        &self,
+        pusher: &dyn Entity,
+        aabb: &WorldAabb,
+    ) -> Vec<SharedEntity> {
+        self.get_entities_in_aabb(aabb)
+            .into_iter()
+            .filter(|entity| entity.id() != pusher.id())
+            .filter(|entity| !entity.is_spectator())
+            .filter(|entity| entity.is_pushable())
+            .collect()
+    }
+
     /// Moves an entity's Arc between chunks when it crosses a chunk boundary.
     ///
     /// Called by `EntityChunkCallback` when an entity moves between chunks.

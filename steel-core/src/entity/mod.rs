@@ -280,6 +280,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns whether this entity is invisible to normal entity selectors.
+    ///
+    /// Mirrors vanilla `Entity.isSpectator`. Base entities are never spectators;
+    /// players override this from their game mode.
+    fn is_spectator(&self) -> bool {
+        false
+    }
+
     /// Returns whether `other` can collide with this entity.
     ///
     /// Mirrors vanilla `Entity.canBeCollidedWith`. Base entities cannot be collided

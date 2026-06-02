@@ -1134,10 +1134,10 @@ impl Entity for Player {
     }
 
     fn broadcast_to_player(&self, player: &Player) -> bool {
-        if player.game_mode() == GameType::Spectator {
+        if player.is_spectator() {
             player.id() == self.id()
         } else {
-            self.game_mode() != GameType::Spectator
+            !self.is_spectator()
         }
     }
 
@@ -1152,6 +1152,22 @@ impl Entity for Player {
 
     fn blocks_building(&self) -> bool {
         true
+    }
+
+    fn is_pickable(&self) -> bool {
+        !self.is_spectator() && !self.is_removed()
+    }
+
+    fn is_pushable(&self) -> bool {
+        self.get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
+    }
+
+    fn is_spectator(&self) -> bool {
+        self.game_mode() == GameType::Spectator
+    }
+
+    fn can_be_hit_by_projectile(&self) -> bool {
+        self.get_health() > 0.0 && self.is_pickable()
     }
 
     fn is_client_authoritative(&self) -> bool {
