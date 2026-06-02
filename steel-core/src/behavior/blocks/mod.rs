@@ -12,8 +12,8 @@ mod redstone;
 pub mod vegetation;
 
 pub use building::{
-    DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, SlimeBlock, StairBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
+    DoorBlock, FenceBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, StairBlock,
+    WeatherState, WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
     WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
 };
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};

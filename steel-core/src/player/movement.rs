@@ -129,12 +129,14 @@ pub fn is_colliding_with_new_blocks(
     world: &Arc<World>,
     old_aabb: WorldAabb,
     new_aabb: WorldAabb,
+    descending: bool,
 ) -> bool {
     let collision_world = WorldCollisionProvider::new(world);
     let old_shape = old_aabb.deflate(COLLISION_EPSILON);
     let collisions = collision_world.get_pre_move_collisions(
         &new_aabb.deflate(COLLISION_EPSILON),
         bottom_center(old_aabb),
+        descending,
     );
 
     for collision_aabb in &collisions {
@@ -360,7 +362,8 @@ impl Player {
 
                 let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
                 let old_collision = has_block_collision(&world, old_aabb);
-                let new_collision = is_colliding_with_new_blocks(&world, old_aabb, new_aabb);
+                let new_collision =
+                    is_colliding_with_new_blocks(&world, old_aabb, new_aabb, self.is_crouching());
 
                 if (fail && !old_collision) || new_collision {
                     self.teleport(

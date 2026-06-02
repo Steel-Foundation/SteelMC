@@ -248,6 +248,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
+    /// Returns true when vanilla collision context should treat the entity as descending.
+    fn is_descending(&self) -> bool {
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_shift_key_down)
+    }
+
     /// Returns the movement vector vanilla exposes for block-contact logic.
     fn known_movement(&self) -> DVec3 {
         self.velocity()
@@ -585,7 +591,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
         )
         .with_on_ground(self.on_ground())
         .with_backs_off_from_edge(self.backs_off_from_edge())
-        .with_fall_distance(self.fall_distance());
+        .with_fall_distance(self.fall_distance())
+        .with_descending(self.is_descending());
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);
@@ -763,16 +770,20 @@ pub trait Entity: EntityEventSource + Send + Sync {
             bounding_box.max_z(),
         );
         let collision_world = WorldCollisionProvider::new(world);
+        let descending = self.is_descending();
         let mut supporting_block =
-            collision_world.find_supporting_block(self.position(), &test_area);
+            collision_world.find_supporting_block(self.position(), &test_area, descending);
 
         if supporting_block.is_none()
             && !self.base().on_ground_no_blocks()
             && let Some(movement) = movement
         {
             let previous_test_area = test_area.move_by(-movement.x, 0.0, -movement.z);
-            supporting_block =
-                collision_world.find_supporting_block(self.position(), &previous_test_area);
+            supporting_block = collision_world.find_supporting_block(
+                self.position(),
+                &previous_test_area,
+                descending,
+            );
         }
 
         EntityGroundContact::on_ground(supporting_block)

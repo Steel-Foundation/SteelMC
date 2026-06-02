@@ -28,6 +28,9 @@ pub(crate) struct EntityPhysicsState {
 
     /// Remaining fall distance for fall damage calculation.
     fall_distance: f64,
+
+    /// Whether vanilla collision context should treat this entity as descending.
+    descending: bool,
 }
 
 impl EntityPhysicsState {
@@ -47,6 +50,7 @@ impl EntityPhysicsState {
             backs_off_from_edge: false,
             on_ground: false,
             fall_distance: 0.0,
+            descending: false,
         }
     }
 
@@ -96,6 +100,12 @@ impl EntityPhysicsState {
         self.fall_distance
     }
 
+    /// Returns whether collision context should treat the entity as descending.
+    #[must_use]
+    pub const fn descending(self) -> bool {
+        self.descending
+    }
+
     /// Returns a copy with the pre-movement ground flag set.
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
@@ -114,6 +124,13 @@ impl EntityPhysicsState {
     #[must_use]
     pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
         self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns a copy with the collision-context descending flag set.
+    #[must_use]
+    pub const fn with_descending(mut self, descending: bool) -> Self {
+        self.descending = descending;
         self
     }
 }

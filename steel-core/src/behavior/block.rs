@@ -6,13 +6,14 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::shapes::VoxelShape;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_damage_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, axis::Axis};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
@@ -27,6 +28,70 @@ use steel_registry::vanilla_fluids;
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
     pub sound: Option<i32>,
+}
+
+const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
+
+/// Entity facts used by vanilla `CollisionContext` for block collision shapes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockCollisionContext {
+    entity_bottom: Option<f64>,
+    descending: bool,
+    placement: bool,
+}
+
+impl BlockCollisionContext {
+    /// Collision context for source-less collision queries.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            entity_bottom: None,
+            descending: false,
+            placement: false,
+        }
+    }
+
+    /// Collision context for normal entity movement.
+    #[must_use]
+    pub const fn entity(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            descending,
+            placement: false,
+        }
+    }
+
+    /// Collision context for vanilla pre-move collision validation.
+    #[must_use]
+    pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            descending,
+            placement: true,
+        }
+    }
+
+    /// Returns whether the source entity is descending through context-sensitive blocks.
+    #[must_use]
+    pub const fn is_descending(self) -> bool {
+        self.descending
+    }
+
+    /// Returns whether this context is used for placement-style collision checks.
+    #[must_use]
+    pub const fn is_placement(self) -> bool {
+        self.placement
+    }
+
+    /// Vanilla `EntityCollisionContext.isAbove`.
+    #[must_use]
+    pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
+        let Some(entity_bottom) = self.entity_bottom else {
+            return default_value;
+        };
+
+        entity_bottom > f64::from(pos.y()) + shape.max(Axis::Y) - COLLISION_CONTEXT_ABOVE_EPSILON
+    }
 }
 
 /// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
@@ -363,6 +428,23 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
         false
+    }
+
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Vanilla parity: `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation uses static registry shape"
+    )]
+    fn get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        state.get_collision_shape()
     }
 
     /// Called on random tick for blocks that support random ticking.

@@ -62,8 +62,8 @@ pub mod waxables;
 pub mod weathering;
 
 pub use block::{
-    BlockBehavior, BlockBehaviorRegistry, DefaultBlockBehavior, EntityFallDamage,
-    EntityFallOnContext, EntityLandingContext,
+    BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
+    EntityFallDamage, EntityFallOnContext, EntityLandingContext,
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{

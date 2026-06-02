@@ -9,6 +9,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::physics::shapes::translate_shape;
 use crate::world::World;
 
@@ -26,20 +27,34 @@ pub trait CollisionWorld {
     /// Returns a list of world-space AABBs representing solid block collisions.
     fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb>;
 
+    /// Queries all block collision shapes with a vanilla collision context.
+    fn get_block_collisions_with_context(
+        &self,
+        aabb: &WorldAabb,
+        context: BlockCollisionContext,
+    ) -> Vec<WorldAabb> {
+        let _ = context;
+        self.get_block_collisions(aabb)
+    }
+
     /// Gets collision shapes for vanilla pre-move checks.
     ///
     /// # Arguments
     /// * `aabb` - The entity's bounding box after intended movement
     /// * `old_bottom_center` - The entity's bottom-center position before movement
+    /// * `descending` - Whether the source entity is descending.
     ///
     /// # Returns
     /// Collision shapes intersecting the target box.
     ///
     /// Vanilla uses the old bottom-center Y as collision context. Steel block
-    /// collision shapes are not context-sensitive yet, so this currently matches
-    /// the block-collision portion of that query.
-    fn get_pre_move_collisions(&self, aabb: &WorldAabb, old_bottom_center: DVec3)
-    -> Vec<WorldAabb>;
+    /// collision shapes receive a placement-style context for this query.
+    fn get_pre_move_collisions(
+        &self,
+        aabb: &WorldAabb,
+        old_bottom_center: DVec3,
+        descending: bool,
+    ) -> Vec<WorldAabb>;
 }
 
 /// Implements `CollisionWorld` for the Steel World struct.
@@ -113,6 +128,16 @@ impl<'a> WorldCollisionProvider<'a> {
         Self { world }
     }
 
+    fn get_collision_shape(
+        &self,
+        block_state: BlockStateId,
+        block_pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+        behavior.get_collision_shape(block_state, self.world.as_ref(), block_pos, context)
+    }
+
     /// Finds the block supporting an entity within `aabb`.
     ///
     /// Mirrors vanilla `CollisionGetter.findSupportingBlock`: among colliding
@@ -127,8 +152,10 @@ impl<'a> WorldCollisionProvider<'a> {
         &self,
         entity_position: DVec3,
         aabb: &WorldAabb,
+        descending: bool,
     ) -> Option<BlockPos> {
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
+        let context = BlockCollisionContext::entity(entity_position.y, descending);
 
         let mut main_support = None;
         let mut main_support_distance = f64::MAX;
@@ -147,7 +174,7 @@ impl<'a> WorldCollisionProvider<'a> {
                         continue;
                     }
 
-                    let collision_shape = block_state.get_collision_shape();
+                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
                     if collision_shape.is_empty() {
                         continue;
                     }
@@ -200,6 +227,14 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
     }
 
     fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+        self.get_block_collisions_with_context(aabb, BlockCollisionContext::empty())
+    }
+
+    fn get_block_collisions_with_context(
+        &self,
+        aabb: &WorldAabb,
+        context: BlockCollisionContext,
+    ) -> Vec<WorldAabb> {
         let mut collisions = Vec::new();
 
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
@@ -219,7 +254,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                         continue;
                     }
 
-                    let collision_shape = block_state.get_collision_shape();
+                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
 
                     if collision_shape.is_empty() {
                         continue;
@@ -245,9 +280,13 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
     fn get_pre_move_collisions(
         &self,
         aabb: &WorldAabb,
-        _old_bottom_center: DVec3,
+        old_bottom_center: DVec3,
+        descending: bool,
     ) -> Vec<WorldAabb> {
-        self.get_block_collisions(aabb)
+        self.get_block_collisions_with_context(
+            aabb,
+            BlockCollisionContext::pre_move(old_bottom_center.y, descending),
+        )
     }
 }
 

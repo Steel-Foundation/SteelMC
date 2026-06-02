@@ -8,6 +8,7 @@
 use glam::DVec3;
 use steel_utils::WorldAabb;
 
+use crate::behavior::BlockCollisionContext;
 use crate::physics::{
     collision::CollisionWorld, physics_state::EntityPhysicsState, shapes::collide,
 };
@@ -259,7 +260,10 @@ fn collide_with_world(
 ) -> MoveResult {
     // Get all collision shapes that could intersect with our movement
     let swept_aabb = sweep_aabb(aabb, movement);
-    let collisions = world.get_block_collisions(&swept_aabb);
+    let collisions = world.get_block_collisions_with_context(
+        &swept_aabb,
+        BlockCollisionContext::entity(state.position().y, state.descending()),
+    );
 
     let (resolved, current_aabb) = collide_with_shapes(movement, aabb, &collisions);
     let final_position = state.position() + resolved;
@@ -543,7 +547,12 @@ mod tests {
             collisions
         }
 
-        fn get_pre_move_collisions(&self, _aabb: &WorldAabb, _old_pos: DVec3) -> Vec<WorldAabb> {
+        fn get_pre_move_collisions(
+            &self,
+            _aabb: &WorldAabb,
+            _old_pos: DVec3,
+            _descending: bool,
+        ) -> Vec<WorldAabb> {
             Vec::new()
         }
     }
@@ -565,7 +574,12 @@ mod tests {
                 .collect()
         }
 
-        fn get_pre_move_collisions(&self, _aabb: &WorldAabb, _old_pos: DVec3) -> Vec<WorldAabb> {
+        fn get_pre_move_collisions(
+            &self,
+            _aabb: &WorldAabb,
+            _old_pos: DVec3,
+            _descending: bool,
+        ) -> Vec<WorldAabb> {
             Vec::new()
         }
     }
