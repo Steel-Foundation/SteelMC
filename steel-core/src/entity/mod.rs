@@ -185,6 +185,11 @@ pub trait Entity: Send + Sync {
         None
     }
 
+    /// Returns true for entities that implement vanilla living-entity behavior.
+    fn is_living_entity(&self) -> bool {
+        false
+    }
+
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).

@@ -1138,6 +1138,10 @@ impl Entity for Player {
         Some(self)
     }
 
+    fn is_living_entity(&self) -> bool {
+        true
+    }
+
     fn max_up_step(&self) -> f32 {
         self.attributes()
             .lock()

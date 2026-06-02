@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use glam::DVec3;
 use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
@@ -99,13 +100,15 @@ impl BlockBehavior for SweetBerryBushBlock {
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {
-        if entity.entity_type() == &vanilla_entities::FOX
+        if !entity.is_living_entity()
+            || entity.entity_type() == &vanilla_entities::FOX
             || entity.entity_type() == &vanilla_entities::BEE
         {
             return;
         }
 
-        // TODO: make stuck in block
+        entity.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
+        // TODO: Apply age-gated contact damage once entity previous-position tracking is available.
     }
 
     fn use_item_on(
