@@ -18,7 +18,10 @@ use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, WorldAabb, translations};
 
 use crate::entity::{Entity, EntityPositionSyncDecision, LivingEntity};
-use crate::physics::{CollisionWorld, MoverType, WorldCollisionProvider, join_is_not_empty};
+use crate::physics::{
+    CollisionWorld, MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE,
+    join_is_not_empty,
+};
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::World;
@@ -34,21 +37,10 @@ pub const SPEED_THRESHOLD_NORMAL: f64 = 100.0;
 /// Maximum movement speed threshold for elytra flight (meters per tick squared).
 pub const SPEED_THRESHOLD_FLYING: f64 = 300.0;
 
-/// Movement error threshold - if player ends up more than this far from target, reject.
-/// Matches vanilla's 0.0625 (1/16 of a block squared).
-pub const MOVEMENT_ERROR_THRESHOLD: f64 = 0.0625;
-
 /// Horizontal position clamping limit (matches vanilla).
 pub const CLAMP_HORIZONTAL: f64 = 3.0E7;
 /// Vertical position clamping limit (matches vanilla).
 pub const CLAMP_VERTICAL: f64 = 2.0E7;
-
-/// Y-axis tolerance value used by vanilla's movement-error branch.
-///
-/// Vanilla currently uses `yDist > -0.5 || yDist < 0.5`, which zeroes every
-/// finite Y residual before the moved-wrongly check. Keep the value named so
-/// the parity quirk is not hidden in the packet handler.
-pub const Y_TOLERANCE: f64 = 0.5;
 
 /// Post-impulse grace period in ticks (vanilla uses ~10-20 ticks).
 pub const IMPULSE_GRACE_TICKS: i32 = 20;

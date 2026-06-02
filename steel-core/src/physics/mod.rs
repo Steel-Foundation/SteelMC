@@ -1,4 +1,4 @@
-//! Physics engine for entity movement with vanilla Minecraft 1.21.11 parity.
+//! Physics engine for entity movement with vanilla Minecraft 26.1 parity.
 //!
 //! This module implements the core physics simulation for moving entities through
 //! the world with proper collision detection, including:
@@ -27,6 +27,8 @@ pub const COLLISION_EPSILON: f64 = 1.0e-5;
 /// Vanilla uses 0.0625 (1/16 block squared).
 pub const MOVEMENT_ERROR_THRESHOLD: f64 = 0.0625;
 
-/// Y-axis tolerance for movement validation.
-/// Vanilla ignores Y differences within ±0.5 blocks after physics simulation.
+/// Y-axis tolerance value used by vanilla's movement-error branch.
+///
+/// Vanilla currently uses `yDist > -0.5 || yDist < 0.5`, which zeroes every
+/// finite Y residual before the moved-wrongly check.
 pub const Y_TOLERANCE: f64 = 0.5;
