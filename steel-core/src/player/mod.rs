@@ -1131,11 +1131,14 @@ impl Entity for Player {
 
     fn bounding_box(&self) -> WorldAabb {
         let pos = self.position();
-        // Player hitbox: 0.6 wide, 1.8 tall (standing)
-        // TODO: Adjust for pose (crouching, swimming, etc.)
-        let half_width = 0.3;
-        let height = 1.8;
-        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
+        let dimensions = self.current_dimensions();
+        WorldAabb::entity_box(
+            pos.x,
+            pos.y,
+            pos.z,
+            f64::from(dimensions.half_width()),
+            f64::from(dimensions.height),
+        )
     }
 
     fn tick(&self) {
@@ -1147,21 +1150,8 @@ impl Entity for Player {
         Some(self)
     }
 
-    /// Returns the eye height for the current pose.
-    ///
-    /// Vanilla eye heights from `Avatar.POSES`:
-    /// - Standing: 1.62
-    /// - Crouching: 1.27
-    /// - Swimming/FallFlying/SpinAttack: 0.4
-    /// - Sleeping: 0.2
     fn get_eye_height(&self) -> f64 {
-        match self.get_desired_pose() {
-            EntityPose::Sneaking => 1.27,
-            EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => 0.4,
-            EntityPose::Sleeping => 0.2,
-            // Standing and all other poses use default player eye height
-            _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
-        }
+        f64::from(self.current_dimensions().eye_height)
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {

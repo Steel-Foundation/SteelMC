@@ -5,6 +5,7 @@
 
 use bitflags::bitflags;
 use steel_registry::entity_data::EntityPose;
+use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_attributes;
 use steel_utils::Identifier;
 
@@ -13,6 +14,12 @@ use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::player::Player;
 
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
+
+const PLAYER_STANDING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.8, 1.62);
+const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.5, 1.27);
+const PLAYER_SWIMMING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 0.6, 0.4);
+const PLAYER_SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
+const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 1.62);
 
 bitflags! {
     /// Vanilla shared‐flags byte sent in entity metadata.
@@ -93,6 +100,24 @@ impl EntityState {
 }
 
 impl Player {
+    /// Returns vanilla `Avatar.POSES` dimensions for a player pose.
+    pub(super) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
+        match pose {
+            EntityPose::Sleeping => PLAYER_SLEEPING_DIMENSIONS,
+            EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => {
+                PLAYER_SWIMMING_DIMENSIONS
+            }
+            EntityPose::Sneaking => PLAYER_CROUCHING_DIMENSIONS,
+            EntityPose::Dying => PLAYER_DYING_DIMENSIONS,
+            _ => PLAYER_STANDING_DIMENSIONS,
+        }
+    }
+
+    /// Returns the player's current pose-dependent dimensions.
+    pub(super) fn current_dimensions(&self) -> EntityDimensions {
+        Self::dimensions_for_pose(self.get_desired_pose())
+    }
+
     pub(super) fn entity_state_snapshot(&self) -> EntityStateSnapshot {
         self.entity_state.lock().snapshot()
     }
@@ -206,5 +231,42 @@ impl Player {
                 &Identifier::vanilla_static("sprinting"),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn player_pose_dimensions_match_vanilla_avatar() {
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::Standing),
+            EntityDimensions::new(0.6, 1.8, 1.62)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::Sneaking),
+            EntityDimensions::new(0.6, 1.5, 1.27)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::FallFlying),
+            EntityDimensions::new(0.6, 0.6, 0.4)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::Swimming),
+            EntityDimensions::new(0.6, 0.6, 0.4)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::SpinAttack),
+            EntityDimensions::new(0.6, 0.6, 0.4)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::Sleeping),
+            EntityDimensions::new(0.2, 0.2, 0.2)
+        );
+        assert_eq!(
+            Player::dimensions_for_pose(EntityPose::Dying),
+            EntityDimensions::new(0.2, 0.2, 1.62)
+        );
     }
 }

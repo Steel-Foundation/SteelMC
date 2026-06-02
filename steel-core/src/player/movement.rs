@@ -12,6 +12,7 @@ use steel_protocol::packets::game::{
     calc_delta, to_angle_byte,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::entity_data::EntityPose;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::{vanilla_attributes, vanilla_entities};
@@ -37,6 +38,8 @@ pub const COLLISION_EPSILON: f64 = 1.0E-5;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
 pub const DEFAULT_GRAVITY: f64 = 0.08;
+/// Default max step height for players.
+pub const PLAYER_MAX_UP_STEP: f32 = 0.6;
 
 /// Maximum movement speed threshold for normal movement (meters per tick squared).
 pub const SPEED_THRESHOLD_NORMAL: f64 = 100.0;
@@ -117,6 +120,7 @@ pub struct MoveResult {
 /// * `start_pos` - The player's starting position
 /// * `delta` - The desired movement vector
 /// * `is_crouching` - Whether the player is sneaking (for edge prevention)
+/// * `is_fall_flying` - Whether the player is elytra gliding
 /// * `on_ground` - Whether the player is currently on ground (affects step-up)
 ///
 /// # Returns
@@ -127,10 +131,21 @@ pub fn simulate_move(
     start_pos: DVec3,
     delta: DVec3,
     is_crouching: bool,
+    is_fall_flying: bool,
     on_ground: bool,
 ) -> MoveResult {
-    // Create physics state for the player
-    let mut state = EntityPhysicsState::new(start_pos, &vanilla_entities::PLAYER);
+    let pose = if is_fall_flying {
+        EntityPose::FallFlying
+    } else if is_crouching {
+        EntityPose::Sneaking
+    } else {
+        EntityPose::Standing
+    };
+    let mut state = EntityPhysicsState::with_dimensions(
+        start_pos,
+        Player::dimensions_for_pose(pose),
+        PLAYER_MAX_UP_STEP,
+    );
     state.is_crouching = is_crouching;
     state.on_ground = on_ground;
 
@@ -320,6 +335,7 @@ pub fn validate_movement(world: &Arc<World>, input: &MovementInput) -> MovementV
         last_good,
         move_delta,
         input.is_crouching,
+        input.is_fall_flying,
         input.on_ground,
     );
 
