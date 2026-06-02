@@ -1031,7 +1031,7 @@ impl Player {
         self.set_old_position_to_current();
         self.movement
             .lock()
-            .reset_for_position_sync(position, self.on_ground());
+            .reset_for_position_sync(position, self.on_ground(), rotation);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
         self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);

@@ -74,8 +74,14 @@ impl MovementState {
     }
 
     /// Resets movement validation and tracking bases after a server position sync.
-    pub(super) const fn reset_for_position_sync(&mut self, position: DVec3, on_ground: bool) {
+    pub(super) fn reset_for_position_sync(
+        &mut self,
+        position: DVec3,
+        on_ground: bool,
+        rotation: (f32, f32),
+    ) {
         self.position_sync = EntityPositionSyncState::new(position, on_ground);
+        self.rotation_sync = EntityRotationSyncState::new(rotation, rotation.0);
         self.last_good_position = position;
         self.first_good_position = position;
         self.received_move_packet_count = 0;
@@ -226,18 +232,20 @@ mod tests {
     }
 
     #[test]
-    fn position_sync_reset_clears_packet_counts_and_known_movement() {
+    fn position_sync_reset_clears_packet_counts_known_movement_and_rotation() {
         let mut state = MovementState::new();
         state.record_move_packet_delta();
         state.set_last_known_client_movement(DVec3::new(0.1, 0.0, 0.0));
 
-        state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0), true);
+        state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0), true, (90.0, 45.0));
 
         assert_eq!(state.last_sent_position(), DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.good_positions().0, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
+        assert_eq!(state.record_body_rotation_sync((90.0, 45.0)), None);
+        assert_eq!(state.record_head_yaw_sync(90.0), None);
     }
 
     #[test]
