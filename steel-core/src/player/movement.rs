@@ -244,7 +244,7 @@ impl Player {
             return;
         }
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             return;
         }
 
@@ -678,7 +678,7 @@ impl Player {
         // Vanilla stores the input unconditionally before the guard check.
         // SteelMC doesn't have setLastClientInput yet, so we skip that.
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             return;
         }
 
@@ -695,7 +695,7 @@ impl Player {
         reason = "There is still a TODO there, this will eventually go away by itself."
     )]
     pub fn handle_player_command(&self, packet: SPlayerCommand) {
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             return;
         }
 

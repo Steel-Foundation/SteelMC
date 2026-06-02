@@ -408,7 +408,7 @@ impl Player {
     ///
     /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
     pub fn handle_use_item_on(&self, packet: SUseItemOn) {
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             return;
         }
 

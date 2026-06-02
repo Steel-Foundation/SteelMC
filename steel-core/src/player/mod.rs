@@ -14,6 +14,7 @@ pub mod game_mode;
 mod game_mode_state;
 mod game_profile;
 mod health_sync;
+mod lifecycle_state;
 pub mod message_chain;
 mod message_validator;
 pub mod movement;
@@ -33,6 +34,7 @@ use entity_state::EntityState;
 use food_data::FoodData;
 use glam::DVec3;
 use health_sync::HealthSyncState;
+use lifecycle_state::PlayerLifecycleState;
 pub use message_validator::LastSeenMessagesValidator;
 use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
@@ -48,7 +50,7 @@ use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering},
+    atomic::{AtomicI32, AtomicU8, AtomicU32, Ordering},
 };
 use steel_protocol::packets::game::{
     CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
@@ -181,8 +183,8 @@ pub struct Player {
     /// Common entity fields (id, uuid, position, rotation, removal, callback).
     base: EntityBase,
 
-    /// Whether the player has finished loading the client.
-    pub client_loaded: AtomicBool,
+    /// Client lifecycle flags.
+    lifecycle: SyncMutex<PlayerLifecycleState>,
 
     /// Movement tracking state
     pub(crate) movement: SyncMutex<MovementState>,
@@ -247,9 +249,6 @@ pub struct Player {
 
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
-
-    /// Whether the player is between domain saves/loads and should ignore gameplay packets.
-    domain_switching: AtomicBool,
 
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
@@ -343,7 +342,7 @@ impl Player {
                 Self::dimensions_for_pose(EntityPose::Standing),
                 world_ref,
             ),
-            client_loaded: AtomicBool::new(false),
+            lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
@@ -369,7 +368,6 @@ impl Player {
             living_base,
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
-            domain_switching: AtomicBool::new(false),
             experience: SyncMutex::new(Experience::default()),
             chunk_send_epoch: AtomicU32::new(0),
         }
@@ -389,7 +387,7 @@ impl Player {
         self.apply_gravity();
         self.tick_ack_block_changes();
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             //return;
         }
 
@@ -950,19 +948,28 @@ impl Player {
 
     /// Marks the player as switching domains if they are not already in a transition.
     pub fn begin_domain_switch(&self) -> bool {
-        self.domain_switching
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.lifecycle.lock().begin_domain_switch()
     }
 
     /// Clears the domain-switch transition marker.
     pub fn finish_domain_switch(&self) {
-        self.domain_switching.store(false, Ordering::Release);
+        self.lifecycle.lock().finish_domain_switch();
     }
 
     /// Returns whether this player is currently switching domains.
     pub fn is_domain_switching(&self) -> bool {
-        self.domain_switching.load(Ordering::Acquire)
+        self.lifecycle.lock().domain_switching()
+    }
+
+    /// Returns whether the client has sent its play-loaded signal.
+    #[must_use]
+    pub fn has_client_loaded(&self) -> bool {
+        self.lifecycle.lock().client_loaded()
+    }
+
+    /// Marks whether the client has loaded into play.
+    pub fn set_client_loaded(&self, client_loaded: bool) {
+        self.lifecycle.lock().set_client_loaded(client_loaded);
     }
 
     /// Resets the player's transient state and prepares them for a new world.
@@ -987,7 +994,7 @@ impl Player {
         }
 
         // --- Reset transient state ---
-        self.client_loaded.store(false, Ordering::Relaxed);
+        self.set_client_loaded(false);
         self.set_velocity(DVec3::ZERO);
         self.movement.lock().reset_last_known_client_movement();
         self.set_on_ground(false);

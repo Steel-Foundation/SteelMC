@@ -1,6 +1,5 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -289,7 +288,7 @@ impl JavaConnection {
             }
             play::S_PLAYER_LOADED => {
                 let _ = SPlayerLoad::read_packet(data)?;
-                player.client_loaded.store(true, Ordering::Relaxed);
+                player.set_client_loaded(true);
                 // Send initial inventory to client
                 player.send_inventory_to_remote();
             }
