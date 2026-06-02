@@ -2411,14 +2411,6 @@ impl World {
                 }
             });
         }
-
-        self.entity_tracker.on_entity_move(
-            entity_id,
-            from,
-            to,
-            |chunk| self.player_area_map.get_tracking_players(chunk),
-            |player_id| self.players.get_by_entity_id(player_id),
-        );
     }
 
     /// Internal method to remove an entity from the world.

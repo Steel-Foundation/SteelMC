@@ -947,12 +947,8 @@ impl ChunkMap {
                     &removed_chunks,
                 );
 
-                // Update entity tracking for this player (only check added/removed chunks)
-                world.entity_tracker().on_player_view_change(
-                    player,
-                    &added_chunks,
-                    &removed_chunks,
-                );
+                // Update entity tracking for this player's new view.
+                world.entity_tracker().update_player(player, &new_view);
             } else {
                 chunk_tickets.add_ticket(new_view.center, new_ticket);
 
@@ -972,7 +968,7 @@ impl ChunkMap {
                 world.player_area_map.on_player_join(player, &new_view);
 
                 // Initial entity tracking for this player
-                world.entity_tracker().on_player_join(player, &new_view);
+                world.entity_tracker().update_player(player, &new_view);
             }
 
             *last_view_guard = Some(new_view);

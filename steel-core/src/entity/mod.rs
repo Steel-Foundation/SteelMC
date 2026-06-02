@@ -213,6 +213,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
 
+    /// Returns whether this entity should be broadcast to the given player.
+    ///
+    /// Mirrors vanilla `Entity.broadcastToPlayer`. Most entities are always
+    /// broadcastable; players override this for spectator visibility rules.
+    fn broadcast_to_player(&self, _player: &Player) -> bool {
+        true
+    }
+
     /// Gets the entity's unique network ID (session-local).
     fn id(&self) -> i32 {
         self.base().id()

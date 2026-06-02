@@ -1,15 +1,12 @@
 //! Entity tracking system for managing which players can see which entities.
 //!
-//! Uses a chunk-based spatial index similar to `PlayerAreaMap` for efficient
-//! tracking. When a player's view changes, we only check entities in the
-//! added/removed chunks rather than iterating all entities.
-//!
-//! The key difference from player tracking is that entities have varying
-//! tracking ranges (from their `EntityType`), so we register entities in
-//! all chunks within their tracking range.
+//! Keeps the vanilla visibility predicate in block space. Vanilla stores an
+//! entity tracking range as client chunks, multiplies it by 16, caps it by the
+//! player's view distance, and then checks horizontal squared distance.
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{CAddEntity, CRemoveEntities, CSetEntityData, to_angle_byte};
 use steel_registry::RegistryEntry;
@@ -20,15 +17,11 @@ use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::{Entity, SharedEntity, WeakEntity};
 use crate::player::Player;
 
-/// World-level entity tracker using chunk-based spatial indexing.
-///
-/// Similar to `PlayerAreaMap` but for entities. Maps chunks to entity IDs,
-/// allowing O(1) lookup of entities in a chunk when player view changes.
-pub struct EntityTracker {
-    /// Maps chunk coords to set of entity IDs whose tracking range includes that chunk.
-    chunks: scc::HashMap<ChunkPos, FxHashSet<i32>>,
+const BLOCKS_PER_CHUNK: f64 = 16.0;
 
-    /// Maps entity ID to its tracking data (weak ref, range, registered chunks, tracking players).
+/// World-level entity tracker.
+pub struct EntityTracker {
+    /// Maps entity ID to its tracking data.
     entities: scc::HashMap<i32, TrackedEntity>,
 }
 
@@ -36,12 +29,34 @@ pub struct EntityTracker {
 struct TrackedEntity {
     /// Weak reference to the entity. When this fails to upgrade, entity is dead.
     entity: WeakEntity,
-    /// Tracking range in chunks.
-    range_chunks: i32,
-    /// Chunks this entity is registered in (for efficient removal).
-    registered_chunks: FxHashSet<ChunkPos>,
+    /// Vanilla client tracking range converted to blocks.
+    tracking_range: EntityTrackingRange,
+    /// Current chunk used by the player-view predicate.
+    registered_chunk: ChunkPos,
     /// Players currently tracking this entity (interior mutable for concurrent access).
     seen_by: SyncRwLock<FxHashSet<i32>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EntityTrackingRange {
+    block_radius: f64,
+}
+
+impl EntityTrackingRange {
+    fn from_client_chunk_range(client_chunk_range: i32) -> Self {
+        Self {
+            block_radius: f64::from(client_chunk_range) * BLOCKS_PER_CHUNK,
+        }
+    }
+
+    fn is_disabled(self) -> bool {
+        self.block_radius <= 0.0
+    }
+
+    fn visible_radius(self, player_view_distance: u8) -> f64 {
+        self.block_radius
+            .min(f64::from(player_view_distance) * BLOCKS_PER_CHUNK)
+    }
 }
 
 impl Default for EntityTracker {
@@ -55,15 +70,14 @@ impl EntityTracker {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            chunks: scc::HashMap::new(),
             entities: scc::HashMap::new(),
         }
     }
 
     /// Starts tracking an entity.
     ///
-    /// Registers the entity in all chunks within its tracking range and sends
-    /// spawn packets to any players already watching those chunks.
+    /// Sends spawn packets to players already watching the entity chunk and
+    /// inside the vanilla tracking range.
     ///
     /// The `get_players_in_chunk` callback should return player IDs in a given chunk
     /// (typically from `PlayerAreaMap::get_tracking_players`).
@@ -75,35 +89,29 @@ impl EntityTracker {
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
         let entity_id = entity.id();
-        let range_chunks = entity.entity_type().client_tracking_range;
+        let tracking_range = EntityTrackingRange::from_client_chunk_range(
+            entity.entity_type().client_tracking_range,
+        );
+        if tracking_range.is_disabled() {
+            return;
+        }
+
         let pos = entity.position();
-        let center_chunk = ChunkPos::from_entity_pos(pos);
+        let registered_chunk = ChunkPos::from_entity_pos(pos);
 
-        // Calculate all chunks within tracking range
-        let mut registered_chunks = FxHashSet::default();
-        for dx in -range_chunks..=range_chunks {
-            for dz in -range_chunks..=range_chunks {
-                let chunk = ChunkPos::new(center_chunk.0.x + dx, center_chunk.0.y + dz);
-                registered_chunks.insert(chunk);
-                self.add_entity_to_chunk(chunk, entity_id);
-            }
-        }
-
-        // Collect players to notify (deduplicated since player might be in multiple chunks)
-        let mut players_to_notify = FxHashSet::default();
-        for &chunk in &registered_chunks {
-            for player_id in get_players_in_chunk(chunk) {
-                // Don't notify if the entity is the player itself
-                if player_id != entity_id {
-                    players_to_notify.insert(player_id);
-                }
-            }
-        }
+        let players_to_notify = Self::visible_players_for_entity(
+            entity_id,
+            entity.as_ref(),
+            registered_chunk,
+            tracking_range,
+            &get_players_in_chunk,
+            &get_player,
+        );
 
         let tracked = TrackedEntity {
             entity: Arc::downgrade(entity),
-            range_chunks,
-            registered_chunks,
+            tracking_range,
+            registered_chunk,
             seen_by: SyncRwLock::new(players_to_notify.clone()),
         };
 
@@ -120,11 +128,6 @@ impl EntityTracker {
     /// Stops tracking an entity and sends despawn to all tracking players.
     pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<Arc<Player>>) {
         if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-            // Remove from all chunk indices
-            for chunk in &tracked.registered_chunks {
-                self.remove_entity_from_chunk(*chunk, entity_id);
-            }
-
             // Send despawn to all tracking players
             for player_id in tracked.seen_by.read().iter() {
                 if let Some(player) = get_player(*player_id) {
@@ -134,97 +137,61 @@ impl EntityTracker {
         }
     }
 
-    /// Called when a player's view changes. Handles entity spawning/despawning.
+    /// Refreshes the tracked-entity set for one player.
     ///
-    /// Only checks entities in the added/removed chunks, not all entities.
-    pub fn on_player_view_change(
-        &self,
-        player: &Player,
-        added_chunks: &[ChunkPos],
-        removed_chunks: &[ChunkPos],
-    ) {
+    /// Mirrors vanilla `TrackedEntity.updatePlayer`: each tracked entity checks
+    /// whether the player tracks the entity chunk, passes the entity-specific
+    /// broadcast predicate, and is inside the effective horizontal range.
+    pub fn update_player(&self, player: &Player, view: &PlayerChunkView) {
         let player_id = player.id();
+        let player_pos = player.position();
+        let player_view_distance = view.view_distance;
 
-        // For removed chunks: check if any entities there should stop being tracked
-        for &chunk in removed_chunks {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
+        let mut entity_ids_to_despawn = Vec::new();
+        let mut entities_to_spawn = Vec::new();
+        let mut dead_entities = Vec::new();
 
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        // Check if player was tracking and if entity is no longer in ANY of player's chunks
-                        // For simplicity, we remove tracking - if the entity is in another visible chunk,
-                        // the added_chunks pass will re-add it
-                        if tracked.seen_by.write().remove(&player_id) {
-                            player.send_packet(CRemoveEntities::single(entity_id));
-                        }
-                    });
+        self.entities.iter_sync(|entity_id, tracked| {
+            let entity_id = *entity_id;
+            let Some(entity) = tracked.entity.upgrade() else {
+                dead_entities.push(entity_id);
+                return true;
+            };
+
+            let visible = entity_id != player_id
+                && view.contains(tracked.registered_chunk)
+                && entity.broadcast_to_player(player)
+                && is_within_tracking_distance(
+                    entity.position(),
+                    player_pos,
+                    tracked.tracking_range,
+                    player_view_distance,
+                );
+
+            let mut seen_by = tracked.seen_by.write();
+            if visible {
+                if seen_by.insert(player_id) {
+                    entities_to_spawn.push(entity);
                 }
+            } else if seen_by.remove(&player_id) {
+                entity_ids_to_despawn.push(entity_id);
             }
+
+            true
+        });
+
+        for entity_id in entity_ids_to_despawn {
+            player.send_packet(CRemoveEntities::single(entity_id));
         }
 
-        // For added chunks: check if any entities there should start being tracked
-        for &chunk in added_chunks {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
-
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    // Skip self
-                    if entity_id == player_id {
-                        continue;
-                    }
-
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        // Check if not already tracking
-                        let mut seen_by = tracked.seen_by.write();
-                        if !seen_by.contains(&player_id) {
-                            // Try to get entity to send spawn packet
-                            if let Some(entity) = tracked.entity.upgrade() {
-                                seen_by.insert(player_id);
-                                send_spawn_packets(&entity, player);
-                            }
-                        }
-                    });
-                }
-            }
+        for entity in entities_to_spawn {
+            send_spawn_packets(&entity, player);
         }
 
         // Clean up dead entities we encountered
-        self.cleanup_dead_entities();
-    }
-
-    /// Called when a player joins - initializes tracking for all visible entities.
-    pub fn on_player_join(&self, player: &Player, view: &PlayerChunkView) {
-        let player_id = player.id();
-
-        view.for_each(|chunk| {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
-
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    // Skip self
-                    if entity_id == player_id {
-                        continue;
-                    }
-
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        let mut seen_by = tracked.seen_by.write();
-                        if !seen_by.contains(&player_id)
-                            && let Some(entity) = tracked.entity.upgrade()
-                        {
-                            seen_by.insert(player_id);
-                            send_spawn_packets(&entity, player);
-                        }
-                    });
-                }
-            }
-        });
+        for entity_id in dead_entities {
+            self.remove_dead_entity(entity_id);
+        }
     }
 
     /// Called when a player leaves - removes them from all entity tracking.
@@ -243,18 +210,15 @@ impl EntityTracker {
 
         // Clean up any dead entities we found
         for entity_id in dead_entities {
-            if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-                for chunk in &tracked.registered_chunks {
-                    self.remove_entity_from_chunk(*chunk, entity_id);
-                }
-            }
+            self.remove_dead_entity(entity_id);
         }
     }
 
-    /// Updates an entity's position in the chunk index.
+    /// Updates an entity's current chunk and visible players after a section move.
     ///
-    /// Call this when an entity moves to a new chunk.
-    pub fn on_entity_move(
+    /// Vanilla refreshes tracked players when an entity's section position changes.
+    /// The old and new chunks may be the same for purely vertical section moves.
+    pub fn on_entity_section_change(
         &self,
         entity_id: i32,
         old_chunk: ChunkPos,
@@ -262,54 +226,33 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
-        if old_chunk == new_chunk {
-            return;
-        }
-
         let mut players_to_remove = Vec::new();
         let mut players_to_add = Vec::new();
         let mut entity_to_spawn = None;
 
         self.entities.update_sync(&entity_id, |_, tracked| {
-            let range = tracked.range_chunks;
-
-            // Calculate old and new chunk sets
-            let mut old_chunks = FxHashSet::default();
-            let mut new_chunks = FxHashSet::default();
-
-            for dx in -range..=range {
-                for dz in -range..=range {
-                    old_chunks.insert(ChunkPos::new(old_chunk.0.x + dx, old_chunk.0.y + dz));
-                    new_chunks.insert(ChunkPos::new(new_chunk.0.x + dx, new_chunk.0.y + dz));
-                }
+            if old_chunk != new_chunk {
+                tracked.registered_chunk = new_chunk;
             }
 
-            // Chunks to remove (in old but not in new)
-            for chunk in old_chunks.difference(&new_chunks) {
-                self.remove_entity_from_chunk(*chunk, entity_id);
-                tracked.registered_chunks.remove(chunk);
-            }
+            let Some(entity) = tracked.entity.upgrade() else {
+                return;
+            };
 
-            // Chunks to add (in new but not in old)
-            for chunk in new_chunks.difference(&old_chunks) {
-                self.add_entity_to_chunk(*chunk, entity_id);
-                tracked.registered_chunks.insert(*chunk);
-            }
-
-            let mut new_seen_by = FxHashSet::default();
-            for &chunk in &new_chunks {
-                for player_id in get_players_in_chunk(chunk) {
-                    if player_id != entity_id {
-                        new_seen_by.insert(player_id);
-                    }
-                }
-            }
+            let new_seen_by = Self::visible_players_for_entity(
+                entity_id,
+                entity.as_ref(),
+                new_chunk,
+                tracked.tracking_range,
+                &get_players_in_chunk,
+                &get_player,
+            );
 
             let mut seen_by = tracked.seen_by.write();
             players_to_remove.extend(seen_by.difference(&new_seen_by).copied());
             players_to_add.extend(new_seen_by.difference(&seen_by).copied());
             *seen_by = new_seen_by;
-            entity_to_spawn = tracked.entity.upgrade();
+            entity_to_spawn = Some(entity);
         });
 
         for player_id in players_to_remove {
@@ -324,28 +267,6 @@ impl EntityTracker {
         for player_id in players_to_add {
             if let Some(player) = get_player(player_id) {
                 send_spawn_packets(&entity, &player);
-            }
-        }
-    }
-
-    /// Cleans up dead entities (from unloaded chunks).
-    fn cleanup_dead_entities(&self) {
-        let mut dead_entities = Vec::new();
-
-        self.entities.iter_sync(|entity_id, tracked| {
-            if tracked.entity.strong_count() == 0 {
-                dead_entities.push(*entity_id);
-            }
-            true // continue iteration
-        });
-
-        for entity_id in dead_entities {
-            if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-                for chunk in &tracked.registered_chunks {
-                    self.remove_entity_from_chunk(*chunk, entity_id);
-                }
-                // Note: We don't send despawn packets here because the players
-                // will get updated via on_player_view_change when chunks unload
             }
         }
     }
@@ -366,33 +287,58 @@ impl EntityTracker {
             .unwrap_or_default()
     }
 
-    fn add_entity_to_chunk(&self, chunk: ChunkPos, entity_id: i32) {
-        if self
-            .chunks
-            .update_sync(&chunk, |_, set| {
-                set.insert(entity_id);
-            })
-            .is_none()
-        {
-            let mut set = FxHashSet::default();
-            set.insert(entity_id);
-            let _ = self.chunks.insert_sync(chunk, set);
-        }
+    fn remove_dead_entity(&self, entity_id: i32) {
+        // Note: We don't send despawn packets here because the players
+        // will get updated via player view changes or explicit removals.
+        let _ = self.entities.remove_sync(&entity_id);
     }
 
-    fn remove_entity_from_chunk(&self, chunk: ChunkPos, entity_id: i32) {
-        let should_remove = self
-            .chunks
-            .update_sync(&chunk, |_, set| {
-                set.remove(&entity_id);
-                set.is_empty()
-            })
-            .unwrap_or(false);
+    fn visible_players_for_entity(
+        entity_id: i32,
+        entity: &dyn Entity,
+        entity_chunk: ChunkPos,
+        tracking_range: EntityTrackingRange,
+        get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    ) -> FxHashSet<i32> {
+        let entity_pos = entity.position();
+        let mut players = FxHashSet::default();
 
-        if should_remove {
-            let _ = self.chunks.remove_if_sync(&chunk, |set| set.is_empty());
+        for player_id in get_players_in_chunk(entity_chunk) {
+            if player_id == entity_id {
+                continue;
+            }
+
+            let Some(player) = get_player(player_id) else {
+                continue;
+            };
+
+            if entity.broadcast_to_player(&player)
+                && is_within_tracking_distance(
+                    entity_pos,
+                    player.position(),
+                    tracking_range,
+                    player.view_distance(),
+                )
+            {
+                players.insert(player_id);
+            }
         }
+
+        players
     }
+}
+
+fn is_within_tracking_distance(
+    entity_pos: DVec3,
+    player_pos: DVec3,
+    tracking_range: EntityTrackingRange,
+    player_view_distance: u8,
+) -> bool {
+    let visible_radius = tracking_range.visible_radius(player_view_distance);
+    let x = player_pos.x - entity_pos.x;
+    let z = player_pos.z - entity_pos.z;
+    x * x + z * z <= visible_radius * visible_radius
 }
 
 /// Sends spawn packets for an entity to a player.
@@ -439,4 +385,67 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
             bundle.add(CSetEntityData::new(entity_id, entity_data));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_tracking_range_is_converted_to_blocks() {
+        let range = EntityTrackingRange::from_client_chunk_range(4);
+
+        assert!((range.visible_radius(10) - 64.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn zero_client_tracking_range_disables_tracking() {
+        let range = EntityTrackingRange::from_client_chunk_range(0);
+
+        assert!(range.is_disabled());
+    }
+
+    #[test]
+    fn tracking_distance_uses_horizontal_circle() {
+        let range = EntityTrackingRange::from_client_chunk_range(4);
+        let entity_pos = DVec3::ZERO;
+
+        assert!(is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.0, 300.0, 0.0),
+            range,
+            8,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.0, 0.0, 64.0),
+            range,
+            8,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.1, 0.0, 0.0),
+            range,
+            8,
+        ));
+    }
+
+    #[test]
+    fn tracking_distance_is_capped_by_player_view_distance() {
+        let range = EntityTrackingRange::from_client_chunk_range(10);
+        let entity_pos = DVec3::ZERO;
+
+        assert!(is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(32.0, 0.0, 0.0),
+            range,
+            2,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(32.1, 0.0, 0.0),
+            range,
+            2,
+        ));
+    }
 }

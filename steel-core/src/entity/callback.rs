@@ -118,6 +118,12 @@ impl EntityLevelCallback for PlayerEntityCallback {
             world
                 .entity_cache()
                 .on_section_change(self.entity_id, old_section, new_section);
+
+            if let Some(player) = world.players.get_by_entity_id(self.entity_id)
+                && let Some(view) = *player.last_tracking_view.lock()
+            {
+                world.entity_tracker().update_player(&player, &view);
+            }
         }
     }
 
@@ -212,6 +218,9 @@ impl EntityLevelCallback for EntityChunkCallback {
             )
         };
 
+        let section_changed = old_section.is_some();
+        let old_chunk_for_tracking = old_chunk.unwrap_or(new_chunk);
+
         // Update section cache if section changed
         if let Some(old_section) = old_section {
             world
@@ -227,6 +236,16 @@ impl EntityLevelCallback for EntityChunkCallback {
             // (within-chunk movement is handled by LevelChunk::tick marking dirty after entity ticks)
             world.mark_chunk_dirty(old_chunk);
             world.mark_chunk_dirty(new_chunk);
+        }
+
+        if section_changed {
+            world.entity_tracker().on_entity_section_change(
+                self.entity_id,
+                old_chunk_for_tracking,
+                new_chunk,
+                |chunk| world.player_area_map.get_tracking_players(chunk),
+                |player_id| world.players.get_by_entity_id(player_id),
+            );
         }
     }
 

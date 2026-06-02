@@ -1133,6 +1133,14 @@ impl Entity for Player {
         &vanilla_entities::PLAYER
     }
 
+    fn broadcast_to_player(&self, player: &Player) -> bool {
+        if player.game_mode() == GameType::Spectator {
+            player.id() == self.id()
+        } else {
+            self.game_mode() != GameType::Spectator
+        }
+    }
+
     fn tick(&self) {
         // Player tick is handled separately by World::tick_game()
         // This is here for Entity trait compliance
