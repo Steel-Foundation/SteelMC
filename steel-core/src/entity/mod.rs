@@ -53,7 +53,7 @@ mod storage;
 mod tracker;
 
 use crate::portal::TeleportTransition;
-pub use base::{EntityBase, EntityBaseState, EntityMovementFlags};
+pub use base::{EntityBase, EntityBaseState, EntityGroundContact, EntityMovementFlags};
 pub use cache::EntityCache;
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
@@ -245,7 +245,22 @@ pub trait Entity: Send + Sync {
 
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, on_ground: bool) {
-        self.base().set_on_ground(on_ground);
+        let ground_contact = self.ground_contact_after_movement(on_ground, None);
+        let movement_flags = self.base().movement_flags().with_on_ground(on_ground);
+        self.base()
+            .set_movement_flags(movement_flags, ground_contact);
+    }
+
+    /// Sets ground and horizontal collision flags from accepted movement.
+    fn set_on_ground_with_movement(
+        &self,
+        on_ground: bool,
+        horizontal_collision: bool,
+        movement: DVec3,
+    ) {
+        let ground_contact = self.ground_contact_after_movement(on_ground, Some(movement));
+        self.base()
+            .set_on_ground_with_movement(on_ground, horizontal_collision, ground_contact);
     }
 
     /// Sets the entity's position.
@@ -333,8 +348,10 @@ pub trait Entity: Send + Sync {
             result.vertical_collision,
             delta,
         );
+        let ground_contact =
+            self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement));
         self.base()
-            .set_movement_flags(movement_flags, result.actual_movement);
+            .set_movement_flags(movement_flags, ground_contact);
 
         // Vanilla: Entity.move() zeros velocity components on collision.
         // Horizontal collision zeros X/Z individually based on which axis collided.
@@ -356,6 +373,59 @@ pub trait Entity: Send + Sync {
         }
 
         Some(result)
+    }
+
+    /// Computes vanilla support state for an on-ground update.
+    fn ground_contact_after_movement(
+        &self,
+        on_ground: bool,
+        movement: Option<DVec3>,
+    ) -> EntityGroundContact {
+        let Some(world) = self.level() else {
+            return if on_ground {
+                EntityGroundContact::on_ground(None)
+            } else {
+                EntityGroundContact::airborne()
+            };
+        };
+
+        self.check_supporting_block(on_ground, movement, &world)
+    }
+
+    /// Mirrors vanilla `Entity.checkSupportingBlock`.
+    fn check_supporting_block(
+        &self,
+        on_ground: bool,
+        movement: Option<DVec3>,
+        world: &Arc<World>,
+    ) -> EntityGroundContact {
+        if !on_ground {
+            return EntityGroundContact::airborne();
+        }
+
+        let bounding_box = self.bounding_box();
+        let test_area = WorldAabb::new(
+            bounding_box.min_x(),
+            bounding_box.min_y() - 1.0e-6,
+            bounding_box.min_z(),
+            bounding_box.max_x(),
+            bounding_box.min_y(),
+            bounding_box.max_z(),
+        );
+        let collision_world = WorldCollisionProvider::new(world);
+        let mut supporting_block =
+            collision_world.find_supporting_block(self.position(), &test_area);
+
+        if supporting_block.is_none()
+            && !self.base().on_ground_no_blocks()
+            && let Some(movement) = movement
+        {
+            let previous_test_area = test_area.move_by(-movement.x, 0.0, -movement.z);
+            supporting_block =
+                collision_world.find_supporting_block(self.position(), &previous_test_area);
+        }
+
+        EntityGroundContact::on_ground(supporting_block)
     }
 
     /// Spawns an item at this entity's location.

@@ -47,6 +47,83 @@ impl<'a> WorldCollisionProvider<'a> {
     pub const fn new(world: &'a Arc<World>) -> Self {
         Self { world }
     }
+
+    /// Finds the block supporting an entity within `aabb`.
+    ///
+    /// Mirrors vanilla `CollisionGetter.findSupportingBlock`: among colliding
+    /// blocks, choose the closest block center to the entity position, then use
+    /// vanilla `BlockPos` ordering as a tie-breaker.
+    #[must_use]
+    #[expect(
+        clippy::float_cmp,
+        reason = "intentional: vanilla compares equal support distances exactly"
+    )]
+    pub fn find_supporting_block(
+        &self,
+        entity_position: DVec3,
+        aabb: &WorldAabb,
+    ) -> Option<BlockPos> {
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().ceil() as i32;
+        let max_y = aabb.max_y().ceil() as i32;
+        let max_z = aabb.max_z().ceil() as i32;
+
+        let mut main_support = None;
+        let mut main_support_distance = f64::MAX;
+
+        for y in min_y..=max_y {
+            for z in min_z..=max_z {
+                for x in min_x..=max_x {
+                    let block_pos = BlockPos::new(x, y, z);
+                    let block_state = self.world.get_block_state(block_pos);
+                    if block_state.is_air() {
+                        continue;
+                    }
+
+                    let collision_shape = block_state.get_collision_shape();
+                    if collision_shape.is_empty() {
+                        continue;
+                    }
+
+                    let supports_entity = collision_shape
+                        .into_iter()
+                        .map(|shape_aabb| translate_shape(shape_aabb, block_pos))
+                        .any(|world_aabb| aabb.intersects(world_aabb));
+                    if !supports_entity {
+                        continue;
+                    }
+
+                    let distance = block_pos_center_distance_sq(block_pos, entity_position);
+                    let should_replace = distance < main_support_distance
+                        || distance == main_support_distance
+                            && main_support
+                                .is_none_or(|support| vanilla_block_pos_less(support, block_pos));
+
+                    if should_replace {
+                        main_support = Some(block_pos);
+                        main_support_distance = distance;
+                    }
+                }
+            }
+        }
+
+        main_support
+    }
+}
+
+fn block_pos_center_distance_sq(pos: BlockPos, point: DVec3) -> f64 {
+    let dx = f64::from(pos.x()) + 0.5 - point.x;
+    let dy = f64::from(pos.y()) + 0.5 - point.y;
+    let dz = f64::from(pos.z()) + 0.5 - point.z;
+    dx * dx + dy * dy + dz * dz
+}
+
+const fn vanilla_block_pos_less(left: BlockPos, right: BlockPos) -> bool {
+    left.y() < right.y()
+        || left.y() == right.y()
+            && (left.z() < right.z() || left.z() == right.z() && left.x() < right.x())
 }
 
 impl CollisionWorld for WorldCollisionProvider<'_> {
@@ -123,5 +200,33 @@ mod tests {
         let aabb3 = WorldAabb::new(5.0, 5.0, 5.0, 6.0, 6.0, 6.0);
 
         assert!(!aabb1.intersects(aabb3));
+    }
+
+    #[test]
+    fn supporting_block_tie_breaker_matches_vanilla_ordering() {
+        assert!(vanilla_block_pos_less(
+            BlockPos::new(0, 0, 0),
+            BlockPos::new(0, 1, 0)
+        ));
+        assert!(vanilla_block_pos_less(
+            BlockPos::new(0, 1, 0),
+            BlockPos::new(0, 1, 1)
+        ));
+        assert!(vanilla_block_pos_less(
+            BlockPos::new(0, 1, 1),
+            BlockPos::new(1, 1, 1)
+        ));
+        assert!(!vanilla_block_pos_less(
+            BlockPos::new(1, 1, 1),
+            BlockPos::new(0, 1, 1)
+        ));
+    }
+
+    #[test]
+    fn supporting_block_distance_uses_block_center() {
+        let distance =
+            block_pos_center_distance_sq(BlockPos::new(1, 2, 3), DVec3::new(1.5, 1.5, 5.5));
+
+        assert!((distance - 5.0).abs() < f64::EPSILON);
     }
 }

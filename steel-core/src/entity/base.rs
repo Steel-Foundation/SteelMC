@@ -9,6 +9,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
+use steel_utils::BlockPos;
 use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
@@ -102,6 +103,45 @@ impl Default for EntityMovementFlags {
     }
 }
 
+/// Vanilla ground-support state updated by `Entity.checkSupportingBlock`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EntityGroundContact {
+    supporting_block: Option<BlockPos>,
+    on_ground_no_blocks: bool,
+}
+
+impl EntityGroundContact {
+    /// Creates airborne ground-contact state.
+    #[must_use]
+    pub const fn airborne() -> Self {
+        Self {
+            supporting_block: None,
+            on_ground_no_blocks: false,
+        }
+    }
+
+    /// Creates grounded contact state from the support search result.
+    #[must_use]
+    pub const fn on_ground(supporting_block: Option<BlockPos>) -> Self {
+        Self {
+            supporting_block,
+            on_ground_no_blocks: supporting_block.is_none(),
+        }
+    }
+
+    /// Returns the supporting block selected by vanilla support rules.
+    #[must_use]
+    pub const fn supporting_block(self) -> Option<BlockPos> {
+        self.supporting_block
+    }
+
+    /// Returns true when the entity is grounded but no block support was found.
+    #[must_use]
+    pub const fn on_ground_no_blocks(self) -> bool {
+        self.on_ground_no_blocks
+    }
+}
+
 /// Vanilla `Entity` movement state stored as one locked snapshot.
 ///
 /// Position, velocity, rotation, and ground contact are commonly read together
@@ -117,6 +157,7 @@ pub struct EntityBaseState {
     dimensions: EntityDimensions,
     bounding_box: WorldAabb,
     movement_flags: EntityMovementFlags,
+    ground_contact: EntityGroundContact,
 }
 
 impl EntityBaseState {
@@ -131,6 +172,7 @@ impl EntityBaseState {
             dimensions,
             bounding_box: Self::make_bounding_box(position, dimensions),
             movement_flags: EntityMovementFlags::new(),
+            ground_contact: EntityGroundContact::airborne(),
         }
     }
 
@@ -179,6 +221,11 @@ impl EntityBaseState {
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
         self.movement_flags = self.movement_flags.with_on_ground(on_ground);
+        self.ground_contact = if on_ground {
+            EntityGroundContact::on_ground(None)
+        } else {
+            EntityGroundContact::airborne()
+        };
         self
     }
 
@@ -344,6 +391,12 @@ impl EntityBase {
         self.state.lock().movement_flags.on_ground()
     }
 
+    /// Returns the current vanilla movement flag snapshot.
+    #[inline]
+    pub fn movement_flags(&self) -> EntityMovementFlags {
+        self.state.lock().movement_flags
+    }
+
     /// Returns true if the last movement was clipped horizontally.
     #[inline]
     pub fn horizontal_collision(&self) -> bool {
@@ -360,6 +413,16 @@ impl EntityBase {
     #[inline]
     pub fn vertical_collision_below(&self) -> bool {
         self.state.lock().movement_flags.vertical_collision_below()
+    }
+
+    /// Returns the block currently supporting this entity, if known.
+    pub fn supporting_block(&self) -> Option<BlockPos> {
+        self.state.lock().ground_contact.supporting_block()
+    }
+
+    /// Returns true when the entity is grounded but no supporting block was found.
+    pub fn on_ground_no_blocks(&self) -> bool {
+        self.state.lock().ground_contact.on_ground_no_blocks()
     }
 
     /// Gets the world this entity is in.
@@ -446,12 +509,20 @@ impl EntityBase {
     pub fn set_on_ground(&self, on_ground: bool) {
         let mut state = self.state.lock();
         state.movement_flags = state.movement_flags.with_on_ground(on_ground);
+        if !on_ground {
+            state.ground_contact = EntityGroundContact::airborne();
+        }
     }
 
     /// Sets all vanilla movement flags after `Entity.move`.
-    pub fn set_movement_flags(&self, movement_flags: EntityMovementFlags, _movement: DVec3) {
-        // TODO: Update main supporting block from movement when support tracking exists.
-        self.state.lock().movement_flags = movement_flags;
+    pub fn set_movement_flags(
+        &self,
+        movement_flags: EntityMovementFlags,
+        ground_contact: EntityGroundContact,
+    ) {
+        let mut state = self.state.lock();
+        state.movement_flags = movement_flags;
+        state.ground_contact = ground_contact;
     }
 
     /// Sets ground and horizontal collision flags from an accepted client move.
@@ -459,13 +530,14 @@ impl EntityBase {
         &self,
         on_ground: bool,
         horizontal_collision: bool,
-        _movement: DVec3,
+        ground_contact: EntityGroundContact,
     ) {
         let mut state = self.state.lock();
         state.movement_flags = state
             .movement_flags
             .with_on_ground(on_ground)
             .with_horizontal_collision(horizontal_collision);
+        state.ground_contact = ground_contact;
     }
 
     /// Checks if this entity was already ticked during the given server tick.

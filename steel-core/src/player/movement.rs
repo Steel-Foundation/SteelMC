@@ -382,7 +382,7 @@ impl Player {
             self.set_position(accepted_pos);
         }
         self.set_rotation((target_yaw, target_pitch));
-        self.base().set_on_ground_with_movement(
+        self.set_on_ground_with_movement(
             packet.on_ground,
             packet.horizontal_collision,
             client_delta,
