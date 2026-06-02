@@ -573,15 +573,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
         // Build physics state
-        let mut physics_state = EntityPhysicsState::with_dimensions(
+        let physics_state = EntityPhysicsState::with_dimensions(
             self.position(),
             self.base().dimensions(),
             self.max_up_step(),
-        );
-        physics_state.velocity = self.velocity();
-        physics_state.on_ground = self.on_ground();
-        physics_state.is_crouching = self.backs_off_from_edge();
-        physics_state.fall_distance = self.fall_distance();
+        )
+        .with_on_ground(self.on_ground())
+        .with_backs_off_from_edge(self.backs_off_from_edge())
+        .with_fall_distance(self.fall_distance());
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);

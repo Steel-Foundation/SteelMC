@@ -92,24 +92,24 @@ pub fn move_entity(
         && delta.z.abs() < ZERO_MOVEMENT_EPSILON
     {
         return MoveResult {
-            final_position: state.position,
+            final_position: state.position(),
             actual_movement: DVec3::new(0.0, 0.0, 0.0),
-            on_ground: state.on_ground,
+            on_ground: state.on_ground(),
             horizontal_collision: false,
             vertical_collision: false,
             x_collision: false,
             z_collision: false,
-            final_aabb: state.bounding_box,
+            final_aabb: state.bounding_box(),
         };
     }
 
     // Vanilla `Entity.move()` uses the real bounding box for collision.
     // Deflating here causes entities (especially items) to end up slightly inside blocks,
     // which can create client-side desync where the client thinks the entity is falling.
-    let aabb = state.bounding_box;
+    let aabb = state.bounding_box();
 
     // Apply sneak-edge prevention if crouching.
-    let movement = if state.is_crouching
+    let movement = if state.backs_off_from_edge()
         && matches!(mover_type, MoverType::SelfMovement | MoverType::Player)
     {
         apply_sneak_edge_prevention(state, delta, &aabb, world)
@@ -144,7 +144,7 @@ fn apply_sneak_edge_prevention(
         return delta;
     }
 
-    let max_down_step = f64::from(state.max_up_step);
+    let max_down_step = f64::from(state.max_up_step());
     let mut delta_x = delta.x;
     let mut delta_z = delta.z;
     let step_x = delta_x.signum() * EDGE_STEP;
@@ -193,12 +193,12 @@ fn is_above_ground(
     aabb: &WorldAabb,
     world: &dyn CollisionWorld,
 ) -> bool {
-    if state.on_ground {
+    if state.on_ground() {
         return true;
     }
 
-    let max_down_step = f64::from(state.max_up_step);
-    let fall_distance = state.fall_distance;
+    let max_down_step = f64::from(state.max_up_step());
+    let fall_distance = state.fall_distance();
     fall_distance < max_down_step
         && !can_fall_at_least(aabb, 0.0, 0.0, max_down_step - fall_distance, world)
 }
@@ -261,7 +261,7 @@ fn collide_with_world(
     let collisions = world.get_block_collisions(&swept_aabb);
 
     let (resolved, current_aabb) = collide_with_shapes(movement, aabb, &collisions);
-    let final_position = state.position + resolved;
+    let final_position = state.position() + resolved;
 
     // Check if on ground (touching block below with epsilon tolerance)
     let on_ground = resolved.y != movement.y && movement.y < 0.0;
@@ -343,7 +343,7 @@ fn should_try_step_up(
     }
 
     // Must have step height > 0
-    if state.max_up_step <= 0.0 {
+    if state.max_up_step() <= 0.0 {
         return false;
     }
 
@@ -353,7 +353,7 @@ fn should_try_step_up(
     }
 
     // Must be on ground or just landed
-    if !state.on_ground && !collision_result.on_ground {
+    if !state.on_ground() && !collision_result.on_ground {
         return false;
     }
 
@@ -379,7 +379,7 @@ fn try_step_up(
     ground_result: &MoveResult,
     world: &dyn CollisionWorld,
 ) -> MoveResult {
-    let max_step = f64::from(state.max_up_step);
+    let max_step = f64::from(state.max_up_step());
     let on_ground_after_collision = ground_result.vertical_collision && movement.y < 0.0;
     let grounded_aabb = if on_ground_after_collision {
         aabb.move_by(0.0, ground_result.actual_movement.y, 0.0)
@@ -422,7 +422,7 @@ fn try_step_up(
         let vertical_collision = actual_movement.y != movement.y;
 
         return MoveResult {
-            final_position: state.position + actual_movement,
+            final_position: state.position() + actual_movement,
             actual_movement,
             on_ground: vertical_collision && movement.y < 0.0,
             horizontal_collision: x_collision || z_collision,
@@ -566,9 +566,7 @@ mod tests {
 
     #[test]
     fn test_move_entity_free_fall() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = false;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
 
         let world = MockWorld { has_floor: true };
         let gravity = DVec3::new(0.0, -0.08, 0.0); // Vanilla gravity per tick
@@ -584,9 +582,7 @@ mod tests {
 
     #[test]
     fn test_move_entity_land_on_ground() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = false;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), &vanilla_entities::PLAYER);
 
         let world = MockWorld { has_floor: true };
         let large_fall = DVec3::new(0.0, -10.0, 0.0);
@@ -621,8 +617,8 @@ mod tests {
     fn test_item_on_ground_with_accumulated_velocity() {
         // Simulates an item that's on the ground (Y=1.0 on top of floor)
         // and has accumulated negative velocity from gravity
-        let mut state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::ITEM);
-        state.on_ground = true;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::ITEM)
+            .with_on_ground(true);
 
         let world = MockWorld { has_floor: true };
 
@@ -649,9 +645,7 @@ mod tests {
     fn test_item_slightly_above_ground() {
         // Simulates an item that's slightly above the ground due to floating point
         // Floor at Y=1.0, item at Y=1.00001 (just above)
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), &vanilla_entities::ITEM);
-        state.on_ground = false; // Not quite on ground yet
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), &vanilla_entities::ITEM);
 
         let world = MockWorld { has_floor: true };
 
@@ -670,10 +664,9 @@ mod tests {
 
     #[test]
     fn test_crouching_backs_off_from_edge_incrementally() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = true;
-        state.is_crouching = true;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
+            .with_on_ground(true)
+            .with_backs_off_from_edge(true);
 
         let world = BoxWorld {
             boxes: vec![WorldAabb::new(-2.0, 0.0, -2.0, 0.5, 1.0, 2.0)],
@@ -691,9 +684,8 @@ mod tests {
 
     #[test]
     fn test_not_crouching_can_move_off_edge() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = true;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
+            .with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![WorldAabb::new(-2.0, 0.0, -2.0, 0.5, 1.0, 2.0)],
@@ -707,10 +699,8 @@ mod tests {
 
     #[test]
     fn test_step_up_uses_obstacle_candidate_height() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = true;
-        state.max_up_step = 0.6;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
+            .with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![
@@ -736,10 +726,8 @@ mod tests {
 
     #[test]
     fn test_step_up_rejects_obstacle_above_max_step() {
-        let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER);
-        state.on_ground = true;
-        state.max_up_step = 0.6;
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
+            .with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![

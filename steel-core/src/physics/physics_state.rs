@@ -4,47 +4,30 @@ use glam::DVec3;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_utils::WorldAabb;
 
-/// Physics state for an entity, tracking position, velocity, and movement properties.
+/// Immutable entity movement input used by the collision resolver.
 ///
-/// This struct contains all the information needed to simulate physics for an entity,
-/// matching vanilla's Entity class fields related to movement.
-#[derive(Debug, Clone)]
+/// Steel keeps authoritative physical state on `EntityBase`; this type is a
+/// narrow snapshot of the fields vanilla `Entity.move` needs while resolving a
+/// single movement.
+#[derive(Debug, Clone, Copy)]
 pub struct EntityPhysicsState {
     /// Current position (center of bounding box at feet level).
-    pub position: DVec3,
-
-    /// Current velocity (delta movement per tick).
-    pub velocity: DVec3,
+    position: DVec3,
 
     /// Entity's axis-aligned bounding box in world coordinates.
-    pub bounding_box: WorldAabb,
-
-    /// Current entity dimensions (can change with pose/age).
-    pub dimensions: EntityDimensions,
+    bounding_box: WorldAabb,
 
     /// Maximum height the entity can step up automatically.
-    pub max_up_step: f32,
+    max_up_step: f32,
 
-    /// Whether the entity is crouching (affects sneak-edge prevention).
-    pub is_crouching: bool,
+    /// Whether the entity backs away from ledges for this movement.
+    backs_off_from_edge: bool,
 
     /// Whether the entity is on the ground (affects step-up and jump mechanics).
-    pub on_ground: bool,
-
-    /// Whether horizontal movement was blocked by collision.
-    pub horizontal_collision: bool,
-
-    /// Whether vertical movement was blocked by collision.
-    pub vertical_collision: bool,
-
-    /// Whether the entity is in water.
-    pub in_water: bool,
-
-    /// Whether the entity is in lava.
-    pub in_lava: bool,
+    on_ground: bool,
 
     /// Remaining fall distance for fall damage calculation.
-    pub fall_distance: f64,
+    fall_distance: f64,
 }
 
 /// Default max step height for most entities.
@@ -68,16 +51,10 @@ impl EntityPhysicsState {
 
         Self {
             position,
-            velocity: DVec3::new(0.0, 0.0, 0.0),
             bounding_box,
-            dimensions,
             max_up_step,
-            is_crouching: false,
+            backs_off_from_edge: false,
             on_ground: false,
-            horizontal_collision: false,
-            vertical_collision: false,
-            in_water: false,
-            in_lava: false,
             fall_distance: 0.0,
         }
     }
@@ -92,37 +69,60 @@ impl EntityPhysicsState {
         WorldAabb::entity_box(position.x, position.y, position.z, half_width, height)
     }
 
-    /// Updates the bounding box to match the current position and dimensions.
-    pub fn update_bounding_box(&mut self) {
-        self.bounding_box = Self::make_bounding_box(self.position, &self.dimensions);
-    }
-
-    /// Sets the position and updates the bounding box accordingly.
-    pub fn set_position(&mut self, position: DVec3) {
-        self.position = position;
-        self.update_bounding_box();
-    }
-
-    /// Sets new dimensions and updates the bounding box.
-    /// Used when entity changes pose (crouching, swimming) or age (baby).
-    pub fn set_dimensions(&mut self, dimensions: EntityDimensions) {
-        self.dimensions = dimensions;
-        self.update_bounding_box();
-    }
-
-    /// Returns the current eye height.
+    /// Returns the current bottom-center position.
     #[must_use]
-    pub const fn eye_height(&self) -> f32 {
-        self.dimensions.eye_height
+    pub const fn position(self) -> DVec3 {
+        self.position
     }
 
-    /// Returns the eye position in world coordinates.
+    /// Returns the current world-space bounding box.
     #[must_use]
-    pub fn eye_position(&self) -> DVec3 {
-        DVec3::new(
-            self.position.x,
-            self.position.y + f64::from(self.dimensions.eye_height),
-            self.position.z,
-        )
+    pub const fn bounding_box(self) -> WorldAabb {
+        self.bounding_box
+    }
+
+    /// Returns the maximum automatic step-up height.
+    #[must_use]
+    pub const fn max_up_step(self) -> f32 {
+        self.max_up_step
+    }
+
+    /// Returns whether sneak-edge prevention should apply.
+    #[must_use]
+    pub const fn backs_off_from_edge(self) -> bool {
+        self.backs_off_from_edge
+    }
+
+    /// Returns whether the entity was on ground before movement.
+    #[must_use]
+    pub const fn on_ground(self) -> bool {
+        self.on_ground
+    }
+
+    /// Returns the accumulated fall distance before movement.
+    #[must_use]
+    pub const fn fall_distance(self) -> f64 {
+        self.fall_distance
+    }
+
+    /// Returns a copy with the pre-movement ground flag set.
+    #[must_use]
+    pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
+        self.on_ground = on_ground;
+        self
+    }
+
+    /// Returns a copy with sneak-edge prevention enabled or disabled.
+    #[must_use]
+    pub const fn with_backs_off_from_edge(mut self, backs_off_from_edge: bool) -> Self {
+        self.backs_off_from_edge = backs_off_from_edge;
+        self
+    }
+
+    /// Returns a copy with the accumulated fall distance set.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
     }
 }
