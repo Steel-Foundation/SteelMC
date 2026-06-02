@@ -46,6 +46,7 @@ mod callback;
 pub mod damage;
 pub mod entities;
 mod living_base;
+mod movement_sync;
 mod registry;
 mod storage;
 mod tracker;
@@ -58,6 +59,7 @@ pub use callback::{
     RemovalReason,
 };
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
+pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
 pub use registry::{ENTITIES, EntityRegistry, init_entities};
 pub use storage::EntityStorage;
 pub use tracker::EntityTracker;

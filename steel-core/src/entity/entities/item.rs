@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState, RemovalReason};
+use crate::entity::{Entity, EntityBase, EntityBaseState, EntityPositionSyncState, RemovalReason};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
@@ -28,7 +28,7 @@ use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, CTakeItemEntity, calc_delta,
+    CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, CTakeItemEntity,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::BlockPos;
@@ -92,14 +92,10 @@ impl ItemEntityState {
 
 /// Last sent movement state for item entity tracking.
 struct ItemEntitySyncState {
+    position: EntityPositionSyncState,
     /// Last velocity sent to clients (for delta detection).
     /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
     last_sent_velocity: DVec3,
-    /// Last position sent to clients (for delta detection).
-    /// Mirrors vanilla's `ServerEntity.lastSentXyz` fields.
-    last_sent_position: DVec3,
-    /// Last `on_ground` state sent to clients.
-    last_sent_on_ground: bool,
     /// Whether position/velocity needs to be synced to clients.
     /// Set when velocity changes significantly, like vanilla's `Entity.needsSync`.
     needs_sync: bool,
@@ -108,9 +104,8 @@ struct ItemEntitySyncState {
 impl ItemEntitySyncState {
     const fn new(position: DVec3, velocity: DVec3, on_ground: bool) -> Self {
         Self {
+            position: EntityPositionSyncState::new(position, on_ground),
             last_sent_velocity: velocity,
-            last_sent_position: position,
-            last_sent_on_ground: on_ground,
             needs_sync: false,
         }
     }
@@ -570,16 +565,9 @@ impl ItemEntity {
         let current_pos = self.position();
         let current_on_ground = self.on_ground();
         let mut sync_state = self.sync_state.lock();
-        let last_sent = sync_state.last_sent_position;
-        let last_on_ground = sync_state.last_sent_on_ground;
+        let last_on_ground = sync_state.position.last_sent_on_ground();
 
-        // Check if position changed enough to warrant sync
-        // Vanilla threshold: 7.6293945E-6 (TOLERANCE_LEVEL_POSITION)
-        let diff_sq = (current_pos.x - last_sent.x).powi(2)
-            + (current_pos.y - last_sent.y).powi(2)
-            + (current_pos.z - last_sent.z).powi(2);
-
-        let position_changed = diff_sq >= 7.629_394_5e-6;
+        let position_changed = sync_state.position.position_changed(current_pos);
         let on_ground_changed = current_on_ground != last_on_ground;
         // Vanilla uses tickCount % 60 for periodic full position sync (FORCED_POS_UPDATE_PERIOD)
         let force_periodic_sync = tick_count % 60 == 0;
@@ -591,23 +579,17 @@ impl ItemEntity {
         }
 
         // Try delta encoding first
-        let dx = calc_delta(current_pos.x, last_sent.x);
-        let dy = calc_delta(current_pos.y, last_sent.y);
-        let dz = calc_delta(current_pos.z, last_sent.z);
+        let delta = sync_state.position.packed_delta(current_pos);
 
         // Use full sync if delta overflow or on-ground changed or periodic
         // (vanilla: ServerEntity.sendChanges line 123)
-        let use_full_sync = on_ground_changed
-            || force_periodic_sync
-            || dx.is_none()
-            || dy.is_none()
-            || dz.is_none();
-
-        sync_state.last_sent_on_ground = current_on_ground;
+        let use_full_sync = on_ground_changed || force_periodic_sync || delta.is_none();
 
         if use_full_sync {
             // Full sync: client sets position directly, so store current_pos
-            sync_state.last_sent_position = current_pos;
+            sync_state
+                .position
+                .mark_full_sent(current_pos, current_on_ground);
 
             let vel = self.velocity();
             // NOTE: We do NOT update last_sent_velocity here because the client
@@ -633,11 +615,13 @@ impl ItemEntity {
             // Vanilla stores the actual position, not the decoded position.
             // This works because encode() is deterministic - both server and client
             // compute the same encoded values.
-            let (Some(dx), Some(dy), Some(dz)) = (dx, dy, dz) else {
+            let Some((dx, dy, dz)) = delta else {
                 return None;
             };
 
-            sync_state.last_sent_position = current_pos;
+            sync_state
+                .position
+                .mark_delta_sent(current_pos, current_on_ground);
 
             Some(PositionSyncPacket::Delta(CMoveEntityPos {
                 entity_id: self.id(),

@@ -75,7 +75,9 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
-use crate::entity::{DEATH_DURATION, Entity, EntityBase, LivingEntityBase, RemovalReason};
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityBase, EntityPositionSyncState, LivingEntityBase, RemovalReason,
+};
 use crate::inventory::SyncPlayerInv;
 use crate::player::experience::Experience;
 use crate::player::player_inventory::PlayerInventory;
@@ -1020,7 +1022,7 @@ impl Player {
         self.set_rotation(rotation);
         {
             let mut mv = self.movement.lock();
-            mv.prev_position = position;
+            mv.position_sync = EntityPositionSyncState::new(position, self.on_ground());
             mv.last_good_position = position;
             mv.first_good_position = position;
             mv.received_move_packet_count = 0;

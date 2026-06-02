@@ -9,7 +9,7 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPosRot, CMoveEntityRot, CPlayerPosition, CRotateHead,
     PlayerCommandAction, SAcceptTeleportation, SMovePlayer, SPlayerCommand, SPlayerInput,
-    calc_delta, to_angle_byte,
+    to_angle_byte,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_attributes;
@@ -225,7 +225,7 @@ impl Player {
             return;
         }
 
-        let prev_pos = self.movement.lock().prev_position;
+        let prev_pos = self.movement.lock().position_sync.last_sent_position();
         let start_pos = self.position();
         let game_mode = self.game_mode.load();
         let state = self.entity_state_snapshot();
@@ -399,25 +399,23 @@ impl Player {
             let new_chunk = ChunkPos::from_entity_pos(pos);
 
             if packet.has_pos {
-                let dx = calc_delta(pos.x, prev_pos.x);
-                let dy = calc_delta(pos.y, prev_pos.y);
-                let dz = calc_delta(pos.z, prev_pos.z);
-
-                let (sync_delay, last_on_ground) = {
+                let (sync_delay, last_on_ground, delta) = {
                     let mut mv = self.movement.lock();
-                    let d = mv.position_sync_delay;
-                    mv.position_sync_delay += 1;
-                    (d, mv.last_sent_on_ground)
+                    let d = mv.position_sync.advance_sync_delay();
+                    (
+                        d,
+                        mv.position_sync.last_sent_on_ground(),
+                        mv.position_sync.packed_delta(pos),
+                    )
                 };
                 let on_ground_changed = last_on_ground != packet.on_ground;
                 let force_sync = sync_delay > 400 || on_ground_changed;
 
-                if let (Some(dx), Some(dy), Some(dz)) = (dx, dy, dz) {
+                if let Some((dx, dy, dz)) = delta {
                     if force_sync {
                         {
                             let mut mv = self.movement.lock();
-                            mv.position_sync_delay = 0;
-                            mv.last_sent_on_ground = packet.on_ground;
+                            mv.position_sync.mark_full_sent(pos, packet.on_ground);
                         }
 
                         let delta = self.velocity();
@@ -435,6 +433,11 @@ impl Player {
                         };
                         world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
                     } else {
+                        self.movement
+                            .lock()
+                            .position_sync
+                            .mark_delta_sent(pos, packet.on_ground);
+
                         let move_packet = CMoveEntityPosRot {
                             entity_id: self.id(),
                             dx,
@@ -449,8 +452,7 @@ impl Player {
                 } else {
                     {
                         let mut mv = self.movement.lock();
-                        mv.position_sync_delay = 0;
-                        mv.last_sent_on_ground = packet.on_ground;
+                        mv.position_sync.mark_full_sent(pos, packet.on_ground);
                     }
 
                     let delta = self.velocity();
@@ -487,7 +489,6 @@ impl Player {
             }
 
             let mut mv = self.movement.lock();
-            mv.prev_position = pos;
             mv.prev_rotation = (yaw, pitch);
         }
     }
