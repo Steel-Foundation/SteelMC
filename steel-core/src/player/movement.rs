@@ -11,7 +11,6 @@ use steel_protocol::packets::game::{
     SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
@@ -642,17 +641,6 @@ impl Player {
             .inflate(0.0625)
             .expand_towards(DVec3::new(0.0, -0.55, 0.0));
         world.block_states_in_aabb_are_air(block_query)
-    }
-
-    /// Returns the player's current gravity value.
-    ///
-    /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
-    /// Default is 0.08 blocks/tick².
-    fn get_gravity(&self) -> f64 {
-        self.attributes()
-            .lock()
-            .get_value(vanilla_attributes::GRAVITY)
-            .unwrap_or(DEFAULT_GRAVITY)
     }
 
     /// Returns how long vanilla permits unsupported floating for this player's gravity.

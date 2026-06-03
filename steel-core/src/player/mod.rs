@@ -1252,6 +1252,10 @@ impl Entity for Player {
         self.abilities.lock().invulnerable.then_some(1)
     }
 
+    fn get_default_gravity(&self) -> f64 {
+        LivingEntity::get_attribute_gravity(self)
+    }
+
     fn fire_ignite_extra_ticks(&self) -> i32 {
         self.get_world().random().lock().next_i32_between(1, 2)
     }
