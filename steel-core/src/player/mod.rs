@@ -88,7 +88,7 @@ use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
-    LivingTravelInput, RemovalReason, SharedEntity,
+    RemovalReason, SharedEntity,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -112,10 +112,6 @@ use crate::inventory::{MenuInstance, container::Container, inventory_menu::Inven
 pub type PreviousMessageEntry = PreviousMessage;
 
 pub use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
-
-const fn living_travel_input_from_client_input(input: PlayerInput) -> LivingTravelInput {
-    LivingTravelInput::new(input.left_intent(), 0.0, input.forward_intent())
-}
 
 /// Client-side settings sent via `SClientInformation` packet.
 /// This is stored separately from the packet struct to allow default initialization.
@@ -1538,9 +1534,6 @@ impl LivingEntity for Player {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let input = self.last_client_input();
-        self.set_travel_input(living_travel_input_from_client_input(input));
-
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
@@ -1616,7 +1609,7 @@ impl TextResolutor for Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{LivingTravelInput, Player, PlayerInput, living_travel_input_from_client_input};
+    use super::Player;
 
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
@@ -1659,15 +1652,5 @@ mod tests {
     #[test]
     fn entity_cramming_disabled_when_gamerule_is_zero() {
         assert!(!Player::should_apply_entity_cramming_damage(0, 100, 100, 0));
-    }
-
-    #[test]
-    fn client_input_becomes_living_travel_input_during_tick() {
-        let input = PlayerInput::from_flags(0x01 | 0x08 | 0x10);
-
-        assert_eq!(
-            living_travel_input_from_client_input(input),
-            LivingTravelInput::new(-1.0, 0.0, 1.0)
-        );
     }
 }
