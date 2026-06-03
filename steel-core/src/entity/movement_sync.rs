@@ -8,6 +8,8 @@ use steel_protocol::packets::game::{
 
 /// Squared position delta needed before vanilla considers a movement worth syncing.
 pub const POSITION_SYNC_THRESHOLD: f64 = 7.629_394_5e-6;
+/// Squared velocity delta needed before vanilla sends an entity motion packet.
+pub const VELOCITY_SYNC_THRESHOLD: f64 = 1.0e-7;
 
 /// Packed body rotation used by entity movement packets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -390,6 +392,50 @@ impl EntityPositionSyncState {
     }
 }
 
+/// Per-entity velocity sync state for tracked entities.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityVelocitySyncState {
+    last_sent_velocity: DVec3,
+}
+
+impl EntityVelocitySyncState {
+    /// Creates sync state at the velocity already known to clients.
+    #[must_use]
+    pub const fn new(velocity: DVec3) -> Self {
+        Self {
+            last_sent_velocity: velocity,
+        }
+    }
+
+    /// Returns the last velocity sent to tracking clients.
+    #[must_use]
+    pub const fn last_sent_velocity(self) -> DVec3 {
+        self.last_sent_velocity
+    }
+
+    /// Selects and records a velocity packet if vanilla requires one.
+    pub fn record_velocity_sync(
+        &mut self,
+        entity_id: i32,
+        current_velocity: DVec3,
+    ) -> Option<CSetEntityMotion> {
+        let diff = current_velocity - self.last_sent_velocity;
+        let diff_sq = diff.length_squared();
+        let became_stationary = diff_sq > 0.0 && current_velocity == DVec3::ZERO;
+        if diff_sq <= VELOCITY_SYNC_THRESHOLD && !became_stationary {
+            return None;
+        }
+
+        self.last_sent_velocity = current_velocity;
+        Some(CSetEntityMotion::new(
+            entity_id,
+            current_velocity.x,
+            current_velocity.y,
+            current_velocity.z,
+        ))
+    }
+}
+
 /// Per-entity movement sync state for tracked position and rotation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityMovementSyncState {
@@ -541,7 +587,7 @@ mod tests {
         EntityMovementSyncPacket, EntityMovementSyncState, EntityMovementSyncUpdate,
         EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
         EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
-        PackedEntityRotation,
+        EntityVelocitySyncState, PackedEntityRotation,
     };
 
     #[test]
@@ -617,6 +663,48 @@ mod tests {
         assert_eq!(state.record_head_yaw(0.5), None);
         assert_eq!(state.record_head_yaw(2.0), Some(to_angle_byte(2.0)));
         assert_eq!(state.record_head_yaw(2.5), None);
+    }
+
+    #[test]
+    fn velocity_sync_records_packet_when_delta_exceeds_threshold() {
+        let mut state = EntityVelocitySyncState::new(DVec3::ZERO);
+
+        let packet = state
+            .record_velocity_sync(12, DVec3::new(0.001, 0.0, 0.0))
+            .expect("velocity should sync");
+
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(packet.velocity_x.to_bits(), 0.001_f64.to_bits());
+        assert_eq!(packet.velocity_y.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.velocity_z.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(state.last_sent_velocity(), DVec3::new(0.001, 0.0, 0.0));
+    }
+
+    #[test]
+    fn velocity_sync_skips_sub_threshold_non_zero_delta() {
+        let mut state = EntityVelocitySyncState::new(DVec3::ZERO);
+
+        assert!(
+            state
+                .record_velocity_sync(12, DVec3::new(0.000_1, 0.0, 0.0))
+                .is_none()
+        );
+        assert_eq!(state.last_sent_velocity(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn velocity_sync_records_packet_when_entity_becomes_stationary() {
+        let mut state = EntityVelocitySyncState::new(DVec3::new(0.000_1, 0.0, 0.0));
+
+        let packet = state
+            .record_velocity_sync(12, DVec3::ZERO)
+            .expect("stationary transition should sync");
+
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(packet.velocity_x.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.velocity_y.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.velocity_z.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(state.last_sent_velocity(), DVec3::ZERO);
     }
 
     #[test]

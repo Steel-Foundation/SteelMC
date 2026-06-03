@@ -492,7 +492,8 @@ pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
     EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
-    EntityRotationSyncState, POSITION_SYNC_THRESHOLD, PackedEntityRotation,
+    EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
+    PackedEntityRotation,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;

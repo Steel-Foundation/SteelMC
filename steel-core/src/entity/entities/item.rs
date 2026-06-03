@@ -19,7 +19,8 @@ use crate::entity::damage::DamageSource;
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementSyncPacket,
-    EntityPositionSyncSnapshot, EntityPositionSyncState, EntitySyncedData, RemovalReason,
+    EntityPositionSyncSnapshot, EntityPositionSyncState, EntitySyncedData, EntityVelocitySyncState,
+    RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -90,16 +91,14 @@ impl ItemEntityState {
 /// Last sent movement state for item entity tracking.
 struct ItemEntitySyncState {
     position: EntityPositionSyncState,
-    /// Last velocity sent to clients (for delta detection).
-    /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
-    last_sent_velocity: DVec3,
+    velocity: EntityVelocitySyncState,
 }
 
 impl ItemEntitySyncState {
     const fn new(position: DVec3, velocity: DVec3, on_ground: bool) -> Self {
         Self {
             position: EntityPositionSyncState::new(position, on_ground),
-            last_sent_velocity: velocity,
+            velocity: EntityVelocitySyncState::new(velocity),
         }
     }
 }
@@ -500,29 +499,10 @@ impl ItemEntity {
     /// - OR velocity became zero (to stop client-side prediction)
     fn check_velocity_sync(&self) -> Option<CSetEntityMotion> {
         let current = self.velocity();
-        let mut sync_state = self.sync_state.lock();
-        let last_sent = sync_state.last_sent_velocity;
-
-        let diff_sq = (current.x - last_sent.x).powi(2)
-            + (current.y - last_sent.y).powi(2)
-            + (current.z - last_sent.z).powi(2);
-
-        // Sync if velocity changed significantly, or if it went to zero
-        // (vanilla: ServerEntity.sendChanges lines 170-172)
-        let should_sync = diff_sq > 1.0e-7
-            || (diff_sq > 0.0 && current.x == 0.0 && current.y == 0.0 && current.z == 0.0);
-
-        if should_sync {
-            sync_state.last_sent_velocity = current;
-            Some(CSetEntityMotion::new(
-                self.id(),
-                current.x,
-                current.y,
-                current.z,
-            ))
-        } else {
-            None
-        }
+        self.sync_state
+            .lock()
+            .velocity
+            .record_velocity_sync(self.id(), current)
     }
 
     /// Checks if position should be synced and returns the appropriate packet.
