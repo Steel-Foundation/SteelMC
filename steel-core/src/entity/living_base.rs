@@ -28,6 +28,7 @@ struct LivingEntityState {
     sprinting: bool,
     sleeping_pos: Option<BlockPos>,
     last_climbable_pos: Option<BlockPos>,
+    discard_friction: bool,
 }
 
 impl LivingEntityState {
@@ -43,6 +44,7 @@ impl LivingEntityState {
             sprinting: false,
             sleeping_pos: None,
             last_climbable_pos: None,
+            discard_friction: false,
         }
     }
 
@@ -208,6 +210,17 @@ impl LivingEntityBase {
     /// Records the last climbable block position this living entity touched.
     pub fn set_last_climbable_pos(&self, pos: BlockPos) {
         self.state.lock().last_climbable_pos = Some(pos);
+    }
+
+    /// Returns whether vanilla living travel should skip friction damping.
+    #[must_use]
+    pub fn should_discard_friction(&self) -> bool {
+        self.state.lock().discard_friction
+    }
+
+    /// Sets whether vanilla living travel should skip friction damping.
+    pub fn set_discard_friction(&self, discard_friction: bool) {
+        self.state.lock().discard_friction = discard_friction;
     }
 
     /// Calculates vanilla living-entity fall damage.
@@ -422,5 +435,17 @@ mod tests {
         assert_eq!(base.last_climbable_pos(), None);
         base.set_last_climbable_pos(climbable_pos);
         assert_eq!(base.last_climbable_pos(), Some(climbable_pos));
+    }
+
+    #[test]
+    fn discard_friction_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert!(!base.should_discard_friction());
+        base.set_discard_friction(true);
+        assert!(base.should_discard_friction());
+        base.set_discard_friction(false);
+        assert!(!base.should_discard_friction());
     }
 }

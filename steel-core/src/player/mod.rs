@@ -1483,6 +1483,21 @@ impl LivingEntity for Player {
             .player_absorption
             .set(amount.max(0.0));
     }
+
+    fn get_flying_speed(&self) -> f32 {
+        if self.is_flying() && !self.is_passenger() {
+            let flying_speed = self.abilities.lock().flying_speed;
+            if self.is_sprinting() {
+                flying_speed * 2.0
+            } else {
+                flying_speed
+            }
+        } else if self.is_sprinting() {
+            0.025_999_999
+        } else {
+            0.02
+        }
+    }
 }
 
 impl TextResolutor for Player {

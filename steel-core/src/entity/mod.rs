@@ -34,7 +34,7 @@ use crate::behavior::{
     EntityLandingContext, FLUID_BEHAVIORS,
 };
 use crate::entity::attribute::AttributeMap;
-use crate::fluid::{LavaFluid, get_height};
+use crate::fluid::{LavaFluid, get_fluid_state, get_height};
 use crate::physics::{
     CollisionWorld, EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
     move_entity as resolve_entity_movement,
@@ -178,6 +178,26 @@ fn trapdoor_usable_as_ladder_state(
     below_state.get_block() == &vanilla_blocks::LADDER
         && below_state.try_get_value(&BlockStateProperties::FACING)
             == trapdoor_state.try_get_value(&BlockStateProperties::FACING)
+}
+
+fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DVec3 {
+    if input.length_squared() < 1.0E-7 {
+        return DVec3::ZERO;
+    }
+
+    let movement = if input.length_squared() > 1.0 {
+        input.normalize()
+    } else {
+        input
+    } * f64::from(speed);
+    let yaw = yaw_degrees.to_radians();
+    let sin = yaw.sin();
+    let cos = yaw.cos();
+    DVec3::new(
+        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.y,
+        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+    )
 }
 
 fn collided_with_fluid(
@@ -1177,6 +1197,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().fall_distance()
     }
 
+    /// Returns whether this entity is currently inside powder snow.
+    fn is_in_powder_snow(&self) -> bool {
+        self.base().is_in_powder_snow()
+    }
+
+    /// Returns whether this entity was inside powder snow during the previous base tick.
+    fn was_in_powder_snow(&self) -> bool {
+        self.base().was_in_powder_snow()
+    }
+
     /// Sets accumulated vanilla fall distance.
     fn set_fall_distance(&self, fall_distance: f64) {
         self.base().set_fall_distance(fall_distance);
@@ -2119,6 +2149,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
     }
 
+    /// Applies vanilla `Entity.moveRelative()`.
+    fn move_relative(&self, speed: f32, input: DVec3) {
+        let yaw = self.rotation().0;
+        self.set_velocity(self.velocity() + get_input_vector(input, speed, yaw));
+    }
+
     /// Moves the entity without collision physics.
     fn move_without_physics(&self, delta: DVec3) -> MoveResult {
         let final_position = self.position() + delta;
@@ -2566,6 +2602,12 @@ pub trait LivingEntity: Entity {
             .unwrap_or(0.08)
     }
 
+    /// Returns vanilla `LivingEntity.getEffectiveGravity()`.
+    fn get_effective_gravity(&self) -> f64 {
+        // TODO: Apply SLOW_FALLING once the mob effect system exists.
+        self.get_gravity()
+    }
+
     /// Checks if the entity can be affected by potions.
     fn is_affected_by_potions(&self) -> bool {
         true
@@ -2633,6 +2675,174 @@ pub trait LivingEntity: Entity {
         }
 
         climbable
+    }
+
+    /// Returns whether vanilla living travel should skip friction damping.
+    fn should_discard_friction(&self) -> bool {
+        self.living_base().should_discard_friction()
+    }
+
+    /// Sets whether vanilla living travel should skip friction damping.
+    fn set_discard_friction(&self, discard_friction: bool) {
+        self.living_base().set_discard_friction(discard_friction);
+    }
+
+    /// Returns whether this living entity is currently applying jump input.
+    fn is_jumping(&self) -> bool {
+        false
+    }
+
+    /// Returns vanilla `LivingEntity.isSuppressingSlidingDownLadder()`.
+    fn is_suppressing_sliding_down_ladder(&self) -> bool {
+        self.is_suppressing_bounce()
+    }
+
+    /// Returns a levitation velocity adjustment for `travelInAir`.
+    fn levitation_travel_y_delta(&self, _movement_y: f64) -> Option<f64> {
+        // TODO: Apply LEVITATION once the mob effect system exists.
+        None
+    }
+
+    /// Returns whether vanilla `LivingEntity.travel()` should use fluid movement.
+    fn should_travel_in_fluid(&self, _fluid_state: FluidState) -> bool {
+        // TODO: Add canStandOnFluid/isAffectedByFluids once those systems exist.
+        self.is_in_water() || self.is_in_lava()
+    }
+
+    /// Returns vanilla `LivingEntity.getFlyingSpeed()`.
+    fn get_flying_speed(&self) -> f32 {
+        if self
+            .controlling_passenger()
+            .is_some_and(|passenger| passenger.entity_type() == &vanilla_entities::PLAYER)
+        {
+            self.get_speed() * 0.1
+        } else {
+            0.02
+        }
+    }
+
+    /// Returns vanilla `LivingEntity.getFrictionInfluencedSpeed()`.
+    fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
+        if self.on_ground() {
+            self.get_speed() * (0.216_000_02 / (block_friction * block_friction * block_friction))
+        } else {
+            self.get_flying_speed()
+        }
+    }
+
+    /// Returns the vertical friction used by `travelInAir`.
+    fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
+        // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
+        0.98
+    }
+
+    /// Applies vanilla `LivingEntity.handleOnClimbable()`.
+    fn handle_on_climbable(&self, movement: DVec3) -> DVec3 {
+        if !self.on_climbable() {
+            return movement;
+        }
+
+        self.reset_fall_distance();
+        let Some(world) = self.level() else {
+            return movement;
+        };
+        let block_state = self.in_block_state(&world);
+        let mut y = movement.y.max(-0.15);
+        if y < 0.0
+            && block_state.get_block() != &vanilla_blocks::SCAFFOLDING
+            && self.is_suppressing_sliding_down_ladder()
+            && self.entity_type() == &vanilla_entities::PLAYER
+        {
+            y = 0.0;
+        }
+
+        DVec3::new(
+            movement.x.clamp(-0.15, 0.15),
+            y,
+            movement.z.clamp(-0.15, 0.15),
+        )
+    }
+
+    /// Applies gravity using vanilla living-entity effective gravity.
+    fn apply_living_travel_gravity(&self) {
+        let gravity = self.get_effective_gravity();
+        if gravity != 0.0 {
+            let mut velocity = self.velocity();
+            velocity.y -= gravity;
+            self.set_velocity(velocity);
+        }
+    }
+
+    /// Mirrors vanilla `LivingEntity.handleRelativeFrictionAndCalculateMovement()`.
+    fn handle_relative_friction_and_calculate_movement(
+        &self,
+        input: DVec3,
+        block_friction: f32,
+    ) -> Option<(DVec3, MoveResult)> {
+        self.move_relative(self.get_friction_influenced_speed(block_friction), input);
+        self.set_velocity(self.handle_on_climbable(self.velocity()));
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let mut movement = self.velocity();
+        if (result.horizontal_collision || self.is_jumping())
+            && (self.on_climbable() || self.was_in_powder_snow() && self.can_walk_on_powder_snow())
+        {
+            movement.y = 0.2;
+        }
+
+        Some((movement, result))
+    }
+
+    /// Mirrors vanilla `LivingEntity.travelInAir()`.
+    fn travel_in_air(&self, input: DVec3) -> Option<MoveResult> {
+        let world = self.level()?;
+        let pos_below = self.block_pos_below_that_affects_movement()?;
+        let block_friction = if self.on_ground() {
+            world.get_block_state(pos_below).get_block().config.friction
+        } else {
+            1.0
+        };
+        let horizontal_friction = block_friction * 0.91;
+        let (movement, result) =
+            self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
+        let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
+            movement.y + levitation_y
+        } else {
+            movement.y - self.get_effective_gravity()
+        };
+
+        if self.should_discard_friction() {
+            self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
+        } else {
+            let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+            self.set_velocity(DVec3::new(
+                movement.x * f64::from(horizontal_friction),
+                movement_y * f64::from(vertical_friction),
+                movement.z * f64::from(horizontal_friction),
+            ));
+        }
+
+        Some(result)
+    }
+
+    /// Default vanilla `LivingEntity.travel()` implementation for overrides.
+    fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
+        let world = self.level()?;
+        let fluid_state = get_fluid_state(&world, self.block_position());
+        if self.should_travel_in_fluid(fluid_state) {
+            // TODO: Implement LivingEntity.travelInFluid().
+            return None;
+        }
+        if self.is_fall_flying() {
+            // TODO: Implement LivingEntity.travelFallFlying().
+            return None;
+        }
+
+        self.travel_in_air(input)
+    }
+
+    /// Mirrors vanilla `LivingEntity.travel()`.
+    fn travel(&self, input: DVec3) -> Option<MoveResult> {
+        self.default_travel(input)
     }
 
     /// Returns the bed position that makes this living entity sleeping.
@@ -2736,7 +2946,7 @@ mod tests {
 
     use super::{
         Entity, EntityBase, EntityVerticalMovementStateUpdate, RemovalReason, SharedEntity,
-        closest_open_space_direction, fall_damage_reset_clip_target,
+        closest_open_space_direction, fall_damage_reset_clip_target, get_input_vector,
         should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
     };
 
@@ -2849,7 +3059,7 @@ mod tests {
     fn assert_vec3_close(left: DVec3, right: DVec3) {
         let diff = left - right;
         assert!(
-            diff.length_squared() < 1.0e-24,
+            diff.length_squared() < 1.0e-12,
             "expected {left:?} to equal {right:?}"
         );
     }
@@ -2939,6 +3149,26 @@ mod tests {
         assert_eq!(
             fall_damage_reset_clip_target(position, DVec3::new(10.0, 0.0, 0.0), 2.0),
             Some(DVec3::new(9.0, 2.0, 3.0))
+        );
+    }
+
+    #[test]
+    fn input_vector_ignores_tiny_input_like_vanilla() {
+        assert_vec3_close(
+            get_input_vector(DVec3::new(1.0E-4, 0.0, 0.0), 0.02, 0.0),
+            DVec3::ZERO,
+        );
+    }
+
+    #[test]
+    fn input_vector_normalizes_large_input_and_rotates_by_yaw() {
+        assert_vec3_close(
+            get_input_vector(DVec3::new(2.0, 0.0, 0.0), 0.5, 0.0),
+            DVec3::new(0.5, 0.0, 0.0),
+        );
+        assert_vec3_close(
+            get_input_vector(DVec3::new(0.0, 0.0, 1.0), 0.5, 90.0),
+            DVec3::new(-0.5, 0.0, 0.0),
         );
     }
 

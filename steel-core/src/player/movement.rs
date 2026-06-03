@@ -737,12 +737,7 @@ impl Player {
             return;
         }
 
-        let gravity = self.get_gravity();
-        if gravity != 0.0 {
-            let mut velocity = self.velocity();
-            velocity.y -= gravity;
-            self.set_velocity(velocity);
-        }
+        self.apply_living_travel_gravity();
     }
 
     /// Returns true if we're waiting for a teleport confirmation.
