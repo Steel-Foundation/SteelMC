@@ -1067,6 +1067,13 @@ impl World {
                         player.connection.send_encoded(encoded);
                     }
                 },
+                |entity_id, packet, excluded_player_ids| {
+                    self.broadcast_to_entity_trackers_except_many(
+                        entity_id,
+                        packet,
+                        &excluded_player_ids,
+                    );
+                },
             );
         }
 
@@ -1581,6 +1588,29 @@ impl World {
             return;
         };
         self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+    }
+
+    /// Broadcasts a packet to players tracking an entity, excluding several players.
+    pub fn broadcast_to_entity_trackers_except_many<P: ClientPacket>(
+        &self,
+        entity_id: i32,
+        packet: P,
+        excluded_player_ids: &[i32],
+    ) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if excluded_player_ids.contains(&player_id) {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                player.connection.send_encoded(encoded.clone());
+            }
+        }
     }
 
     /// Broadcasts an entity movement sync packet to players currently tracking an entity.
