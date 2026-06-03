@@ -72,6 +72,15 @@ fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_s
     ((previous_horizontal_speed - new_horizontal_speed) * 10.0 - 3.0) as f32
 }
 
+const fn fall_flying_free_fall_interval(fall_flying_ticks: i32) -> Option<i32> {
+    let check_fall_flying_ticks = fall_flying_ticks.wrapping_add(1);
+    if check_fall_flying_ticks % 10 == 0 {
+        Some(check_fall_flying_ticks / 10)
+    } else {
+        None
+    }
+}
+
 const fn equipment_slot_matches_equippable(
     slot: EquipmentSlot,
     equippable_slot: EquippableSlot,
@@ -3462,9 +3471,19 @@ pub trait LivingEntity: Entity {
     fn update_fall_flying(&self) {
         self.check_fall_distance_accumulation();
         if self.can_glide() {
-            // TODO: Using fall_flying_ticks + 1 like vanilla, damage a random glider
-            // every 20 fall-flying ticks and emit ELYTRA_GLIDE every 10 ticks once
-            // living equipment mutation and game events are wired through the tick path.
+            if let Some(_free_fall_interval) =
+                fall_flying_free_fall_interval(self.fall_flying_ticks())
+            {
+                // TODO: Damage a random glider every second emitted interval once
+                // living equipment mutation is wired through the tick path.
+                if let Some(world) = self.level() {
+                    world.game_event_at(
+                        &vanilla_game_events::ELYTRA_GLIDE,
+                        self.position(),
+                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
+                    );
+                }
+            }
         } else {
             self.set_fall_flying(false);
         }
@@ -3687,7 +3706,8 @@ mod tests {
         Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
         LivingEntityBase, LivingTravelInput, RemovalReason, SharedEntity,
         closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
-        get_input_vector, should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
+        fall_flying_free_fall_interval, get_input_vector, should_apply_resolved_movement,
+        trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -4066,6 +4086,13 @@ mod tests {
     fn fall_flying_collision_damage_matches_vanilla_threshold() {
         assert!(fall_flying_collision_damage(1.0, 0.8) <= 0.0);
         assert!((fall_flying_collision_damage(1.0, 0.6) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn fall_flying_free_fall_interval_matches_vanilla_cadence() {
+        assert_eq!(fall_flying_free_fall_interval(8), None);
+        assert_eq!(fall_flying_free_fall_interval(9), Some(1));
+        assert_eq!(fall_flying_free_fall_interval(19), Some(2));
     }
 
     #[test]
