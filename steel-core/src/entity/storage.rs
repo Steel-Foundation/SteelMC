@@ -50,7 +50,9 @@ impl EntityStorage {
     /// Adds an entity to this chunk's storage.
     pub fn add(&self, entity: SharedEntity) {
         let id = entity.id();
-        self.entities.write().insert(id, entity);
+        if self.entities.write().insert(id, entity).is_some() {
+            panic!("entity id {id} is already present in chunk entity storage");
+        }
     }
 
     /// Removes an entity from this chunk's storage by ID.
@@ -196,5 +198,14 @@ mod tests {
 
         assert_eq!(saveable.len(), 1);
         assert_eq!(saveable[0].id(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "already present in chunk entity storage")]
+    fn add_rejects_duplicate_entity_ids() {
+        let storage = EntityStorage::new();
+
+        storage.add(raw_item(1));
+        storage.add(raw_item(1));
     }
 }

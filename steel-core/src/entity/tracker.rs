@@ -8,8 +8,12 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use rustc_hash::FxHashSet;
-use steel_protocol::packets::game::{CAddEntity, CRemoveEntities, CSetEntityData, to_angle_byte};
+use steel_protocol::packets::game::{
+    AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CUpdateAttributes,
+    to_angle_byte,
+};
 use steel_registry::RegistryEntry;
+use steel_registry::entity_data::DataValue;
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncRwLock;
 
@@ -354,55 +358,115 @@ fn is_within_tracking_distance(
     x * x + z * z <= visible_radius * visible_radius
 }
 
-/// Sends spawn packets for an entity to a player.
-///
-/// Uses packet bundling to ensure all spawn-related packets (add entity, metadata, etc.)
-/// are processed atomically by the client in a single tick.
-fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
-    let pos = entity.position();
-    let vel = entity.velocity();
-    let (yaw, pitch) = entity.rotation();
-    let entity_type_id = entity.entity_type().id() as i32;
+struct EntitySpawnPairing {
+    spawn_packet: CAddEntity,
+    entity_data: Vec<DataValue>,
+    attributes: Vec<AttributeSnapshot>,
+}
 
-    // Convert rotation from degrees to protocol byte format (256th of a full rotation)
-    // Uses to_angle_byte which matches vanilla's Mth.packDegrees
-    let x_rot = to_angle_byte(pitch);
-    let y_rot = to_angle_byte(yaw);
+impl EntitySpawnPairing {
+    fn from_entity(entity: &SharedEntity) -> Self {
+        let pos = entity.position();
+        let vel = entity.velocity();
+        let (yaw, pitch) = entity.rotation();
+        let entity_type_id = entity.entity_type().id() as i32;
 
-    let spawn_packet = CAddEntity {
-        id: entity.id(),
-        uuid: entity.uuid(),
-        entity_type: entity_type_id,
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        velocity_x: vel.x,
-        velocity_y: vel.y,
-        velocity_z: vel.z,
-        x_rot,
-        y_rot,
-        head_y_rot: y_rot,
-        data: entity.spawn_data(),
-    };
+        // Convert rotation from degrees to protocol byte format (256th of a full rotation)
+        // Uses to_angle_byte which matches vanilla's Mth.packDegrees
+        let x_rot = to_angle_byte(pitch);
+        let y_rot = to_angle_byte(yaw);
 
-    // Collect entity data before entering the bundle closure
-    let entity_data = entity.pack_all_entity_data();
-    let entity_id = entity.id();
-
-    // Send all spawn packets in a bundle so client processes them atomically
-    player.send_bundle(|bundle| {
-        bundle.add(spawn_packet);
-
-        // Send entity data if any
-        if !entity_data.is_empty() {
-            bundle.add(CSetEntityData::new(entity_id, entity_data));
+        Self {
+            spawn_packet: CAddEntity {
+                id: entity.id(),
+                uuid: entity.uuid(),
+                entity_type: entity_type_id,
+                x: pos.x,
+                y: pos.y,
+                z: pos.z,
+                velocity_x: vel.x,
+                velocity_y: vel.y,
+                velocity_z: vel.z,
+                x_rot,
+                y_rot,
+                head_y_rot: y_rot,
+                data: entity.spawn_data(),
+            },
+            entity_data: entity.pack_all_entity_data(),
+            attributes: entity.pack_syncable_attributes(),
         }
-    });
+    }
+
+    fn send_to(self, entity_id: i32, player: &Player) {
+        player.send_bundle(|bundle| {
+            bundle.add(self.spawn_packet);
+
+            if !self.entity_data.is_empty() {
+                bundle.add(CSetEntityData::new(entity_id, self.entity_data));
+            }
+
+            if !self.attributes.is_empty() {
+                bundle.add(CUpdateAttributes::new(entity_id, self.attributes));
+            }
+
+            // TODO: Add SetEquipment, SetPassengers, and leash/link packets when
+            // those protocol packets and runtime systems exist.
+        });
+    }
+}
+
+/// Sends spawn pairing packets for an entity to a player.
+///
+/// Mirrors vanilla `ServerEntity.addPairing` / `sendPairingData`: add entity,
+/// metadata, syncable attributes, and future relationship/equipment packets are
+/// processed atomically by the client in a single tick.
+fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
+    let entity_id = entity.id();
+    EntitySpawnPairing::from_entity(entity).send_to(entity_id, player);
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Weak};
+
+    use steel_protocol::packets::game::AttributeSnapshot;
+    use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities};
+
     use super::*;
+    use crate::entity::EntityBase;
+
+    struct PairingTestEntity {
+        base: EntityBase,
+        attributes: Vec<AttributeSnapshot>,
+    }
+
+    impl PairingTestEntity {
+        fn shared(attributes: Vec<AttributeSnapshot>) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
+                attributes,
+            })
+        }
+    }
+
+    impl Entity for PairingTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+            self.attributes.clone()
+        }
+    }
 
     #[test]
     fn client_tracking_range_is_converted_to_blocks() {
@@ -460,5 +524,22 @@ mod tests {
             range,
             2,
         ));
+    }
+
+    #[test]
+    fn spawn_pairing_includes_syncable_attributes() {
+        test_support::init_test_registry();
+
+        let entity = PairingTestEntity::shared(vec![AttributeSnapshot {
+            attribute_id: 7,
+            base_value: 1.25,
+            modifiers: Vec::new(),
+        }]);
+        let pairing = EntitySpawnPairing::from_entity(&entity);
+
+        assert_eq!(pairing.spawn_packet.id, entity.id());
+        assert_eq!(pairing.attributes.len(), 1);
+        assert_eq!(pairing.attributes[0].attribute_id, 7);
+        assert_eq!(pairing.attributes[0].base_value, 1.25);
     }
 }

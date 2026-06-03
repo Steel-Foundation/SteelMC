@@ -37,6 +37,12 @@ impl PlayerMap {
     /// Inserts a player into both maps.
     ///
     /// Returns `true` if the player was inserted, `false` if a player with the same UUID already exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if another player already has the same entity ID. Entity IDs are
+    /// session-unique; accepting a duplicate would break entity lookup and
+    /// packet routing invariants.
     pub fn insert(&self, player: Arc<Player>) -> bool {
         let uuid = player.gameprofile.id;
         let entity_id = player.id();
@@ -45,7 +51,10 @@ impl PlayerMap {
             return false;
         }
 
-        let _ = self.by_entity_id.insert_sync(entity_id, player);
+        if self.by_entity_id.insert_sync(entity_id, player).is_err() {
+            let _ = self.by_uuid.remove_sync(&uuid);
+            panic!("player entity id {entity_id} is already registered");
+        }
         true
     }
 

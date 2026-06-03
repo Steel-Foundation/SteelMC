@@ -2,9 +2,8 @@
 use std::sync::Arc;
 
 use steel_protocol::packets::game::{
-    CAddEntity, CGameEvent, CPlayerInfoUpdate, CRemoveEntities, CRemovePlayerInfo, GameEventType,
+    CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
 };
-use steel_registry::{RegistryEntry, vanilla_entities};
 use steel_utils::SectionPos;
 use tokio::time::Instant;
 
@@ -16,6 +15,43 @@ use crate::{
 };
 
 impl World {
+    fn attach_player_entity_callback(self: &Arc<Self>, player: &Arc<Player>) {
+        let callback = Arc::new(PlayerEntityCallback::new(
+            player.id(),
+            player.position(),
+            Arc::downgrade(self),
+        ));
+        player.set_level_callback(callback);
+    }
+
+    fn register_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
+        self.attach_player_entity_callback(player);
+
+        let entity: SharedEntity = player.clone();
+        self.entity_cache.register(&entity);
+        self.entity_tracker.add(
+            &entity,
+            |chunk| self.player_area_map.get_tracking_players(chunk),
+            |id| self.players.get_by_entity_id(id),
+        );
+    }
+
+    pub(crate) fn unregister_player_entity(&self, player: &Player) {
+        let entity_id = player.id();
+        self.entity_tracker
+            .remove(entity_id, |id| self.players.get_by_entity_id(id));
+
+        let section = SectionPos::from_entity_pos(player.position());
+        self.entity_cache
+            .unregister(entity_id, player.uuid(), section);
+        player.set_level_callback(Arc::new(NullEntityCallback));
+    }
+
+    pub(crate) fn register_respawned_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
+        self.register_player_entity(player);
+        self.chunk_map.update_player_status(player);
+    }
+
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
         let uuid = player.gameprofile.id;
@@ -33,17 +69,12 @@ impl World {
             log::error!("Failed to save player data for {uuid}: {e}");
         }
 
-        // Unregister from entity cache
-        let pos = player.position();
-        let section = SectionPos::from_entity_pos(pos);
-        self.entity_cache.unregister(entity_id, uuid, section);
-        player.set_level_callback(Arc::new(NullEntityCallback));
+        self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
         self.entity_tracker().on_player_leave(entity_id);
 
         self.player_area_map.on_player_leave(&player);
-        self.broadcast_to_all(CRemoveEntities::single(entity_id));
         self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
 
         self.chunk_map.remove_player(&player);
@@ -63,13 +94,9 @@ impl World {
             return;
         }
 
-        let pos = player.position();
-        let section = SectionPos::from_entity_pos(pos);
-        self.entity_cache.unregister(entity_id, uuid, section);
-        player.set_level_callback(Arc::new(NullEntityCallback));
+        self.unregister_player_entity(player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(player);
-        self.broadcast_to_all(CRemoveEntities::single(entity_id));
         // Note: no CRemovePlayerInfo — player stays in the global tab list
         self.chunk_map.remove_player(player);
     }
@@ -85,26 +112,14 @@ impl World {
             return;
         }
 
-        // Set up level callback for section tracking
-        let pos = player.position();
-        let callback = Arc::new(PlayerEntityCallback::new(
-            player.id(),
-            pos,
-            Arc::downgrade(self),
-        ));
-        player.set_level_callback(callback);
-
-        // Register player in entity cache for unified entity lookups
-        self.entity_cache
-            .register(&(player.clone() as SharedEntity));
-
-        // Note: player_area_map.on_player_join is called in chunk_map.update_player_status
-        // when the player's view is first computed
-
-        // Tab list + entity spawn sync only needed on first join
+        // Tab-list sync only needs the initial login path; world changes keep
+        // the player in the global tab list.
         if reason == ResetReason::InitialJoin {
-            self.sync_tab_list_and_entities(&player);
+            self.sync_tab_list(&player);
         }
+
+        self.register_player_entity(&player);
+        self.chunk_map.update_player_status(&player);
 
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
@@ -117,15 +132,13 @@ impl World {
         });
     }
 
-    /// Sends full tab list + entity spawn synchronization for a newly joined player.
+    /// Sends full tab list synchronization for a newly joined player.
     ///
-    /// Sends all existing players' info to the new player, and broadcasts the new
-    /// player's info + entity spawn to all existing players.
-    fn sync_tab_list_and_entities(self: &Arc<Self>, player: &Arc<Player>) {
-        let pos = player.position();
-        let (yaw, pitch) = player.rotation();
-
-        // Send existing players to the new player (tab list + entity spawn)
+    /// Sends all existing players' info to the new player, then broadcasts the
+    /// new player's info to everyone. Entity spawn pairing is owned by
+    /// `EntityTracker`, matching vanilla `ChunkMap`.
+    fn sync_tab_list(self: &Arc<Self>, player: &Arc<Player>) {
+        // Send existing players to the new player.
         self.players.iter_players(|_, existing_player| {
             if existing_player.gameprofile.id == player.gameprofile.id {
                 return true;
@@ -154,24 +167,6 @@ impl World {
                 player.send_packet(session_packet);
             }
 
-            // Spawn existing player entity for new player (bundled for atomic processing)
-            let existing_pos = existing_player.position();
-            let (existing_yaw, existing_pitch) = existing_player.rotation();
-            let player_type_id = vanilla_entities::PLAYER.id() as i32;
-            player.send_bundle(|bundle| {
-                bundle.add(CAddEntity::player(
-                    existing_player.id(),
-                    existing_player.gameprofile.id,
-                    player_type_id,
-                    existing_pos.x,
-                    existing_pos.y,
-                    existing_pos.z,
-                    existing_yaw,
-                    existing_pitch,
-                ));
-                // TODO: Add entity metadata and equipment packets here when implemented
-            });
-
             true
         });
 
@@ -186,20 +181,5 @@ impl World {
             true, // show_hat
         );
         self.broadcast_to_all(player_info_packet);
-
-        // Spawn new player entity for all other players
-        // TODO: bundle with entity metadata + equipment packets when implemented
-        let player_type_id = vanilla_entities::PLAYER.id() as i32;
-        let spawn_packet = CAddEntity::player(
-            player.id(),
-            player.gameprofile.id,
-            player_type_id,
-            pos.x,
-            pos.y,
-            pos.z,
-            yaw,
-            pitch,
-        );
-        self.broadcast_to_all_except(spawn_packet, player.id());
     }
 }

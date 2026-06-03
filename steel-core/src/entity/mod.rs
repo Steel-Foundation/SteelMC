@@ -6,7 +6,7 @@ use glam::DVec3;
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
-use steel_protocol::packets::game::{CEntityEvent, SoundSource};
+use steel_protocol::packets::game::{AttributeSnapshot, CEntityEvent, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
@@ -1064,6 +1064,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns the synchronized entity-data container for entities with vanilla data accessors.
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         None
+    }
+
+    /// Packs syncable attributes for initial spawn pairing.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
+    /// living attributes after the add-entity and metadata packets.
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        Vec::new()
     }
 
     /// Returns true if the entity has been marked for removal.

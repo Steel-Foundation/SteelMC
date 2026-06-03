@@ -43,6 +43,12 @@ impl EntityCache {
     /// Registers an entity in the cache.
     ///
     /// Called when an entity is added to a chunk.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity ID or UUID is already registered. The world cache is
+    /// a session-unique index; silently replacing entries leaves stale section
+    /// membership and breaks packet/entity lookup invariants.
     pub fn register(&self, entity: &SharedEntity) {
         let id = entity.id();
         let uuid = entity.uuid();
@@ -50,13 +56,15 @@ impl EntityCache {
         let pos = entity.position();
         let section = SectionPos::from_entity_pos(pos);
 
-        // Add to ID lookup
-        let _ = self.by_id.insert_sync(id, weak.clone());
+        if self.by_id.insert_sync(id, weak.clone()).is_err() {
+            panic!("entity id {id} is already registered in the world cache");
+        }
 
-        // Add to UUID lookup
-        let _ = self.by_uuid.insert_sync(uuid, weak);
+        if self.by_uuid.insert_sync(uuid, weak).is_err() {
+            let _ = self.by_id.remove_sync(&id);
+            panic!("entity uuid {uuid} is already registered in the world cache");
+        }
 
-        // Add to section index
         self.add_to_section(section, id);
     }
 
@@ -312,5 +320,17 @@ mod tests {
         assert_eq!(cache.count(), 0);
         assert_eq!(cache.by_section.len(), 0);
         assert!(cache.get_entities_in_section(section).is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "already registered in the world cache")]
+    fn register_rejects_duplicate_entity_ids() {
+        let cache = EntityCache::new();
+        let dimensions = EntityDimensions::new(0.25, 0.25, 0.125);
+        let first: SharedEntity = CacheTestEntity::new(1, DVec3::ZERO, dimensions);
+        let second: SharedEntity = CacheTestEntity::new(1, DVec3::new(1.0, 0.0, 0.0), dimensions);
+
+        cache.register(&first);
+        cache.register(&second);
     }
 }

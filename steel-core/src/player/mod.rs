@@ -55,9 +55,9 @@ use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
-    CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
-    CRespawn, CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes,
-    ClientCommandAction, SoundSource,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRespawn,
+    CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes, ClientCommandAction,
+    SoundSource,
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -504,7 +504,10 @@ impl Player {
                 None,
             );
 
-            world.broadcast_to_all(CRemoveEntities::single(self.id()));
+            world.unregister_player_entity(self);
+            world.entity_tracker().on_player_leave(self.id());
+            world.player_area_map.remove_by_entity_id(self.id());
+            world.chunk_map.remove_player(self);
             self.set_removed(RemovalReason::Killed);
         }
     }
@@ -824,15 +827,6 @@ impl Player {
         let was_removed = self.base.clear_removed();
         let world = self.get_world();
 
-        // Only send CRemoveEntities if tick_death() hasn't already removed us
-        // (tick_death sends CRemoveEntities + set_removed at DEATH_DURATION).
-        // NOTE: Since we reuse the same entity ID (unlike vanilla which creates a
-        // fresh ServerPlayer), clients may briefly see remove+re-add in the same
-        // frame if respawn races with tick_death's DEATH_DURATION removal.
-        if !was_removed {
-            world.broadcast_to_all(CRemoveEntities::single(self.id()));
-        }
-
         // Respawn-specific state: reset health and pose
         {
             let mut entity_data = self.entity_data.lock();
@@ -856,6 +850,9 @@ impl Player {
         let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
             return;
         };
+        if !was_removed {
+            world.unregister_player_entity(self);
+        }
 
         // Shared reset (clears transient state, sends CRespawn)
         player_arc.reset(world.clone(), ResetReason::Respawn);
@@ -887,34 +884,6 @@ impl Player {
 
         // TODO: send mob effect packets once effects are implemented
         // TODO: send CInitializeBorder once world border is implemented
-
-        // Broadcast respawned entity to other players
-        // Vanilla: ChunkMap.addEntity -> addPairing -> sendPairingData
-        // TODO: also send SetEquipment + UpdateAttributes in the bundle
-        let player_type_id = vanilla_entities::PLAYER.id() as i32;
-        let spawn_packet = CAddEntity::player(
-            self.id(),
-            self.gameprofile.id,
-            player_type_id,
-            spawn.x,
-            spawn.y,
-            spawn.z,
-            0.0,
-            0.0,
-        );
-        let entity_data = self.entity_data.lock().pack_all();
-        let entity_id = self.id();
-        world.players.iter_players(|_, p| {
-            if p.id() != entity_id {
-                p.send_bundle(|bundle| {
-                    bundle.add(spawn_packet.clone());
-                    if !entity_data.is_empty() {
-                        bundle.add(CSetEntityData::new(entity_id, entity_data.clone()));
-                    }
-                });
-            }
-            true
-        });
 
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
         player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
@@ -1177,6 +1146,7 @@ impl Player {
                     event: GameEventType::LevelChunksLoadStart,
                     data: 0.0,
                 });
+                world.register_respawned_player_entity(self);
             }
         }
     }
@@ -1340,6 +1310,10 @@ impl Entity for Player {
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
+    }
+
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
     }
 
     fn max_up_step(&self) -> f32 {
