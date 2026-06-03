@@ -1014,6 +1014,34 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
+    /// Sets the vanilla shift-key-down shared flag.
+    fn set_shared_shift_key_down(&self, shift_key_down: bool) {
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_shift_key_down(shift_key_down);
+        }
+    }
+
+    /// Sets the vanilla swimming shared flag.
+    fn set_shared_swimming(&self, swimming: bool) {
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_swimming(swimming);
+        }
+    }
+
+    /// Sets the vanilla sprinting shared flag.
+    fn set_shared_sprinting(&self, sprinting: bool) {
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_sprinting(sprinting);
+        }
+    }
+
+    /// Sets the vanilla fall-flying shared flag.
+    fn set_shared_fall_flying(&self, fall_flying: bool) {
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_fall_flying(fall_flying);
+        }
+    }
+
     /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
     fn default_can_walk_on_powder_snow(&self) -> bool {
         REGISTRY.entity_types.is_in_tag(
@@ -2549,6 +2577,7 @@ pub trait LivingEntity: Entity {
 
     /// Sets whether this entity is fall flying.
     fn set_fall_flying(&self, fall_flying: bool) {
+        self.set_shared_fall_flying(fall_flying);
         self.living_base().set_fall_flying(fall_flying);
     }
 
@@ -2584,6 +2613,7 @@ pub trait LivingEntity: Entity {
 
     /// Sets whether the entity is sprinting.
     fn set_sprinting(&self, sprinting: bool) {
+        self.set_shared_sprinting(sprinting);
         self.living_base().set_sprinting(sprinting);
     }
 

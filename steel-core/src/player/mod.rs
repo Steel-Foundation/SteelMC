@@ -33,7 +33,6 @@ mod tick_state;
 pub use abilities::Abilities;
 use chat_state::ChatState;
 use container_counter::ContainerCounter;
-use entity_state::EntityState;
 use food_data::FoodData;
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -233,9 +232,6 @@ pub struct Player {
     /// Local tick and once-per-tick packet state.
     tick_state: SyncMutex<PlayerTickState>,
 
-    /// Player-local pose and shared-flag inputs.
-    entity_state: SyncMutex<EntityState>,
-
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
     pub abilities: SyncMutex<Abilities>,
 
@@ -363,7 +359,6 @@ impl Player {
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
             tick_state: SyncMutex::new(PlayerTickState::new()),
-            entity_state: SyncMutex::new(EntityState::new()),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             living_base,
@@ -447,7 +442,6 @@ impl Player {
 
         self.broadcast_inventory_changes();
         self.update_pose();
-        self.update_shared_flags();
         self.sync_entity_data();
 
         {

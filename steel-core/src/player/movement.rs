@@ -895,7 +895,7 @@ impl Player {
             }
         }
 
-        // Shared flags are updated once per tick in tick() → update_shared_flags().
+        // Dirty shared flags are synced once per tick by sync_entity_data().
     }
 }
 

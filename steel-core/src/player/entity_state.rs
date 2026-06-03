@@ -1,6 +1,6 @@
 //! Core entity state flags for a player.
 //!
-//! Groups player-local pose inputs such as swimming and sneaking.
+//! Groups player pose and shared-flag helpers.
 
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
@@ -14,7 +14,7 @@ use steel_utils::types::GameType;
 use steel_utils::{BlockStateId, WorldAabb};
 
 use crate::behavior::BlockCollisionContext;
-use crate::entity::{Entity, EntitySharedFlags, LivingEntity};
+use crate::entity::{Entity, EntitySyncedData, LivingEntity};
 use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
@@ -73,51 +73,6 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
     }
 }
 
-/// Player-local pose and shared-flag inputs.
-pub(super) struct EntityState {
-    /// Whether the vanilla swimming shared flag is set.
-    swimming: bool,
-    /// Whether the player is sneaking (shift key down).
-    crouching: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct EntityStateSnapshot {
-    pub swimming: bool,
-    pub crouching: bool,
-}
-
-impl EntityState {
-    #[must_use]
-    pub(super) const fn new() -> Self {
-        Self {
-            swimming: false,
-            crouching: false,
-        }
-    }
-
-    #[must_use]
-    pub(super) const fn snapshot(&self) -> EntityStateSnapshot {
-        EntityStateSnapshot {
-            swimming: self.swimming,
-            crouching: self.crouching,
-        }
-    }
-
-    pub(super) const fn set_swimming(&mut self, swimming: bool) {
-        self.swimming = swimming;
-    }
-
-    pub(super) const fn set_crouching(&mut self, crouching: bool) {
-        self.crouching = crouching;
-    }
-
-    pub(super) const fn reset_transient(&mut self) {
-        self.swimming = false;
-        self.crouching = false;
-    }
-}
-
 impl Player {
     /// Returns vanilla `Avatar.POSES` dimensions for a player pose.
     pub(super) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
@@ -130,10 +85,6 @@ impl Player {
             EntityPose::Dying => PLAYER_DYING_DIMENSIONS,
             _ => PLAYER_STANDING_DIMENSIONS,
         }
-    }
-
-    pub(super) fn entity_state_snapshot(&self) -> EntityStateSnapshot {
-        self.entity_state.lock().snapshot()
     }
 
     #[must_use]
@@ -165,7 +116,8 @@ impl Player {
     }
 
     pub(super) fn reset_entity_state(&self) {
-        self.entity_state.lock().reset_transient();
+        self.set_shared_swimming(false);
+        self.set_shared_shift_key_down(false);
         self.clear_sleeping_pos();
         self.set_fall_flying(false);
         self.set_sprinting(false);
@@ -173,56 +125,34 @@ impl Player {
 
     /// Returns true if the player is shifting (sneaking).
     pub fn is_crouching(&self) -> bool {
-        self.entity_state.lock().snapshot().crouching
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
     /// Sets whether the player is shifting (sneaking).
     pub fn set_crouching(&self, crouching: bool) {
-        self.entity_state.lock().set_crouching(crouching);
-    }
-
-    /// Packs `EntityState` booleans into the vanilla shared flags byte and writes
-    /// it into `entity_data.shared_flags`. Dirty-tracking in [`SyncedValue`]
-    /// ensures a `SetEntityData` packet is only sent when the value changes.
-    pub(super) fn update_shared_flags(&self) {
-        let state = self.entity_state_snapshot();
-        let mut flags = EntitySharedFlags::empty();
-
-        flags.set(
-            EntitySharedFlags::ON_FIRE,
-            self.is_on_fire() || self.has_visual_fire(),
-        );
-        // TODO: invisible, glowing
-        flags.set(EntitySharedFlags::SHIFT_KEY_DOWN, state.crouching);
-        flags.set(EntitySharedFlags::SWIMMING, state.swimming);
-        flags.set(EntitySharedFlags::SPRINTING, self.is_sprinting());
-        flags.set(EntitySharedFlags::FALL_FLYING, self.is_fall_flying());
-
-        self.entity_data
-            .lock()
-            .base_mut()
-            .shared_flags
-            .set(flags.metadata_byte());
+        self.set_shared_shift_key_down(crouching);
     }
 
     /// Returns true if vanilla player rules consider the player swimming.
     #[must_use]
     pub fn is_swimming(&self) -> bool {
-        let state = self.entity_state_snapshot();
-        state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_swimming)
+            && !self.is_flying()
+            && self.game_mode() != GameType::Spectator
     }
 
     fn set_swimming(&self, swimming: bool) {
-        self.entity_state.lock().set_swimming(swimming);
+        self.set_shared_swimming(swimming);
     }
 
     /// Updates the vanilla swimming shared flag.
     pub(super) fn update_swimming(&self) {
-        let state = self.entity_state_snapshot();
         let world = self.get_world();
         let block_fluid = get_fluid_state(&world, self.block_position());
         let swimming = select_swimming_state(
-            state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator,
+            self.is_swimming(),
             SwimmingEnvironment {
                 sprinting: self.is_sprinting(),
                 passenger: self.is_passenger(),
@@ -286,14 +216,13 @@ impl Player {
     /// Priority: `Sleeping` > `Swimming` > `FallFlying` > `Sneaking` > `Standing`
     // TODO: Add SpinAttack pose (requires riptide trident)
     pub(super) fn get_desired_pose(&self) -> EntityPose {
-        let es = self.entity_state_snapshot();
         if self.is_sleeping() {
             EntityPose::Sleeping
-        } else if es.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator {
+        } else if self.is_swimming() {
             EntityPose::Swimming
         } else if self.is_fall_flying() {
             EntityPose::FallFlying
-        } else if es.crouching && !self.is_flying() {
+        } else if self.is_crouching() && !self.is_flying() {
             EntityPose::Sneaking
         } else {
             EntityPose::Standing

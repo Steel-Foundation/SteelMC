@@ -20,6 +20,18 @@ pub trait EntitySyncedData: Send + Sync {
     /// Returns the shared vanilla swimming flag.
     fn is_swimming(&self) -> bool;
 
+    /// Sets the shared vanilla shift-key-down flag.
+    fn set_shift_key_down(&self, shift_key_down: bool);
+
+    /// Sets the shared vanilla swimming flag.
+    fn set_swimming(&self, swimming: bool);
+
+    /// Sets the shared vanilla sprinting flag.
+    fn set_sprinting(&self, sprinting: bool);
+
+    /// Sets the shared vanilla fall-flying flag.
+    fn set_fall_flying(&self, fall_flying: bool);
+
     /// Sets the shared vanilla on-fire flag.
     fn set_base_on_fire_flag(&self, on_fire: bool);
 
@@ -57,18 +69,47 @@ where
         .contains(EntitySharedFlags::SWIMMING)
     }
 
+    fn set_shift_key_down(&self, shift_key_down: bool) {
+        self.set_shared_flag(EntitySharedFlags::SHIFT_KEY_DOWN, shift_key_down);
+    }
+
+    fn set_swimming(&self, swimming: bool) {
+        self.set_shared_flag(EntitySharedFlags::SWIMMING, swimming);
+    }
+
+    fn set_sprinting(&self, sprinting: bool) {
+        self.set_shared_flag(EntitySharedFlags::SPRINTING, sprinting);
+    }
+
+    fn set_fall_flying(&self, fall_flying: bool) {
+        self.set_shared_flag(EntitySharedFlags::FALL_FLYING, fall_flying);
+    }
+
     fn set_base_on_fire_flag(&self, on_fire: bool) {
-        let mut entity_data = self.lock();
-        let base = VanillaEntityData::base_mut(&mut *entity_data);
-        let mut flags = EntitySharedFlags::from_metadata_byte(*base.shared_flags.get());
-        flags.set(EntitySharedFlags::ON_FIRE, on_fire);
-        base.shared_flags.set(flags.metadata_byte());
+        self.set_shared_flag(EntitySharedFlags::ON_FIRE, on_fire);
     }
 
     fn set_base_ticks_frozen(&self, ticks_frozen: i32) {
         VanillaEntityData::base_mut(&mut *self.lock())
             .ticks_frozen
             .set(ticks_frozen);
+    }
+}
+
+trait SharedFlagSetter {
+    fn set_shared_flag(&self, flag: EntitySharedFlags, value: bool);
+}
+
+impl<T> SharedFlagSetter for SyncMutex<T>
+where
+    T: VanillaEntityData + Send + Sync,
+{
+    fn set_shared_flag(&self, flag: EntitySharedFlags, value: bool) {
+        let mut entity_data = self.lock();
+        let base = VanillaEntityData::base_mut(&mut *entity_data);
+        let mut flags = EntitySharedFlags::from_metadata_byte(*base.shared_flags.get());
+        flags.set(flag, value);
+        base.shared_flags.set(flags.metadata_byte());
     }
 }
 
@@ -120,6 +161,30 @@ mod tests {
             .set(EntitySharedFlags::SWIMMING.metadata_byte());
 
         assert!(EntitySyncedData::is_swimming(&data));
+    }
+
+    #[test]
+    fn synced_data_writes_individual_shared_flags_without_stomping() {
+        let data = SyncMutex::new(ItemEntityData::new());
+
+        EntitySyncedData::set_shift_key_down(&data, true);
+        EntitySyncedData::set_swimming(&data, true);
+        EntitySyncedData::set_sprinting(&data, true);
+        EntitySyncedData::set_fall_flying(&data, true);
+
+        let flags = EntitySharedFlags::from_metadata_byte(*data.lock().base().shared_flags.get());
+        assert!(flags.contains(EntitySharedFlags::SHIFT_KEY_DOWN));
+        assert!(flags.contains(EntitySharedFlags::SWIMMING));
+        assert!(flags.contains(EntitySharedFlags::SPRINTING));
+        assert!(flags.contains(EntitySharedFlags::FALL_FLYING));
+
+        EntitySyncedData::set_swimming(&data, false);
+
+        let flags = EntitySharedFlags::from_metadata_byte(*data.lock().base().shared_flags.get());
+        assert!(flags.contains(EntitySharedFlags::SHIFT_KEY_DOWN));
+        assert!(!flags.contains(EntitySharedFlags::SWIMMING));
+        assert!(flags.contains(EntitySharedFlags::SPRINTING));
+        assert!(flags.contains(EntitySharedFlags::FALL_FLYING));
     }
 
     #[test]
