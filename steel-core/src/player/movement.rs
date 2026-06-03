@@ -12,6 +12,7 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
+use steel_registry::vanilla_mob_effects;
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
@@ -73,6 +74,29 @@ struct AcceptedMovementBroadcast {
     pitch: f32,
     on_ground: bool,
     client_delta: DVec3,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PlayerFloatingValidation {
+    y_dist: f64,
+    player_stands_on_something: bool,
+    is_spectator: bool,
+    server_allows_flight: bool,
+    may_fly: bool,
+    has_levitation: bool,
+    is_fall_flying: bool,
+}
+
+impl PlayerFloatingValidation {
+    fn can_violate(self) -> bool {
+        self.y_dist >= -0.03125
+            && !self.player_stands_on_something
+            && !self.is_spectator
+            && !self.server_allows_flight
+            && !self.may_fly
+            && !self.has_levitation
+            && !self.is_fall_flying
+    }
 }
 
 impl Player {
@@ -601,14 +625,17 @@ impl Player {
         is_spectator: bool,
         is_fall_flying: bool,
     ) {
-        let may_fly = self.abilities.lock().may_fly;
-        // TODO: Add levitation and auto-spin exemptions when those systems exist.
-        let can_violate_floating = y_dist >= -0.03125
-            && !player_stands_on_something
-            && !is_spectator
-            && !self.config.allow_flight
-            && !may_fly
-            && !is_fall_flying;
+        // TODO: Add auto-spin exemption when riptide/spin attack state exists.
+        let can_violate_floating = PlayerFloatingValidation {
+            y_dist,
+            player_stands_on_something,
+            is_spectator,
+            server_allows_flight: self.config.allow_flight,
+            may_fly: self.abilities.lock().may_fly,
+            has_levitation: self.has_mob_effect(vanilla_mob_effects::LEVITATION),
+            is_fall_flying,
+        }
+        .can_violate();
 
         let client_is_floating = can_violate_floating && Self::no_blocks_around_entity(world, self);
         self.movement
@@ -884,5 +911,27 @@ mod tests {
         assert_eq!(wrap_degrees(181.0), -179.0);
         assert_eq!(wrap_degrees(-181.0), 179.0);
         assert_eq!(wrap_degrees(90.0), 90.0);
+    }
+
+    #[test]
+    fn floating_validation_exempts_levitation_like_vanilla() {
+        let validation = PlayerFloatingValidation {
+            y_dist: 0.0,
+            player_stands_on_something: false,
+            is_spectator: false,
+            server_allows_flight: false,
+            may_fly: false,
+            has_levitation: false,
+            is_fall_flying: false,
+        };
+
+        assert!(validation.can_violate());
+        assert!(
+            !PlayerFloatingValidation {
+                has_levitation: true,
+                ..validation
+            }
+            .can_violate()
+        );
     }
 }
