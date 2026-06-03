@@ -29,10 +29,6 @@ impl SlimeBlock {
 
     #[must_use]
     fn velocity_after_fall(context: EntityLandingContext) -> DVec3 {
-        if context.suppresses_bounce {
-            return context.default_velocity_after_fall_on();
-        }
-
         if context.velocity.y >= 0.0 {
             return context.velocity;
         }
@@ -130,14 +126,6 @@ mod tests {
             SlimeBlock::velocity_after_fall(landing(DVec3::new(0.0, -2.0, 0.0), false, false));
 
         assert_eq!(velocity, DVec3::new(0.0, 1.6, 0.0));
-    }
-
-    #[test]
-    fn suppressing_bounce_uses_default_landing_velocity() {
-        let velocity =
-            SlimeBlock::velocity_after_fall(landing(DVec3::new(0.5, -2.0, 0.75), true, true));
-
-        assert_eq!(velocity, DVec3::new(0.5, 0.0, 0.75));
     }
 
     #[test]
