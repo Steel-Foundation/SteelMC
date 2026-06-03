@@ -12,7 +12,7 @@ mod redstone;
 pub mod vegetation;
 
 pub use building::{
-    CampfireBlock, DoorBlock, FenceBlock, HoneyBlock, LavaCauldronBlock, MagmaBlock,
+    CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock, MagmaBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, StairBlock,
     WeatherState, WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
     WeatheringCopperSlabBlock, WeatheringCopperStairBlock,

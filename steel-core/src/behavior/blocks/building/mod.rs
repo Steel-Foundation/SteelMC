@@ -1,6 +1,7 @@
 mod campfire_block;
 mod door_block;
 mod fence_block;
+mod hay_block;
 mod honey_block;
 mod lava_cauldron_block;
 mod magma_block;
@@ -15,6 +16,7 @@ mod weathering_block;
 pub use campfire_block::CampfireBlock;
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
 pub use fence_block::FenceBlock;
+pub use hay_block::HayBlock;
 pub use honey_block::HoneyBlock;
 pub use lava_cauldron_block::LavaCauldronBlock;
 pub use magma_block::MagmaBlock;
