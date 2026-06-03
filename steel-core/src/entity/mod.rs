@@ -180,7 +180,7 @@ fn trapdoor_usable_as_ladder_state(
             == trapdoor_state.try_get_value(&BlockStateProperties::FACING)
 }
 
-fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DVec3 {
+pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DVec3 {
     if input.length_squared() < 1.0E-7 {
         return DVec3::ZERO;
     }
@@ -1165,6 +1165,27 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Equivalent to vanilla's `Entity.getEyeY()`.
     fn get_eye_y(&self) -> f64 {
         self.position().y + self.get_eye_height()
+    }
+
+    /// Calculates vanilla `Entity.calculateViewVector()`.
+    fn calculate_view_vector(&self, pitch_degrees: f32, yaw_degrees: f32) -> DVec3 {
+        let pitch = pitch_degrees.to_radians();
+        let yaw = -yaw_degrees.to_radians();
+        let yaw_cos = yaw.cos();
+        let yaw_sin = yaw.sin();
+        let pitch_cos = pitch.cos();
+        let pitch_sin = pitch.sin();
+        DVec3::new(
+            f64::from(yaw_sin * pitch_cos),
+            f64::from(-pitch_sin),
+            f64::from(yaw_cos * pitch_cos),
+        )
+    }
+
+    /// Returns vanilla `Entity.getLookAngle()`.
+    fn look_angle(&self) -> DVec3 {
+        let (yaw, pitch) = self.rotation();
+        self.calculate_view_vector(pitch, yaw)
     }
 
     /// Gets the entity's velocity in blocks per tick.
@@ -3295,6 +3316,20 @@ mod tests {
             get_input_vector(DVec3::new(0.0, 0.0, 1.0), 0.5, 90.0),
             DVec3::new(-0.5, 0.0, 0.0),
         );
+    }
+
+    #[test]
+    fn look_angle_matches_vanilla_view_vector_axes() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+
+        entity.set_rotation((0.0, 0.0));
+        assert_vec3_close(entity.look_angle(), DVec3::new(0.0, 0.0, 1.0));
+
+        entity.set_rotation((90.0, 0.0));
+        assert_vec3_close(entity.look_angle(), DVec3::new(-1.0, 0.0, 0.0));
+
+        entity.set_rotation((0.0, 90.0));
+        assert_vec3_close(entity.look_angle(), DVec3::new(0.0, -1.0, 0.0));
     }
 
     #[test]

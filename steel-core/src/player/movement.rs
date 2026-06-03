@@ -15,7 +15,9 @@ use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
-use crate::entity::{AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity};
+use crate::entity::{
+    AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity, get_input_vector,
+};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
@@ -798,6 +800,16 @@ impl Player {
     #[must_use]
     pub fn last_client_input(&self) -> PlayerInput {
         self.movement.lock().last_client_input()
+    }
+
+    /// Returns vanilla `ServerPlayer.getLastClientMoveIntent()`.
+    #[must_use]
+    pub fn last_client_move_intent(&self) -> DVec3 {
+        get_input_vector(
+            self.last_client_input().movement_input(),
+            1.0,
+            self.rotation().0,
+        )
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).

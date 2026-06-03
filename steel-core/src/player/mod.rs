@@ -263,18 +263,12 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let (yaw, pitch) = self.rotation();
-        let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
         let block_interaction_range = self
             .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);
-        let direction = DVec3::new(
-            -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
-            -pitch_rad.sin() * block_interaction_range,
-            pitch_rad.cos() * yaw_rad.cos() * block_interaction_range,
-        );
+        let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
         (start_pos, end_pos)
