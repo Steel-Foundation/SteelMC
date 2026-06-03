@@ -1217,6 +1217,11 @@ impl EntityBase {
         self.relationships.lock().remove_passenger_id(passenger_id)
     }
 
+    /// Stops riding the current vehicle, if any.
+    pub fn stop_riding(&self) {
+        self.stop_riding_relationship();
+    }
+
     /// Sets the vanilla boarding cooldown in ticks.
     pub(crate) fn set_boarding_cooldown(&self, boarding_cooldown: i32) {
         self.relationships.lock().boarding_cooldown = boarding_cooldown;

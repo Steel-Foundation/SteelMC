@@ -13,7 +13,7 @@ use steel_registry::blocks::{
 };
 use steel_registry::data_components::vanilla_components::{EquippableSlot, GLIDER};
 use steel_registry::entity_data::{DataValue, EntityPose};
-use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::entity_type::{EntityAttachment, EntityTypeRef};
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
@@ -564,6 +564,7 @@ mod registry;
 mod shared_flags;
 mod storage;
 mod synced_data;
+mod ticking;
 mod tracker;
 
 use crate::portal::TeleportTransition;
@@ -594,6 +595,7 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
 pub use storage::EntityStorage;
 pub use synced_data::EntitySyncedData;
+pub(crate) use ticking::tick_vehicle_passengers;
 pub use tracker::EntityTracker;
 
 /// Type alias for a shared entity reference.
@@ -792,6 +794,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.vehicle().is_some()
     }
 
+    /// Stops riding the current vehicle, if any.
+    ///
+    /// Mirrors vanilla `Entity.stopRiding`.
+    fn stop_riding(&self) {
+        self.base().stop_riding();
+    }
+
     /// Gets this entity's direct passengers.
     ///
     /// Mirrors vanilla `Entity.getPassengers`.
@@ -833,6 +842,63 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla `Entity.hasPassenger(Entity)`.
     fn has_passenger(&self, passenger: &dyn Entity) -> bool {
         self.base().has_passenger_id(passenger.id())
+    }
+
+    /// Returns the current direct passenger index for attachment lookup.
+    fn passenger_index(&self, passenger: &dyn Entity) -> Option<usize> {
+        self.passengers()
+            .iter()
+            .position(|entity| entity.id() == passenger.id())
+    }
+
+    /// Returns this passenger's vehicle attachment point.
+    ///
+    /// Mirrors vanilla `Entity.getVehicleAttachmentPoint`.
+    fn vehicle_attachment_point(&self, _vehicle: &dyn Entity) -> DVec3 {
+        let dimensions = self.base().dimensions();
+        dimensions.attachments.get_clamped(
+            EntityAttachment::Vehicle,
+            0,
+            self.rotation().0,
+            dimensions,
+        )
+    }
+
+    /// Returns this vehicle's passenger attachment point.
+    ///
+    /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
+    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+        let dimensions = self.base().dimensions();
+        let passenger_index = match self.passenger_index(passenger) {
+            Some(passenger_index) => passenger_index,
+            None => 0,
+        };
+        dimensions.attachments.get_clamped(
+            EntityAttachment::Passenger,
+            passenger_index,
+            self.rotation().0,
+            dimensions,
+        )
+    }
+
+    /// Returns the world position where `passenger` should ride this vehicle.
+    ///
+    /// Mirrors vanilla `Entity.getPassengerRidingPosition`.
+    fn passenger_riding_position(&self, passenger: &dyn Entity) -> DVec3 {
+        self.position() + self.passenger_attachment_point(passenger)
+    }
+
+    /// Repositions a direct passenger from this vehicle's attachment point.
+    ///
+    /// Mirrors vanilla `Entity.positionRider`.
+    fn position_rider(&self, passenger: &dyn Entity) {
+        if !self.has_passenger(passenger) {
+            return;
+        }
+
+        let riding_position = self.passenger_riding_position(passenger);
+        let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
+        passenger.set_position(riding_position - vehicle_attachment);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -969,6 +1035,17 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Steel keeps the fallback empty because many vanilla subclasses override
     /// tick without calling `super.tick()`.
     fn tick(&self) {}
+
+    /// Called every game tick while this entity is riding another entity.
+    ///
+    /// Mirrors vanilla `Entity.rideTick`.
+    fn ride_tick(&self) {
+        self.set_velocity(DVec3::ZERO);
+        self.tick();
+        if let Some(vehicle) = self.vehicle() {
+            vehicle.position_rider(self.as_entity_event_source());
+        }
+    }
 
     /// Runs the vanilla base-tick physics pieces Steel currently implements.
     ///

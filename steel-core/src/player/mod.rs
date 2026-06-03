@@ -85,7 +85,7 @@ use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
-    RemovalReason, SharedEntity,
+    RemovalReason, SharedEntity, tick_vehicle_passengers,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -364,7 +364,7 @@ impl Player {
         clippy::cast_possible_truncation,
         reason = "world coordinates are always within i32 range in a valid Minecraft world"
     )]
-    pub fn tick(&self) {
+    pub fn tick(&self, server_tick: i32) {
         self.advance_tick();
         self.advance_tick_count();
 
@@ -485,6 +485,16 @@ impl Player {
         }
 
         self.connection.tick();
+
+        let world = self.get_world();
+        let mut post_tick = |entity: &SharedEntity| {
+            entity.send_changes(server_tick);
+            if let Some(dirty_data) = entity.pack_dirty_entity_data() {
+                let packet = CSetEntityData::new(entity.id(), dirty_data);
+                world.broadcast_to_entity_trackers(entity.id(), packet, None);
+            }
+        };
+        tick_vehicle_passengers(self, server_tick, &mut post_tick);
     }
 
     /// Ticks the death animation timer.

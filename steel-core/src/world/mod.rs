@@ -1041,7 +1041,7 @@ impl World {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
             self.players.iter_players(|_uuid, player| {
-                player.tick();
+                player.tick(tick_count as i32);
                 true
             });
             start.elapsed()

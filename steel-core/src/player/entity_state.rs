@@ -3,7 +3,7 @@
 //! Groups player pose and shared-flag helpers.
 
 use steel_registry::entity_data::EntityPose;
-use steel_registry::entity_type::EntityDimensions;
+use steel_registry::entity_type::{EntityAttachmentPoint, EntityAttachments, EntityDimensions};
 use steel_registry::fluid::FluidStateExt as _;
 use steel_utils::WorldAabb;
 use steel_utils::types::GameType;
@@ -15,9 +15,32 @@ use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
 const POSE_COLLISION_EPSILON: f64 = 1.0E-7;
+const PLAYER_VEHICLE_ATTACHMENT: [EntityAttachmentPoint; 1] =
+    [EntityAttachmentPoint::new(0.0, 0.6, 0.0)];
+const NO_ATTACHMENT_POINTS: [EntityAttachmentPoint; 0] = [];
 
-const PLAYER_STANDING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.5, 1.27);
+const fn player_dimensions_with_vehicle_attachment(
+    width: f32,
+    height: f32,
+    eye_height: f32,
+) -> EntityDimensions {
+    EntityDimensions::new_with_attachments(
+        width,
+        height,
+        eye_height,
+        EntityAttachments::new(
+            &NO_ATTACHMENT_POINTS,
+            &PLAYER_VEHICLE_ATTACHMENT,
+            &NO_ATTACHMENT_POINTS,
+            &NO_ATTACHMENT_POINTS,
+        ),
+    )
+}
+
+const PLAYER_STANDING_DIMENSIONS: EntityDimensions =
+    player_dimensions_with_vehicle_attachment(0.6, 1.8, 1.62);
+const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions =
+    player_dimensions_with_vehicle_attachment(0.6, 1.5, 1.27);
 const PLAYER_SWIMMING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 0.6, 0.4);
 const PLAYER_SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 1.62);
@@ -231,17 +254,27 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::entity_type::EntityAttachment;
+
     use super::*;
+
+    fn assert_vec3_close(left: glam::DVec3, right: glam::DVec3) {
+        let diff = left - right;
+        assert!(
+            diff.length_squared() < 1.0e-12,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
 
     #[test]
     fn player_pose_dimensions_match_vanilla_avatar() {
         assert_eq!(
             Player::dimensions_for_pose(EntityPose::Standing),
-            EntityDimensions::new(0.6, 1.8, 1.62)
+            PLAYER_STANDING_DIMENSIONS
         );
         assert_eq!(
             Player::dimensions_for_pose(EntityPose::Sneaking),
-            EntityDimensions::new(0.6, 1.5, 1.27)
+            PLAYER_CROUCHING_DIMENSIONS
         );
         assert_eq!(
             Player::dimensions_for_pose(EntityPose::FallFlying),
@@ -262,6 +295,32 @@ mod tests {
         assert_eq!(
             Player::dimensions_for_pose(EntityPose::Dying),
             EntityDimensions::new(0.2, 0.2, 1.62)
+        );
+    }
+
+    #[test]
+    fn player_pose_dimensions_preserve_vanilla_vehicle_attachment() {
+        let standing = Player::dimensions_for_pose(EntityPose::Standing);
+        let crouching = Player::dimensions_for_pose(EntityPose::Sneaking);
+        let swimming = Player::dimensions_for_pose(EntityPose::Swimming);
+
+        assert_vec3_close(
+            standing
+                .attachments
+                .get_clamped(EntityAttachment::Vehicle, 0, 0.0, standing),
+            glam::DVec3::new(0.0, 0.6, 0.0),
+        );
+        assert_vec3_close(
+            crouching
+                .attachments
+                .get_clamped(EntityAttachment::Vehicle, 0, 0.0, crouching),
+            glam::DVec3::new(0.0, 0.6, 0.0),
+        );
+        assert_vec3_close(
+            swimming
+                .attachments
+                .get_clamped(EntityAttachment::Vehicle, 0, 0.0, swimming),
+            glam::DVec3::ZERO,
         );
     }
 

@@ -13,6 +13,7 @@ struct EntityTypeEntry {
     height: f32,
     eye_height: f32,
     fixed: bool,
+    attachments: AttachmentsEntry,
     mob_category: String,
     client_tracking_range: i32,
     update_interval: i32,
@@ -25,6 +26,21 @@ struct EntityTypeEntry {
     flags: Option<FlagsEntry>,
     #[serde(default)]
     attributes: Option<FxHashMap<String, f64>>,
+}
+
+#[derive(Deserialize)]
+struct AttachmentsEntry {
+    passenger: Vec<AttachmentPointEntry>,
+    vehicle: Vec<AttachmentPointEntry>,
+    name_tag: Vec<AttachmentPointEntry>,
+    warden_chest: Vec<AttachmentPointEntry>,
+}
+
+#[derive(Deserialize)]
+struct AttachmentPointEntry {
+    x: f64,
+    y: f64,
+    z: f64,
 }
 
 fn default_can_serialize() -> bool {
@@ -62,6 +78,18 @@ fn mob_category_variant(category: &str) -> TokenStream {
     }
 }
 
+fn attachment_points(points: &[AttachmentPointEntry]) -> Vec<TokenStream> {
+    points
+        .iter()
+        .map(|point| {
+            let x = Literal::f64_suffixed(point.x);
+            let y = Literal::f64_suffixed(point.y);
+            let z = Literal::f64_suffixed(point.z);
+            quote! { EntityAttachmentPoint::new(#x, #y, #z) }
+        })
+        .collect()
+}
+
 pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/entities.json");
 
@@ -73,7 +101,10 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::entity_type::{EntityDimensions, EntityFlags, EntityType, EntityTypeRegistry, MobCategory};
+        use crate::entity_type::{
+            EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityFlags, EntityType,
+            EntityTypeRegistry, MobCategory,
+        };
         use steel_utils::Identifier;
     });
 
@@ -90,6 +121,10 @@ pub(crate) fn build() -> TokenStream {
         let height = Literal::f32_suffixed(entity_type.height);
         let eye_height = Literal::f32_suffixed(entity_type.eye_height);
         let fixed = entity_type.fixed;
+        let passenger_attachments = attachment_points(&entity_type.attachments.passenger);
+        let vehicle_attachments = attachment_points(&entity_type.attachments.vehicle);
+        let name_tag_attachments = attachment_points(&entity_type.attachments.name_tag);
+        let warden_chest_attachments = attachment_points(&entity_type.attachments.warden_chest);
 
         // Classification
         let mob_category = mob_category_variant(&entity_type.mob_category);
@@ -131,7 +166,17 @@ pub(crate) fn build() -> TokenStream {
                 key: Identifier::vanilla_static(#entity_type_key),
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
-                dimensions: EntityDimensions::new(#width, #height, #eye_height),
+                dimensions: EntityDimensions::new_with_attachments(
+                    #width,
+                    #height,
+                    #eye_height,
+                    EntityAttachments::new(
+                        &[#(#passenger_attachments),*],
+                        &[#(#vehicle_attachments),*],
+                        &[#(#name_tag_attachments),*],
+                        &[#(#warden_chest_attachments),*],
+                    ),
+                ),
                 fixed: #fixed,
                 mob_category: #mob_category,
                 fire_immune: #fire_immune,
