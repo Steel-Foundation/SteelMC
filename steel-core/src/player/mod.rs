@@ -1483,6 +1483,24 @@ impl LivingEntity for Player {
         &self.living_base
     }
 
+    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+        let inventory = self.inventory.lock();
+        visitor(inventory.equipment().get_ref(slot));
+    }
+
+    fn with_equipment_slot_mut(
+        &self,
+        slot: EquipmentSlot,
+        visitor: &mut dyn FnMut(&mut ItemStack),
+    ) {
+        let mut inventory = self.inventory.lock();
+        visitor(inventory.equipment_mut().get_mut(slot));
+    }
+
+    fn has_infinite_materials(&self) -> bool {
+        Player::has_infinite_materials(self)
+    }
+
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
@@ -1503,11 +1521,6 @@ impl LivingEntity for Player {
 
     fn is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
-    }
-
-    fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
-        let inventory = self.inventory.lock();
-        self.can_glide_using(inventory.equipment().get_ref(slot), slot)
     }
 
     fn can_glide(&self) -> bool {

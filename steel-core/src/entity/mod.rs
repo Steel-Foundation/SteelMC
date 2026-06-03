@@ -2839,6 +2839,32 @@ pub trait LivingEntity: Entity {
         self.living_base().fall_flying_ticks()
     }
 
+    /// Visits the item in a vanilla living-entity equipment slot.
+    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+        let equipment = self.living_base().equipment().lock();
+        visitor(equipment.get_ref(slot));
+    }
+
+    /// Mutates the item in a vanilla living-entity equipment slot.
+    fn with_equipment_slot_mut(
+        &self,
+        slot: EquipmentSlot,
+        visitor: &mut dyn FnMut(&mut ItemStack),
+    ) {
+        let mut equipment = self.living_base().equipment().lock();
+        visitor(equipment.get_mut(slot));
+    }
+
+    /// Returns whether equipment durability should be skipped for this entity.
+    fn has_infinite_materials(&self) -> bool {
+        false
+    }
+
+    /// Called after an equipped item breaks.
+    fn on_equipped_item_broken(&self, _slot: EquipmentSlot) {
+        // TODO: Broadcast vanilla equipped-item break events once item break callbacks exist.
+    }
+
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
         self.living_base()
@@ -2858,8 +2884,42 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the item in `slot` can be used for vanilla gliding.
-    fn can_glide_using_equipment_slot(&self, _slot: EquipmentSlot) -> bool {
-        false
+    fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
+        let mut can_glide = false;
+        self.with_equipment_slot(slot, &mut |item_stack| {
+            can_glide = self.can_glide_using(item_stack, slot);
+        });
+        can_glide
+    }
+
+    /// Damages one random equipped glider like vanilla `LivingEntity.updateFallFlying()`.
+    fn damage_random_glider(&self) {
+        let mut slots_with_gliders = Vec::new();
+        for slot in EquipmentSlot::ALL {
+            if self.can_glide_using_equipment_slot(slot) {
+                slots_with_gliders.push(slot);
+            }
+        }
+
+        let slot_count = slots_with_gliders.len();
+        if slot_count == 0 {
+            return;
+        }
+
+        let slot_index = self
+            .base()
+            .random()
+            .lock()
+            .next_i32_bounded(slot_count as i32) as usize;
+        let slot_to_damage = slots_with_gliders[slot_index];
+        let has_infinite_materials = self.has_infinite_materials();
+        let mut item_broke = false;
+        self.with_equipment_slot_mut(slot_to_damage, &mut |item_stack| {
+            item_broke = item_stack.hurt_and_break(1, has_infinite_materials);
+        });
+        if item_broke {
+            self.on_equipped_item_broken(slot_to_damage);
+        }
     }
 
     /// Default vanilla `LivingEntity.canGlide()` implementation for overrides.
@@ -3467,11 +3527,12 @@ pub trait LivingEntity: Entity {
     fn update_fall_flying(&self) {
         self.check_fall_distance_accumulation();
         if self.can_glide() {
-            if let Some(_free_fall_interval) =
+            if let Some(free_fall_interval) =
                 fall_flying_free_fall_interval(self.fall_flying_ticks())
             {
-                // TODO: Damage a random glider every second emitted interval once
-                // living equipment mutation is wired through the tick path.
+                if free_fall_interval % 2 == 0 {
+                    self.damage_random_glider();
+                }
                 if let Some(world) = self.level() {
                     world.game_event_at(
                         &vanilla_game_events::ELYTRA_GLIDE,
@@ -3786,7 +3847,6 @@ mod tests {
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
         vehicle: bool,
-        glider_slot: Option<EquipmentSlot>,
     }
 
     impl LivingFluidTestEntity {
@@ -3810,7 +3870,6 @@ mod tests {
                 affected_by_fluids,
                 can_stand_on_fluid: false,
                 vehicle: false,
-                glider_slot: None,
             }
         }
 
@@ -3829,9 +3888,8 @@ mod tests {
             self
         }
 
-        const fn with_glider_slot(mut self, slot: EquipmentSlot) -> Self {
-            self.glider_slot = Some(slot);
-            self
+        fn equip(&self, slot: EquipmentSlot, stack: ItemStack) {
+            self.living_base.equipment().lock().set(slot, stack);
         }
     }
 
@@ -3880,10 +3938,6 @@ mod tests {
 
         fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
             self.can_stand_on_fluid
-        }
-
-        fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
-            self.glider_slot == Some(slot)
         }
     }
 
@@ -4170,10 +4224,29 @@ mod tests {
     }
 
     #[test]
+    fn default_can_glide_uses_living_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_on_ground(false);
+
+        assert!(!entity.can_glide());
+
+        entity.equip(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::ITEMS.elytra),
+        );
+
+        assert!(entity.can_glide());
+    }
+
+    #[test]
     fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
         init_test_registry();
-        let entity =
-            LivingFluidTestEntity::new(0.0, 0.0, true).with_glider_slot(EquipmentSlot::Chest);
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::ITEMS.elytra),
+        );
         entity.set_on_ground(false);
 
         assert!(entity.try_to_start_fall_flying());
@@ -4183,13 +4256,42 @@ mod tests {
     #[test]
     fn try_to_start_fall_flying_rejects_levitation() {
         init_test_registry();
-        let entity =
-            LivingFluidTestEntity::new(0.0, 0.0, true).with_glider_slot(EquipmentSlot::Chest);
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::ITEMS.elytra),
+        );
         entity.set_on_ground(false);
         entity.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
 
         assert!(!entity.try_to_start_fall_flying());
         assert!(!entity.is_fall_flying());
+    }
+
+    #[test]
+    fn update_fall_flying_damages_glider_every_second_event_interval() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::ITEMS.elytra),
+        );
+        entity.set_on_ground(false);
+        for _ in 0..19 {
+            entity.living_base.tick_fall_flying_state(true);
+        }
+
+        entity.update_fall_flying();
+
+        assert_eq!(
+            entity
+                .living_base
+                .equipment()
+                .lock()
+                .get_ref(EquipmentSlot::Chest)
+                .get_damage_value(),
+            1
+        );
     }
 
     #[test]

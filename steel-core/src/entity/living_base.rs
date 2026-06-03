@@ -13,6 +13,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Identifier};
 
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::inventory::equipment::EntityEquipment;
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
@@ -162,6 +163,7 @@ pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
     active_mob_effects: SyncMutex<FxHashMap<MobEffectRef, ActiveMobEffect>>,
+    equipment: SyncMutex<EntityEquipment>,
 }
 
 impl LivingEntityBase {
@@ -182,6 +184,7 @@ impl LivingEntityBase {
             state: SyncMutex::new(LivingEntityState::new(speed)),
             attributes: SyncMutex::new(attributes),
             active_mob_effects: SyncMutex::new(FxHashMap::default()),
+            equipment: SyncMutex::new(EntityEquipment::new()),
         }
     }
 
@@ -189,6 +192,12 @@ impl LivingEntityBase {
     #[inline]
     pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
         &self.attributes
+    }
+
+    /// Returns vanilla `LivingEntity.equipment` storage.
+    #[inline]
+    pub const fn equipment(&self) -> &SyncMutex<EntityEquipment> {
+        &self.equipment
     }
 
     /// Returns whether this living entity has an active vanilla mob effect.
@@ -491,9 +500,12 @@ impl LivingEntityBase {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        test_support::init_test_registry, vanilla_attributes, vanilla_entities, vanilla_mob_effects,
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
+        vanilla_entities, vanilla_items, vanilla_mob_effects,
     };
     use steel_utils::BlockPos;
+
+    use crate::inventory::equipment::EquipmentSlot;
 
     use super::{ActiveMobEffect, LivingEntityBase, LivingTravelInput};
 
@@ -575,6 +587,26 @@ mod tests {
         assert_eq!(base.fall_flying_ticks(), 2);
         base.tick_fall_flying_state(false);
         assert_eq!(base.fall_flying_ticks(), 0);
+    }
+
+    #[test]
+    fn equipment_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert!(base.equipment().lock().is_empty());
+
+        base.equipment().lock().set(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::ITEMS.elytra),
+        );
+
+        assert!(
+            base.equipment()
+                .lock()
+                .get_ref(EquipmentSlot::Chest)
+                .is(&vanilla_items::ITEMS.elytra)
+        );
     }
 
     #[test]
