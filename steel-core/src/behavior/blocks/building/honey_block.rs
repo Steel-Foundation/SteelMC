@@ -206,18 +206,20 @@ impl BlockBehavior for HoneyBlock {
 
     fn entity_inside(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
-        _effect_collector: &mut InsideBlockEffectCollector,
-        _is_precise: bool,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
     ) {
         if Self::is_sliding_down(pos, entity) {
             // TODO: Award the honey-block slide advancement once advancements exist.
             Self::do_slide_movement(entity);
             Self::maybe_do_slide_effects(world, entity);
         }
+
+        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
 }
 

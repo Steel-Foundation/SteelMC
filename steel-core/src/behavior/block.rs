@@ -559,6 +559,25 @@ pub trait BlockBehavior: Send + Sync {
         // Default: no-op
     }
 
+    /// Default entity-inside hook.
+    ///
+    /// Overrides that mirror vanilla `super.entityInside(...)` should call
+    /// [`Self::default_entity_inside`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn default_entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+    }
+
     /// Called when an entity is inside this block's collision area.
     ///
     /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
@@ -568,10 +587,6 @@ pub trait BlockBehavior: Send + Sync {
     /// * `world` - The world
     /// * `pos` - The position of the block
     /// * `entity` - The entity inside the block
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
     fn entity_inside(
         &self,
         state: BlockStateId,
@@ -581,7 +596,7 @@ pub trait BlockBehavior: Send + Sync {
         effect_collector: &mut InsideBlockEffectCollector,
         is_precise: bool,
     ) {
-        // Default: no-op
+        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
 
     /// Called when an entity lands on this block.

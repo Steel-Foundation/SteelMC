@@ -1,3 +1,4 @@
+mod campfire_block;
 mod door_block;
 mod fence_block;
 mod honey_block;
@@ -10,6 +11,7 @@ mod slime_block;
 mod stair_block;
 mod weathering_block;
 
+pub use campfire_block::CampfireBlock;
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
 pub use fence_block::FenceBlock;
 pub use honey_block::HoneyBlock;
