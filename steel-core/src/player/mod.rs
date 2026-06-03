@@ -393,7 +393,7 @@ impl Player {
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(self.position());
 
-        self.base_tick();
+        self.default_tick();
         self.update_swimming();
         self.apply_gravity();
         self.tick_ack_block_changes();

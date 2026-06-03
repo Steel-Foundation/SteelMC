@@ -813,10 +813,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
         )
     }
 
+    /// Default vanilla `Entity.tick()` behavior.
+    ///
+    /// Concrete entity ticks that mirror vanilla `super.tick()` should call this
+    /// rather than calling [`Self::base_tick`] directly.
+    fn default_tick(&self) {
+        self.base_tick();
+    }
+
     /// Called every game tick when the entity is in a ticked chunk.
     ///
     /// Use `self.level()` to access the world for physics, block queries, etc.
     /// The caller (`EntityStorage`) handles post-tick dirty data sync.
+    ///
+    /// Steel keeps the fallback empty because many vanilla subclasses override
+    /// tick without calling `super.tick()`.
     fn tick(&self) {}
 
     /// Runs the vanilla base-tick physics pieces Steel currently implements.
@@ -2624,6 +2635,16 @@ mod tests {
                 .iter()
                 .any(|direction| direction.relative(origin) == neighbor_pos)
         })
+    }
+
+    #[test]
+    fn default_tick_runs_vanilla_entity_base_tick() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+        entity.base().set_boarding_cooldown(2);
+
+        entity.default_tick();
+
+        assert_eq!(entity.base().boarding_cooldown(), 1);
     }
 
     #[test]
