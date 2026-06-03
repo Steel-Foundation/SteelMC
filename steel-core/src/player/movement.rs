@@ -21,8 +21,8 @@ use crate::entity::{
     EntityPositionSyncSnapshot, LivingEntity,
 };
 use crate::physics::{
-    MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE, has_collision,
-    is_colliding_with_new_shapes,
+    MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
+    has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
 };
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -63,41 +63,6 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
         degrees += 360.0;
     }
     degrees
-}
-
-#[must_use]
-fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
-    let error_x = target_pos.x - simulated_pos.x;
-    let mut error_y = target_pos.y - simulated_pos.y;
-    if error_y > -Y_TOLERANCE || error_y < Y_TOLERANCE {
-        error_y = 0.0;
-    }
-    let error_z = target_pos.z - simulated_pos.z;
-    DVec3::new(error_x, error_y, error_z)
-}
-
-#[must_use]
-fn vanilla_post_move_y_dist(target_y: f64, simulated_y: f64) -> f64 {
-    let mut y_dist = target_y - simulated_y;
-    if y_dist > -0.5 || y_dist < 0.5 {
-        y_dist = 0.0;
-    }
-    y_dist
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MovementCollisionValidation {
-    no_physics: bool,
-    moved_wrongly: bool,
-    old_collision: bool,
-    new_collision: bool,
-}
-
-impl MovementCollisionValidation {
-    #[must_use]
-    const fn rejects(self) -> bool {
-        !self.no_physics && ((self.moved_wrongly && !self.old_collision) || self.new_collision)
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -803,44 +768,5 @@ mod tests {
         assert_eq!(wrap_degrees(181.0), -179.0);
         assert_eq!(wrap_degrees(-181.0), 179.0);
         assert_eq!(wrap_degrees(90.0), 90.0);
-    }
-
-    #[test]
-    fn movement_error_delta_matches_vanilla_y_branch() {
-        let delta = movement_error_delta(DVec3::new(10.0, 120.0, -5.0), DVec3::new(8.0, 0.0, -8.0));
-
-        assert_eq!(delta, DVec3::new(2.0, 0.0, 3.0));
-    }
-
-    #[test]
-    fn movement_validation_accepts_no_physics_even_with_new_collision() {
-        assert!(
-            !MovementCollisionValidation {
-                no_physics: true,
-                moved_wrongly: true,
-                old_collision: false,
-                new_collision: true,
-            }
-            .rejects()
-        );
-    }
-
-    #[test]
-    fn movement_validation_rejects_new_collision_for_physical_player() {
-        assert!(
-            MovementCollisionValidation {
-                no_physics: false,
-                moved_wrongly: false,
-                old_collision: false,
-                new_collision: true,
-            }
-            .rejects()
-        );
-    }
-
-    #[test]
-    fn post_move_y_dist_matches_vanilla_y_branch() {
-        assert_eq!(vanilla_post_move_y_dist(64.0, 63.0), 0.0);
-        assert_eq!(vanilla_post_move_y_dist(64.0, 65.0), 0.0);
     }
 }

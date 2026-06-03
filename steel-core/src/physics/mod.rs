@@ -11,6 +11,7 @@
 
 pub mod collision;
 pub(crate) mod entity_move;
+pub mod movement_validation;
 pub(crate) mod physics_state;
 pub mod shapes;
 
@@ -21,18 +22,12 @@ pub use collision::{
 };
 pub(crate) use entity_move::move_entity;
 pub use entity_move::{MoveResult, MoverType};
+pub use movement_validation::{
+    MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, movement_error_delta,
+    vanilla_post_move_y_dist,
+};
 pub(crate) use physics_state::EntityPhysicsState;
 pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_shape};
 
 /// Collision epsilon used for AABB deflation (vanilla constant).
 pub const COLLISION_EPSILON: f64 = 1.0e-5;
-
-/// Movement error threshold for anti-cheat validation (squared distance).
-/// Vanilla uses 0.0625 (1/16 block squared).
-pub const MOVEMENT_ERROR_THRESHOLD: f64 = 0.0625;
-
-/// Y-axis tolerance value used by vanilla's movement-error branch.
-///
-/// Vanilla currently uses `yDist > -0.5 || yDist < 0.5`, which zeroes every
-/// finite Y residual before the moved-wrongly check.
-pub const Y_TOLERANCE: f64 = 0.5;
