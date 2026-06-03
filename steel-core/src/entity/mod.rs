@@ -13,6 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_game_events};
 use steel_utils::locks::SyncMutex;
@@ -28,8 +29,8 @@ use crate::physics::{
     CollisionWorld, MoveResult, MoverType, WorldCollisionProvider,
     move_entity as resolve_entity_movement,
 };
-use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
+use crate::world::{ClipBlockShape, ClipFluid, World};
 use crate::{entity::damage::DamageSource, player::Player};
 
 use entities::ItemEntity;
@@ -98,6 +99,19 @@ const fn direction_step(direction: Direction) -> f64 {
         Direction::Down | Direction::North | Direction::West => -1.0,
         Direction::Up | Direction::South | Direction::East => 1.0,
     }
+}
+
+fn fall_damage_reset_clip_target(
+    position: DVec3,
+    movement: DVec3,
+    fall_distance: f64,
+) -> Option<DVec3> {
+    if fall_distance == 0.0 || movement.length_squared() < 1.0 {
+        return None;
+    }
+
+    let check_distance = movement.length().min(8.0);
+    Some(position + movement.normalize() * check_distance)
 }
 
 /// Allocates a new unique entity ID.
@@ -1246,6 +1260,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
         // Update entity state
         if should_apply_resolved_movement(movement, result.actual_movement) {
+            self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
             self.set_position(result.final_position);
         }
         let movement_flags = EntityMovementFlags::after_move(
@@ -1316,6 +1331,27 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
     fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
         self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
+    }
+
+    /// Resets fall distance when vanilla's fall-damage-resetting clip hits.
+    fn reset_fall_distance_on_resetting_clip(&self, world: &Arc<World>, movement: DVec3) {
+        let Some(check_to) =
+            fall_damage_reset_clip_target(self.position(), movement, self.fall_distance())
+        else {
+            return;
+        };
+
+        let hit = world.clip(
+            self.position(),
+            check_to,
+            ClipBlockShape::FallDamageResetting {
+                entity_is_player: self.entity_type() == &vanilla_entities::PLAYER,
+            },
+            ClipFluid::Water,
+        );
+        if !hit.is_miss() {
+            self.reset_fall_distance();
+        }
     }
 
     /// Mirrors vanilla `Entity.doCheckFallDamage`.
@@ -1678,7 +1714,7 @@ mod tests {
 
     use super::{
         Entity, EntityBase, SharedEntity, closest_open_space_direction,
-        should_apply_resolved_movement,
+        fall_damage_reset_clip_target, should_apply_resolved_movement,
     };
 
     struct PushableTestEntity {
@@ -1769,6 +1805,28 @@ mod tests {
             DVec3::new(1.0, 0.0, 0.0),
             DVec3::ZERO
         ));
+    }
+
+    #[test]
+    fn fall_damage_reset_clip_target_matches_vanilla_thresholds() {
+        let position = DVec3::new(1.0, 2.0, 3.0);
+
+        assert_eq!(
+            fall_damage_reset_clip_target(position, DVec3::new(1.0, 0.0, 0.0), 0.0),
+            None
+        );
+        assert_eq!(
+            fall_damage_reset_clip_target(position, DVec3::new(0.999, 0.0, 0.0), 2.0),
+            None
+        );
+        assert_eq!(
+            fall_damage_reset_clip_target(position, DVec3::new(1.0, 0.0, 0.0), 2.0),
+            Some(DVec3::new(2.0, 2.0, 3.0))
+        );
+        assert_eq!(
+            fall_damage_reset_clip_target(position, DVec3::new(10.0, 0.0, 0.0), 2.0),
+            Some(DVec3::new(9.0, 2.0, 3.0))
+        );
     }
 
     #[test]
