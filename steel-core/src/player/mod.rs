@@ -313,11 +313,6 @@ impl Player {
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
         let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
-        let max_health = living_base
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::MAX_HEALTH)
-            .unwrap_or(20.0) as f32;
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
 
@@ -339,7 +334,7 @@ impl Player {
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
-                data.living_entity_mut().health.set(max_health);
+                living_base.initialize_synced_data(&mut data);
                 data
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),

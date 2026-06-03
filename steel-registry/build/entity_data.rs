@@ -639,6 +639,35 @@ fn concrete_default_overrides(
     overrides
 }
 
+fn layer_has_living_entity_data(
+    layer: &LayerDefinition,
+    layer_indices: &FxHashMap<&str, usize>,
+    layers: &[LayerDefinition],
+) -> bool {
+    let mut current_layer = layer;
+    loop {
+        if current_layer.simple_name == "LivingEntity" {
+            return true;
+        }
+
+        let Some(parent_java_class) = current_layer.parent_java_class.as_ref() else {
+            return false;
+        };
+        let Some(parent_index) = layer_indices.get(parent_java_class.as_str()) else {
+            return false;
+        };
+        current_layer = &layers[*parent_index];
+    }
+}
+
+fn entity_has_living_entity_data(entity: &EntityEntry) -> bool {
+    entity
+        .synched_data
+        .layers
+        .iter()
+        .any(|layer| !layer.fields.is_empty() && layer.simple_name == "LivingEntity")
+}
+
 pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/entities.json");
 
@@ -706,6 +735,15 @@ pub(crate) fn build() -> TokenStream {
 
             /// Returns `true` if any field has been modified.
             fn is_dirty(&self) -> bool;
+        }
+
+        /// Common access to vanilla synchronized data declared by `LivingEntity`.
+        pub trait VanillaLivingEntityData: VanillaEntityData {
+            /// Returns the vanilla living entity-data layer.
+            fn living_entity(&self) -> &LivingEntityData;
+
+            /// Returns the mutable vanilla living entity-data layer.
+            fn living_entity_mut(&mut self) -> &mut LivingEntityData;
         }
     });
 
@@ -825,6 +863,22 @@ pub(crate) fn build() -> TokenStream {
         };
         let layer_accessors =
             layer_accessor_methods(layer, &layer_indices, &layers, quote! { self }, true);
+        let living_entity_data_impl =
+            if layer_has_living_entity_data(layer, &layer_indices, &layers) {
+                quote! {
+                    impl VanillaLivingEntityData for #struct_ident {
+                        fn living_entity(&self) -> &LivingEntityData {
+                            #struct_ident::living_entity(self)
+                        }
+
+                        fn living_entity_mut(&mut self) -> &mut LivingEntityData {
+                            #struct_ident::living_entity_mut(self)
+                        }
+                    }
+                }
+            } else {
+                quote! {}
+            };
 
         // Generate the struct
         stream.extend(quote! {
@@ -898,6 +952,8 @@ pub(crate) fn build() -> TokenStream {
                     #struct_ident::is_dirty(self)
                 }
             }
+
+            #living_entity_data_impl
         });
     }
 
@@ -952,6 +1008,21 @@ pub(crate) fn build() -> TokenStream {
                     #root_field_ident: data
                 }
             }
+        };
+        let living_entity_data_impl = if entity_has_living_entity_data(entity) {
+            quote! {
+                impl VanillaLivingEntityData for #concrete_ident {
+                    fn living_entity(&self) -> &LivingEntityData {
+                        #concrete_ident::living_entity(self)
+                    }
+
+                    fn living_entity_mut(&mut self) -> &mut LivingEntityData {
+                        #concrete_ident::living_entity_mut(self)
+                    }
+                }
+            }
+        } else {
+            quote! {}
         };
 
         stream.extend(quote! {
@@ -1013,6 +1084,8 @@ pub(crate) fn build() -> TokenStream {
                     #concrete_ident::is_dirty(self)
                 }
             }
+
+            #living_entity_data_impl
         });
     }
 

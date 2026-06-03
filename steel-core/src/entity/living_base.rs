@@ -9,6 +9,7 @@ use rustc_hash::FxHashMap;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
+use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Identifier};
 
@@ -176,9 +177,7 @@ impl LivingEntityBase {
     /// Creates living runtime state from an explicit attribute map.
     #[must_use]
     pub fn with_attributes(attributes: AttributeMap) -> Self {
-        let speed = attributes
-            .get_value(vanilla_attributes::MOVEMENT_SPEED)
-            .unwrap_or(0.1) as f32;
+        let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
         Self {
             state: SyncMutex::new(LivingEntityState::new(speed)),
@@ -192,6 +191,18 @@ impl LivingEntityBase {
     #[inline]
     pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
         &self.attributes
+    }
+
+    /// Applies vanilla constructor-time synced-data mutations for living entities.
+    ///
+    /// Vanilla defines `DATA_HEALTH_ID` as `1.0F`, then `LivingEntity` constructs
+    /// its attribute map and calls `setHealth(getMaxHealth())`.
+    pub fn initialize_synced_data<T: VanillaLivingEntityData>(&self, entity_data: &mut T) {
+        let max_health = self
+            .attributes
+            .lock()
+            .required_value(vanilla_attributes::MAX_HEALTH) as f32;
+        entity_data.living_entity_mut().health.set(max_health);
     }
 
     /// Returns vanilla `LivingEntity.equipment` storage.
@@ -501,13 +512,30 @@ impl LivingEntityBase {
 mod tests {
     use steel_registry::{
         item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
-        vanilla_entities, vanilla_items, vanilla_mob_effects,
+        vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items,
+        vanilla_mob_effects,
     };
     use steel_utils::BlockPos;
 
     use crate::inventory::equipment::EquipmentSlot;
 
     use super::{ActiveMobEffect, LivingEntityBase, LivingTravelInput};
+
+    #[test]
+    fn living_constructor_initializes_health_from_max_health() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let mut entity_data = PlayerEntityData::new();
+
+        assert_eq!(*entity_data.living_entity().health.get(), 1.0);
+
+        base.initialize_synced_data(&mut entity_data);
+
+        assert_eq!(
+            *entity_data.living_entity().health.get(),
+            vanilla_attributes::MAX_HEALTH.default_value as f32
+        );
+    }
 
     #[test]
     fn fall_damage_starts_above_safe_fall_distance() {

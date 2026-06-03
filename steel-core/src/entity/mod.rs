@@ -2711,8 +2711,7 @@ pub trait LivingEntity: Entity {
     fn get_max_health(&self) -> f32 {
         self.attributes()
             .lock()
-            .get_value(vanilla_attributes::MAX_HEALTH)
-            .unwrap_or(20.0) as f32
+            .required_value(vanilla_attributes::MAX_HEALTH) as f32
     }
 
     /// Heals the entity by the specified amount.
@@ -2765,8 +2764,7 @@ pub trait LivingEntity: Entity {
     fn get_attribute_gravity(&self) -> f64 {
         self.attributes()
             .lock()
-            .get_value(vanilla_attributes::GRAVITY)
-            .unwrap_or(0.08)
+            .required_value(vanilla_attributes::GRAVITY)
     }
 
     /// Returns vanilla `LivingEntity.getEffectiveGravity()`.
