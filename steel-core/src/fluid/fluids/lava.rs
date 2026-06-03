@@ -12,14 +12,12 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
-use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior};
 use crate::fluid::{
@@ -140,14 +138,7 @@ impl FluidBehavior for LavaFluid {
         effect_collector.apply(InsideBlockEffectType::LavaIgnite);
         effect_collector.run_after(
             InsideBlockEffectType::LavaIgnite,
-            Box::new(|entity| {
-                if entity.fire_immune() {
-                    return;
-                }
-                if entity.hurt(&DamageSource::environment(&vanilla_damage_types::LAVA), 4.0) {
-                    // TODO: Play vanilla burn sound once shared entity sound emission exists.
-                }
-            }),
+            Box::new(|entity| entity.lava_hurt()),
         );
     }
 

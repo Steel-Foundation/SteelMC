@@ -790,6 +790,10 @@ impl Entity for ItemEntity {
         self.on_pos(0.999_999)
     }
 
+    fn should_play_lava_hurt_sound(&self) -> bool {
+        self.get_health() <= 0 || self.tick_count() % 10 == 0
+    }
+
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
         Some(self)
     }
@@ -886,5 +890,23 @@ mod tests {
         let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
 
         assert!(!item.blocks_building());
+    }
+
+    #[test]
+    fn item_lava_hurt_sound_uses_vanilla_interval() {
+        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+
+        assert!(item.should_play_lava_hurt_sound());
+        item.advance_tick_count();
+        assert!(!item.should_play_lava_hurt_sound());
+
+        for _ in 1..10 {
+            item.advance_tick_count();
+        }
+        assert!(item.should_play_lava_hurt_sound());
+
+        item.set_health(0);
+        item.advance_tick_count();
+        assert!(item.should_play_lava_hurt_sound());
     }
 }

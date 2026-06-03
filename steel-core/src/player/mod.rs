@@ -1369,6 +1369,10 @@ impl Entity for Player {
             .is(&vanilla_items::ITEMS.leather_boots)
     }
 
+    fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
+        world.may_interact(self, pos)
+    }
+
     fn is_swimming(&self) -> bool {
         Player::is_swimming(self)
     }

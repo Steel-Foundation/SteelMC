@@ -63,17 +63,13 @@ enum BlockEffectSegmentResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BlockEffectFireFreezeSnapshot {
-    was_on_fire: bool,
-    was_freezing: bool,
+struct BlockEffectFireSnapshot {
     previous_remaining_fire_ticks: i32,
 }
 
-impl BlockEffectFireFreezeSnapshot {
+impl BlockEffectFireSnapshot {
     fn from_entity(entity: &dyn Entity) -> Self {
         Self {
-            was_on_fire: entity.is_on_fire(),
-            was_freezing: entity.is_freezing(),
             previous_remaining_fire_ticks: entity.remaining_fire_ticks(),
         }
     }
@@ -82,17 +78,11 @@ impl BlockEffectFireFreezeSnapshot {
 fn finish_inside_block_effects(
     entity: &dyn Entity,
     effect_collector: &mut InsideBlockEffectCollector,
-    before_effects: BlockEffectFireFreezeSnapshot,
+    before_effects: BlockEffectFireSnapshot,
 ) {
     effect_collector.apply_and_clear(entity);
     if entity.is_removed() {
         return;
-    }
-
-    let extinguished = before_effects.was_on_fire && !entity.is_on_fire()
-        || before_effects.was_freezing && !entity.is_freezing();
-    if extinguished {
-        // TODO: Play vanilla extinguish sound once shared entity sound emission exists.
     }
 
     let ignited_this_tick =
@@ -339,7 +329,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     let mut visited_blocks = FxHashSet::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
-    let before_effects = BlockEffectFireFreezeSnapshot::from_entity(entity);
+    let before_effects = BlockEffectFireSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {
         let mut remaining_iterations = 16;
         let delta = movement.to() - movement.from();
@@ -1069,6 +1059,28 @@ pub trait Entity: EntityEventSource + Send + Sync {
         0
     }
 
+    /// Returns whether vanilla should play this entity's lava hurt sound.
+    fn should_play_lava_hurt_sound(&self) -> bool {
+        true
+    }
+
+    /// Applies vanilla lava-contact damage after lava ignition effects.
+    fn lava_hurt(&self) {
+        if self.fire_immune() {
+            return;
+        }
+
+        if self.hurt(&DamageSource::environment(&vanilla_damage_types::LAVA), 4.0)
+            && self.should_play_lava_hurt_sound()
+        {
+            let pitch = {
+                let mut random = self.base().random().lock();
+                2.0 + random.next_f32() * 0.4
+            };
+            self.play_sound(sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
+        }
+    }
+
     /// Maximum vanilla `remainingFireTicks` this entity can store.
     fn remaining_fire_ticks_cap(&self) -> Option<i32> {
         None
@@ -1501,6 +1513,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns vanilla movement side effects emitted by this entity.
     fn movement_emission(&self) -> EntityMovementEmission {
         EntityMovementEmission::All
+    }
+
+    /// Returns whether this entity may modify the world at a position.
+    ///
+    /// Vanilla `Entity.mayInteract` defaults to true; player-like entities can
+    /// apply world permission checks through overrides.
+    fn may_interact(&self, _world: &World, _pos: BlockPos) -> bool {
+        true
     }
 
     /// Returns this entity's vanilla sound source category.

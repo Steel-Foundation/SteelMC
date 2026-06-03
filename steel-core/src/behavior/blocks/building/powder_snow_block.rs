@@ -3,6 +3,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
+use steel_registry::game_rules::GameRuleValue;
+use steel_registry::{vanilla_entities, vanilla_game_rules};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
@@ -98,16 +100,21 @@ impl BlockBehavior for PowderSnowBlock {
             entity.make_stuck_in_block(IN_BLOCK_SPEED_MULTIPLIER);
         }
 
+        let world = Arc::clone(world);
         effect_collector.run_before(
             InsideBlockEffectType::Extinguish,
             Box::new(move |entity| {
                 if !entity.is_on_fire() {
                     return;
                 }
-                // TODO: Destroy powder snow here once Steel has vanilla
-                // `Entity.mayInteract` for non-player entities and a typed
-                // player access path from shared entity callbacks.
-                let _ = pos;
+
+                let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+                    == GameRuleValue::Bool(true);
+                if (mob_griefing || entity.entity_type() == &vanilla_entities::PLAYER)
+                    && entity.may_interact(world.as_ref(), pos)
+                {
+                    world.destroy_block(pos, false);
+                }
             }),
         );
         effect_collector.apply(InsideBlockEffectType::Freeze);
