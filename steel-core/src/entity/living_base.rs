@@ -21,6 +21,7 @@ struct LivingEntityState {
     last_hurt: f32,
     death_time: i32,
     speed: f32,
+    current_impulse_context_reset_grace_time: i32,
 }
 
 impl LivingEntityState {
@@ -31,6 +32,7 @@ impl LivingEntityState {
             last_hurt: 0.0,
             death_time: 0,
             speed,
+            current_impulse_context_reset_grace_time: 0,
         }
     }
 
@@ -101,6 +103,27 @@ impl LivingEntityBase {
             .get_value(vanilla_attributes::MOVEMENT_SPEED)
         {
             self.state.lock().speed = speed as f32;
+        }
+    }
+
+    /// Applies vanilla post-impulse movement validation grace.
+    pub fn apply_post_impulse_grace_time(&self, ticks: i32) {
+        let mut state = self.state.lock();
+        state.current_impulse_context_reset_grace_time =
+            state.current_impulse_context_reset_grace_time.max(ticks);
+    }
+
+    /// Returns whether movement validation is inside post-impulse grace.
+    #[must_use]
+    pub fn is_in_post_impulse_grace_time(&self) -> bool {
+        self.state.lock().current_impulse_context_reset_grace_time > 0
+    }
+
+    /// Decrements post-impulse grace once per living-entity tick.
+    pub fn tick_post_impulse_grace_time(&self) {
+        let mut state = self.state.lock();
+        if state.current_impulse_context_reset_grace_time > 0 {
+            state.current_impulse_context_reset_grace_time -= 1;
         }
     }
 
@@ -183,6 +206,8 @@ impl LivingEntityBase {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+
     use super::LivingEntityBase;
 
     #[test]
@@ -207,5 +232,36 @@ mod tests {
             LivingEntityBase::calculate_fall_damage(8.0, 0.2, 3.0, 1.0),
             1
         );
+    }
+
+    #[test]
+    fn post_impulse_grace_counts_down_by_tick() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        base.apply_post_impulse_grace_time(2);
+
+        assert!(base.is_in_post_impulse_grace_time());
+        base.tick_post_impulse_grace_time();
+        assert!(base.is_in_post_impulse_grace_time());
+        base.tick_post_impulse_grace_time();
+        assert!(!base.is_in_post_impulse_grace_time());
+    }
+
+    #[test]
+    fn post_impulse_grace_keeps_larger_existing_window() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        base.apply_post_impulse_grace_time(5);
+        base.apply_post_impulse_grace_time(2);
+
+        for _ in 0..4 {
+            base.tick_post_impulse_grace_time();
+            assert!(base.is_in_post_impulse_grace_time());
+        }
+
+        base.tick_post_impulse_grace_time();
+        assert!(!base.is_in_post_impulse_grace_time());
     }
 }

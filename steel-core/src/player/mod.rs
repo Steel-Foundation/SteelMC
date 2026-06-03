@@ -86,8 +86,8 @@ use text_components::{content::Resolvable, custom::CustomData};
 use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntityBase, RemovalReason,
-    SharedEntity,
+    DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
+    RemovalReason, SharedEntity,
 };
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::player::experience::Experience;
@@ -102,8 +102,6 @@ use steel_protocol::packets::{
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
-
-use crate::entity::LivingEntity;
 
 use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
@@ -445,7 +443,7 @@ impl Player {
         }
 
         self.refresh_dirty_attributes();
-        self.movement.lock().tick_post_impulse_grace_time();
+        self.tick_post_impulse_grace_time();
 
         self.broadcast_inventory_changes();
         self.update_pose();

@@ -49,8 +49,6 @@ pub(crate) struct ClientAuthoredMovementState {
     received_move_packet_count: i32,
     /// Number of move packets at the last tick.
     known_move_packet_count: i32,
-    /// Remaining ticks for vanilla post-impulse movement validation grace.
-    post_impulse_grace_time: i32,
     /// Last movement accepted from the client.
     last_known_client_movement: DVec3,
     /// Whether the last accepted client move appeared unsupported in air.
@@ -68,7 +66,6 @@ impl ClientAuthoredMovementState {
             first_good_position: DVec3::ZERO,
             received_move_packet_count: 0,
             known_move_packet_count: 0,
-            post_impulse_grace_time: 0,
             last_known_client_movement: DVec3::ZERO,
             client_is_floating: false,
             above_ground_tick_count: 0,
@@ -107,26 +104,6 @@ impl ClientAuthoredMovementState {
     /// Marks a movement target as the latest accepted vanilla last-good position.
     pub(crate) const fn mark_last_good_position(&mut self, position: DVec3) {
         self.last_good_position = position;
-    }
-
-    /// Applies vanilla post-impulse movement validation grace.
-    pub(crate) const fn apply_post_impulse_grace_time(&mut self, ticks: i32) {
-        if ticks > self.post_impulse_grace_time {
-            self.post_impulse_grace_time = ticks;
-        }
-    }
-
-    /// Returns whether movement validation is inside post-impulse grace.
-    #[must_use]
-    pub(crate) const fn is_in_post_impulse_grace_time(&self) -> bool {
-        self.post_impulse_grace_time > 0
-    }
-
-    /// Decrements post-impulse grace once per tick.
-    pub(crate) const fn tick_post_impulse_grace_time(&mut self) {
-        if self.post_impulse_grace_time > 0 {
-            self.post_impulse_grace_time -= 1;
-        }
     }
 
     /// Sets the last accepted client movement vector.
@@ -276,33 +253,6 @@ mod tests {
         );
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
-    }
-
-    #[test]
-    fn client_movement_post_impulse_grace_counts_down_by_tick() {
-        let mut state = ClientAuthoredMovementState::new();
-        state.apply_post_impulse_grace_time(2);
-
-        assert!(state.is_in_post_impulse_grace_time());
-        state.tick_post_impulse_grace_time();
-        assert!(state.is_in_post_impulse_grace_time());
-        state.tick_post_impulse_grace_time();
-        assert!(!state.is_in_post_impulse_grace_time());
-    }
-
-    #[test]
-    fn client_movement_post_impulse_grace_keeps_larger_existing_window() {
-        let mut state = ClientAuthoredMovementState::new();
-        state.apply_post_impulse_grace_time(5);
-        state.apply_post_impulse_grace_time(2);
-
-        for _ in 0..4 {
-            state.tick_post_impulse_grace_time();
-            assert!(state.is_in_post_impulse_grace_time());
-        }
-
-        state.tick_post_impulse_grace_time();
-        assert!(!state.is_in_post_impulse_grace_time());
     }
 
     #[test]

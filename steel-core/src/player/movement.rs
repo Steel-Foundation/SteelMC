@@ -129,7 +129,7 @@ impl Player {
 
     /// Applies vanilla post-impulse movement validation grace.
     pub fn apply_post_impulse_grace_time(&self, ticks: i32) {
-        self.movement.lock().apply_post_impulse_grace_time(ticks);
+        LivingEntity::apply_post_impulse_grace_time(self, ticks);
     }
 
     /// Resets per-tick vanilla movement validation bases for the controlled root vehicle.
@@ -322,10 +322,7 @@ impl Player {
 
                 let error_delta = movement_error_delta(target_pos, self.position());
                 let error_dist_sq = error_delta.length_squared();
-                let in_impulse_grace = {
-                    let mv = self.movement.lock();
-                    mv.is_in_post_impulse_grace_time()
-                };
+                let in_impulse_grace = self.is_in_post_impulse_grace_time();
                 let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
                     && !is_creative
                     && !is_spectator

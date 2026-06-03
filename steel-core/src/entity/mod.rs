@@ -2456,7 +2456,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 /// can be damaged, and can die. It's based on Minecraft's `LivingEntity` class.
 ///
 /// **Note:** All methods take `&self` (not `&mut self`) because living entities
-/// are shared via `Arc` and use interior mutability (atomics, `SyncMutex`, etc.).
+/// are shared via `Arc` and use interior mutability (`SyncMutex`, etc.).
 pub trait LivingEntity: Entity {
     /// Returns a reference to the shared [`LivingEntityBase`] that holds
     /// living runtime state such as attributes, cached movement speed,
@@ -2571,6 +2571,21 @@ pub trait LivingEntity: Entity {
     /// Sets the entity's cached movement speed.
     fn set_speed(&self, speed: f32) {
         self.living_base().set_speed(speed);
+    }
+
+    /// Applies vanilla post-impulse movement validation grace.
+    fn apply_post_impulse_grace_time(&self, ticks: i32) {
+        self.living_base().apply_post_impulse_grace_time(ticks);
+    }
+
+    /// Returns whether movement validation is inside post-impulse grace.
+    fn is_in_post_impulse_grace_time(&self) -> bool {
+        self.living_base().is_in_post_impulse_grace_time()
+    }
+
+    /// Decrements post-impulse grace once per living-entity tick.
+    fn tick_post_impulse_grace_time(&self) {
+        self.living_base().tick_post_impulse_grace_time();
     }
 
     /// Drains dirty attributes and applies server-side effects.

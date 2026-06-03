@@ -104,22 +104,6 @@ impl MovementState {
         }
     }
 
-    /// Applies vanilla post-impulse movement validation grace.
-    pub(super) const fn apply_post_impulse_grace_time(&mut self, ticks: i32) {
-        self.client_movement.apply_post_impulse_grace_time(ticks);
-    }
-
-    /// Returns whether movement validation is inside post-impulse grace.
-    #[must_use]
-    pub(super) const fn is_in_post_impulse_grace_time(&self) -> bool {
-        self.client_movement.is_in_post_impulse_grace_time()
-    }
-
-    /// Decrements post-impulse grace once per player tick.
-    pub(super) const fn tick_post_impulse_grace_time(&mut self) {
-        self.client_movement.tick_post_impulse_grace_time();
-    }
-
     /// Sets the last accepted client movement vector.
     pub(super) const fn set_last_known_client_movement(&mut self, movement: DVec3) {
         self.client_movement
@@ -254,33 +238,6 @@ mod tests {
             on_ground: true,
         });
         assert!(packets.is_empty());
-    }
-
-    #[test]
-    fn post_impulse_grace_counts_down_by_tick() {
-        let mut state = MovementState::new();
-        state.apply_post_impulse_grace_time(2);
-
-        assert!(state.is_in_post_impulse_grace_time());
-        state.tick_post_impulse_grace_time();
-        assert!(state.is_in_post_impulse_grace_time());
-        state.tick_post_impulse_grace_time();
-        assert!(!state.is_in_post_impulse_grace_time());
-    }
-
-    #[test]
-    fn post_impulse_grace_keeps_larger_existing_window() {
-        let mut state = MovementState::new();
-        state.apply_post_impulse_grace_time(5);
-        state.apply_post_impulse_grace_time(2);
-
-        for _ in 0..4 {
-            state.tick_post_impulse_grace_time();
-            assert!(state.is_in_post_impulse_grace_time());
-        }
-
-        state.tick_post_impulse_grace_time();
-        assert!(!state.is_in_post_impulse_grace_time());
     }
 
     #[test]
