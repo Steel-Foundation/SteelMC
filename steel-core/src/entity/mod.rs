@@ -7,7 +7,10 @@ use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{CEntityEvent, SoundSource};
-use steel_registry::blocks::{block_state_ext::BlockStateExt as _, shapes::is_shape_full_block};
+use steel_registry::blocks::{
+    block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
+    shapes::is_shape_full_block,
+};
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
@@ -162,6 +165,19 @@ fn fall_damage_reset_clip_target(
 
     let check_distance = movement.length().min(8.0);
     Some(position + movement.normalize() * check_distance)
+}
+
+fn trapdoor_usable_as_ladder_state(
+    trapdoor_state: BlockStateId,
+    below_state: BlockStateId,
+) -> bool {
+    if trapdoor_state.try_get_value(&BlockStateProperties::OPEN) != Some(true) {
+        return false;
+    }
+
+    below_state.get_block() == &vanilla_blocks::LADDER
+        && below_state.try_get_value(&BlockStateProperties::FACING)
+            == trapdoor_state.try_get_value(&BlockStateProperties::FACING)
 }
 
 fn collided_with_fluid(
@@ -2581,6 +2597,44 @@ pub trait LivingEntity: Entity {
         self.living_base().set_fall_flying(fall_flying);
     }
 
+    /// Returns the last climbable block position this living entity touched.
+    fn last_climbable_pos(&self) -> Option<BlockPos> {
+        self.living_base().last_climbable_pos()
+    }
+
+    /// Records the last climbable block position this living entity touched.
+    fn set_last_climbable_pos(&self, pos: BlockPos) {
+        self.living_base().set_last_climbable_pos(pos);
+    }
+
+    /// Returns vanilla `LivingEntity.onClimbable()` behavior.
+    fn default_living_on_climbable(&self) -> bool {
+        if self.is_spectator() {
+            return false;
+        }
+
+        let pos = self.block_position();
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let state = world.get_block_state(pos);
+        let block = state.get_block();
+
+        if self.is_fall_flying() && block.has_tag(&BlockTag::CAN_GLIDE_THROUGH) {
+            return false;
+        }
+
+        let climbable = block.has_tag(&BlockTag::CLIMBABLE)
+            || block.has_tag(&BlockTag::TRAPDOORS)
+                && trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()));
+
+        if climbable {
+            self.set_last_climbable_pos(pos);
+        }
+
+        climbable
+    }
+
     /// Returns the bed position that makes this living entity sleeping.
     fn sleeping_pos(&self) -> Option<BlockPos> {
         self.living_base().sleeping_pos()
@@ -2672,14 +2726,18 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
+    use steel_registry::blocks::{
+        block_state_ext::BlockStateExt as _,
+        properties::{BlockStateProperties, Direction as BlockDirection},
+    };
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::vanilla_entities;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_entities};
     use steel_utils::{BlockPos, Direction};
 
     use super::{
         Entity, EntityBase, EntityVerticalMovementStateUpdate, RemovalReason, SharedEntity,
         closest_open_space_direction, fall_damage_reset_clip_target,
-        should_apply_resolved_movement,
+        should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -2882,6 +2940,51 @@ mod tests {
             fall_damage_reset_clip_target(position, DVec3::new(10.0, 0.0, 0.0), 2.0),
             Some(DVec3::new(9.0, 2.0, 3.0))
         );
+    }
+
+    #[test]
+    fn open_trapdoor_matches_ladder_facing_for_climbable() {
+        init_test_registry();
+
+        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
+            .default_state()
+            .set_value(&BlockStateProperties::OPEN, true)
+            .set_value(&BlockStateProperties::FACING, BlockDirection::North);
+        let ladder = vanilla_blocks::LADDER
+            .default_state()
+            .set_value(&BlockStateProperties::FACING, BlockDirection::North);
+
+        assert!(trapdoor_usable_as_ladder_state(trapdoor, ladder));
+    }
+
+    #[test]
+    fn closed_trapdoor_is_not_usable_as_ladder() {
+        init_test_registry();
+
+        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
+            .default_state()
+            .set_value(&BlockStateProperties::OPEN, false)
+            .set_value(&BlockStateProperties::FACING, BlockDirection::North);
+        let ladder = vanilla_blocks::LADDER
+            .default_state()
+            .set_value(&BlockStateProperties::FACING, BlockDirection::North);
+
+        assert!(!trapdoor_usable_as_ladder_state(trapdoor, ladder));
+    }
+
+    #[test]
+    fn trapdoor_ladder_facing_must_match() {
+        init_test_registry();
+
+        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
+            .default_state()
+            .set_value(&BlockStateProperties::OPEN, true)
+            .set_value(&BlockStateProperties::FACING, BlockDirection::North);
+        let ladder = vanilla_blocks::LADDER
+            .default_state()
+            .set_value(&BlockStateProperties::FACING, BlockDirection::South);
+
+        assert!(!trapdoor_usable_as_ladder_state(trapdoor, ladder));
     }
 
     #[test]

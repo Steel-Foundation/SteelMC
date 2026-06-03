@@ -27,6 +27,7 @@ struct LivingEntityState {
     fall_flying: bool,
     sprinting: bool,
     sleeping_pos: Option<BlockPos>,
+    last_climbable_pos: Option<BlockPos>,
 }
 
 impl LivingEntityState {
@@ -41,6 +42,7 @@ impl LivingEntityState {
             fall_flying: false,
             sprinting: false,
             sleeping_pos: None,
+            last_climbable_pos: None,
         }
     }
 
@@ -195,6 +197,17 @@ impl LivingEntityBase {
     #[must_use]
     pub fn is_sleeping(&self) -> bool {
         self.sleeping_pos().is_some()
+    }
+
+    /// Returns the last climbable block position this living entity touched.
+    #[must_use]
+    pub fn last_climbable_pos(&self) -> Option<BlockPos> {
+        self.state.lock().last_climbable_pos
+    }
+
+    /// Records the last climbable block position this living entity touched.
+    pub fn set_last_climbable_pos(&self, pos: BlockPos) {
+        self.state.lock().last_climbable_pos = Some(pos);
     }
 
     /// Calculates vanilla living-entity fall damage.
@@ -398,5 +411,16 @@ mod tests {
         base.clear_sleeping_pos();
         assert!(!base.is_sleeping());
         assert_eq!(base.sleeping_pos(), None);
+    }
+
+    #[test]
+    fn last_climbable_pos_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let climbable_pos = BlockPos::new(-5, 72, 3);
+
+        assert_eq!(base.last_climbable_pos(), None);
+        base.set_last_climbable_pos(climbable_pos);
+        assert_eq!(base.last_climbable_pos(), Some(climbable_pos));
     }
 }

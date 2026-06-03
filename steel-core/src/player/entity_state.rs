@@ -5,13 +5,8 @@
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::fluid::FluidStateExt as _;
-use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_blocks;
-use steel_registry::{
-    blocks::block_state_ext::BlockStateExt as _, blocks::properties::BlockStateProperties,
-};
+use steel_utils::WorldAabb;
 use steel_utils::types::GameType;
-use steel_utils::{BlockStateId, WorldAabb};
 
 use crate::behavior::BlockCollisionContext;
 use crate::entity::{Entity, EntitySyncedData, LivingEntity};
@@ -173,38 +168,11 @@ impl Player {
     /// Returns true if vanilla rules consider this player to be on a climbable block.
     #[must_use]
     pub(super) fn on_climbable(&self) -> bool {
-        if self.is_flying() || self.is_spectator() {
+        if self.is_flying() {
             return false;
         }
 
-        let pos = self.block_position();
-        let world = self.get_world();
-        let state = world.get_block_state(pos);
-        let block = state.get_block();
-
-        if self.is_fall_flying() && block.has_tag(&BlockTag::CAN_GLIDE_THROUGH) {
-            return false;
-        }
-
-        if block.has_tag(&BlockTag::CLIMBABLE) {
-            return true;
-        }
-
-        block.has_tag(&BlockTag::TRAPDOORS)
-            && Self::trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()))
-    }
-
-    fn trapdoor_usable_as_ladder_state(
-        trapdoor_state: BlockStateId,
-        below_state: BlockStateId,
-    ) -> bool {
-        if trapdoor_state.try_get_value(&BlockStateProperties::OPEN) != Some(true) {
-            return false;
-        }
-
-        below_state.get_block() == &vanilla_blocks::LADDER
-            && below_state.try_get_value(&BlockStateProperties::FACING)
-                == trapdoor_state.try_get_value(&BlockStateProperties::FACING)
+        self.default_living_on_climbable()
     }
 
     /// Sets the player's fall flying state.
@@ -264,8 +232,6 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::blocks::properties::Direction;
-    use steel_registry::test_support::init_test_registry;
 
     #[test]
     fn player_pose_dimensions_match_vanilla_avatar() {
@@ -452,50 +418,5 @@ mod tests {
             ),
             Some(EntityPose::Swimming)
         );
-    }
-
-    #[test]
-    fn open_trapdoor_matches_ladder_facing_for_climbable() {
-        init_test_registry();
-
-        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
-            .default_state()
-            .set_value(&BlockStateProperties::OPEN, true)
-            .set_value(&BlockStateProperties::FACING, Direction::North);
-        let ladder = vanilla_blocks::LADDER
-            .default_state()
-            .set_value(&BlockStateProperties::FACING, Direction::North);
-
-        assert!(Player::trapdoor_usable_as_ladder_state(trapdoor, ladder));
-    }
-
-    #[test]
-    fn closed_trapdoor_is_not_usable_as_ladder() {
-        init_test_registry();
-
-        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
-            .default_state()
-            .set_value(&BlockStateProperties::OPEN, false)
-            .set_value(&BlockStateProperties::FACING, Direction::North);
-        let ladder = vanilla_blocks::LADDER
-            .default_state()
-            .set_value(&BlockStateProperties::FACING, Direction::North);
-
-        assert!(!Player::trapdoor_usable_as_ladder_state(trapdoor, ladder));
-    }
-
-    #[test]
-    fn trapdoor_ladder_facing_must_match() {
-        init_test_registry();
-
-        let trapdoor = vanilla_blocks::OAK_TRAPDOOR
-            .default_state()
-            .set_value(&BlockStateProperties::OPEN, true)
-            .set_value(&BlockStateProperties::FACING, Direction::North);
-        let ladder = vanilla_blocks::LADDER
-            .default_state()
-            .set_value(&BlockStateProperties::FACING, Direction::South);
-
-        assert!(!Player::trapdoor_usable_as_ladder_state(trapdoor, ladder));
     }
 }
