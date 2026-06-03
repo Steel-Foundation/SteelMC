@@ -16,7 +16,8 @@ use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
 use crate::entity::{
-    AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity, get_input_vector,
+    AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity, LivingTravelInput,
+    get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -817,6 +818,12 @@ impl Player {
         // Vanilla stores the input unconditionally before the guard check.
         let input = PlayerInput::from_flags(packet.flags);
         self.movement.lock().set_last_client_input(input);
+        self.set_jumping(input.jump());
+        self.set_travel_input(LivingTravelInput::new(
+            input.left_intent(),
+            0.0,
+            input.forward_intent(),
+        ));
 
         if !self.has_client_loaded() {
             return;

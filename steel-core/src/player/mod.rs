@@ -90,7 +90,9 @@ use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
     RemovalReason, SharedEntity,
 };
+use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
+use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
@@ -1490,6 +1492,42 @@ impl LivingEntity for Player {
 
     fn is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
+    }
+
+    fn travel(&self, input: DVec3) -> Option<MoveResult> {
+        if self.is_passenger() {
+            return self.default_travel(input);
+        }
+
+        if self.is_swimming() {
+            let look_angle_y = self.look_angle().y;
+            let multiplier = if look_angle_y < -0.2 { 0.085 } else { 0.06 };
+            let has_fluid_above = self.level().is_some_and(|world| {
+                let position = self.position();
+                let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
+                !get_fluid_state(&world, pos).is_empty()
+            });
+            if look_angle_y <= 0.0 || self.is_jumping() || has_fluid_above {
+                let velocity = self.velocity();
+                self.set_velocity(
+                    velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
+                );
+            }
+        }
+
+        if self.is_flying() {
+            let original_movement_y = self.velocity().y;
+            let result = self.default_travel(input);
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(
+                velocity.x,
+                original_movement_y * 0.6,
+                velocity.z,
+            ));
+            result
+        } else {
+            self.default_travel(input)
+        }
     }
 
     fn get_flying_speed(&self) -> f32 {
