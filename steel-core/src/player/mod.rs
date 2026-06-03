@@ -1490,6 +1490,13 @@ impl LivingEntity for Player {
             .set(amount.max(0.0));
     }
 
+    fn fall_sounds(&self) -> (i32, i32) {
+        (
+            sound_events::ENTITY_PLAYER_SMALL_FALL,
+            sound_events::ENTITY_PLAYER_BIG_FALL,
+        )
+    }
+
     fn is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
     }

@@ -65,6 +65,10 @@ fn horizontal_distance(vector: DVec3) -> f64 {
     vector.x.hypot(vector.z)
 }
 
+fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_speed: f64) -> f32 {
+    ((previous_horizontal_speed - new_horizontal_speed) * 10.0 - 3.0) as f32
+}
+
 enum BlockEffectSegmentResult {
     Complete(i32),
     IterationLimit,
@@ -2616,6 +2620,20 @@ pub trait LivingEntity: Entity {
     /// Sets the absorption amount.
     fn set_absorption_amount(&self, amount: f32);
 
+    /// Returns vanilla small and big fall sounds for this living entity.
+    fn fall_sounds(&self) -> (i32, i32) {
+        (
+            sound_events::ENTITY_GENERIC_SMALL_FALL,
+            sound_events::ENTITY_GENERIC_BIG_FALL,
+        )
+    }
+
+    /// Returns vanilla `LivingEntity.getFallDamageSound()`.
+    fn fall_damage_sound(&self, damage: i32) -> i32 {
+        let (small, big) = self.fall_sounds();
+        if damage > 4 { big } else { small }
+    }
+
     /// Gets the entity's armor value from the attribute system.
     fn get_armor_value(&self) -> i32 {
         self.attributes()
@@ -3002,6 +3020,51 @@ pub trait LivingEntity: Entity {
         )
     }
 
+    /// Mirrors vanilla `LivingEntity.stopFallFlying()`.
+    fn stop_fall_flying(&self) {
+        self.set_fall_flying(true);
+        self.set_fall_flying(false);
+    }
+
+    /// Mirrors vanilla `LivingEntity.handleFallFlyingCollisions()`.
+    fn handle_fall_flying_collisions(
+        &self,
+        previous_horizontal_speed: f64,
+        new_horizontal_speed: f64,
+    ) {
+        if !self.horizontal_collision() {
+            return;
+        }
+
+        let damage = fall_flying_collision_damage(previous_horizontal_speed, new_horizontal_speed);
+        if damage <= 0.0 {
+            return;
+        }
+
+        self.play_sound(self.fall_damage_sound(damage as i32), 1.0, 1.0);
+        self.hurt(
+            &DamageSource::environment(&vanilla_damage_types::FLY_INTO_WALL),
+            damage,
+        );
+    }
+
+    /// Mirrors vanilla `LivingEntity.travelFallFlying()`.
+    fn travel_fall_flying(&self, input: DVec3) -> Option<MoveResult> {
+        if self.on_climbable() {
+            let result = self.travel_in_air(input);
+            self.stop_fall_flying();
+            return result;
+        }
+
+        let previous_movement = self.velocity();
+        let previous_horizontal_speed = horizontal_distance(previous_movement);
+        self.set_velocity(self.update_fall_flying_movement(previous_movement));
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity());
+        let new_horizontal_speed = horizontal_distance(self.velocity());
+        self.handle_fall_flying_collisions(previous_horizontal_speed, new_horizontal_speed);
+        result
+    }
+
     /// Default vanilla `LivingEntity.travel()` implementation for overrides.
     fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
@@ -3011,8 +3074,7 @@ pub trait LivingEntity: Entity {
             return None;
         }
         if self.is_fall_flying() {
-            // TODO: Implement LivingEntity.travelFallFlying().
-            return None;
+            return self.travel_fall_flying(input);
         }
 
         self.travel_in_air(input)
@@ -3121,15 +3183,16 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::fluid::FluidState;
     use steel_registry::{
-        test_support::init_test_registry, vanilla_blocks, vanilla_entities, vanilla_fluids,
+        sound_events, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
+        vanilla_fluids,
     };
     use steel_utils::{BlockPos, Direction};
 
     use super::{
         Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
         LivingEntityBase, LivingTravelInput, RemovalReason, SharedEntity,
-        closest_open_space_direction, fall_damage_reset_clip_target, get_input_vector,
-        should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
+        closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
+        get_input_vector, should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -3473,6 +3536,38 @@ mod tests {
 
         assert!(movement.y > -0.2);
         assert!(movement.z > 0.0);
+    }
+
+    #[test]
+    fn fall_flying_collision_damage_matches_vanilla_threshold() {
+        assert!(fall_flying_collision_damage(1.0, 0.8) <= 0.0);
+        assert!((fall_flying_collision_damage(1.0, 0.6) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn fall_damage_sound_selects_vanilla_small_and_big_sounds() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        assert_eq!(
+            entity.fall_damage_sound(4),
+            sound_events::ENTITY_GENERIC_SMALL_FALL
+        );
+        assert_eq!(
+            entity.fall_damage_sound(5),
+            sound_events::ENTITY_GENERIC_BIG_FALL
+        );
+    }
+
+    #[test]
+    fn stop_fall_flying_toggles_shared_state_back_to_false() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_fall_flying(true);
+
+        entity.stop_fall_flying();
+
+        assert!(!entity.is_fall_flying());
     }
 
     #[test]
