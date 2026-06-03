@@ -624,6 +624,16 @@ pub trait BlockBehavior: Send + Sync {
         context.default_velocity_after_fall_on()
     }
 
+    /// Called when an entity steps on this block while on ground.
+    ///
+    /// Vanilla parity: `Block.stepOn(Level, BlockPos, BlockState, Entity)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+    }
+
     // === Block Entity Methods ===
 
     /// Returns whether this block has an associated block entity.

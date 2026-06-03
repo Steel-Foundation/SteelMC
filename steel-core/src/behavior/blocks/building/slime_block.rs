@@ -10,13 +10,11 @@ use crate::{
         BlockBehavior, BlockPlaceContext, EntityFallDamage, EntityFallOnContext,
         EntityLandingContext,
     },
-    entity::damage::DamageSource,
+    entity::{Entity, damage::DamageSource},
     world::World,
 };
 
 /// Behavior for slime blocks.
-///
-/// TODO: Add vanilla `stepOn` horizontal damping.
 #[block_behavior]
 pub struct SlimeBlock {
     block: BlockRef,
@@ -45,6 +43,17 @@ impl SlimeBlock {
             -context.velocity.y * bounce_factor,
             context.velocity.z,
         )
+    }
+
+    #[must_use]
+    fn velocity_after_step_on(velocity: DVec3, is_stepping_carefully: bool) -> DVec3 {
+        let abs_delta_y = velocity.y.abs();
+        if abs_delta_y >= 0.1 || is_stepping_carefully {
+            return velocity;
+        }
+
+        let scale = 0.4 + abs_delta_y * 0.2;
+        DVec3::new(velocity.x * scale, velocity.y, velocity.z * scale)
     }
 }
 
@@ -79,6 +88,19 @@ impl BlockBehavior for SlimeBlock {
         context: EntityLandingContext,
     ) -> DVec3 {
         Self::velocity_after_fall(context)
+    }
+
+    fn step_on(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+        entity.set_velocity(Self::velocity_after_step_on(
+            entity.velocity(),
+            entity.is_stepping_carefully(),
+        ));
     }
 }
 
@@ -124,5 +146,29 @@ mod tests {
             SlimeBlock::velocity_after_fall(landing(DVec3::new(0.0, 0.2, 0.0), true, false));
 
         assert_eq!(velocity, DVec3::new(0.0, 0.2, 0.0));
+    }
+
+    #[test]
+    fn step_on_damps_horizontal_velocity_for_non_careful_entities() {
+        let velocity = SlimeBlock::velocity_after_step_on(DVec3::new(1.0, 0.05, -2.0), false);
+
+        assert!((velocity - DVec3::new(0.41, 0.05, -0.82)).length() < 1.0e-12);
+    }
+
+    #[test]
+    fn step_on_keeps_velocity_for_careful_entities() {
+        let velocity = DVec3::new(1.0, 0.05, -2.0);
+
+        assert_eq!(SlimeBlock::velocity_after_step_on(velocity, true), velocity);
+    }
+
+    #[test]
+    fn step_on_keeps_horizontal_velocity_when_vertical_speed_is_large() {
+        let velocity = DVec3::new(1.0, -0.1, -2.0);
+
+        assert_eq!(
+            SlimeBlock::velocity_after_step_on(velocity, false),
+            velocity
+        );
     }
 }

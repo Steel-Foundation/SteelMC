@@ -65,12 +65,16 @@ enum BlockEffectSegmentResult {
 
 #[derive(Debug, Clone, Copy)]
 struct BlockEffectFireSnapshot {
+    was_on_fire: bool,
+    was_freezing: bool,
     previous_remaining_fire_ticks: i32,
 }
 
 impl BlockEffectFireSnapshot {
     fn from_entity(entity: &dyn Entity) -> Self {
         Self {
+            was_on_fire: entity.is_on_fire(),
+            was_freezing: entity.is_freezing(),
             previous_remaining_fire_ticks: entity.remaining_fire_ticks(),
         }
     }
@@ -84,6 +88,12 @@ fn finish_inside_block_effects(
     effect_collector.apply_and_clear(entity);
     if entity.is_removed() {
         return;
+    }
+
+    let extinguished = before_effects.was_on_fire && !entity.is_on_fire()
+        || before_effects.was_freezing && !entity.is_freezing();
+    if extinguished {
+        entity.play_entity_on_fire_extinguished_sound();
     }
 
     let ignited_this_tick =
@@ -315,6 +325,19 @@ fn should_apply_resolved_movement(requested_movement: DVec3, actual_movement: DV
         || requested_movement.length_squared() - movement_length < MOVEMENT_RECORD_EPSILON
 }
 
+fn apply_step_on_block(entity: &dyn Entity, world: &Arc<World>) {
+    if !entity.on_ground() {
+        return;
+    }
+
+    let Some(effect_pos) = entity.on_pos_legacy() else {
+        return;
+    };
+    let effect_state = world.get_block_state(effect_pos);
+    let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
+    behavior.step_on(effect_state, world, effect_pos, entity);
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "vanilla movement block-effect traversal is easier to audit when kept in one sweep"
@@ -327,6 +350,8 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
     let Some(world) = entity.level() else {
         return;
     };
+
+    apply_step_on_block(entity, &world);
 
     let mut visited_blocks = FxHashSet::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
@@ -917,6 +942,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn is_suppressing_bounce(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
+    }
+
+    /// Returns true when vanilla block step-on hooks should treat this entity as careful.
+    fn is_stepping_carefully(&self) -> bool {
+        self.is_suppressing_bounce()
     }
 
     /// Returns true when vanilla collision context should treat the entity as descending.
@@ -1599,6 +1629,15 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 None,
             );
         }
+    }
+
+    /// Plays vanilla's extinguished-on-fire entity sound.
+    fn play_entity_on_fire_extinguished_sound(&self) {
+        let pitch = {
+            let mut random = self.base().random().lock();
+            1.6 + (random.next_f32() - random.next_f32()) * 0.4
+        };
+        self.play_sound(sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
     }
 
     /// Plays the base vanilla step sound for a block.
