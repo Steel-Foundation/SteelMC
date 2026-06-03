@@ -652,8 +652,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().advance_base_tick_state();
         self.refresh_fluid_contact_for_base_tick();
         self.base().dampen_fall_distance_in_lava();
+        self.check_below_world();
         // TODO: Add remaining vanilla baseTick pieces: portal, fire ticks,
-        // sprint particles, leash tick, and shared below-world handling.
+        // sprint particles, and leash tick.
+    }
+
+    /// Applies vanilla below-world handling.
+    fn check_below_world(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        if self.position().y < f64::from(world.get_min_y() - 64) {
+            self.on_below_world();
+        }
+    }
+
+    /// Runs entity-specific behavior after falling below the world.
+    fn on_below_world(&self) {
+        self.set_removed(RemovalReason::Discarded);
     }
 
     /// Sends position/velocity changes to tracking players.
@@ -2184,6 +2201,15 @@ mod tests {
 
         assert_vec3_close(entity.velocity(), DVec3::new(0.1, 0.2, 0.3));
         assert!(!entity.needs_velocity_sync());
+    }
+
+    #[test]
+    fn default_below_world_hook_discards_entity() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+
+        entity.on_below_world();
+
+        assert!(entity.is_removed());
     }
 
     #[test]

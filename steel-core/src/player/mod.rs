@@ -419,7 +419,6 @@ impl Player {
             self.block_breaking.lock().tick(self, &world);
             self.apply_effects_from_blocks();
             self.push_entities(&world);
-            self.check_below_world();
 
             // TODO: Implement remaining player ticking logic here
             // - Managing game mode specific logic
@@ -537,16 +536,6 @@ impl Player {
     #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn handle_client_tick_end(&self) {
         //log::info!("Hello from the other side!");
-    }
-
-    fn check_below_world(&self) {
-        let pos = self.position();
-        if pos.y < f64::from(self.get_world().get_min_y() - 64) {
-            self.hurt(
-                &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
-                4.0,
-            );
-        }
     }
 
     fn push_entities(&self, world: &Arc<World>) {
@@ -1361,6 +1350,13 @@ impl Entity for Player {
                 self.play_block_step_sound(primary_state);
             }
         }
+    }
+
+    fn on_below_world(&self) {
+        self.hurt(
+            &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
+            4.0,
+        );
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
