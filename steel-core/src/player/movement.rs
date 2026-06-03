@@ -304,11 +304,7 @@ impl Player {
                 let player_stands_on_something = self.vertical_collision_below();
 
                 if was_on_ground && !packet.on_ground && moved_upwards {
-                    if self.is_sprinting() {
-                        self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
-                    } else {
-                        self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
-                    }
+                    self.jump_from_ground();
                 }
 
                 let Some(_move_result) = self.move_entity(MoverType::Player, move_delta) else {
