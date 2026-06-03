@@ -35,6 +35,21 @@ pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
 const FIRE_IGNITE_TICKS: i32 = 8 * 20;
 const LAVA_IGNITE_TICKS: i32 = 15 * 20;
 
+fn require_finite_position(position: DVec3, field: &str) {
+    assert!(
+        position.is_finite(),
+        "entity {field} must be finite: {position:?}"
+    );
+}
+
+fn normalize_rotation(rotation: (f32, f32)) -> (f32, f32) {
+    assert!(
+        rotation.0.is_finite() && rotation.1.is_finite(),
+        "entity rotation must be finite: {rotation:?}"
+    );
+    (rotation.0 % 360.0, rotation.1.clamp(-90.0, 90.0) % 360.0)
+}
+
 /// A vanilla movement segment used by block-contact effects.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityMovement {
@@ -614,6 +629,7 @@ impl EntityBaseState {
     /// Creates base state for a freshly spawned entity.
     #[must_use]
     pub fn new(position: DVec3, dimensions: EntityDimensions) -> Self {
+        require_finite_position(position, "position");
         Self {
             tick_count: 0,
             position,
@@ -669,22 +685,25 @@ impl EntityBaseState {
 
     /// Sets velocity on this state snapshot.
     #[must_use]
-    pub const fn with_velocity(mut self, velocity: DVec3) -> Self {
-        self.velocity = velocity;
+    pub fn with_velocity(mut self, velocity: DVec3) -> Self {
+        if velocity.is_finite() {
+            self.velocity = velocity;
+        }
         self
     }
 
     /// Sets previous position on this state snapshot.
     #[must_use]
-    pub const fn with_old_position(mut self, old_position: DVec3) -> Self {
+    pub fn with_old_position(mut self, old_position: DVec3) -> Self {
+        require_finite_position(old_position, "old position");
         self.old_position = old_position;
         self
     }
 
     /// Sets rotation on this state snapshot.
     #[must_use]
-    pub const fn with_rotation(mut self, rotation: (f32, f32)) -> Self {
-        self.rotation = rotation;
+    pub fn with_rotation(mut self, rotation: (f32, f32)) -> Self {
+        self.rotation = normalize_rotation(rotation);
         self
     }
 
@@ -1338,6 +1357,7 @@ impl EntityBase {
 
     /// Sets the entity's position and notifies the callback.
     pub fn set_position(&self, pos: DVec3) {
+        require_finite_position(pos, "position");
         let old_pos = {
             let mut state = self.state.lock();
             let old = state.position;
@@ -1361,6 +1381,7 @@ impl EntityBase {
 
     /// Sets the vanilla movement-trace old position explicitly.
     pub fn set_old_position(&self, old_position: DVec3) {
+        require_finite_position(old_position, "old position");
         self.state.lock().old_position = old_position;
     }
 
@@ -1409,7 +1430,9 @@ impl EntityBase {
 
     /// Sets the entity's velocity in blocks per tick.
     pub fn set_velocity(&self, velocity: DVec3) {
-        self.state.lock().velocity = velocity;
+        if velocity.is_finite() {
+            self.state.lock().velocity = velocity;
+        }
     }
 
     /// Advances vanilla `Entity.tickCount` by one tick.
@@ -1463,7 +1486,7 @@ impl EntityBase {
 
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     pub fn set_rotation(&self, rotation: (f32, f32)) {
-        self.state.lock().rotation = rotation;
+        self.state.lock().rotation = normalize_rotation(rotation);
     }
 
     /// Sets whether this entity bypasses collision physics.
@@ -2456,6 +2479,84 @@ mod tests {
         assert_vec3_close(base.old_position(), DVec3::new(4.0, 5.0, 6.0));
         base.set_old_position(DVec3::new(7.0, 8.0, 9.0));
         assert_vec3_close(base.old_position(), DVec3::new(7.0, 8.0, 9.0));
+    }
+
+    #[test]
+    fn set_velocity_ignores_non_finite_updates_like_vanilla() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        let velocity = DVec3::new(0.25, -0.5, 0.75);
+        base.set_velocity(velocity);
+        base.set_velocity(DVec3::new(f64::NAN, 0.0, 0.0));
+        assert_vec3_close(base.velocity(), velocity);
+
+        let state = EntityBaseState::new(DVec3::ZERO, EntityDimensions::new(0.25, 0.25, 0.125))
+            .with_velocity(DVec3::new(f64::INFINITY, 0.0, 0.0));
+        assert_vec3_close(state.velocity, DVec3::ZERO);
+    }
+
+    #[test]
+    fn set_rotation_wraps_yaw_and_clamps_pitch_like_vanilla_snap() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_rotation((450.0, 120.0));
+        let rotation = base.rotation();
+        assert_f32_close(rotation.0, 90.0);
+        assert_f32_close(rotation.1, 90.0);
+
+        base.set_rotation((-450.0, -120.0));
+        let rotation = base.rotation();
+        assert_f32_close(rotation.0, -90.0);
+        assert_f32_close(rotation.1, -90.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "entity position must be finite")]
+    fn set_position_rejects_non_finite_values() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_position(DVec3::new(f64::NAN, 0.0, 0.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "entity old position must be finite")]
+    fn set_old_position_rejects_non_finite_values() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_old_position(DVec3::new(0.0, f64::INFINITY, 0.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "entity rotation must be finite")]
+    fn set_rotation_rejects_non_finite_values() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_rotation((f32::NAN, 0.0));
     }
 
     #[test]
