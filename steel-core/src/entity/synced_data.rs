@@ -16,6 +16,9 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Returns the shared vanilla shift-key-down flag.
     fn is_shift_key_down(&self) -> bool;
+
+    /// Returns the shared vanilla swimming flag.
+    fn is_swimming(&self) -> bool;
 }
 
 impl<T> EntitySyncedData for SyncMutex<T>
@@ -39,6 +42,13 @@ where
             *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
         )
         .contains(EntitySharedFlags::SHIFT_KEY_DOWN)
+    }
+
+    fn is_swimming(&self) -> bool {
+        EntitySharedFlags::from_metadata_byte(
+            *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
+        )
+        .contains(EntitySharedFlags::SWIMMING)
     }
 }
 
@@ -77,5 +87,18 @@ mod tests {
             .set(EntitySharedFlags::SHIFT_KEY_DOWN.metadata_byte());
 
         assert!(EntitySyncedData::is_shift_key_down(&data));
+    }
+
+    #[test]
+    fn synced_data_reads_swimming_from_generated_base_layer() {
+        let data = SyncMutex::new(ItemEntityData::new());
+        assert!(!EntitySyncedData::is_swimming(&data));
+
+        data.lock()
+            .base_mut()
+            .shared_flags
+            .set(EntitySharedFlags::SWIMMING.metadata_byte());
+
+        assert!(EntitySyncedData::is_swimming(&data));
     }
 }

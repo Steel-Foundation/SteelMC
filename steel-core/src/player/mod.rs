@@ -59,17 +59,19 @@ use std::sync::{
 use steel_protocol::packets::game::{
     CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
     CRespawn, CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes,
-    ClientCommandAction,
+    ClientCommandAction, SoundSource,
 };
 use steel_registry::RegistryEntry;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{vanilla_attributes, vanilla_entities};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
@@ -99,7 +101,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::ChunkPos;
+use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 
 use crate::entity::LivingEntity;
 
@@ -1022,6 +1024,20 @@ impl Player {
         self.tick_state.lock().advance_tick();
     }
 
+    fn primary_step_sound_block_pos(&self, affecting_pos: BlockPos) -> BlockPos {
+        let above_pos = affecting_pos.above();
+        let above_state = self.get_world().get_block_state(above_pos);
+        let above_block = above_state.get_block();
+
+        if above_block.has_tag(&BlockTag::INSIDE_STEP_SOUND_BLOCKS)
+            || above_block.has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+        {
+            above_pos
+        } else {
+            affecting_pos
+        }
+    }
+
     /// Resets the player's transient state and prepares them for a new world.
     ///
     /// This is the shared "clean slate" path used by initial join, respawn, and
@@ -1306,6 +1322,45 @@ impl Entity for Player {
 
     fn backs_off_from_edge(&self) -> bool {
         self.is_crouching() && !self.is_flying()
+    }
+
+    fn is_crouching(&self) -> bool {
+        Player::is_crouching(self)
+    }
+
+    fn is_swimming(&self) -> bool {
+        Player::is_swimming(self)
+    }
+
+    fn sound_source(&self) -> SoundSource {
+        SoundSource::Players
+    }
+
+    fn swim_sound(&self) -> i32 {
+        sound_events::ENTITY_PLAYER_SWIM
+    }
+
+    fn play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {
+        if self.is_in_water() {
+            self.water_swim_sound();
+            self.play_muffled_step_sound(on_state);
+            return;
+        }
+
+        let primary_step_sound_pos = self.primary_step_sound_block_pos(on_pos);
+        if primary_step_sound_pos == on_pos {
+            self.play_block_step_sound(on_state);
+        } else {
+            let primary_state = self.get_world().get_block_state(primary_step_sound_pos);
+            if primary_state
+                .get_block()
+                .has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+            {
+                self.play_combination_step_sounds(primary_state, on_state);
+            } else {
+                self.play_block_step_sound(primary_state);
+            }
+        }
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {

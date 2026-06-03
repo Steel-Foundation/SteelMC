@@ -14,7 +14,7 @@ use steel_registry::entity_type::EntityDimensions;
 use steel_utils::BlockPos;
 use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
@@ -372,6 +372,118 @@ impl EntityGroundContact {
     }
 }
 
+/// Vanilla movement side effects emitted by `Entity.move`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityMovementEmission {
+    /// Emit no movement sounds or game events.
+    None,
+    /// Emit movement sounds only.
+    Sounds,
+    /// Emit movement game events only.
+    Events,
+    /// Emit both movement sounds and game events.
+    All,
+}
+
+impl EntityMovementEmission {
+    /// Returns whether this movement emits any side effects.
+    #[must_use]
+    pub const fn emits_anything(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// Returns whether this movement emits game events.
+    #[must_use]
+    pub const fn emits_events(self) -> bool {
+        matches!(self, Self::Events | Self::All)
+    }
+
+    /// Returns whether this movement emits sounds.
+    #[must_use]
+    pub const fn emits_sounds(self) -> bool {
+        matches!(self, Self::Sounds | Self::All)
+    }
+}
+
+/// Vanilla movement distance counters used by step, swim, and flap side effects.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityMovementProgress {
+    move_dist: f32,
+    fly_dist: f32,
+    next_step: f32,
+    crystal_sound_intensity: f32,
+    last_crystal_sound_play_tick: i32,
+}
+
+impl EntityMovementProgress {
+    /// Creates default vanilla movement progress state.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            move_dist: 0.0,
+            fly_dist: 0.0,
+            next_step: 1.0,
+            crystal_sound_intensity: 0.0,
+            last_crystal_sound_play_tick: 0,
+        }
+    }
+
+    /// Adds movement distance from a completed movement pass.
+    pub fn add_movement(&mut self, clipped_movement: DVec3, climbing: bool) {
+        let moved_distance = (clipped_movement.length() * 0.6) as f32;
+        let horizontal_moved_distance = ((clipped_movement.x * clipped_movement.x
+            + clipped_movement.z * clipped_movement.z)
+            .sqrt()
+            * 0.6) as f32;
+
+        self.move_dist += if climbing {
+            moved_distance
+        } else {
+            horizontal_moved_distance
+        };
+        self.fly_dist += moved_distance;
+    }
+
+    /// Returns vanilla `moveDist`.
+    #[must_use]
+    pub const fn move_dist(self) -> f32 {
+        self.move_dist
+    }
+
+    /// Returns vanilla `flyDist`.
+    #[must_use]
+    pub const fn fly_dist(self) -> f32 {
+        self.fly_dist
+    }
+
+    /// Returns vanilla `nextStep`.
+    #[must_use]
+    pub const fn next_step(self) -> f32 {
+        self.next_step
+    }
+
+    /// Returns whether movement crossed the next step threshold.
+    #[must_use]
+    pub const fn crossed_next_step(self) -> bool {
+        self.move_dist > self.next_step
+    }
+}
+
+impl Default for EntityMovementProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Sound parameters for vanilla amethyst step chimes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityAmethystStepSound {
+    /// Chime volume.
+    pub volume: f32,
+    /// Chime pitch.
+    pub pitch: f32,
+}
+
 /// Vanilla `Entity` movement state stored as one locked snapshot.
 ///
 /// Position, velocity, rotation, and ground contact are commonly read together
@@ -392,6 +504,7 @@ pub struct EntityBaseState {
     bounding_box: WorldAabb,
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
+    movement_progress: EntityMovementProgress,
     fluid_contact: EntityFluidContact,
     was_eye_in_water: bool,
     piston_movement: EntityPistonMovement,
@@ -418,6 +531,7 @@ impl EntityBaseState {
             bounding_box: Self::make_bounding_box(position, dimensions),
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
+            movement_progress: EntityMovementProgress::new(),
             fluid_contact: EntityFluidContact::default(),
             was_eye_in_water: false,
             piston_movement: EntityPistonMovement::new(),
@@ -844,6 +958,12 @@ impl EntityBase {
         self.state.lock().ground_contact
     }
 
+    /// Returns vanilla movement side-effect progress counters.
+    #[inline]
+    pub fn movement_progress(&self) -> EntityMovementProgress {
+        self.state.lock().movement_progress
+    }
+
     /// Returns true if the last movement was clipped horizontally.
     #[inline]
     pub fn horizontal_collision(&self) -> bool {
@@ -1146,6 +1266,48 @@ impl EntityBase {
         state.tick_count = state.tick_count.wrapping_add(1);
     }
 
+    /// Records movement distance used by vanilla step, swim, and flap effects.
+    pub fn record_movement_progress(
+        &self,
+        clipped_movement: DVec3,
+        climbing: bool,
+    ) -> EntityMovementProgress {
+        let mut state = self.state.lock();
+        state
+            .movement_progress
+            .add_movement(clipped_movement, climbing);
+        state.movement_progress
+    }
+
+    /// Stores vanilla `nextStep` after a produced movement side effect.
+    pub fn set_next_step(&self, next_step: f32) {
+        self.state.lock().movement_progress.next_step = next_step;
+    }
+
+    /// Returns vanilla amethyst-step chime parameters when the cooldown allows it.
+    pub fn amethyst_step_sound(&self, tick_count: i32) -> Option<EntityAmethystStepSound> {
+        let intensity = {
+            let mut state = self.state.lock();
+            let progress = &mut state.movement_progress;
+            if tick_count < progress.last_crystal_sound_play_tick + 20 {
+                return None;
+            }
+
+            let tick_delta = tick_count - progress.last_crystal_sound_play_tick;
+            progress.crystal_sound_intensity *= 0.997_f32.powi(tick_delta);
+            progress.crystal_sound_intensity = (progress.crystal_sound_intensity + 0.07).min(1.0);
+            progress.last_crystal_sound_play_tick = tick_count;
+            progress.crystal_sound_intensity
+        };
+
+        let pitch = {
+            let mut random = self.random.lock();
+            0.5 + intensity * random.next_f32() * 1.2
+        };
+        let volume = 0.1 + intensity * 1.2;
+        Some(EntityAmethystStepSound { volume, pitch })
+    }
+
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     pub fn set_rotation(&self, rotation: (f32, f32)) {
         self.state.lock().rotation = rotation;
@@ -1287,8 +1449,9 @@ impl EntityBase {
 #[cfg(test)]
 mod tests {
     use super::{
-        EntityBase, EntityBaseState, EntityFluidContact, EntityMovement, EntityMovementFlags,
-        EntityPistonMovement, EntityVerticalMovementStateUpdate,
+        EntityBase, EntityBaseState, EntityFluidContact, EntityMovement, EntityMovementEmission,
+        EntityMovementFlags, EntityMovementProgress, EntityPistonMovement,
+        EntityVerticalMovementStateUpdate,
     };
     use std::sync::{Arc, Weak};
 
@@ -1308,6 +1471,13 @@ mod tests {
         let diff = left - right;
         assert!(
             diff.length_squared() < 1.0e-24,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    fn assert_f32_close(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 1.0e-6,
             "expected {left:?} to equal {right:?}"
         );
     }
@@ -1451,6 +1621,35 @@ mod tests {
         assert!(!flags.horizontal_collision());
         assert!(!flags.vertical_collision());
         assert!(!flags.vertical_collision_below());
+    }
+
+    #[test]
+    fn movement_emission_flags_match_vanilla_variants() {
+        assert!(!EntityMovementEmission::None.emits_anything());
+        assert!(EntityMovementEmission::Sounds.emits_anything());
+        assert!(EntityMovementEmission::Events.emits_anything());
+        assert!(EntityMovementEmission::All.emits_anything());
+
+        assert!(EntityMovementEmission::Sounds.emits_sounds());
+        assert!(!EntityMovementEmission::Sounds.emits_events());
+        assert!(!EntityMovementEmission::Events.emits_sounds());
+        assert!(EntityMovementEmission::Events.emits_events());
+        assert!(EntityMovementEmission::All.emits_sounds());
+        assert!(EntityMovementEmission::All.emits_events());
+    }
+
+    #[test]
+    fn movement_progress_accumulates_vanilla_step_and_fly_distance() {
+        let mut progress = EntityMovementProgress::new();
+
+        progress.add_movement(DVec3::new(3.0, 4.0, 0.0), false);
+        assert_f32_close(progress.move_dist(), 1.8);
+        assert_f32_close(progress.fly_dist(), 3.0);
+        assert!(progress.crossed_next_step());
+
+        progress.add_movement(DVec3::new(0.0, 4.0, 3.0), true);
+        assert_f32_close(progress.move_dist(), 4.8);
+        assert_f32_close(progress.fly_dist(), 6.0);
     }
 
     #[test]

@@ -2519,26 +2519,41 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
+        self.play_sound_at(
+            sound_id,
+            source,
+            DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+
+    /// Plays a sound at an exact world position, broadcasting to nearby players.
+    pub fn play_sound_at(
+        &self,
+        sound_id: i32,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
         let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
+            SectionPos::block_to_section_coord(pos.x.floor() as i32),
+            SectionPos::block_to_section_coord(pos.z.floor() as i32),
         );
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
 
-        let packet = CSound::new(
-            sound_id,
-            source,
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-            volume,
-            pitch,
-            seed,
-        );
+        let packet = CSound::new(sound_id, source, pos.x, pos.y, pos.z, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -2547,12 +2562,6 @@ impl World {
         };
 
         // Get players tracking this chunk, then filter by 64-block distance
-        let sound_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
             if exclude == Some(entity_id) {
@@ -2560,9 +2569,9 @@ impl World {
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
                 let player_pos = player.position();
-                let dx = player_pos.x - sound_pos.0;
-                let dy = player_pos.y - sound_pos.1;
-                let dz = player_pos.z - sound_pos.2;
+                let dx = player_pos.x - pos.x;
+                let dy = player_pos.y - pos.y;
+                let dz = player_pos.z - pos.z;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
@@ -2892,11 +2901,24 @@ impl World {
         pos: BlockPos,
         context: &GameEventContext,
     ) {
-        let source_pos = DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
+        self.game_event_at(
+            event,
+            DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            context,
         );
+    }
+
+    /// Dispatches a game event from an exact world position.
+    pub fn game_event_at(
+        self: &Arc<Self>,
+        event: GameEventRef,
+        source_pos: DVec3,
+        context: &GameEventContext,
+    ) {
         self.game_event_listeners
             .dispatch(self, event, source_pos, context);
     }

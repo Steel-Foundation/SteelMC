@@ -6,8 +6,9 @@ use glam::DVec3;
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::{block_state_ext::BlockStateExt as _, shapes::is_shape_full_block};
-use steel_registry::entity_data::DataValue;
+use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
@@ -15,7 +16,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_game_events};
+use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_game_events};
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis};
@@ -314,8 +315,9 @@ mod tracker;
 
 use crate::portal::TeleportTransition;
 pub use base::{
-    EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact, EntityMovement,
-    EntityMovementFlags, EntityVerticalMovementStateUpdate,
+    EntityAmethystStepSound, EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact,
+    EntityMovement, EntityMovementEmission, EntityMovementFlags, EntityMovementProgress,
+    EntityVerticalMovementStateUpdate,
 };
 pub use cache::EntityCache;
 pub use callback::{
@@ -1156,6 +1158,297 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .speed_factor
     }
 
+    /// Returns this entity's physical pose.
+    fn pose(&self) -> EntityPose {
+        self.base().pose()
+    }
+
+    /// Returns whether vanilla currently considers this entity crouching.
+    fn is_crouching(&self) -> bool {
+        self.pose() == EntityPose::Sneaking
+    }
+
+    /// Returns whether vanilla currently considers this entity swimming.
+    fn is_swimming(&self) -> bool {
+        self.synced_data()
+            .is_some_and(EntitySyncedData::is_swimming)
+    }
+
+    /// Returns whether this entity is on rails.
+    fn is_on_rails(&self) -> bool {
+        false
+    }
+
+    /// Returns whether a block state is climbable for base movement effects.
+    fn is_state_climbable(&self, state: BlockStateId) -> bool {
+        let block = state.get_block();
+        block.has_tag(&BlockTag::CLIMBABLE) || block == &vanilla_blocks::POWDER_SNOW
+    }
+
+    /// Returns vanilla movement side effects emitted by this entity.
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::All
+    }
+
+    /// Returns this entity's vanilla sound source category.
+    fn sound_source(&self) -> SoundSource {
+        SoundSource::Neutral
+    }
+
+    /// Returns this entity's vanilla swim sound.
+    fn swim_sound(&self) -> i32 {
+        sound_events::ENTITY_GENERIC_SWIM
+    }
+
+    /// Returns whether sounds from this entity are suppressed.
+    fn is_silent(&self) -> bool {
+        false
+    }
+
+    /// Plays an entity sound at the entity's exact position.
+    fn play_sound(&self, sound_id: i32, volume: f32, pitch: f32) {
+        if self.is_silent() {
+            return;
+        }
+
+        if let Some(world) = self.level() {
+            world.play_sound_at(
+                sound_id,
+                self.sound_source(),
+                self.position(),
+                volume,
+                pitch,
+                None,
+            );
+        }
+    }
+
+    /// Plays the base vanilla step sound for a block.
+    fn play_step_sound(&self, _pos: BlockPos, block_state: BlockStateId) {
+        self.play_block_step_sound(block_state);
+    }
+
+    /// Plays a vanilla block step sound at this entity's current position.
+    fn play_block_step_sound(&self, block_state: BlockStateId) {
+        let sound_type = block_state.get_block().config.sound_type;
+        self.play_sound(
+            sound_type.step_sound,
+            sound_type.volume * 0.15,
+            sound_type.pitch,
+        );
+    }
+
+    /// Plays vanilla's muffled secondary step sound.
+    fn play_muffled_step_sound(&self, block_state: BlockStateId) {
+        let sound_type = block_state.get_block().config.sound_type;
+        self.play_sound(
+            sound_type.step_sound,
+            sound_type.volume * 0.05,
+            sound_type.pitch * 0.8,
+        );
+    }
+
+    /// Plays vanilla's combination primary and secondary step sounds.
+    fn play_combination_step_sounds(
+        &self,
+        primary_step_sound: BlockStateId,
+        secondary_step_sound: BlockStateId,
+    ) {
+        self.play_block_step_sound(primary_step_sound);
+        self.play_muffled_step_sound(secondary_step_sound);
+    }
+
+    /// Plays vanilla walking step sounds, including amethyst chimes.
+    fn walking_step_sound(&self, pos: BlockPos, block_state: BlockStateId) {
+        self.play_step_sound(pos, block_state);
+        if block_state
+            .get_block()
+            .has_tag(&BlockTag::CRYSTAL_SOUND_BLOCKS)
+        {
+            self.play_amethyst_step_sound();
+        }
+    }
+
+    /// Plays vanilla amethyst step chime when its cooldown permits it.
+    fn play_amethyst_step_sound(&self) {
+        let Some(sound) = self.base().amethyst_step_sound(self.tick_count()) else {
+            return;
+        };
+        self.play_sound(
+            sound_events::BLOCK_AMETHYST_BLOCK_CHIME,
+            sound.volume,
+            sound.pitch,
+        );
+    }
+
+    /// Plays vanilla swim sound from movement emission.
+    fn water_swim_sound(&self) {
+        let velocity = self.velocity();
+        let volume = ((velocity.x * velocity.x * 0.2
+            + velocity.y * velocity.y
+            + velocity.z * velocity.z * 0.2)
+            .sqrt() as f32
+            * 0.35)
+            .min(1.0);
+        self.play_swim_sound(volume);
+    }
+
+    /// Plays this entity's swim sound at the given volume.
+    fn play_swim_sound(&self, volume: f32) {
+        let pitch = {
+            let mut random = self.base().random().lock();
+            1.0 + (random.next_f32() - random.next_f32()) * 0.4
+        };
+        self.play_sound(self.swim_sound(), volume, pitch);
+    }
+
+    /// Returns whether the entity is currently flapping.
+    fn is_flapping(&self) -> bool {
+        false
+    }
+
+    /// Runs entity-specific flap side effects.
+    fn on_flap(&self) {}
+
+    /// Processes vanilla flap movement side effects.
+    fn process_flapping_movement(&self) {
+        if !self.is_flapping() {
+            return;
+        }
+
+        self.on_flap();
+        if self.movement_emission().emits_events()
+            && let Some(world) = self.level()
+        {
+            world.game_event_at(
+                &vanilla_game_events::FLAP,
+                self.position(),
+                &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            );
+        }
+    }
+
+    /// Returns the next step threshold after movement side effects are produced.
+    fn next_step(&self) -> f32 {
+        self.base().movement_progress().move_dist().floor() + 1.0
+    }
+
+    /// Applies vanilla movement sounds and game events after a completed move.
+    fn apply_movement_emission_and_play_sound(
+        &self,
+        emission: EntityMovementEmission,
+        clipped_movement: DVec3,
+        effect_pos: BlockPos,
+        effect_state: BlockStateId,
+    ) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(supporting_pos) = self.on_pos(1.0e-5) else {
+            return;
+        };
+
+        let supporting_state = world.get_block_state(supporting_pos);
+        let climbing = self.is_state_climbable(supporting_state);
+        let progress = self
+            .base()
+            .record_movement_progress(clipped_movement, climbing);
+
+        if progress.crossed_next_step() && supporting_state.get_block() != &vanilla_blocks::AIR {
+            let only_effect_state_emissions = supporting_pos == effect_pos;
+            let mut produced_side_effects = self.vibration_and_sound_effects_from_block(
+                effect_pos,
+                effect_state,
+                emission.emits_sounds(),
+                only_effect_state_emissions,
+                clipped_movement,
+            );
+            if !only_effect_state_emissions {
+                produced_side_effects |= self.vibration_and_sound_effects_from_block(
+                    supporting_pos,
+                    supporting_state,
+                    false,
+                    emission.emits_events(),
+                    clipped_movement,
+                );
+            }
+
+            if produced_side_effects {
+                self.base().set_next_step(self.next_step());
+            } else if self.is_in_water() {
+                self.base().set_next_step(self.next_step());
+                if emission.emits_sounds() {
+                    self.water_swim_sound();
+                }
+                if emission.emits_events() {
+                    world.game_event_at(
+                        &vanilla_game_events::SWIM,
+                        self.position(),
+                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
+                    );
+                }
+            }
+        } else if supporting_state.get_block() == &vanilla_blocks::AIR {
+            self.process_flapping_movement();
+        }
+    }
+
+    /// Applies movement side effects after vanilla collision and landing updates.
+    fn apply_movement_side_effects_after_move(&self, world: &World, actual_movement: DVec3) {
+        let emission = self.movement_emission();
+        if !emission.emits_anything() || self.is_passenger() {
+            return;
+        }
+
+        let Some(effect_pos) = self.on_pos_legacy() else {
+            return;
+        };
+        let effect_state = world.get_block_state(effect_pos);
+        self.apply_movement_emission_and_play_sound(
+            emission,
+            actual_movement,
+            effect_pos,
+            effect_state,
+        );
+    }
+
+    /// Emits step side effects from a candidate movement-effect block.
+    fn vibration_and_sound_effects_from_block(
+        &self,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        should_sound: bool,
+        should_vibrate: bool,
+        clipped_movement: DVec3,
+    ) -> bool {
+        if block_state.get_block() == &vanilla_blocks::AIR {
+            return false;
+        }
+
+        let is_climbable = self.is_state_climbable(block_state);
+        if !(self.on_ground()
+            || is_climbable
+            || self.is_crouching() && clipped_movement.y == 0.0
+            || self.is_on_rails())
+            || self.is_swimming()
+        {
+            return false;
+        }
+
+        if should_sound {
+            self.walking_step_sound(pos, block_state);
+        }
+        if should_vibrate && let Some(world) = self.level() {
+            world.game_event_at(
+                &vanilla_game_events::STEP,
+                self.position(),
+                &GameEventContext::new(Some(self.as_entity_event_source()), Some(block_state)),
+            );
+        }
+
+        true
+    }
+
     /// Maximum height this entity can step up during normal movement.
     fn max_up_step(&self) -> f32 {
         0.0
@@ -1335,6 +1628,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 };
             self.set_velocity(next_velocity);
         }
+
+        self.apply_movement_side_effects_after_move(&world, result.actual_movement);
 
         let speed_factor = f64::from(self.block_speed_factor());
         let vel = self.velocity();
