@@ -188,6 +188,97 @@ fn record_movement_for_block_effects(
     }
 }
 
+fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMovement]) {
+    if !entity.is_affected_by_blocks() {
+        return;
+    }
+
+    let Some(world) = entity.level() else {
+        return;
+    };
+
+    let mut visited_blocks = FxHashSet::default();
+    for movement in movements.iter().copied() {
+        let mut remaining_iterations = 16;
+        let delta = movement.to() - movement.from();
+        if let Some(original_movement) = movement.axis_dependent_original_movement()
+            && delta.length_squared() > 0.0
+        {
+            let mut segment_from = movement.from();
+            for axis in block_effects::axis_step_order(original_movement) {
+                let axis_move = block_effects::component(delta, axis);
+                if axis_move == 0.0 {
+                    continue;
+                }
+
+                let segment_to = relative_on_axis(segment_from, axis, axis_move);
+                match apply_block_effect_segment(
+                    entity,
+                    &world,
+                    segment_from,
+                    segment_to,
+                    remaining_iterations,
+                    &mut visited_blocks,
+                ) {
+                    BlockEffectSegmentResult::Complete(iterations) => {
+                        remaining_iterations -= iterations;
+                    }
+                    BlockEffectSegmentResult::IterationLimit => {
+                        apply_block_effect_segment(
+                            entity,
+                            &world,
+                            movement.to(),
+                            movement.to(),
+                            1,
+                            &mut visited_blocks,
+                        );
+                        return;
+                    }
+                    BlockEffectSegmentResult::Removed => return,
+                }
+                segment_from = segment_to;
+            }
+        } else {
+            match apply_block_effect_segment(
+                entity,
+                &world,
+                movement.from(),
+                movement.to(),
+                remaining_iterations,
+                &mut visited_blocks,
+            ) {
+                BlockEffectSegmentResult::Complete(iterations) => {
+                    remaining_iterations -= iterations;
+                }
+                BlockEffectSegmentResult::IterationLimit => {
+                    apply_block_effect_segment(
+                        entity,
+                        &world,
+                        movement.to(),
+                        movement.to(),
+                        1,
+                        &mut visited_blocks,
+                    );
+                    return;
+                }
+                BlockEffectSegmentResult::Removed => return,
+            }
+        }
+
+        if remaining_iterations <= 0 {
+            apply_block_effect_segment(
+                entity,
+                &world,
+                movement.to(),
+                movement.to(),
+                1,
+                &mut visited_blocks,
+            );
+            return;
+        }
+    }
+}
+
 pub mod attribute;
 mod base;
 mod block_effects;
@@ -905,96 +996,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// shape, fluid inside effects, and `InsideBlockEffectApplier` once those
     /// effect systems exist.
     fn apply_effects_from_blocks(&self) {
-        if !self.is_affected_by_blocks() {
-            return;
-        }
-
-        let Some(world) = self.level() else {
-            return;
-        };
-
         let entity = self.as_entity_event_source();
         let movements = self.base().take_movements_for_block_effects();
-        let mut visited_blocks = FxHashSet::default();
-        for movement in movements {
-            let mut remaining_iterations = 16;
-            let delta = movement.to() - movement.from();
-            if let Some(original_movement) = movement.axis_dependent_original_movement()
-                && delta.length_squared() > 0.0
-            {
-                let mut segment_from = movement.from();
-                for axis in block_effects::axis_step_order(original_movement) {
-                    let axis_move = block_effects::component(delta, axis);
-                    if axis_move == 0.0 {
-                        continue;
-                    }
+        apply_effects_from_block_movements(entity, &movements);
+    }
 
-                    let segment_to = relative_on_axis(segment_from, axis, axis_move);
-                    match apply_block_effect_segment(
-                        entity,
-                        &world,
-                        segment_from,
-                        segment_to,
-                        remaining_iterations,
-                        &mut visited_blocks,
-                    ) {
-                        BlockEffectSegmentResult::Complete(iterations) => {
-                            remaining_iterations -= iterations;
-                        }
-                        BlockEffectSegmentResult::IterationLimit => {
-                            apply_block_effect_segment(
-                                entity,
-                                &world,
-                                movement.to(),
-                                movement.to(),
-                                1,
-                                &mut visited_blocks,
-                            );
-                            return;
-                        }
-                        BlockEffectSegmentResult::Removed => return,
-                    }
-                    segment_from = segment_to;
-                }
-            } else {
-                match apply_block_effect_segment(
-                    entity,
-                    &world,
-                    movement.from(),
-                    movement.to(),
-                    remaining_iterations,
-                    &mut visited_blocks,
-                ) {
-                    BlockEffectSegmentResult::Complete(iterations) => {
-                        remaining_iterations -= iterations;
-                    }
-                    BlockEffectSegmentResult::IterationLimit => {
-                        apply_block_effect_segment(
-                            entity,
-                            &world,
-                            movement.to(),
-                            movement.to(),
-                            1,
-                            &mut visited_blocks,
-                        );
-                        return;
-                    }
-                    BlockEffectSegmentResult::Removed => return,
-                }
-            }
-
-            if remaining_iterations <= 0 {
-                apply_block_effect_segment(
-                    entity,
-                    &world,
-                    movement.to(),
-                    movement.to(),
-                    1,
-                    &mut visited_blocks,
-                );
-                return;
-            }
-        }
+    /// Replays the last finalized block-contact movement list.
+    fn apply_effects_from_blocks_for_last_movements(&self) {
+        let entity = self.as_entity_event_source();
+        let movements = self.base().last_movements_for_block_effects();
+        apply_effects_from_block_movements(entity, &movements);
     }
 
     /// Sets whether the entity is on the ground.

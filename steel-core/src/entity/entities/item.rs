@@ -682,6 +682,11 @@ impl Entity for ItemEntity {
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
             if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
+                self.apply_effects_from_blocks();
+                if self.is_removed() {
+                    return;
+                }
+
                 // Get world for block queries
                 if let Some(world) = self.level() {
                     // Apply friction (vanilla: ItemEntity.tick line 125-128)
@@ -707,12 +712,11 @@ impl Entity for ItemEntity {
                     self.set_velocity(velocity);
                 }
             }
-        }
-
-        // Check blocks the item overlaps (cactus destroys items, etc.)
-        self.apply_effects_from_blocks();
-        if self.is_removed() {
-            return;
+        } else {
+            self.apply_effects_from_blocks_for_last_movements();
+            if self.is_removed() {
+                return;
+            }
         }
 
         // Item merging (vanilla: ItemEntity.tick lines 152-156)

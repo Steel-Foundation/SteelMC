@@ -130,7 +130,11 @@ impl EntityMovementTrace {
                 .push(EntityMovement::new(old_position, position));
         }
 
-        self.final_movements_this_tick.clone()
+        self.final_movements_this_tick.as_slice().to_vec()
+    }
+
+    fn last_for_block_effects(&self) -> Vec<EntityMovement> {
+        self.final_movements_this_tick.as_slice().to_vec()
     }
 }
 
@@ -1047,6 +1051,11 @@ impl EntityBase {
             .take_for_block_effects(old_position, position)
     }
 
+    /// Returns the last finalized movement segments for vanilla block-contact effects.
+    pub fn last_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+        self.movement_trace.lock().last_for_block_effects()
+    }
+
     /// Sets the entity's bounding box directly.
     ///
     /// Use this for vanilla entities whose box is not simply dimensions centered
@@ -1618,6 +1627,28 @@ mod tests {
                 DVec3::new(1.0, 2.0, 3.0)
             )]
         );
+    }
+
+    #[test]
+    fn movement_trace_replays_last_finalized_movements() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        assert!(base.last_movements_for_block_effects().is_empty());
+
+        base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
+        base.set_position(DVec3::new(1.0, 0.0, 0.0));
+        let finalized = base.take_movements_for_block_effects();
+        assert_eq!(base.last_movements_for_block_effects(), finalized);
+
+        base.record_movement_this_tick(EntityMovement::new(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(2.0, 0.0, 0.0),
+        ));
+        assert_eq!(base.last_movements_for_block_effects(), finalized);
     }
 
     #[test]
