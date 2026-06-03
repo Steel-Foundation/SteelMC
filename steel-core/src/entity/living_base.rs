@@ -16,6 +16,60 @@ use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifie
 pub const DEATH_DURATION: i32 = 20;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 
+/// Movement input stored on vanilla `LivingEntity`.
+///
+/// Vanilla names these fields `xxa`, `yya`, and `zza`; Steel uses axis names
+/// so AI/pathfinding code can set intent without carrying obfuscated names.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LivingTravelInput {
+    sideways: f32,
+    vertical: f32,
+    forward: f32,
+}
+
+impl LivingTravelInput {
+    /// No travel input.
+    pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
+
+    /// Creates living travel input.
+    #[must_use]
+    pub const fn new(sideways: f32, vertical: f32, forward: f32) -> Self {
+        Self {
+            sideways,
+            vertical,
+            forward,
+        }
+    }
+
+    /// Returns sideways movement input.
+    #[must_use]
+    pub const fn sideways(self) -> f32 {
+        self.sideways
+    }
+
+    /// Returns vertical movement input.
+    #[must_use]
+    pub const fn vertical(self) -> f32 {
+        self.vertical
+    }
+
+    /// Returns forward movement input.
+    #[must_use]
+    pub const fn forward(self) -> f32 {
+        self.forward
+    }
+
+    /// Returns input after vanilla `LivingEntity.applyInput()` damping.
+    #[must_use]
+    pub const fn dampened(self) -> Self {
+        Self {
+            sideways: self.sideways * 0.98,
+            vertical: self.vertical,
+            forward: self.forward * 0.98,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LivingEntityState {
     death_processed: bool,
@@ -29,6 +83,9 @@ struct LivingEntityState {
     sleeping_pos: Option<BlockPos>,
     last_climbable_pos: Option<BlockPos>,
     discard_friction: bool,
+    jumping: bool,
+    travel_input: LivingTravelInput,
+    no_jump_delay: i32,
 }
 
 impl LivingEntityState {
@@ -45,6 +102,9 @@ impl LivingEntityState {
             sleeping_pos: None,
             last_climbable_pos: None,
             discard_friction: false,
+            jumping: false,
+            travel_input: LivingTravelInput::ZERO,
+            no_jump_delay: 0,
         }
     }
 
@@ -223,6 +283,53 @@ impl LivingEntityBase {
         self.state.lock().discard_friction = discard_friction;
     }
 
+    /// Returns whether this living entity is applying jump input.
+    #[must_use]
+    pub fn is_jumping(&self) -> bool {
+        self.state.lock().jumping
+    }
+
+    /// Sets whether this living entity is applying jump input.
+    pub fn set_jumping(&self, jumping: bool) {
+        self.state.lock().jumping = jumping;
+    }
+
+    /// Returns vanilla living travel input.
+    #[must_use]
+    pub fn travel_input(&self) -> LivingTravelInput {
+        self.state.lock().travel_input
+    }
+
+    /// Sets vanilla living travel input.
+    pub fn set_travel_input(&self, input: LivingTravelInput) {
+        self.state.lock().travel_input = input;
+    }
+
+    /// Applies vanilla `LivingEntity.applyInput()` damping to travel input.
+    pub fn dampen_travel_input(&self) {
+        let mut state = self.state.lock();
+        state.travel_input = state.travel_input.dampened();
+    }
+
+    /// Returns vanilla jump cooldown ticks.
+    #[must_use]
+    pub fn no_jump_delay(&self) -> i32 {
+        self.state.lock().no_jump_delay
+    }
+
+    /// Sets vanilla jump cooldown ticks.
+    pub fn set_no_jump_delay(&self, ticks: i32) {
+        self.state.lock().no_jump_delay = ticks;
+    }
+
+    /// Decrements vanilla jump cooldown once per living AI step.
+    pub fn tick_no_jump_delay(&self) {
+        let mut state = self.state.lock();
+        if state.no_jump_delay > 0 {
+            state.no_jump_delay -= 1;
+        }
+    }
+
     /// Calculates vanilla living-entity fall damage.
     #[must_use]
     pub fn calculate_fall_damage(
@@ -305,7 +412,7 @@ mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_attributes, vanilla_entities};
     use steel_utils::BlockPos;
 
-    use super::LivingEntityBase;
+    use super::{LivingEntityBase, LivingTravelInput};
 
     #[test]
     fn fall_damage_starts_above_safe_fall_distance() {
@@ -447,5 +554,39 @@ mod tests {
         assert!(base.should_discard_friction());
         base.set_discard_friction(false);
         assert!(!base.should_discard_friction());
+    }
+
+    #[test]
+    fn living_travel_input_is_shared_living_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert_eq!(base.travel_input(), LivingTravelInput::ZERO);
+        base.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
+        assert_eq!(base.travel_input(), LivingTravelInput::new(1.0, 0.5, -1.0));
+
+        base.dampen_travel_input();
+        assert_eq!(
+            base.travel_input(),
+            LivingTravelInput::new(0.98, 0.5, -0.98)
+        );
+    }
+
+    #[test]
+    fn jumping_and_jump_delay_are_shared_living_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert!(!base.is_jumping());
+        base.set_jumping(true);
+        assert!(base.is_jumping());
+
+        assert_eq!(base.no_jump_delay(), 0);
+        base.set_no_jump_delay(2);
+        base.tick_no_jump_delay();
+        assert_eq!(base.no_jump_delay(), 1);
+        base.tick_no_jump_delay();
+        base.tick_no_jump_delay();
+        assert_eq!(base.no_jump_delay(), 0);
     }
 }

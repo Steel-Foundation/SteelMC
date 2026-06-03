@@ -523,7 +523,7 @@ pub use fluid_contact::EntityFluidContact;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
-pub use living_base::{DEATH_DURATION, LivingEntityBase};
+pub use living_base::{DEATH_DURATION, LivingEntityBase, LivingTravelInput};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -2699,7 +2699,42 @@ pub trait LivingEntity: Entity {
 
     /// Returns whether this living entity is currently applying jump input.
     fn is_jumping(&self) -> bool {
-        false
+        self.living_base().is_jumping()
+    }
+
+    /// Sets whether this living entity is currently applying jump input.
+    fn set_jumping(&self, jumping: bool) {
+        self.living_base().set_jumping(jumping);
+    }
+
+    /// Returns vanilla living travel input.
+    fn travel_input(&self) -> LivingTravelInput {
+        self.living_base().travel_input()
+    }
+
+    /// Sets vanilla living travel input.
+    fn set_travel_input(&self, input: LivingTravelInput) {
+        self.living_base().set_travel_input(input);
+    }
+
+    /// Applies vanilla `LivingEntity.applyInput()` damping.
+    fn apply_input(&self) {
+        self.living_base().dampen_travel_input();
+    }
+
+    /// Returns vanilla jump cooldown ticks.
+    fn no_jump_delay(&self) -> i32 {
+        self.living_base().no_jump_delay()
+    }
+
+    /// Sets vanilla jump cooldown ticks.
+    fn set_no_jump_delay(&self, ticks: i32) {
+        self.living_base().set_no_jump_delay(ticks);
+    }
+
+    /// Decrements vanilla jump cooldown once per living AI step.
+    fn tick_no_jump_delay(&self) {
+        self.living_base().tick_no_jump_delay();
     }
 
     /// Returns vanilla `LivingEntity.isSuppressingSlidingDownLadder()`.
