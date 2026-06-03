@@ -178,14 +178,17 @@ fn record_movement_for_block_effects(
     requested_movement: DVec3,
     actual_movement: DVec3,
 ) {
-    let movement_length = actual_movement.length_squared();
-    if movement_length > MOVEMENT_RECORD_EPSILON
-        || requested_movement.length_squared() - movement_length < MOVEMENT_RECORD_EPSILON
-    {
+    if should_apply_resolved_movement(requested_movement, actual_movement) {
         entity.base().record_movement_this_tick(
             EntityMovement::with_axis_dependent_original_movement(from, to, requested_movement),
         );
     }
+}
+
+fn should_apply_resolved_movement(requested_movement: DVec3, actual_movement: DVec3) -> bool {
+    let movement_length = actual_movement.length_squared();
+    movement_length > MOVEMENT_RECORD_EPSILON
+        || requested_movement.length_squared() - movement_length < MOVEMENT_RECORD_EPSILON
 }
 
 fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMovement]) {
@@ -1179,6 +1182,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
     }
 
+    /// Moves the entity without collision physics.
+    fn move_without_physics(&self, delta: DVec3) -> MoveResult {
+        let final_position = self.position() + delta;
+        self.set_position(final_position);
+        self.base().clear_collision_flags();
+        self.refresh_fluid_contact();
+
+        MoveResult {
+            final_position,
+            actual_movement: delta,
+            on_ground: self.on_ground(),
+            horizontal_collision: false,
+            vertical_collision: false,
+            x_collision: false,
+            z_collision: false,
+            final_aabb: self.bounding_box(),
+        }
+    }
+
     /// Moves the entity with collision detection.
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
@@ -1186,21 +1208,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
-            let final_position = self.position() + delta;
-            self.set_position(final_position);
-            self.base().clear_collision_flags();
-            self.refresh_fluid_contact();
-
-            return Some(MoveResult {
-                final_position,
-                actual_movement: delta,
-                on_ground: self.on_ground(),
-                horizontal_collision: false,
-                vertical_collision: false,
-                x_collision: false,
-                z_collision: false,
-                final_aabb: self.bounding_box(),
-            });
+            return Some(self.move_without_physics(delta));
         }
 
         let mut movement = delta;
@@ -1237,7 +1245,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
         );
 
         // Update entity state
-        self.set_position(result.final_position);
+        if should_apply_resolved_movement(movement, result.actual_movement) {
+            self.set_position(result.final_position);
+        }
         let movement_flags = EntityMovementFlags::after_move(
             result.on_ground,
             result.horizontal_collision,
@@ -1666,7 +1676,10 @@ mod tests {
     use steel_registry::vanilla_entities;
     use steel_utils::{BlockPos, Direction};
 
-    use super::{Entity, EntityBase, SharedEntity, closest_open_space_direction};
+    use super::{
+        Entity, EntityBase, SharedEntity, closest_open_space_direction,
+        should_apply_resolved_movement,
+    };
 
     struct PushableTestEntity {
         base: EntityBase,
@@ -1743,6 +1756,19 @@ mod tests {
             ),
             Direction::Up
         );
+    }
+
+    #[test]
+    fn resolved_movement_application_matches_vanilla_threshold() {
+        assert!(should_apply_resolved_movement(DVec3::ZERO, DVec3::ZERO));
+        assert!(should_apply_resolved_movement(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0e-3, 0.0, 0.0)
+        ));
+        assert!(!should_apply_resolved_movement(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::ZERO
+        ));
     }
 
     #[test]
