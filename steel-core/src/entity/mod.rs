@@ -1037,6 +1037,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.is_local_instance_authoritative()
     }
 
+    /// Returns true when vanilla allows this side to run entity AI/travel logic.
+    fn is_effective_ai(&self) -> bool {
+        self.is_local_instance_authoritative()
+    }
+
     /// Returns true when vanilla landing bounce should be suppressed.
     fn is_suppressing_bounce(&self) -> bool {
         self.synced_data()
@@ -3531,6 +3536,9 @@ mod tests {
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(controller));
 
         assert!(vehicle.is_client_authoritative());
+        assert!(!vehicle.is_local_instance_authoritative());
+        assert!(!vehicle.can_simulate_movement());
+        assert!(!vehicle.is_effective_ai());
 
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();

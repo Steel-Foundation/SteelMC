@@ -1294,6 +1294,14 @@ impl Entity for Player {
         true
     }
 
+    fn can_simulate_movement(&self) -> bool {
+        true
+    }
+
+    fn is_effective_ai(&self) -> bool {
+        true
+    }
+
     fn known_movement(&self) -> DVec3 {
         self.movement.lock().last_known_client_movement()
     }
