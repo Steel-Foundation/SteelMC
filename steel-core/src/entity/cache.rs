@@ -119,17 +119,20 @@ impl EntityCache {
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
         let mut result = Vec::new();
 
-        // Determine section range (with 2 block grace like vanilla)
-        let min_x = ((aabb.min_x() - 2.0) as i32) >> 4;
-        let min_y = ((aabb.min_y() - 2.0) as i32) >> 4;
-        let min_z = ((aabb.min_z() - 2.0) as i32) >> 4;
-        let max_x = ((aabb.max_x() + 2.0) as i32) >> 4;
-        let max_y = ((aabb.max_y() + 2.0) as i32) >> 4;
-        let max_z = ((aabb.max_z() + 2.0) as i32) >> 4;
+        let min_section = SectionPos::from_entity_pos(glam::DVec3::new(
+            aabb.min_x() - 2.0,
+            aabb.min_y() - 2.0,
+            aabb.min_z() - 2.0,
+        ));
+        let max_section = SectionPos::from_entity_pos(glam::DVec3::new(
+            aabb.max_x() + 2.0,
+            aabb.max_y() + 2.0,
+            aabb.max_z() + 2.0,
+        ));
 
-        for sy in min_y..=max_y {
-            for sz in min_z..=max_z {
-                for sx in min_x..=max_x {
+        for sy in min_section.y()..=max_section.y() {
+            for sz in min_section.z()..=max_section.z() {
+                for sx in min_section.x()..=max_section.x() {
                     let section_pos = SectionPos::new(sx, sy, sz);
 
                     let entity_ids: Option<Vec<i32>> = self
@@ -184,10 +187,14 @@ impl EntityCache {
         // Clean by_uuid
         self.by_uuid.retain_sync(|_, weak| weak.strong_count() > 0);
 
-        // Clean sections - remove empty sections
-        // Note: scc::HashMap doesn't have a scan method that allows collecting,
-        // so we use retain_sync which handles this case
-        self.by_section.retain_sync(|_, set| !set.is_empty());
+        self.by_section.retain_sync(|_, set| {
+            set.retain(|id| {
+                self.by_id
+                    .read_sync(id, |_, weak| weak.strong_count() > 0)
+                    .unwrap_or(false)
+            });
+            !set.is_empty()
+        });
     }
 
     fn add_to_section(&self, section: SectionPos, entity_id: i32) {
@@ -226,5 +233,84 @@ impl EntityCache {
 impl Default for EntityCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak};
+
+    use glam::DVec3;
+    use steel_registry::{
+        entity_type::{EntityDimensions, EntityTypeRef},
+        vanilla_entities,
+    };
+    use steel_utils::WorldAabb;
+
+    use super::*;
+    use crate::entity::{Entity, EntityBase};
+    use crate::world::World;
+
+    struct CacheTestEntity {
+        base: EntityBase,
+    }
+
+    impl CacheTestEntity {
+        fn new(id: i32, position: DVec3, dimensions: EntityDimensions) -> Arc<Self> {
+            Arc::new(Self {
+                base: EntityBase::new(id, position, dimensions, Weak::<World>::new()),
+            })
+        }
+    }
+
+    impl Entity for CacheTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+    }
+
+    #[test]
+    fn aabb_query_floors_section_coordinates_for_negative_bounds() {
+        let cache = EntityCache::new();
+        let entity = CacheTestEntity::new(
+            1,
+            DVec3::new(-0.25, 64.0, 0.0),
+            EntityDimensions::new(4.0, 1.0, 0.5),
+        );
+        let entity: SharedEntity = entity;
+
+        cache.register(&entity);
+
+        let query = WorldAabb::new(1.5, 64.0, -0.1, 1.6, 64.5, 0.1);
+        let entities = cache.get_entities_in_aabb(&query);
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id(), 1);
+    }
+
+    #[test]
+    fn cleanup_removes_dead_section_ids() {
+        let cache = EntityCache::new();
+        let section = SectionPos::from_entity_pos(DVec3::ZERO);
+
+        {
+            let entity =
+                CacheTestEntity::new(1, DVec3::ZERO, EntityDimensions::new(0.25, 0.25, 0.125));
+            let entity: SharedEntity = entity;
+            cache.register(&entity);
+        }
+
+        assert_eq!(cache.count(), 1);
+        assert_eq!(cache.by_section.len(), 1);
+
+        cache.cleanup();
+
+        assert_eq!(cache.count(), 0);
+        assert_eq!(cache.by_section.len(), 0);
+        assert!(cache.get_entities_in_section(section).is_empty());
     }
 }
