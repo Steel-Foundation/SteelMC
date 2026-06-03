@@ -1,27 +1,24 @@
 //! Core entity state flags for a player.
 //!
-//! Groups the boolean/simple state flags that describe what the player is
-//! physically doing: sleeping, swimming, gliding, sneaking, sprinting.
+//! Groups player-local pose inputs such as sleeping, swimming, and sneaking.
 
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_blocks;
 use steel_registry::{
     blocks::block_state_ext::BlockStateExt as _, blocks::properties::BlockStateProperties,
 };
-use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::types::GameType;
-use steel_utils::{BlockStateId, Identifier, WorldAabb};
+use steel_utils::{BlockStateId, WorldAabb};
 
 use crate::behavior::BlockCollisionContext;
-use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::{Entity, EntitySharedFlags, LivingEntity};
 use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
-const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POSE_COLLISION_EPSILON: f64 = 1.0E-7;
 
 const PLAYER_STANDING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.8, 1.62);
@@ -76,7 +73,7 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
     }
 }
 
-/// Physical state flags for a player entity.
+/// Player-local pose and shared-flag inputs.
 pub(super) struct EntityState {
     /// Whether the player is currently sleeping in a bed.
     sleeping: bool,
@@ -84,8 +81,6 @@ pub(super) struct EntityState {
     swimming: bool,
     /// Whether the player is sneaking (shift key down).
     crouching: bool,
-    /// Whether the player is sprinting.
-    sprinting: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +88,6 @@ pub(super) struct EntityStateSnapshot {
     pub sleeping: bool,
     pub swimming: bool,
     pub crouching: bool,
-    pub sprinting: bool,
 }
 
 impl EntityState {
@@ -103,7 +97,6 @@ impl EntityState {
             sleeping: false,
             swimming: false,
             crouching: false,
-            sprinting: false,
         }
     }
 
@@ -113,7 +106,6 @@ impl EntityState {
             sleeping: self.sleeping,
             swimming: self.swimming,
             crouching: self.crouching,
-            sprinting: self.sprinting,
         }
     }
 
@@ -129,15 +121,10 @@ impl EntityState {
         self.crouching = crouching;
     }
 
-    pub(super) const fn set_sprinting(&mut self, sprinting: bool) {
-        self.sprinting = sprinting;
-    }
-
     pub(super) const fn reset_transient(&mut self) {
         self.sleeping = false;
         self.swimming = false;
         self.crouching = false;
-        self.sprinting = false;
     }
 }
 
@@ -190,6 +177,7 @@ impl Player {
     pub(super) fn reset_entity_state(&self) {
         self.entity_state.lock().reset_transient();
         self.set_fall_flying(false);
+        self.set_sprinting(false);
     }
 
     /// Returns true if the player is shifting (sneaking).
@@ -216,7 +204,7 @@ impl Player {
         // TODO: invisible, glowing
         flags.set(EntitySharedFlags::SHIFT_KEY_DOWN, state.crouching);
         flags.set(EntitySharedFlags::SWIMMING, state.swimming);
-        flags.set(EntitySharedFlags::SPRINTING, state.sprinting);
+        flags.set(EntitySharedFlags::SPRINTING, self.is_sprinting());
         flags.set(EntitySharedFlags::FALL_FLYING, self.is_fall_flying());
 
         self.entity_data
@@ -256,7 +244,7 @@ impl Player {
         let swimming = select_swimming_state(
             state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator,
             SwimmingEnvironment {
-                sprinting: state.sprinting,
+                sprinting: self.is_sprinting(),
                 passenger: self.is_passenger(),
                 in_water: self.is_in_water(),
                 under_water: self.is_under_water(),
@@ -361,29 +349,6 @@ impl Player {
         self.base
             .set_pose_and_dimensions(actual_pose, Self::dimensions_for_pose(actual_pose));
         self.entity_data.lock().base_mut().pose.set(actual_pose);
-    }
-
-    /// Adds or removes the sprint speed modifier on `MOVEMENT_SPEED`.
-    ///
-    /// Vanilla: `LivingEntity.setSprinting()` — `SPEED_MODIFIER_SPRINTING`.
-    pub(super) fn apply_sprint_speed_modifier(&self, sprinting: bool) {
-        let mut attrs = self.attributes().lock();
-        if sprinting {
-            attrs.add_modifier(
-                vanilla_attributes::MOVEMENT_SPEED,
-                AttributeModifier {
-                    id: Identifier::vanilla_static("sprinting"),
-                    amount: SPRINT_SPEED_MODIFIER_AMOUNT,
-                    operation: AttributeModifierOperation::AddMultipliedTotal,
-                },
-                false,
-            );
-        } else {
-            attrs.remove_modifier(
-                vanilla_attributes::MOVEMENT_SPEED,
-                &Identifier::vanilla_static("sprinting"),
-            );
-        }
     }
 }
 

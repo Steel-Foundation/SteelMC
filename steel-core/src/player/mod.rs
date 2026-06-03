@@ -233,7 +233,7 @@ pub struct Player {
     /// Local tick and once-per-tick packet state.
     tick_state: SyncMutex<PlayerTickState>,
 
-    /// Physical state flags (sleeping, fall flying, on ground).
+    /// Player-local pose and shared-flag inputs.
     entity_state: SyncMutex<EntityState>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
@@ -1484,15 +1484,6 @@ impl LivingEntity for Player {
             .lock()
             .player_absorption
             .set(amount.max(0.0));
-    }
-
-    fn is_sprinting(&self) -> bool {
-        self.entity_state_snapshot().sprinting
-    }
-
-    fn set_sprinting(&self, sprinting: bool) {
-        self.entity_state.lock().set_sprinting(sprinting);
-        self.apply_sprint_speed_modifier(sprinting);
     }
 
     fn is_sleeping(&self) -> bool {

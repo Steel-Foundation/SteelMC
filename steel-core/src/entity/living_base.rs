@@ -7,12 +7,14 @@
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_attributes;
+use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 
-use crate::entity::attribute::AttributeMap;
+use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
+const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LivingEntityState {
@@ -23,6 +25,7 @@ struct LivingEntityState {
     speed: f32,
     current_impulse_context_reset_grace_time: i32,
     fall_flying: bool,
+    sprinting: bool,
 }
 
 impl LivingEntityState {
@@ -35,6 +38,7 @@ impl LivingEntityState {
             speed,
             current_impulse_context_reset_grace_time: 0,
             fall_flying: false,
+            sprinting: false,
         }
     }
 
@@ -140,6 +144,35 @@ impl LivingEntityBase {
         self.state.lock().fall_flying = fall_flying;
     }
 
+    /// Returns whether this living entity is sprinting.
+    #[must_use]
+    pub fn is_sprinting(&self) -> bool {
+        self.state.lock().sprinting
+    }
+
+    /// Sets the vanilla living-entity sprinting state and movement-speed modifier.
+    pub fn set_sprinting(&self, sprinting: bool) {
+        self.state.lock().sprinting = sprinting;
+
+        let mut attributes = self.attributes.lock();
+        if sprinting {
+            attributes.add_modifier(
+                vanilla_attributes::MOVEMENT_SPEED,
+                AttributeModifier {
+                    id: Identifier::vanilla_static("sprinting"),
+                    amount: SPRINT_SPEED_MODIFIER_AMOUNT,
+                    operation: AttributeModifierOperation::AddMultipliedTotal,
+                },
+                false,
+            );
+        } else {
+            attributes.remove_modifier(
+                vanilla_attributes::MOVEMENT_SPEED,
+                &Identifier::vanilla_static("sprinting"),
+            );
+        }
+    }
+
     /// Calculates vanilla living-entity fall damage.
     #[must_use]
     pub fn calculate_fall_damage(
@@ -219,7 +252,7 @@ impl LivingEntityBase {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{test_support::init_test_registry, vanilla_attributes, vanilla_entities};
 
     use super::LivingEntityBase;
 
@@ -288,5 +321,39 @@ mod tests {
         assert!(base.is_fall_flying());
         base.set_fall_flying(false);
         assert!(!base.is_fall_flying());
+    }
+
+    #[test]
+    fn sprinting_is_living_entity_state_and_speed_modifier() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
+        let base_speed = base
+            .attributes()
+            .lock()
+            .get_value(movement_speed)
+            .expect("player should have movement speed");
+
+        assert!(!base.is_sprinting());
+        base.set_sprinting(true);
+        assert!(base.is_sprinting());
+        assert!(
+            base.attributes()
+                .lock()
+                .get_value(movement_speed)
+                .expect("player should have movement speed")
+                > base_speed
+        );
+
+        base.set_sprinting(false);
+        assert!(!base.is_sprinting());
+        assert_eq!(
+            base.attributes()
+                .lock()
+                .get_value(movement_speed)
+                .expect("player should have movement speed")
+                .to_bits(),
+            base_speed.to_bits()
+        );
     }
 }

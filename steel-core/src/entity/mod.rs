@@ -2562,11 +2562,13 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity is sprinting.
     fn is_sprinting(&self) -> bool {
-        false
+        self.living_base().is_sprinting()
     }
 
     /// Sets whether the entity is sprinting.
-    fn set_sprinting(&self, sprinting: bool);
+    fn set_sprinting(&self, sprinting: bool) {
+        self.living_base().set_sprinting(sprinting);
+    }
 
     /// Gets the entity's cached movement speed.
     fn get_speed(&self) -> f32 {
