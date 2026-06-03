@@ -5,6 +5,7 @@ use glam::DVec3;
 
 use crate::entity::{EntityMovementSyncPackets, EntityMovementSyncState, EntityMovementSyncUpdate};
 use crate::physics::ClientAuthoredMovementState;
+use crate::player::PlayerInput;
 
 /// Player movement packets force a full entity position sync after this delay.
 const PLAYER_FULL_SYNC_DELAY: i32 = 400;
@@ -19,6 +20,8 @@ pub struct MovementState {
     client_vehicle_movement: ClientAuthoredMovementState,
     /// Entity id of the controlled root vehicle tracked this tick.
     client_vehicle_id: Option<i32>,
+    /// Latest vanilla client input snapshot sent by the player.
+    last_client_input: PlayerInput,
 }
 
 impl MovementState {
@@ -29,7 +32,19 @@ impl MovementState {
             client_movement: ClientAuthoredMovementState::new(),
             client_vehicle_movement: ClientAuthoredMovementState::new(),
             client_vehicle_id: None,
+            last_client_input: PlayerInput::EMPTY,
         }
+    }
+
+    /// Stores the latest client input snapshot.
+    pub(super) const fn set_last_client_input(&mut self, input: PlayerInput) {
+        self.last_client_input = input;
+    }
+
+    /// Returns the latest client input snapshot.
+    #[must_use]
+    pub(super) const fn last_client_input(&self) -> PlayerInput {
+        self.last_client_input
     }
 
     /// Returns the last absolute position used as the client's movement delta base.
@@ -189,6 +204,7 @@ mod tests {
     use glam::DVec3;
 
     use crate::entity::EntityMovementSyncUpdate;
+    use crate::player::PlayerInput;
 
     use super::MovementState;
 
@@ -196,6 +212,21 @@ mod tests {
     fn movement_state_starts_with_zero_known_client_movement() {
         let state = MovementState::new();
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn movement_state_tracks_last_client_input() {
+        let mut state = MovementState::new();
+        let input = PlayerInput::from_flags(0x01 | 0x08 | 0x10 | 0x40);
+
+        assert_eq!(state.last_client_input(), PlayerInput::EMPTY);
+        state.set_last_client_input(input);
+
+        assert_eq!(state.last_client_input(), input);
+        assert_eq!(
+            state.last_client_input().movement_input(),
+            DVec3::new(-1.0, 0.0, 1.0)
+        );
     }
 
     #[test]

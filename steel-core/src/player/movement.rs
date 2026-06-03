@@ -20,8 +20,8 @@ use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
 };
-use crate::player::Player;
 use crate::player::food_data::food_constants;
+use crate::player::{Player, PlayerInput};
 use crate::world::World;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
@@ -794,10 +794,17 @@ impl Player {
         }
     }
 
+    /// Returns the latest vanilla client input snapshot.
+    #[must_use]
+    pub fn last_client_input(&self) -> PlayerInput {
+        self.movement.lock().last_client_input()
+    }
+
     /// Handles a player input packet (movement keys, sneaking, sprinting).
     pub fn handle_player_input(&self, packet: SPlayerInput) {
         // Vanilla stores the input unconditionally before the guard check.
-        // SteelMC doesn't have setLastClientInput yet, so we skip that.
+        let input = PlayerInput::from_flags(packet.flags);
+        self.movement.lock().set_last_client_input(input);
 
         if !self.has_client_loaded() {
             return;
@@ -806,7 +813,7 @@ impl Player {
         // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
         // lastActionTime = Util.getMillis(), preventing idle-kick. Add when idle-kick system is implemented.
 
-        self.set_crouching(packet.shift());
+        self.set_crouching(input.shift());
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).
