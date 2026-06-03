@@ -407,6 +407,61 @@ pub fn join_is_not_empty(first: VoxelShape, second: VoxelShape, op: BooleanOp) -
     false
 }
 
+/// Materializes the unoptimized cell boxes produced by a shape boolean operation.
+///
+/// Vanilla parity: `Shapes.joinUnoptimized(first, second, op)`, expressed as
+/// block-local boxes instead of a lazily merged voxel shape.
+///
+/// # Panics
+/// Panics if `op.apply(false, false)` is true, matching vanilla's invalid
+/// operation guard for unbounded outside-space results.
+#[must_use]
+pub fn join_unoptimized_boxes(
+    first: VoxelShape,
+    second: VoxelShape,
+    op: BooleanOp,
+) -> Vec<BlockLocalAabb> {
+    if op.apply(false, false) {
+        panic!("join_unoptimized_boxes cannot use an operation that includes empty outside space");
+    }
+
+    if first.is_empty() && second.is_empty() {
+        return Vec::new();
+    }
+
+    let mut x_edges = shape_edges(first, second, Axis::X);
+    let mut y_edges = shape_edges(first, second, Axis::Y);
+    let mut z_edges = shape_edges(first, second, Axis::Z);
+    sort_and_dedup_voxel_edges(&mut x_edges);
+    sort_and_dedup_voxel_edges(&mut y_edges);
+    sort_and_dedup_voxel_edges(&mut z_edges);
+
+    let mut boxes = Vec::new();
+    for x in x_edges.windows(2) {
+        if x[1] - x[0] <= VOXEL_EPSILON {
+            continue;
+        }
+        for y in y_edges.windows(2) {
+            if y[1] - y[0] <= VOXEL_EPSILON {
+                continue;
+            }
+            for z in z_edges.windows(2) {
+                if z[1] - z[0] <= VOXEL_EPSILON {
+                    continue;
+                }
+
+                let first_full = shape_fills_cell(first, x[0], x[1], y[0], y[1], z[0], z[1]);
+                let second_full = shape_fills_cell(second, x[0], x[1], y[0], y[1], z[0], z[1]);
+                if op.apply(first_full, second_full) {
+                    boxes.push(BlockLocalAabb::new(x[0], y[0], z[0], x[1], y[1], z[1]));
+                }
+            }
+        }
+    }
+
+    boxes
+}
+
 fn shape_edges(first: VoxelShape, second: VoxelShape, axis: Axis) -> Vec<f64> {
     let mut edges = Vec::with_capacity((first.len() + second.len()) * 2);
     for shape in [first, second] {
@@ -794,6 +849,20 @@ mod tests {
             VoxelShape::from_boxes(LOWER_HALF_BLOCK),
             BooleanOp::OnlyFirst
         ));
+    }
+
+    #[test]
+    fn join_unoptimized_boxes_materializes_only_second_remainder() {
+        let remainder = join_unoptimized_boxes(
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            VoxelShape::FULL_BLOCK,
+            BooleanOp::OnlySecond,
+        );
+
+        assert_eq!(
+            remainder,
+            vec![BlockLocalAabb::new(0.0, 0.5, 0.0, 1.0, 1.0, 1.0)]
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::blocks::shapes::VoxelShape;
+use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -15,14 +15,16 @@ use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId, axis::Axis};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
+use crate::physics::collide;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
@@ -198,38 +200,43 @@ impl EntityFallOnFacts {
 }
 
 /// Entity facts needed by `Block.fallOn`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EntityFallOnContext {
+#[derive(Clone, Copy)]
+pub struct EntityFallOnContext<'a> {
     /// Accumulated vanilla fall distance at landing time.
     pub fall_distance: f64,
     /// Whether vanilla bounce behavior should be suppressed.
     pub suppresses_bounce: bool,
     /// Entity facts available to vanilla fall-on hooks.
     pub entity: EntityFallOnFacts,
+    /// Source entity for vanilla side effects such as game events.
+    pub source_entity: Option<&'a dyn Entity>,
 }
 
-impl EntityFallOnContext {
+impl<'a> EntityFallOnContext<'a> {
     /// Creates a fall-on context for a ground collision.
     #[must_use]
     pub const fn new(
         fall_distance: f64,
         suppresses_bounce: bool,
         entity: EntityFallOnFacts,
+        source_entity: Option<&'a dyn Entity>,
     ) -> Self {
         Self {
             fall_distance,
             suppresses_bounce,
             entity,
+            source_entity,
         }
     }
 
     /// Creates a fall-on context from a landing entity.
     #[must_use]
-    pub fn from_entity(fall_distance: f64, entity: &dyn Entity) -> Self {
+    pub fn from_entity(fall_distance: f64, entity: &'a dyn Entity) -> Self {
         Self::new(
             fall_distance,
             entity.is_suppressing_bounce(),
             EntityFallOnFacts::from_entity(entity),
+            Some(entity),
         )
     }
 
@@ -238,6 +245,12 @@ impl EntityFallOnContext {
     pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
         self.fall_distance = fall_distance;
         self
+    }
+
+    /// Returns the source entity for vanilla side effects.
+    #[must_use]
+    pub const fn source_entity(self) -> Option<&'a dyn Entity> {
+        self.source_entity
     }
 }
 
@@ -280,6 +293,75 @@ impl EntityLandingContext {
     pub const fn default_velocity_after_fall_on(self) -> DVec3 {
         DVec3::new(self.velocity.x, 0.0, self.velocity.z)
     }
+}
+
+/// Vanilla `Block.pushEntitiesUp` for block-state replacements that add collision.
+///
+/// Returns `new_state` so callers can mirror vanilla call sites that transform
+/// the replacement state before setting it in the world.
+pub(crate) fn push_entities_up(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> BlockStateId {
+    let added_collision = added_collision_boxes(old_state, new_state, world, pos);
+    let Some(query_box) = world_aabb_bounds(&added_collision) else {
+        return new_state;
+    };
+
+    for entity in world.get_entities_in_aabb(&query_box) {
+        let offset = collide(
+            Axis::Y,
+            &entity.bounding_box().move_by(0.0, 1.0, 0.0),
+            &added_collision,
+            -1.0,
+        );
+        entity.set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0));
+    }
+
+    new_state
+}
+
+fn added_collision_boxes(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> Vec<WorldAabb> {
+    let context = BlockCollisionContext::empty();
+    let old_shape = BLOCK_BEHAVIORS
+        .get_behavior(old_state.get_block())
+        .get_collision_shape(old_state, world.as_ref(), pos, context);
+    let new_shape = BLOCK_BEHAVIORS
+        .get_behavior(new_state.get_block())
+        .get_collision_shape(new_state, world.as_ref(), pos, context);
+
+    join_unoptimized_boxes(old_shape, new_shape, BooleanOp::OnlySecond)
+        .into_iter()
+        .map(|aabb| aabb.at_block(pos))
+        .collect()
+}
+
+fn world_aabb_bounds(boxes: &[WorldAabb]) -> Option<WorldAabb> {
+    let first = boxes.first()?;
+    let mut min_x = first.min_x();
+    let mut min_y = first.min_y();
+    let mut min_z = first.min_z();
+    let mut max_x = first.max_x();
+    let mut max_y = first.max_y();
+    let mut max_z = first.max_z();
+
+    for aabb in boxes {
+        min_x = min_x.min(aabb.min_x());
+        min_y = min_y.min(aabb.min_y());
+        min_z = min_z.min(aabb.min_z());
+        max_x = max_x.max(aabb.max_x());
+        max_y = max_y.max(aabb.max_y());
+        max_z = max_z.max(aabb.max_z());
+    }
+
+    Some(WorldAabb::new(min_x, min_y, min_z, max_x, max_y, max_z))
 }
 
 /// Trait defining the behavior of a block.
@@ -694,7 +776,7 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
             context.fall_distance,
@@ -711,7 +793,7 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
     }
@@ -1036,5 +1118,16 @@ mod tests {
         assert!(facts.is_player());
         assert!(facts.is_living_entity);
         assert!((facts.bounding_box_width_squared_height() - 0.648).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn world_aabb_bounds_contains_all_boxes() {
+        let bounds = world_aabb_bounds(&[
+            WorldAabb::new(1.0, 2.0, 3.0, 2.0, 3.0, 4.0),
+            WorldAabb::new(-1.0, 4.0, 2.0, 0.0, 5.0, 6.0),
+        ])
+        .expect("non-empty boxes should have bounds");
+
+        assert_eq!(bounds, WorldAabb::new(-1.0, 2.0, 2.0, 2.0, 5.0, 6.0));
     }
 }

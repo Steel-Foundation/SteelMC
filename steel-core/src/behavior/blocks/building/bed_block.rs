@@ -32,7 +32,7 @@ impl BedBlock {
     }
 
     #[must_use]
-    fn fall_context(context: EntityFallOnContext) -> EntityFallOnContext {
+    fn fall_context(context: EntityFallOnContext<'_>) -> EntityFallOnContext<'_> {
         context.with_fall_distance(context.fall_distance * 0.5)
     }
 
@@ -61,7 +61,7 @@ impl BlockBehavior for BedBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, Self::fall_context(context))
     }
@@ -103,6 +103,7 @@ mod tests {
             12.0,
             false,
             EntityFallOnFacts::new(&vanilla_entities::PLAYER, true, 0.6, 1.8),
+            None,
         ));
 
         assert!((context.fall_distance - 6.0).abs() < f64::EPSILON);

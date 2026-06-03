@@ -173,7 +173,7 @@ impl BlockBehavior for HoneyBlock {
         _state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
             context.fall_distance,

@@ -63,7 +63,7 @@ impl BlockBehavior for SlimeBlock {
         _state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         if context.suppresses_bounce {
             None

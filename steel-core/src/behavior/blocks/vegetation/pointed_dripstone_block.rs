@@ -82,7 +82,7 @@ impl BlockBehavior for PointedDripstoneBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Self::fall_damage_for_state(state, context.fall_distance)
             .or_else(|| self.default_fall_on(state, world, pos, context))

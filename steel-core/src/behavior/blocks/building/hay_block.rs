@@ -48,7 +48,7 @@ impl BlockBehavior for HayBlock {
         _state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
-        context: EntityFallOnContext,
+        context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(Self::fall_damage(context.fall_distance))
     }
