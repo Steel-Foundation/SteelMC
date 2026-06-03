@@ -142,7 +142,7 @@ impl EntityMovementTrace {
     }
 }
 
-/// Vanilla authority gate for vertical collision and ground-contact updates.
+/// Vanilla server-driven gate for vertical collision and ground-contact updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityVerticalMovementStateUpdate {
     /// Preserve the existing vertical collision and ground-contact state.
@@ -154,8 +154,8 @@ pub enum EntityVerticalMovementStateUpdate {
 impl EntityVerticalMovementStateUpdate {
     /// Returns the vanilla update behavior for a completed movement request.
     #[must_use]
-    pub fn for_move(requested_delta: DVec3, local_authoritative: bool) -> Self {
-        if requested_delta.y.abs() > 0.0 || local_authoritative {
+    pub fn for_move(requested_delta: DVec3, server_driven_movement: bool) -> Self {
+        if requested_delta.y.abs() > 0.0 || server_driven_movement {
             Self::Refresh
         } else {
             Self::Preserve

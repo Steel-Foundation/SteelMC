@@ -604,7 +604,7 @@ pub type WeakEntity = Weak<dyn Entity>;
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AcceptedClientMovement {
-    /// Optional authoritative client position. Rotation-only packets leave this unset.
+    /// Optional accepted packet position. Rotation-only packets leave this unset.
     pub position: Option<DVec3>,
     /// Accepted yaw and pitch in degrees.
     pub rotation: (f32, f32),
@@ -1090,12 +1090,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    /// Returns true when movement is authored by a remote client.
-    fn is_client_authoritative(&self) -> bool {
+    /// Returns true when movement is driven by serverbound movement packets.
+    fn uses_client_movement_packets(&self) -> bool {
         if !self.is_removed()
             && let Some(controller) = self.controlling_passenger()
             && controller.id() != self.id()
-            && controller.is_client_authoritative()
+            && controller.uses_client_movement_packets()
         {
             return true;
         }
@@ -1103,19 +1103,19 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    /// Returns true when this server instance owns movement side effects.
-    fn is_local_instance_authoritative(&self) -> bool {
-        !self.is_client_authoritative()
+    /// Returns true when normal server ticks drive this entity's movement.
+    fn is_server_driven_movement(&self) -> bool {
+        !self.uses_client_movement_packets()
     }
 
     /// Returns true when vanilla allows this side to apply movement simulation side effects.
     fn can_simulate_movement(&self) -> bool {
-        self.is_local_instance_authoritative()
+        self.is_server_driven_movement()
     }
 
     /// Returns true when vanilla allows this side to run entity AI/travel logic.
     fn is_effective_ai(&self) -> bool {
-        self.is_local_instance_authoritative()
+        self.is_server_driven_movement()
     }
 
     /// Returns true when vanilla landing bounce should be suppressed.
@@ -2369,10 +2369,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
             self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
             self.set_position(result.final_position);
         }
-        let vertical_state_update = EntityVerticalMovementStateUpdate::for_move(
-            movement,
-            self.is_local_instance_authoritative(),
-        );
+        let vertical_state_update =
+            EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
         let movement_flags = EntityMovementFlags::after_move_with_previous(
             self.base().movement_flags(),
             vertical_state_update,
@@ -2390,9 +2388,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .set_movement_flags(movement_flags, ground_contact);
         self.refresh_fluid_contact();
 
-        if self.is_local_instance_authoritative()
-            && self.apply_fall_damage_after_move(&result, &world)
-        {
+        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
             return Some(result);
         }
 
@@ -3741,7 +3737,7 @@ mod tests {
         entity_type: EntityTypeRef,
         known_movement: DVec3,
         known_speed: DVec3,
-        client_authoritative: bool,
+        uses_client_movement_packets: bool,
     }
 
     impl KnownMovementTestEntity {
@@ -3756,7 +3752,7 @@ mod tests {
                 entity_type,
                 known_movement,
                 known_speed,
-                client_authoritative: entity_type == &vanilla_entities::PLAYER,
+                uses_client_movement_packets: entity_type == &vanilla_entities::PLAYER,
             })
         }
     }
@@ -3778,8 +3774,8 @@ mod tests {
             self.known_speed
         }
 
-        fn is_client_authoritative(&self) -> bool {
-            self.client_authoritative
+        fn uses_client_movement_packets(&self) -> bool {
+            self.uses_client_movement_packets
         }
     }
 
@@ -4513,8 +4509,8 @@ mod tests {
         );
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(controller));
 
-        assert!(vehicle.is_client_authoritative());
-        assert!(!vehicle.is_local_instance_authoritative());
+        assert!(vehicle.uses_client_movement_packets());
+        assert!(!vehicle.is_server_driven_movement());
         assert!(!vehicle.can_simulate_movement());
         assert!(!vehicle.is_effective_ai());
 

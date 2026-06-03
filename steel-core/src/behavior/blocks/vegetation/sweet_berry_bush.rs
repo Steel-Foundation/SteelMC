@@ -193,7 +193,7 @@ impl SweetBerryBushBlock {
             return;
         }
 
-        let movement = if entity.is_client_authoritative() {
+        let movement = if entity.uses_client_movement_packets() {
             entity.known_movement()
         } else {
             entity.old_position() - entity.position()
@@ -259,7 +259,7 @@ mod tests {
         base: EntityBase,
         entity_type: EntityTypeRef,
         is_living: bool,
-        is_client_authoritative: bool,
+        uses_client_movement_packets: bool,
         known_movement: DVec3,
         damage: SyncMutex<Vec<(String, f32)>>,
     }
@@ -275,7 +275,7 @@ mod tests {
                 ),
                 entity_type,
                 is_living: true,
-                is_client_authoritative: false,
+                uses_client_movement_packets: false,
                 known_movement: DVec3::ZERO,
                 damage: SyncMutex::new(Vec::new()),
             }
@@ -292,7 +292,7 @@ mod tests {
         }
 
         fn with_client_movement(mut self, movement: DVec3) -> Self {
-            self.is_client_authoritative = true;
+            self.uses_client_movement_packets = true;
             self.known_movement = movement;
             self
         }
@@ -320,8 +320,8 @@ mod tests {
             self.is_living
         }
 
-        fn is_client_authoritative(&self) -> bool {
-            self.is_client_authoritative
+        fn uses_client_movement_packets(&self) -> bool {
+            self.uses_client_movement_packets
         }
 
         fn known_movement(&self) -> DVec3 {

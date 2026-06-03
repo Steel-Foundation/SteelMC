@@ -1296,7 +1296,7 @@ impl Entity for Player {
         self.get_health() > 0.0 && self.is_pickable()
     }
 
-    fn is_client_authoritative(&self) -> bool {
+    fn uses_client_movement_packets(&self) -> bool {
         true
     }
 

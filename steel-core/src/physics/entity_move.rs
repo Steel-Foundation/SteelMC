@@ -28,7 +28,7 @@ const MTH_EQUAL_EPSILON: f64 = 1.0e-5;
 pub enum MoverType {
     /// Normal entity movement (walking, jumping, gravity).
     SelfMovement,
-    /// Player movement received from the client.
+    /// Movement requested by a serverbound player or controlled-vehicle packet.
     Player,
     /// Movement caused by external forces (pistons, etc).
     Piston,
