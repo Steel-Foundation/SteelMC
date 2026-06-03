@@ -315,7 +315,7 @@ mod tracker;
 use crate::portal::TeleportTransition;
 pub use base::{
     EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact, EntityMovement,
-    EntityMovementFlags,
+    EntityMovementFlags, EntityVerticalMovementStateUpdate,
 };
 pub use cache::EntityCache;
 pub use callback::{
@@ -1263,14 +1263,23 @@ pub trait Entity: EntityEventSource + Send + Sync {
             self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
             self.set_position(result.final_position);
         }
-        let movement_flags = EntityMovementFlags::after_move(
+        let vertical_state_update = EntityVerticalMovementStateUpdate::for_move(
+            movement,
+            self.is_local_instance_authoritative(),
+        );
+        let movement_flags = EntityMovementFlags::after_move_with_previous(
+            self.base().movement_flags(),
+            vertical_state_update,
             result.on_ground,
             result.horizontal_collision,
             result.vertical_collision,
             movement,
         );
-        let ground_contact =
-            self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement));
+        let ground_contact = if vertical_state_update.refreshes_state() {
+            self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement))
+        } else {
+            self.base().ground_contact()
+        };
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
         self.refresh_fluid_contact();
@@ -1713,8 +1722,9 @@ mod tests {
     use steel_utils::{BlockPos, Direction};
 
     use super::{
-        Entity, EntityBase, SharedEntity, closest_open_space_direction,
-        fall_damage_reset_clip_target, should_apply_resolved_movement,
+        Entity, EntityBase, EntityVerticalMovementStateUpdate, SharedEntity,
+        closest_open_space_direction, fall_damage_reset_clip_target,
+        should_apply_resolved_movement,
     };
 
     struct PushableTestEntity {
@@ -1826,6 +1836,19 @@ mod tests {
         assert_eq!(
             fall_damage_reset_clip_target(position, DVec3::new(10.0, 0.0, 0.0), 2.0),
             Some(DVec3::new(9.0, 2.0, 3.0))
+        );
+    }
+
+    #[test]
+    fn vertical_collision_state_update_matches_vanilla_authority_gate() {
+        assert!(
+            EntityVerticalMovementStateUpdate::for_move(DVec3::new(0.0, -0.1, 0.0), false)
+                .refreshes_state()
+        );
+        assert!(EntityVerticalMovementStateUpdate::for_move(DVec3::ZERO, true).refreshes_state());
+        assert!(
+            !EntityVerticalMovementStateUpdate::for_move(DVec3::new(0.1, 0.0, 0.0), false)
+                .refreshes_state()
         );
     }
 

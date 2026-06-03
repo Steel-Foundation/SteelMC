@@ -138,6 +138,34 @@ impl EntityMovementTrace {
     }
 }
 
+/// Vanilla authority gate for vertical collision and ground-contact updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityVerticalMovementStateUpdate {
+    /// Preserve the existing vertical collision and ground-contact state.
+    Preserve,
+    /// Refresh vertical collision and ground-contact state from the movement result.
+    Refresh,
+}
+
+impl EntityVerticalMovementStateUpdate {
+    /// Returns the vanilla update behavior for a completed movement request.
+    #[must_use]
+    pub fn for_move(requested_delta: DVec3, local_authoritative: bool) -> Self {
+        if requested_delta.y.abs() > 0.0 || local_authoritative {
+            Self::Refresh
+        } else {
+            Self::Preserve
+        }
+    }
+
+    /// Returns whether vertical collision and ground contact should be refreshed.
+    #[inline]
+    #[must_use]
+    pub const fn refreshes_state(self) -> bool {
+        matches!(self, Self::Refresh)
+    }
+}
+
 /// Vanilla collision and ground-contact flags updated by `Entity.move`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityMovementFlags {
@@ -173,6 +201,26 @@ impl EntityMovementFlags {
             vertical_collision,
             vertical_collision_below: vertical_collision && requested_delta.y < 0.0,
         }
+    }
+
+    /// Creates movement flags from a completed movement pass while preserving
+    /// vertical/ground state when vanilla skips that update.
+    #[must_use]
+    pub fn after_move_with_previous(
+        previous: Self,
+        vertical_state_update: EntityVerticalMovementStateUpdate,
+        on_ground: bool,
+        horizontal_collision: bool,
+        vertical_collision: bool,
+        requested_delta: DVec3,
+    ) -> Self {
+        let mut next = previous.with_horizontal_collision(horizontal_collision);
+        if vertical_state_update.refreshes_state() {
+            next.on_ground = on_ground;
+            next.vertical_collision = vertical_collision;
+            next.vertical_collision_below = vertical_collision && requested_delta.y < 0.0;
+        }
+        next
     }
 
     /// Returns true if the entity is touching the ground.
@@ -782,6 +830,12 @@ impl EntityBase {
         self.state.lock().movement_flags
     }
 
+    /// Returns the current vanilla ground-contact snapshot.
+    #[inline]
+    pub fn ground_contact(&self) -> EntityGroundContact {
+        self.state.lock().ground_contact
+    }
+
     /// Returns true if the last movement was clipped horizontally.
     #[inline]
     pub fn horizontal_collision(&self) -> bool {
@@ -1219,7 +1273,7 @@ impl EntityBase {
 mod tests {
     use super::{
         EntityBase, EntityBaseState, EntityFluidContact, EntityMovement, EntityMovementFlags,
-        EntityPistonMovement,
+        EntityPistonMovement, EntityVerticalMovementStateUpdate,
     };
     use std::sync::{Arc, Weak};
 
@@ -1382,6 +1436,25 @@ mod tests {
         assert!(!flags.horizontal_collision());
         assert!(!flags.vertical_collision());
         assert!(!flags.vertical_collision_below());
+    }
+
+    #[test]
+    fn movement_flags_can_preserve_vertical_state_for_client_authored_horizontal_moves() {
+        let previous =
+            EntityMovementFlags::after_move(true, false, true, DVec3::new(0.0, -1.0, 0.0));
+        let flags = EntityMovementFlags::after_move_with_previous(
+            previous,
+            EntityVerticalMovementStateUpdate::Preserve,
+            false,
+            true,
+            false,
+            DVec3::new(1.0, 0.0, 0.0),
+        );
+
+        assert!(flags.on_ground());
+        assert!(flags.horizontal_collision());
+        assert!(flags.vertical_collision());
+        assert!(flags.vertical_collision_below());
     }
 
     #[test]
