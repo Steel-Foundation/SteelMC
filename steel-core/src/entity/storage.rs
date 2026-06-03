@@ -11,7 +11,7 @@ use steel_protocol::packets::game::CSetEntityData;
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncRwLock;
 
-use super::SharedEntity;
+use super::{RemovalReason, SharedEntity};
 use crate::world::World;
 
 /// Storage for entities in a chunk.
@@ -21,6 +21,13 @@ use crate::world::World;
 pub struct EntityStorage {
     /// Entities in this chunk, keyed by entity ID.
     entities: SyncRwLock<FxHashMap<i32, SharedEntity>>,
+}
+
+fn should_keep_for_save(entity: &SharedEntity) -> bool {
+    !entity.is_removed()
+        || entity
+            .removal_reason()
+            .is_some_and(RemovalReason::should_save)
 }
 
 impl fmt::Debug for EntityStorage {
@@ -87,7 +94,7 @@ impl EntityStorage {
         self.entities
             .read()
             .values()
-            .filter(|e| !e.is_removed() && e.entity_type().can_serialize)
+            .filter(|e| should_keep_for_save(e) && e.entity_type().can_serialize)
             .cloned()
             .collect()
     }
@@ -138,7 +145,7 @@ impl EntityStorage {
         }
 
         // Cleanup removed entities
-        self.entities.write().retain(|_, e| !e.is_removed());
+        self.entities.write().retain(|_, e| should_keep_for_save(e));
 
         ticked_any
     }
@@ -152,5 +159,42 @@ impl EntityStorage {
 impl Default for EntityStorage {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak};
+
+    use glam::DVec3;
+    use steel_registry::vanilla_entities;
+
+    use super::*;
+    use crate::entity::entities::RawEntity;
+
+    fn raw_item(id: i32) -> SharedEntity {
+        Arc::new(RawEntity::new(
+            id,
+            DVec3::ZERO,
+            Weak::new(),
+            &vanilla_entities::ITEM,
+        ))
+    }
+
+    #[test]
+    fn saveable_entities_keep_unloaded_to_chunk_removals() {
+        let storage = EntityStorage::new();
+        let unloaded = raw_item(1);
+        let discarded = raw_item(2);
+
+        unloaded.set_removed(RemovalReason::UnloadedToChunk);
+        discarded.set_removed(RemovalReason::Discarded);
+        storage.add(unloaded);
+        storage.add(discarded);
+
+        let saveable = storage.get_saveable_entities();
+
+        assert_eq!(saveable.len(), 1);
+        assert_eq!(saveable[0].id(), 1);
     }
 }

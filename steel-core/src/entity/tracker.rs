@@ -88,6 +88,12 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
+        assert!(
+            !entity.is_removed(),
+            "cannot add removed entity {} to tracker",
+            entity.id()
+        );
+
         let entity_id = entity.id();
         let tracking_range = EntityTrackingRange::from_client_chunk_range(
             entity.entity_type().client_tracking_range,
@@ -116,7 +122,9 @@ impl EntityTracker {
             seen_by: SyncRwLock::new(players_to_notify),
         };
 
-        let _ = self.entities.insert_sync(entity_id, tracked);
+        if self.entities.insert_sync(entity_id, tracked).is_err() {
+            panic!("entity {entity_id} is already tracked");
+        }
 
         // Send spawn packets to all nearby players
         for player_id in player_ids_to_notify {
@@ -159,7 +167,8 @@ impl EntityTracker {
                 return true;
             };
 
-            let visible = entity_id != player_id
+            let visible = !entity.is_removed()
+                && entity_id != player_id
                 && view.contains(tracked.registered_chunk)
                 && entity.broadcast_to_player(player)
                 && is_within_tracking_distance(
@@ -304,6 +313,9 @@ impl EntityTracker {
     ) -> FxHashSet<i32> {
         let entity_pos = entity.position();
         let mut players = FxHashSet::default();
+        if entity.is_removed() {
+            return players;
+        }
 
         for player_id in get_players_in_chunk(entity_chunk) {
             if player_id == entity_id {

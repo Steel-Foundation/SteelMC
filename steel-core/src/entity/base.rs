@@ -758,14 +758,14 @@ pub struct EntityBaseLoad {
 /// Non-physical lifecycle state shared by every entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EntityLifecycleState {
-    removed: bool,
+    removal_reason: Option<RemovalReason>,
     last_world_tick: i32,
 }
 
 impl EntityLifecycleState {
     const fn new() -> Self {
         Self {
-            removed: false,
+            removal_reason: None,
             last_world_tick: -1,
         }
     }
@@ -1241,26 +1241,33 @@ impl EntityBase {
     /// Returns true if the entity has been marked for removal.
     #[inline]
     pub fn is_removed(&self) -> bool {
-        self.lifecycle.lock().removed
+        self.lifecycle.lock().removal_reason.is_some()
+    }
+
+    /// Returns the reason this entity was removed, if it has been removed.
+    #[inline]
+    pub fn removal_reason(&self) -> Option<RemovalReason> {
+        self.lifecycle.lock().removal_reason
     }
 
     /// Marks the entity as removed with the given reason.
     ///
     /// Notifies the level callback on first removal.
     pub fn set_removed(&self, reason: RemovalReason) {
-        let should_notify = {
+        let callback = {
             let mut lifecycle = self.lifecycle.lock();
-            if lifecycle.removed {
-                false
+            if lifecycle.removal_reason.is_some() {
+                None
             } else {
-                lifecycle.removed = true;
-                true
+                lifecycle.removal_reason = Some(reason);
+                Some(self.level_callback.lock().clone())
             }
         };
 
-        if should_notify {
+        if let Some(callback) = callback {
             self.detach_from_relationships(reason);
-            self.level_callback.lock().on_remove(reason);
+            callback.on_remove(reason);
+            *self.level_callback.lock() = Arc::new(NullEntityCallback);
         }
     }
 
@@ -1319,8 +1326,8 @@ impl EntityBase {
     /// way to reset this base lifecycle flag.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
-        let was_removed = lifecycle.removed;
-        lifecycle.removed = false;
+        let was_removed = lifecycle.removal_reason.is_some();
+        lifecycle.removal_reason = None;
         was_removed
     }
 
@@ -2078,10 +2085,12 @@ mod tests {
         base.set_removed(RemovalReason::Discarded);
         base.set_removed(RemovalReason::Killed);
         assert!(base.is_removed());
+        assert_eq!(base.removal_reason(), Some(RemovalReason::Discarded));
         assert_eq!(*callback.removals.lock(), vec![RemovalReason::Discarded]);
         assert!(base.clear_removed());
         assert!(!base.clear_removed());
         assert!(!base.is_removed());
+        assert_eq!(base.removal_reason(), None);
     }
 
     #[test]

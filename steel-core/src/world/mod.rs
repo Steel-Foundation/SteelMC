@@ -19,7 +19,7 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CGameEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate,
-    CRemoveEntities, CSound, CSystemChat, GameEventType, SoundSource,
+    CSound, CSystemChat, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -2917,8 +2917,12 @@ impl World {
         &self,
         entity_id: i32,
         chunk_pos: ChunkPos,
-        reason: RemovalReason,
+        _reason: RemovalReason,
     ) {
+        self.entity_tracker.remove(entity_id, |player_id| {
+            self.players.get_by_entity_id(player_id)
+        });
+
         // Remove from chunk storage
         let entity: Option<SharedEntity> = self
             .chunk_map
@@ -2933,12 +2937,6 @@ impl World {
             let section = SectionPos::from_entity_pos(pos);
             self.entity_cache
                 .unregister(entity_id, entity.uuid(), section);
-
-            // Broadcast remove packet if entity was destroyed
-            if reason.should_destroy() {
-                let packet = CRemoveEntities::single(entity_id);
-                self.broadcast_to_nearby(chunk_pos, packet, None);
-            }
         }
     }
 

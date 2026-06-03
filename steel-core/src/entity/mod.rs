@@ -1071,6 +1071,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_removed()
     }
 
+    /// Returns why this entity was removed, if it has been removed.
+    fn removal_reason(&self) -> Option<RemovalReason> {
+        self.base().removal_reason()
+    }
+
     /// Marks the entity as removed with the given reason.
     fn set_removed(&self, reason: RemovalReason) {
         self.base().set_removed(reason);
