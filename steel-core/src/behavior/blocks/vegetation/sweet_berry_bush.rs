@@ -108,7 +108,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             return;
         }
 
-        entity.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
+        entity.make_stuck_in_block(state, DVec3::new(0.8, 0.75, 0.8));
         Self::apply_contact_damage(state, entity);
     }
 

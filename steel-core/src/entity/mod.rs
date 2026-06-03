@@ -1416,9 +1416,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.set_velocity(next_velocity);
     }
 
-    /// Applies vanilla stuck-in-block movement for the next movement pass.
-    fn make_stuck_in_block(&self, speed_multiplier: DVec3) {
+    /// Default vanilla stuck-in-block movement for the next movement pass.
+    fn default_make_stuck_in_block(&self, _state: BlockStateId, speed_multiplier: DVec3) {
         self.base().make_stuck_in_block(speed_multiplier);
+    }
+
+    /// Applies vanilla stuck-in-block movement for the next movement pass.
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        self.default_make_stuck_in_block(state, speed_multiplier);
     }
 
     /// Applies current block-contact effects to this entity.

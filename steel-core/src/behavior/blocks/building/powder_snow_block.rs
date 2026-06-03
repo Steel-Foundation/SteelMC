@@ -89,7 +89,7 @@ impl BlockBehavior for PowderSnowBlock {
 
     fn entity_inside(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
@@ -97,7 +97,7 @@ impl BlockBehavior for PowderSnowBlock {
         _is_precise: bool,
     ) {
         if !entity.is_living_entity() || entity.in_block_state(world).get_block() == self.block {
-            entity.make_stuck_in_block(IN_BLOCK_SPEED_MULTIPLIER);
+            entity.make_stuck_in_block(state, IN_BLOCK_SPEED_MULTIPLIER);
         }
 
         let world = Arc::clone(world);

@@ -1278,6 +1278,14 @@ impl Entity for Player {
             )
     }
 
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        if !self.is_flying() {
+            self.default_make_stuck_in_block(state, speed_multiplier);
+        }
+
+        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+    }
+
     fn can_be_hit_by_projectile(&self) -> bool {
         self.get_health() > 0.0 && self.is_pickable()
     }
