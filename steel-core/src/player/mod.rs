@@ -392,11 +392,6 @@ impl Player {
             //return;
         }
 
-        let current_pos = self.position();
-        let chunk_pos = ChunkPos::from_entity_pos(current_pos);
-
-        *self.last_chunk_pos.lock() = chunk_pos;
-
         let world = self.get_world();
         world.chunk_map.update_player_status(self);
 

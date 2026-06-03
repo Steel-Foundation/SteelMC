@@ -891,7 +891,8 @@ impl ChunkMap {
 
     /// Updates the player's status in the chunk map.
     pub fn update_player_status(&self, player: &Player) {
-        let current_chunk_pos = *player.last_chunk_pos.lock();
+        let current_chunk_pos = ChunkPos::from_entity_pos(player.position());
+        *player.last_chunk_pos.lock() = current_chunk_pos;
         let view_distance = player.view_distance();
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
