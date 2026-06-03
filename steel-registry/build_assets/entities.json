@@ -936,7 +936,13 @@
               "accessor_field": "DATA_PARTICLE",
               "serializer_id": 16,
               "serializer": "particle",
-              "default_value": "ColorParticleOption"
+              "default_value": {
+                "type": "minecraft:entity_effect",
+                "options": {
+                  "kind": "color",
+                  "color": -1
+                }
+              }
             }
           ]
         }
@@ -39011,7 +39017,11 @@
               "accessor_field": "DATA_VILLAGER_DATA",
               "serializer_id": 18,
               "serializer": "villager_data",
-              "default_value": "VillagerData"
+              "default_value": {
+                "type": "minecraft:plains",
+                "profession": "minecraft:none",
+                "level": 1
+              }
             },
             {
               "index": 20,
@@ -43431,7 +43441,11 @@
               "accessor_field": "DATA_VILLAGER_DATA",
               "serializer_id": 18,
               "serializer": "villager_data",
-              "default_value": "VillagerData"
+              "default_value": {
+                "type": "minecraft:desert",
+                "profession": "minecraft:weaponsmith",
+                "level": 1
+              }
             },
             {
               "index": 21,

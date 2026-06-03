@@ -37,6 +37,7 @@ use crate::{
     menu_type::MenuTypeRegistry,
     mob_effect::MobEffectRegistry,
     painting_variant::PaintingVariantRegistry,
+    particle_type::ParticleTypeRegistry,
     pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
@@ -46,6 +47,8 @@ use crate::{
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
+    villager_profession::VillagerProfessionRegistry,
+    villager_type::VillagerTypeRegistry,
     wolf_sound_variant::WolfSoundVariantRegistry,
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
@@ -86,6 +89,7 @@ mod macros;
 pub mod menu_type;
 pub mod mob_effect;
 pub mod painting_variant;
+pub mod particle_type;
 pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
@@ -97,6 +101,8 @@ pub mod template_pool;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
+pub mod villager_profession;
+pub mod villager_type;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
@@ -216,6 +222,21 @@ pub mod vanilla_chicken_variants;
 #[rustfmt::skip]
 #[path = "generated/vanilla_painting_variants.rs"]
 pub mod vanilla_painting_variants;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_particle_types.rs"]
+pub mod vanilla_particle_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_villager_types.rs"]
+pub mod vanilla_villager_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_villager_professions.rs"]
+pub mod vanilla_villager_professions;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -525,6 +546,10 @@ pub const CAT_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_var
 pub const COW_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_variant");
 pub const CHICKEN_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("chicken_variant");
 pub const PAINTING_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("painting_variant");
+pub const PARTICLE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("particle_type");
+pub const VILLAGER_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("villager_type");
+pub const VILLAGER_PROFESSION_REGISTRY: Identifier =
+    Identifier::vanilla_static("villager_profession");
 pub const DIMENSION_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("dimension_type");
 pub const DAMAGE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("damage_type");
 pub const BANNER_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("banner_pattern");
@@ -575,6 +600,9 @@ pub struct Registry {
     pub cow_variants: CowVariantRegistry,
     pub chicken_variants: ChickenVariantRegistry,
     pub painting_variants: PaintingVariantRegistry,
+    pub particle_types: ParticleTypeRegistry,
+    pub villager_types: VillagerTypeRegistry,
+    pub villager_professions: VillagerProfessionRegistry,
     pub dimension_types: DimensionTypeRegistry,
     pub damage_types: DamageTypeRegistry,
     pub banner_patterns: BannerPatternRegistry,
@@ -648,6 +676,11 @@ impl Registry {
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
+        vanilla_particle_types::register_particle_types(&mut registry.particle_types);
+        vanilla_villager_types::register_villager_types(&mut registry.villager_types);
+        vanilla_villager_professions::register_villager_professions(
+            &mut registry.villager_professions,
+        );
         vanilla_painting_variant_tags::PaintingVariantTag::register_painting_variant_tags(
             &mut registry.painting_variants,
         );
@@ -733,6 +766,9 @@ impl Registry {
         self.cow_variants.freeze();
         self.chicken_variants.freeze();
         self.painting_variants.freeze();
+        self.particle_types.freeze();
+        self.villager_types.freeze();
+        self.villager_professions.freeze();
         self.dimension_types.freeze();
         self.damage_types.freeze();
         self.banner_patterns.freeze();
@@ -917,6 +953,9 @@ impl Registry {
             cow_variants: CowVariantRegistry::new(),
             chicken_variants: ChickenVariantRegistry::new(),
             painting_variants: PaintingVariantRegistry::new(),
+            particle_types: ParticleTypeRegistry::new(),
+            villager_types: VillagerTypeRegistry::new(),
+            villager_professions: VillagerProfessionRegistry::new(),
             dimension_types: DimensionTypeRegistry::new(),
             damage_types: DamageTypeRegistry::new(),
             banner_patterns: BannerPatternRegistry::new(),
@@ -1028,6 +1067,30 @@ mod tests {
                 .placed_features
                 .by_key(&Identifier::vanilla_static("ore_diamond"))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn vanilla_static_entity_data_registries_initialize_in_vanilla_order() {
+        let registry = Registry::new_vanilla();
+        let entity_effect = Identifier::vanilla_static("entity_effect");
+        let plains = Identifier::vanilla_static("plains");
+        let none = Identifier::vanilla_static("none");
+
+        assert_eq!(
+            registry.particle_types.by_id(21).map(|entry| &entry.key),
+            Some(&entity_effect)
+        );
+        assert_eq!(
+            registry.villager_types.by_id(2).map(|entry| &entry.key),
+            Some(&plains)
+        );
+        assert_eq!(
+            registry
+                .villager_professions
+                .by_id(0)
+                .map(|entry| &entry.key),
+            Some(&none)
         );
     }
 

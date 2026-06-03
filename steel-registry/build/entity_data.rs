@@ -239,6 +239,19 @@ fn registry_default_expr(module: &str, default: &Value, serializer: &str) -> Tok
     quote! { crate::#module_ident::#value_ident.id() as i32 }
 }
 
+fn registry_field_default_expr(
+    module: &str,
+    object: &serde_json::Map<String, Value>,
+    serializer: &str,
+    field: &str,
+) -> TokenStream {
+    registry_default_expr(
+        module,
+        required_field(object, serializer, field),
+        serializer,
+    )
+}
+
 fn ordinal_default_expr(default: &Value, serializer: &str, names: &[&str]) -> TokenStream {
     let name = required_string(default, serializer);
     let ordinal = names
@@ -439,20 +452,59 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             quote! { Quaternionf::new(#x_lit, #y_lit, #z_lit, #w_lit) }
         }
         "villager_data" => {
-            if let Some(obj) = default.as_object() {
-                let vt = required_object_i32(obj, serializer, "type");
-                let prof = required_object_i32(obj, serializer, "profession");
-                let level = required_object_i32(obj, serializer, "level");
-                quote! { VillagerData::new(#vt, #prof, #level) }
-            } else {
-                require_exact_string(default, serializer, "VillagerData");
-                quote! { VillagerData::new(0, 0, 1) }
-            }
+            let obj = required_object(default, serializer);
+            assert_eq!(
+                obj.len(),
+                3,
+                "Expected villager_data default with type/profession/level, got {default}"
+            );
+
+            let vt = registry_field_default_expr("vanilla_villager_types", obj, serializer, "type");
+            let prof = registry_field_default_expr(
+                "vanilla_villager_professions",
+                obj,
+                serializer,
+                "profession",
+            );
+            let level = required_object_i32(obj, serializer, "level");
+            quote! { VillagerData::new(#vt, #prof, #level) }
         }
         "item_stack" => item_stack_default_expr(default),
         "particle" => {
-            require_exact_string(default, serializer, "ColorParticleOption");
-            quote! { ParticleData::default() }
+            let obj = required_object(default, serializer);
+            assert_eq!(
+                obj.len(),
+                2,
+                "Expected particle default with type/options, got {default}"
+            );
+
+            let particle_type =
+                registry_field_default_expr("vanilla_particle_types", obj, serializer, "type");
+            let options = required_object(required_field(obj, serializer, "options"), serializer);
+            let kind = required_string(required_field(options, serializer, "kind"), serializer);
+
+            match kind {
+                "none" => {
+                    assert_eq!(
+                        options.len(),
+                        1,
+                        "Expected particle none options to contain only kind, got {default}"
+                    );
+                    quote! { ParticleData::new(#particle_type, ParticleOptions::None) }
+                }
+                "color" => {
+                    assert_eq!(
+                        options.len(),
+                        2,
+                        "Expected particle color options with kind/color, got {default}"
+                    );
+                    let color = required_object_i32(options, serializer, "color");
+                    quote! {
+                        ParticleData::new(#particle_type, ParticleOptions::Color { color: #color })
+                    }
+                }
+                _ => panic!("Unsupported particle options kind '{kind}' in {default}"),
+            }
         }
         "particles" => {
             require_empty_array(default, serializer);
@@ -814,7 +866,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::entity_data::{
             ArmadilloState, BlockPos, DataValue, Direction, EntityData, EntityPose,
-            GlobalPos, HumanoidArm, ParticleData, ParticleList, Quaternionf,
+            GlobalPos, HumanoidArm, ParticleData, ParticleList, ParticleOptions, Quaternionf,
             ResolvableProfile, Rotations, SnifferState, SyncedValue, Vector3f,
             VillagerData,
         };

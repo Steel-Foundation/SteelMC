@@ -258,13 +258,29 @@ impl Quaternionf {
     }
 }
 
+/// Particle-specific payload written after the particle type id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParticleOptions {
+    None,
+    Color { color: i32 },
+}
+
 /// Particle effect data.
-// TODO: Implement proper particle types when needed
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticleData {
     /// Particle type registry ID.
     pub particle_type: i32,
-    // TODO: Add particle-specific options
+    pub options: ParticleOptions,
+}
+
+impl ParticleData {
+    #[must_use]
+    pub fn new(particle_type: i32, options: ParticleOptions) -> Self {
+        Self {
+            particle_type,
+            options,
+        }
+    }
 }
 
 /// A list of particle effects.
@@ -432,9 +448,15 @@ pub fn write_data_values(values: &[DataValue], buf: &mut Vec<u8>) -> io::Result<
 
 #[cfg(test)]
 mod tests {
-    use steel_utils::Identifier;
+    use steel_utils::{Identifier, codec::VarInt, serial::WriteTo};
 
     use crate::vanilla_entity_data::{EggEntityData, ItemEntityData};
+    use crate::{Registry, RegistryExt};
+
+    use super::{
+        EntityData, EntityDataSerializerRegistry, ParticleData, ParticleOptions,
+        register_vanilla_entity_data_serializers,
+    };
 
     #[test]
     fn projectile_item_stack_defaults_use_extracted_item() {
@@ -452,5 +474,43 @@ mod tests {
 
         assert!(data.item.get().is_empty());
         assert!(data.pack_all().is_empty());
+    }
+
+    #[test]
+    fn entity_effect_particle_color_options_encode_payload() {
+        let registry = Registry::new_vanilla();
+        let entity_effect = Identifier::vanilla_static("entity_effect");
+        let Some(particle_type_id) = registry.particle_types.id_from_key(&entity_effect) else {
+            panic!("entity_effect particle type must be registered");
+        };
+
+        let mut serializers = EntityDataSerializerRegistry::new();
+        register_vanilla_entity_data_serializers(&mut serializers);
+
+        let Some(serializer_id) = serializers.id_from_key(&Identifier::vanilla_static("particle"))
+        else {
+            panic!("particle entity-data serializer must be registered");
+        };
+
+        let Some(writer) = serializers.get_writer(serializer_id as i32) else {
+            panic!("particle entity-data serializer must have a writer");
+        };
+
+        let particle = ParticleData::new(
+            particle_type_id as i32,
+            ParticleOptions::Color { color: -1 },
+        );
+        let value = EntityData::Particle(particle);
+        let mut encoded = Vec::new();
+        let result = writer(&value, &mut encoded);
+        assert!(result.is_ok(), "{result:?}");
+
+        let mut expected = Vec::new();
+        let result = VarInt(particle_type_id as i32).write(&mut expected);
+        assert!(result.is_ok(), "{result:?}");
+        let result = (-1i32).write(&mut expected);
+        assert!(result.is_ok(), "{result:?}");
+
+        assert_eq!(encoded, expected);
     }
 }

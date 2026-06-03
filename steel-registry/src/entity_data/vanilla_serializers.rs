@@ -14,7 +14,7 @@ use steel_utils::{
 
 use steel_utils::Identifier;
 
-use super::{EntityData, EntityDataSerializerRegistry};
+use super::{EntityData, EntityDataSerializerRegistry, ParticleData, ParticleOptions};
 
 /// Simple serializer: extract value and call `.write(buf)`.
 macro_rules! ser_write {
@@ -168,12 +168,17 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
     }
 }
 
+fn write_particle(particle: &ParticleData, buf: &mut Vec<u8>) -> io::Result<()> {
+    VarInt(particle.particle_type).write(buf)?;
+    match &particle.options {
+        ParticleOptions::None => Ok(()),
+        ParticleOptions::Color { color } => color.write(buf),
+    }
+}
+
 fn ser_particle(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::Particle(v) => {
-            VarInt(v.particle_type).write(buf)
-            // TODO: Write particle-specific options based on type
-        }
+        EntityData::Particle(v) => write_particle(v, buf),
         _ => Err(io::Error::other("Expected Particle")),
     }
 }
@@ -183,8 +188,7 @@ fn ser_particles(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
         EntityData::Particles(v) => {
             VarInt(v.particles.len() as i32).write(buf)?;
             for particle in &v.particles {
-                VarInt(particle.particle_type).write(buf)?;
-                // TODO: Write particle-specific options
+                write_particle(particle, buf)?;
             }
             Ok(())
         }

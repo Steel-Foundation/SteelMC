@@ -38,6 +38,7 @@ mod menu_types;
 mod mob_effects;
 mod packets;
 mod painting_variants;
+mod particle_types;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
@@ -52,6 +53,8 @@ mod timeline_tags;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
+mod villager_professions;
+mod villager_types;
 mod wolf_sound_variants;
 mod wolf_variants;
 mod world_clocks;
@@ -96,6 +99,9 @@ const CAT_VARIANTS: &str = "cat_variants";
 const COW_VARIANTS: &str = "cow_variants";
 const CHICKEN_VARIANTS: &str = "chicken_variants";
 const PAINTING_VARIANTS: &str = "painting_variants";
+const PARTICLE_TYPES: &str = "particle_types";
+const VILLAGER_TYPES: &str = "villager_types";
+const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
 const DAMAGE_TYPE_TAGS: &str = "damage_type_tags";
@@ -177,6 +183,9 @@ pub fn main() {
         (cow_variants::build(), COW_VARIANTS),
         (chicken_variants::build(), CHICKEN_VARIANTS),
         (painting_variants::build(), PAINTING_VARIANTS),
+        (particle_types::build(), PARTICLE_TYPES),
+        (villager_types::build(), VILLAGER_TYPES),
+        (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
         (damage_type_tags::build(), DAMAGE_TYPE_TAGS),

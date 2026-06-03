@@ -4,6 +4,27 @@ use quote::quote;
 use std::fs;
 use steel_utils::Identifier;
 
+pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
+    println!("cargo:rerun-if-changed={path}");
+    let content = fs::read_to_string(path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
+}
+
+pub fn sort_contiguous_registry_entries<T>(
+    entries: &mut [T],
+    path: &str,
+    id: impl Fn(&T) -> usize,
+) {
+    entries.sort_by_key(&id);
+    for (expected, entry) in entries.iter().enumerate() {
+        let actual = id(entry);
+        assert_eq!(
+            actual, expected,
+            "Expected contiguous ids in {path}: entry at position {expected} has id {actual}"
+        );
+    }
+}
+
 pub fn generate_identifier(resource: &Identifier) -> TokenStream {
     let namespace = resource.namespace.as_ref();
     let path = resource.path.as_ref();
