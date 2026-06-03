@@ -61,6 +61,10 @@ const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::Up,
 ];
 
+fn horizontal_distance(vector: DVec3) -> f64 {
+    vector.x.hypot(vector.z)
+}
+
 enum BlockEffectSegmentResult {
     Complete(i32),
     IterationLimit,
@@ -2891,6 +2895,49 @@ pub trait LivingEntity: Entity {
         Some(result)
     }
 
+    /// Mirrors vanilla `LivingEntity.updateFallFlyingMovement()`.
+    fn update_fall_flying_movement(&self, mut movement: DVec3) -> DVec3 {
+        let look_angle = self.look_angle();
+        let pitch_radians = self.rotation().1.to_radians();
+        let look_horizontal_length = horizontal_distance(look_angle);
+        let move_horizontal_length = horizontal_distance(movement);
+        let gravity = self.get_effective_gravity();
+        let lift_force = f64::from(pitch_radians).cos().powi(2);
+        movement.y += gravity * (-1.0 + lift_force * 0.75);
+
+        if movement.y < 0.0 && look_horizontal_length > 0.0 {
+            let convert = movement.y * -0.1 * lift_force;
+            movement += DVec3::new(
+                look_angle.x * convert / look_horizontal_length,
+                convert,
+                look_angle.z * convert / look_horizontal_length,
+            );
+        }
+
+        if pitch_radians < 0.0 && look_horizontal_length > 0.0 {
+            let convert = move_horizontal_length * -f64::from(pitch_radians.sin()) * 0.04;
+            movement += DVec3::new(
+                -look_angle.x * convert / look_horizontal_length,
+                convert * 3.2,
+                -look_angle.z * convert / look_horizontal_length,
+            );
+        }
+
+        if look_horizontal_length > 0.0 {
+            movement += DVec3::new(
+                (look_angle.x / look_horizontal_length * move_horizontal_length - movement.x) * 0.1,
+                0.0,
+                (look_angle.z / look_horizontal_length * move_horizontal_length - movement.z) * 0.1,
+            );
+        }
+
+        DVec3::new(
+            movement.x * f64::from(0.99_f32),
+            movement.y * f64::from(0.98_f32),
+            movement.z * f64::from(0.99_f32),
+        )
+    }
+
     /// Default vanilla `LivingEntity.travel()` implementation for overrides.
     fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
@@ -3141,6 +3188,10 @@ mod tests {
         fn is_living_entity(&self) -> bool {
             true
         }
+
+        fn get_default_gravity(&self) -> f64 {
+            LivingEntity::get_attribute_gravity(self)
+        }
     }
 
     impl LivingEntity for LivingFluidTestEntity {
@@ -3330,6 +3381,34 @@ mod tests {
 
         entity.set_rotation((0.0, 90.0));
         assert_vec3_close(entity.look_angle(), DVec3::new(0.0, -1.0, 0.0));
+    }
+
+    #[test]
+    fn fall_flying_movement_applies_vanilla_gravity_lift_and_drag() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_rotation((0.0, 0.0));
+
+        assert_vec3_close(
+            entity.update_fall_flying_movement(DVec3::ZERO),
+            DVec3::new(
+                0.0,
+                -0.018 * f64::from(0.98_f32),
+                0.0018 * f64::from(0.99_f32),
+            ),
+        );
+    }
+
+    #[test]
+    fn fall_flying_movement_converts_upward_pitch_to_lift() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_rotation((0.0, -45.0));
+
+        let movement = entity.update_fall_flying_movement(DVec3::new(0.0, -0.2, 0.4));
+
+        assert!(movement.y > -0.2);
+        assert!(movement.z > 0.0);
     }
 
     #[test]
