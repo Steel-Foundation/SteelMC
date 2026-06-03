@@ -436,7 +436,7 @@ impl Player {
         }
 
         self.refresh_dirty_attributes();
-        self.tick_post_impulse_grace_time();
+        self.tick_living_state();
 
         self.broadcast_inventory_changes();
         self.update_pose();
@@ -1499,6 +1499,15 @@ impl LivingEntity for Player {
 
     fn is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
+    }
+
+    fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
+        let inventory = self.inventory.lock();
+        self.can_glide_using(inventory.equipment().get_ref(slot), slot)
+    }
+
+    fn can_glide(&self) -> bool {
+        !self.is_flying() && self.default_can_glide()
     }
 
     fn jump_from_ground(&self) {

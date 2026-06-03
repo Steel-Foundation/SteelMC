@@ -81,6 +81,7 @@ struct LivingEntityState {
     speed: f32,
     current_impulse_context_reset_grace_time: i32,
     fall_flying: bool,
+    fall_flying_ticks: i32,
     sprinting: bool,
     sleeping_pos: Option<BlockPos>,
     last_climbable_pos: Option<BlockPos>,
@@ -100,6 +101,7 @@ impl LivingEntityState {
             speed,
             current_impulse_context_reset_grace_time: 0,
             fall_flying: false,
+            fall_flying_ticks: 0,
             sprinting: false,
             sleeping_pos: None,
             last_climbable_pos: None,
@@ -229,6 +231,22 @@ impl LivingEntityBase {
     /// Sets the vanilla living-entity fall-flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
         self.state.lock().fall_flying = fall_flying;
+    }
+
+    /// Returns vanilla `LivingEntity.fallFlyTicks`.
+    #[must_use]
+    pub fn fall_flying_ticks(&self) -> i32 {
+        self.state.lock().fall_flying_ticks
+    }
+
+    /// Ticks vanilla `LivingEntity.fallFlyTicks`.
+    pub fn tick_fall_flying_state(&self, fall_flying: bool) {
+        let mut state = self.state.lock();
+        if fall_flying {
+            state.fall_flying_ticks = state.fall_flying_ticks.wrapping_add(1);
+        } else {
+            state.fall_flying_ticks = 0;
+        }
     }
 
     /// Returns whether this living entity is sprinting.
@@ -502,6 +520,19 @@ mod tests {
         assert!(base.is_fall_flying());
         base.set_fall_flying(false);
         assert!(!base.is_fall_flying());
+    }
+
+    #[test]
+    fn fall_flying_ticks_are_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert_eq!(base.fall_flying_ticks(), 0);
+        base.tick_fall_flying_state(true);
+        base.tick_fall_flying_state(true);
+        assert_eq!(base.fall_flying_ticks(), 2);
+        base.tick_fall_flying_state(false);
+        assert_eq!(base.fall_flying_ticks(), 0);
     }
 
     #[test]

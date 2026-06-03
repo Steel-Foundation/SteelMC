@@ -11,6 +11,7 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
+use steel_registry::data_components::vanilla_components::{EquippableSlot, GLIDER};
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
@@ -36,6 +37,7 @@ use crate::behavior::{
 };
 use crate::entity::attribute::AttributeMap;
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{
     COLLISION_EPSILON, CollisionWorld, EntityPhysicsState, MoveResult, MoverType,
     WorldCollisionProvider, move_entity as resolve_entity_movement,
@@ -68,6 +70,23 @@ fn horizontal_distance(vector: DVec3) -> f64 {
 
 fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_speed: f64) -> f32 {
     ((previous_horizontal_speed - new_horizontal_speed) * 10.0 - 3.0) as f32
+}
+
+const fn equipment_slot_matches_equippable(
+    slot: EquipmentSlot,
+    equippable_slot: EquippableSlot,
+) -> bool {
+    matches!(
+        (slot, equippable_slot),
+        (EquipmentSlot::MainHand, EquippableSlot::Mainhand)
+            | (EquipmentSlot::OffHand, EquippableSlot::Offhand)
+            | (EquipmentSlot::Feet, EquippableSlot::Feet)
+            | (EquipmentSlot::Legs, EquippableSlot::Legs)
+            | (EquipmentSlot::Chest, EquippableSlot::Chest)
+            | (EquipmentSlot::Head, EquippableSlot::Head)
+            | (EquipmentSlot::Body, EquippableSlot::Body)
+            | (EquipmentSlot::Saddle, EquippableSlot::Saddle)
+    )
 }
 
 fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
@@ -1302,6 +1321,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Resets accumulated vanilla fall distance.
     fn reset_fall_distance(&self) {
         self.base().reset_fall_distance();
+    }
+
+    /// Mirrors vanilla `Entity.checkFallDistanceAccumulation()`.
+    fn check_fall_distance_accumulation(&self) {
+        if self.velocity().y > -0.5 && self.fall_distance() > 1.0 {
+            self.set_fall_distance(1.0);
+        }
     }
 
     /// Returns the current vanilla fire/freeze state.
@@ -2789,6 +2815,64 @@ pub trait LivingEntity: Entity {
         self.living_base().set_fall_flying(fall_flying);
     }
 
+    /// Returns vanilla `LivingEntity.getFallFlyingTicks()`.
+    fn fall_flying_ticks(&self) -> i32 {
+        self.living_base().fall_flying_ticks()
+    }
+
+    /// Ticks living-entity counters after movement.
+    fn tick_living_state(&self) {
+        self.living_base()
+            .tick_fall_flying_state(self.is_fall_flying());
+        self.living_base().tick_post_impulse_grace_time();
+    }
+
+    /// Mirrors vanilla `LivingEntity.canGlideUsing()`.
+    fn can_glide_using(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
+        let Some(equippable) = item_stack.get_equippable() else {
+            return false;
+        };
+
+        item_stack.has(GLIDER)
+            && equipment_slot_matches_equippable(slot, equippable.slot)
+            && !item_stack.next_damage_will_break()
+    }
+
+    /// Returns whether the item in `slot` can be used for vanilla gliding.
+    fn can_glide_using_equipment_slot(&self, _slot: EquipmentSlot) -> bool {
+        false
+    }
+
+    /// Default vanilla `LivingEntity.canGlide()` implementation for overrides.
+    fn default_can_glide(&self) -> bool {
+        !self.on_ground()
+            && !self.is_passenger()
+            && !self.has_mob_effect(vanilla_mob_effects::LEVITATION)
+            && EquipmentSlot::ALL
+                .iter()
+                .any(|&slot| self.can_glide_using_equipment_slot(slot))
+    }
+
+    /// Mirrors vanilla `LivingEntity.canGlide()`.
+    fn can_glide(&self) -> bool {
+        self.default_can_glide()
+    }
+
+    /// Mirrors vanilla `Player.startFallFlying()`.
+    fn start_fall_flying(&self) {
+        self.set_fall_flying(true);
+    }
+
+    /// Mirrors vanilla `Player.tryToStartFallFlying()`.
+    fn try_to_start_fall_flying(&self) -> bool {
+        if !self.is_fall_flying() && self.can_glide() && !self.is_in_water() {
+            self.start_fall_flying();
+            return true;
+        }
+
+        false
+    }
+
     /// Returns the last climbable block position this living entity touched.
     fn last_climbable_pos(&self) -> Option<BlockPos> {
         self.living_base().last_climbable_pos()
@@ -3034,6 +3118,10 @@ pub trait LivingEntity: Entity {
 
         if !self.can_simulate_movement() || !self.is_effective_ai() {
             return None;
+        }
+
+        if self.is_fall_flying() {
+            self.update_fall_flying();
         }
 
         let input = self.travel_input();
@@ -3356,6 +3444,18 @@ pub trait LivingEntity: Entity {
         self.travel_in_lava(input, base_gravity, is_falling, old_y)
     }
 
+    /// Mirrors the validation part of vanilla `LivingEntity.updateFallFlying()`.
+    fn update_fall_flying(&self) {
+        self.check_fall_distance_accumulation();
+        if self.can_glide() {
+            // TODO: Using fall_flying_ticks + 1 like vanilla, damage a random glider
+            // every 20 fall-flying ticks and emit ELYTRA_GLIDE every 10 ticks once
+            // living equipment mutation and game events are wired through the tick path.
+        } else {
+            self.set_fall_flying(false);
+        }
+    }
+
     /// Mirrors vanilla `LivingEntity.updateFallFlyingMovement()`.
     fn update_fall_flying_movement(&self, mut movement: DVec3) -> DVec3 {
         let look_angle = self.look_angle();
@@ -3560,11 +3660,14 @@ mod tests {
     };
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::fluid::FluidState;
+    use steel_registry::item_stack::ItemStack;
     use steel_registry::{
         sound_events, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
-        vanilla_entities, vanilla_fluids, vanilla_mob_effects,
+        vanilla_entities, vanilla_fluids, vanilla_items, vanilla_mob_effects,
     };
     use steel_utils::{BlockPos, Direction};
+
+    use crate::inventory::equipment::EquipmentSlot;
 
     use super::{
         Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
@@ -3653,6 +3756,7 @@ mod tests {
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
         vehicle: bool,
+        glider_slot: Option<EquipmentSlot>,
     }
 
     impl LivingFluidTestEntity {
@@ -3676,6 +3780,7 @@ mod tests {
                 affected_by_fluids,
                 can_stand_on_fluid: false,
                 vehicle: false,
+                glider_slot: None,
             }
         }
 
@@ -3691,6 +3796,11 @@ mod tests {
 
         const fn with_vehicle(mut self) -> Self {
             self.vehicle = true;
+            self
+        }
+
+        const fn with_glider_slot(mut self, slot: EquipmentSlot) -> Self {
+            self.glider_slot = Some(slot);
             self
         }
     }
@@ -3740,6 +3850,10 @@ mod tests {
 
         fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
             self.can_stand_on_fluid
+        }
+
+        fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
+            self.glider_slot == Some(slot)
         }
     }
 
@@ -3938,6 +4052,78 @@ mod tests {
     fn fall_flying_collision_damage_matches_vanilla_threshold() {
         assert!(fall_flying_collision_damage(1.0, 0.8) <= 0.0);
         assert!((fall_flying_collision_damage(1.0, 0.6) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn fall_distance_accumulation_clamps_like_vanilla() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_fall_distance(2.0);
+        entity.set_velocity(DVec3::new(0.0, -0.4, 0.0));
+
+        entity.check_fall_distance_accumulation();
+
+        assert!((entity.fall_distance() - 1.0).abs() < f64::EPSILON);
+
+        entity.set_fall_distance(2.0);
+        entity.set_velocity(DVec3::new(0.0, -0.6, 0.0));
+
+        entity.check_fall_distance_accumulation();
+
+        assert!((entity.fall_distance() - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn can_glide_using_matches_vanilla_component_gate() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let mut elytra = ItemStack::new(&vanilla_items::ITEMS.elytra);
+
+        assert!(entity.can_glide_using(&elytra, EquipmentSlot::Chest));
+        assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Head));
+
+        elytra.set_damage_value(elytra.get_max_damage() - 1);
+
+        assert!(elytra.next_damage_will_break());
+        assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Chest));
+        assert!(!entity.can_glide_using(
+            &ItemStack::new(&vanilla_items::ITEMS.stone),
+            EquipmentSlot::Chest
+        ));
+    }
+
+    #[test]
+    fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
+        init_test_registry();
+        let entity =
+            LivingFluidTestEntity::new(0.0, 0.0, true).with_glider_slot(EquipmentSlot::Chest);
+        entity.set_on_ground(false);
+
+        assert!(entity.try_to_start_fall_flying());
+        assert!(entity.is_fall_flying());
+    }
+
+    #[test]
+    fn try_to_start_fall_flying_rejects_levitation() {
+        init_test_registry();
+        let entity =
+            LivingFluidTestEntity::new(0.0, 0.0, true).with_glider_slot(EquipmentSlot::Chest);
+        entity.set_on_ground(false);
+        entity.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
+
+        assert!(!entity.try_to_start_fall_flying());
+        assert!(!entity.is_fall_flying());
+    }
+
+    #[test]
+    fn update_fall_flying_stops_when_glider_gate_fails() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_fall_flying(true);
+
+        entity.update_fall_flying();
+
+        assert!(!entity.is_fall_flying());
     }
 
     #[test]

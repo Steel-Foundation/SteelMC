@@ -831,25 +831,8 @@ impl Player {
                 self.set_sprinting(false);
             }
             PlayerCommandAction::StartFallFlying => {
-                // TODO: Full canGlide() checks once the required systems exist:
-                //   - no Levitation effect
-                //   - at least one equipped item has GLIDER component in correct slot
-                //     and won't break on next damage
-                // If validation fails, call stop_fall_flying() (toggle shared flag 7)
-                // Also needs tick-based updateFallFlying():
-                //   - re-validate canGlide() every tick
-                //   - damage a random glider item every 20 ticks
-                //   - emit ELYTRA_GLIDE game event every 10 ticks
-                // Blocked on: equipment checks working end-to-end and potion effects.
-                if !self.is_fall_flying()
-                    && !self.on_ground()
-                    && !self.is_passenger()
-                    && !self.is_flying()
-                    && !self.is_in_water()
-                {
-                    self.set_fall_flying(true);
-                } else {
-                    self.set_fall_flying(false);
+                if !self.try_to_start_fall_flying() {
+                    self.stop_fall_flying();
                 }
             }
             PlayerCommandAction::LeaveBed => {
