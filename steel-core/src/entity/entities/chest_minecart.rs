@@ -94,6 +94,10 @@ impl Entity for ChestMinecartEntity {
         true
     }
 
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         nbt.insert("FlippedRotation", Self::nbt_bool(false));
         let state = self.state.lock();
@@ -152,5 +156,6 @@ mod tests {
 
         assert!(minecart.is_pickable());
         assert!(minecart.is_pushable());
+        assert!(minecart.blocks_building());
     }
 }

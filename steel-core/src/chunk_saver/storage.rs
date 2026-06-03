@@ -673,6 +673,7 @@ impl ChunkStorage {
                     was_in_powder_snow: fire_freeze.was_in_powder_snow(),
                     has_visual_fire: fire_freeze.has_visual_fire(),
                     on_ground: entity.on_ground(),
+                    no_gravity: entity.is_no_gravity(),
                     nbt_data: nbt_bytes,
                 })
             })
@@ -1064,6 +1065,7 @@ impl ChunkStorage {
                     persistent.has_visual_fire,
                 ),
                 on_ground: persistent.on_ground,
+                no_gravity: persistent.no_gravity,
                 world: level,
             },
             &nbt,
@@ -2575,6 +2577,7 @@ mod tests {
         crystal.set_beam_target(Some(BlockPos::new(0, 64, 0)));
         crystal.set_invulnerable(true);
         crystal.set_fall_distance(3.75);
+        crystal.set_no_gravity(true);
         proto.add_entity(crystal);
 
         let chunk = ChunkAccess::Proto(proto);
@@ -2583,6 +2586,7 @@ mod tests {
         };
         assert_eq!(prepared.persistent.entities.len(), 1);
         assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f64::EPSILON);
+        assert!(prepared.persistent.entities[0].no_gravity);
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,
@@ -2605,6 +2609,7 @@ mod tests {
             vanilla_entities::END_CRYSTAL.id()
         );
         assert!((entities[0].fall_distance() - 3.75).abs() <= f64::EPSILON);
+        assert!(entities[0].is_no_gravity());
     }
 
     #[test]

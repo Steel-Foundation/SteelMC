@@ -78,6 +78,7 @@ struct StructureEntityInfo {
     velocity: DVec3,
     fall_distance: f64,
     on_ground: bool,
+    no_gravity: bool,
     nbt: NbtCompound,
 }
 
@@ -346,6 +347,7 @@ impl StructureTemplate {
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
             let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
+            let no_gravity = entity_nbt.byte("NoGravity").is_some_and(|value| value != 0);
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);
 
@@ -357,6 +359,7 @@ impl StructureTemplate {
                 velocity,
                 fall_distance,
                 on_ground,
+                no_gravity,
                 nbt,
             });
         }
@@ -393,6 +396,7 @@ impl StructureTemplate {
             "UUID",
             "fall_distance",
             "OnGround",
+            "NoGravity",
         ] {
             let _ = nbt.remove(field);
         }
@@ -832,6 +836,7 @@ impl StructureTemplate {
                     fall_distance: entity.fall_distance,
                     fire_freeze: EntityFireFreezeState::new(),
                     on_ground: entity.on_ground,
+                    no_gravity: entity.no_gravity,
                     world: region.weak_world(),
                 },
                 &nbt,

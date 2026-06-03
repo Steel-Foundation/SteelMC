@@ -896,12 +896,12 @@ impl ChunkMap {
         let view_distance = player.view_distance();
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
+        let world = self.world_gen_context.world();
         let mut last_view_guard = player.last_tracking_view.lock();
 
         if last_view_guard.as_ref() != Some(&new_view) {
             let mut chunk_tickets = self.chunk_tickets.lock();
 
-            let world = self.world_gen_context.world();
             let new_ticket = ChunkTicket::player(new_view.view_distance, world.simulation_distance);
 
             if let Some(last_view) = last_view_guard.as_ref() {
@@ -947,9 +947,6 @@ impl ChunkMap {
                     &added_chunks,
                     &removed_chunks,
                 );
-
-                // Update entity tracking for this player's new view.
-                world.entity_tracker().update_player(player, &new_view);
             } else {
                 chunk_tickets.add_ticket(new_view.center, new_ticket);
 
@@ -967,13 +964,16 @@ impl ChunkMap {
 
                 // First time - add all chunks in view to player area map
                 world.player_area_map.on_player_join(player, &new_view);
-
-                // Initial entity tracking for this player
-                world.entity_tracker().update_player(player, &new_view);
             }
 
             *last_view_guard = Some(new_view);
         }
+        drop(last_view_guard);
+
+        // Entity visibility also depends on exact player position, not only
+        // chunk-view changes. Vanilla refreshes tracked entities for accepted
+        // movement within the same chunk as well.
+        world.entity_tracker().update_player(player, &new_view);
     }
 
     /// Removes a player from the chunk map.

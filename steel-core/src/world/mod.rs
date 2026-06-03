@@ -1040,8 +1040,12 @@ impl World {
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
+            let server_tick = tick_count as i32;
             self.players.iter_players(|_uuid, player| {
-                player.tick(tick_count as i32);
+                if !player.was_ticked_this_tick(server_tick) {
+                    player.mark_ticked(server_tick);
+                    player.tick(server_tick);
+                }
                 true
             });
             start.elapsed()
@@ -1050,6 +1054,8 @@ impl World {
         {
             let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
             self.entity_tracker.send_changes(
+                |chunk| self.player_area_map.get_tracking_players(chunk),
+                |player_id| self.players.get_by_entity_id(player_id),
                 |entity_id, packet| {
                     self.broadcast_movement_sync_to_entity_trackers(entity_id, packet, None);
                 },
@@ -1793,7 +1799,6 @@ impl World {
                 DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
-            entity.set_default_pickup_delay();
             self.add_entity(entity);
         }
     }
@@ -2745,7 +2750,6 @@ impl World {
     /// Spawns an item entity at the given position.
     ///
     /// This is a convenience method for dropping items in the world.
-    /// The item will have a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
@@ -2779,8 +2783,6 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        entity.set_default_pickup_delay();
-
         self.add_entity(entity.clone());
         Some(entity)
     }
@@ -2814,7 +2816,9 @@ impl World {
         let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
         let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
 
-        self.spawn_item(DVec3::new(x, y, z), item)
+        let entity = self.spawn_item(DVec3::new(x, y, z), item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Drops an item from a block face with directional velocity.
@@ -2879,11 +2883,13 @@ impl World {
             f64::from(step_z) * 0.1
         };
 
-        self.spawn_item_with_velocity(
+        let entity = self.spawn_item_with_velocity(
             DVec3::new(x, y, z),
             item,
             DVec3::new(delta_x, delta_y, delta_z),
-        )
+        )?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Gets an entity by its network ID.
@@ -2931,7 +2937,19 @@ impl World {
     /// Moves an entity's Arc between chunks when it crosses a chunk boundary.
     ///
     /// Called by `EntityChunkCallback` when an entity moves between chunks.
-    pub fn move_entity_between_chunks(&self, entity_id: i32, from: ChunkPos, to: ChunkPos) {
+    pub fn move_entity_between_chunks(&self, entity_id: i32, from: ChunkPos, to: ChunkPos) -> bool {
+        if from == to {
+            return true;
+        }
+
+        let target_is_full = self
+            .chunk_map
+            .with_full_chunk(to, |chunk| chunk.as_full().is_some())
+            .unwrap_or(false);
+        if !target_is_full {
+            return false;
+        }
+
         // Remove Arc from old chunk
         let entity = self
             .chunk_map
@@ -2947,7 +2965,10 @@ impl World {
                     c.entities.add(entity);
                 }
             });
+            return true;
         }
+
+        false
     }
 
     /// Internal method to remove an entity from the world.
@@ -2957,17 +2978,23 @@ impl World {
         &self,
         entity_id: i32,
         chunk_pos: ChunkPos,
-        _reason: RemovalReason,
+        reason: RemovalReason,
     ) {
         self.entity_tracker.remove(entity_id, |player_id| {
             self.players.get_by_entity_id(player_id)
         });
 
-        // Remove from chunk storage
+        // Saveable removals stay in chunk storage until persistence consumes them.
         let entity: Option<SharedEntity> = self
             .chunk_map
             .with_full_chunk(chunk_pos, |chunk| {
-                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
+                chunk.as_full().and_then(|c| {
+                    if reason.should_save() {
+                        c.entities.get(entity_id)
+                    } else {
+                        c.entities.remove(entity_id)
+                    }
+                })
             })
             .flatten();
 

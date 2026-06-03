@@ -642,10 +642,11 @@ impl Player {
         if let Some(entity) = self
             .get_world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)
-            && thrown_from_hand
         {
             entity.set_pickup_delay(40);
-            entity.set_thrower(self.gameprofile.id);
+            if thrown_from_hand {
+                entity.set_thrower(self.gameprofile.id);
+            }
         }
     }
 

@@ -61,23 +61,25 @@ impl World {
             return;
         }
 
-        let start = Instant::now();
-
-        // Save player data before removal
-        let server = player.server();
-        if let Err(e) = server.player_data_storage.save(&player).await {
-            log::error!("Failed to save player data for {uuid}: {e}");
-        }
-
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
         self.entity_tracker().on_player_leave(entity_id);
 
         self.player_area_map.on_player_leave(&player);
+        self.chunk_map.remove_player(&player);
+
+        let start = Instant::now();
+
+        // Save after world indexes are cleared so a fast reconnect cannot collide
+        // with this player's stale entity ID/UUID cache entries.
+        let server = player.server();
+        if let Err(e) = server.player_data_storage.save(&player).await {
+            log::error!("Failed to save player data for {uuid}: {e}");
+        }
+
         self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
 
-        self.chunk_map.remove_player(&player);
         player.cleanup();
         log::info!("Player {uuid} removed in {:?}", start.elapsed());
     }

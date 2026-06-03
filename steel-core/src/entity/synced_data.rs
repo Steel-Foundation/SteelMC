@@ -14,6 +14,9 @@ pub trait EntitySyncedData: Send + Sync {
     /// Returns the shared vanilla `NoGravity` flag.
     fn is_no_gravity(&self) -> bool;
 
+    /// Sets the shared vanilla `NoGravity` flag.
+    fn set_no_gravity(&self, no_gravity: bool);
+
     /// Returns the shared vanilla shift-key-down flag.
     fn is_shift_key_down(&self) -> bool;
 
@@ -53,6 +56,12 @@ where
 
     fn is_no_gravity(&self) -> bool {
         *VanillaEntityData::base(&*self.lock()).no_gravity.get()
+    }
+
+    fn set_no_gravity(&self, no_gravity: bool) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .no_gravity
+            .set(no_gravity);
     }
 
     fn is_shift_key_down(&self) -> bool {
@@ -124,7 +133,7 @@ mod tests {
         let data = SyncMutex::new(ItemEntityData::new());
         assert!(!EntitySyncedData::is_no_gravity(&data));
 
-        data.lock().base_mut().no_gravity.set(true);
+        EntitySyncedData::set_no_gravity(&data, true);
 
         assert!(EntitySyncedData::is_no_gravity(&data));
         let Some(values) = EntitySyncedData::pack_dirty(&data) else {

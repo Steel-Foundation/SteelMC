@@ -220,38 +220,54 @@ impl EntityLevelCallback for EntityChunkCallback {
         let new_section = SectionPos::from_entity_pos(new_pos);
         let new_chunk = ChunkPos::from_entity_pos(new_pos);
 
-        let (old_section, old_chunk) = {
-            let mut state = self.state.lock();
-            (
-                state.replace_section(new_section),
-                state.replace_chunk(new_chunk),
-            )
+        let (old_section_pos, old_chunk_pos) = {
+            let state = self.state.lock();
+            (state.last_section, state.last_chunk)
         };
 
-        let section_changed = old_section.is_some();
-        let old_chunk_for_tracking = old_chunk.unwrap_or(new_chunk);
+        let section_changed = old_section_pos != new_section;
+        let chunk_changed = old_chunk_pos != new_chunk;
 
-        // Update section cache if section changed
-        if let Some(old_section) = old_section {
-            world
-                .entity_cache()
-                .on_section_change(self.entity_id, old_section, new_section);
+        if chunk_changed
+            && !world.move_entity_between_chunks(self.entity_id, old_chunk_pos, new_chunk)
+        {
+            log::warn!(
+                "Could not move entity {} from chunk {:?} to non-full chunk {:?}",
+                self.entity_id,
+                old_chunk_pos,
+                new_chunk
+            );
+            return;
         }
 
-        // Move Arc between chunks if chunk changed
-        if let Some(old_chunk) = old_chunk {
-            world.move_entity_between_chunks(self.entity_id, old_chunk, new_chunk);
+        {
+            let mut state = self.state.lock();
+            if section_changed {
+                let _ = state.replace_section(new_section);
+            }
+            if chunk_changed {
+                let _ = state.replace_chunk(new_chunk);
+            }
+        }
 
+        // Update section cache if section changed
+        if section_changed {
+            world
+                .entity_cache()
+                .on_section_change(self.entity_id, old_section_pos, new_section);
+        }
+
+        if chunk_changed {
             // Mark both old and new chunks dirty for saving
             // (within-chunk movement is handled by LevelChunk::tick marking dirty after entity ticks)
-            world.mark_chunk_dirty(old_chunk);
+            world.mark_chunk_dirty(old_chunk_pos);
             world.mark_chunk_dirty(new_chunk);
         }
 
         if section_changed {
             world.entity_tracker().on_entity_section_change(
                 self.entity_id,
-                old_chunk_for_tracking,
+                old_chunk_pos,
                 new_chunk,
                 |chunk| world.player_area_map.get_tracking_players(chunk),
                 |player_id| world.players.get_by_entity_id(player_id),

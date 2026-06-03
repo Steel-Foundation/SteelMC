@@ -2365,7 +2365,15 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns true if gravity is disabled for this entity.
     fn is_no_gravity(&self) -> bool {
         self.synced_data()
-            .is_some_and(EntitySyncedData::is_no_gravity)
+            .map_or_else(|| self.base().no_gravity(), EntitySyncedData::is_no_gravity)
+    }
+
+    /// Sets the shared vanilla `NoGravity` flag.
+    fn set_no_gravity(&self, no_gravity: bool) {
+        self.base().set_no_gravity(no_gravity);
+        if let Some(synced_data) = self.synced_data() {
+            synced_data.set_no_gravity(no_gravity);
+        }
     }
 
     /// Gets the current gravity value.

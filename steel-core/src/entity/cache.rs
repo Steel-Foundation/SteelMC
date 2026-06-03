@@ -57,12 +57,18 @@ impl EntityCache {
         let section = SectionPos::from_entity_pos(pos);
 
         if self.by_id.insert_sync(id, weak.clone()).is_err() {
-            panic!("entity id {id} is already registered in the world cache");
+            self.cleanup();
+            if self.by_id.insert_sync(id, weak.clone()).is_err() {
+                panic!("entity id {id} is already registered in the world cache");
+            }
         }
 
-        if self.by_uuid.insert_sync(uuid, weak).is_err() {
-            let _ = self.by_id.remove_sync(&id);
-            panic!("entity uuid {uuid} is already registered in the world cache");
+        if self.by_uuid.insert_sync(uuid, weak.clone()).is_err() {
+            self.cleanup();
+            if self.by_uuid.insert_sync(uuid, weak).is_err() {
+                let _ = self.by_id.remove_sync(&id);
+                panic!("entity uuid {uuid} is already registered in the world cache");
+            }
         }
 
         self.add_to_section(section, id);
@@ -254,6 +260,7 @@ mod tests {
         vanilla_entities,
     };
     use steel_utils::WorldAabb;
+    use uuid::Uuid;
 
     use super::*;
     use crate::entity::{Entity, EntityBase};
@@ -265,8 +272,17 @@ mod tests {
 
     impl CacheTestEntity {
         fn new(id: i32, position: DVec3, dimensions: EntityDimensions) -> Arc<Self> {
+            Self::with_uuid(id, Uuid::new_v4(), position, dimensions)
+        }
+
+        fn with_uuid(
+            id: i32,
+            uuid: Uuid,
+            position: DVec3,
+            dimensions: EntityDimensions,
+        ) -> Arc<Self> {
             Arc::new(Self {
-                base: EntityBase::new(id, position, dimensions, Weak::<World>::new()),
+                base: EntityBase::with_uuid(id, uuid, position, dimensions, Weak::<World>::new()),
             })
         }
     }
@@ -320,6 +336,26 @@ mod tests {
         assert_eq!(cache.count(), 0);
         assert_eq!(cache.by_section.len(), 0);
         assert!(cache.get_entities_in_section(section).is_empty());
+    }
+
+    #[test]
+    fn register_replaces_dead_duplicate_index_entries() {
+        let cache = EntityCache::new();
+        let dimensions = EntityDimensions::new(0.25, 0.25, 0.125);
+        let uuid = Uuid::new_v4();
+
+        {
+            let entity: SharedEntity = CacheTestEntity::with_uuid(1, uuid, DVec3::ZERO, dimensions);
+            cache.register(&entity);
+        }
+
+        let replacement: SharedEntity =
+            CacheTestEntity::with_uuid(1, uuid, DVec3::new(1.0, 0.0, 0.0), dimensions);
+        cache.register(&replacement);
+
+        assert_eq!(cache.count(), 1);
+        assert_eq!(cache.get_by_uuid(&uuid).map(|entity| entity.id()), Some(1));
+        assert_eq!(cache.get_by_id(1).map(|entity| entity.uuid()), Some(uuid));
     }
 
     #[test]

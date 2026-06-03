@@ -125,6 +125,10 @@ impl Entity for EndCrystalEntity {
         true
     }
 
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
@@ -192,5 +196,12 @@ mod tests {
         let crystal = EndCrystalEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
 
         assert!(crystal.is_pickable());
+    }
+
+    #[test]
+    fn end_crystal_blocks_building_like_vanilla() {
+        let crystal = EndCrystalEntity::new(1, DVec3::ZERO, Weak::new());
+
+        assert!(crystal.blocks_building());
     }
 }

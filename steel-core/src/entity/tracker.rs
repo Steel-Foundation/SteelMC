@@ -230,11 +230,14 @@ impl EntityTracker {
     /// Mirrors vanilla `ChunkMap.tick` driving `ServerEntity.sendChanges`.
     pub fn send_changes(
         &self,
+        get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: impl Fn(i32) -> Option<Arc<Player>>,
         mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
         mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
         mut broadcast_passengers: impl FnMut(i32, CSetPassengers, Vec<i32>),
     ) {
         let mut dead_entities = Vec::new();
+        let mut entities_to_refresh = Vec::new();
         let mut passengers_to_broadcast = Vec::new();
         let mut packets_to_broadcast = Vec::new();
         let mut entity_data_to_broadcast = Vec::new();
@@ -254,14 +257,13 @@ impl EntityTracker {
             {
                 let mut last_passenger_ids = tracked.last_passenger_ids.lock();
                 if *last_passenger_ids != passenger_ids {
-                    let excluded_player_ids =
-                        changed_passenger_ids(&last_passenger_ids, &passenger_ids);
                     passengers_to_broadcast.push((
                         entity_id,
                         CSetPassengers::new(entity_id, passenger_ids.clone()),
-                        excluded_player_ids,
+                        Vec::new(),
                     ));
                     *last_passenger_ids = passenger_ids;
+                    entities_to_refresh.push(entity_id);
                 }
             }
 
@@ -296,6 +298,10 @@ impl EntityTracker {
 
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
+        }
+
+        for entity_id in entities_to_refresh {
+            self.refresh_entity_players(entity_id, &get_players_in_chunk, &get_player);
         }
 
         for (entity_id, packet, excluded_player_ids) in passengers_to_broadcast {
@@ -388,6 +394,53 @@ impl EntityTracker {
         }
     }
 
+    fn refresh_entity_players(
+        &self,
+        entity_id: i32,
+        get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    ) {
+        let mut players_to_remove = Vec::new();
+        let mut players_to_add = Vec::new();
+        let mut entity_to_spawn = None;
+
+        self.entities.update_sync(&entity_id, |_, tracked| {
+            let Some(entity) = tracked.entity.upgrade() else {
+                return;
+            };
+
+            let new_seen_by = Self::visible_players_for_entity(
+                entity_id,
+                entity.as_ref(),
+                tracked.registered_chunk,
+                tracked.tracking_range,
+                get_players_in_chunk,
+                get_player,
+            );
+
+            let mut seen_by = tracked.seen_by.write();
+            players_to_remove.extend(seen_by.difference(&new_seen_by).copied());
+            players_to_add.extend(new_seen_by.difference(&seen_by).copied());
+            *seen_by = new_seen_by;
+            entity_to_spawn = Some(entity);
+        });
+
+        for player_id in players_to_remove {
+            if let Some(player) = get_player(player_id) {
+                player.send_packet(CRemoveEntities::single(entity_id));
+            }
+        }
+
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+        for player_id in players_to_add {
+            if let Some(player) = get_player(player_id) {
+                send_spawn_packets(&entity, &player);
+            }
+        }
+    }
+
     /// Gets the number of tracked entities.
     #[must_use]
     pub fn count(&self) -> usize {
@@ -419,6 +472,7 @@ impl EntityTracker {
         get_player: &impl Fn(i32) -> Option<Arc<Player>>,
     ) -> FxHashSet<i32> {
         let entity_pos = entity.position();
+        let tracking_range = effective_tracking_range(entity, tracking_range);
         let mut players = FxHashSet::default();
         if entity.is_removed() {
             return players;
@@ -459,6 +513,34 @@ fn is_within_tracking_distance(
     let x = player_pos.x - entity_pos.x;
     let z = player_pos.z - entity_pos.z;
     x * x + z * z <= visible_radius * visible_radius
+}
+
+fn effective_tracking_range(
+    entity: &dyn Entity,
+    base_range: EntityTrackingRange,
+) -> EntityTrackingRange {
+    let mut range = base_range;
+    let mut visited = FxHashSet::default();
+    visited.insert(entity.id());
+    add_passenger_tracking_ranges(entity, &mut range, &mut visited);
+    range
+}
+
+fn add_passenger_tracking_ranges(
+    entity: &dyn Entity,
+    range: &mut EntityTrackingRange,
+    visited: &mut FxHashSet<i32>,
+) {
+    for passenger in entity.passengers() {
+        if !visited.insert(passenger.id()) {
+            continue;
+        }
+        let passenger_range = EntityTrackingRange::from_client_chunk_range(
+            passenger.entity_type().client_tracking_range,
+        );
+        range.block_radius = range.block_radius.max(passenger_range.block_radius);
+        add_passenger_tracking_ranges(passenger.as_ref(), range, visited);
+    }
 }
 
 struct EntitySpawnPairing {
@@ -529,15 +611,6 @@ fn direct_passenger_ids(entity: &dyn Entity) -> Vec<i32> {
         .passengers()
         .into_iter()
         .map(|passenger| passenger.id())
-        .collect()
-}
-
-fn changed_passenger_ids(previous: &[i32], current: &[i32]) -> Vec<i32> {
-    previous
-        .iter()
-        .chain(current.iter())
-        .filter(|passenger_id| previous.contains(passenger_id) != current.contains(passenger_id))
-        .copied()
         .collect()
 }
 
@@ -773,6 +846,8 @@ mod tests {
 
         let mut updates = Vec::new();
         tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
             |_, _| {},
             |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {
@@ -784,6 +859,8 @@ mod tests {
 
         vehicle_typed.add_passenger(&passenger);
         tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
             |_, _| {},
             |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {
@@ -795,10 +872,12 @@ mod tests {
         assert_eq!(updates[0].0, 1);
         assert_eq!(updates[0].1.vehicle_id, 1);
         assert_eq!(updates[0].1.passenger_ids, vec![2]);
-        assert_eq!(updates[0].2, vec![2]);
+        assert!(updates[0].2.is_empty());
 
         updates.clear();
         tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
             |_, _| {},
             |_, _| {},
             |entity_id, packet, excluded_player_ids| {
@@ -809,6 +888,8 @@ mod tests {
 
         vehicle_typed.clear_passengers();
         tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
             |_, _| {},
             |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {
@@ -820,6 +901,6 @@ mod tests {
         assert_eq!(updates[0].0, 1);
         assert_eq!(updates[0].1.vehicle_id, 1);
         assert!(updates[0].1.passenger_ids.is_empty());
-        assert_eq!(updates[0].2, vec![2]);
+        assert!(updates[0].2.is_empty());
     }
 }

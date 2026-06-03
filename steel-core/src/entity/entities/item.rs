@@ -57,6 +57,7 @@ const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
 const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
 const ITEM_WATER_DRAG: f64 = 0.99;
 const ITEM_LAVA_DRAG: f64 = 0.95;
+const MERGE_MAX_STACK_SIZE: i32 = 64;
 
 /// Mutable item-specific state that changes during item ticks, pickup, damage,
 /// merging, and save/load.
@@ -111,13 +112,13 @@ impl ItemEntity {
     /// Use `set_item()` to set the actual item after creation, or use `with_item()`.
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::with_item(id, position, ItemStack::empty(), world)
+        Self::with_item_and_velocity(id, position, ItemStack::empty(), DVec3::ZERO, world)
     }
 
     /// Creates a new item entity with the specified item.
     #[must_use]
     pub fn with_item(id: i32, position: DVec3, item: ItemStack, world: Weak<World>) -> Self {
-        Self::with_item_and_velocity(id, position, item, DVec3::new(0.0, 0.0, 0.0), world)
+        Self::with_item_and_velocity(id, position, item, Self::default_spawn_velocity(), world)
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
@@ -148,6 +149,14 @@ impl ItemEntity {
             entity_data: SyncMutex::new(entity_data),
             item_state: SyncMutex::new(ItemEntityState::new()),
         }
+    }
+
+    fn default_spawn_velocity() -> DVec3 {
+        DVec3::new(
+            rand::random::<f64>() * 0.2 - 0.1,
+            0.2,
+            rand::random::<f64>() * 0.2 - 0.1,
+        )
     }
 
     /// Creates an item entity from saved data with restored base state.
@@ -399,7 +408,10 @@ impl ItemEntity {
         from_stack: &ItemStack,
     ) {
         // Calculate how many items to transfer
-        let max_count = to_stack.max_stack_size();
+        let max_count = to_stack.max_stack_size().min(MERGE_MAX_STACK_SIZE);
+        if to_stack.count() >= max_count {
+            return;
+        }
         let space_available = max_count - to_stack.count();
         let transfer_count = space_available.min(from_stack.count());
 
@@ -502,33 +514,20 @@ impl Entity for ItemEntity {
     }
 
     fn tick(&self) {
-        let should_despawn = {
-            let mut state = self.item_state.lock();
-
-            if state.pickup_delay > 0 && state.pickup_delay != INFINITE_PICKUP_DELAY {
-                state.pickup_delay -= 1;
-            }
-
-            if state.age == INFINITE_LIFETIME {
-                false
-            } else {
-                state.age += 1;
-                state.age >= LIFETIME
-            }
-        };
-
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
 
-        if should_despawn {
-            self.set_removed(RemovalReason::Discarded);
-            return;
-        }
-
         self.default_tick();
+
+        {
+            let mut state = self.item_state.lock();
+            if state.pickup_delay > 0 && state.pickup_delay != INFINITE_PICKUP_DELAY {
+                state.pickup_delay -= 1;
+            }
+        }
 
         // Vanilla item tick stores previous position before applying movement.
         self.set_old_position_to_current();
@@ -626,6 +625,20 @@ impl Entity for ItemEntity {
         if self.on_ground() != old_on_ground {
             self.mark_velocity_sync();
         }
+
+        let should_despawn = {
+            let mut state = self.item_state.lock();
+            if state.age == INFINITE_LIFETIME {
+                false
+            } else {
+                state.age += 1;
+                state.age >= LIFETIME
+            }
+        };
+
+        if should_despawn {
+            self.set_removed(RemovalReason::Discarded);
+        }
     }
 
     fn get_default_gravity(&self) -> f64 {
@@ -652,7 +665,7 @@ impl Entity for ItemEntity {
         // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
         let new_health = {
             let mut state = self.item_state.lock();
-            state.health -= amount as i32;
+            state.health = (state.health as f32 - amount) as i32;
             state.health
         };
         if new_health <= 0 {
@@ -730,7 +743,9 @@ mod tests {
 
     use glam::DVec3;
 
-    use crate::entity::Entity;
+    use steel_registry::{item_stack::ItemStack, vanilla_damage_types, vanilla_items};
+
+    use crate::entity::{Entity, damage::DamageSource};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -758,5 +773,34 @@ mod tests {
         item.set_health(0);
         item.advance_tick_count();
         assert!(item.should_play_lava_hurt_sound());
+    }
+
+    #[test]
+    fn item_with_stack_uses_vanilla_default_velocity() {
+        let item = ItemEntity::with_item(
+            1,
+            DVec3::ZERO,
+            ItemStack::new(&vanilla_items::ITEMS.stone),
+            Weak::<World>::new(),
+        );
+        let velocity = item.velocity();
+
+        assert!(velocity.x >= -0.1);
+        assert!(velocity.x < 0.1);
+        assert_eq!(velocity.y, 0.2);
+        assert!(velocity.z >= -0.1);
+        assert!(velocity.z < 0.1);
+    }
+
+    #[test]
+    fn item_damage_truncates_after_fractional_subtraction() {
+        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+
+        assert!(item.hurt(
+            &DamageSource::environment(&vanilla_damage_types::GENERIC),
+            0.75
+        ));
+
+        assert_eq!(item.get_health(), 4);
     }
 }

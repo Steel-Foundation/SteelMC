@@ -615,6 +615,7 @@ pub struct EntityBaseState {
     ground_contact: EntityGroundContact,
     movement_progress: EntityMovementProgress,
     fire_freeze: EntityFireFreezeState,
+    no_gravity: bool,
     in_block_state: Option<BlockStateId>,
     fluid_contact: EntityFluidContact,
     was_eye_in_water: bool,
@@ -645,6 +646,7 @@ impl EntityBaseState {
             ground_contact: EntityGroundContact::airborne(),
             movement_progress: EntityMovementProgress::new(),
             fire_freeze: EntityFireFreezeState::new(),
+            no_gravity: false,
             in_block_state: None,
             fluid_contact: EntityFluidContact::default(),
             was_eye_in_water: false,
@@ -721,6 +723,13 @@ impl EntityBaseState {
         self
     }
 
+    /// Sets the shared vanilla `NoGravity` flag on this construction snapshot.
+    #[must_use]
+    pub const fn with_no_gravity(mut self, no_gravity: bool) -> Self {
+        self.no_gravity = no_gravity;
+        self
+    }
+
     /// Sets the ground-contact flag on this state snapshot.
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
@@ -770,6 +779,8 @@ pub struct EntityBaseLoad {
     pub fire_freeze: EntityFireFreezeState,
     /// Restored ground-contact flag.
     pub on_ground: bool,
+    /// Restored shared vanilla `NoGravity` flag.
+    pub no_gravity: bool,
     /// World reference for the loaded entity.
     pub world: Weak<World>,
 }
@@ -973,6 +984,7 @@ impl EntityBase {
                 .with_rotation(load.rotation)
                 .with_fall_distance(load.fall_distance)
                 .with_fire_freeze_state(load.fire_freeze)
+                .with_no_gravity(load.no_gravity)
                 .with_on_ground(load.on_ground),
             load.world,
         )
@@ -1166,6 +1178,12 @@ impl EntityBase {
     #[inline]
     pub fn no_physics(&self) -> bool {
         self.state.lock().no_physics
+    }
+
+    /// Returns the shared vanilla `NoGravity` state stored on the base snapshot.
+    #[inline]
+    pub fn no_gravity(&self) -> bool {
+        self.state.lock().no_gravity
     }
 
     /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
@@ -1497,6 +1515,11 @@ impl EntityBase {
     /// Sets whether this entity bypasses collision physics.
     pub fn set_no_physics(&self, no_physics: bool) {
         self.state.lock().no_physics = no_physics;
+    }
+
+    /// Sets the shared vanilla `NoGravity` state stored on the base snapshot.
+    pub fn set_no_gravity(&self, no_gravity: bool) {
+        self.state.lock().no_gravity = no_gravity;
     }
 
     /// Marks velocity for vanilla `ServerEntity` synchronization.
@@ -2339,6 +2362,7 @@ mod tests {
             fall_distance: 0.0,
             fire_freeze: EntityFireFreezeState::from_parts(12, 34, true, false, true),
             on_ground: false,
+            no_gravity: true,
             world: Weak::<World>::new(),
         };
 
@@ -2349,6 +2373,7 @@ mod tests {
         assert_eq!(state.ticks_frozen(), 34);
         assert!(state.is_in_powder_snow());
         assert!(state.has_visual_fire());
+        assert!(base.no_gravity());
     }
 
     #[test]

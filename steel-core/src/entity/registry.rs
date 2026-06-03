@@ -48,6 +48,8 @@ pub struct EntityLoadRequest {
     pub fire_freeze: EntityFireFreezeState,
     /// Restored ground-contact flag.
     pub on_ground: bool,
+    /// Restored shared vanilla `NoGravity` flag.
+    pub no_gravity: bool,
     /// World reference for the loaded entity.
     pub world: Weak<World>,
 }
@@ -65,6 +67,7 @@ impl EntityLoadRequest {
                 fall_distance: self.fall_distance,
                 fire_freeze: self.fire_freeze,
                 on_ground: self.on_ground,
+                no_gravity: self.no_gravity,
                 world: self.world,
             },
         )
@@ -146,8 +149,10 @@ impl EntityRegistry {
         let (entity_type, load) = request.into_base_load();
         let id = entity_type.id();
         let load_factory = self.entries.get(id)?.load_factory?;
+        let no_gravity = load.no_gravity;
 
         let entity = load_factory(load);
+        entity.set_no_gravity(no_gravity);
         entity.load_additional(nbt);
         Some(entity)
     }
@@ -161,13 +166,16 @@ impl EntityRegistry {
     ) -> SharedEntity {
         let (entity_type, load) = request.into_base_load();
         let id = entity_type.id();
+        let no_gravity = load.no_gravity;
         if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
             let entity = load_factory(load);
+            entity.set_no_gravity(no_gravity);
             entity.load_additional(nbt);
             return entity;
         }
 
         let entity: SharedEntity = Arc::new(RawEntity::from_saved(load, entity_type));
+        entity.set_no_gravity(no_gravity);
         entity.load_additional(nbt);
         entity
     }
@@ -313,6 +321,7 @@ mod tests {
                 fall_distance: 2.25,
                 fire_freeze: EntityFireFreezeState::new(),
                 on_ground: true,
+                no_gravity: true,
                 world: Weak::new(),
             },
             &borrowed,
@@ -324,6 +333,7 @@ mod tests {
         assert_eq!(entity.rotation(), (45.0, 10.0));
         assert!((entity.fall_distance() - 2.25).abs() <= f64::EPSILON);
         assert!(entity.on_ground());
+        assert!(entity.is_no_gravity());
 
         let mut saved = NbtCompound::new();
         entity.save_additional(&mut saved);
