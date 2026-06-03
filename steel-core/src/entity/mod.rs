@@ -670,6 +670,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().first_passenger()
     }
 
+    /// Returns the living passenger currently controlling this entity, if any.
+    ///
+    /// Mirrors vanilla `Entity.getControllingPassenger`. Base entities have no
+    /// controller; controllable vehicles override this based on their own rules.
+    fn controlling_passenger(&self) -> Option<SharedEntity> {
+        None
+    }
+
+    /// Returns whether this entity currently has a controlling passenger.
+    ///
+    /// Mirrors vanilla `Entity.hasControllingPassenger`.
+    fn has_controlling_passenger(&self) -> bool {
+        self.controlling_passenger().is_some()
+    }
+
     /// Returns whether this entity has any direct passengers.
     ///
     /// Mirrors vanilla `Entity.isVehicle`.
@@ -966,11 +981,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Returns the movement vector vanilla exposes for block-contact logic.
     fn known_movement(&self) -> DVec3 {
+        if let Some(controller) = self.controlling_passenger()
+            && !self.is_removed()
+            && controller.entity_type() == &vanilla_entities::PLAYER
+        {
+            return controller.known_movement();
+        }
+
         self.velocity()
     }
 
     /// Returns the base-tick displacement vanilla exposes as `getKnownSpeed`.
     fn known_speed(&self) -> DVec3 {
+        if let Some(controller) = self.controlling_passenger()
+            && !self.is_removed()
+            && controller.entity_type() == &vanilla_entities::PLAYER
+        {
+            return controller.known_speed();
+        }
+
         self.base().known_speed()
     }
 
@@ -2471,7 +2500,7 @@ mod tests {
     use steel_utils::{BlockPos, Direction};
 
     use super::{
-        Entity, EntityBase, EntityVerticalMovementStateUpdate, SharedEntity,
+        Entity, EntityBase, EntityVerticalMovementStateUpdate, RemovalReason, SharedEntity,
         closest_open_space_direction, fall_damage_reset_clip_target,
         should_apply_resolved_movement,
     };
@@ -2499,6 +2528,80 @@ mod tests {
 
         fn is_pushable(&self) -> bool {
             true
+        }
+    }
+
+    struct KnownMovementTestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        known_movement: DVec3,
+        known_speed: DVec3,
+    }
+
+    impl KnownMovementTestEntity {
+        fn shared(
+            id: i32,
+            entity_type: EntityTypeRef,
+            known_movement: DVec3,
+            known_speed: DVec3,
+        ) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+                known_movement,
+                known_speed,
+            })
+        }
+    }
+
+    impl Entity for KnownMovementTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn known_movement(&self) -> DVec3 {
+            self.known_movement
+        }
+
+        fn known_speed(&self) -> DVec3 {
+            self.known_speed
+        }
+    }
+
+    struct ControlledVehicleTestEntity {
+        base: EntityBase,
+        controller: Option<SharedEntity>,
+    }
+
+    impl ControlledVehicleTestEntity {
+        fn shared(id: i32, controller: Option<SharedEntity>) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::new(
+                    id,
+                    DVec3::ZERO,
+                    vanilla_entities::ACACIA_BOAT.dimensions,
+                    Weak::new(),
+                ),
+                controller,
+            })
+        }
+    }
+
+    impl Entity for ControlledVehicleTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ACACIA_BOAT
+        }
+
+        fn controlling_passenger(&self) -> Option<SharedEntity> {
+            self.controller.clone()
         }
     }
 
@@ -2624,6 +2727,59 @@ mod tests {
         entity.on_below_world();
 
         assert!(entity.is_removed());
+    }
+
+    #[test]
+    fn base_entity_has_no_controlling_passenger() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+
+        assert!(entity.controlling_passenger().is_none());
+        assert!(!entity.has_controlling_passenger());
+    }
+
+    #[test]
+    fn controlled_vehicle_uses_player_known_movement_and_speed() {
+        let player_movement = DVec3::new(0.25, 0.0, -0.5);
+        let player_speed = DVec3::new(0.5, 0.0, -1.0);
+        let controller = KnownMovementTestEntity::shared(
+            1,
+            &vanilla_entities::PLAYER,
+            player_movement,
+            player_speed,
+        );
+        let vehicle = ControlledVehicleTestEntity::shared(2, Some(controller));
+
+        vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
+        vehicle.base().advance_base_tick_state();
+        vehicle.set_position(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.base().advance_base_tick_state();
+
+        assert!(vehicle.has_controlling_passenger());
+        assert_vec3_close(vehicle.known_movement(), player_movement);
+        assert_vec3_close(vehicle.known_speed(), player_speed);
+
+        vehicle.set_removed(RemovalReason::Discarded);
+
+        assert_vec3_close(vehicle.known_movement(), DVec3::new(4.0, 0.0, 4.0));
+        assert_vec3_close(vehicle.known_speed(), DVec3::new(2.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn controlled_vehicle_known_movement_falls_back_without_active_player_controller() {
+        let non_player_controller = KnownMovementTestEntity::shared(
+            1,
+            &vanilla_entities::ZOMBIE,
+            DVec3::new(0.25, 0.0, -0.5),
+            DVec3::new(0.5, 0.0, -1.0),
+        );
+        let vehicle = ControlledVehicleTestEntity::shared(2, Some(non_player_controller));
+        vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
+        vehicle.base().advance_base_tick_state();
+        vehicle.set_position(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.base().advance_base_tick_state();
+
+        assert_vec3_close(vehicle.known_movement(), DVec3::new(4.0, 0.0, 4.0));
+        assert_vec3_close(vehicle.known_speed(), DVec3::new(2.0, 0.0, 0.0));
     }
 
     #[test]
