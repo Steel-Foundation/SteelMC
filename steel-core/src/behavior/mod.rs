@@ -63,7 +63,7 @@ pub mod weathering;
 
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
-    EntityFallDamage, EntityFallOnContext, EntityLandingContext,
+    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{

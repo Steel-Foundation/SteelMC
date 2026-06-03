@@ -7,10 +7,12 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::VoxelShape;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_damage_types;
+use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, axis::Axis};
@@ -141,21 +143,101 @@ pub struct EntityLandingContext {
 
 /// Entity facts needed by `Block.fallOn`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityFallOnFacts {
+    /// Vanilla entity type of the landing entity.
+    pub entity_type: EntityTypeRef,
+    /// Whether the landing entity implements vanilla living-entity behavior.
+    pub is_living_entity: bool,
+    /// Current entity bounding-box X/Z width.
+    pub bounding_box_width: f64,
+    /// Current entity bounding-box height.
+    pub bounding_box_height: f64,
+}
+
+impl EntityFallOnFacts {
+    /// Creates fall-on facts from explicit entity values.
+    #[must_use]
+    pub const fn new(
+        entity_type: EntityTypeRef,
+        is_living_entity: bool,
+        bounding_box_width: f64,
+        bounding_box_height: f64,
+    ) -> Self {
+        Self {
+            entity_type,
+            is_living_entity,
+            bounding_box_width,
+            bounding_box_height,
+        }
+    }
+
+    /// Creates fall-on facts from an entity.
+    #[must_use]
+    pub fn from_entity(entity: &dyn Entity) -> Self {
+        let bounding_box = entity.bounding_box();
+        Self::new(
+            entity.entity_type(),
+            entity.is_living_entity(),
+            bounding_box.width(),
+            bounding_box.height(),
+        )
+    }
+
+    /// Returns true for vanilla players.
+    #[must_use]
+    pub fn is_player(self) -> bool {
+        self.entity_type == &vanilla_entities::PLAYER
+    }
+
+    /// Vanilla farmland trampling size check:
+    /// `getBbWidth() * getBbWidth() * getBbHeight()`.
+    #[must_use]
+    pub fn bounding_box_width_squared_height(self) -> f64 {
+        self.bounding_box_width * self.bounding_box_width * self.bounding_box_height
+    }
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityFallOnContext {
     /// Accumulated vanilla fall distance at landing time.
     pub fall_distance: f64,
     /// Whether vanilla bounce behavior should be suppressed.
     pub suppresses_bounce: bool,
+    /// Entity facts available to vanilla fall-on hooks.
+    pub entity: EntityFallOnFacts,
 }
 
 impl EntityFallOnContext {
     /// Creates a fall-on context for a ground collision.
     #[must_use]
-    pub const fn new(fall_distance: f64, suppresses_bounce: bool) -> Self {
+    pub const fn new(
+        fall_distance: f64,
+        suppresses_bounce: bool,
+        entity: EntityFallOnFacts,
+    ) -> Self {
         Self {
             fall_distance,
             suppresses_bounce,
+            entity,
         }
+    }
+
+    /// Creates a fall-on context from a landing entity.
+    #[must_use]
+    pub fn from_entity(fall_distance: f64, entity: &dyn Entity) -> Self {
+        Self::new(
+            fall_distance,
+            entity.is_suppressing_bounce(),
+            EntityFallOnFacts::from_entity(entity),
+        )
+    }
+
+    /// Returns this context with a transformed fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
     }
 }
 
@@ -940,5 +1022,19 @@ impl BlockBehaviorRegistry {
 impl Default for BlockBehaviorRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fall_on_facts_use_vanilla_width_squared_height_formula() {
+        let facts = EntityFallOnFacts::new(&vanilla_entities::PLAYER, true, 0.6, 1.8);
+
+        assert!(facts.is_player());
+        assert!(facts.is_living_entity);
+        assert!((facts.bounding_box_width_squared_height() - 0.648).abs() < f64::EPSILON);
     }
 }

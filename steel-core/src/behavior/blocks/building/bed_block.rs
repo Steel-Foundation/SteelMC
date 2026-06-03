@@ -33,7 +33,7 @@ impl BedBlock {
 
     #[must_use]
     fn fall_context(context: EntityFallOnContext) -> EntityFallOnContext {
-        EntityFallOnContext::new(context.fall_distance * 0.5, context.suppresses_bounce)
+        context.with_fall_distance(context.fall_distance * 0.5)
     }
 
     #[must_use]
@@ -85,6 +85,10 @@ impl BlockBehavior for BedBlock {
 mod tests {
     use super::*;
 
+    use steel_registry::vanilla_entities;
+
+    use crate::behavior::EntityFallOnFacts;
+
     fn landing(
         velocity: DVec3,
         is_living_entity: bool,
@@ -95,10 +99,15 @@ mod tests {
 
     #[test]
     fn bed_halves_fall_distance_before_default_damage() {
-        let context = BedBlock::fall_context(EntityFallOnContext::new(12.0, false));
+        let context = BedBlock::fall_context(EntityFallOnContext::new(
+            12.0,
+            false,
+            EntityFallOnFacts::new(&vanilla_entities::PLAYER, true, 0.6, 1.8),
+        ));
 
         assert!((context.fall_distance - 6.0).abs() < f64::EPSILON);
         assert!(!context.suppresses_bounce);
+        assert!(context.entity.is_player());
     }
 
     #[test]

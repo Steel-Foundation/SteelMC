@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
-    EntityLandingContext, FLUID_BEHAVIORS,
+    EntityFallOnFacts, EntityLandingContext, FLUID_BEHAVIORS,
 };
 use crate::entity::attribute::AttributeMap;
 use crate::fluid::{LavaFluid, get_height};
@@ -2135,8 +2135,17 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let fall_distance = self.fall_distance();
         if fall_distance > 0.0 {
             let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
-            let fall_context =
-                EntityFallOnContext::new(fall_distance, self.is_suppressing_bounce());
+            let bounding_box = self.bounding_box();
+            let fall_context = EntityFallOnContext::new(
+                fall_distance,
+                self.is_suppressing_bounce(),
+                EntityFallOnFacts::new(
+                    self.entity_type(),
+                    self.is_living_entity(),
+                    bounding_box.width(),
+                    bounding_box.height(),
+                ),
+            );
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
                 let damage_applied = self.cause_fall_damage(
                     fall_damage.fall_distance,
