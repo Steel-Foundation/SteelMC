@@ -605,6 +605,25 @@ pub trait BlockBehavior: Send + Sync {
         ))
     }
 
+    /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
+    ///
+    /// Vanilla parity hook for block-specific fall side effects that depend on
+    /// whether `Entity.causeFallDamage` returned true.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn after_fall_on_damage(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_damage: &EntityFallDamage,
+        damage_applied: bool,
+    ) {
+    }
+
     /// Updates entity velocity after a vertical movement collision with this block.
     ///
     /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.

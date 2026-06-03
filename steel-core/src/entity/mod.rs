@@ -6,7 +6,7 @@ use glam::DVec3;
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
-use steel_protocol::packets::game::SoundSource;
+use steel_protocol::packets::game::{CEntityEvent, SoundSource};
 use steel_registry::blocks::{block_state_ext::BlockStateExt as _, shapes::is_shape_full_block};
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
@@ -20,9 +20,10 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
 };
+use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
-use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::behavior::{
@@ -1618,6 +1619,22 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Broadcasts a vanilla entity event/status packet near this entity.
+    fn broadcast_entity_event(&self, event: EntityStatus) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        world.broadcast_to_nearby(
+            ChunkPos::from_entity_pos(self.position()),
+            CEntityEvent {
+                entity_id: self.id(),
+                event,
+            },
+            None,
+        );
+    }
+
     /// Plays an entity sound at the entity's exact position.
     fn play_sound(&self, sound_id: i32, volume: f32, pitch: f32) {
         if self.is_silent() {
@@ -2121,10 +2138,18 @@ pub trait Entity: EntityEventSource + Send + Sync {
             let fall_context =
                 EntityFallOnContext::new(fall_distance, self.is_suppressing_bounce());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                self.cause_fall_damage(
+                let damage_applied = self.cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,
+                );
+                behavior.after_fall_on_damage(
+                    on_state,
+                    world,
+                    pos,
+                    self.as_entity_event_source(),
+                    &fall_damage,
+                    damage_applied,
                 );
             }
 
