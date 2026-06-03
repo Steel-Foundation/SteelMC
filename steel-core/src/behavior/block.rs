@@ -653,16 +653,15 @@ pub trait BlockBehavior: Send + Sync {
     ) {
     }
 
-    /// Updates entity velocity after a vertical movement collision with this block.
+    /// Default post-fall movement hook.
     ///
-    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
-    /// Steel returns the velocity to apply so movement resolution keeps entity
-    /// state changes centralized in [`Entity::move_entity`].
+    /// Overrides that mirror vanilla `super.updateEntityMovementAfterFallOn(...)`
+    /// should call [`Self::default_update_entity_movement_after_fall_on`].
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
-    fn update_entity_movement_after_fall_on(
+    fn default_update_entity_movement_after_fall_on(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
@@ -670,6 +669,21 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityLandingContext,
     ) -> DVec3 {
         context.default_velocity_after_fall_on()
+    }
+
+    /// Updates entity velocity after a vertical movement collision with this block.
+    ///
+    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
+    /// Steel returns the velocity to apply so movement resolution keeps entity
+    /// state changes centralized in [`Entity::move_entity`].
+    fn update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
     }
 
     /// Default step-on hook.

@@ -82,11 +82,15 @@ impl BlockBehavior for SlimeBlock {
 
     fn update_entity_movement_after_fall_on(
         &self,
-        _state: BlockStateId,
-        _world: &Arc<World>,
-        _pos: BlockPos,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
         context: EntityLandingContext,
     ) -> DVec3 {
+        if context.suppresses_bounce {
+            return self.default_update_entity_movement_after_fall_on(state, world, pos, context);
+        }
+
         Self::velocity_after_fall(context)
     }
 
