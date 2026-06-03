@@ -1,6 +1,6 @@
 //! Core entity state flags for a player.
 //!
-//! Groups player-local pose inputs such as sleeping, swimming, and sneaking.
+//! Groups player-local pose inputs such as swimming and sneaking.
 
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
@@ -75,8 +75,6 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
 
 /// Player-local pose and shared-flag inputs.
 pub(super) struct EntityState {
-    /// Whether the player is currently sleeping in a bed.
-    sleeping: bool,
     /// Whether the vanilla swimming shared flag is set.
     swimming: bool,
     /// Whether the player is sneaking (shift key down).
@@ -85,7 +83,6 @@ pub(super) struct EntityState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct EntityStateSnapshot {
-    pub sleeping: bool,
     pub swimming: bool,
     pub crouching: bool,
 }
@@ -94,7 +91,6 @@ impl EntityState {
     #[must_use]
     pub(super) const fn new() -> Self {
         Self {
-            sleeping: false,
             swimming: false,
             crouching: false,
         }
@@ -103,14 +99,9 @@ impl EntityState {
     #[must_use]
     pub(super) const fn snapshot(&self) -> EntityStateSnapshot {
         EntityStateSnapshot {
-            sleeping: self.sleeping,
             swimming: self.swimming,
             crouching: self.crouching,
         }
-    }
-
-    pub(super) const fn set_sleeping(&mut self, sleeping: bool) {
-        self.sleeping = sleeping;
     }
 
     pub(super) const fn set_swimming(&mut self, swimming: bool) {
@@ -122,7 +113,6 @@ impl EntityState {
     }
 
     pub(super) const fn reset_transient(&mut self) {
-        self.sleeping = false;
         self.swimming = false;
         self.crouching = false;
     }
@@ -176,6 +166,7 @@ impl Player {
 
     pub(super) fn reset_entity_state(&self) {
         self.entity_state.lock().reset_transient();
+        self.clear_sleeping_pos();
         self.set_fall_flying(false);
         self.set_sprinting(false);
     }
@@ -212,17 +203,6 @@ impl Player {
             .base_mut()
             .shared_flags
             .set(flags.metadata_byte());
-    }
-
-    /// Returns true if the player is currently sleeping.
-    #[must_use]
-    pub fn is_sleeping(&self) -> bool {
-        self.entity_state.lock().snapshot().sleeping
-    }
-
-    /// Sets the player's sleeping state.
-    pub fn set_sleeping(&self, sleeping: bool) {
-        self.entity_state.lock().set_sleeping(sleeping);
     }
 
     /// Returns true if vanilla player rules consider the player swimming.
@@ -307,7 +287,7 @@ impl Player {
     // TODO: Add SpinAttack pose (requires riptide trident)
     pub(super) fn get_desired_pose(&self) -> EntityPose {
         let es = self.entity_state_snapshot();
-        if es.sleeping {
+        if self.is_sleeping() {
             EntityPose::Sleeping
         } else if es.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator {
             EntityPose::Swimming

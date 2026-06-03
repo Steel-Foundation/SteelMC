@@ -7,8 +7,8 @@
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_attributes;
-use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{BlockPos, Identifier};
 
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 
@@ -26,6 +26,7 @@ struct LivingEntityState {
     current_impulse_context_reset_grace_time: i32,
     fall_flying: bool,
     sprinting: bool,
+    sleeping_pos: Option<BlockPos>,
 }
 
 impl LivingEntityState {
@@ -39,6 +40,7 @@ impl LivingEntityState {
             current_impulse_context_reset_grace_time: 0,
             fall_flying: false,
             sprinting: false,
+            sleeping_pos: None,
         }
     }
 
@@ -173,6 +175,28 @@ impl LivingEntityBase {
         }
     }
 
+    /// Returns the bed position that makes this living entity sleeping.
+    #[must_use]
+    pub fn sleeping_pos(&self) -> Option<BlockPos> {
+        self.state.lock().sleeping_pos
+    }
+
+    /// Sets the vanilla living-entity sleeping position.
+    pub fn set_sleeping_pos(&self, bed_position: BlockPos) {
+        self.state.lock().sleeping_pos = Some(bed_position);
+    }
+
+    /// Clears the vanilla living-entity sleeping position.
+    pub fn clear_sleeping_pos(&self) {
+        self.state.lock().sleeping_pos = None;
+    }
+
+    /// Returns whether this living entity has a sleeping position.
+    #[must_use]
+    pub fn is_sleeping(&self) -> bool {
+        self.sleeping_pos().is_some()
+    }
+
     /// Calculates vanilla living-entity fall damage.
     #[must_use]
     pub fn calculate_fall_damage(
@@ -253,6 +277,7 @@ impl LivingEntityBase {
 #[cfg(test)]
 mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_attributes, vanilla_entities};
+    use steel_utils::BlockPos;
 
     use super::LivingEntityBase;
 
@@ -355,5 +380,23 @@ mod tests {
                 .to_bits(),
             base_speed.to_bits()
         );
+    }
+
+    #[test]
+    fn sleeping_uses_living_entity_sleeping_position() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let bed_pos = BlockPos::new(12, 64, -4);
+
+        assert!(!base.is_sleeping());
+        assert_eq!(base.sleeping_pos(), None);
+
+        base.set_sleeping_pos(bed_pos);
+        assert!(base.is_sleeping());
+        assert_eq!(base.sleeping_pos(), Some(bed_pos));
+
+        base.clear_sleeping_pos();
+        assert!(!base.is_sleeping());
+        assert_eq!(base.sleeping_pos(), None);
     }
 }

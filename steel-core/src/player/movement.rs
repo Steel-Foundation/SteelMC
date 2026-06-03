@@ -207,8 +207,7 @@ impl Player {
         let prev_pos = self.movement.lock().last_sent_position();
         let start_pos = self.position();
         let game_mode = self.game_mode();
-        let state = self.entity_state_snapshot();
-        let is_sleeping = state.sleeping;
+        let is_sleeping = self.is_sleeping();
         let is_fall_flying = self.is_fall_flying();
         let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
@@ -877,7 +876,7 @@ impl Player {
             }
             PlayerCommandAction::LeaveBed => {
                 if self.is_sleeping() {
-                    self.set_sleeping(false);
+                    self.stop_sleeping();
                     // TODO: Full bed wake-up logic:
                     //   - set bed block OCCUPIED property to false
                     //   - compute stand-up position via BedBlock::findStandUpPosition

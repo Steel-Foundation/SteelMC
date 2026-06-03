@@ -1485,14 +1485,6 @@ impl LivingEntity for Player {
             .player_absorption
             .set(amount.max(0.0));
     }
-
-    fn is_sleeping(&self) -> bool {
-        Player::is_sleeping(self)
-    }
-
-    fn stop_sleeping(&self) {
-        self.set_sleeping(false);
-    }
 }
 
 impl TextResolutor for Player {

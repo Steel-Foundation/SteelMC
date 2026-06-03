@@ -2552,13 +2552,30 @@ pub trait LivingEntity: Entity {
         self.living_base().set_fall_flying(fall_flying);
     }
 
+    /// Returns the bed position that makes this living entity sleeping.
+    fn sleeping_pos(&self) -> Option<BlockPos> {
+        self.living_base().sleeping_pos()
+    }
+
+    /// Sets the vanilla living-entity sleeping position.
+    fn set_sleeping_pos(&self, bed_position: BlockPos) {
+        self.living_base().set_sleeping_pos(bed_position);
+    }
+
+    /// Clears the vanilla living-entity sleeping position.
+    fn clear_sleeping_pos(&self) {
+        self.living_base().clear_sleeping_pos();
+    }
+
     /// Checks if the entity is sleeping.
     fn is_sleeping(&self) -> bool {
-        false
+        self.sleeping_pos().is_some()
     }
 
     /// Stops the entity from sleeping.
-    fn stop_sleeping(&self) {}
+    fn stop_sleeping(&self) {
+        self.clear_sleeping_pos();
+    }
 
     /// Checks if the entity is sprinting.
     fn is_sprinting(&self) -> bool {
