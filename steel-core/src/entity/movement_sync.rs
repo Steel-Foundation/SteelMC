@@ -303,15 +303,71 @@ impl EntityPositionSyncState {
     }
 }
 
+/// Per-entity movement sync state for tracked position and rotation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityMovementSyncState {
+    position: EntityPositionSyncState,
+    rotation: EntityRotationSyncState,
+}
+
+impl EntityMovementSyncState {
+    /// Creates movement sync state for values already known to tracking clients.
+    #[must_use]
+    pub fn new(position: DVec3, on_ground: bool, body_rotation: (f32, f32), head_yaw: f32) -> Self {
+        Self {
+            position: EntityPositionSyncState::new(position, on_ground),
+            rotation: EntityRotationSyncState::new(body_rotation, head_yaw),
+        }
+    }
+
+    /// Returns the last absolute position used as the client's delta base.
+    #[must_use]
+    pub const fn last_sent_position(self) -> DVec3 {
+        self.position.last_sent_position()
+    }
+
+    /// Selects and records a position sync that forces full packets after a delay.
+    ///
+    /// Vanilla player movement uses this form: delta packets are sent while the
+    /// packed delta base is fresh, then a full position sync refreshes that base.
+    pub fn record_position_sync_with_full_delay(
+        &mut self,
+        position: DVec3,
+        on_ground: bool,
+        full_sync_delay: i32,
+    ) -> EntityPositionSyncDecision {
+        let delay = self.position.advance_sync_delay();
+        let on_ground_changed = self.position.last_sent_on_ground() != on_ground;
+        let force_full = delay > full_sync_delay || on_ground_changed;
+        self.position
+            .record_movement_sync(position, on_ground, force_full)
+    }
+
+    /// Records a body rotation packet when the packed yaw or pitch changed.
+    pub fn record_body_rotation(&mut self, rotation: (f32, f32)) -> Option<PackedEntityRotation> {
+        self.rotation.record_body_rotation(rotation)
+    }
+
+    /// Marks body rotation as sent because a full position sync includes it.
+    pub fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
+        self.rotation.mark_body_rotation_sent(rotation);
+    }
+
+    /// Records a head-rotation packet when the packed yaw changed.
+    pub fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
+        self.rotation.record_head_yaw(head_yaw)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
     use steel_protocol::packets::game::{calc_delta, to_angle_byte};
 
     use super::{
-        EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
-        EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
-        PackedEntityRotation,
+        EntityMovementSyncState, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
+        EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
+        EntityRotationSyncState, PackedEntityRotation,
     };
 
     #[test]
@@ -387,6 +443,28 @@ mod tests {
         assert_eq!(state.record_head_yaw(0.5), None);
         assert_eq!(state.record_head_yaw(2.0), Some(to_angle_byte(2.0)));
         assert_eq!(state.record_head_yaw(2.5), None);
+    }
+
+    #[test]
+    fn movement_sync_state_tracks_position_and_rotation_together() {
+        let mut state = EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0);
+
+        let decision =
+            state.record_position_sync_with_full_delay(DVec3::new(0.25, 0.0, 0.0), true, 400);
+        assert_eq!(decision, EntityPositionSyncDecision::Full);
+        assert_eq!(state.last_sent_position(), DVec3::new(0.25, 0.0, 0.0));
+
+        assert_eq!(state.record_body_rotation((0.5, 0.5)), None);
+        assert_eq!(
+            state.record_body_rotation((2.0, 0.0)),
+            Some(PackedEntityRotation {
+                yaw: to_angle_byte(2.0),
+                pitch: to_angle_byte(0.0),
+            })
+        );
+        state.mark_body_rotation_sent((90.0, 45.0));
+        assert_eq!(state.record_body_rotation((90.0, 45.0)), None);
+        assert_eq!(state.record_head_yaw(2.0), Some(to_angle_byte(2.0)));
     }
 
     #[test]

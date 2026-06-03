@@ -489,9 +489,9 @@ pub use inside_block_effects::{
 };
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{
-    EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
-    EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
-    POSITION_SYNC_THRESHOLD, PackedEntityRotation,
+    EntityMovementSyncState, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
+    EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
+    EntityRotationSyncState, POSITION_SYNC_THRESHOLD, PackedEntityRotation,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;

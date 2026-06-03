@@ -3,10 +3,7 @@
 
 use glam::DVec3;
 
-use crate::entity::{
-    EntityPositionSyncDecision, EntityPositionSyncState, EntityRotationSyncState,
-    PackedEntityRotation,
-};
+use crate::entity::{EntityMovementSyncState, EntityPositionSyncDecision, PackedEntityRotation};
 use crate::physics::ClientAuthoredMovementState;
 
 /// Player movement packets force a full entity position sync after this delay.
@@ -14,10 +11,8 @@ const PLAYER_FULL_SYNC_DELAY: i32 = 400;
 
 /// Internal movement tracking state, stored behind a single `SyncMutex` on `Player`.
 pub struct MovementState {
-    /// Position/on-ground state used for tracking movement packets.
-    position_sync: EntityPositionSyncState,
-    /// Packed body/head rotation state used for tracking movement packets.
-    rotation_sync: EntityRotationSyncState,
+    /// Entity movement sync state used for tracking movement packets.
+    entity_sync: EntityMovementSyncState,
     /// Vanilla validation state for client-authored body movement.
     client_movement: ClientAuthoredMovementState,
 }
@@ -26,8 +21,7 @@ impl MovementState {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            position_sync: EntityPositionSyncState::new(DVec3::new(0.0, 0.0, 0.0), false),
-            rotation_sync: EntityRotationSyncState::new((0.0, 0.0), 0.0),
+            entity_sync: EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0),
             client_movement: ClientAuthoredMovementState::new(),
         }
     }
@@ -35,7 +29,7 @@ impl MovementState {
     /// Returns the last absolute position used as the client's movement delta base.
     #[must_use]
     pub(super) const fn last_sent_position(&self) -> DVec3 {
-        self.position_sync.last_sent_position()
+        self.entity_sync.last_sent_position()
     }
 
     /// Resets per-tick vanilla movement validation bases.
@@ -50,8 +44,7 @@ impl MovementState {
         on_ground: bool,
         rotation: (f32, f32),
     ) {
-        self.position_sync = EntityPositionSyncState::new(position, on_ground);
-        self.rotation_sync = EntityRotationSyncState::new(rotation, rotation.0);
+        self.entity_sync = EntityMovementSyncState::new(position, on_ground, rotation, rotation.0);
         self.client_movement.reset_for_position_sync(position);
     }
 
@@ -133,11 +126,11 @@ impl MovementState {
         position: DVec3,
         on_ground: bool,
     ) -> EntityPositionSyncDecision {
-        let delay = self.position_sync.advance_sync_delay();
-        let on_ground_changed = self.position_sync.last_sent_on_ground() != on_ground;
-        let force_full = delay > PLAYER_FULL_SYNC_DELAY || on_ground_changed;
-        self.position_sync
-            .record_movement_sync(position, on_ground, force_full)
+        self.entity_sync.record_position_sync_with_full_delay(
+            position,
+            on_ground,
+            PLAYER_FULL_SYNC_DELAY,
+        )
     }
 
     /// Records a body rotation packet when the packed yaw or pitch changed.
@@ -145,17 +138,17 @@ impl MovementState {
         &mut self,
         rotation: (f32, f32),
     ) -> Option<PackedEntityRotation> {
-        self.rotation_sync.record_body_rotation(rotation)
+        self.entity_sync.record_body_rotation(rotation)
     }
 
     /// Marks body rotation as sent because a full position sync includes it.
     pub(super) fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
-        self.rotation_sync.mark_body_rotation_sent(rotation);
+        self.entity_sync.mark_body_rotation_sent(rotation);
     }
 
     /// Records a head-rotation packet when the packed yaw changed.
     pub(super) fn record_head_yaw_sync(&mut self, head_yaw: f32) -> Option<i8> {
-        self.rotation_sync.record_head_yaw(head_yaw)
+        self.entity_sync.record_head_yaw(head_yaw)
     }
 }
 
