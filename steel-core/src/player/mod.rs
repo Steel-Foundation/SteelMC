@@ -52,10 +52,7 @@ use block_breaking::BlockBreakingManager;
 use enum_dispatch::enum_dispatch;
 use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
-use std::sync::{
-    Arc, Weak,
-    atomic::{AtomicU32, Ordering},
-};
+use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
     CRespawn, CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes,
@@ -262,7 +259,7 @@ pub struct Player {
 
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
-    pub chunk_send_epoch: AtomicU32,
+    pub chunk_send_epoch: SyncMutex<u32>,
 }
 
 impl Player {
@@ -375,7 +372,7 @@ impl Player {
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
             experience: SyncMutex::new(Experience::default()),
-            chunk_send_epoch: AtomicU32::new(0),
+            chunk_send_epoch: SyncMutex::new(0),
         }
     }
 
@@ -1061,7 +1058,10 @@ impl Player {
 
         // Reset chunk tracking — bump generation counter so the chunk sending tick
         // discards any in-flight batch encoded against the old world.
-        self.chunk_send_epoch.fetch_add(1, Ordering::Release);
+        {
+            let mut chunk_send_epoch = self.chunk_send_epoch.lock();
+            *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
+        }
         *self.chunk_sender.lock() = ChunkSender::default();
         *self.last_tracking_view.lock() = None;
         *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);

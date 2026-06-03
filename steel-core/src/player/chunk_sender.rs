@@ -5,16 +5,14 @@
 //! time on the per-player `ChunkSender` mutex so that game-tick operations like
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
 use rustc_hash::FxHashSet;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU32, Ordering},
-};
+use std::sync::Arc;
 
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
 use steel_protocol::utils::ConnectionProtocol;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, PackedChunkPos};
 
 use crate::{
@@ -94,7 +92,7 @@ impl ChunkSender {
         &mut self,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
-        chunk_send_epoch: &AtomicU32,
+        chunk_send_epoch: &SyncMutex<u32>,
     ) -> Option<PreparedBatch> {
         if self.unacknowledged_batches >= self.max_unacknowledged_batches {
             return None;
@@ -112,7 +110,7 @@ impl ChunkSender {
             return None;
         }
 
-        let epoch_snapshot = chunk_send_epoch.load(Ordering::Acquire);
+        let epoch_snapshot = *chunk_send_epoch.lock();
 
         Some(PreparedBatch {
             holders,
@@ -177,9 +175,10 @@ impl ChunkSender {
         batch: &PreparedBatch,
         encoded_chunks: Vec<EncodedPacket>,
         connection: &PlayerConnection,
-        chunk_send_epoch: &AtomicU32,
+        chunk_send_epoch: &SyncMutex<u32>,
     ) {
-        if chunk_send_epoch.load(Ordering::Acquire) != batch.epoch_snapshot {
+        let epoch = chunk_send_epoch.lock();
+        if *epoch != batch.epoch_snapshot {
             return;
         }
 
