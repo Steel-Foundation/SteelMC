@@ -5,7 +5,7 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use rustc_hash::FxHashSet;
+use rustc_hash::FxHashMap;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
@@ -17,6 +17,36 @@ use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifie
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
+
+/// Runtime mob-effect state currently needed by living physics.
+///
+/// TODO: Extend this into full vanilla `MobEffectInstance` state with duration,
+/// ambience, visibility, hidden effects, attribute modifiers, ticking, and sync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActiveMobEffect {
+    effect: MobEffectRef,
+    amplifier: i32,
+}
+
+impl ActiveMobEffect {
+    /// Creates active mob-effect state.
+    #[must_use]
+    pub const fn new(effect: MobEffectRef, amplifier: i32) -> Self {
+        Self { effect, amplifier }
+    }
+
+    /// Returns the mob effect.
+    #[must_use]
+    pub const fn effect(self) -> MobEffectRef {
+        self.effect
+    }
+
+    /// Returns vanilla `MobEffectInstance.getAmplifier()`.
+    #[must_use]
+    pub const fn amplifier(self) -> i32 {
+        self.amplifier
+    }
+}
 
 /// Movement input stored on vanilla `LivingEntity`.
 ///
@@ -131,8 +161,7 @@ impl LivingEntityState {
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
-    // TODO: Replace presence-only tracking with full vanilla MobEffectInstance state.
-    active_mob_effects: SyncMutex<FxHashSet<MobEffectRef>>,
+    active_mob_effects: SyncMutex<FxHashMap<MobEffectRef, ActiveMobEffect>>,
 }
 
 impl LivingEntityBase {
@@ -152,7 +181,7 @@ impl LivingEntityBase {
         Self {
             state: SyncMutex::new(LivingEntityState::new(speed)),
             attributes: SyncMutex::new(attributes),
-            active_mob_effects: SyncMutex::new(FxHashSet::default()),
+            active_mob_effects: SyncMutex::new(FxHashMap::default()),
         }
     }
 
@@ -165,14 +194,27 @@ impl LivingEntityBase {
     /// Returns whether this living entity has an active vanilla mob effect.
     #[must_use]
     pub fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
-        self.active_mob_effects.lock().contains(&effect)
+        self.active_mob_effects.lock().contains_key(&effect)
+    }
+
+    /// Returns active vanilla mob-effect state.
+    #[must_use]
+    pub fn mob_effect(&self, effect: MobEffectRef) -> Option<ActiveMobEffect> {
+        self.active_mob_effects.lock().get(&effect).copied()
+    }
+
+    /// Sets active vanilla mob-effect state.
+    pub fn set_mob_effect(&self, effect: MobEffectRef, amplifier: i32) {
+        self.active_mob_effects
+            .lock()
+            .insert(effect, ActiveMobEffect::new(effect, amplifier));
     }
 
     /// Sets the presence of a vanilla mob effect.
     pub fn set_mob_effect_active(&self, effect: MobEffectRef, active: bool) {
         let mut effects = self.active_mob_effects.lock();
         if active {
-            effects.insert(effect);
+            effects.insert(effect, ActiveMobEffect::new(effect, 0));
         } else {
             effects.remove(&effect);
         }
@@ -453,7 +495,7 @@ mod tests {
     };
     use steel_utils::BlockPos;
 
-    use super::{LivingEntityBase, LivingTravelInput};
+    use super::{ActiveMobEffect, LivingEntityBase, LivingTravelInput};
 
     #[test]
     fn fall_damage_starts_above_safe_fall_distance() {
@@ -577,8 +619,25 @@ mod tests {
         assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
         base.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, true);
         assert!(base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
+        assert_eq!(
+            base.mob_effect(vanilla_mob_effects::DOLPHINS_GRACE),
+            Some(ActiveMobEffect::new(vanilla_mob_effects::DOLPHINS_GRACE, 0))
+        );
         base.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, false);
         assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
+    }
+
+    #[test]
+    fn active_mob_effect_amplifier_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        base.set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
+
+        assert_eq!(
+            base.mob_effect(vanilla_mob_effects::JUMP_BOOST),
+            Some(ActiveMobEffect::new(vanilla_mob_effects::JUMP_BOOST, 2))
+        );
     }
 
     #[test]

@@ -572,7 +572,7 @@ pub use fluid_contact::EntityFluidContact;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
-pub use living_base::{DEATH_DURATION, LivingEntityBase, LivingTravelInput};
+pub use living_base::{ActiveMobEffect, DEATH_DURATION, LivingEntityBase, LivingTravelInput};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -2760,8 +2760,12 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getEffectiveGravity()`.
     fn get_effective_gravity(&self) -> f64 {
-        // TODO: Apply SLOW_FALLING once the mob effect system exists.
-        self.get_gravity()
+        let gravity = self.get_gravity();
+        if self.velocity().y <= 0.0 && self.has_mob_effect(vanilla_mob_effects::SLOW_FALLING) {
+            gravity.min(0.01)
+        } else {
+            gravity
+        }
     }
 
     /// Checks if the entity can be affected by potions.
@@ -2772,6 +2776,16 @@ pub trait LivingEntity: Entity {
     /// Returns vanilla `LivingEntity.hasEffect()`.
     fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
         self.living_base().has_mob_effect(effect)
+    }
+
+    /// Returns vanilla `LivingEntity.getEffect()`.
+    fn mob_effect(&self, effect: MobEffectRef) -> Option<ActiveMobEffect> {
+        self.living_base().mob_effect(effect)
+    }
+
+    /// Sets active vanilla mob-effect state.
+    fn set_mob_effect(&self, effect: MobEffectRef, amplifier: i32) {
+        self.living_base().set_mob_effect(effect, amplifier);
     }
 
     /// Sets the presence of a vanilla mob effect.
@@ -2999,8 +3013,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getJumpBoostPower()`.
     fn get_jump_boost_power(&self) -> f32 {
-        // TODO: Apply JUMP_BOOST once mob effects track amplifiers.
-        0.0
+        self.mob_effect(vanilla_mob_effects::JUMP_BOOST)
+            .map_or(0.0, |effect| 0.1 * (effect.amplifier() as f32 + 1.0))
     }
 
     /// Returns vanilla `LivingEntity.getJumpPower(float)`.
@@ -3143,9 +3157,9 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns a levitation velocity adjustment for `travelInAir`.
-    fn levitation_travel_y_delta(&self, _movement_y: f64) -> Option<f64> {
-        // TODO: Apply LEVITATION once the mob effect system exists.
-        None
+    fn levitation_travel_y_delta(&self, movement_y: f64) -> Option<f64> {
+        self.mob_effect(vanilla_mob_effects::LEVITATION)
+            .map(|effect| (0.05 * f64::from(effect.amplifier() + 1) - movement_y) * 0.2)
     }
 
     /// Returns whether vanilla `LivingEntity.travel()` should use fluid movement.
@@ -4052,6 +4066,46 @@ mod tests {
     fn fall_flying_collision_damage_matches_vanilla_threshold() {
         assert!(fall_flying_collision_damage(1.0, 0.8) <= 0.0);
         assert!((fall_flying_collision_damage(1.0, 0.6) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn jump_boost_power_uses_active_effect_amplifier() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        assert!(entity.get_jump_boost_power().abs() < f32::EPSILON);
+
+        entity.set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
+
+        assert!((entity.get_jump_boost_power() - 0.3).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn levitation_travel_uses_active_effect_amplifier() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        assert!(entity.levitation_travel_y_delta(-0.2).is_none());
+
+        entity.set_mob_effect(vanilla_mob_effects::LEVITATION, 1);
+
+        assert!(
+            (entity.levitation_travel_y_delta(-0.2).unwrap_or(0.0) - 0.06).abs() < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn slow_falling_caps_effective_gravity_only_while_falling() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
+        entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
+
+        assert!((entity.get_effective_gravity() - 0.01).abs() < f64::EPSILON);
+
+        entity.set_velocity(DVec3::new(0.0, 0.1, 0.0));
+
+        assert!((entity.get_effective_gravity() - entity.get_gravity()).abs() < f64::EPSILON);
     }
 
     #[test]
