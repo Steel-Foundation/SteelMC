@@ -651,7 +651,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn base_tick(&self) {
         self.base().advance_base_tick_state();
         self.refresh_fluid_contact_for_base_tick();
-        // TODO: Add remaining vanilla baseTick pieces: portal, fire/lava,
+        self.base().dampen_fall_distance_in_lava();
+        // TODO: Add remaining vanilla baseTick pieces: portal, fire ticks,
         // sprint particles, leash tick, and shared below-world handling.
     }
 

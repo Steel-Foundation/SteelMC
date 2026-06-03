@@ -1343,6 +1343,14 @@ impl EntityBase {
         self.set_fall_distance(0.0);
     }
 
+    /// Applies vanilla base-tick fall-distance damping while touching lava.
+    pub fn dampen_fall_distance_in_lava(&self) {
+        let mut state = self.state.lock();
+        if state.fluid_contact.lava_height() > 0.0 {
+            state.fall_distance *= 0.5;
+        }
+    }
+
     /// Sets whether this entity is touching the ground.
     pub fn set_on_ground(&self, on_ground: bool) {
         let mut state = self.state.lock();
@@ -2070,6 +2078,22 @@ mod tests {
             (base.fall_distance() + vertical_movement).abs() > f64::EPSILON,
             "fall distance should preserve vanilla's f32 cast before widening"
         );
+    }
+
+    #[test]
+    fn base_tick_lava_contact_dampens_fall_distance() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_fall_distance(8.0);
+        base.set_fluid_contact(EntityFluidContact::from_parts(0.0, 0.25, false, false));
+        base.dampen_fall_distance_in_lava();
+
+        assert_f64_close(base.fall_distance(), 4.0);
     }
 
     #[test]
