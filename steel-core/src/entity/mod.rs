@@ -2767,6 +2767,65 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_no_jump_delay();
     }
 
+    /// Applies vanilla `LivingEntity.aiStep()` velocity thresholds.
+    fn apply_living_velocity_thresholds(&self) {
+        let movement = self.velocity();
+        let mut dx = movement.x;
+        let mut dy = movement.y;
+        let mut dz = movement.z;
+
+        if self.entity_type() == &vanilla_entities::PLAYER {
+            if movement.x.mul_add(movement.x, movement.z * movement.z) < 9.0E-6 {
+                dx = 0.0;
+                dz = 0.0;
+            }
+        } else {
+            if movement.x.abs() < 0.003 {
+                dx = 0.0;
+            }
+            if movement.z.abs() < 0.003 {
+                dz = 0.0;
+            }
+        }
+
+        if movement.y.abs() < 0.003 {
+            dy = 0.0;
+        }
+
+        self.set_velocity(DVec3::new(dx, dy, dz));
+    }
+
+    /// Default vanilla-shaped `LivingEntity.aiStep()` movement foundation for overrides.
+    ///
+    /// This covers the shared travel state Steel currently has; mob AI, equipment,
+    /// and jump handling are still separate follow-up work.
+    fn default_ai_step(&self) -> Option<MoveResult> {
+        self.tick_no_jump_delay();
+        if !self.can_simulate_movement() {
+            self.set_velocity(self.velocity() * 0.98);
+        }
+
+        self.apply_living_velocity_thresholds();
+        self.apply_input();
+        // TODO: Implement LivingEntity jump handling and serverAiStep() hooks.
+
+        if !self.can_simulate_movement() || !self.is_effective_ai() {
+            return None;
+        }
+
+        let input = self.travel_input();
+        self.travel(DVec3::new(
+            f64::from(input.sideways()),
+            f64::from(input.vertical()),
+            f64::from(input.forward()),
+        ))
+    }
+
+    /// Mirrors vanilla `LivingEntity.aiStep()`.
+    fn ai_step(&self) -> Option<MoveResult> {
+        self.default_ai_step()
+    }
+
     /// Returns vanilla `LivingEntity.isSuppressingSlidingDownLadder()`.
     fn is_suppressing_sliding_down_ladder(&self) -> bool {
         self.is_suppressing_bounce()
@@ -3068,9 +3127,9 @@ mod tests {
 
     use super::{
         Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
-        LivingEntityBase, RemovalReason, SharedEntity, closest_open_space_direction,
-        fall_damage_reset_clip_target, get_input_vector, should_apply_resolved_movement,
-        trapdoor_usable_as_ladder_state,
+        LivingEntityBase, LivingTravelInput, RemovalReason, SharedEntity,
+        closest_open_space_direction, fall_damage_reset_clip_target, get_input_vector,
+        should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -3414,6 +3473,45 @@ mod tests {
 
         assert!(movement.y > -0.2);
         assert!(movement.z > 0.0);
+    }
+
+    #[test]
+    fn living_ai_step_zeroes_tiny_player_velocity_like_vanilla() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_velocity(DVec3::new(0.002, 0.002, 0.002));
+
+        entity.apply_living_velocity_thresholds();
+
+        assert_vec3_close(entity.velocity(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let velocity = DVec3::new(0.002, 0.003, 0.0025);
+        entity.set_velocity(velocity);
+
+        entity.apply_living_velocity_thresholds();
+
+        assert_vec3_close(entity.velocity(), velocity);
+    }
+
+    #[test]
+    fn default_ai_step_ticks_jump_delay_and_dampens_input_before_travel() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_no_jump_delay(2);
+        entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
+
+        assert!(entity.default_ai_step().is_none());
+
+        assert_eq!(entity.no_jump_delay(), 1);
+        assert_eq!(
+            entity.travel_input(),
+            LivingTravelInput::new(0.98, 0.5, -0.98)
+        );
     }
 
     #[test]

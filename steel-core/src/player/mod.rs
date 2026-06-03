@@ -387,7 +387,7 @@ impl Player {
 
         self.default_tick();
         self.update_swimming();
-        self.apply_gravity();
+        self.ai_step();
         self.tick_ack_block_changes();
 
         if !self.has_client_loaded() {
@@ -1492,6 +1492,14 @@ impl LivingEntity for Player {
 
     fn is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
+    }
+
+    fn ai_step(&self) -> Option<MoveResult> {
+        if self.is_flying() && !self.is_passenger() {
+            self.reset_fall_distance();
+        }
+
+        self.default_ai_step()
     }
 
     fn travel(&self, input: DVec3) -> Option<MoveResult> {

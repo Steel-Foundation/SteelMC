@@ -716,33 +716,6 @@ impl Player {
         should_disconnect
     }
 
-    /// Applies gravity to the player's velocity.
-    ///
-    /// Matches vanilla `Entity.applyGravity()` and `LivingEntity.travel()`.
-    /// Gravity is not applied when:
-    /// - Player is on the ground
-    /// - Player is in spectator mode (no physics)
-    /// - Player abilities are currently flying
-    /// - Player is fall flying (elytra - uses different physics)
-    pub(super) fn apply_gravity(&self) {
-        let is_fall_flying = self.is_fall_flying();
-        let on_ground = self.on_ground();
-        let game_mode = self.game_mode();
-        let is_spectator = game_mode == GameType::Spectator;
-        let is_flying = self.is_flying();
-        let is_passenger = self.is_passenger();
-
-        if is_flying && !is_passenger {
-            self.reset_fall_distance();
-        }
-
-        if on_ground || is_spectator || is_flying || is_fall_flying || is_passenger {
-            return;
-        }
-
-        self.apply_living_travel_gravity();
-    }
-
     /// Returns true if we're waiting for a teleport confirmation.
     #[must_use]
     pub fn is_awaiting_teleport(&self) -> bool {
