@@ -237,10 +237,7 @@ fn can_fall_at_least(
     );
 
     world
-        .get_collisions_with_context(
-            &fall_aabb,
-            BlockCollisionContext::entity(state.position().y, state.descending()),
-        )
+        .get_collisions_with_context(&fall_aabb, state.block_collision_context())
         .is_empty()
 }
 
@@ -280,7 +277,7 @@ fn collide_with_world(
     let collisions = collect_collisions_with_context(
         world,
         &swept_aabb,
-        BlockCollisionContext::entity(state.position().y, state.descending()),
+        state.block_collision_context(),
         entity_collisions,
     );
 
@@ -438,7 +435,7 @@ fn try_step_up(
     let collisions = collect_collisions_with_context(
         world,
         &step_sweep_aabb,
-        BlockCollisionContext::entity(state.position().y, state.descending()),
+        state.block_collision_context(),
         entity_collisions,
     );
     let candidates = collect_candidate_step_up_heights(

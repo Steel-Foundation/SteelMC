@@ -11,10 +11,9 @@ use std::{
 use glam::DVec3;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
-use steel_utils::BlockPos;
-use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
@@ -601,6 +600,7 @@ pub struct EntityBaseState {
     ground_contact: EntityGroundContact,
     movement_progress: EntityMovementProgress,
     fire_freeze: EntityFireFreezeState,
+    in_block_state: Option<BlockStateId>,
     fluid_contact: EntityFluidContact,
     was_eye_in_water: bool,
     piston_movement: EntityPistonMovement,
@@ -629,6 +629,7 @@ impl EntityBaseState {
             ground_contact: EntityGroundContact::airborne(),
             movement_progress: EntityMovementProgress::new(),
             fire_freeze: EntityFireFreezeState::new(),
+            in_block_state: None,
             fluid_contact: EntityFluidContact::default(),
             was_eye_in_water: false,
             piston_movement: EntityPistonMovement::new(),
@@ -1014,6 +1015,7 @@ impl EntityBase {
         max_up_step: f32,
         backs_off_from_edge: bool,
         descending: bool,
+        can_walk_on_powder_snow: bool,
     ) -> EntityPhysicsState {
         let state = self.state.lock();
         EntityPhysicsState::new(state.position, state.bounding_box, max_up_step)
@@ -1021,6 +1023,7 @@ impl EntityBase {
             .with_backs_off_from_edge(backs_off_from_edge)
             .with_fall_distance(state.fall_distance)
             .with_descending(descending)
+            .with_can_walk_on_powder_snow(can_walk_on_powder_snow)
     }
 
     /// Gets the entity's current pose.
@@ -1075,6 +1078,20 @@ impl EntityBase {
     #[inline]
     pub fn fire_freeze_state(&self) -> EntityFireFreezeState {
         self.state.lock().fire_freeze
+    }
+
+    /// Returns vanilla `Entity.getInBlockState`, cached until base tick or block-position change.
+    pub fn in_block_state(&self, world: &World) -> BlockStateId {
+        let mut state = self.state.lock();
+        if let Some(in_block_state) = state.in_block_state {
+            return in_block_state;
+        }
+
+        let position = state.position;
+        let block_pos = BlockPos::containing(position.x, position.y, position.z);
+        let in_block_state = world.get_block_state(block_pos);
+        state.in_block_state = Some(in_block_state);
+        in_block_state
     }
 
     /// Replaces the current vanilla fire/freeze state.
@@ -1188,8 +1205,14 @@ impl EntityBase {
 
     /// Advances the base-tick movement and relationship state Steel currently implements.
     pub fn advance_base_tick_state(&self) {
+        self.clear_in_block_state_for_base_tick();
         self.compute_known_speed();
         self.decrement_boarding_cooldown();
+    }
+
+    /// Clears vanilla `inBlockState` at the start of base tick.
+    fn clear_in_block_state_for_base_tick(&self) {
+        self.state.lock().in_block_state = None;
     }
 
     /// Computes vanilla `lastKnownSpeed` from the previous base-tick position.
@@ -1313,6 +1336,11 @@ impl EntityBase {
             let old = state.position;
             state.position = pos;
             state.bounding_box = EntityBaseState::make_bounding_box(pos, state.dimensions);
+            if BlockPos::containing(old.x, old.y, old.z)
+                != BlockPos::containing(pos.x, pos.y, pos.z)
+            {
+                state.in_block_state = None;
+            }
             old
         };
         self.level_callback.lock().on_move(old_pos, pos);
@@ -2388,7 +2416,8 @@ mod tests {
             Weak::<World>::new(),
         );
 
-        let physics_state = base.physics_state(0.6, true, true);
+        let physics_state = base.physics_state(0.6, true, true, true);
+        let block_collision_context = physics_state.block_collision_context();
 
         assert_vec3_close(physics_state.position(), position);
         assert_eq!(physics_state.bounding_box(), custom_box);
@@ -2396,7 +2425,8 @@ mod tests {
         assert!(physics_state.backs_off_from_edge());
         assert!(physics_state.on_ground());
         assert_f64_close(physics_state.fall_distance(), 3.5);
-        assert!(physics_state.descending());
+        assert!(block_collision_context.is_descending());
+        assert!(block_collision_context.can_walk_on_powder_snow());
     }
 
     #[test]

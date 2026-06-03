@@ -191,7 +191,8 @@ impl Player {
                 &self
                     .bounding_box_for_pose(pose)
                     .deflate(POSE_COLLISION_EPSILON),
-                BlockCollisionContext::entity(self.position().y, self.is_descending()),
+                BlockCollisionContext::entity(self.position().y, self.is_descending())
+                    .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow()),
             )
             .is_empty()
     }

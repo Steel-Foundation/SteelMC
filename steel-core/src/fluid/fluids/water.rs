@@ -12,6 +12,7 @@ use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
+use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior};
 use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
 use crate::world::World;
@@ -70,6 +71,17 @@ impl FluidBehavior for WaterFluid {
     fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         world.drop_resources(state, pos);
         world.destroy_block_effect(pos, u32::from(state.0), None);
+    }
+
+    /// Vanilla parity: `WaterFluid.entityInside()` extinguishes fire.
+    fn entity_inside(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+        effect_collector.apply(InsideBlockEffectType::Extinguish);
     }
 
     /// Flowing water: 1/64 chance for ambient sound.

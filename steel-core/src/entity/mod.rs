@@ -10,6 +10,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::{block_state_ext::BlockStateExt as _, shapes::is_shape_full_block};
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -25,11 +26,13 @@ use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, EntityFallOnContext, EntityLandingContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
+    EntityLandingContext, FLUID_BEHAVIORS,
 };
 use crate::entity::attribute::AttributeMap;
+use crate::fluid::get_height;
 use crate::physics::{
-    CollisionWorld, MoveResult, MoverType, WorldCollisionProvider,
+    CollisionWorld, EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
     move_entity as resolve_entity_movement,
 };
 use crate::world::game_event_context::GameEventContext;
@@ -159,6 +162,45 @@ fn fall_damage_reset_clip_target(
     Some(position + movement.normalize() * check_distance)
 }
 
+fn collided_with_fluid(
+    world: &Arc<World>,
+    fluid_state: FluidState,
+    block_pos: BlockPos,
+    from: DVec3,
+    to: DVec3,
+    entity: &dyn Entity,
+) -> bool {
+    if fluid_state.is_empty() {
+        return false;
+    }
+
+    let fluid_height = f64::from(get_height(world, block_pos, fluid_state));
+    let fluid_box = WorldAabb::new(
+        f64::from(block_pos.x()),
+        f64::from(block_pos.y()),
+        f64::from(block_pos.z()),
+        f64::from(block_pos.x() + 1),
+        f64::from(block_pos.y()) + fluid_height,
+        f64::from(block_pos.z() + 1),
+    );
+
+    block_effects::collided_with_aabb_moving_from(
+        entity.make_bounding_box_at(from),
+        from,
+        to,
+        fluid_box,
+    )
+}
+
+fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
+    entity.base().physics_state(
+        entity.max_up_step(),
+        entity.backs_off_from_edge(),
+        entity.is_descending(),
+        entity.can_walk_on_powder_snow(),
+    )
+}
+
 /// Allocates a new unique entity ID.
 ///
 /// This is the primary way to get entity IDs for spawning entities.
@@ -202,23 +244,38 @@ fn apply_block_effect_segment(
             }
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            let fluid_state = state.get_fluid_state();
             let entity_inside_shape =
                 behavior.get_entity_inside_collision_shape(state, world.as_ref(), pos, entity);
-            if !block_effects::collided_with_shape_moving_from(
+            let inside_block = block_effects::collided_with_shape_moving_from(
                 entity.make_bounding_box_at(from),
                 from,
                 to,
                 pos,
                 entity_inside_shape,
-            ) || !visited_blocks.insert(pos)
-            {
+            );
+            let inside_fluid = collided_with_fluid(world, fluid_state, pos, from, to, entity);
+
+            if !(inside_block || inside_fluid) || !visited_blocks.insert(pos) {
                 return true;
             }
 
-            let moved_far = from.distance_squared(to) > 0.999_990_000_000_252_6_f64.powi(2);
-            let is_precise = moved_far || aabb.intersects_block(pos);
-            effect_collector.advance_step(iteration);
-            behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
+            if inside_block {
+                let moved_far = from.distance_squared(to) > 0.999_990_000_000_252_6_f64.powi(2);
+                let is_precise = moved_far || aabb.intersects_block(pos);
+                effect_collector.advance_step(iteration);
+                behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
+                if entity.is_removed() {
+                    return false;
+                }
+            }
+
+            if inside_fluid {
+                effect_collector.advance_step(iteration);
+                FLUID_BEHAVIORS
+                    .get_behavior(fluid_state.fluid_id)
+                    .entity_inside(world, pos, entity, effect_collector);
+            }
             !entity.is_removed()
         })
     else {
@@ -499,6 +556,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
             position.y.floor() as i32,
             position.z.floor() as i32,
         )
+    }
+
+    /// Returns vanilla `Entity.getInBlockState`.
+    fn in_block_state(&self, world: &World) -> BlockStateId {
+        self.base().in_block_state(world)
     }
 
     /// Gets the entity position used by vanilla movement traces.
@@ -865,6 +927,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn is_descending(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
+    }
+
+    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
+    fn can_walk_on_powder_snow(&self) -> bool {
+        REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
+        )
     }
 
     /// Returns the movement vector vanilla exposes for block-contact logic.
@@ -1267,8 +1337,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Applies current block-contact effects to this entity.
     ///
     /// Mirrors the shared ownership boundary of vanilla `Entity.applyEffectsFromBlocks`.
-    /// TODO: Extend the block behavior API with vanilla fluid inside effects
-    /// and `InsideBlockEffectApplier` once those effect systems exist.
     fn apply_effects_from_blocks(&self) {
         let entity = self.as_entity_event_source();
         let movements = self.base().take_movements_for_block_effects();
@@ -1785,11 +1853,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .base()
             .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
-        let physics_state = self.base().physics_state(
-            self.max_up_step(),
-            self.backs_off_from_edge(),
-            self.is_descending(),
-        );
+        let physics_state = physics_state_for_move(self.as_entity_event_source());
         let start_position = physics_state.position();
 
         // Perform collision detection and movement
@@ -2012,7 +2076,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
             bounding_box.min_y(),
             bounding_box.max_z(),
         );
-        let collision_world = WorldCollisionProvider::new(world);
+        let collision_world =
+            WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
         let descending = self.is_descending();
         let mut supporting_block =
             collision_world.find_supporting_block(self.position(), &test_area, descending);

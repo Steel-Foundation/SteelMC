@@ -66,20 +66,27 @@ pub(super) fn collided_with_shape_moving_from(
     block_pos: BlockPos,
     shape: VoxelShape,
 ) -> bool {
+    shape.iter().any(|part| {
+        collided_with_aabb_moving_from(entity_box_at_from, from, to, part.at_block(block_pos))
+    })
+}
+
+pub(super) fn collided_with_aabb_moving_from(
+    entity_box_at_from: WorldAabb,
+    from: DVec3,
+    to: DVec3,
+    target_box: WorldAabb,
+) -> bool {
     let from_center = center(entity_box_at_from);
     let to_center = from_center + (to - from);
     let inflate_x = entity_box_at_from.width() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
     let inflate_y = entity_box_at_from.height() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
     let inflate_z = entity_box_at_from.depth() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
 
-    shape.iter().any(|part| {
-        let inflated_part = part
-            .at_block(block_pos)
-            .inflate_xyz(inflate_x, inflate_y, inflate_z);
-        contains(inflated_part, from_center)
-            || contains(inflated_part, to_center)
-            || clip_aabb(inflated_part, from_center, to_center).is_some()
-    })
+    let inflated_part = target_box.inflate_xyz(inflate_x, inflate_y, inflate_z);
+    contains(inflated_part, from_center)
+        || contains(inflated_part, to_center)
+        || clip_aabb(inflated_part, from_center, to_center).is_some()
 }
 
 #[expect(

@@ -73,7 +73,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities,
-    vanilla_entity_type_tags::EntityTypeTag, vanilla_item_tags::ItemTag,
+    vanilla_entity_type_tags::EntityTypeTag, vanilla_item_tags::ItemTag, vanilla_items,
 };
 use steel_utils::entity_events::EntityStatus;
 
@@ -1352,6 +1352,21 @@ impl Entity for Player {
 
     fn is_crouching(&self) -> bool {
         Player::is_crouching(self)
+    }
+
+    fn can_walk_on_powder_snow(&self) -> bool {
+        if REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
+        ) {
+            return true;
+        }
+
+        self.inventory
+            .lock()
+            .equipment()
+            .get_ref(EquipmentSlot::Feet)
+            .is(&vanilla_items::ITEMS.leather_boots)
     }
 
     fn is_swimming(&self) -> bool {

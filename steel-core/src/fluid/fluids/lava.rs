@@ -12,12 +12,15 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior};
 use crate::fluid::{
     FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
@@ -123,6 +126,29 @@ impl FluidBehavior for LavaFluid {
     /// Lava does NOT drop block items (unlike water).
     fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, _state: BlockStateId) {
         world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
+    }
+
+    /// Vanilla parity: `LavaFluid.entityInside()` clears freezing, ignites, then applies lava damage.
+    fn entity_inside(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+        effect_collector.apply(InsideBlockEffectType::ClearFreeze);
+        effect_collector.apply(InsideBlockEffectType::LavaIgnite);
+        effect_collector.run_after(
+            InsideBlockEffectType::LavaIgnite,
+            Box::new(|entity| {
+                if entity.fire_immune() {
+                    return;
+                }
+                if entity.hurt(&DamageSource::environment(&vanilla_damage_types::LAVA), 4.0) {
+                    // TODO: Play vanilla burn sound once shared entity sound emission exists.
+                }
+            }),
+        );
     }
 
     /// Vanilla parity: `LavaFluid.animateTick()`.

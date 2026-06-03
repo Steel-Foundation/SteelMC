@@ -1,5 +1,6 @@
 mod door_block;
 mod fence_block;
+mod powder_snow_block;
 mod rotated_pillar_block;
 mod scaffolding_block;
 mod slab_block;
@@ -9,6 +10,7 @@ mod weathering_block;
 
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
 pub use fence_block::FenceBlock;
+pub use powder_snow_block::PowderSnowBlock;
 pub use rotated_pillar_block::RotatedPillarBlock;
 pub use scaffolding_block::ScaffoldingBlock;
 pub use slab_block::{SlabBlock, WeatheringCopperSlabBlock};

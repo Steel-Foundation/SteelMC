@@ -5,6 +5,8 @@ use glam::DVec3;
 use steel_registry::entity_type::EntityDimensions;
 use steel_utils::WorldAabb;
 
+use crate::behavior::BlockCollisionContext;
+
 /// Immutable entity movement input used by the collision resolver.
 ///
 /// Steel keeps authoritative physical state on `EntityBase`; this type is a
@@ -32,6 +34,9 @@ pub(crate) struct EntityPhysicsState {
 
     /// Whether vanilla collision context should treat this entity as descending.
     descending: bool,
+
+    /// Whether vanilla lets this entity walk on powder snow.
+    can_walk_on_powder_snow: bool,
 }
 
 impl EntityPhysicsState {
@@ -49,6 +54,7 @@ impl EntityPhysicsState {
             on_ground: false,
             fall_distance: 0.0,
             descending: false,
+            can_walk_on_powder_snow: false,
         }
     }
 
@@ -112,10 +118,12 @@ impl EntityPhysicsState {
         self.fall_distance
     }
 
-    /// Returns whether collision context should treat the entity as descending.
+    /// Returns the vanilla block collision context for this movement snapshot.
     #[must_use]
-    pub const fn descending(self) -> bool {
-        self.descending
+    pub const fn block_collision_context(self) -> BlockCollisionContext {
+        BlockCollisionContext::entity(self.position.y, self.descending)
+            .with_fall_distance(self.fall_distance)
+            .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow)
     }
 
     /// Returns a copy with the pre-movement ground flag set.
@@ -143,6 +151,13 @@ impl EntityPhysicsState {
     #[must_use]
     pub const fn with_descending(mut self, descending: bool) -> Self {
         self.descending = descending;
+        self
+    }
+
+    /// Returns a copy with powder-snow walkability set.
+    #[must_use]
+    pub const fn with_can_walk_on_powder_snow(mut self, can_walk_on_powder_snow: bool) -> Self {
+        self.can_walk_on_powder_snow = can_walk_on_powder_snow;
         self
     }
 }

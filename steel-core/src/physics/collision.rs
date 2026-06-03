@@ -179,6 +179,27 @@ impl<'a> WorldCollisionProvider<'a> {
         behavior.get_collision_shape(block_state, self.world.as_ref(), block_pos, context)
     }
 
+    fn entity_collision_context(
+        &self,
+        entity_bottom: f64,
+        descending: bool,
+        placement: bool,
+    ) -> BlockCollisionContext {
+        let context = if placement {
+            BlockCollisionContext::pre_move(entity_bottom, descending)
+        } else {
+            BlockCollisionContext::entity(entity_bottom, descending)
+        };
+
+        if let Some(source) = self.source {
+            context
+                .with_fall_distance(source.fall_distance())
+                .with_can_walk_on_powder_snow(source.can_walk_on_powder_snow())
+        } else {
+            context
+        }
+    }
+
     /// Finds the block supporting an entity within `aabb`.
     ///
     /// Mirrors vanilla `CollisionGetter.findSupportingBlock`: among colliding
@@ -196,7 +217,7 @@ impl<'a> WorldCollisionProvider<'a> {
         descending: bool,
     ) -> Option<BlockPos> {
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
-        let context = BlockCollisionContext::entity(entity_position.y, descending);
+        let context = self.entity_collision_context(entity_position.y, descending, false);
 
         let mut main_support = None;
         let mut main_support_distance = f64::MAX;
@@ -370,6 +391,18 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         }
 
         collisions
+    }
+
+    fn get_pre_move_collisions(
+        &self,
+        aabb: &WorldAabb,
+        old_bottom_center: DVec3,
+        descending: bool,
+    ) -> Vec<WorldAabb> {
+        self.get_collisions_with_context(
+            aabb,
+            self.entity_collision_context(old_bottom_center.y, descending, true),
+        )
     }
 
     fn get_entity_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {

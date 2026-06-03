@@ -2,7 +2,7 @@
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
 use std::sync::Arc;
 
-use crate::entity::Entity;
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
@@ -71,7 +71,18 @@ pub trait FluidBehavior: Send + Sync {
     }
 
     /// Called when an entity is inside this fluid.
-    fn entity_inside(&self, _world: &mut World, _pos: BlockPos, _entity: &mut dyn Entity) {}
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn entity_inside(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+    }
 
     /// Gets the explosion resistance of this fluid.
     fn explosion_resistance(&self) -> f32 {

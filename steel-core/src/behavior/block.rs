@@ -36,6 +36,8 @@ const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BlockCollisionContext {
     entity_bottom: Option<f64>,
+    fall_distance: f64,
+    can_walk_on_powder_snow: bool,
     descending: bool,
     placement: bool,
 }
@@ -46,6 +48,8 @@ impl BlockCollisionContext {
     pub const fn empty() -> Self {
         Self {
             entity_bottom: None,
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
             descending: false,
             placement: false,
         }
@@ -56,6 +60,8 @@ impl BlockCollisionContext {
     pub const fn entity(entity_bottom: f64, descending: bool) -> Self {
         Self {
             entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
             descending,
             placement: false,
         }
@@ -66,9 +72,37 @@ impl BlockCollisionContext {
     pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
         Self {
             entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
             descending,
             placement: true,
         }
+    }
+
+    /// Returns a copy with vanilla accumulated fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns a copy with vanilla powder-snow walkability.
+    #[must_use]
+    pub const fn with_can_walk_on_powder_snow(mut self, can_walk_on_powder_snow: bool) -> Self {
+        self.can_walk_on_powder_snow = can_walk_on_powder_snow;
+        self
+    }
+
+    /// Returns accumulated vanilla fall distance for context-sensitive block collision.
+    #[must_use]
+    pub const fn fall_distance(self) -> f64 {
+        self.fall_distance
+    }
+
+    /// Returns whether the source entity can walk on powder snow.
+    #[must_use]
+    pub const fn can_walk_on_powder_snow(self) -> bool {
+        self.can_walk_on_powder_snow
     }
 
     /// Returns whether the source entity is descending through context-sensitive blocks.
@@ -432,12 +466,12 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns this block state's collision shape for the supplied collision context.
     ///
-    /// Vanilla parity: `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
+    /// Vanilla baseline for `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation uses static registry shape"
     )]
-    fn get_collision_shape(
+    fn default_get_collision_shape(
         &self,
         state: BlockStateId,
         world: &dyn LevelReader,
@@ -447,14 +481,29 @@ pub trait BlockBehavior: Send + Sync {
         state.get_collision_shape()
     }
 
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Overrides that mirror vanilla `super.getCollisionShape(...)` should call
+    /// [`Self::default_get_collision_shape`].
+    fn get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        self.default_get_collision_shape(state, world, pos, context)
+    }
+
     /// Returns this block state's shape used by vanilla entity-inside effects.
     ///
-    /// Vanilla parity: `BlockState.getEntityInsideCollisionShape(BlockGetter, BlockPos, Entity)`.
+    /// Vanilla baseline for
+    /// `BlockState.getEntityInsideCollisionShape(BlockGetter, BlockPos, Entity)`.
     #[expect(
         unused_variables,
         reason = "vanilla default is a full block independent of state, world, position, and entity"
     )]
-    fn get_entity_inside_collision_shape(
+    fn default_get_entity_inside_collision_shape(
         &self,
         state: BlockStateId,
         world: &dyn LevelReader,
@@ -462,6 +511,17 @@ pub trait BlockBehavior: Send + Sync {
         entity: &dyn Entity,
     ) -> VoxelShape {
         VoxelShape::FULL_BLOCK
+    }
+
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    fn get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        self.default_get_entity_inside_collision_shape(state, world, pos, entity)
     }
 
     /// Called on random tick for blocks that support random ticking.
