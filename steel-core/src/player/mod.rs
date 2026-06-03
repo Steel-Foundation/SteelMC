@@ -381,6 +381,7 @@ impl Player {
     )]
     pub fn tick(&self) {
         self.advance_tick();
+        self.advance_tick_count();
 
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {

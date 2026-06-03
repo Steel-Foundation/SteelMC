@@ -380,6 +380,7 @@ impl EntityGroundContact {
 /// accessors through [`EntityBase`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityBaseState {
+    tick_count: i32,
     position: DVec3,
     old_position: DVec3,
     last_known_position: Option<DVec3>,
@@ -405,6 +406,7 @@ impl EntityBaseState {
     #[must_use]
     pub fn new(position: DVec3, dimensions: EntityDimensions) -> Self {
         Self {
+            tick_count: 0,
             position,
             old_position: position,
             last_known_position: None,
@@ -773,6 +775,12 @@ impl EntityBase {
         self.state.lock().last_known_speed
     }
 
+    /// Returns vanilla `Entity.tickCount`.
+    #[inline]
+    pub fn tick_count(&self) -> i32 {
+        self.state.lock().tick_count
+    }
+
     /// Gets the entity's current bounding box.
     #[inline]
     pub fn bounding_box(&self) -> WorldAabb {
@@ -1131,6 +1139,13 @@ impl EntityBase {
         self.state.lock().velocity = velocity;
     }
 
+    /// Advances vanilla `Entity.tickCount` by one tick.
+    #[inline]
+    pub fn advance_tick_count(&self) {
+        let mut state = self.state.lock();
+        state.tick_count = state.tick_count.wrapping_add(1);
+    }
+
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     pub fn set_rotation(&self, rotation: (f32, f32)) {
         self.state.lock().rotation = rotation;
@@ -1436,6 +1451,21 @@ mod tests {
         assert!(!flags.horizontal_collision());
         assert!(!flags.vertical_collision());
         assert!(!flags.vertical_collision_below());
+    }
+
+    #[test]
+    fn base_tick_count_advances_like_vanilla_entity_tick_count() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        assert_eq!(base.tick_count(), 0);
+        base.advance_tick_count();
+
+        assert_eq!(base.tick_count(), 1);
     }
 
     #[test]

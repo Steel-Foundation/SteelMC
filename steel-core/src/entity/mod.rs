@@ -741,6 +741,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().known_speed()
     }
 
+    /// Returns vanilla `Entity.tickCount`.
+    fn tick_count(&self) -> i32 {
+        self.base().tick_count()
+    }
+
+    /// Advances vanilla `Entity.tickCount`.
+    fn advance_tick_count(&self) {
+        self.base().advance_tick_count();
+    }
+
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).

@@ -122,6 +122,7 @@ impl EntityStorage {
             // Mark as ticked before running tick() to prevent double-tick
             // even if the entity moves during its own tick
             entity.mark_ticked(tick_count);
+            entity.advance_tick_count();
 
             // Entity-specific tick (entities access world via self.level())
             entity.tick();

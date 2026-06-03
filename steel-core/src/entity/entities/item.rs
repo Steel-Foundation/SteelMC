@@ -64,12 +64,6 @@ const ITEM_LAVA_DRAG: f64 = 0.95;
 struct ItemEntityState {
     /// Age in ticks. Despawns at `LIFETIME` (6000). Special value -32768 = infinite.
     age: i32,
-    /// Per-entity tick counter used for vanilla timing logic.
-    ///
-    /// Vanilla uses `Entity.tickCount` (always increments) for things like the
-    /// `(tickCount + id) % 4 == 0` movement fallback and periodic position sync.
-    /// This must not be tied to `age` because `age` can be set to `INFINITE_LIFETIME`.
-    tick_count: i32,
     /// Ticks until pickupable. 0 = can pickup, 32767 = never.
     pickup_delay: i32,
     /// Health (damage resistance). Item is destroyed when this reaches 0.
@@ -85,7 +79,6 @@ impl ItemEntityState {
     const fn new() -> Self {
         Self {
             age: 0,
-            tick_count: 0,
             pickup_delay: 0,
             health: DEFAULT_HEALTH,
             thrower: None,
@@ -219,15 +212,6 @@ impl ItemEntity {
     /// Sets the age in ticks.
     pub fn set_age(&self, age: i32) {
         self.item_state.lock().age = age;
-    }
-
-    /// Returns this entity's internal tick counter.
-    ///
-    /// This mirrors vanilla `Entity.tickCount` and always increments, even when
-    /// `age` is set to `INFINITE_LIFETIME`.
-    #[must_use]
-    pub fn get_tick_count(&self) -> i32 {
-        self.item_state.lock().tick_count
     }
 
     /// Sets the entity to never despawn.
@@ -547,8 +531,11 @@ impl ItemEntity {
     /// to absolute position sync (`CEntityPositionSync`) when:
     /// - Delta is too large for i16 encoding
     /// - On-ground state changed
-    /// - Periodic full sync (every 60 ticks based on `tick_count`)
-    fn check_position_sync(&self, tick_count: i32) -> Option<EntityPositionSyncPacket> {
+    /// - Periodic full sync (every 60 `ServerEntity` ticks)
+    fn check_position_sync(
+        &self,
+        server_entity_tick_count: i32,
+    ) -> Option<EntityPositionSyncPacket> {
         let current_pos = self.position();
         let current_on_ground = self.on_ground();
         let mut sync_state = self.sync_state.lock();
@@ -556,10 +543,10 @@ impl ItemEntity {
 
         let position_changed = sync_state.position.position_changed(current_pos);
         let on_ground_changed = current_on_ground != last_on_ground;
-        // Vanilla uses tickCount % 60 for periodic full position sync (FORCED_POS_UPDATE_PERIOD)
-        let force_periodic_sync = tick_count % 60 == 0;
+        // Vanilla uses `ServerEntity.tickCount % 60` for periodic full position sync.
+        let force_periodic_sync = server_entity_tick_count % 60 == 0;
 
-        // Vanilla: boolean pos = positionChanged || this.tickCount % 60 == 0;
+        // Vanilla: boolean pos = positionChanged || ServerEntity.tickCount % 60 == 0;
         // We sync if position changed, on_ground changed, or periodic
         if !position_changed && !on_ground_changed && !force_periodic_sync {
             return None;
@@ -624,23 +611,19 @@ impl Entity for ItemEntity {
     }
 
     fn tick(&self) {
-        // Vanilla: `Entity.tickCount` increments every tick regardless of item age/lifetime.
-        let (tick_count, should_despawn) = {
+        let should_despawn = {
             let mut state = self.item_state.lock();
-            state.tick_count += 1;
 
             if state.pickup_delay > 0 && state.pickup_delay != INFINITE_PICKUP_DELAY {
                 state.pickup_delay -= 1;
             }
 
-            let should_despawn = if state.age == INFINITE_LIFETIME {
+            if state.age == INFINITE_LIFETIME {
                 false
             } else {
                 state.age += 1;
                 state.age >= LIFETIME
-            };
-
-            (state.tick_count, should_despawn)
+            }
         };
 
         // Check if item is empty
@@ -677,7 +660,7 @@ impl Entity for ItemEntity {
         let horizontal_movement_sq = vel.x * vel.x + vel.z * vel.z;
         let should_move = !self.on_ground()
             || horizontal_movement_sq > 1.0e-5
-            || (tick_count + self.id()) % 4 == 0;
+            || (self.tick_count() + self.id()) % 4 == 0;
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
@@ -727,7 +710,7 @@ impl Entity for ItemEntity {
             || old_pos.z.floor() as i32 != current_pos.z.floor() as i32;
         let merge_rate = if moved_block { 2 } else { 40 };
 
-        if tick_count % merge_rate == 0
+        if self.tick_count() % merge_rate == 0
             && self.is_mergeable()
             && let Some(world) = self.level()
         {
