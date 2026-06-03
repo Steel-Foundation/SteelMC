@@ -378,13 +378,20 @@ impl Player {
             self.set_on_ground(false);
         }
 
+        let tick_position = self.position();
+
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
-        self.movement.lock().reset_for_tick(self.position());
+        self.movement.lock().reset_for_tick(tick_position);
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
         self.update_swimming();
         self.ai_step();
+
+        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
+        self.set_position(tick_position);
+        self.refresh_fluid_contact();
+
         self.tick_ack_block_changes();
 
         if !self.has_client_loaded() {
