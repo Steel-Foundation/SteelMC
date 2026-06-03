@@ -47,12 +47,6 @@ impl MovementState {
         self.last_client_input
     }
 
-    /// Returns the last absolute position used as the client's movement delta base.
-    #[must_use]
-    pub(super) const fn last_sent_position(&self) -> DVec3 {
-        self.entity_sync.last_sent_position()
-    }
-
     /// Resets per-tick vanilla movement validation bases.
     pub(super) const fn reset_for_tick(&mut self, position: DVec3) {
         self.client_movement.reset_for_tick(position);
@@ -253,7 +247,6 @@ mod tests {
 
         state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0), true, (90.0, 45.0));
 
-        assert_eq!(state.last_sent_position(), DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.good_positions().0, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);

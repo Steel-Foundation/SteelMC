@@ -21,7 +21,7 @@ use crate::entity::{
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
-    has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
+    is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
 };
 use crate::player::food_data::food_constants;
 use crate::player::{Player, PlayerInput};
@@ -229,8 +229,12 @@ impl Player {
             return;
         }
 
-        let prev_pos = self.movement.lock().last_sent_position();
         let start_pos = self.position();
+        let target_pos = DVec3::new(
+            clamp_horizontal(packet.get_x(start_pos.x)),
+            clamp_vertical(packet.get_y(start_pos.y)),
+            clamp_horizontal(packet.get_z(start_pos.z)),
+        );
         let game_mode = self.game_mode();
         let is_sleeping = self.is_sleeping();
         let is_fall_flying = self.is_fall_flying();
@@ -239,168 +243,178 @@ impl Player {
         let is_creative = game_mode == GameType::Creative;
         let world = self.get_world();
         let tick_runs_normally = world.tick_runs_normally();
-        let mut accepted_pos = prev_pos;
-        let mut client_delta = DVec3::ZERO;
         let mut moved_upwards = false;
         let mut floating_check = None;
 
         if self.is_passenger() {
+            let passenger_pos = self.position();
+            self.set_position(passenger_pos);
             self.set_rotation((target_yaw, target_pitch));
+            world.chunk_map.update_player_status(self);
             self.broadcast_accepted_movement(
                 &world,
                 AcceptedMovementBroadcast {
                     has_pos: false,
                     has_rot: packet.has_rot,
-                    pos: prev_pos,
+                    pos: passenger_pos,
                     yaw: target_yaw,
                     pitch: target_pitch,
                     on_ground: self.on_ground(),
-                    client_delta,
+                    client_delta: DVec3::ZERO,
                 },
             );
             return;
         }
 
-        if packet.has_pos {
-            let target_pos = DVec3::new(
-                clamp_horizontal(packet.position.x),
-                clamp_vertical(packet.position.y),
-                clamp_horizontal(packet.position.z),
-            );
-            let (first_good, last_good) = self.movement.lock().good_positions();
+        let (first_good, last_good) = self.movement.lock().good_positions();
 
-            if is_sleeping {
-                let dx = target_pos.x - first_good.x;
-                let dy = target_pos.y - first_good.y;
-                let dz = target_pos.z - first_good.z;
-                let moved_dist_sq = dx * dx + dy * dy + dz * dz;
+        if is_sleeping {
+            let dx = target_pos.x - first_good.x;
+            let dy = target_pos.y - first_good.y;
+            let dz = target_pos.z - first_good.z;
+            let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if moved_dist_sq > 1.0 {
-                    self.teleport(
-                        start_pos.x,
-                        start_pos.y,
-                        start_pos.z,
-                        target_yaw,
-                        target_pitch,
-                    );
-                    return;
-                }
-            } else {
-                let dx = target_pos.x - first_good.x;
-                let dy = target_pos.y - first_good.y;
-                let dz = target_pos.z - first_good.z;
-                let moved_dist_sq = dx * dx + dy * dy + dz * dz;
+            if moved_dist_sq > 1.0 {
+                self.teleport(
+                    start_pos.x,
+                    start_pos.y,
+                    start_pos.z,
+                    target_yaw,
+                    target_pitch,
+                );
+                return;
+            }
+        } else {
+            let dx = target_pos.x - first_good.x;
+            let dy = target_pos.y - first_good.y;
+            let dz = target_pos.z - first_good.z;
+            let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if tick_runs_normally {
-                    let mut delta_packets = {
-                        let mut mv = self.movement.lock();
-                        mv.record_move_packet_delta()
-                    };
-
-                    if delta_packets > 5 {
-                        delta_packets = 1;
-                    }
-
-                    if Self::should_validate_movement(&world, is_fall_flying) {
-                        let threshold = if is_fall_flying {
-                            SPEED_THRESHOLD_FLYING
-                        } else {
-                            SPEED_THRESHOLD_NORMAL
-                        } * f64::from(delta_packets);
-
-                        if moved_dist_sq - self.velocity().length_squared() > threshold {
-                            self.teleport(
-                                start_pos.x,
-                                start_pos.y,
-                                start_pos.z,
-                                current_rotation.0,
-                                current_rotation.1,
-                            );
-                            return;
-                        }
-                    }
-                }
-
-                let old_aabb = self.bounding_box();
-                let move_delta = target_pos - last_good;
-                moved_upwards = move_delta.y > 0.0;
-                let player_stands_on_something = self.vertical_collision_below();
-
-                if was_on_ground && !packet.on_ground && moved_upwards {
-                    self.jump_from_ground();
-                }
-
-                let Some(_move_result) = self.move_entity(MoverType::Player, move_delta) else {
-                    self.teleport(
-                        start_pos.x,
-                        start_pos.y,
-                        start_pos.z,
-                        target_yaw,
-                        target_pitch,
-                    );
-                    return;
+            if tick_runs_normally {
+                let mut delta_packets = {
+                    let mut mv = self.movement.lock();
+                    mv.record_move_packet_delta()
                 };
 
-                let error_delta = movement_error_delta(target_pos, self.position());
-                let error_dist_sq = error_delta.length_squared();
-                let in_impulse_grace = self.is_in_post_impulse_grace_time();
-                let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
-                    && !is_creative
-                    && !is_spectator
-                    && !in_impulse_grace;
-
-                let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
-                let collision_world = WorldCollisionProvider::for_entity(&world, self);
-                let old_collision = has_collision(&collision_world, old_aabb);
-                let new_collision = is_colliding_with_new_shapes(
-                    &collision_world,
-                    old_aabb,
-                    new_aabb,
-                    self.is_crouching(),
-                );
-
-                if (MovementCollisionValidation {
-                    no_physics: self.no_physics(),
-                    moved_wrongly: fail,
-                    old_collision,
-                    new_collision,
-                })
-                .rejects()
-                {
-                    self.teleport(
-                        start_pos.x,
-                        start_pos.y,
-                        start_pos.z,
-                        target_yaw,
-                        target_pitch,
-                    );
-                    self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
-                    self.remove_latest_movement_recording();
-                    return;
+                if delta_packets > 5 {
+                    delta_packets = 1;
                 }
 
-                floating_check = Some((
-                    player_stands_on_something,
-                    vanilla_post_move_y_dist(target_pos.y, self.position().y),
-                ));
-                self.movement.lock().mark_last_good_position(target_pos);
+                if Self::should_validate_movement(&world, is_fall_flying) {
+                    let threshold = if is_fall_flying {
+                        SPEED_THRESHOLD_FLYING
+                    } else {
+                        SPEED_THRESHOLD_NORMAL
+                    } * f64::from(delta_packets);
 
-                if packet.on_ground && self.is_sprinting() {
-                    let dx = move_delta.x;
-                    let dz = move_delta.z;
-
-                    let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
-                    if cm > 0 {
-                        self.cause_food_exhaustion(
-                            food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01,
+                    if moved_dist_sq - self.velocity().length_squared() > threshold {
+                        self.teleport(
+                            start_pos.x,
+                            start_pos.y,
+                            start_pos.z,
+                            current_rotation.0,
+                            current_rotation.1,
                         );
+                        return;
                     }
                 }
             }
 
-            accepted_pos = target_pos;
-            client_delta = accepted_pos - start_pos;
+            let old_aabb = self.bounding_box();
+            let move_delta = target_pos - last_good;
+            moved_upwards = move_delta.y > 0.0;
+            let player_stands_on_something = self.vertical_collision_below();
+
+            if was_on_ground && !packet.on_ground && moved_upwards {
+                self.jump_from_ground();
+            }
+
+            let Some(_move_result) = self.move_entity(MoverType::Player, move_delta) else {
+                self.teleport(
+                    start_pos.x,
+                    start_pos.y,
+                    start_pos.z,
+                    target_yaw,
+                    target_pitch,
+                );
+                return;
+            };
+
+            let error_delta = movement_error_delta(target_pos, self.position());
+            let error_dist_sq = error_delta.length_squared();
+            let in_impulse_grace = self.is_in_post_impulse_grace_time();
+            let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
+                && !is_creative
+                && !is_spectator
+                && !in_impulse_grace;
+
+            let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
+            let collision_world = WorldCollisionProvider::for_entity(&world, self);
+            let old_collision = collision_world.has_entity_context_collision(
+                old_aabb,
+                old_aabb.min_y(),
+                self.is_descending(),
+            );
+            let new_collision = is_colliding_with_new_shapes(
+                &collision_world,
+                old_aabb,
+                new_aabb,
+                self.is_crouching(),
+            );
+
+            if (MovementCollisionValidation {
+                no_physics: self.no_physics(),
+                moved_wrongly: fail,
+                old_collision,
+                new_collision,
+            })
+            .rejects()
+            {
+                self.teleport(
+                    start_pos.x,
+                    start_pos.y,
+                    start_pos.z,
+                    target_yaw,
+                    target_pitch,
+                );
+                self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+                self.remove_latest_movement_recording();
+                return;
+            }
+
+            floating_check = Some((
+                player_stands_on_something,
+                vanilla_post_move_y_dist(target_pos.y, self.position().y),
+            ));
+
+            if packet.on_ground && self.is_sprinting() {
+                let dx = move_delta.x;
+                let dz = move_delta.z;
+
+                let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
+                if cm > 0 {
+                    self.cause_food_exhaustion(
+                        food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01,
+                    );
+                }
+            }
         }
+
+        let client_delta = target_pos - start_pos;
+        if self.apply_accepted_client_movement(
+            &world,
+            AcceptedClientMovement {
+                position: Some(target_pos),
+                rotation: (target_yaw, target_pitch),
+                on_ground: packet.on_ground,
+                horizontal_collision: packet.horizontal_collision,
+                movement: client_delta,
+                reset_fall_distance: moved_upwards,
+            },
+        ) {
+            return;
+        }
+        world.chunk_map.update_player_status(self);
 
         if let Some((player_stands_on_something, y_dist)) = floating_check {
             self.record_client_floating(
@@ -411,32 +425,16 @@ impl Player {
                 is_fall_flying,
             );
         }
-
-        let accepted_position = packet.has_pos.then_some(accepted_pos);
-        if self.apply_accepted_client_movement(
-            &world,
-            AcceptedClientMovement {
-                position: accepted_position,
-                rotation: (target_yaw, target_pitch),
-                on_ground: packet.on_ground,
-                horizontal_collision: packet.horizontal_collision,
-                movement: client_delta,
-                reset_fall_distance: moved_upwards,
-            },
-        ) {
-            return;
-        }
+        self.movement
+            .lock()
+            .mark_last_good_position(self.position());
 
         self.broadcast_accepted_movement(
             &world,
             AcceptedMovementBroadcast {
                 has_pos: packet.has_pos,
                 has_rot: packet.has_rot,
-                pos: if packet.has_pos {
-                    accepted_pos
-                } else {
-                    prev_pos
-                },
+                pos: target_pos,
                 yaw: target_yaw,
                 pitch: target_pitch,
                 on_ground: packet.on_ground,
@@ -536,7 +534,11 @@ impl Player {
             .bounding_box()
             .move_vec(target_pos - vehicle.position());
         let collision_world = WorldCollisionProvider::for_entity(&world, vehicle.as_ref());
-        let old_collision = has_collision(&collision_world, old_aabb);
+        let old_collision = collision_world.has_entity_context_collision(
+            old_aabb,
+            old_aabb.min_y(),
+            vehicle.is_descending(),
+        );
         let new_collision = is_colliding_with_new_shapes(
             &collision_world,
             old_aabb,

@@ -200,6 +200,25 @@ impl<'a> WorldCollisionProvider<'a> {
         }
     }
 
+    /// Returns whether an entity-context collision query intersects anything.
+    ///
+    /// Mirrors vanilla `Level.noCollision(entity, box)` callers by using the
+    /// source entity's normal collision context rather than a source-less check.
+    #[must_use]
+    pub fn has_entity_context_collision(
+        &self,
+        aabb: WorldAabb,
+        entity_bottom: f64,
+        descending: bool,
+    ) -> bool {
+        !self
+            .get_collisions_with_context(
+                &aabb.deflate(COLLISION_EPSILON),
+                self.entity_collision_context(entity_bottom, descending, false),
+            )
+            .is_empty()
+    }
+
     /// Finds the block supporting an entity within `aabb`.
     ///
     /// Mirrors vanilla `CollisionGetter.findSupportingBlock`: among colliding
