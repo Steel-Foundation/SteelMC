@@ -19,7 +19,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     vegetation_can_survive, vegetation_update_shape,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::entity::Entity;
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
@@ -258,6 +258,8 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
     ) {
         if entity.entity_type() == &vanilla_entities::RAVAGER
             && world

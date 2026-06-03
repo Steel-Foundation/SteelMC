@@ -133,6 +133,7 @@ fn apply_block_effect_segment(
     from: DVec3,
     to: DVec3,
     max_iterations: i32,
+    effect_collector: &mut InsideBlockEffectCollector,
     visited_blocks: &mut FxHashSet<BlockPos>,
 ) -> BlockEffectSegmentResult {
     let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
@@ -170,7 +171,10 @@ fn apply_block_effect_segment(
                 return true;
             }
 
-            behavior.entity_inside(state, world, pos, entity);
+            let moved_far = from.distance_squared(to) > 0.999_990_000_000_252_6_f64.powi(2);
+            let is_precise = moved_far || aabb.intersects_block(pos);
+            effect_collector.advance_step(iteration);
+            behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
             !entity.is_removed()
         })
     else {
@@ -229,6 +233,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
     };
 
     let mut visited_blocks = FxHashSet::default();
+    let mut effect_collector = InsideBlockEffectCollector::new();
     for movement in movements.iter().copied() {
         let mut remaining_iterations = 16;
         let delta = movement.to() - movement.from();
@@ -249,6 +254,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                     segment_from,
                     segment_to,
                     remaining_iterations,
+                    &mut effect_collector,
                     &mut visited_blocks,
                 ) {
                     BlockEffectSegmentResult::Complete(iterations) => {
@@ -261,11 +267,16 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                             movement.to(),
                             movement.to(),
                             1,
+                            &mut effect_collector,
                             &mut visited_blocks,
                         );
+                        effect_collector.apply_and_clear(entity);
                         return;
                     }
-                    BlockEffectSegmentResult::Removed => return,
+                    BlockEffectSegmentResult::Removed => {
+                        effect_collector.apply_and_clear(entity);
+                        return;
+                    }
                 }
                 segment_from = segment_to;
             }
@@ -276,6 +287,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                 movement.from(),
                 movement.to(),
                 remaining_iterations,
+                &mut effect_collector,
                 &mut visited_blocks,
             ) {
                 BlockEffectSegmentResult::Complete(iterations) => {
@@ -288,11 +300,16 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                         movement.to(),
                         movement.to(),
                         1,
+                        &mut effect_collector,
                         &mut visited_blocks,
                     );
+                    effect_collector.apply_and_clear(entity);
                     return;
                 }
-                BlockEffectSegmentResult::Removed => return,
+                BlockEffectSegmentResult::Removed => {
+                    effect_collector.apply_and_clear(entity);
+                    return;
+                }
             }
         }
 
@@ -303,11 +320,15 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                 movement.to(),
                 movement.to(),
                 1,
+                &mut effect_collector,
                 &mut visited_blocks,
             );
+            effect_collector.apply_and_clear(entity);
             return;
         }
     }
+
+    effect_collector.apply_and_clear(entity);
 }
 
 pub mod attribute;
@@ -318,6 +339,7 @@ mod callback;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
+mod inside_block_effects;
 mod living_base;
 mod movement_sync;
 mod registry;
@@ -338,6 +360,9 @@ pub use callback::{
     RemovalReason,
 };
 pub use fluid_contact::EntityFluidContact;
+pub use inside_block_effects::{
+    InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
+};
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{
     EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
@@ -671,6 +696,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Runs entity-specific behavior after falling below the world.
     fn on_below_world(&self) {
         self.set_removed(RemovalReason::Discarded);
+    }
+
+    /// Applies an inside-block effect queued by vanilla's step-based collector.
+    fn apply_inside_block_effect(&self, _effect_type: InsideBlockEffectType) {
+        // TODO: Implement concrete fire/freeze effect state on EntityBase.
     }
 
     /// Sends position/velocity changes to tracking players.

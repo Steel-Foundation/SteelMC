@@ -22,7 +22,7 @@ use crate::{
             vegetation_block::{double_plant_can_survive, double_plant_update_shape},
         },
     },
-    entity::Entity,
+    entity::{Entity, InsideBlockEffectCollector},
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
@@ -201,6 +201,8 @@ impl BlockBehavior for PitcherCropBlock {
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
     ) {
         if entity.entity_type() == &vanilla_entities::RAVAGER
             && world

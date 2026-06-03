@@ -25,7 +25,7 @@ use crate::{
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
-    entity::{Entity, damage::DamageSource},
+    entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -101,6 +101,8 @@ impl BlockBehavior for SweetBerryBushBlock {
         _world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
     ) {
         if !Self::applies_contact_effects(entity) {
             return;
