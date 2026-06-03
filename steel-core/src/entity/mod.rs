@@ -2613,6 +2613,16 @@ pub trait LivingEntity: Entity {
         true
     }
 
+    /// Returns vanilla `LivingEntity.isAffectedByFluids()`.
+    fn is_affected_by_fluids(&self) -> bool {
+        true
+    }
+
+    /// Returns vanilla `LivingEntity.canStandOnFluid()`.
+    fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
+        false
+    }
+
     /// Checks if the entity is attackable.
     fn attackable(&self) -> bool {
         true
@@ -2704,9 +2714,10 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether vanilla `LivingEntity.travel()` should use fluid movement.
-    fn should_travel_in_fluid(&self, _fluid_state: FluidState) -> bool {
-        // TODO: Add canStandOnFluid/isAffectedByFluids once those systems exist.
-        self.is_in_water() || self.is_in_lava()
+    fn should_travel_in_fluid(&self, fluid_state: FluidState) -> bool {
+        (self.is_in_water() || self.is_in_lava())
+            && self.is_affected_by_fluids()
+            && !self.can_stand_on_fluid(fluid_state)
     }
 
     /// Returns vanilla `LivingEntity.getFlyingSpeed()`.
@@ -2941,13 +2952,17 @@ mod tests {
         properties::{BlockStateProperties, Direction as BlockDirection},
     };
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_entities};
+    use steel_registry::fluid::FluidState;
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_blocks, vanilla_entities, vanilla_fluids,
+    };
     use steel_utils::{BlockPos, Direction};
 
     use super::{
-        Entity, EntityBase, EntityVerticalMovementStateUpdate, RemovalReason, SharedEntity,
-        closest_open_space_direction, fall_damage_reset_clip_target, get_input_vector,
-        should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
+        Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
+        LivingEntityBase, RemovalReason, SharedEntity, closest_open_space_direction,
+        fall_damage_reset_clip_target, get_input_vector, should_apply_resolved_movement,
+        trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -3020,6 +3035,81 @@ mod tests {
 
         fn is_client_authoritative(&self) -> bool {
             self.client_authoritative
+        }
+    }
+
+    struct LivingFluidTestEntity {
+        base: EntityBase,
+        living_base: LivingEntityBase,
+        affected_by_fluids: bool,
+        can_stand_on_fluid: bool,
+    }
+
+    impl LivingFluidTestEntity {
+        fn new(water_height: f64, lava_height: f64, affected_by_fluids: bool) -> Self {
+            let base = EntityBase::new(
+                1,
+                DVec3::ZERO,
+                vanilla_entities::PLAYER.dimensions,
+                Weak::new(),
+            );
+            base.set_fluid_contact(EntityFluidContact::from_parts(
+                water_height,
+                lava_height,
+                false,
+                false,
+            ));
+            Self {
+                base,
+                living_base: LivingEntityBase::new(&vanilla_entities::PLAYER),
+                affected_by_fluids,
+                can_stand_on_fluid: false,
+            }
+        }
+
+        const fn with_standing_on_fluid(mut self) -> Self {
+            self.can_stand_on_fluid = true;
+            self
+        }
+    }
+
+    impl Entity for LivingFluidTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::PLAYER
+        }
+
+        fn is_living_entity(&self) -> bool {
+            true
+        }
+    }
+
+    impl LivingEntity for LivingFluidTestEntity {
+        fn living_base(&self) -> &LivingEntityBase {
+            &self.living_base
+        }
+
+        fn get_health(&self) -> f32 {
+            20.0
+        }
+
+        fn set_health(&self, _health: f32) {}
+
+        fn get_absorption_amount(&self) -> f32 {
+            0.0
+        }
+
+        fn set_absorption_amount(&self, _amount: f32) {}
+
+        fn is_affected_by_fluids(&self) -> bool {
+            self.affected_by_fluids
+        }
+
+        fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
+            self.can_stand_on_fluid
         }
     }
 
@@ -3169,6 +3259,22 @@ mod tests {
         assert_vec3_close(
             get_input_vector(DVec3::new(0.0, 0.0, 1.0), 0.5, 90.0),
             DVec3::new(-0.5, 0.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn living_travel_fluid_predicate_matches_vanilla_hooks() {
+        init_test_registry();
+        let water = FluidState::source(&vanilla_fluids::WATER);
+
+        assert!(LivingFluidTestEntity::new(0.4, 0.0, true).should_travel_in_fluid(water));
+        assert!(LivingFluidTestEntity::new(0.0, 0.4, true).should_travel_in_fluid(water));
+        assert!(!LivingFluidTestEntity::new(0.0, 0.0, true).should_travel_in_fluid(water));
+        assert!(!LivingFluidTestEntity::new(0.4, 0.0, false).should_travel_in_fluid(water));
+        assert!(
+            !LivingFluidTestEntity::new(0.4, 0.0, true)
+                .with_standing_on_fluid()
+                .should_travel_in_fluid(water)
         );
     }
 

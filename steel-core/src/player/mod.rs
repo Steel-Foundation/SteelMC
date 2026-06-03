@@ -1484,6 +1484,10 @@ impl LivingEntity for Player {
             .set(amount.max(0.0));
     }
 
+    fn is_affected_by_fluids(&self) -> bool {
+        !self.is_flying()
+    }
+
     fn get_flying_speed(&self) -> f32 {
         if self.is_flying() && !self.is_passenger() {
             let flying_speed = self.abilities.lock().flying_speed;
