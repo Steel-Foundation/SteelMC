@@ -69,10 +69,7 @@ use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{
-    REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities,
-    vanilla_entity_type_tags::EntityTypeTag, vanilla_item_tags::ItemTag, vanilla_items,
-};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
@@ -1263,21 +1260,7 @@ impl Entity for Player {
             return false;
         }
 
-        let has_freeze_immune_wearable = {
-            let inventory = self.inventory.lock();
-            EquipmentSlot::ARMOR_SLOTS.iter().any(|slot| {
-                REGISTRY.items.is_in_tag(
-                    inventory.equipment().get_ref(*slot).item(),
-                    &ItemTag::FREEZE_IMMUNE_WEARABLES,
-                )
-            })
-        };
-
-        !has_freeze_immune_wearable
-            && !REGISTRY.entity_types.is_in_tag(
-                self.entity_type(),
-                &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
-            )
+        self.default_living_can_freeze()
     }
 
     fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {

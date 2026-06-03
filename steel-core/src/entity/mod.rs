@@ -21,6 +21,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
 };
@@ -1426,12 +1427,17 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_freezing()
     }
 
-    /// Returns whether this entity may accumulate frozen ticks.
-    fn can_freeze(&self) -> bool {
+    /// Returns vanilla `Entity.canFreeze()` without living-equipment overrides.
+    fn default_can_freeze(&self) -> bool {
         !REGISTRY.entity_types.is_in_tag(
             self.entity_type(),
             &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
         )
+    }
+
+    /// Returns whether this entity may accumulate frozen ticks.
+    fn can_freeze(&self) -> bool {
+        self.default_can_freeze()
     }
 
     /// Returns vanilla `getTicksRequiredToFreeze`.
@@ -2865,6 +2871,28 @@ pub trait LivingEntity: Entity {
         // TODO: Broadcast vanilla equipped-item break events once item break callbacks exist.
     }
 
+    /// Returns vanilla `LivingEntity.canFreeze()` after concrete entity exemptions.
+    ///
+    /// Vanilla keeps the entity-type freeze immunity on `Entity` and the equipment
+    /// immunity on `LivingEntity`. Steel keeps this helper separate so concrete
+    /// `Entity::can_freeze` implementations can delegate without downcasting.
+    fn default_living_can_freeze(&self) -> bool {
+        for slot in EquipmentSlot::ARMOR_SLOTS {
+            let mut is_freeze_immune = false;
+            self.with_equipment_slot(slot, &mut |item_stack| {
+                is_freeze_immune = REGISTRY
+                    .items
+                    .is_in_tag(item_stack.item(), &ItemTag::FREEZE_IMMUNE_WEARABLES);
+            });
+
+            if is_freeze_immune {
+                return false;
+            }
+        }
+
+        self.default_can_freeze()
+    }
+
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
         self.living_base()
@@ -4221,6 +4249,33 @@ mod tests {
             &ItemStack::new(&vanilla_items::ITEMS.stone),
             EquipmentSlot::Chest
         ));
+    }
+
+    #[test]
+    fn living_freeze_immunity_uses_armor_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        assert!(entity.default_living_can_freeze());
+
+        entity.equip(
+            EquipmentSlot::Feet,
+            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+        );
+
+        assert!(!entity.default_living_can_freeze());
+    }
+
+    #[test]
+    fn living_freeze_immunity_ignores_non_armor_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+        );
+
+        assert!(entity.default_living_can_freeze());
     }
 
     #[test]
