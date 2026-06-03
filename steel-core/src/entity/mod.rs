@@ -23,11 +23,11 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
 };
-use steel_registry::{vanilla_attributes, vanilla_mob_effects};
+use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::behavior::{
@@ -1862,6 +1862,35 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .speed_factor
     }
 
+    /// Returns vanilla `Entity.getBlockJumpFactor()`.
+    #[expect(
+        clippy::float_cmp,
+        reason = "intentional: vanilla checks static block jump factors against 1.0"
+    )]
+    fn block_jump_factor(&self) -> f32 {
+        let Some(world) = self.level() else {
+            return 1.0;
+        };
+
+        let jump_factor_here = world
+            .get_block_state(self.block_position())
+            .get_block()
+            .config
+            .jump_factor;
+        if jump_factor_here != 1.0 {
+            return jump_factor_here;
+        }
+
+        let Some(below_pos) = self.block_pos_below_that_affects_movement() else {
+            return 1.0;
+        };
+        world
+            .get_block_state(below_pos)
+            .get_block()
+            .config
+            .jump_factor
+    }
+
     /// Returns this entity's physical pose.
     fn pose(&self) -> EntityPose {
         self.base().pose()
@@ -2848,6 +2877,11 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_no_jump_delay();
     }
 
+    /// Returns vanilla `LivingEntity.isImmobile()`.
+    fn is_immobile(&self) -> bool {
+        self.is_dead_or_dying()
+    }
+
     /// Applies vanilla `LivingEntity.aiStep()` velocity thresholds.
     fn apply_living_velocity_thresholds(&self) {
         let movement = self.velocity();
@@ -2876,10 +2910,110 @@ pub trait LivingEntity: Entity {
         self.set_velocity(DVec3::new(dx, dy, dz));
     }
 
+    /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
+    fn server_ai_step(&self) {}
+
+    /// Returns vanilla `LivingEntity.getJumpBoostPower()`.
+    fn get_jump_boost_power(&self) -> f32 {
+        // TODO: Apply JUMP_BOOST once mob effects track amplifiers.
+        0.0
+    }
+
+    /// Returns vanilla `LivingEntity.getJumpPower(float)`.
+    fn get_jump_power_with_multiplier(&self, multiplier: f32) -> f32 {
+        let jump_strength =
+            self.attributes()
+                .lock()
+                .get_value(vanilla_attributes::JUMP_STRENGTH)
+                .unwrap_or(vanilla_attributes::JUMP_STRENGTH.default_value) as f32;
+        jump_strength * multiplier * self.block_jump_factor() + self.get_jump_boost_power()
+    }
+
+    /// Returns vanilla `LivingEntity.getJumpPower()`.
+    fn get_jump_power(&self) -> f32 {
+        self.get_jump_power_with_multiplier(1.0)
+    }
+
+    /// Default vanilla `LivingEntity.jumpFromGround()` implementation for overrides.
+    fn default_jump_from_ground(&self) {
+        let jump_power = self.get_jump_power();
+        if jump_power <= 1.0E-5 {
+            return;
+        }
+
+        let movement = self.velocity();
+        self.set_velocity(DVec3::new(
+            movement.x,
+            movement.y.max(f64::from(jump_power)),
+            movement.z,
+        ));
+        if self.is_sprinting() {
+            let angle = self.rotation().0.to_radians();
+            self.set_velocity(
+                self.velocity()
+                    + DVec3::new(
+                        f64::from(-angle.sin() * 0.2),
+                        0.0,
+                        f64::from(angle.cos() * 0.2),
+                    ),
+            );
+        }
+
+        self.mark_velocity_sync();
+    }
+
+    /// Mirrors vanilla `LivingEntity.jumpFromGround()`.
+    fn jump_from_ground(&self) {
+        self.default_jump_from_ground();
+    }
+
+    /// Mirrors vanilla `LivingEntity.goDownInWater()`.
+    fn go_down_in_water(&self) {
+        self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(-0.04_f32), 0.0));
+    }
+
+    /// Mirrors vanilla `LivingEntity.jumpInLiquid()`.
+    fn jump_in_liquid(&self, _fluid_tag: &Identifier) {
+        self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(0.04_f32), 0.0));
+    }
+
+    /// Applies vanilla `LivingEntity.aiStep()` jump handling.
+    fn handle_living_jump(&self) {
+        if !self.is_jumping() || !self.is_affected_by_fluids() {
+            self.set_no_jump_delay(0);
+            return;
+        }
+
+        let fluid_height = if self.is_in_lava() {
+            self.fluid_contact().lava_height()
+        } else {
+            self.fluid_contact().water_height()
+        };
+        let in_water_and_has_fluid_height = self.is_in_water() && fluid_height > 0.0;
+        let fluid_jump_threshold = self.get_fluid_jump_threshold();
+        if !in_water_and_has_fluid_height
+            || self.on_ground() && fluid_height <= fluid_jump_threshold
+        {
+            if !self.is_in_lava() || self.on_ground() && fluid_height <= fluid_jump_threshold {
+                if (self.on_ground()
+                    || in_water_and_has_fluid_height && fluid_height <= fluid_jump_threshold)
+                    && self.no_jump_delay() == 0
+                {
+                    self.jump_from_ground();
+                    self.set_no_jump_delay(10);
+                }
+            } else {
+                self.jump_in_liquid(&vanilla_fluid_tags::FluidTag::LAVA);
+            }
+        } else {
+            self.jump_in_liquid(&vanilla_fluid_tags::FluidTag::WATER);
+        }
+    }
+
     /// Default vanilla-shaped `LivingEntity.aiStep()` movement foundation for overrides.
     ///
-    /// This covers the shared travel state Steel currently has; mob AI, equipment,
-    /// and jump handling are still separate follow-up work.
+    /// This covers the shared travel state Steel currently has; mob AI and
+    /// equipment ticking are still separate follow-up work.
     fn default_ai_step(&self) -> Option<MoveResult> {
         self.tick_no_jump_delay();
         if !self.can_simulate_movement() {
@@ -2888,7 +3022,15 @@ pub trait LivingEntity: Entity {
 
         self.apply_living_velocity_thresholds();
         self.apply_input();
-        // TODO: Implement LivingEntity jump handling and serverAiStep() hooks.
+        if self.is_immobile() {
+            self.set_jumping(false);
+            let input = self.travel_input();
+            self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
+        } else if self.is_effective_ai() {
+            self.server_ai_step();
+        }
+
+        self.handle_living_jump();
 
         if !self.can_simulate_movement() || !self.is_effective_ai() {
             return None;
@@ -3419,8 +3561,8 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::fluid::FluidState;
     use steel_registry::{
-        sound_events, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-        vanilla_fluids, vanilla_mob_effects,
+        sound_events, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
+        vanilla_entities, vanilla_fluids, vanilla_mob_effects,
     };
     use steel_utils::{BlockPos, Direction};
 
@@ -3881,6 +4023,57 @@ mod tests {
     }
 
     #[test]
+    fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
+
+        entity.jump_from_ground();
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
+        assert!(entity.needs_velocity_sync());
+    }
+
+    #[test]
+    fn sprint_jump_from_ground_adds_vanilla_horizontal_impulse() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
+        entity.set_sprinting(true);
+        entity.set_rotation((0.0, 0.0));
+
+        entity.jump_from_ground();
+
+        assert_vec3_close(
+            entity.velocity(),
+            DVec3::new(0.0, jump_strength, f64::from(0.2_f32)),
+        );
+    }
+
+    #[test]
+    fn living_jump_in_water_uses_fluid_jump_impulse_without_cooldown() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
+        entity.set_jumping(true);
+
+        entity.handle_living_jump();
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.0, f64::from(0.04_f32), 0.0));
+        assert_eq!(entity.no_jump_delay(), 0);
+    }
+
+    #[test]
+    fn living_jump_without_input_resets_jump_delay_like_vanilla() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_no_jump_delay(4);
+
+        entity.handle_living_jump();
+
+        assert_eq!(entity.no_jump_delay(), 0);
+    }
+
+    #[test]
     fn living_ai_step_zeroes_tiny_player_velocity_like_vanilla() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
@@ -3904,7 +4097,7 @@ mod tests {
     }
 
     #[test]
-    fn default_ai_step_ticks_jump_delay_and_dampens_input_before_travel() {
+    fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
         entity.set_no_jump_delay(2);
@@ -3912,11 +4105,26 @@ mod tests {
 
         assert!(entity.default_ai_step().is_none());
 
-        assert_eq!(entity.no_jump_delay(), 1);
+        assert_eq!(entity.no_jump_delay(), 0);
         assert_eq!(
             entity.travel_input(),
             LivingTravelInput::new(0.98, 0.5, -0.98)
         );
+    }
+
+    #[test]
+    fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
+        entity.set_on_ground(true);
+        entity.set_jumping(true);
+
+        assert!(entity.default_ai_step().is_none());
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
+        assert_eq!(entity.no_jump_delay(), 10);
+        assert!(entity.needs_velocity_sync());
     }
 
     #[test]

@@ -1501,6 +1501,16 @@ impl LivingEntity for Player {
         !self.is_flying()
     }
 
+    fn jump_from_ground(&self) {
+        self.default_jump_from_ground();
+        // TODO: Award Stats.JUMP once player statistics exist.
+        if self.is_sprinting() {
+            self.cause_food_exhaustion(0.2);
+        } else {
+            self.cause_food_exhaustion(0.05);
+        }
+    }
+
     fn ai_step(&self) -> Option<MoveResult> {
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
