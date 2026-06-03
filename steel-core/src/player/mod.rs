@@ -1244,6 +1244,10 @@ impl Entity for Player {
         self.get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
+    fn on_climbable(&self) -> bool {
+        Player::on_climbable(self)
+    }
+
     fn is_spectator(&self) -> bool {
         self.game_mode() == GameType::Spectator
     }
@@ -1371,10 +1375,7 @@ impl Entity for Player {
     }
 
     fn can_walk_on_powder_snow(&self) -> bool {
-        if REGISTRY.entity_types.is_in_tag(
-            self.entity_type(),
-            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
-        ) {
+        if self.default_can_walk_on_powder_snow() {
             return true;
         }
 

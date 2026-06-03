@@ -55,6 +55,16 @@ impl MovementState {
         self.client_vehicle_movement.clear_client_floating();
     }
 
+    /// Returns the current vanilla controlled-vehicle validation positions.
+    #[must_use]
+    pub(super) const fn vehicle_good_positions(&self, vehicle_id: i32) -> Option<(DVec3, DVec3)> {
+        if !matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+            return None;
+        }
+
+        Some(self.client_vehicle_movement.good_positions())
+    }
+
     /// Resets movement validation and tracking bases after a server position sync.
     pub(super) fn reset_for_position_sync(
         &mut self,
@@ -80,6 +90,18 @@ impl MovementState {
     /// Marks a movement target as the latest accepted vanilla last-good position.
     pub(super) const fn mark_last_good_position(&mut self, position: DVec3) {
         self.client_movement.mark_last_good_position(position);
+    }
+
+    /// Marks a controlled-vehicle target as the latest accepted vanilla last-good position.
+    pub(super) const fn mark_vehicle_last_good_position(
+        &mut self,
+        vehicle_id: i32,
+        position: DVec3,
+    ) {
+        if matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+            self.client_vehicle_movement
+                .mark_last_good_position(position);
+        }
     }
 
     /// Applies vanilla post-impulse movement validation grace.
@@ -119,6 +141,18 @@ impl MovementState {
     pub(super) const fn record_client_floating(&mut self, client_is_floating: bool) {
         self.client_movement
             .record_client_floating(client_is_floating);
+    }
+
+    /// Records whether the controlled vehicle appeared to float after accepted movement.
+    pub(super) const fn record_vehicle_client_floating(
+        &mut self,
+        vehicle_id: i32,
+        client_is_floating: bool,
+    ) {
+        if matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+            self.client_vehicle_movement
+                .record_client_floating(client_is_floating);
+        }
     }
 
     /// Resets the vanilla floating violation counter.
@@ -283,8 +317,44 @@ mod tests {
 
         state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
 
+        assert_eq!(
+            state.vehicle_good_positions(42),
+            Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(1.0, 2.0, 3.0)))
+        );
+        assert_eq!(state.vehicle_good_positions(41), None);
         assert!(!state.tick_vehicle_client_floating(41, 0));
         assert!(!state.tick_vehicle_client_floating(42, 0));
+    }
+
+    #[test]
+    fn vehicle_last_good_update_is_guarded_by_active_vehicle_id() {
+        let mut state = MovementState::new();
+        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+
+        state.mark_vehicle_last_good_position(41, DVec3::new(9.0, 9.0, 9.0));
+        assert_eq!(
+            state.vehicle_good_positions(42),
+            Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(1.0, 2.0, 3.0)))
+        );
+
+        state.mark_vehicle_last_good_position(42, DVec3::new(4.0, 5.0, 6.0));
+
+        assert_eq!(
+            state.vehicle_good_positions(42),
+            Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(4.0, 5.0, 6.0)))
+        );
+    }
+
+    #[test]
+    fn vehicle_floating_update_is_guarded_by_active_vehicle_id() {
+        let mut state = MovementState::new();
+        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+
+        state.record_vehicle_client_floating(41, true);
+        assert!(!state.tick_vehicle_client_floating(42, 0));
+
+        state.record_vehicle_client_floating(42, true);
+        assert!(state.tick_vehicle_client_floating(42, 0));
     }
 
     #[test]

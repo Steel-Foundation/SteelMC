@@ -975,6 +975,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Returns true when movement is authored by a remote client.
     fn is_client_authoritative(&self) -> bool {
+        if !self.is_removed()
+            && let Some(controller) = self.controlling_passenger()
+            && controller.id() != self.id()
+            && controller.is_client_authoritative()
+        {
+            return true;
+        }
+
         false
     }
 
@@ -1006,15 +1014,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
-    fn can_walk_on_powder_snow(&self) -> bool {
+    fn default_can_walk_on_powder_snow(&self) -> bool {
         REGISTRY.entity_types.is_in_tag(
             self.entity_type(),
             &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
         )
     }
 
+    /// Returns whether this entity can walk on powder snow.
+    fn can_walk_on_powder_snow(&self) -> bool {
+        self.default_can_walk_on_powder_snow()
+    }
+
     /// Returns whether vanilla excludes this vehicle from floating kicks.
     fn is_flying_vehicle(&self) -> bool {
+        false
+    }
+
+    /// Returns true if vanilla rules consider this entity to be on a climbable block.
+    fn on_climbable(&self) -> bool {
         false
     }
 
@@ -1531,11 +1549,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .set_on_ground_with_movement(on_ground, horizontal_collision, ground_contact);
     }
 
-    /// Applies final state accepted from a client-authored movement packet.
+    /// Default final state application for accepted client-authored movement.
     ///
     /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
     /// handling after rollback/collision validation has accepted the target.
-    fn apply_accepted_client_movement(
+    fn default_apply_accepted_client_movement(
         &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
@@ -1559,6 +1577,26 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
 
         false
+    }
+
+    /// Applies final state accepted from a client-authored movement packet.
+    fn apply_accepted_client_movement(
+        &self,
+        world: &Arc<World>,
+        accepted: AcceptedClientMovement,
+    ) -> bool {
+        self.default_apply_accepted_client_movement(world, accepted)
+    }
+
+    /// Applies final state accepted from a controlled-vehicle movement packet.
+    fn apply_accepted_client_vehicle_movement(
+        &self,
+        world: &Arc<World>,
+        mut accepted: AcceptedClientMovement,
+    ) -> bool {
+        accepted.horizontal_collision = self.horizontal_collision();
+        accepted.reset_fall_distance = false;
+        self.default_apply_accepted_client_movement(world, accepted)
     }
 
     /// Sets the entity's position.
@@ -2605,6 +2643,7 @@ mod tests {
         entity_type: EntityTypeRef,
         known_movement: DVec3,
         known_speed: DVec3,
+        client_authoritative: bool,
     }
 
     impl KnownMovementTestEntity {
@@ -2619,6 +2658,7 @@ mod tests {
                 entity_type,
                 known_movement,
                 known_speed,
+                client_authoritative: entity_type == &vanilla_entities::PLAYER,
             })
         }
     }
@@ -2638,6 +2678,10 @@ mod tests {
 
         fn known_speed(&self) -> DVec3 {
             self.known_speed
+        }
+
+        fn is_client_authoritative(&self) -> bool {
+            self.client_authoritative
         }
     }
 
@@ -2827,6 +2871,8 @@ mod tests {
             player_speed,
         );
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(controller));
+
+        assert!(vehicle.is_client_authoritative());
 
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();

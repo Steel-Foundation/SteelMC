@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer, SPlayerCommand,
-    SPlayerInput,
+    CMoveVehicle, CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer,
+    SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_attributes;
@@ -84,6 +84,15 @@ impl Player {
         }
 
         false
+    }
+
+    fn move_vehicle_packet_from_entity(entity: &dyn Entity) -> CMoveVehicle {
+        let rotation = entity.rotation();
+        CMoveVehicle {
+            position: entity.position(),
+            y_rot: rotation.0,
+            x_rot: rotation.1,
+        }
     }
 
     /// Checks if we're awaiting a teleport confirmation and handles timeout/resend.
@@ -418,6 +427,150 @@ impl Player {
         );
     }
 
+    /// Handles a controlled-vehicle movement packet.
+    ///
+    /// Matches vanilla `ServerGamePacketListenerImpl.handleMoveVehicle()`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "matches vanilla handleMoveVehicle; splitting would hurt readability"
+    )]
+    pub fn handle_move_vehicle(&self, packet: SMoveVehicle) {
+        if Self::is_invalid_position(
+            packet.position.x,
+            packet.position.y,
+            packet.position.z,
+            packet.x_rot,
+            packet.y_rot,
+        ) {
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_VEHICLE_MOVEMENT.msg());
+            return;
+        }
+
+        if self.update_awaiting_teleport() || !self.has_client_loaded() {
+            return;
+        }
+
+        let Some(vehicle) = self.root_vehicle() else {
+            return;
+        };
+        let controlled_by_player = vehicle
+            .controlling_passenger()
+            .is_some_and(|controller| controller.id() == self.id());
+        if !controlled_by_player {
+            return;
+        }
+        let Some((first_good, last_good)) =
+            self.movement.lock().vehicle_good_positions(vehicle.id())
+        else {
+            return;
+        };
+
+        let world = self.get_world();
+        let old_position = vehicle.position();
+        let target_pos = DVec3::new(
+            clamp_horizontal(packet.position.x),
+            clamp_vertical(packet.position.y),
+            clamp_horizontal(packet.position.z),
+        );
+        let target_yaw = wrap_degrees(packet.y_rot);
+        let target_pitch = wrap_degrees(packet.x_rot);
+        let first_good_delta = target_pos - first_good;
+        let moved_dist_sq = first_good_delta.length_squared();
+        let expected_dist_sq = vehicle.velocity().length_squared();
+        if moved_dist_sq - expected_dist_sq > SPEED_THRESHOLD_NORMAL {
+            log::warn!(
+                "{} (vehicle of {}) moved too quickly! {},{},{}",
+                vehicle.id(),
+                self.gameprofile.name,
+                first_good_delta.x,
+                first_good_delta.y,
+                first_good_delta.z
+            );
+            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+            return;
+        }
+
+        let old_aabb = vehicle.bounding_box();
+        let move_delta = target_pos - last_good;
+        let vehicle_rests_on_something = vehicle.vertical_collision_below();
+        if vehicle.is_living_entity() && vehicle.on_climbable() {
+            vehicle.reset_fall_distance();
+        }
+
+        if vehicle.move_entity(MoverType::Player, move_delta).is_none() {
+            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+            return;
+        }
+
+        let error_delta = movement_error_delta(target_pos, vehicle.position());
+        let error_dist_sq = error_delta.length_squared();
+        let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD;
+        if fail {
+            log::warn!(
+                "{} (vehicle of {}) moved wrongly! {}",
+                vehicle.id(),
+                self.gameprofile.name,
+                error_dist_sq.sqrt()
+            );
+        }
+
+        let new_aabb = vehicle
+            .bounding_box()
+            .move_vec(target_pos - vehicle.position());
+        let collision_world = WorldCollisionProvider::for_entity(&world, vehicle.as_ref());
+        let old_collision = has_collision(&collision_world, old_aabb);
+        let new_collision = is_colliding_with_new_shapes(
+            &collision_world,
+            old_aabb,
+            new_aabb,
+            vehicle.is_descending(),
+        );
+
+        if (MovementCollisionValidation {
+            no_physics: false,
+            moved_wrongly: fail,
+            old_collision,
+            new_collision,
+        })
+        .rejects()
+        {
+            vehicle.set_position(old_position);
+            vehicle.refresh_fluid_contact();
+            vehicle.set_rotation((target_yaw, target_pitch));
+            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+            vehicle.remove_latest_movement_recording();
+            return;
+        }
+
+        let client_delta = target_pos - old_position;
+        self.movement
+            .lock()
+            .set_last_known_client_movement(client_delta);
+        if vehicle.apply_accepted_client_vehicle_movement(
+            &world,
+            AcceptedClientMovement {
+                position: Some(target_pos),
+                rotation: (target_yaw, target_pitch),
+                on_ground: packet.on_ground,
+                horizontal_collision: vehicle.horizontal_collision(),
+                movement: client_delta,
+                reset_fall_distance: false,
+            },
+        ) {
+            return;
+        }
+        world.chunk_map.update_player_status(self);
+        self.record_client_vehicle_floating(
+            &world,
+            vehicle.as_ref(),
+            vanilla_post_move_y_dist(target_pos.y, vehicle.position().y),
+            vehicle_rests_on_something,
+        );
+        self.movement
+            .lock()
+            .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
+    }
+
     fn broadcast_accepted_movement(&self, world: &Arc<World>, movement: AcceptedMovementBroadcast) {
         if !movement.has_pos && !movement.has_rot {
             return;
@@ -462,14 +615,32 @@ impl Player {
             && !may_fly
             && !is_fall_flying;
 
-        let client_is_floating = can_violate_floating && self.no_blocks_around(world);
+        let client_is_floating = can_violate_floating && Self::no_blocks_around_entity(world, self);
         self.movement
             .lock()
             .record_client_floating(client_is_floating);
     }
 
-    fn no_blocks_around(&self, world: &World) -> bool {
-        let block_query = self
+    fn record_client_vehicle_floating(
+        &self,
+        world: &World,
+        vehicle: &dyn Entity,
+        y_dist: f64,
+        vehicle_rests_on_something: bool,
+    ) {
+        let client_is_floating = y_dist >= -0.03125
+            && !vehicle_rests_on_something
+            && !self.config.allow_flight
+            && !vehicle.is_flying_vehicle()
+            && !vehicle.is_no_gravity()
+            && Self::no_blocks_around_entity(world, vehicle);
+        self.movement
+            .lock()
+            .record_vehicle_client_floating(vehicle.id(), client_is_floating);
+    }
+
+    fn no_blocks_around_entity(world: &World, entity: &dyn Entity) -> bool {
+        let block_query = entity
             .bounding_box()
             .inflate(0.0625)
             .expand_towards(DVec3::new(0.0, -0.55, 0.0));
