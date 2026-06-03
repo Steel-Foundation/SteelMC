@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -19,12 +20,15 @@ use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
-use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{
     FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
     is_water_fluid, lava_id,
 };
 use crate::world::World;
+const NORMAL_LAVA_ENTITY_FLOW_SCALE: f64 = 0.002_333_333_333_333_333_5;
+const FAST_LAVA_ENTITY_FLOW_SCALE: f64 = 0.007;
+
 /// Lava fluid implementation.
 ///
 /// Implements [`FluidBehavior`] with lava-specific parameters and
@@ -37,6 +41,15 @@ impl LavaFluid {
     // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
     fn is_fast_lava(world: &Arc<World>) -> bool {
         world.dimension_type.key == vanilla_dimension_types::THE_NETHER.key
+    }
+
+    /// Returns vanilla's lava current scale for entity fluid pushing.
+    pub(crate) fn entity_flow_scale(world: &Arc<World>) -> f64 {
+        if Self::is_fast_lava(world) {
+            FAST_LAVA_ENTITY_FLOW_SCALE
+        } else {
+            NORMAL_LAVA_ENTITY_FLOW_SCALE
+        }
     }
 }
 
@@ -75,6 +88,10 @@ impl FluidBehavior for LavaFluid {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => false,
         }
+    }
+
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        flowing_fluid_flow(world, pos, fluid_state)
     }
 
     /// Vanilla parity: `LavaFluid.canBeReplacedWith()`.

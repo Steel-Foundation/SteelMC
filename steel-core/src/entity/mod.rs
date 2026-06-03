@@ -30,7 +30,7 @@ use crate::behavior::{
     EntityLandingContext, FLUID_BEHAVIORS,
 };
 use crate::entity::attribute::AttributeMap;
-use crate::fluid::get_height;
+use crate::fluid::{LavaFluid, get_height};
 use crate::physics::{
     CollisionWorld, EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
     move_entity as resolve_entity_movement,
@@ -48,6 +48,7 @@ use entities::ItemEntity;
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
+const WATER_ENTITY_FLOW_SCALE: f64 = 0.014;
 const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::North,
     Direction::South,
@@ -585,6 +586,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// a concrete entity type opts in.
     fn is_pushable(&self) -> bool {
         false
+    }
+
+    /// Returns whether vanilla fluid currents can push this entity.
+    fn is_pushed_by_fluid(&self) -> bool {
+        true
     }
 
     /// Returns whether this entity is invisible to normal entity selectors.
@@ -1205,18 +1211,57 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return contact;
         };
 
-        let contact = EntityFluidContact::scan(
-            &world,
-            self.position(),
-            self.get_eye_y(),
-            self.bounding_box(),
-        );
+        let contact = if advance_eye_water_history {
+            EntityFluidContact::scan_with_currents(
+                &world,
+                self.position(),
+                self.get_eye_y(),
+                self.bounding_box(),
+                self.is_pushed_by_fluid(),
+            )
+        } else {
+            EntityFluidContact::scan(
+                &world,
+                self.position(),
+                self.get_eye_y(),
+                self.bounding_box(),
+            )
+        };
         if advance_eye_water_history {
             self.base().set_fluid_contact_for_base_tick(contact);
+            self.apply_fluid_current_for_base_tick(&world, contact);
         } else {
             self.base().set_fluid_contact(contact);
         }
         contact
+    }
+
+    /// Applies vanilla water/lava current impulses from the base-tick fluid scan.
+    fn apply_fluid_current_for_base_tick(&self, world: &Arc<World>, contact: EntityFluidContact) {
+        if !self.is_pushed_by_fluid() {
+            return;
+        }
+
+        let is_player = self.entity_type() == &vanilla_entities::PLAYER;
+        let old_velocity = self.velocity();
+        let water_impulse =
+            contact.water_current_impulse(is_player, old_velocity, WATER_ENTITY_FLOW_SCALE);
+        self.apply_fluid_current_impulse(water_impulse);
+
+        let old_velocity = old_velocity + water_impulse;
+        let lava_impulse = contact.lava_current_impulse(
+            is_player,
+            old_velocity,
+            LavaFluid::entity_flow_scale(world),
+        );
+        self.apply_fluid_current_impulse(lava_impulse);
+    }
+
+    /// Applies a non-zero fluid current impulse and marks velocity sync.
+    fn apply_fluid_current_impulse(&self, impulse: DVec3) {
+        if impulse.length_squared() > 0.0 {
+            self.push_impulse(impulse);
+        }
     }
 
     /// Returns true if this entity type ignores vanilla fall damage.

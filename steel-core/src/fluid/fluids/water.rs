@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::sound_events;
@@ -13,7 +14,7 @@ use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
-use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
 use crate::world::World;
 
@@ -53,6 +54,10 @@ impl FluidBehavior for WaterFluid {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => true,
         }
+    }
+
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        flowing_fluid_flow(world, pos, fluid_state)
     }
 
     /// Water can only be replaced from below and only by non-water fluids.

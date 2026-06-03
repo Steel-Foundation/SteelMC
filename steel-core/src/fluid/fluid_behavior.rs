@@ -2,6 +2,8 @@
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
 use std::sync::Arc;
 
+use glam::DVec3;
+
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
@@ -119,17 +121,12 @@ pub trait FluidBehavior: Send + Sync {
         self.tick_delay(world)
     }
 
-    /// Returns the x component of the flow velocity at a position (used for entity physics).
-    ///
-    /// Determines how strongly entities/items are pushed horizontally.
-    // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    fn get_flow_x(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
-        0.0
-    }
-
-    /// Returns the z component of the flow velocity at a position (used for entity physics).
-    // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    fn get_flow_z(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
-        0.0
+    /// Returns this fluid state's vanilla flow vector at a position.
+    #[expect(
+        unused_variables,
+        reason = "default implementation is used by empty/non-flowing fluids"
+    )]
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        DVec3::ZERO
     }
 }

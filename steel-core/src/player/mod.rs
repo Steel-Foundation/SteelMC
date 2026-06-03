@@ -1350,6 +1350,10 @@ impl Entity for Player {
         self.is_crouching() && !self.is_flying()
     }
 
+    fn is_pushed_by_fluid(&self) -> bool {
+        !self.is_flying()
+    }
+
     fn is_crouching(&self) -> bool {
         Player::is_crouching(self)
     }
