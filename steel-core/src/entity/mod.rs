@@ -15,7 +15,7 @@ use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_attributes;
+use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
@@ -23,6 +23,7 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
 };
+use steel_registry::{vanilla_attributes, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
@@ -36,8 +37,8 @@ use crate::behavior::{
 use crate::entity::attribute::AttributeMap;
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
 use crate::physics::{
-    CollisionWorld, EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
-    move_entity as resolve_entity_movement,
+    COLLISION_EPSILON, CollisionWorld, EntityPhysicsState, MoveResult, MoverType,
+    WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, World};
@@ -67,6 +68,27 @@ fn horizontal_distance(vector: DVec3) -> f64 {
 
 fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_speed: f64) -> f32 {
     ((previous_horizontal_speed - new_horizontal_speed) * 10.0 - 3.0) as f32
+}
+
+fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
+    let min_x = aabb.min_x().floor() as i32;
+    let max_x = aabb.max_x().ceil() as i32;
+    let min_y = aabb.min_y().floor() as i32;
+    let max_y = aabb.max_y().ceil() as i32;
+    let min_z = aabb.min_z().floor() as i32;
+    let max_z = aabb.max_z().ceil() as i32;
+
+    for x in min_x..max_x {
+        for y in min_y..max_y {
+            for z in min_z..max_z {
+                if !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 enum BlockEffectSegmentResult {
@@ -653,6 +675,28 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().bounding_box()
     }
 
+    /// Returns vanilla `Entity.isFree()` for the current bounding box shifted by `delta`.
+    fn is_free(&self, delta: DVec3) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+
+        let target_box = self.bounding_box().move_vec(delta);
+        let collision_world =
+            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        if !collision_world
+            .get_collisions_with_context(
+                &target_box.deflate(COLLISION_EPSILON),
+                physics_state_for_move(self.as_entity_event_source()).block_collision_context(),
+            )
+            .is_empty()
+        {
+            return false;
+        }
+
+        !aabb_contains_any_liquid(&world, target_box)
+    }
+
     /// Returns whether this entity obstructs block placement.
     ///
     /// Mirrors vanilla `Entity.blocksBuilding`. Base entities do not obstruct
@@ -1171,6 +1215,15 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Override for entities with pose-dependent eye heights (e.g., players).
     fn get_eye_height(&self) -> f64 {
         f64::from(self.base().dimensions().eye_height)
+    }
+
+    /// Returns vanilla `Entity.getFluidJumpThreshold()`.
+    fn get_fluid_jump_threshold(&self) -> f64 {
+        if self.get_eye_height() < 0.4 {
+            0.0
+        } else {
+            0.4
+        }
     }
 
     /// Gets the Y coordinate of the entity's eyes.
@@ -2661,6 +2714,16 @@ pub trait LivingEntity: Entity {
         true
     }
 
+    /// Returns vanilla `LivingEntity.hasEffect()`.
+    fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
+        self.living_base().has_mob_effect(effect)
+    }
+
+    /// Sets the presence of a vanilla mob effect.
+    fn set_mob_effect_active(&self, effect: MobEffectRef, active: bool) {
+        self.living_base().set_mob_effect_active(effect, active);
+    }
+
     /// Returns vanilla `LivingEntity.isAffectedByFluids()`.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -2862,6 +2925,24 @@ pub trait LivingEntity: Entity {
             && !self.can_stand_on_fluid(fluid_state)
     }
 
+    /// Returns vanilla `LivingEntity.getWaterSlowDown()`.
+    fn get_water_slow_down(&self) -> f32 {
+        0.8
+    }
+
+    /// Returns the water movement efficiency attribute used by fluid travel.
+    fn water_movement_efficiency(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::WATER_MOVEMENT_EFFICIENCY)
+            .unwrap_or(0.0) as f32
+    }
+
+    /// Returns whether dolphin's grace should apply to water travel.
+    fn has_dolphins_grace(&self) -> bool {
+        self.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE)
+    }
+
     /// Returns vanilla `LivingEntity.getFlyingSpeed()`.
     fn get_flying_speed(&self) -> f32 {
         if self
@@ -2977,6 +3058,162 @@ pub trait LivingEntity: Entity {
         Some(result)
     }
 
+    /// Mirrors vanilla `LivingEntity.getFluidFallingAdjustedMovement()`.
+    fn get_fluid_falling_adjusted_movement(
+        &self,
+        base_gravity: f64,
+        is_falling: bool,
+        movement: DVec3,
+    ) -> DVec3 {
+        if base_gravity == 0.0 || self.is_sprinting() {
+            return movement;
+        }
+
+        let y = if is_falling
+            && (movement.y - 0.005).abs() >= 0.003
+            && (movement.y - base_gravity / 16.0).abs() < 0.003
+        {
+            -0.003
+        } else {
+            movement.y - base_gravity / 16.0
+        };
+
+        DVec3::new(movement.x, y, movement.z)
+    }
+
+    /// Mirrors vanilla `LivingEntity.jumpOutOfFluid()`.
+    fn jump_out_of_fluid(&self, old_y: f64) {
+        if !self.horizontal_collision() {
+            return;
+        }
+
+        let movement = self.velocity();
+        let target_delta = DVec3::new(
+            movement.x,
+            movement.y + f64::from(0.6_f32) - self.position().y + old_y,
+            movement.z,
+        );
+        if self.is_free(target_delta) {
+            self.set_velocity(DVec3::new(movement.x, f64::from(0.3_f32), movement.z));
+        }
+    }
+
+    /// Mirrors vanilla `LivingEntity.floatInWaterWhileRidden()`.
+    fn float_in_water_while_ridden(&self) {
+        if !REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::CAN_FLOAT_WHILE_RIDDEN)
+        {
+            return;
+        }
+        if !self.is_vehicle()
+            || self.fluid_contact().water_height() <= self.get_fluid_jump_threshold()
+        {
+            return;
+        }
+
+        self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(0.04_f32), 0.0));
+    }
+
+    /// Mirrors vanilla `LivingEntity.travelInWater()`.
+    fn travel_in_water(
+        &self,
+        input: DVec3,
+        base_gravity: f64,
+        is_falling: bool,
+        old_y: f64,
+    ) -> Option<MoveResult> {
+        let mut slow_down = if self.is_sprinting() {
+            0.9
+        } else {
+            self.get_water_slow_down()
+        };
+        let mut speed = 0.02;
+        let mut water_movement_efficiency = self.water_movement_efficiency();
+        if !self.on_ground() {
+            water_movement_efficiency *= 0.5;
+        }
+
+        if water_movement_efficiency > 0.0 {
+            slow_down += (0.546_000_06 - slow_down) * water_movement_efficiency;
+            speed += (self.get_speed() - speed) * water_movement_efficiency;
+        }
+
+        if self.has_dolphins_grace() {
+            slow_down = 0.96;
+        }
+
+        self.move_relative(speed, input);
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        let mut movement = self.velocity();
+        if result.horizontal_collision && self.on_climbable() {
+            movement.y = 0.2;
+        }
+
+        movement = DVec3::new(
+            movement.x * f64::from(slow_down),
+            movement.y * f64::from(0.8_f32),
+            movement.z * f64::from(slow_down),
+        );
+        self.set_velocity(self.get_fluid_falling_adjusted_movement(
+            base_gravity,
+            is_falling,
+            movement,
+        ));
+        self.jump_out_of_fluid(old_y);
+
+        Some(result)
+    }
+
+    /// Mirrors vanilla `LivingEntity.travelInLava()`.
+    fn travel_in_lava(
+        &self,
+        input: DVec3,
+        base_gravity: f64,
+        is_falling: bool,
+        old_y: f64,
+    ) -> Option<MoveResult> {
+        self.move_relative(0.02, input);
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
+        if self.fluid_contact().lava_height() <= self.get_fluid_jump_threshold() {
+            let movement = self.velocity();
+            self.set_velocity(DVec3::new(
+                movement.x * 0.5,
+                movement.y * f64::from(0.8_f32),
+                movement.z * 0.5,
+            ));
+            self.set_velocity(self.get_fluid_falling_adjusted_movement(
+                base_gravity,
+                is_falling,
+                self.velocity(),
+            ));
+        } else {
+            self.set_velocity(self.velocity() * 0.5);
+        }
+
+        if base_gravity != 0.0 {
+            self.set_velocity(self.velocity() + DVec3::new(0.0, -base_gravity / 4.0, 0.0));
+        }
+
+        self.jump_out_of_fluid(old_y);
+
+        Some(result)
+    }
+
+    /// Mirrors vanilla `LivingEntity.travelInFluid()`.
+    fn travel_in_fluid(&self, input: DVec3) -> Option<MoveResult> {
+        let is_falling = self.velocity().y <= 0.0;
+        let old_y = self.position().y;
+        let base_gravity = self.get_effective_gravity();
+        if self.is_in_water() {
+            let result = self.travel_in_water(input, base_gravity, is_falling, old_y);
+            self.float_in_water_while_ridden();
+            return result;
+        }
+
+        self.travel_in_lava(input, base_gravity, is_falling, old_y)
+    }
+
     /// Mirrors vanilla `LivingEntity.updateFallFlyingMovement()`.
     fn update_fall_flying_movement(&self, mut movement: DVec3) -> DVec3 {
         let look_angle = self.look_angle();
@@ -3070,8 +3307,7 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let fluid_state = get_fluid_state(&world, self.block_position());
         if self.should_travel_in_fluid(fluid_state) {
-            // TODO: Implement LivingEntity.travelInFluid().
-            return None;
+            return self.travel_in_fluid(input);
         }
         if self.is_fall_flying() {
             return self.travel_fall_flying(input);
@@ -3184,7 +3420,7 @@ mod tests {
     use steel_registry::fluid::FluidState;
     use steel_registry::{
         sound_events, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-        vanilla_fluids,
+        vanilla_fluids, vanilla_mob_effects,
     };
     use steel_utils::{BlockPos, Direction};
 
@@ -3271,8 +3507,10 @@ mod tests {
     struct LivingFluidTestEntity {
         base: EntityBase,
         living_base: LivingEntityBase,
+        entity_type: EntityTypeRef,
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
+        vehicle: bool,
     }
 
     impl LivingFluidTestEntity {
@@ -3292,13 +3530,25 @@ mod tests {
             Self {
                 base,
                 living_base: LivingEntityBase::new(&vanilla_entities::PLAYER),
+                entity_type: &vanilla_entities::PLAYER,
                 affected_by_fluids,
                 can_stand_on_fluid: false,
+                vehicle: false,
             }
         }
 
         const fn with_standing_on_fluid(mut self) -> Self {
             self.can_stand_on_fluid = true;
+            self
+        }
+
+        const fn with_entity_type(mut self, entity_type: EntityTypeRef) -> Self {
+            self.entity_type = entity_type;
+            self
+        }
+
+        const fn with_vehicle(mut self) -> Self {
+            self.vehicle = true;
             self
         }
     }
@@ -3309,11 +3559,15 @@ mod tests {
         }
 
         fn entity_type(&self) -> EntityTypeRef {
-            &vanilla_entities::PLAYER
+            self.entity_type
         }
 
         fn is_living_entity(&self) -> bool {
             true
+        }
+
+        fn is_vehicle(&self) -> bool {
+            self.vehicle
         }
 
         fn get_default_gravity(&self) -> f64 {
@@ -3568,6 +3822,62 @@ mod tests {
         entity.stop_fall_flying();
 
         assert!(!entity.is_fall_flying());
+    }
+
+    #[test]
+    fn fluid_falling_adjustment_matches_vanilla_special_falling_case() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        let movement =
+            entity.get_fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
+
+        assert_vec3_close(movement, DVec3::new(1.0, -0.003, 1.0));
+    }
+
+    #[test]
+    fn fluid_falling_adjustment_is_skipped_while_sprinting() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_sprinting(true);
+
+        let movement =
+            entity.get_fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
+
+        assert_vec3_close(movement, DVec3::new(1.0, 0.01, 1.0));
+    }
+
+    #[test]
+    fn water_float_while_ridden_uses_vanilla_entity_type_tag_and_threshold() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true)
+            .with_entity_type(&vanilla_entities::HORSE)
+            .with_vehicle();
+
+        entity.float_in_water_while_ridden();
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.0, f64::from(0.04_f32), 0.0));
+    }
+
+    #[test]
+    fn water_float_while_ridden_ignores_non_vehicle_tagged_entity() {
+        init_test_registry();
+        let entity =
+            LivingFluidTestEntity::new(0.5, 0.0, true).with_entity_type(&vanilla_entities::HORSE);
+
+        entity.float_in_water_while_ridden();
+
+        assert_vec3_close(entity.velocity(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn dolphins_grace_water_travel_hook_uses_active_mob_effect_state() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
+
+        assert!(!entity.has_dolphins_grace());
+        entity.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, true);
+        assert!(entity.has_dolphins_grace());
     }
 
     #[test]

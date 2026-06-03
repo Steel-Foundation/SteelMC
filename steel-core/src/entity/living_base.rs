@@ -5,7 +5,9 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
+use rustc_hash::FxHashSet;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Identifier};
@@ -127,6 +129,8 @@ impl LivingEntityState {
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
+    // TODO: Replace presence-only tracking with full vanilla MobEffectInstance state.
+    active_mob_effects: SyncMutex<FxHashSet<MobEffectRef>>,
 }
 
 impl LivingEntityBase {
@@ -146,6 +150,7 @@ impl LivingEntityBase {
         Self {
             state: SyncMutex::new(LivingEntityState::new(speed)),
             attributes: SyncMutex::new(attributes),
+            active_mob_effects: SyncMutex::new(FxHashSet::default()),
         }
     }
 
@@ -153,6 +158,22 @@ impl LivingEntityBase {
     #[inline]
     pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
         &self.attributes
+    }
+
+    /// Returns whether this living entity has an active vanilla mob effect.
+    #[must_use]
+    pub fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
+        self.active_mob_effects.lock().contains(&effect)
+    }
+
+    /// Sets the presence of a vanilla mob effect.
+    pub fn set_mob_effect_active(&self, effect: MobEffectRef, active: bool) {
+        let mut effects = self.active_mob_effects.lock();
+        if active {
+            effects.insert(effect);
+        } else {
+            effects.remove(&effect);
+        }
     }
 
     /// Gets the cached movement speed used by living movement code.
@@ -409,7 +430,9 @@ impl LivingEntityBase {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_attributes, vanilla_entities};
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_attributes, vanilla_entities, vanilla_mob_effects,
+    };
     use steel_utils::BlockPos;
 
     use super::{LivingEntityBase, LivingTravelInput};
@@ -513,6 +536,18 @@ mod tests {
                 .to_bits(),
             base_speed.to_bits()
         );
+    }
+
+    #[test]
+    fn active_mob_effect_presence_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
+        base.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, true);
+        assert!(base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
+        base.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, false);
+        assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
     }
 
     #[test]
