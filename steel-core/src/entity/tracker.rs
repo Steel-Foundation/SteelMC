@@ -15,10 +15,13 @@ use steel_protocol::packets::game::{
 use steel_registry::RegistryEntry;
 use steel_registry::entity_data::DataValue;
 use steel_utils::ChunkPos;
-use steel_utils::locks::SyncRwLock;
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::entity::{Entity, SharedEntity, WeakEntity};
+use crate::entity::{
+    Entity, EntityMovementSyncPacket, ServerEntityMovementSyncState,
+    ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
+};
 use crate::player::Player;
 
 const BLOCKS_PER_CHUNK: f64 = 16.0;
@@ -33,6 +36,8 @@ pub struct EntityTracker {
 struct TrackedEntity {
     /// Weak reference to the entity. When this fails to upgrade, entity is dead.
     entity: WeakEntity,
+    /// Vanilla `ServerEntity` movement sync state owned by the tracker.
+    server_entity: SyncMutex<ServerEntityMovementSyncState>,
     /// Vanilla client tracking range converted to blocks.
     tracking_range: EntityTrackingRange,
     /// Current chunk used by the player-view predicate.
@@ -121,6 +126,15 @@ impl EntityTracker {
 
         let tracked = TrackedEntity {
             entity: Arc::downgrade(entity),
+            server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
+                pos,
+                entity.velocity(),
+                entity.on_ground(),
+                entity.rotation(),
+                entity.rotation().0,
+                entity.entity_type().update_interval,
+                entity.entity_type().track_deltas,
+            )),
             tracking_range,
             registered_chunk,
             seen_by: SyncRwLock::new(players_to_notify),
@@ -205,6 +219,71 @@ impl EntityTracker {
         // Clean up dead entities we encountered
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
+        }
+    }
+
+    /// Sends tracker-owned movement changes for all tracked entities.
+    ///
+    /// Mirrors vanilla `ChunkMap.tick` driving `ServerEntity.sendChanges`.
+    pub fn send_changes(
+        &self,
+        mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
+        mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
+    ) {
+        let mut dead_entities = Vec::new();
+        let mut packets_to_broadcast = Vec::new();
+        let mut entity_data_to_broadcast = Vec::new();
+
+        self.entities.iter_sync(|entity_id, tracked| {
+            let entity_id = *entity_id;
+            let Some(entity) = tracked.entity.upgrade() else {
+                dead_entities.push(entity_id);
+                return true;
+            };
+
+            if entity.is_removed() {
+                return true;
+            }
+
+            let dirty_entity_data = entity.pack_dirty_entity_data();
+            let has_dirty_entity_data = dirty_entity_data.is_some();
+            let result =
+                tracked
+                    .server_entity
+                    .lock()
+                    .record_send_changes(ServerEntityMovementSyncUpdate {
+                        entity_id,
+                        is_passenger: entity.is_passenger(),
+                        position: entity.position(),
+                        velocity: entity.velocity(),
+                        body_rotation: entity.rotation(),
+                        head_yaw: entity.rotation().0,
+                        on_ground: entity.on_ground(),
+                        needs_velocity_sync: entity.needs_velocity_sync(),
+                        has_dirty_entity_data,
+                        force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
+                    });
+            if result.should_clear_velocity_sync() {
+                entity.clear_velocity_sync();
+            }
+            result.for_each_packet(|packet| packets_to_broadcast.push((entity_id, packet)));
+            if let Some(dirty_entity_data) = dirty_entity_data {
+                entity_data_to_broadcast.push((entity_id, dirty_entity_data));
+            }
+
+            true
+        });
+
+        for entity_id in dead_entities {
+            self.remove_dead_entity(entity_id);
+        }
+
+        for (entity_id, packet) in packets_to_broadcast {
+            broadcast_movement(entity_id, packet);
+        }
+
+        for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
+            broadcast_entity_data(entity_id, dirty_entity_data);
         }
     }
 

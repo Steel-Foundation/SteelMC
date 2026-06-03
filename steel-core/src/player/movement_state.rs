@@ -1,19 +1,12 @@
-//! Movement tracking state for position validation, broadcast delta detection,
-//! and anti-cheat rate limiting.
+//! Movement tracking state for position validation and anti-cheat rate limiting.
 
 use glam::DVec3;
 
-use crate::entity::{EntityMovementSyncPackets, EntityMovementSyncState, EntityMovementSyncUpdate};
 use crate::physics::ClientAuthoredMovementState;
 use crate::player::PlayerInput;
 
-/// Player movement packets force a full entity position sync after this delay.
-const PLAYER_FULL_SYNC_DELAY: i32 = 400;
-
 /// Internal movement tracking state, stored behind a single `SyncMutex` on `Player`.
 pub struct MovementState {
-    /// Entity movement sync state used for tracking movement packets.
-    entity_sync: EntityMovementSyncState,
     /// Vanilla validation state for client-authored body movement.
     client_movement: ClientAuthoredMovementState,
     /// Vanilla validation state for the controlled root vehicle.
@@ -28,7 +21,6 @@ impl MovementState {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entity_sync: EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0),
             client_movement: ClientAuthoredMovementState::new(),
             client_vehicle_movement: ClientAuthoredMovementState::new(),
             client_vehicle_id: None,
@@ -74,14 +66,8 @@ impl MovementState {
         Some(self.client_vehicle_movement.good_positions())
     }
 
-    /// Resets movement validation and tracking bases after a server position sync.
-    pub(super) fn reset_for_position_sync(
-        &mut self,
-        position: DVec3,
-        on_ground: bool,
-        rotation: (f32, f32),
-    ) {
-        self.entity_sync = EntityMovementSyncState::new(position, on_ground, rotation, rotation.0);
+    /// Resets movement validation bases after a server position sync.
+    pub(super) const fn reset_for_position_sync(&mut self, position: DVec3) {
         self.client_movement.reset_for_position_sync(position);
     }
 
@@ -182,22 +168,12 @@ impl MovementState {
         self.client_vehicle_movement
             .tick_client_floating(true, maximum_flying_ticks)
     }
-
-    /// Selects and records packets for an accepted player-authored movement.
-    pub(super) fn record_accepted_movement_sync(
-        &mut self,
-        update: EntityMovementSyncUpdate,
-    ) -> EntityMovementSyncPackets {
-        self.entity_sync
-            .record_update_with_full_delay(update, PLAYER_FULL_SYNC_DELAY)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
 
-    use crate::entity::EntityMovementSyncUpdate;
     use crate::player::PlayerInput;
 
     use super::MovementState;
@@ -224,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_reset_updates_both_good_positions_and_packet_base() {
+    fn tick_reset_updates_both_good_positions_and_packet_count() {
         let mut state = MovementState::new();
         state.mark_last_good_position(DVec3::new(1.0, 2.0, 3.0));
         state.record_move_packet_delta();
@@ -240,28 +216,17 @@ mod tests {
     }
 
     #[test]
-    fn position_sync_reset_clears_packet_counts_known_movement_and_rotation() {
+    fn position_sync_reset_clears_packet_counts_and_known_movement() {
         let mut state = MovementState::new();
         state.record_move_packet_delta();
         state.set_last_known_client_movement(DVec3::new(0.1, 0.0, 0.0));
 
-        state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0), true, (90.0, 45.0));
+        state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0));
 
         assert_eq!(state.good_positions().0, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
-        let packets = state.record_accepted_movement_sync(EntityMovementSyncUpdate {
-            entity_id: 1,
-            has_position: false,
-            has_rotation: true,
-            position: DVec3::new(2.0, 3.0, 4.0),
-            velocity: DVec3::ZERO,
-            body_rotation: (90.0, 45.0),
-            head_yaw: 90.0,
-            on_ground: true,
-        });
-        assert!(packets.is_empty());
     }
 
     #[test]

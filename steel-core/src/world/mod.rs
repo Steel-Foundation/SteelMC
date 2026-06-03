@@ -19,7 +19,7 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CGameEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate,
-    CSound, CSystemChat, GameEventType, SoundSource,
+    CSetEntityData, CSound, CSystemChat, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -1047,6 +1047,29 @@ impl World {
             start.elapsed()
         };
 
+        {
+            let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
+            self.entity_tracker.send_changes(
+                |entity_id, packet| {
+                    self.broadcast_movement_sync_to_entity_trackers(entity_id, packet, None);
+                },
+                |entity_id, dirty_entity_data| {
+                    let packet = CSetEntityData::new(entity_id, dirty_entity_data);
+                    let Ok(encoded) = EncodedPacket::from_bare(
+                        packet,
+                        self.compression,
+                        ConnectionProtocol::Play,
+                    ) else {
+                        return;
+                    };
+                    self.broadcast_to_entity_trackers_encoded(entity_id, encoded.clone(), None);
+                    if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                        player.connection.send_encoded(encoded);
+                    }
+                },
+            );
+        }
+
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
             let _span = tracing::trace_span!("broadcast_latency").entered();
             self.broadcast_player_latency_updates();
@@ -1520,19 +1543,6 @@ impl World {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
-            return;
-        };
-        self.broadcast_to_nearby_encoded(chunk, encoded, exclude);
-    }
-
-    /// Broadcasts an entity movement sync packet to all players tracking a chunk.
-    pub fn broadcast_movement_sync_to_nearby(
-        &self,
-        chunk: ChunkPos,
-        packet: EntityMovementSyncPacket,
-        exclude: Option<i32>,
-    ) {
-        let Some(encoded) = self.encode_movement_sync_packet(packet) else {
             return;
         };
         self.broadcast_to_nearby_encoded(chunk, encoded, exclude);

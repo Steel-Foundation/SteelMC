@@ -10,6 +10,10 @@ use steel_protocol::packets::game::{
 pub const POSITION_SYNC_THRESHOLD: f64 = 7.629_394_5e-6;
 /// Squared velocity delta needed before vanilla sends an entity motion packet.
 pub const VELOCITY_SYNC_THRESHOLD: f64 = 1.0e-7;
+/// Vanilla `ServerEntity.FORCED_POS_UPDATE_PERIOD`.
+pub const FORCED_POS_UPDATE_PERIOD: i32 = 60;
+/// Vanilla `ServerEntity.FORCED_TELEPORT_PERIOD`.
+pub const FORCED_TELEPORT_PERIOD: i32 = 400;
 
 /// Packed body rotation used by entity movement packets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +71,12 @@ impl EntityRotationSyncState {
 
         self.last_body_rotation = packed;
         Some(packed)
+    }
+
+    /// Returns whether packed body yaw or pitch changed since the last sync.
+    #[must_use]
+    pub fn body_rotation_changed(self, rotation: (f32, f32)) -> bool {
+        PackedEntityRotation::from_degrees(rotation) != self.last_body_rotation
     }
 
     /// Marks a body rotation as sent because a full position sync includes it.
@@ -371,6 +381,12 @@ impl EntityPositionSyncState {
         self.sync_delay = 0;
     }
 
+    /// Resets the delta base when vanilla updates `VecDeltaCodec` without a packet.
+    pub const fn reset_base_without_packet(&mut self, position: DVec3, on_ground: bool) {
+        self.last_sent_position = position;
+        self.last_sent_on_ground = on_ground;
+    }
+
     /// Selects and records the next movement sync form.
     ///
     /// Callers decide whether a sync is needed and whether vanilla forces a full
@@ -462,6 +478,239 @@ pub struct EntityMovementSyncUpdate {
     pub head_yaw: f32,
     /// Current on-ground flag.
     pub on_ground: bool,
+}
+
+/// Per-tracked-entity movement state owned by the entity tracker.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ServerEntityMovementSyncState {
+    position: EntityPositionSyncState,
+    rotation: EntityRotationSyncState,
+    velocity: EntityVelocitySyncState,
+    update_interval: i32,
+    track_delta: bool,
+    tick_count: i32,
+    teleport_delay: i32,
+    was_riding: bool,
+    was_on_ground: bool,
+}
+
+/// Runtime values accepted by vanilla `ServerEntity.sendChanges` movement sync.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ServerEntityMovementSyncUpdate {
+    /// Entity network id.
+    pub entity_id: i32,
+    /// Whether the entity is currently riding another entity.
+    pub is_passenger: bool,
+    /// Current entity tracking position.
+    pub position: DVec3,
+    /// Current entity velocity.
+    pub velocity: DVec3,
+    /// Current body yaw and pitch in degrees.
+    pub body_rotation: (f32, f32),
+    /// Current head yaw in degrees.
+    pub head_yaw: f32,
+    /// Current on-ground flag.
+    pub on_ground: bool,
+    /// Vanilla `Entity.needsSync`.
+    pub needs_velocity_sync: bool,
+    /// Whether synced entity data is dirty this tick.
+    pub has_dirty_entity_data: bool,
+    /// Vanilla living fall-flying velocity sync exception.
+    pub force_velocity_sync: bool,
+}
+
+/// Movement packets and side effects selected by one `ServerEntity.sendChanges` pass.
+#[derive(Clone, Debug, Default)]
+pub struct ServerEntityMovementSyncResult {
+    packets: Vec<EntityMovementSyncPacket>,
+    clear_velocity_sync: bool,
+}
+
+impl ServerEntityMovementSyncResult {
+    /// Returns whether vanilla `Entity.needsSync` should be cleared after processing.
+    #[must_use]
+    pub const fn should_clear_velocity_sync(&self) -> bool {
+        self.clear_velocity_sync
+    }
+
+    /// Visits selected packets in vanilla send order.
+    pub fn for_each_packet(self, send: impl FnMut(EntityMovementSyncPacket)) {
+        self.packets.into_iter().for_each(send);
+    }
+}
+
+impl ServerEntityMovementSyncState {
+    /// Creates movement sync state for a newly tracked entity.
+    #[must_use]
+    pub fn new(
+        position: DVec3,
+        velocity: DVec3,
+        on_ground: bool,
+        body_rotation: (f32, f32),
+        head_yaw: f32,
+        update_interval: i32,
+        track_delta: bool,
+    ) -> Self {
+        Self {
+            position: EntityPositionSyncState::new(position, on_ground),
+            rotation: EntityRotationSyncState::new(body_rotation, head_yaw),
+            velocity: EntityVelocitySyncState::new(velocity),
+            update_interval,
+            track_delta,
+            tick_count: 0,
+            teleport_delay: 0,
+            was_riding: false,
+            was_on_ground: on_ground,
+        }
+    }
+
+    /// Selects packets for a vanilla `ServerEntity.sendChanges` movement pass.
+    #[must_use]
+    pub fn record_send_changes(
+        &mut self,
+        update: ServerEntityMovementSyncUpdate,
+    ) -> ServerEntityMovementSyncResult {
+        let mut result = ServerEntityMovementSyncResult::default();
+        let should_process =
+            self.should_process(update.needs_velocity_sync, update.has_dirty_entity_data);
+        if should_process {
+            result.clear_velocity_sync = update.needs_velocity_sync;
+            let should_send_rotation = self.rotation.body_rotation_changed(update.body_rotation);
+
+            if update.is_passenger {
+                self.record_passenger_update(update, should_send_rotation, &mut result);
+            } else {
+                self.record_non_passenger_update(update, should_send_rotation, &mut result);
+            }
+
+            if let Some(head_y_rot) = self.rotation.record_head_yaw(update.head_yaw) {
+                result
+                    .packets
+                    .push(EntityMovementSyncPacket::from(CRotateHead {
+                        entity_id: update.entity_id,
+                        head_y_rot,
+                    }));
+            }
+        }
+
+        self.tick_count = self.tick_count.wrapping_add(1);
+        result
+    }
+
+    fn should_process(self, needs_velocity_sync: bool, has_dirty_entity_data: bool) -> bool {
+        needs_velocity_sync
+            || has_dirty_entity_data
+            || (self.update_interval > 0 && self.tick_count % self.update_interval == 0)
+    }
+
+    fn record_passenger_update(
+        &mut self,
+        update: ServerEntityMovementSyncUpdate,
+        should_send_rotation: bool,
+        result: &mut ServerEntityMovementSyncResult,
+    ) {
+        if should_send_rotation
+            && let Some(body_rotation) = self.rotation.record_body_rotation(update.body_rotation)
+        {
+            result
+                .packets
+                .push(EntityMovementSyncPacket::from(CMoveEntityRot {
+                    entity_id: update.entity_id,
+                    y_rot: body_rotation.yaw(),
+                    x_rot: body_rotation.pitch(),
+                    on_ground: update.on_ground,
+                }));
+        }
+
+        self.position
+            .reset_base_without_packet(update.position, update.on_ground);
+        self.was_riding = true;
+    }
+
+    fn record_non_passenger_update(
+        &mut self,
+        update: ServerEntityMovementSyncUpdate,
+        should_send_rotation: bool,
+        result: &mut ServerEntityMovementSyncResult,
+    ) {
+        self.teleport_delay = self.teleport_delay.wrapping_add(1);
+
+        let position_changed = self.position.position_changed(update.position);
+        let should_send_position =
+            position_changed || self.tick_count % FORCED_POS_UPDATE_PERIOD == 0;
+        let delta_too_big = self.position.packed_delta(update.position).is_none();
+        let force_full = delta_too_big
+            || self.teleport_delay > FORCED_TELEPORT_PERIOD
+            || self.was_riding
+            || self.was_on_ground != update.on_ground;
+
+        if update.needs_velocity_sync || self.track_delta || update.force_velocity_sync {
+            if let Some(packet) = self
+                .velocity
+                .record_velocity_sync(update.entity_id, update.velocity)
+            {
+                result.packets.push(EntityMovementSyncPacket::from(packet));
+            }
+        }
+
+        if force_full {
+            self.was_on_ground = update.on_ground;
+            self.teleport_delay = 0;
+            let decision =
+                self.position
+                    .record_movement_sync(update.position, update.on_ground, true);
+            self.rotation.mark_body_rotation_sent(update.body_rotation);
+            result.packets.push(EntityMovementSyncPacket::from(
+                decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
+                    update.entity_id,
+                    update.position,
+                    update.velocity,
+                    update.body_rotation,
+                    update.on_ground,
+                )),
+            ));
+        } else if should_send_position && should_send_rotation {
+            let decision =
+                self.position
+                    .record_movement_sync(update.position, update.on_ground, false);
+            self.rotation.mark_body_rotation_sent(update.body_rotation);
+            result.packets.push(EntityMovementSyncPacket::from(
+                decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
+                    update.entity_id,
+                    update.position,
+                    update.velocity,
+                    update.body_rotation,
+                    update.on_ground,
+                )),
+            ));
+        } else if should_send_position {
+            let decision =
+                self.position
+                    .record_movement_sync(update.position, update.on_ground, false);
+            result.packets.push(EntityMovementSyncPacket::from(
+                decision.into_position_packet(EntityPositionSyncSnapshot::new(
+                    update.entity_id,
+                    update.position,
+                    update.velocity,
+                    update.body_rotation,
+                    update.on_ground,
+                )),
+            ));
+        } else if should_send_rotation
+            && let Some(body_rotation) = self.rotation.record_body_rotation(update.body_rotation)
+        {
+            result
+                .packets
+                .push(EntityMovementSyncPacket::from(CMoveEntityRot {
+                    entity_id: update.entity_id,
+                    y_rot: body_rotation.yaw(),
+                    x_rot: body_rotation.pitch(),
+                    on_ground: update.on_ground,
+                }));
+        }
+
+        self.was_riding = false;
+    }
 }
 
 impl EntityMovementSyncState {
@@ -587,7 +836,8 @@ mod tests {
         EntityMovementSyncPacket, EntityMovementSyncState, EntityMovementSyncUpdate,
         EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
         EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
-        EntityVelocitySyncState, PackedEntityRotation,
+        EntityVelocitySyncState, PackedEntityRotation, ServerEntityMovementSyncState,
+        ServerEntityMovementSyncUpdate,
     };
 
     #[test]
@@ -803,6 +1053,165 @@ mod tests {
         let packets = state.record_update_with_full_delay(rotation_only_update, 400);
 
         assert!(packets.is_empty());
+    }
+
+    fn collect_server_packets(
+        state: &mut ServerEntityMovementSyncState,
+        update: ServerEntityMovementSyncUpdate,
+    ) -> Vec<EntityMovementSyncPacket> {
+        let result = state.record_send_changes(update);
+        let mut packets = Vec::new();
+        result.for_each_packet(|packet| packets.push(packet));
+        packets
+    }
+
+    fn server_update(position: DVec3, velocity: DVec3) -> ServerEntityMovementSyncUpdate {
+        ServerEntityMovementSyncUpdate {
+            entity_id: 12,
+            is_passenger: false,
+            position,
+            velocity,
+            body_rotation: (0.0, 0.0),
+            head_yaw: 0.0,
+            on_ground: false,
+            needs_velocity_sync: false,
+            has_dirty_entity_data: false,
+            force_velocity_sync: false,
+        }
+    }
+
+    #[test]
+    fn server_entity_sync_sends_track_delta_velocity_before_position() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            true,
+        );
+        let packets = collect_server_packets(
+            &mut state,
+            server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::new(0.001, 0.0, 0.0)),
+        );
+
+        assert_eq!(packets.len(), 2);
+        assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
+        assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn server_entity_sync_skips_velocity_for_non_track_delta_without_needs_sync() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            2,
+            false,
+        );
+        let packets = collect_server_packets(
+            &mut state,
+            server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::new(0.001, 0.0, 0.0)),
+        );
+
+        assert_eq!(packets.len(), 1);
+        assert!(matches!(packets[0], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn server_entity_sync_processes_and_clears_explicit_needs_sync() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            false,
+        );
+        let mut update = server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::new(0.001, 0.0, 0.0));
+        update.needs_velocity_sync = true;
+
+        let result = state.record_send_changes(update);
+        assert!(result.should_clear_velocity_sync());
+        let mut packets = Vec::new();
+        result.for_each_packet(|packet| packets.push(packet));
+
+        assert_eq!(packets.len(), 2);
+        assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
+        assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn server_entity_sync_processes_dirty_data_gate_between_intervals() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            false,
+        );
+        let first_packets =
+            collect_server_packets(&mut state, server_update(DVec3::ZERO, DVec3::ZERO));
+        assert_eq!(first_packets.len(), 1);
+
+        let mut update = server_update(DVec3::ZERO, DVec3::ZERO);
+        update.body_rotation = (2.0, 0.0);
+        update.has_dirty_entity_data = true;
+
+        let packets = collect_server_packets(&mut state, update);
+
+        assert_eq!(packets.len(), 1);
+        assert!(matches!(packets[0], EntityMovementSyncPacket::Rotation(_)));
+    }
+
+    #[test]
+    fn server_entity_sync_forces_full_position_when_on_ground_changes() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            false,
+        );
+        let mut update = server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::ZERO);
+        update.on_ground = true;
+
+        let packets = collect_server_packets(&mut state, update);
+
+        assert_eq!(packets.len(), 1);
+        assert!(matches!(
+            packets[0],
+            EntityMovementSyncPacket::PositionSync(_)
+        ));
+    }
+
+    #[test]
+    fn server_entity_sync_rotates_passenger_without_position_packet() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            1,
+            true,
+        );
+        let mut update = server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::new(0.001, 0.0, 0.0));
+        update.is_passenger = true;
+        update.body_rotation = (2.0, 0.0);
+
+        let packets = collect_server_packets(&mut state, update);
+
+        assert_eq!(packets.len(), 1);
+        assert!(matches!(packets[0], EntityMovementSyncPacket::Rotation(_)));
     }
 
     #[test]

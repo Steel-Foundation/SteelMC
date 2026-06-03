@@ -119,6 +119,16 @@ impl EntityLevelCallback for PlayerEntityCallback {
                 .entity_cache()
                 .on_section_change(self.entity_id, old_section, new_section);
 
+            let old_chunk = ChunkPos::new(old_section.x(), old_section.z());
+            let new_chunk = ChunkPos::new(new_section.x(), new_section.z());
+            world.entity_tracker().on_entity_section_change(
+                self.entity_id,
+                old_chunk,
+                new_chunk,
+                |chunk| world.player_area_map.get_tracking_players(chunk),
+                |player_id| world.players.get_by_entity_id(player_id),
+            );
+
             if let Some(player) = world.players.get_by_entity_id(self.entity_id)
                 && let Some(view) = *player.last_tracking_view.lock()
             {

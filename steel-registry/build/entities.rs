@@ -47,6 +47,22 @@ fn default_can_serialize() -> bool {
     true
 }
 
+fn vanilla_track_deltas(entity_type_name: &str) -> bool {
+    !matches!(
+        entity_type_name,
+        "player"
+            | "llama_spit"
+            | "wither"
+            | "bat"
+            | "item_frame"
+            | "glow_item_frame"
+            | "leash_knot"
+            | "painting"
+            | "end_crystal"
+            | "evoker_fangs"
+    )
+}
+
 #[derive(Deserialize)]
 struct FlagsEntry {
     is_pushable: bool,
@@ -115,6 +131,7 @@ pub(crate) fn build() -> TokenStream {
         let entity_type_key = &entity_type.name;
         let client_tracking_range = entity_type.client_tracking_range;
         let update_interval = entity_type.update_interval;
+        let track_deltas = vanilla_track_deltas(entity_type_key);
 
         // Dimensions
         let width = Literal::f32_suffixed(entity_type.width);
@@ -166,6 +183,7 @@ pub(crate) fn build() -> TokenStream {
                 key: Identifier::vanilla_static(#entity_type_key),
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
+                track_deltas: #track_deltas,
                 dimensions: EntityDimensions::new_with_attachments(
                     #width,
                     #height,

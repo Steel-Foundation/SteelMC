@@ -589,7 +589,7 @@ pub use movement_sync::{
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
     EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
-    PackedEntityRotation,
+    PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
@@ -1104,16 +1104,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.sync_base_fire_freeze_entity_data();
     }
 
-    /// Sends position/velocity changes to tracking players.
-    ///
-    /// Called every tick by `EntityStorage` after `tick()`, mirrors vanilla's
-    /// `ServerEntity.sendChanges()`. Handles position sync based on `updateInterval`,
-    /// velocity sync when `needsSync` is set, and on-ground state changes.
-    ///
-    /// Default implementation does nothing. Override for entities that need
-    /// position/velocity synchronization (items, projectiles, etc.).
-    fn send_changes(&self, _tick_count: i32) {}
-
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the entity is not in a world or the world was dropped.
@@ -1178,6 +1168,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Returns true for entities that implement vanilla living-entity behavior.
     fn is_living_entity(&self) -> bool {
+        false
+    }
+
+    /// Returns true when vanilla `ServerEntity` should force velocity sync for fall flying.
+    fn forces_fall_flying_velocity_sync(&self) -> bool {
         false
     }
 

@@ -44,7 +44,7 @@ use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::CSetExperience,
+    packets::game::{CSetEntityData, CSetExperience},
 };
 use teleport_state::TeleportState;
 use tick_state::PlayerTickState;
@@ -56,8 +56,7 @@ pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRespawn,
-    CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes, ClientCommandAction,
-    SoundSource,
+    CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes, ClientCommandAction, SoundSource,
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -439,7 +438,6 @@ impl Player {
 
         self.broadcast_inventory_changes();
         self.update_pose();
-        self.sync_entity_data();
 
         {
             let health = self.get_health();
@@ -478,22 +476,15 @@ impl Player {
             let snapshots = self.attributes().lock().drain_dirty_sync();
             if !snapshots.is_empty() {
                 let packet = CUpdateAttributes::new(self.id(), snapshots);
-                let chunk_pos = *self.last_chunk_pos.lock();
                 self.get_world()
-                    .broadcast_to_nearby(chunk_pos, packet, None);
+                    .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+                self.send_packet(packet);
             }
         }
 
         self.connection.tick();
 
-        let world = self.get_world();
-        let mut post_tick = |entity: &SharedEntity| {
-            entity.send_changes(server_tick);
-            if let Some(dirty_data) = entity.pack_dirty_entity_data() {
-                let packet = CSetEntityData::new(entity.id(), dirty_data);
-                world.broadcast_to_entity_trackers(entity.id(), packet, None);
-            }
-        };
+        let mut post_tick = |_entity: &SharedEntity| {};
         tick_vehicle_passengers(self, server_tick, &mut post_tick);
     }
 
@@ -522,13 +513,13 @@ impl Player {
         }
     }
 
-    /// Syncs dirty entity data to nearby players.
+    /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
             let packet = CSetEntityData::new(self.id(), dirty_values);
-            let chunk_pos = *self.last_chunk_pos.lock();
             self.get_world()
-                .broadcast_to_nearby(chunk_pos, packet, None);
+                .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+            self.send_packet(packet);
         }
     }
 
@@ -1079,9 +1070,7 @@ impl Player {
         self.set_position(position);
         self.set_rotation(rotation);
         self.set_old_position_to_current();
-        self.movement
-            .lock()
-            .reset_for_position_sync(position, self.on_ground(), rotation);
+        self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
         self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);
@@ -1199,6 +1188,10 @@ impl Entity for Player {
 
     fn is_living_entity(&self) -> bool {
         true
+    }
+
+    fn forces_fall_flying_velocity_sync(&self) -> bool {
+        self.is_fall_flying()
     }
 
     fn blocks_building(&self) -> bool {

@@ -18,9 +18,7 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementSyncPacket,
-    EntityPositionSyncSnapshot, EntityPositionSyncState, EntitySyncedData, EntityVelocitySyncState,
-    RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -30,7 +28,7 @@ use crate::world::World;
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_protocol::packets::game::{CSetEntityMotion, CTakeItemEntity};
+use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::BlockPos;
 
@@ -88,21 +86,6 @@ impl ItemEntityState {
     }
 }
 
-/// Last sent movement state for item entity tracking.
-struct ItemEntitySyncState {
-    position: EntityPositionSyncState,
-    velocity: EntityVelocitySyncState,
-}
-
-impl ItemEntitySyncState {
-    const fn new(position: DVec3, velocity: DVec3, on_ground: bool) -> Self {
-        Self {
-            position: EntityPositionSyncState::new(position, on_ground),
-            velocity: EntityVelocitySyncState::new(velocity),
-        }
-    }
-}
-
 /// A dropped item entity.
 ///
 /// Mirrors vanilla's `ItemEntity` behavior:
@@ -120,8 +103,6 @@ pub struct ItemEntity {
 
     /// Item-specific mutable state.
     item_state: SyncMutex<ItemEntityState>,
-    /// Movement sync state used by tracking.
-    sync_state: SyncMutex<ItemEntitySyncState>,
 }
 
 impl ItemEntity {
@@ -166,7 +147,6 @@ impl ItemEntity {
             ),
             entity_data: SyncMutex::new(entity_data),
             item_state: SyncMutex::new(ItemEntityState::new()),
-            sync_state: SyncMutex::new(ItemEntitySyncState::new(position, velocity, false)),
         }
     }
 
@@ -176,14 +156,10 @@ impl ItemEntity {
     /// is restored via `load_additional()` after this constructor.
     #[must_use]
     pub fn from_saved(load: EntityBaseLoad) -> Self {
-        let position = load.position;
-        let velocity = load.velocity;
-        let on_ground = load.on_ground;
         Self {
             base: EntityBase::from_load(load, vanilla_entities::ITEM.dimensions),
             entity_data: SyncMutex::new(ItemEntityData::new()),
             item_state: SyncMutex::new(ItemEntityState::new()),
-            sync_state: SyncMutex::new(ItemEntitySyncState::new(position, velocity, on_ground)),
         }
     }
 
@@ -490,71 +466,6 @@ impl ItemEntity {
         }
     }
 
-    // === Network Sync ===
-
-    /// Checks if velocity should be synced and returns the packet if needed.
-    ///
-    /// Vanilla syncs velocity when:
-    /// - Velocity changed by more than 1e-7 squared distance
-    /// - OR velocity became zero (to stop client-side prediction)
-    fn check_velocity_sync(&self) -> Option<CSetEntityMotion> {
-        let current = self.velocity();
-        self.sync_state
-            .lock()
-            .velocity
-            .record_velocity_sync(self.id(), current)
-    }
-
-    /// Checks if position should be synced and returns the appropriate packet.
-    ///
-    /// Uses delta encoding (`CMoveEntityPos`) for small movements, and falls back
-    /// to absolute position sync (`CEntityPositionSync`) when:
-    /// - Delta is too large for i16 encoding
-    /// - On-ground state changed
-    /// - Periodic full sync (every 60 `ServerEntity` ticks)
-    fn check_position_sync(
-        &self,
-        server_entity_tick_count: i32,
-    ) -> Option<EntityMovementSyncPacket> {
-        let current_pos = self.position();
-        let current_on_ground = self.on_ground();
-        let mut sync_state = self.sync_state.lock();
-        let last_on_ground = sync_state.position.last_sent_on_ground();
-
-        let position_changed = sync_state.position.position_changed(current_pos);
-        let on_ground_changed = current_on_ground != last_on_ground;
-        // Vanilla uses `ServerEntity.tickCount % 60` for periodic full position sync.
-        let force_periodic_sync = server_entity_tick_count % 60 == 0;
-
-        // Vanilla: boolean pos = positionChanged || ServerEntity.tickCount % 60 == 0;
-        // We sync if position changed, on_ground changed, or periodic
-        if !position_changed && !on_ground_changed && !force_periodic_sync {
-            return None;
-        }
-
-        // Use full sync if delta overflow or on-ground changed or periodic
-        // (vanilla: ServerEntity.sendChanges line 123)
-        let force_full = on_ground_changed || force_periodic_sync;
-        let decision =
-            sync_state
-                .position
-                .record_movement_sync(current_pos, current_on_ground, force_full);
-
-        // NOTE: We do NOT update last_sent_velocity here because the client
-        // ignores the velocity field in CEntityPositionSync for non-authoritative
-        // entities (like items). The velocity sync is handled separately by
-        // check_velocity_sync() which sends CSetEntityMotion.
-        Some(EntityMovementSyncPacket::from(
-            decision.into_position_packet(EntityPositionSyncSnapshot::new(
-                self.id(),
-                current_pos,
-                self.velocity(),
-                self.rotation(),
-                current_on_ground,
-            )),
-        ))
-    }
-
     fn apply_fluid_movement_or_gravity(&self) {
         let contact = self.fluid_contact();
         if contact.water_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
@@ -715,40 +626,6 @@ impl Entity for ItemEntity {
         if self.on_ground() != old_on_ground {
             self.mark_velocity_sync();
         }
-    }
-
-    fn send_changes(&self, tick_count: i32) {
-        let Some(world) = self.level() else {
-            return;
-        };
-
-        let update_interval = self.entity_type().update_interval; // 20 for items
-        let needs_sync = self.needs_velocity_sync();
-
-        // Only send updates on the update interval OR when needsSync is set
-        // (vanilla: ServerEntity.sendChanges line 97)
-        if tick_count % update_interval != 0 && !needs_sync {
-            return;
-        }
-
-        // Vanilla sends velocity BEFORE position (ServerEntity.sendChanges lines 168-182).
-        // Items have trackDelta=true, so we ALWAYS check velocity when in the update window.
-        //
-        // CRITICAL: The client ignores velocity in CEntityPositionSync for non-authoritative
-        // entities (like items). The client runs its own physics simulation and accumulates
-        // gravity in deltaMovement. We MUST send CSetEntityMotion to override the client's
-        // deltaMovement, otherwise the client's accumulated gravity causes visual desync.
-        if let Some(vel_packet) = self.check_velocity_sync() {
-            world.broadcast_movement_sync_to_entity_trackers(self.id(), vel_packet.into(), None);
-        }
-
-        // Send position update if needed (vanilla: ServerEntity.sendChanges line 182)
-        if let Some(packet) = self.check_position_sync(tick_count) {
-            world.broadcast_movement_sync_to_entity_trackers(self.id(), packet, None);
-        }
-
-        // Clear needsSync after processing (vanilla: ServerEntity.sendChanges line 193)
-        self.clear_velocity_sync();
     }
 
     fn get_default_gravity(&self) -> f64 {

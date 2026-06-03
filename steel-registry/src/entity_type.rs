@@ -219,6 +219,8 @@ pub struct EntityType {
     pub key: Identifier,
     pub client_tracking_range: i32,
     pub update_interval: i32,
+    /// Whether vanilla `ServerEntity` tracks velocity deltas for this type.
+    pub track_deltas: bool,
 
     /// Default entity dimensions.
     pub dimensions: EntityDimensions,
@@ -310,6 +312,8 @@ crate::impl_tagged_registry!(EntityTypeRegistry, types_by_key, "entity type");
 
 #[cfg(test)]
 mod tests {
+    use crate::vanilla_entities;
+
     use super::{EntityAttachment, EntityAttachmentPoint, EntityAttachments, EntityDimensions};
 
     fn assert_vec3_close(left: glam::DVec3, right: glam::DVec3) {
@@ -364,5 +368,16 @@ mod tests {
                 .get_clamped(EntityAttachment::WardenChest, 0, 0.0, dimensions),
             glam::DVec3::new(0.0, 0.9, 0.0),
         );
+    }
+
+    #[test]
+    fn vanilla_track_deltas_exclusions_match_entity_type_method() {
+        assert!(!vanilla_entities::PLAYER.track_deltas);
+        assert!(!vanilla_entities::BAT.track_deltas);
+        assert!(!vanilla_entities::ITEM_FRAME.track_deltas);
+        assert!(!vanilla_entities::EVOKER_FANGS.track_deltas);
+
+        assert!(vanilla_entities::ITEM.track_deltas);
+        assert!(vanilla_entities::ARROW.track_deltas);
     }
 }

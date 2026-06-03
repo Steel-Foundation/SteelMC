@@ -7,7 +7,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use steel_protocol::packets::game::CSetEntityData;
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncRwLock;
 
@@ -101,7 +100,7 @@ impl EntityStorage {
             .collect()
     }
 
-    /// Ticks all entities in this chunk and broadcasts dirty entity data.
+    /// Ticks all entities in this chunk.
     ///
     /// Called from `LevelChunk::tick()`.
     /// Returns `true` if any entities were ticked (chunk should be marked dirty).
@@ -109,10 +108,8 @@ impl EntityStorage {
     /// Uses `tick_count` to prevent double-ticking: if an entity moves to a
     /// different chunk during its tick and that chunk is ticked later in the
     /// same server tick, the entity will be skipped.
-    pub fn tick(&self, world: &Arc<World>, _chunk_pos: ChunkPos, tick_count: i32) -> bool {
-        let mut post_tick = |entity: &SharedEntity| {
-            Self::sync_after_tick(world, entity, tick_count);
-        };
+    pub fn tick(&self, _world: &Arc<World>, _chunk_pos: ChunkPos, tick_count: i32) -> bool {
+        let mut post_tick = |_entity: &SharedEntity| {};
         self.tick_entities(tick_count, &mut post_tick)
     }
 
@@ -192,17 +189,6 @@ impl EntityStorage {
         post_tick(entity);
 
         tick_vehicle_passengers(entity.as_ref(), tick_count, post_tick);
-    }
-
-    fn sync_after_tick(world: &Arc<World>, entity: &SharedEntity, tick_count: i32) {
-        // Send position/velocity changes (mirrors vanilla's ServerEntity.sendChanges()).
-        entity.send_changes(tick_count);
-
-        // Broadcast dirty entity data (base tick behavior).
-        if let Some(dirty_data) = entity.pack_dirty_entity_data() {
-            let packet = CSetEntityData::new(entity.id(), dirty_data);
-            world.broadcast_to_entity_trackers(entity.id(), packet, None);
-        }
     }
 
     /// Clears all entities from storage.

@@ -13,12 +13,10 @@ use steel_protocol::packets::game::{
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::vanilla_mob_effects;
+use steel_utils::translations;
 use steel_utils::types::GameType;
-use steel_utils::{ChunkPos, translations};
 
-use crate::entity::{
-    AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity, get_input_vector,
-};
+use crate::entity::{AcceptedClientMovement, Entity, LivingEntity, get_input_vector};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
@@ -68,10 +66,6 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
 struct AcceptedMovementBroadcast {
     has_pos: bool,
     has_rot: bool,
-    pos: DVec3,
-    yaw: f32,
-    pitch: f32,
-    on_ground: bool,
     client_delta: DVec3,
 }
 
@@ -256,10 +250,6 @@ impl Player {
                 AcceptedMovementBroadcast {
                     has_pos: false,
                     has_rot: packet.has_rot,
-                    pos: passenger_pos,
-                    yaw: target_yaw,
-                    pitch: target_pitch,
-                    on_ground: self.on_ground(),
                     client_delta: DVec3::ZERO,
                 },
             );
@@ -434,10 +424,6 @@ impl Player {
             AcceptedMovementBroadcast {
                 has_pos: packet.has_pos,
                 has_rot: packet.has_rot,
-                pos: target_pos,
-                yaw: target_yaw,
-                pitch: target_pitch,
-                on_ground: packet.on_ground,
                 client_delta,
             },
         );
@@ -591,31 +577,18 @@ impl Player {
             .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
     }
 
-    fn broadcast_accepted_movement(&self, world: &Arc<World>, movement: AcceptedMovementBroadcast) {
+    fn broadcast_accepted_movement(
+        &self,
+        _world: &Arc<World>,
+        movement: AcceptedMovementBroadcast,
+    ) {
         if !movement.has_pos && !movement.has_rot {
             return;
         }
 
-        let new_chunk = ChunkPos::from_entity_pos(movement.pos);
-        let body_rotation = (movement.yaw, movement.pitch);
-        let packets = {
-            let mut state = self.movement.lock();
-            state.set_last_known_client_movement(movement.client_delta);
-            state.record_accepted_movement_sync(EntityMovementSyncUpdate {
-                entity_id: self.id(),
-                has_position: movement.has_pos,
-                has_rotation: movement.has_rot,
-                position: movement.pos,
-                velocity: self.velocity(),
-                body_rotation,
-                head_yaw: movement.yaw,
-                on_ground: movement.on_ground,
-            })
-        };
-
-        packets.for_each(|packet| {
-            world.broadcast_movement_sync_to_nearby(new_chunk, packet, Some(self.id()));
-        });
+        self.movement
+            .lock()
+            .set_last_known_client_movement(movement.client_delta);
     }
 
     fn record_client_floating(
