@@ -15,7 +15,7 @@ use super::entities::{
     BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity, ItemFrameEntity,
     RawEntity,
 };
-use super::{EntityBaseLoad, SharedEntity, next_entity_id};
+use super::{EntityBaseLoad, EntityFireFreezeState, SharedEntity, next_entity_id};
 use crate::world::World;
 
 /// Factory function type for creating entities.
@@ -44,6 +44,8 @@ pub struct EntityLoadRequest {
     pub rotation: (f32, f32),
     /// Restored accumulated fall distance.
     pub fall_distance: f64,
+    /// Restored vanilla fire/freeze state.
+    pub fire_freeze: EntityFireFreezeState,
     /// Restored ground-contact flag.
     pub on_ground: bool,
     /// World reference for the loaded entity.
@@ -61,6 +63,7 @@ impl EntityLoadRequest {
                 velocity: self.velocity,
                 rotation: self.rotation,
                 fall_distance: self.fall_distance,
+                fire_freeze: self.fire_freeze,
                 on_ground: self.on_ground,
                 world: self.world,
             },
@@ -308,6 +311,7 @@ mod tests {
                 velocity: DVec3::new(0.1, 0.0, 0.2),
                 rotation: (45.0, 10.0),
                 fall_distance: 2.25,
+                fire_freeze: EntityFireFreezeState::new(),
                 on_ground: true,
                 world: Weak::new(),
             },

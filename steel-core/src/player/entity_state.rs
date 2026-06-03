@@ -217,7 +217,11 @@ impl Player {
         let state = self.entity_state.lock();
         let mut flags = EntitySharedFlags::empty();
 
-        // TODO: on_fire, invisible, glowing
+        flags.set(
+            EntitySharedFlags::ON_FIRE,
+            self.is_on_fire() || self.has_visual_fire(),
+        );
+        // TODO: invisible, glowing
         flags.set(EntitySharedFlags::SHIFT_KEY_DOWN, state.crouching);
         flags.set(EntitySharedFlags::SWIMMING, state.swimming);
         flags.set(EntitySharedFlags::SPRINTING, state.sprinting);

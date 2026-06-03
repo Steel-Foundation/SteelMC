@@ -6,7 +6,7 @@ use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
-use crate::entity::{ENTITIES, EntityLoadRequest, SharedEntity};
+use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
@@ -642,6 +642,7 @@ impl ChunkStorage {
                 let pos = entity.position();
                 let vel = entity.velocity();
                 let (yaw, pitch) = entity.rotation();
+                let fire_freeze = entity.fire_freeze_state();
 
                 // Validate position is finite (discard corrupted entities)
                 if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
@@ -666,6 +667,11 @@ impl ChunkStorage {
                     motion: [vel.x, vel.y, vel.z],
                     rotation: [yaw, pitch],
                     fall_distance: entity.fall_distance(),
+                    remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
+                    ticks_frozen: fire_freeze.ticks_frozen(),
+                    is_in_powder_snow: fire_freeze.is_in_powder_snow(),
+                    was_in_powder_snow: fire_freeze.was_in_powder_snow(),
+                    has_visual_fire: fire_freeze.has_visual_fire(),
                     on_ground: entity.on_ground(),
                     nbt_data: nbt_bytes,
                 })
@@ -1050,6 +1056,13 @@ impl ChunkStorage {
                 velocity,
                 rotation,
                 fall_distance: persistent.fall_distance,
+                fire_freeze: EntityFireFreezeState::from_parts(
+                    persistent.remaining_fire_ticks,
+                    persistent.ticks_frozen,
+                    persistent.is_in_powder_snow,
+                    persistent.was_in_powder_snow,
+                    persistent.has_visual_fire,
+                ),
                 on_ground: persistent.on_ground,
                 world: level,
             },

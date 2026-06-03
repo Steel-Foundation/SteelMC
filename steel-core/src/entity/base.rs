@@ -19,7 +19,8 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, NullEntityCallback, RemovalReason, SharedEntity, WeakEntity,
+    EntityLevelCallback, InsideBlockEffectType, NullEntityCallback, RemovalReason, SharedEntity,
+    WeakEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::world::World;
@@ -30,6 +31,10 @@ const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
 const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
 const MOVEMENT_TRACE_LIMIT: usize = 100;
 const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
+/// Default vanilla `Entity.getTicksRequiredToFreeze` value.
+pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
+const FIRE_IGNITE_TICKS: i32 = 8 * 20;
+const LAVA_IGNITE_TICKS: i32 = 15 * 20;
 
 /// A vanilla movement segment used by block-contact effects.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -475,6 +480,96 @@ impl Default for EntityMovementProgress {
     }
 }
 
+/// Vanilla base fire and freezing state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityFireFreezeState {
+    remaining_fire_ticks: i32,
+    ticks_frozen: i32,
+    is_in_powder_snow: bool,
+    was_in_powder_snow: bool,
+    has_visual_fire: bool,
+}
+
+impl EntityFireFreezeState {
+    /// Creates default vanilla fire/freeze state.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
+        }
+    }
+
+    /// Creates fire/freeze state restored from persistent data.
+    #[must_use]
+    pub const fn from_parts(
+        remaining_fire_ticks: i32,
+        ticks_frozen: i32,
+        is_in_powder_snow: bool,
+        was_in_powder_snow: bool,
+        has_visual_fire: bool,
+    ) -> Self {
+        Self {
+            remaining_fire_ticks,
+            ticks_frozen,
+            is_in_powder_snow,
+            was_in_powder_snow,
+            has_visual_fire,
+        }
+    }
+
+    /// Returns vanilla `remainingFireTicks`.
+    #[must_use]
+    pub const fn remaining_fire_ticks(self) -> i32 {
+        self.remaining_fire_ticks
+    }
+
+    /// Returns synchronized vanilla `TicksFrozen`.
+    #[must_use]
+    pub const fn ticks_frozen(self) -> i32 {
+        self.ticks_frozen
+    }
+
+    /// Returns whether this entity touched powder snow during the current tick.
+    #[must_use]
+    pub const fn is_in_powder_snow(self) -> bool {
+        self.is_in_powder_snow
+    }
+
+    /// Returns whether this entity touched powder snow during the previous tick.
+    #[must_use]
+    pub const fn was_in_powder_snow(self) -> bool {
+        self.was_in_powder_snow
+    }
+
+    /// Returns vanilla `hasVisualFire`.
+    #[must_use]
+    pub const fn has_visual_fire(self) -> bool {
+        self.has_visual_fire
+    }
+
+    /// Returns whether the entity has any frozen ticks.
+    #[must_use]
+    pub const fn is_freezing(self) -> bool {
+        self.ticks_frozen > 0
+    }
+
+    /// Returns whether the entity has reached vanilla full-freeze duration.
+    #[must_use]
+    pub const fn is_fully_frozen(self, ticks_required_to_freeze: i32) -> bool {
+        self.ticks_frozen >= ticks_required_to_freeze
+    }
+}
+
+impl Default for EntityFireFreezeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Sound parameters for vanilla amethyst step chimes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityAmethystStepSound {
@@ -505,6 +600,7 @@ pub struct EntityBaseState {
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
     movement_progress: EntityMovementProgress,
+    fire_freeze: EntityFireFreezeState,
     fluid_contact: EntityFluidContact,
     was_eye_in_water: bool,
     piston_movement: EntityPistonMovement,
@@ -532,6 +628,7 @@ impl EntityBaseState {
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
             movement_progress: EntityMovementProgress::new(),
+            fire_freeze: EntityFireFreezeState::new(),
             fluid_contact: EntityFluidContact::default(),
             was_eye_in_water: false,
             piston_movement: EntityPistonMovement::new(),
@@ -597,6 +694,13 @@ impl EntityBaseState {
         self
     }
 
+    /// Sets base fire/freeze state on this construction snapshot.
+    #[must_use]
+    pub const fn with_fire_freeze_state(mut self, fire_freeze: EntityFireFreezeState) -> Self {
+        self.fire_freeze = fire_freeze;
+        self
+    }
+
     /// Sets the ground-contact flag on this state snapshot.
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
@@ -642,6 +746,8 @@ pub struct EntityBaseLoad {
     pub rotation: (f32, f32),
     /// Restored accumulated fall distance.
     pub fall_distance: f64,
+    /// Restored vanilla fire/freeze state.
+    pub fire_freeze: EntityFireFreezeState,
     /// Restored ground-contact flag.
     pub on_ground: bool,
     /// World reference for the loaded entity.
@@ -846,6 +952,7 @@ impl EntityBase {
                 .with_velocity(load.velocity)
                 .with_rotation(load.rotation)
                 .with_fall_distance(load.fall_distance)
+                .with_fire_freeze_state(load.fire_freeze)
                 .with_on_ground(load.on_ground),
             load.world,
         )
@@ -962,6 +1069,17 @@ impl EntityBase {
     #[inline]
     pub fn movement_progress(&self) -> EntityMovementProgress {
         self.state.lock().movement_progress
+    }
+
+    /// Returns the current vanilla fire/freeze state.
+    #[inline]
+    pub fn fire_freeze_state(&self) -> EntityFireFreezeState {
+        self.state.lock().fire_freeze
+    }
+
+    /// Replaces the current vanilla fire/freeze state.
+    pub fn set_fire_freeze_state(&self, fire_freeze: EntityFireFreezeState) {
+        self.state.lock().fire_freeze = fire_freeze;
     }
 
     /// Returns true if the last movement was clipped horizontally.
@@ -1343,6 +1461,221 @@ impl EntityBase {
         self.set_fall_distance(0.0);
     }
 
+    /// Returns vanilla `remainingFireTicks`.
+    pub fn remaining_fire_ticks(&self) -> i32 {
+        self.state.lock().fire_freeze.remaining_fire_ticks()
+    }
+
+    /// Sets vanilla `remainingFireTicks`.
+    pub fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
+        self.state.lock().fire_freeze.remaining_fire_ticks = remaining_fire_ticks;
+    }
+
+    /// Returns synchronized vanilla `TicksFrozen`.
+    pub fn ticks_frozen(&self) -> i32 {
+        self.state.lock().fire_freeze.ticks_frozen()
+    }
+
+    /// Sets synchronized vanilla `TicksFrozen`.
+    pub fn set_ticks_frozen(&self, ticks_frozen: i32) {
+        self.state.lock().fire_freeze.ticks_frozen = ticks_frozen;
+    }
+
+    /// Returns whether the entity touched powder snow during the current tick.
+    pub fn is_in_powder_snow(&self) -> bool {
+        self.state.lock().fire_freeze.is_in_powder_snow()
+    }
+
+    /// Returns whether the entity touched powder snow during the previous tick.
+    pub fn was_in_powder_snow(&self) -> bool {
+        self.state.lock().fire_freeze.was_in_powder_snow()
+    }
+
+    /// Sets vanilla `hasVisualFire`.
+    pub fn set_visual_fire(&self, has_visual_fire: bool) {
+        self.state.lock().fire_freeze.has_visual_fire = has_visual_fire;
+    }
+
+    /// Returns vanilla `hasVisualFire`.
+    pub fn has_visual_fire(&self) -> bool {
+        self.state.lock().fire_freeze.has_visual_fire()
+    }
+
+    /// Returns whether the entity is on fire on the server.
+    pub fn is_on_fire(&self, fire_immune: bool) -> bool {
+        !fire_immune && self.remaining_fire_ticks() > 0
+    }
+
+    /// Returns whether the entity is freezing.
+    pub fn is_freezing(&self) -> bool {
+        self.state.lock().fire_freeze.is_freezing()
+    }
+
+    /// Returns whether the entity has reached full-freeze duration.
+    pub fn is_fully_frozen(&self, ticks_required_to_freeze: i32) -> bool {
+        self.state
+            .lock()
+            .fire_freeze
+            .is_fully_frozen(ticks_required_to_freeze)
+    }
+
+    /// Advances vanilla powder-snow contact at the start of base tick.
+    pub fn advance_powder_snow_contact_for_base_tick(&self) {
+        let mut state = self.state.lock();
+        state.fire_freeze.was_in_powder_snow = state.fire_freeze.is_in_powder_snow;
+        state.fire_freeze.is_in_powder_snow = false;
+    }
+
+    /// Advances vanilla server-side fire tick state.
+    ///
+    /// Returns true when the caller should apply one tick of on-fire damage.
+    pub fn advance_fire_tick(&self, fire_immune: bool, in_lava: bool) -> bool {
+        let mut state = self.state.lock();
+        if state.fire_freeze.remaining_fire_ticks <= 0 {
+            return false;
+        }
+
+        if fire_immune {
+            state.fire_freeze.remaining_fire_ticks = state.fire_freeze.remaining_fire_ticks.min(0);
+            return false;
+        }
+
+        let should_damage = state.fire_freeze.remaining_fire_ticks % 20 == 0 && !in_lava;
+        state.fire_freeze.remaining_fire_ticks -= 1;
+        should_damage
+    }
+
+    /// Clears accumulated freezing.
+    pub fn clear_freeze(&self) {
+        self.set_ticks_frozen(0);
+    }
+
+    /// Clears fire without resetting the vanilla fire immunity cooldown.
+    pub fn clear_fire(&self) {
+        let mut state = self.state.lock();
+        state.fire_freeze.remaining_fire_ticks = state.fire_freeze.remaining_fire_ticks.min(0);
+    }
+
+    /// Ignites this entity for a vanilla tick duration.
+    pub fn ignite_for_ticks(&self, number_of_ticks: i32, remaining_fire_ticks_cap: Option<i32>) {
+        let mut state = self.state.lock();
+        Self::ignite_for_ticks_in_state(
+            &mut state.fire_freeze,
+            number_of_ticks,
+            remaining_fire_ticks_cap,
+        );
+    }
+
+    /// Applies a vanilla inside-block effect to base fire/freeze state.
+    pub fn apply_inside_block_effect(
+        &self,
+        effect_type: InsideBlockEffectType,
+        can_freeze: bool,
+        fire_immune: bool,
+        fire_ignite_extra_ticks: i32,
+        ticks_required_to_freeze: i32,
+        remaining_fire_ticks_cap: Option<i32>,
+    ) {
+        let mut state = self.state.lock();
+        match effect_type {
+            InsideBlockEffectType::Freeze => {
+                state.fire_freeze.is_in_powder_snow = true;
+                if can_freeze {
+                    state.fire_freeze.ticks_frozen =
+                        ticks_required_to_freeze.min(state.fire_freeze.ticks_frozen + 1);
+                }
+            }
+            InsideBlockEffectType::ClearFreeze => {
+                state.fire_freeze.ticks_frozen = 0;
+            }
+            InsideBlockEffectType::FireIgnite => {
+                Self::apply_fire_ignite(
+                    &mut state.fire_freeze,
+                    fire_immune,
+                    fire_ignite_extra_ticks,
+                    remaining_fire_ticks_cap,
+                );
+            }
+            InsideBlockEffectType::LavaIgnite => {
+                if !fire_immune {
+                    Self::ignite_for_ticks_in_state(
+                        &mut state.fire_freeze,
+                        LAVA_IGNITE_TICKS,
+                        remaining_fire_ticks_cap,
+                    );
+                }
+            }
+            InsideBlockEffectType::Extinguish => {
+                state.fire_freeze.remaining_fire_ticks =
+                    state.fire_freeze.remaining_fire_ticks.min(0);
+            }
+        }
+    }
+
+    fn apply_fire_ignite(
+        fire_freeze: &mut EntityFireFreezeState,
+        fire_immune: bool,
+        fire_ignite_extra_ticks: i32,
+        remaining_fire_ticks_cap: Option<i32>,
+    ) {
+        if fire_immune {
+            return;
+        }
+
+        if fire_freeze.remaining_fire_ticks < 0 {
+            Self::set_remaining_fire_ticks_in_state(
+                fire_freeze,
+                fire_freeze.remaining_fire_ticks + 1,
+                remaining_fire_ticks_cap,
+            );
+        } else if fire_ignite_extra_ticks > 0 {
+            Self::set_remaining_fire_ticks_in_state(
+                fire_freeze,
+                fire_freeze.remaining_fire_ticks + fire_ignite_extra_ticks,
+                remaining_fire_ticks_cap,
+            );
+        }
+
+        if fire_freeze.remaining_fire_ticks >= 0 {
+            Self::ignite_for_ticks_in_state(
+                fire_freeze,
+                FIRE_IGNITE_TICKS,
+                remaining_fire_ticks_cap,
+            );
+        }
+    }
+
+    fn ignite_for_ticks_in_state(
+        fire_freeze: &mut EntityFireFreezeState,
+        number_of_ticks: i32,
+        remaining_fire_ticks_cap: Option<i32>,
+    ) {
+        if fire_freeze.remaining_fire_ticks < number_of_ticks {
+            Self::set_remaining_fire_ticks_in_state(
+                fire_freeze,
+                number_of_ticks,
+                remaining_fire_ticks_cap,
+            );
+        }
+        fire_freeze.ticks_frozen = 0;
+    }
+
+    fn set_remaining_fire_ticks_in_state(
+        fire_freeze: &mut EntityFireFreezeState,
+        remaining_fire_ticks: i32,
+        remaining_fire_ticks_cap: Option<i32>,
+    ) {
+        fire_freeze.remaining_fire_ticks =
+            Self::cap_remaining_fire_ticks(remaining_fire_ticks, remaining_fire_ticks_cap);
+    }
+
+    fn cap_remaining_fire_ticks(
+        remaining_fire_ticks: i32,
+        remaining_fire_ticks_cap: Option<i32>,
+    ) -> i32 {
+        remaining_fire_ticks_cap.map_or(remaining_fire_ticks, |cap| remaining_fire_ticks.min(cap))
+    }
+
     /// Applies vanilla base-tick fall-distance damping while touching lava.
     pub fn dampen_fall_distance_in_lava(&self) {
         let mut state = self.state.lock();
@@ -1457,9 +1790,9 @@ impl EntityBase {
 #[cfg(test)]
 mod tests {
     use super::{
-        EntityBase, EntityBaseState, EntityFluidContact, EntityMovement, EntityMovementEmission,
-        EntityMovementFlags, EntityMovementProgress, EntityPistonMovement,
-        EntityVerticalMovementStateUpdate,
+        DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState, EntityFireFreezeState,
+        EntityFluidContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
+        EntityMovementProgress, EntityPistonMovement, EntityVerticalMovementStateUpdate,
     };
     use std::sync::{Arc, Weak};
 
@@ -1468,10 +1801,12 @@ mod tests {
     use steel_registry::{vanilla_damage_types, vanilla_entities};
     use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
+    use uuid::Uuid;
 
     use crate::entity::damage::DamageSource;
     use crate::entity::{
-        Entity, EntityLevelCallback, RemovalReason, SharedEntity, entities::RawEntity,
+        Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
+        entities::RawEntity,
     };
     use crate::world::World;
 
@@ -1747,6 +2082,208 @@ mod tests {
 
         assert_eq!(base.fluid_contact(), air_contact);
         assert!(base.was_eye_in_water());
+    }
+
+    #[test]
+    fn fire_freeze_state_applies_inside_block_effects() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::Freeze,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert!(base.is_in_powder_snow());
+        assert_eq!(base.ticks_frozen(), 1);
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::LavaIgnite,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), 300);
+        assert_eq!(base.ticks_frozen(), 0);
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::Extinguish,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), 0);
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::ClearFreeze,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.ticks_frozen(), 0);
+    }
+
+    #[test]
+    fn fire_ignite_respects_remaining_fire_tick_cap() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::LavaIgnite,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            Some(1),
+        );
+        assert_eq!(base.remaining_fire_ticks(), 1);
+
+        base.set_remaining_fire_ticks(10);
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::LavaIgnite,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            Some(1),
+        );
+        assert_eq!(base.remaining_fire_ticks(), 1);
+
+        base.set_remaining_fire_ticks(0);
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::FireIgnite,
+            true,
+            false,
+            2,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            Some(1),
+        );
+        assert_eq!(base.remaining_fire_ticks(), 1);
+    }
+
+    #[test]
+    fn fire_ignite_respects_vanilla_cooldown_shape() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_remaining_fire_ticks(-2);
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::FireIgnite,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), -1);
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::FireIgnite,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), 160);
+
+        base.set_remaining_fire_ticks(4);
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::FireIgnite,
+            true,
+            false,
+            2,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), 160);
+
+        base.set_remaining_fire_ticks(0);
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::FireIgnite,
+            true,
+            true,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        assert_eq!(base.remaining_fire_ticks(), 0);
+    }
+
+    #[test]
+    fn base_tick_advances_powder_snow_and_fire_state() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.apply_inside_block_effect(
+            InsideBlockEffectType::Freeze,
+            true,
+            false,
+            0,
+            DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+            None,
+        );
+        base.advance_powder_snow_contact_for_base_tick();
+        assert!(!base.is_in_powder_snow());
+        assert!(base.was_in_powder_snow());
+
+        base.set_remaining_fire_ticks(21);
+        assert!(!base.advance_fire_tick(false, false));
+        assert_eq!(base.remaining_fire_ticks(), 20);
+        assert!(base.advance_fire_tick(false, false));
+        assert_eq!(base.remaining_fire_ticks(), 19);
+
+        base.set_remaining_fire_ticks(20);
+        assert!(!base.advance_fire_tick(false, true));
+        assert_eq!(base.remaining_fire_ticks(), 19);
+    }
+
+    #[test]
+    fn fire_freeze_state_round_trips_through_base_load() {
+        let load = super::EntityBaseLoad {
+            id: 1,
+            position: DVec3::ZERO,
+            uuid: Uuid::nil(),
+            velocity: DVec3::ZERO,
+            rotation: (0.0, 0.0),
+            fall_distance: 0.0,
+            fire_freeze: EntityFireFreezeState::from_parts(12, 34, true, false, true),
+            on_ground: false,
+            world: Weak::<World>::new(),
+        };
+
+        let base = EntityBase::from_load(load, EntityDimensions::new(0.25, 0.25, 0.125));
+        let state = base.fire_freeze_state();
+
+        assert_eq!(state.remaining_fire_ticks(), 12);
+        assert_eq!(state.ticks_frozen(), 34);
+        assert!(state.is_in_powder_snow());
+        assert!(state.has_visual_fire());
     }
 
     #[test]

@@ -16,7 +16,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
-use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_game_events};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
+};
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis};
@@ -55,6 +57,48 @@ enum BlockEffectSegmentResult {
     Complete(i32),
     IterationLimit,
     Removed,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BlockEffectFireFreezeSnapshot {
+    was_on_fire: bool,
+    was_freezing: bool,
+    previous_remaining_fire_ticks: i32,
+}
+
+impl BlockEffectFireFreezeSnapshot {
+    fn from_entity(entity: &dyn Entity) -> Self {
+        Self {
+            was_on_fire: entity.is_on_fire(),
+            was_freezing: entity.is_freezing(),
+            previous_remaining_fire_ticks: entity.remaining_fire_ticks(),
+        }
+    }
+}
+
+fn finish_inside_block_effects(
+    entity: &dyn Entity,
+    effect_collector: &mut InsideBlockEffectCollector,
+    before_effects: BlockEffectFireFreezeSnapshot,
+) {
+    effect_collector.apply_and_clear(entity);
+    if entity.is_removed() {
+        return;
+    }
+
+    let extinguished = before_effects.was_on_fire && !entity.is_on_fire()
+        || before_effects.was_freezing && !entity.is_freezing();
+    if extinguished {
+        // TODO: Play vanilla extinguish sound once shared entity sound emission exists.
+    }
+
+    let ignited_this_tick =
+        entity.remaining_fire_ticks() > before_effects.previous_remaining_fire_ticks;
+    if !entity.is_on_fire() && !ignited_this_tick {
+        entity.set_remaining_fire_ticks(-entity.fire_immune_ticks());
+    } else {
+        entity.sync_base_fire_freeze_entity_data();
+    }
 }
 
 fn closest_open_space_direction(
@@ -223,6 +267,10 @@ fn should_apply_resolved_movement(requested_movement: DVec3, actual_movement: DV
         || requested_movement.length_squared() - movement_length < MOVEMENT_RECORD_EPSILON
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "vanilla movement block-effect traversal is easier to audit when kept in one sweep"
+)]
 fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMovement]) {
     if !entity.is_affected_by_blocks() {
         return;
@@ -234,6 +282,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
     let mut visited_blocks = FxHashSet::default();
     let mut effect_collector = InsideBlockEffectCollector::new();
+    let before_effects = BlockEffectFireFreezeSnapshot::from_entity(entity);
     for movement in movements.iter().copied() {
         let mut remaining_iterations = 16;
         let delta = movement.to() - movement.from();
@@ -270,11 +319,11 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                             &mut effect_collector,
                             &mut visited_blocks,
                         );
-                        effect_collector.apply_and_clear(entity);
+                        finish_inside_block_effects(entity, &mut effect_collector, before_effects);
                         return;
                     }
                     BlockEffectSegmentResult::Removed => {
-                        effect_collector.apply_and_clear(entity);
+                        finish_inside_block_effects(entity, &mut effect_collector, before_effects);
                         return;
                     }
                 }
@@ -303,11 +352,11 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                         &mut effect_collector,
                         &mut visited_blocks,
                     );
-                    effect_collector.apply_and_clear(entity);
+                    finish_inside_block_effects(entity, &mut effect_collector, before_effects);
                     return;
                 }
                 BlockEffectSegmentResult::Removed => {
-                    effect_collector.apply_and_clear(entity);
+                    finish_inside_block_effects(entity, &mut effect_collector, before_effects);
                     return;
                 }
             }
@@ -323,12 +372,12 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
                 &mut effect_collector,
                 &mut visited_blocks,
             );
-            effect_collector.apply_and_clear(entity);
+            finish_inside_block_effects(entity, &mut effect_collector, before_effects);
             return;
         }
     }
 
-    effect_collector.apply_and_clear(entity);
+    finish_inside_block_effects(entity, &mut effect_collector, before_effects);
 }
 
 pub mod attribute;
@@ -350,8 +399,9 @@ mod tracker;
 
 use crate::portal::TeleportTransition;
 pub use base::{
-    EntityAmethystStepSound, EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact,
-    EntityMovement, EntityMovementEmission, EntityMovementFlags, EntityMovementProgress,
+    DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityAmethystStepSound, EntityBase, EntityBaseLoad,
+    EntityBaseState, EntityFireFreezeState, EntityGroundContact, EntityMovement,
+    EntityMovementEmission, EntityMovementFlags, EntityMovementProgress,
     EntityVerticalMovementStateUpdate,
 };
 pub use cache::EntityCache;
@@ -675,11 +725,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// subclasses override tick without calling `super.tick()`.
     fn base_tick(&self) {
         self.base().advance_base_tick_state();
+        self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
+        if self
+            .base()
+            .advance_fire_tick(self.fire_immune(), self.is_in_lava())
+        {
+            self.hurt(
+                &DamageSource::environment(&vanilla_damage_types::ON_FIRE),
+                1.0,
+            );
+        }
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
-        // TODO: Add remaining vanilla baseTick pieces: portal, fire ticks,
-        // sprint particles, and leash tick.
+        self.sync_base_fire_freeze_entity_data();
+        // TODO: Add remaining vanilla baseTick pieces: portal, sprint particles, and leash tick.
     }
 
     /// Applies vanilla below-world handling.
@@ -699,8 +759,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Applies an inside-block effect queued by vanilla's step-based collector.
-    fn apply_inside_block_effect(&self, _effect_type: InsideBlockEffectType) {
-        // TODO: Implement concrete fire/freeze effect state on EntityBase.
+    fn apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
+        let fire_ignite_extra_ticks = if matches!(effect_type, InsideBlockEffectType::FireIgnite) {
+            self.fire_ignite_extra_ticks()
+        } else {
+            0
+        };
+        self.base().apply_inside_block_effect(
+            effect_type,
+            self.can_freeze(),
+            self.fire_immune(),
+            fire_ignite_extra_ticks,
+            self.ticks_required_to_freeze(),
+            self.remaining_fire_ticks_cap(),
+        );
+        self.sync_base_fire_freeze_entity_data();
     }
 
     /// Sends position/velocity changes to tracking players.
@@ -884,6 +957,118 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Resets accumulated vanilla fall distance.
     fn reset_fall_distance(&self) {
         self.base().reset_fall_distance();
+    }
+
+    /// Returns the current vanilla fire/freeze state.
+    fn fire_freeze_state(&self) -> EntityFireFreezeState {
+        self.base().fire_freeze_state()
+    }
+
+    /// Returns vanilla `remainingFireTicks`.
+    fn remaining_fire_ticks(&self) -> i32 {
+        self.base().remaining_fire_ticks()
+    }
+
+    /// Sets vanilla `remainingFireTicks`.
+    fn set_remaining_fire_ticks(&self, remaining_fire_ticks: i32) {
+        self.base().set_remaining_fire_ticks(
+            self.remaining_fire_ticks_cap()
+                .map_or(remaining_fire_ticks, |cap| remaining_fire_ticks.min(cap)),
+        );
+        self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Returns synchronized vanilla `TicksFrozen`.
+    fn ticks_frozen(&self) -> i32 {
+        self.base().ticks_frozen()
+    }
+
+    /// Sets synchronized vanilla `TicksFrozen`.
+    fn set_ticks_frozen(&self, ticks_frozen: i32) {
+        self.base().set_ticks_frozen(ticks_frozen);
+        self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Returns whether this entity is immune to fire effects and fire damage.
+    fn fire_immune(&self) -> bool {
+        self.entity_type().fire_immune
+    }
+
+    /// Returns vanilla fire immunity cooldown ticks after not being ignited.
+    fn fire_immune_ticks(&self) -> i32 {
+        0
+    }
+
+    /// Maximum vanilla `remainingFireTicks` this entity can store.
+    fn remaining_fire_ticks_cap(&self) -> Option<i32> {
+        None
+    }
+
+    /// Returns extra ticks added by fire-block ignition before 8-second ignition.
+    fn fire_ignite_extra_ticks(&self) -> i32 {
+        0
+    }
+
+    /// Returns whether the entity is on fire on the server.
+    fn is_on_fire(&self) -> bool {
+        self.base().is_on_fire(self.fire_immune())
+    }
+
+    /// Returns vanilla `hasVisualFire`.
+    fn has_visual_fire(&self) -> bool {
+        self.base().has_visual_fire()
+    }
+
+    /// Returns whether the entity has any frozen ticks.
+    fn is_freezing(&self) -> bool {
+        self.base().is_freezing()
+    }
+
+    /// Returns whether this entity may accumulate frozen ticks.
+    fn can_freeze(&self) -> bool {
+        !REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
+        )
+    }
+
+    /// Returns vanilla `getTicksRequiredToFreeze`.
+    fn ticks_required_to_freeze(&self) -> i32 {
+        DEFAULT_TICKS_REQUIRED_TO_FREEZE
+    }
+
+    /// Returns whether this entity has reached full-freeze duration.
+    fn is_fully_frozen(&self) -> bool {
+        self.base().is_fully_frozen(self.ticks_required_to_freeze())
+    }
+
+    /// Clears accumulated freezing.
+    fn clear_freeze(&self) {
+        self.base().clear_freeze();
+        self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Clears fire without resetting the vanilla fire immunity cooldown.
+    fn clear_fire(&self) {
+        self.base().clear_fire();
+        self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Ignites this entity for a vanilla tick duration.
+    fn ignite_for_ticks(&self, number_of_ticks: i32) {
+        self.base()
+            .ignite_for_ticks(number_of_ticks, self.remaining_fire_ticks_cap());
+        self.sync_base_fire_freeze_entity_data();
+    }
+
+    /// Projects base fire/freeze state into generated synced entity data.
+    fn sync_base_fire_freeze_entity_data(&self) {
+        let Some(synced_data) = self.synced_data() else {
+            return;
+        };
+
+        synced_data.set_base_ticks_frozen(self.ticks_frozen());
+        synced_data.set_base_on_fire_flag(self.is_on_fire() || self.has_visual_fire());
     }
 
     /// Returns true if this entity is currently touching water.

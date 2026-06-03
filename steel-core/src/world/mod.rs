@@ -47,7 +47,10 @@ use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 use steel_registry::{vanilla_blocks, vanilla_game_events};
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::{
+    locks::{SyncMutex, SyncRwLock},
+    random::legacy_random::LegacyRandom,
+};
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -258,6 +261,8 @@ pub struct World {
     entity_tracker: EntityTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
+    /// Vanilla `Level.random` runtime random source.
+    random: SyncMutex<LegacyRandom>,
     /// Monotonic counter for `sub_tick_order` on scheduled ticks.
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
@@ -359,6 +364,7 @@ impl World {
                 entity_cache: EntityCache::new(),
                 entity_tracker: EntityTracker::new(),
                 weather: SyncMutex::new(weather),
+                random: SyncMutex::new(LegacyRandom::from_seed(rand::random())),
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
@@ -686,6 +692,12 @@ impl World {
     #[must_use]
     pub fn seed(&self) -> i64 {
         self.level_data.read().data().seed
+    }
+
+    /// Returns this world's vanilla runtime random source.
+    #[must_use]
+    pub const fn random(&self) -> &SyncMutex<LegacyRandom> {
+        &self.random
     }
 
     /// Gets the obfuscated seed for sending to clients.

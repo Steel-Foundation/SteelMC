@@ -5,7 +5,7 @@
 use steel_registry::item_stack::ItemStack;
 
 use crate::{
-    entity::{Entity, LivingEntity},
+    entity::{Entity, EntityFireFreezeState, LivingEntity},
     inventory::container::Container,
 };
 
@@ -35,6 +35,21 @@ pub struct PersistentPlayerData {
 
     /// Whether the player is elytra gliding.
     pub fall_flying: bool,
+
+    /// Vanilla `remainingFireTicks`.
+    pub remaining_fire_ticks: i32,
+
+    /// Synchronized vanilla `TicksFrozen`.
+    pub ticks_frozen: i32,
+
+    /// Vanilla `isInPowderSnow`.
+    pub is_in_powder_snow: bool,
+
+    /// Vanilla `wasInPowderSnow`.
+    pub was_in_powder_snow: bool,
+
+    /// Vanilla `hasVisualFire`.
+    pub has_visual_fire: bool,
 
     /// Current health points.
     pub health: f32,
@@ -124,6 +139,7 @@ impl PersistentPlayerData {
         let delta = player.velocity();
         let on_ground = player.on_ground();
         let fall_flying = player.is_fall_flying();
+        let fire_freeze = player.fire_freeze_state();
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let food_data = player.food_data.lock();
@@ -157,6 +173,11 @@ impl PersistentPlayerData {
             rotation: [yaw, pitch],
             on_ground,
             fall_flying,
+            remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
+            ticks_frozen: fire_freeze.ticks_frozen(),
+            is_in_powder_snow: fire_freeze.is_in_powder_snow(),
+            was_in_powder_snow: fire_freeze.was_in_powder_snow(),
+            has_visual_fire: fire_freeze.has_visual_fire(),
             health: player.get_health(),
             game_mode: player.game_mode() as i32,
             prev_game_mode: player.previous_game_mode() as i32,
@@ -260,6 +281,17 @@ impl PersistentPlayerData {
             player.set_fall_flying(self.fall_flying);
             player.set_on_ground(self.on_ground);
         }
+
+        player
+            .base()
+            .set_fire_freeze_state(EntityFireFreezeState::from_parts(
+                self.remaining_fire_ticks,
+                self.ticks_frozen,
+                self.is_in_powder_snow,
+                self.was_in_powder_snow,
+                self.has_visual_fire,
+            ));
+        player.sync_base_fire_freeze_entity_data();
 
         // Health
         player.set_health(self.health);

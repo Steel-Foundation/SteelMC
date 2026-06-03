@@ -40,7 +40,7 @@ use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::{ENTITIES, EntityLoadRequest};
+use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
@@ -830,6 +830,7 @@ impl StructureTemplate {
                     velocity: entity.velocity,
                     rotation,
                     fall_distance: entity.fall_distance,
+                    fire_freeze: EntityFireFreezeState::new(),
                     on_ground: entity.on_ground,
                     world: region.weak_world(),
                 },

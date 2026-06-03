@@ -412,6 +412,16 @@ pub struct PersistentEntity {
     pub rotation: [f32; 2],
     /// Accumulated vanilla fall distance.
     pub fall_distance: f64,
+    /// Vanilla `remainingFireTicks`.
+    pub remaining_fire_ticks: i32,
+    /// Synchronized vanilla `TicksFrozen`.
+    pub ticks_frozen: i32,
+    /// Vanilla `isInPowderSnow`.
+    pub is_in_powder_snow: bool,
+    /// Vanilla `wasInPowderSnow`.
+    pub was_in_powder_snow: bool,
+    /// Vanilla `hasVisualFire`.
+    pub has_visual_fire: bool,
     /// Whether entity is on ground.
     pub on_ground: bool,
     /// Type-specific NBT data from `save_additional`.

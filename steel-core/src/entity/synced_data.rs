@@ -19,6 +19,12 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Returns the shared vanilla swimming flag.
     fn is_swimming(&self) -> bool;
+
+    /// Sets the shared vanilla on-fire flag.
+    fn set_base_on_fire_flag(&self, on_fire: bool);
+
+    /// Sets synchronized vanilla frozen ticks.
+    fn set_base_ticks_frozen(&self, ticks_frozen: i32);
 }
 
 impl<T> EntitySyncedData for SyncMutex<T>
@@ -49,6 +55,20 @@ where
             *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
         )
         .contains(EntitySharedFlags::SWIMMING)
+    }
+
+    fn set_base_on_fire_flag(&self, on_fire: bool) {
+        let mut entity_data = self.lock();
+        let base = VanillaEntityData::base_mut(&mut *entity_data);
+        let mut flags = EntitySharedFlags::from_metadata_byte(*base.shared_flags.get());
+        flags.set(EntitySharedFlags::ON_FIRE, on_fire);
+        base.shared_flags.set(flags.metadata_byte());
+    }
+
+    fn set_base_ticks_frozen(&self, ticks_frozen: i32) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .ticks_frozen
+            .set(ticks_frozen);
     }
 }
 
@@ -100,5 +120,21 @@ mod tests {
             .set(EntitySharedFlags::SWIMMING.metadata_byte());
 
         assert!(EntitySyncedData::is_swimming(&data));
+    }
+
+    #[test]
+    fn synced_data_writes_fire_and_freeze_base_layer() {
+        let data = SyncMutex::new(ItemEntityData::new());
+
+        data.set_base_on_fire_flag(true);
+        data.set_base_ticks_frozen(12);
+
+        let values =
+            EntitySyncedData::pack_dirty(&data).expect("expected dirty base fire/freeze metadata");
+        assert_eq!(values.len(), 2);
+        assert!(matches!(values[0].value, EntityData::Byte(1)));
+        assert!(matches!(values[1].value, EntityData::Int(12)));
+
+        assert!(EntitySyncedData::pack_dirty(&data).is_none());
     }
 }

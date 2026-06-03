@@ -71,7 +71,10 @@ use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{sound_events, vanilla_attributes, vanilla_entities};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities,
+    vanilla_entity_type_tags::EntityTypeTag, vanilla_item_tags::ItemTag,
+};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
@@ -89,7 +92,7 @@ use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntityBase, RemovalReason,
     SharedEntity,
 };
-use crate::inventory::SyncPlayerInv;
+use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::player::experience::Experience;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
@@ -1239,6 +1242,40 @@ impl Entity for Player {
 
     fn is_spectator(&self) -> bool {
         self.game_mode() == GameType::Spectator
+    }
+
+    fn fire_immune_ticks(&self) -> i32 {
+        20
+    }
+
+    fn remaining_fire_ticks_cap(&self) -> Option<i32> {
+        self.abilities.lock().invulnerable.then_some(1)
+    }
+
+    fn fire_ignite_extra_ticks(&self) -> i32 {
+        self.get_world().random().lock().next_i32_between(1, 2)
+    }
+
+    fn can_freeze(&self) -> bool {
+        if self.is_spectator() {
+            return false;
+        }
+
+        let has_freeze_immune_wearable = {
+            let inventory = self.inventory.lock();
+            EquipmentSlot::ARMOR_SLOTS.iter().any(|slot| {
+                REGISTRY.items.is_in_tag(
+                    inventory.equipment().get_ref(*slot).item(),
+                    &ItemTag::FREEZE_IMMUNE_WEARABLES,
+                )
+            })
+        };
+
+        !has_freeze_immune_wearable
+            && !REGISTRY.entity_types.is_in_tag(
+                self.entity_type(),
+                &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
+            )
     }
 
     fn can_be_hit_by_projectile(&self) -> bool {
