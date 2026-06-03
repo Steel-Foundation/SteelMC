@@ -3082,8 +3082,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla `LivingEntity.isImmobile()`.
-    fn is_immobile(&self) -> bool {
+    fn default_is_immobile(&self) -> bool {
         self.is_dead_or_dying()
+    }
+
+    /// Returns vanilla `LivingEntity.isImmobile()`.
+    fn is_immobile(&self) -> bool {
+        self.default_is_immobile()
     }
 
     /// Applies vanilla `LivingEntity.aiStep()` velocity thresholds.

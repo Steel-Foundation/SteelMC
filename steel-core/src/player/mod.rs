@@ -1498,6 +1498,10 @@ impl LivingEntity for Player {
         !self.is_flying() && self.default_can_glide()
     }
 
+    fn is_immobile(&self) -> bool {
+        self.default_is_immobile() || self.is_sleeping()
+    }
+
     fn jump_from_ground(&self) {
         self.default_jump_from_ground();
         // TODO: Award Stats.JUMP once player statistics exist.
