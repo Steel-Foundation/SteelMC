@@ -79,7 +79,8 @@ use crate::{
     chunk::heightmap::HeightmapType,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
-        Entity, EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity,
+        Entity, EntityCache, EntityMovementSyncPacket, EntityTracker, RemovalReason, SharedEntity,
+        entities::ItemEntity,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, WorldGenerationSettings},
@@ -1524,6 +1525,19 @@ impl World {
         self.broadcast_to_nearby_encoded(chunk, encoded, exclude);
     }
 
+    /// Broadcasts an entity movement sync packet to all players tracking a chunk.
+    pub fn broadcast_movement_sync_to_nearby(
+        &self,
+        chunk: ChunkPos,
+        packet: EntityMovementSyncPacket,
+        exclude: Option<i32>,
+    ) {
+        let Some(encoded) = self.encode_movement_sync_packet(packet) else {
+            return;
+        };
+        self.broadcast_to_nearby_encoded(chunk, encoded, exclude);
+    }
+
     /// Broadcasts an already-encoded packet to all players tracking the given chunk.
     ///
     /// Use this when you have a pre-encoded packet to avoid re-encoding.
@@ -1559,6 +1573,19 @@ impl World {
         self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
     }
 
+    /// Broadcasts an entity movement sync packet to players currently tracking an entity.
+    pub fn broadcast_movement_sync_to_entity_trackers(
+        &self,
+        entity_id: i32,
+        packet: EntityMovementSyncPacket,
+        exclude: Option<i32>,
+    ) {
+        let Some(encoded) = self.encode_movement_sync_packet(packet) else {
+            return;
+        };
+        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+    }
+
     /// Broadcasts an already-encoded packet to players currently tracking an entity.
     pub fn broadcast_to_entity_trackers_encoded(
         &self,
@@ -1574,6 +1601,33 @@ impl World {
                 player.connection.send_encoded(packet.clone());
             }
         }
+    }
+
+    fn encode_movement_sync_packet(
+        &self,
+        packet: EntityMovementSyncPacket,
+    ) -> Option<EncodedPacket> {
+        let encoded = match packet {
+            EntityMovementSyncPacket::Position(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::PositionRotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::Rotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::HeadRotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::PositionSync(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::Velocity(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+        };
+        encoded.ok()
     }
 
     /// Saves all dirty chunks in this world to disk.

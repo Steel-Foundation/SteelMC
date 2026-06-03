@@ -2,8 +2,8 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, PackedEntityDelta, calc_delta,
-    to_angle_byte,
+    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
+    CSetEntityMotion, PackedEntityDelta, calc_delta, to_angle_byte,
 };
 
 /// Squared position delta needed before vanilla considers a movement worth syncing.
@@ -116,6 +116,93 @@ pub enum EntityPositionRotSyncPacket {
     Delta(CMoveEntityPosRot),
     /// Full absolute position sync.
     Full(CEntityPositionSync),
+}
+
+/// Concrete movement sync packet ready for broadcast.
+#[derive(Clone, Debug)]
+pub enum EntityMovementSyncPacket {
+    /// Delta-encoded position update.
+    Position(CMoveEntityPos),
+    /// Delta-encoded position and body rotation update.
+    PositionRotation(CMoveEntityPosRot),
+    /// Body rotation-only update.
+    Rotation(CMoveEntityRot),
+    /// Head yaw update.
+    HeadRotation(CRotateHead),
+    /// Full absolute position sync.
+    PositionSync(CEntityPositionSync),
+    /// Velocity sync.
+    Velocity(CSetEntityMotion),
+}
+
+impl From<EntityPositionSyncPacket> for EntityMovementSyncPacket {
+    fn from(packet: EntityPositionSyncPacket) -> Self {
+        match packet {
+            EntityPositionSyncPacket::Delta(packet) => Self::Position(packet),
+            EntityPositionSyncPacket::Full(packet) => Self::PositionSync(packet),
+        }
+    }
+}
+
+impl From<EntityPositionRotSyncPacket> for EntityMovementSyncPacket {
+    fn from(packet: EntityPositionRotSyncPacket) -> Self {
+        match packet {
+            EntityPositionRotSyncPacket::Delta(packet) => Self::PositionRotation(packet),
+            EntityPositionRotSyncPacket::Full(packet) => Self::PositionSync(packet),
+        }
+    }
+}
+
+impl From<CMoveEntityRot> for EntityMovementSyncPacket {
+    fn from(packet: CMoveEntityRot) -> Self {
+        Self::Rotation(packet)
+    }
+}
+
+impl From<CRotateHead> for EntityMovementSyncPacket {
+    fn from(packet: CRotateHead) -> Self {
+        Self::HeadRotation(packet)
+    }
+}
+
+impl From<CSetEntityMotion> for EntityMovementSyncPacket {
+    fn from(packet: CSetEntityMotion) -> Self {
+        Self::Velocity(packet)
+    }
+}
+
+/// At most two movement packets are emitted for one tracked movement update:
+/// one body movement/rotation packet and one head-rotation packet.
+#[derive(Clone, Debug, Default)]
+pub struct EntityMovementSyncPackets {
+    primary: Option<EntityMovementSyncPacket>,
+    head_rotation: Option<EntityMovementSyncPacket>,
+}
+
+impl EntityMovementSyncPackets {
+    /// Creates a bundle from body movement and head-rotation packets.
+    fn new(primary: Option<EntityMovementSyncPacket>, head_rotation: Option<CRotateHead>) -> Self {
+        Self {
+            primary,
+            head_rotation: head_rotation.map(EntityMovementSyncPacket::from),
+        }
+    }
+
+    /// Returns whether no movement sync packets were selected.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.primary.is_none() && self.head_rotation.is_none()
+    }
+
+    /// Visits selected packets in vanilla send order.
+    pub fn for_each(self, mut send: impl FnMut(EntityMovementSyncPacket)) {
+        if let Some(packet) = self.primary {
+            send(packet);
+        }
+        if let Some(packet) = self.head_rotation {
+            send(packet);
+        }
+    }
 }
 
 /// Runtime values needed to build a vanilla position sync packet.
@@ -310,6 +397,27 @@ pub struct EntityMovementSyncState {
     rotation: EntityRotationSyncState,
 }
 
+/// Runtime values accepted by tracked entity movement sync.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityMovementSyncUpdate {
+    /// Entity network id.
+    pub entity_id: i32,
+    /// Whether this update includes position.
+    pub has_position: bool,
+    /// Whether this update includes body/head rotation.
+    pub has_rotation: bool,
+    /// Current entity position, or the previous position for rotation-only updates.
+    pub position: DVec3,
+    /// Current entity velocity.
+    pub velocity: DVec3,
+    /// Current body yaw and pitch in degrees.
+    pub body_rotation: (f32, f32),
+    /// Current head yaw in degrees.
+    pub head_yaw: f32,
+    /// Current on-ground flag.
+    pub on_ground: bool,
+}
+
 impl EntityMovementSyncState {
     /// Creates movement sync state for values already known to tracking clients.
     #[must_use]
@@ -343,6 +451,71 @@ impl EntityMovementSyncState {
             .record_movement_sync(position, on_ground, force_full)
     }
 
+    /// Selects and records packets for a tracked movement update.
+    pub fn record_update_with_full_delay(
+        &mut self,
+        update: EntityMovementSyncUpdate,
+        full_sync_delay: i32,
+    ) -> EntityMovementSyncPackets {
+        let head_rotation = if update.has_rotation {
+            self.record_head_yaw(update.head_yaw)
+                .map(|head_y_rot| CRotateHead {
+                    entity_id: update.entity_id,
+                    head_y_rot,
+                })
+        } else {
+            None
+        };
+
+        let primary = if update.has_position {
+            let decision = self.record_position_sync_with_full_delay(
+                update.position,
+                update.on_ground,
+                full_sync_delay,
+            );
+            let position_includes_rotation = matches!(decision, EntityPositionSyncDecision::Full);
+            let body_rotation = if position_includes_rotation {
+                self.mark_body_rotation_sent(update.body_rotation);
+                None
+            } else if update.has_rotation {
+                self.record_body_rotation(update.body_rotation)
+            } else {
+                None
+            };
+            let snapshot = EntityPositionSyncSnapshot::new(
+                update.entity_id,
+                update.position,
+                update.velocity,
+                update.body_rotation,
+                update.on_ground,
+            );
+
+            if position_includes_rotation || body_rotation.is_some() {
+                Some(EntityMovementSyncPacket::from(
+                    decision.into_position_rot_packet(snapshot),
+                ))
+            } else {
+                Some(EntityMovementSyncPacket::from(
+                    decision.into_position_packet(snapshot),
+                ))
+            }
+        } else if update.has_rotation {
+            self.record_body_rotation(update.body_rotation)
+                .map(|body_rotation| {
+                    EntityMovementSyncPacket::from(CMoveEntityRot {
+                        entity_id: update.entity_id,
+                        y_rot: body_rotation.yaw(),
+                        x_rot: body_rotation.pitch(),
+                        on_ground: update.on_ground,
+                    })
+                })
+        } else {
+            None
+        };
+
+        EntityMovementSyncPackets::new(primary, head_rotation)
+    }
+
     /// Records a body rotation packet when the packed yaw or pitch changed.
     pub fn record_body_rotation(&mut self, rotation: (f32, f32)) -> Option<PackedEntityRotation> {
         self.rotation.record_body_rotation(rotation)
@@ -365,9 +538,10 @@ mod tests {
     use steel_protocol::packets::game::{calc_delta, to_angle_byte};
 
     use super::{
-        EntityMovementSyncState, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
-        EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
-        EntityRotationSyncState, PackedEntityRotation,
+        EntityMovementSyncPacket, EntityMovementSyncState, EntityMovementSyncUpdate,
+        EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
+        EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
+        PackedEntityRotation,
     };
 
     #[test]
@@ -465,6 +639,82 @@ mod tests {
         state.mark_body_rotation_sent((90.0, 45.0));
         assert_eq!(state.record_body_rotation((90.0, 45.0)), None);
         assert_eq!(state.record_head_yaw(2.0), Some(to_angle_byte(2.0)));
+    }
+
+    #[test]
+    fn movement_sync_update_emits_position_rotation_before_head_rotation() {
+        let mut state = EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0);
+        let position = DVec3::new(0.25, 0.0, 0.0);
+        let update = EntityMovementSyncUpdate {
+            entity_id: 12,
+            has_position: true,
+            has_rotation: true,
+            position,
+            velocity: DVec3::new(1.0, 2.0, 3.0),
+            body_rotation: (2.0, 0.0),
+            head_yaw: 2.0,
+            on_ground: false,
+        };
+
+        let packets = state.record_update_with_full_delay(update, 400);
+        let mut emitted = Vec::new();
+        packets.for_each(|packet| emitted.push(packet));
+
+        assert_eq!(emitted.len(), 2);
+        let EntityMovementSyncPacket::PositionRotation(packet) = &emitted[0] else {
+            panic!("expected position-rotation packet");
+        };
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(
+            packet.dx,
+            calc_delta(position.x, 0.0).expect("delta should fit")
+        );
+        assert_eq!(packet.y_rot, to_angle_byte(2.0));
+        assert_eq!(packet.x_rot, to_angle_byte(0.0));
+
+        let EntityMovementSyncPacket::HeadRotation(packet) = &emitted[1] else {
+            panic!("expected head-rotation packet");
+        };
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(packet.head_y_rot, to_angle_byte(2.0));
+    }
+
+    #[test]
+    fn movement_sync_update_full_position_marks_body_and_head_rotation_sent() {
+        let mut state = EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0);
+        let full_update = EntityMovementSyncUpdate {
+            entity_id: 12,
+            has_position: true,
+            has_rotation: true,
+            position: DVec3::new(0.25, 0.0, 0.0),
+            velocity: DVec3::ZERO,
+            body_rotation: (90.0, 45.0),
+            head_yaw: 90.0,
+            on_ground: true,
+        };
+
+        let packets = state.record_update_with_full_delay(full_update, 400);
+        let mut emitted = Vec::new();
+        packets.for_each(|packet| emitted.push(packet));
+
+        assert_eq!(emitted.len(), 2);
+        assert!(matches!(
+            emitted[0],
+            EntityMovementSyncPacket::PositionSync(_)
+        ));
+        assert!(matches!(
+            emitted[1],
+            EntityMovementSyncPacket::HeadRotation(_)
+        ));
+
+        let rotation_only_update = EntityMovementSyncUpdate {
+            has_position: false,
+            position: full_update.position,
+            ..full_update
+        };
+        let packets = state.record_update_with_full_delay(rotation_only_update, 400);
+
+        assert!(packets.is_empty());
     }
 
     #[test]

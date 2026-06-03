@@ -489,7 +489,8 @@ pub use inside_block_effects::{
 };
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{
-    EntityMovementSyncState, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
+    EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
+    EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
     EntityPositionSyncPacket, EntityPositionSyncSnapshot, EntityPositionSyncState,
     EntityRotationSyncState, POSITION_SYNC_THRESHOLD, PackedEntityRotation,
 };

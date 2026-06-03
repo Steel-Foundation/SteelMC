@@ -3,7 +3,7 @@
 
 use glam::DVec3;
 
-use crate::entity::{EntityMovementSyncState, EntityPositionSyncDecision, PackedEntityRotation};
+use crate::entity::{EntityMovementSyncPackets, EntityMovementSyncState, EntityMovementSyncUpdate};
 use crate::physics::ClientAuthoredMovementState;
 
 /// Player movement packets force a full entity position sync after this delay.
@@ -120,41 +120,21 @@ impl MovementState {
             .tick_client_floating(should_count, maximum_flying_ticks)
     }
 
-    /// Selects and records the player movement sync form.
-    pub(super) fn record_position_sync(
+    /// Selects and records packets for an accepted player-authored movement.
+    pub(super) fn record_accepted_movement_sync(
         &mut self,
-        position: DVec3,
-        on_ground: bool,
-    ) -> EntityPositionSyncDecision {
-        self.entity_sync.record_position_sync_with_full_delay(
-            position,
-            on_ground,
-            PLAYER_FULL_SYNC_DELAY,
-        )
-    }
-
-    /// Records a body rotation packet when the packed yaw or pitch changed.
-    pub(super) fn record_body_rotation_sync(
-        &mut self,
-        rotation: (f32, f32),
-    ) -> Option<PackedEntityRotation> {
-        self.entity_sync.record_body_rotation(rotation)
-    }
-
-    /// Marks body rotation as sent because a full position sync includes it.
-    pub(super) fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
-        self.entity_sync.mark_body_rotation_sent(rotation);
-    }
-
-    /// Records a head-rotation packet when the packed yaw changed.
-    pub(super) fn record_head_yaw_sync(&mut self, head_yaw: f32) -> Option<i8> {
-        self.entity_sync.record_head_yaw(head_yaw)
+        update: EntityMovementSyncUpdate,
+    ) -> EntityMovementSyncPackets {
+        self.entity_sync
+            .record_update_with_full_delay(update, PLAYER_FULL_SYNC_DELAY)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
+
+    use crate::entity::EntityMovementSyncUpdate;
 
     use super::MovementState;
 
@@ -193,8 +173,17 @@ mod tests {
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
-        assert_eq!(state.record_body_rotation_sync((90.0, 45.0)), None);
-        assert_eq!(state.record_head_yaw_sync(90.0), None);
+        let packets = state.record_accepted_movement_sync(EntityMovementSyncUpdate {
+            entity_id: 1,
+            has_position: false,
+            has_rotation: true,
+            position: DVec3::new(2.0, 3.0, 4.0),
+            velocity: DVec3::ZERO,
+            body_rotation: (90.0, 45.0),
+            head_yaw: 90.0,
+            on_ground: true,
+        });
+        assert!(packets.is_empty());
     }
 
     #[test]

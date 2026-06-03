@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CMoveEntityRot, CPlayerPosition, CRotateHead, PlayerCommandAction, SAcceptTeleportation,
-    SMovePlayer, SPlayerCommand, SPlayerInput,
+    CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer, SPlayerCommand,
+    SPlayerInput,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_attributes;
@@ -16,10 +16,7 @@ use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
-use crate::entity::{
-    Entity, EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
-    EntityPositionSyncSnapshot, LivingEntity,
-};
+use crate::entity::{Entity, EntityMovementSyncUpdate, LivingEntity};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
@@ -409,88 +406,24 @@ impl Player {
 
         let new_chunk = ChunkPos::from_entity_pos(movement.pos);
         let body_rotation = (movement.yaw, movement.pitch);
-        let (position_decision, position_includes_rotation, body_rotation_packet, head_y_rot) = {
+        let packets = {
             let mut state = self.movement.lock();
             state.set_last_known_client_movement(movement.client_delta);
-            let head_y_rot = if movement.has_rot {
-                state.record_head_yaw_sync(movement.yaw)
-            } else {
-                None
-            };
-
-            if movement.has_pos {
-                let decision = state.record_position_sync(movement.pos, movement.on_ground);
-                let position_includes_rotation =
-                    matches!(decision, EntityPositionSyncDecision::Full);
-                let body_rotation_packet = if position_includes_rotation {
-                    state.mark_body_rotation_sent(body_rotation);
-                    None
-                } else if movement.has_rot {
-                    state.record_body_rotation_sync(body_rotation)
-                } else {
-                    None
-                };
-                (
-                    Some(decision),
-                    position_includes_rotation,
-                    body_rotation_packet,
-                    head_y_rot,
-                )
-            } else {
-                let body_rotation_packet = if movement.has_rot {
-                    state.record_body_rotation_sync(body_rotation)
-                } else {
-                    None
-                };
-                (None, false, body_rotation_packet, head_y_rot)
-            }
+            state.record_accepted_movement_sync(EntityMovementSyncUpdate {
+                entity_id: self.id(),
+                has_position: movement.has_pos,
+                has_rotation: movement.has_rot,
+                position: movement.pos,
+                velocity: self.velocity(),
+                body_rotation,
+                head_yaw: movement.yaw,
+                on_ground: movement.on_ground,
+            })
         };
 
-        if let Some(decision) = position_decision {
-            let snapshot = EntityPositionSyncSnapshot::new(
-                self.id(),
-                movement.pos,
-                self.velocity(),
-                body_rotation,
-                movement.on_ground,
-            );
-
-            if position_includes_rotation || body_rotation_packet.is_some() {
-                match decision.into_position_rot_packet(snapshot) {
-                    EntityPositionRotSyncPacket::Delta(packet) => {
-                        world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
-                    }
-                    EntityPositionRotSyncPacket::Full(packet) => {
-                        world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
-                    }
-                }
-            } else {
-                match decision.into_position_packet(snapshot) {
-                    EntityPositionSyncPacket::Delta(packet) => {
-                        world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
-                    }
-                    EntityPositionSyncPacket::Full(packet) => {
-                        world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
-                    }
-                }
-            }
-        } else if let Some(body_rotation) = body_rotation_packet {
-            let rot_packet = CMoveEntityRot {
-                entity_id: self.id(),
-                y_rot: body_rotation.yaw(),
-                x_rot: body_rotation.pitch(),
-                on_ground: movement.on_ground,
-            };
-            world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id()));
-        }
-
-        if let Some(head_y_rot) = head_y_rot {
-            let head_packet = CRotateHead {
-                entity_id: self.id(),
-                head_y_rot,
-            };
-            world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id()));
-        }
+        packets.for_each(|packet| {
+            world.broadcast_movement_sync_to_nearby(new_chunk, packet, Some(self.id()));
+        });
     }
 
     fn record_client_floating(

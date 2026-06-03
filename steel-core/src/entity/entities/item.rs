@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityPositionSyncPacket,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementSyncPacket,
     EntityPositionSyncSnapshot, EntityPositionSyncState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
@@ -535,7 +535,7 @@ impl ItemEntity {
     fn check_position_sync(
         &self,
         server_entity_tick_count: i32,
-    ) -> Option<EntityPositionSyncPacket> {
+    ) -> Option<EntityMovementSyncPacket> {
         let current_pos = self.position();
         let current_on_ground = self.on_ground();
         let mut sync_state = self.sync_state.lock();
@@ -564,7 +564,7 @@ impl ItemEntity {
         // ignores the velocity field in CEntityPositionSync for non-authoritative
         // entities (like items). The velocity sync is handled separately by
         // check_velocity_sync() which sends CSetEntityMotion.
-        Some(
+        Some(EntityMovementSyncPacket::from(
             decision.into_position_packet(EntityPositionSyncSnapshot::new(
                 self.id(),
                 current_pos,
@@ -572,7 +572,7 @@ impl ItemEntity {
                 self.rotation(),
                 current_on_ground,
             )),
-        )
+        ))
     }
 
     fn apply_fluid_movement_or_gravity(&self) {
@@ -759,19 +759,12 @@ impl Entity for ItemEntity {
         // gravity in deltaMovement. We MUST send CSetEntityMotion to override the client's
         // deltaMovement, otherwise the client's accumulated gravity causes visual desync.
         if let Some(vel_packet) = self.check_velocity_sync() {
-            world.broadcast_to_entity_trackers(self.id(), vel_packet, None);
+            world.broadcast_movement_sync_to_entity_trackers(self.id(), vel_packet.into(), None);
         }
 
         // Send position update if needed (vanilla: ServerEntity.sendChanges line 182)
         if let Some(packet) = self.check_position_sync(tick_count) {
-            match packet {
-                EntityPositionSyncPacket::Delta(packet) => {
-                    world.broadcast_to_entity_trackers(self.id(), packet, None);
-                }
-                EntityPositionSyncPacket::Full(packet) => {
-                    world.broadcast_to_entity_trackers(self.id(), packet, None);
-                }
-            }
+            world.broadcast_movement_sync_to_entity_trackers(self.id(), packet, None);
         }
 
         // Clear needsSync after processing (vanilla: ServerEntity.sendChanges line 193)
