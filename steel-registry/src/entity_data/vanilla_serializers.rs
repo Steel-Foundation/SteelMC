@@ -253,10 +253,16 @@ fn ser_quaternion(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 fn ser_resolvable_profile(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
         EntityData::ResolvableProfile(_v) => {
-            // TODO: Implement proper profile serialization
-            // For now, write "no name, no UUID" which is the empty profile
-            false.write(buf)?; // has name
-            false.write(buf) // has UUID
+            // Vanilla default is ResolvableProfile.Static.EMPTY:
+            // Either::right(Partial.EMPTY), then PlayerSkin.Patch.EMPTY.
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            VarInt(0).write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)
         }
         _ => Err(io::Error::other("Expected ResolvableProfile")),
     }
@@ -336,6 +342,7 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
 #[cfg(test)]
 mod tests {
     use crate::RegistryExt;
+    use crate::entity_data::ResolvableProfile;
 
     use super::*;
 
@@ -393,5 +400,17 @@ mod tests {
         let mut buf = Vec::new();
         writer(&EntityData::Boolean(true), &mut buf).unwrap();
         assert_eq!(buf, vec![1]);
+    }
+
+    #[test]
+    fn empty_resolvable_profile_matches_vanilla_static_empty_shape() {
+        let mut buf = Vec::new();
+        ser_resolvable_profile(
+            &EntityData::ResolvableProfile(ResolvableProfile::default()),
+            &mut buf,
+        )
+        .unwrap();
+
+        assert_eq!(buf, vec![0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

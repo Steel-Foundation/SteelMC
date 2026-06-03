@@ -129,6 +129,110 @@ fn key_ident(default: &Value, serializer: &str) -> Ident {
     Ident::new(&path.to_shouty_snake_case(), Span::call_site())
 }
 
+fn key_field_ident(default: &Value, serializer: &str) -> Ident {
+    let path = minecraft_path(required_string(default, serializer), serializer);
+    Ident::new(&path.to_snake_case(), Span::call_site())
+}
+
+fn required_i64(default: &Value, serializer: &str) -> i64 {
+    default
+        .as_i64()
+        .unwrap_or_else(|| panic!("Expected integer default for {serializer}, got {default}"))
+}
+
+fn required_i32(default: &Value, serializer: &str) -> i32 {
+    required_i64(default, serializer)
+        .try_into()
+        .unwrap_or_else(|_| {
+            panic!("Integer default for {serializer} is out of i32 range: {default}")
+        })
+}
+
+fn required_i8(default: &Value, serializer: &str) -> i8 {
+    required_i64(default, serializer)
+        .try_into()
+        .unwrap_or_else(|_| {
+            panic!("Integer default for {serializer} is out of i8 range: {default}")
+        })
+}
+
+fn required_u16(default: &Value, serializer: &str) -> u16 {
+    required_i64(default, serializer)
+        .try_into()
+        .unwrap_or_else(|_| {
+            panic!("Integer default for {serializer} is out of u16 range: {default}")
+        })
+}
+
+fn required_f32(default: &Value, serializer: &str) -> f32 {
+    default
+        .as_f64()
+        .unwrap_or_else(|| panic!("Expected float default for {serializer}, got {default}"))
+        as f32
+}
+
+fn required_object<'a>(default: &'a Value, serializer: &str) -> &'a serde_json::Map<String, Value> {
+    default
+        .as_object()
+        .unwrap_or_else(|| panic!("Expected object default for {serializer}, got {default}"))
+}
+
+fn required_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    serializer: &str,
+    field: &str,
+) -> &'a Value {
+    object
+        .get(field)
+        .unwrap_or_else(|| panic!("Missing '{field}' in {serializer} default: {object:?}"))
+}
+
+fn required_object_i32(
+    object: &serde_json::Map<String, Value>,
+    serializer: &str,
+    field: &str,
+) -> i32 {
+    required_i32(required_field(object, serializer, field), serializer)
+}
+
+fn required_object_f32(
+    object: &serde_json::Map<String, Value>,
+    serializer: &str,
+    field: &str,
+) -> f32 {
+    required_f32(required_field(object, serializer, field), serializer)
+}
+
+fn require_exact_string(default: &Value, serializer: &str, expected: &str) {
+    let actual = required_string(default, serializer);
+    assert_eq!(
+        actual, expected,
+        "Expected {serializer} default '{expected}', got '{actual}'"
+    );
+}
+
+fn require_empty_array(default: &Value, serializer: &str) {
+    let Some(values) = default.as_array() else {
+        panic!("Expected empty array default for {serializer}, got {default}");
+    };
+    assert!(
+        values.is_empty(),
+        "Expected empty array default for {serializer}, got {default}"
+    );
+}
+
+fn optional_none_expr(serializer: &str, default: &Value) -> TokenStream {
+    let present = default
+        .get("present")
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| panic!("Expected {serializer} presence, got {default}"));
+    assert!(
+        !present,
+        "Unsupported present default for {serializer}: {default}"
+    );
+    quote! { None }
+}
+
 fn registry_default_expr(module: &str, default: &Value, serializer: &str) -> TokenStream {
     let module_ident = Ident::new(module, Span::call_site());
     let value_ident = key_ident(default, serializer);
@@ -144,34 +248,47 @@ fn ordinal_default_expr(default: &Value, serializer: &str, names: &[&str]) -> To
     quote! { #ordinal }
 }
 
+fn item_stack_default_expr(default: &Value) -> TokenStream {
+    if default.as_str().is_some() {
+        require_exact_string(default, "item_stack", "empty");
+        return quote! { ItemStack::empty() };
+    }
+
+    let object = required_object(default, "item_stack");
+    assert!(
+        object.len() == 2,
+        "Expected item_stack default with only item/count, got {default}"
+    );
+
+    let item_ident = key_field_ident(required_field(object, "item_stack", "item"), "item_stack");
+    let count = required_object_i32(object, "item_stack", "count");
+    assert!(
+        count > 0,
+        "Expected positive item_stack count, got {count} in {default}"
+    );
+
+    quote! {
+        ItemStack::with_count(&crate::vanilla_items::ITEMS.#item_ident, #count)
+    }
+}
+
 /// Generate the default value expression for a field.
 fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
     match serializer {
         "byte" => {
-            let v = default
-                .as_i64()
-                .unwrap_or_else(|| panic!("Expected integer default for byte, got {default}"))
-                as i8;
+            let v = required_i8(default, serializer);
             quote! { #v }
         }
         "int" => {
-            let v = default
-                .as_i64()
-                .unwrap_or_else(|| panic!("Expected integer default for int, got {default}"))
-                as i32;
+            let v = required_i32(default, serializer);
             quote! { #v }
         }
         "long" => {
-            let v = default
-                .as_i64()
-                .unwrap_or_else(|| panic!("Expected integer default for long, got {default}"));
+            let v = required_i64(default, serializer);
             quote! { #v }
         }
         "float" => {
-            let v = default
-                .as_f64()
-                .unwrap_or_else(|| panic!("Expected float default, got {default}"))
-                as f32;
+            let v = required_f32(default, serializer);
             let lit = Literal::f32_suffixed(v);
             quote! { #lit }
         }
@@ -204,9 +321,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
         | "optional_block_state"
         | "optional_living_entity_reference"
         | "optional_unsigned_int"
-        | "optional_global_pos" => {
-            quote! { None }
-        }
+        | "optional_global_pos" => optional_none_expr(serializer, default),
         "pose" => {
             let pose_str = required_string(default, serializer);
             let pose_ident = Ident::new(&pose_str.to_upper_camel_case(), Span::call_site());
@@ -218,31 +333,25 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             quote! { Direction::#dir_ident }
         }
         "rotations" => {
-            if let Some(obj) = default.as_object() {
-                let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let z = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let x_lit = Literal::f32_suffixed(x);
-                let y_lit = Literal::f32_suffixed(y);
-                let z_lit = Literal::f32_suffixed(z);
-                quote! { Rotations::new(#x_lit, #y_lit, #z_lit) }
-            } else {
-                quote! { Rotations::ZERO }
-            }
+            let obj = required_object(default, serializer);
+            let x = required_object_f32(obj, serializer, "x");
+            let y = required_object_f32(obj, serializer, "y");
+            let z = required_object_f32(obj, serializer, "z");
+            let x_lit = Literal::f32_suffixed(x);
+            let y_lit = Literal::f32_suffixed(y);
+            let z_lit = Literal::f32_suffixed(z);
+            quote! { Rotations::new(#x_lit, #y_lit, #z_lit) }
         }
         "block_pos" => {
-            if let Some(obj) = default.as_object() {
-                let x = obj.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let y = obj.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let z = obj.get("z").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                quote! { BlockPos::new(#x, #y, #z) }
-            } else {
-                quote! { BlockPos::new(0, 0, 0) }
-            }
+            let obj = required_object(default, serializer);
+            let x = required_object_i32(obj, serializer, "x");
+            let y = required_object_i32(obj, serializer, "y");
+            let z = required_object_i32(obj, serializer, "z");
+            quote! { BlockPos::new(#x, #y, #z) }
         }
         "block_state" => {
-            if let Some(v) = default.as_i64() {
-                let v = v as u16;
+            if default.as_i64().is_some() {
+                let v = required_u16(default, serializer);
                 quote! { BlockStateId(#v) }
             } else {
                 let block_ident = key_ident(default, serializer);
@@ -308,56 +417,52 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             quote! { ArmadilloState::#state_ident }
         }
         "vector3" => {
-            if let Some(obj) = default.as_object() {
-                let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let z = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let x_lit = Literal::f32_suffixed(x);
-                let y_lit = Literal::f32_suffixed(y);
-                let z_lit = Literal::f32_suffixed(z);
-                quote! { Vector3f::new(#x_lit, #y_lit, #z_lit) }
-            } else {
-                quote! { Vector3f::ZERO }
-            }
+            let obj = required_object(default, serializer);
+            let x = required_object_f32(obj, serializer, "x");
+            let y = required_object_f32(obj, serializer, "y");
+            let z = required_object_f32(obj, serializer, "z");
+            let x_lit = Literal::f32_suffixed(x);
+            let y_lit = Literal::f32_suffixed(y);
+            let z_lit = Literal::f32_suffixed(z);
+            quote! { Vector3f::new(#x_lit, #y_lit, #z_lit) }
         }
         "quaternion" => {
-            if let Some(obj) = default.as_object() {
-                let x = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let y = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let z = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let w = obj.get("w").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-                let x_lit = Literal::f32_suffixed(x);
-                let y_lit = Literal::f32_suffixed(y);
-                let z_lit = Literal::f32_suffixed(z);
-                let w_lit = Literal::f32_suffixed(w);
-                quote! { Quaternionf::new(#x_lit, #y_lit, #z_lit, #w_lit) }
-            } else {
-                quote! { Quaternionf::IDENTITY }
-            }
+            let obj = required_object(default, serializer);
+            let x = required_object_f32(obj, serializer, "x");
+            let y = required_object_f32(obj, serializer, "y");
+            let z = required_object_f32(obj, serializer, "z");
+            let w = required_object_f32(obj, serializer, "w");
+            let x_lit = Literal::f32_suffixed(x);
+            let y_lit = Literal::f32_suffixed(y);
+            let z_lit = Literal::f32_suffixed(z);
+            let w_lit = Literal::f32_suffixed(w);
+            quote! { Quaternionf::new(#x_lit, #y_lit, #z_lit, #w_lit) }
         }
         "villager_data" => {
             if let Some(obj) = default.as_object() {
-                let vt = obj.get("type").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let prof = obj.get("profession").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let level = obj.get("level").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
+                let vt = required_object_i32(obj, serializer, "type");
+                let prof = required_object_i32(obj, serializer, "profession");
+                let level = required_object_i32(obj, serializer, "level");
                 quote! { VillagerData::new(#vt, #prof, #level) }
             } else {
+                require_exact_string(default, serializer, "VillagerData");
                 quote! { VillagerData::new(0, 0, 1) }
             }
         }
-        "item_stack" => {
-            quote! { ItemStack::empty() }
-        }
+        "item_stack" => item_stack_default_expr(default),
         "particle" => {
+            require_exact_string(default, serializer, "ColorParticleOption");
             quote! { ParticleData::default() }
         }
         "particles" => {
+            require_empty_array(default, serializer);
             quote! { ParticleList::default() }
         }
         "resolvable_profile" => {
+            require_exact_string(default, serializer, "Static");
             quote! { ResolvableProfile::default() }
         }
-        _ => quote! { Default::default() },
+        _ => panic!("Unhandled entity data default for serializer {serializer}: {default}"),
     }
 }
 

@@ -429,3 +429,28 @@ pub fn write_data_values(values: &[DataValue], buf: &mut Vec<u8>) -> io::Result<
     // Write terminator
     0xFFu8.write(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::Identifier;
+
+    use crate::vanilla_entity_data::{EggEntityData, ItemEntityData};
+
+    #[test]
+    fn projectile_item_stack_defaults_use_extracted_item() {
+        let data = EggEntityData::new();
+        let stack = data.throwable_item_projectile().item_stack.get();
+
+        assert_eq!(&stack.item().key, &Identifier::vanilla_static("egg"));
+        assert_eq!(stack.count(), 1);
+        assert!(data.pack_all().is_empty());
+    }
+
+    #[test]
+    fn empty_item_stack_defaults_remain_empty() {
+        let data = ItemEntityData::new();
+
+        assert!(data.item.get().is_empty());
+        assert!(data.pack_all().is_empty());
+    }
+}
