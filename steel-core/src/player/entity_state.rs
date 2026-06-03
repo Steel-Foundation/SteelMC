@@ -82,8 +82,6 @@ pub(super) struct EntityState {
     sleeping: bool,
     /// Whether the vanilla swimming shared flag is set.
     swimming: bool,
-    /// Whether the player is currently fall flying (elytra gliding).
-    fall_flying: bool,
     /// Whether the player is sneaking (shift key down).
     crouching: bool,
     /// Whether the player is sprinting.
@@ -94,7 +92,6 @@ pub(super) struct EntityState {
 pub(super) struct EntityStateSnapshot {
     pub sleeping: bool,
     pub swimming: bool,
-    pub fall_flying: bool,
     pub crouching: bool,
     pub sprinting: bool,
 }
@@ -105,7 +102,6 @@ impl EntityState {
         Self {
             sleeping: false,
             swimming: false,
-            fall_flying: false,
             crouching: false,
             sprinting: false,
         }
@@ -116,7 +112,6 @@ impl EntityState {
         EntityStateSnapshot {
             sleeping: self.sleeping,
             swimming: self.swimming,
-            fall_flying: self.fall_flying,
             crouching: self.crouching,
             sprinting: self.sprinting,
         }
@@ -130,10 +125,6 @@ impl EntityState {
         self.swimming = swimming;
     }
 
-    pub(super) const fn set_fall_flying(&mut self, fall_flying: bool) {
-        self.fall_flying = fall_flying;
-    }
-
     pub(super) const fn set_crouching(&mut self, crouching: bool) {
         self.crouching = crouching;
     }
@@ -143,7 +134,6 @@ impl EntityState {
     }
 
     pub(super) const fn reset_transient(&mut self) {
-        self.fall_flying = false;
         self.sleeping = false;
         self.swimming = false;
         self.crouching = false;
@@ -199,6 +189,7 @@ impl Player {
 
     pub(super) fn reset_entity_state(&self) {
         self.entity_state.lock().reset_transient();
+        self.set_fall_flying(false);
     }
 
     /// Returns true if the player is shifting (sneaking).
@@ -215,7 +206,7 @@ impl Player {
     /// it into `entity_data.shared_flags`. Dirty-tracking in [`SyncedValue`]
     /// ensures a `SetEntityData` packet is only sent when the value changes.
     pub(super) fn update_shared_flags(&self) {
-        let state = self.entity_state.lock();
+        let state = self.entity_state_snapshot();
         let mut flags = EntitySharedFlags::empty();
 
         flags.set(
@@ -226,8 +217,7 @@ impl Player {
         flags.set(EntitySharedFlags::SHIFT_KEY_DOWN, state.crouching);
         flags.set(EntitySharedFlags::SWIMMING, state.swimming);
         flags.set(EntitySharedFlags::SPRINTING, state.sprinting);
-        flags.set(EntitySharedFlags::FALL_FLYING, state.fall_flying);
-        drop(state);
+        flags.set(EntitySharedFlags::FALL_FLYING, self.is_fall_flying());
 
         self.entity_data
             .lock()
@@ -279,7 +269,7 @@ impl Player {
     /// Returns true if the player is currently fall flying (elytra).
     #[must_use]
     pub fn is_fall_flying(&self) -> bool {
-        self.entity_state.lock().snapshot().fall_flying
+        LivingEntity::is_fall_flying(self)
     }
 
     /// Returns true if vanilla rules consider this player to be on a climbable block.
@@ -321,7 +311,7 @@ impl Player {
 
     /// Sets the player's fall flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
-        self.entity_state.lock().set_fall_flying(fall_flying);
+        LivingEntity::set_fall_flying(self, fall_flying);
     }
 
     /// Determines the desired pose based on current player state.
@@ -333,7 +323,7 @@ impl Player {
             EntityPose::Sleeping
         } else if es.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator {
             EntityPose::Swimming
-        } else if es.fall_flying {
+        } else if self.is_fall_flying() {
             EntityPose::FallFlying
         } else if es.crouching && !self.is_flying() {
             EntityPose::Sneaking

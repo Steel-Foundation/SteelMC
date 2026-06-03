@@ -1495,10 +1495,6 @@ impl LivingEntity for Player {
         self.apply_sprint_speed_modifier(sprinting);
     }
 
-    fn is_fall_flying(&self) -> bool {
-        Player::is_fall_flying(self)
-    }
-
     fn is_sleeping(&self) -> bool {
         Player::is_sleeping(self)
     }

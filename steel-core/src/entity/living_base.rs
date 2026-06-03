@@ -22,6 +22,7 @@ struct LivingEntityState {
     death_time: i32,
     speed: f32,
     current_impulse_context_reset_grace_time: i32,
+    fall_flying: bool,
 }
 
 impl LivingEntityState {
@@ -33,6 +34,7 @@ impl LivingEntityState {
             death_time: 0,
             speed,
             current_impulse_context_reset_grace_time: 0,
+            fall_flying: false,
         }
     }
 
@@ -125,6 +127,17 @@ impl LivingEntityBase {
         if state.current_impulse_context_reset_grace_time > 0 {
             state.current_impulse_context_reset_grace_time -= 1;
         }
+    }
+
+    /// Returns whether this living entity is currently fall flying.
+    #[must_use]
+    pub fn is_fall_flying(&self) -> bool {
+        self.state.lock().fall_flying
+    }
+
+    /// Sets the vanilla living-entity fall-flying state.
+    pub fn set_fall_flying(&self, fall_flying: bool) {
+        self.state.lock().fall_flying = fall_flying;
     }
 
     /// Calculates vanilla living-entity fall damage.
@@ -263,5 +276,17 @@ mod tests {
 
         base.tick_post_impulse_grace_time();
         assert!(!base.is_in_post_impulse_grace_time());
+    }
+
+    #[test]
+    fn fall_flying_is_living_entity_state() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        assert!(!base.is_fall_flying());
+        base.set_fall_flying(true);
+        assert!(base.is_fall_flying());
+        base.set_fall_flying(false);
+        assert!(!base.is_fall_flying());
     }
 }

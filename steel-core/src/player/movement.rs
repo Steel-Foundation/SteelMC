@@ -208,7 +208,8 @@ impl Player {
         let start_pos = self.position();
         let game_mode = self.game_mode();
         let state = self.entity_state_snapshot();
-        let (is_sleeping, is_fall_flying) = (state.sleeping, state.fall_flying);
+        let is_sleeping = state.sleeping;
+        let is_fall_flying = self.is_fall_flying();
         let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
         let is_creative = game_mode == GameType::Creative;

@@ -2544,7 +2544,12 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity is fall flying (using elytra).
     fn is_fall_flying(&self) -> bool {
-        false
+        self.living_base().is_fall_flying()
+    }
+
+    /// Sets whether this entity is fall flying.
+    fn set_fall_flying(&self, fall_flying: bool) {
+        self.living_base().set_fall_flying(fall_flying);
     }
 
     /// Checks if the entity is sleeping.
