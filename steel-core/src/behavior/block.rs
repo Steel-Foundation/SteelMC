@@ -599,14 +599,15 @@ pub trait BlockBehavior: Send + Sync {
         self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
 
-    /// Called when an entity lands on this block.
+    /// Default fall-on hook.
     ///
-    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
+    /// Overrides that mirror vanilla `super.fallOn(...)` should call
+    /// [`Self::default_fall_on`].
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
-    fn fall_on(
+    fn default_fall_on(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
@@ -618,6 +619,19 @@ pub trait BlockBehavior: Send + Sync {
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
+    }
+
+    /// Called when an entity lands on this block.
+    ///
+    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext,
+    ) -> Option<EntityFallDamage> {
+        self.default_fall_on(state, world, pos, context)
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
