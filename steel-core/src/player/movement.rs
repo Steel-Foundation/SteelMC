@@ -16,7 +16,7 @@ use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
-use crate::entity::{Entity, EntityMovementSyncUpdate, LivingEntity};
+use crate::entity::{AcceptedClientMovement, Entity, EntityMovementSyncUpdate, LivingEntity};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     has_collision, is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
@@ -355,10 +355,6 @@ impl Player {
             client_delta = accepted_pos - start_pos;
         }
 
-        if packet.has_pos {
-            self.set_position(accepted_pos);
-            self.refresh_fluid_contact();
-        }
         if let Some((player_stands_on_something, y_dist)) = floating_check {
             self.record_client_floating(
                 &world,
@@ -368,17 +364,20 @@ impl Player {
                 is_fall_flying,
             );
         }
-        self.set_rotation((target_yaw, target_pitch));
-        self.set_on_ground_with_movement(
-            packet.on_ground,
-            packet.horizontal_collision,
-            client_delta,
-        );
-        if self.do_check_fall_damage(client_delta, packet.on_ground, &world) {
+
+        let accepted_position = packet.has_pos.then_some(accepted_pos);
+        if self.apply_accepted_client_movement(
+            &world,
+            AcceptedClientMovement {
+                position: accepted_position,
+                rotation: (target_yaw, target_pitch),
+                on_ground: packet.on_ground,
+                horizontal_collision: packet.horizontal_collision,
+                movement: client_delta,
+                reset_fall_distance: moved_upwards,
+            },
+        ) {
             return;
-        }
-        if moved_upwards {
-            self.reset_fall_distance();
         }
 
         self.broadcast_accepted_movement(

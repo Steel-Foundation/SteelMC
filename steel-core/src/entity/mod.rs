@@ -506,6 +506,23 @@ pub type SharedEntity = Arc<dyn Entity>;
 /// Type alias for a weak entity reference.
 pub type WeakEntity = Weak<dyn Entity>;
 
+/// Final state accepted from a client-authored movement packet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AcceptedClientMovement {
+    /// Optional authoritative client position. Rotation-only packets leave this unset.
+    pub position: Option<DVec3>,
+    /// Accepted yaw and pitch in degrees.
+    pub rotation: (f32, f32),
+    /// Accepted on-ground flag.
+    pub on_ground: bool,
+    /// Accepted horizontal-collision flag.
+    pub horizontal_collision: bool,
+    /// Movement delta from the server position before processing the packet.
+    pub movement: DVec3,
+    /// Whether vanilla resets fall distance after the movement is applied.
+    pub reset_fall_distance: bool,
+}
+
 /// Object-safe access to an entity trait object from default `Entity` methods.
 pub trait EntityEventSource {
     /// Returns this entity as a game-event source.
@@ -1502,6 +1519,36 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let ground_contact = self.ground_contact_after_movement(on_ground, Some(movement));
         self.base()
             .set_on_ground_with_movement(on_ground, horizontal_collision, ground_contact);
+    }
+
+    /// Applies final state accepted from a client-authored movement packet.
+    ///
+    /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
+    /// handling after rollback/collision validation has accepted the target.
+    fn apply_accepted_client_movement(
+        &self,
+        world: &Arc<World>,
+        accepted: AcceptedClientMovement,
+    ) -> bool {
+        if let Some(position) = accepted.position {
+            self.set_position(position);
+            self.refresh_fluid_contact();
+        }
+
+        self.set_rotation(accepted.rotation);
+        self.set_on_ground_with_movement(
+            accepted.on_ground,
+            accepted.horizontal_collision,
+            accepted.movement,
+        );
+        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
+            return true;
+        }
+        if accepted.reset_fall_distance {
+            self.reset_fall_distance();
+        }
+
+        false
     }
 
     /// Sets the entity's position.
