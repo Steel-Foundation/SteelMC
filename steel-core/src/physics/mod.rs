@@ -22,6 +22,7 @@ pub use collision::{
 };
 pub(crate) use entity_move::move_entity;
 pub use entity_move::{MoveResult, MoverType};
+pub(crate) use movement_validation::ClientAuthoredMovementState;
 pub use movement_validation::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, movement_error_delta,
     vanilla_post_move_y_dist,

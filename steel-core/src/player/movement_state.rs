@@ -7,6 +7,7 @@ use crate::entity::{
     EntityPositionSyncDecision, EntityPositionSyncState, EntityRotationSyncState,
     PackedEntityRotation,
 };
+use crate::physics::ClientAuthoredMovementState;
 
 /// Player movement packets force a full entity position sync after this delay.
 const PLAYER_FULL_SYNC_DELAY: i32 = 400;
@@ -17,30 +18,8 @@ pub struct MovementState {
     position_sync: EntityPositionSyncState,
     /// Packed body/head rotation state used for tracking movement packets.
     rotation_sync: EntityRotationSyncState,
-
-    /// Last known good position (for collision rollback).
-    last_good_position: DVec3,
-    /// Position at start of tick (for speed validation).
-    /// Matches vanilla `firstGoodX/Y/Z`.
-    first_good_position: DVec3,
-
-    /// Number of move packets received since connection started.
-    received_move_packet_count: i32,
-    /// Number of move packets at the last tick (for rate limiting).
-    known_move_packet_count: i32,
-
-    /// Remaining ticks for vanilla post-impulse movement validation grace.
-    post_impulse_grace_time: i32,
-
-    /// Last movement accepted from the client.
-    ///
-    /// Mirrors vanilla `ServerPlayer.lastKnownClientMovement`.
-    last_known_client_movement: DVec3,
-
-    /// Whether the last accepted client move appeared to be unsupported in air.
-    client_is_floating: bool,
-    /// Number of consecutive ticks the client has appeared to be floating.
-    above_ground_tick_count: i32,
+    /// Vanilla validation state for client-authored body movement.
+    client_movement: ClientAuthoredMovementState,
 }
 
 impl MovementState {
@@ -49,14 +28,7 @@ impl MovementState {
         Self {
             position_sync: EntityPositionSyncState::new(DVec3::new(0.0, 0.0, 0.0), false),
             rotation_sync: EntityRotationSyncState::new((0.0, 0.0), 0.0),
-            last_good_position: DVec3::new(0.0, 0.0, 0.0),
-            first_good_position: DVec3::new(0.0, 0.0, 0.0),
-            received_move_packet_count: 0,
-            known_move_packet_count: 0,
-            post_impulse_grace_time: 0,
-            last_known_client_movement: DVec3::new(0.0, 0.0, 0.0),
-            client_is_floating: false,
-            above_ground_tick_count: 0,
+            client_movement: ClientAuthoredMovementState::new(),
         }
     }
 
@@ -68,9 +40,7 @@ impl MovementState {
 
     /// Resets per-tick vanilla movement validation bases.
     pub(super) const fn reset_for_tick(&mut self, position: DVec3) {
-        self.first_good_position = position;
-        self.last_good_position = position;
-        self.known_move_packet_count = self.received_move_packet_count;
+        self.client_movement.reset_for_tick(position);
     }
 
     /// Resets movement validation and tracking bases after a server position sync.
@@ -82,75 +52,67 @@ impl MovementState {
     ) {
         self.position_sync = EntityPositionSyncState::new(position, on_ground);
         self.rotation_sync = EntityRotationSyncState::new(rotation, rotation.0);
-        self.last_good_position = position;
-        self.first_good_position = position;
-        self.received_move_packet_count = 0;
-        self.known_move_packet_count = 0;
-        self.last_known_client_movement = DVec3::ZERO;
-        self.reset_flying_ticks();
+        self.client_movement.reset_for_position_sync(position);
     }
 
     /// Returns the current vanilla first-good and last-good validation positions.
     #[must_use]
     pub(super) const fn good_positions(&self) -> (DVec3, DVec3) {
-        (self.first_good_position, self.last_good_position)
+        self.client_movement.good_positions()
     }
 
     /// Records a received movement packet and returns packets since the last tick.
     pub(super) const fn record_move_packet_delta(&mut self) -> i32 {
-        self.received_move_packet_count += 1;
-        self.received_move_packet_count - self.known_move_packet_count
+        self.client_movement.record_move_packet_delta()
     }
 
     /// Marks a movement target as the latest accepted vanilla last-good position.
     pub(super) const fn mark_last_good_position(&mut self, position: DVec3) {
-        self.last_good_position = position;
+        self.client_movement.mark_last_good_position(position);
     }
 
     /// Applies vanilla post-impulse movement validation grace.
     pub(super) const fn apply_post_impulse_grace_time(&mut self, ticks: i32) {
-        if ticks > self.post_impulse_grace_time {
-            self.post_impulse_grace_time = ticks;
-        }
+        self.client_movement.apply_post_impulse_grace_time(ticks);
     }
 
     /// Returns whether movement validation is inside post-impulse grace.
     #[must_use]
     pub(super) const fn is_in_post_impulse_grace_time(&self) -> bool {
-        self.post_impulse_grace_time > 0
+        self.client_movement.is_in_post_impulse_grace_time()
     }
 
     /// Decrements post-impulse grace once per player tick.
     pub(super) const fn tick_post_impulse_grace_time(&mut self) {
-        if self.post_impulse_grace_time > 0 {
-            self.post_impulse_grace_time -= 1;
-        }
+        self.client_movement.tick_post_impulse_grace_time();
     }
 
     /// Sets the last accepted client movement vector.
     pub(super) const fn set_last_known_client_movement(&mut self, movement: DVec3) {
-        self.last_known_client_movement = movement;
+        self.client_movement
+            .set_last_known_client_movement(movement);
     }
 
     /// Clears the last accepted client movement vector.
     pub(super) const fn reset_last_known_client_movement(&mut self) {
-        self.last_known_client_movement = DVec3::ZERO;
+        self.client_movement.reset_last_known_client_movement();
     }
 
     /// Returns the last accepted client movement vector.
     #[must_use]
     pub(super) const fn last_known_client_movement(&self) -> DVec3 {
-        self.last_known_client_movement
+        self.client_movement.last_known_client_movement()
     }
 
     /// Records whether the latest accepted movement made the client appear to float.
     pub(super) const fn record_client_floating(&mut self, client_is_floating: bool) {
-        self.client_is_floating = client_is_floating;
+        self.client_movement
+            .record_client_floating(client_is_floating);
     }
 
     /// Resets the vanilla floating violation counter.
     pub(super) const fn reset_flying_ticks(&mut self) {
-        self.above_ground_tick_count = 0;
+        self.client_movement.reset_flying_ticks();
     }
 
     /// Advances the vanilla floating violation tracker.
@@ -161,14 +123,8 @@ impl MovementState {
         should_count: bool,
         maximum_flying_ticks: i32,
     ) -> bool {
-        if self.client_is_floating && should_count {
-            self.above_ground_tick_count = self.above_ground_tick_count.saturating_add(1);
-            return self.above_ground_tick_count > maximum_flying_ticks;
-        }
-
-        self.client_is_floating = false;
-        self.above_ground_tick_count = 0;
-        false
+        self.client_movement
+            .tick_client_floating(should_count, maximum_flying_ticks)
     }
 
     /// Selects and records the player movement sync form.
