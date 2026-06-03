@@ -447,6 +447,23 @@ pub trait BlockBehavior: Send + Sync {
         state.get_collision_shape()
     }
 
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    ///
+    /// Vanilla parity: `BlockState.getEntityInsideCollisionShape(BlockGetter, BlockPos, Entity)`.
+    #[expect(
+        unused_variables,
+        reason = "vanilla default is a full block independent of state, world, position, and entity"
+    )]
+    fn get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        VoxelShape::FULL_BLOCK
+    }
+
     /// Called on random tick for blocks that support random ticking.
     ///
     /// This is only called if `is_randomly_ticking()` returns true.

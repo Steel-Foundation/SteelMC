@@ -152,11 +152,24 @@ fn apply_block_effect_segment(
             }
 
             let state = world.get_block_state(pos);
-            if state.is_air() || !visited_blocks.insert(pos) {
+            if state.is_air() {
                 return true;
             }
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            let entity_inside_shape =
+                behavior.get_entity_inside_collision_shape(state, world.as_ref(), pos, entity);
+            if !block_effects::collided_with_shape_moving_from(
+                entity.make_bounding_box_at(from),
+                from,
+                to,
+                pos,
+                entity_inside_shape,
+            ) || !visited_blocks.insert(pos)
+            {
+                return true;
+            }
+
             behavior.entity_inside(state, world, pos, entity);
             !entity.is_removed()
         })
@@ -1021,9 +1034,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Applies current block-contact effects to this entity.
     ///
     /// Mirrors the shared ownership boundary of vanilla `Entity.applyEffectsFromBlocks`.
-    /// TODO: Extend the block behavior API with vanilla's entity-inside collision
-    /// shape, fluid inside effects, and `InsideBlockEffectApplier` once those
-    /// effect systems exist.
+    /// TODO: Extend the block behavior API with vanilla fluid inside effects
+    /// and `InsideBlockEffectApplier` once those effect systems exist.
     fn apply_effects_from_blocks(&self) {
         let entity = self.as_entity_event_source();
         let movements = self.base().take_movements_for_block_effects();

@@ -2,11 +2,13 @@ use std::mem;
 
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
+use steel_registry::blocks::shapes::VoxelShape;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis};
 
 const SMALL_MOVEMENT_EPSILON_SQ: f64 = 9.999_999_4e-11;
 const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
+const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
 
 pub(super) fn for_each_block_intersected_between(
     from: DVec3,
@@ -55,6 +57,29 @@ pub(super) fn for_each_block_intersected_between(
     }
 
     Some(last_iteration + 1)
+}
+
+pub(super) fn collided_with_shape_moving_from(
+    entity_box_at_from: WorldAabb,
+    from: DVec3,
+    to: DVec3,
+    block_pos: BlockPos,
+    shape: VoxelShape,
+) -> bool {
+    let from_center = center(entity_box_at_from);
+    let to_center = from_center + (to - from);
+    let inflate_x = entity_box_at_from.width() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
+    let inflate_y = entity_box_at_from.height() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
+    let inflate_z = entity_box_at_from.depth() * 0.5 - ENTITY_INSIDE_SWEEP_INFLATE_EPSILON;
+
+    shape.iter().any(|part| {
+        let inflated_part = part
+            .at_block(block_pos)
+            .inflate_xyz(inflate_x, inflate_y, inflate_z);
+        contains(inflated_part, from_center)
+            || contains(inflated_part, to_center)
+            || clip_aabb(inflated_part, from_center, to_center).is_some()
+    })
 }
 
 #[expect(
@@ -303,6 +328,61 @@ fn clip_block(pos: BlockPos, from: DVec3, to: DVec3) -> Option<DVec3> {
     Some(from + direction * t_min)
 }
 
+fn clip_aabb(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
+    let direction = to - from;
+    let mut t_min = 0.0;
+    let mut t_max = 1.0;
+
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let start = component(from, axis);
+        let delta = component(direction, axis);
+        let axis_min = aabb.min(axis);
+        let axis_max = aabb.max(axis);
+        if delta.abs() < CLIP_EPSILON {
+            if start < axis_min || start > axis_max {
+                return None;
+            }
+            continue;
+        }
+
+        let inv_delta = 1.0 / delta;
+        let mut low = (axis_min - start) * inv_delta;
+        let mut high = (axis_max - start) * inv_delta;
+        if low > high {
+            mem::swap(&mut low, &mut high);
+        }
+
+        if low > t_min {
+            t_min = low;
+        }
+        if high < t_max {
+            t_max = high;
+        }
+        if t_min > t_max {
+            return None;
+        }
+    }
+
+    Some(from + direction * t_min)
+}
+
+fn contains(aabb: WorldAabb, point: DVec3) -> bool {
+    point.x >= aabb.min_x()
+        && point.x < aabb.max_x()
+        && point.y >= aabb.min_y()
+        && point.y < aabb.max_y()
+        && point.z >= aabb.min_z()
+        && point.z < aabb.max_z()
+}
+
+const fn center(aabb: WorldAabb) -> DVec3 {
+    DVec3::new(
+        f64::midpoint(aabb.min_x(), aabb.max_x()),
+        f64::midpoint(aabb.min_y(), aabb.max_y()),
+        f64::midpoint(aabb.min_z(), aabb.max_z()),
+    )
+}
+
 fn get_furthest_corner(direction: DVec3) -> IVec3 {
     let x_dot = direction.x.abs();
     let y_dot = direction.y.abs();
@@ -384,6 +464,49 @@ mod tests {
             .is_some()
         );
         positions
+    }
+
+    #[test]
+    fn entity_inside_shape_uses_swept_entity_center_against_inflated_shape() {
+        let entity_box = WorldAabb::entity_box(0.5, 0.0, 0.5, 0.3, 1.8);
+        let from = DVec3::new(0.5, 0.0, 0.5);
+        let to = DVec3::new(2.5, 0.0, 2.5);
+
+        assert!(collided_with_shape_moving_from(
+            entity_box,
+            from,
+            to,
+            BlockPos::new(2, 0, 2),
+            VoxelShape::FULL_BLOCK,
+        ));
+        assert!(!collided_with_shape_moving_from(
+            entity_box,
+            from,
+            to,
+            BlockPos::new(2, 0, 0),
+            VoxelShape::FULL_BLOCK,
+        ));
+    }
+
+    #[test]
+    fn stationary_entity_inside_shape_uses_current_entity_box() {
+        let entity_box = WorldAabb::entity_box(0.5, 0.0, 0.5, 0.3, 1.8);
+        let position = DVec3::new(0.5, 0.0, 0.5);
+
+        assert!(collided_with_shape_moving_from(
+            entity_box,
+            position,
+            position,
+            BlockPos::new(0, 0, 0),
+            VoxelShape::FULL_BLOCK,
+        ));
+        assert!(!collided_with_shape_moving_from(
+            entity_box,
+            position,
+            position,
+            BlockPos::new(2, 0, 0),
+            VoxelShape::FULL_BLOCK,
+        ));
     }
 
     #[test]
