@@ -1,3 +1,4 @@
+mod bed_block;
 mod campfire_block;
 mod door_block;
 mod fence_block;
@@ -13,6 +14,7 @@ mod slime_block;
 mod stair_block;
 mod weathering_block;
 
+pub use bed_block::BedBlock;
 pub use campfire_block::CampfireBlock;
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
 pub use fence_block::FenceBlock;
