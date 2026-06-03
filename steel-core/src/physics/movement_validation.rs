@@ -150,6 +150,12 @@ impl ClientAuthoredMovementState {
         self.client_is_floating = client_is_floating;
     }
 
+    /// Clears vanilla floating violation state.
+    pub(crate) const fn clear_client_floating(&mut self) {
+        self.client_is_floating = false;
+        self.above_ground_tick_count = 0;
+    }
+
     /// Resets the vanilla floating violation counter.
     pub(crate) const fn reset_flying_ticks(&mut self) {
         self.above_ground_tick_count = 0;
@@ -324,6 +330,18 @@ mod tests {
         assert!(!state.tick_client_floating(false, 1));
 
         state.record_client_floating(true);
+        assert!(!state.tick_client_floating(true, 1));
+    }
+
+    #[test]
+    fn client_movement_clear_floating_resets_flag_and_counter() {
+        let mut state = ClientAuthoredMovementState::new();
+        state.record_client_floating(true);
+        assert!(!state.tick_client_floating(true, 1));
+
+        state.clear_client_floating();
+
+        assert!(!state.tick_client_floating(true, 1));
         assert!(!state.tick_client_floating(true, 1));
     }
 

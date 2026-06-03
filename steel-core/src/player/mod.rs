@@ -392,6 +392,7 @@ impl Player {
 
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(self.position());
+        self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
         self.update_swimming();
@@ -437,6 +438,9 @@ impl Player {
         }
 
         if self.disconnect_if_floating_too_long() {
+            return;
+        }
+        if self.disconnect_if_vehicle_floating_too_long() {
             return;
         }
 

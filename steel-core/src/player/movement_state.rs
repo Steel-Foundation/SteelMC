@@ -15,6 +15,10 @@ pub struct MovementState {
     entity_sync: EntityMovementSyncState,
     /// Vanilla validation state for client-authored body movement.
     client_movement: ClientAuthoredMovementState,
+    /// Vanilla validation state for the controlled root vehicle.
+    client_vehicle_movement: ClientAuthoredMovementState,
+    /// Entity id of the controlled root vehicle tracked this tick.
+    client_vehicle_id: Option<i32>,
 }
 
 impl MovementState {
@@ -23,6 +27,8 @@ impl MovementState {
         Self {
             entity_sync: EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0),
             client_movement: ClientAuthoredMovementState::new(),
+            client_vehicle_movement: ClientAuthoredMovementState::new(),
+            client_vehicle_id: None,
         }
     }
 
@@ -35,6 +41,18 @@ impl MovementState {
     /// Resets per-tick vanilla movement validation bases.
     pub(super) const fn reset_for_tick(&mut self, position: DVec3) {
         self.client_movement.reset_for_tick(position);
+    }
+
+    /// Resets per-tick vanilla controlled-vehicle movement validation bases.
+    pub(super) const fn reset_vehicle_for_tick(&mut self, vehicle_id: i32, position: DVec3) {
+        self.client_vehicle_id = Some(vehicle_id);
+        self.client_vehicle_movement.reset_for_tick(position);
+    }
+
+    /// Clears the active controlled-vehicle validation state for this tick.
+    pub(super) const fn clear_vehicle_for_tick(&mut self) {
+        self.client_vehicle_id = None;
+        self.client_vehicle_movement.clear_client_floating();
     }
 
     /// Resets movement validation and tracking bases after a server position sync.
@@ -106,6 +124,7 @@ impl MovementState {
     /// Resets the vanilla floating violation counter.
     pub(super) const fn reset_flying_ticks(&mut self) {
         self.client_movement.reset_flying_ticks();
+        self.client_vehicle_movement.reset_flying_ticks();
     }
 
     /// Advances the vanilla floating violation tracker.
@@ -118,6 +137,23 @@ impl MovementState {
     ) -> bool {
         self.client_movement
             .tick_client_floating(should_count, maximum_flying_ticks)
+    }
+
+    /// Advances the vanilla controlled-vehicle floating violation tracker.
+    ///
+    /// Returns true once the client has exceeded the configured maximum flying ticks.
+    pub(super) const fn tick_vehicle_client_floating(
+        &mut self,
+        vehicle_id: i32,
+        maximum_flying_ticks: i32,
+    ) -> bool {
+        if !matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+            self.client_vehicle_movement.clear_client_floating();
+            return false;
+        }
+
+        self.client_vehicle_movement
+            .tick_client_floating(true, maximum_flying_ticks)
     }
 
     /// Selects and records packets for an accepted player-authored movement.
@@ -239,5 +275,37 @@ mod tests {
 
         state.record_client_floating(true);
         assert!(!state.tick_client_floating(true, 1));
+    }
+
+    #[test]
+    fn vehicle_tick_reset_tracks_active_vehicle_id() {
+        let mut state = MovementState::new();
+
+        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+
+        assert!(!state.tick_vehicle_client_floating(41, 0));
+        assert!(!state.tick_vehicle_client_floating(42, 0));
+    }
+
+    #[test]
+    fn vehicle_state_clears_when_no_controlled_vehicle_is_active() {
+        let mut state = MovementState::new();
+        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+
+        state.clear_vehicle_for_tick();
+
+        assert!(!state.tick_vehicle_client_floating(42, 0));
+    }
+
+    #[test]
+    fn reset_flying_ticks_applies_to_vehicle_counter() {
+        let mut state = MovementState::new();
+        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.client_vehicle_movement.record_client_floating(true);
+
+        assert!(!state.tick_vehicle_client_floating(42, 1));
+        state.reset_flying_ticks();
+        assert!(!state.tick_vehicle_client_floating(42, 1));
+        assert!(state.tick_vehicle_client_floating(42, 1));
     }
 }

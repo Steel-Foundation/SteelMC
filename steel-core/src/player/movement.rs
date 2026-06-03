@@ -123,6 +123,26 @@ impl Player {
         self.movement.lock().apply_post_impulse_grace_time(ticks);
     }
 
+    /// Resets per-tick vanilla movement validation bases for the controlled root vehicle.
+    pub(super) fn reset_vehicle_movement_for_tick(&self) {
+        let Some(vehicle) = self.root_vehicle() else {
+            self.movement.lock().clear_vehicle_for_tick();
+            return;
+        };
+
+        let controlled_by_player = vehicle
+            .controlling_passenger()
+            .is_some_and(|controller| controller.id() == self.id());
+        if !controlled_by_player {
+            self.movement.lock().clear_vehicle_for_tick();
+            return;
+        }
+
+        self.movement
+            .lock()
+            .reset_vehicle_for_tick(vehicle.id(), vehicle.position());
+    }
+
     /// Checks if movement validation should be performed for this player.
     ///
     /// Matches vanilla's `ServerGamePacketListenerImpl.shouldValidateMovement()`.
@@ -468,12 +488,16 @@ impl Player {
     }
 
     /// Returns how long vanilla permits unsupported floating for this player's gravity.
+    pub(super) fn maximum_flying_ticks(&self) -> i32 {
+        Self::maximum_flying_ticks_for_gravity(self.get_gravity())
+    }
+
+    /// Returns how long vanilla permits unsupported floating for an entity gravity value.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "gravity threshold bounds the result far below i32::MAX"
     )]
-    pub(super) fn maximum_flying_ticks(&self) -> i32 {
-        let gravity = self.get_gravity();
+    fn maximum_flying_ticks_for_gravity(gravity: f64) -> i32 {
         if gravity < 1.0E-5 {
             return i32::MAX;
         }
@@ -494,6 +518,37 @@ impl Player {
         if should_disconnect {
             log::warn!(
                 "{} was kicked for floating too long!",
+                self.gameprofile.name
+            );
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_FLYING.msg());
+        }
+
+        should_disconnect
+    }
+
+    /// Advances vanilla's controlled-vehicle floating tracker and disconnects when exceeded.
+    pub(super) fn disconnect_if_vehicle_floating_too_long(&self) -> bool {
+        let Some(vehicle) = self.root_vehicle() else {
+            self.movement.lock().clear_vehicle_for_tick();
+            return false;
+        };
+        let controlled_by_player = vehicle
+            .controlling_passenger()
+            .is_some_and(|controller| controller.id() == self.id());
+        if !controlled_by_player {
+            self.movement.lock().clear_vehicle_for_tick();
+            return false;
+        }
+
+        let maximum_flying_ticks = Self::maximum_flying_ticks_for_gravity(vehicle.get_gravity());
+        let should_disconnect = self
+            .movement
+            .lock()
+            .tick_vehicle_client_floating(vehicle.id(), maximum_flying_ticks);
+
+        if should_disconnect {
+            log::warn!(
+                "{} was kicked for floating a vehicle too long!",
                 self.gameprofile.name
             );
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_FLYING.msg());

@@ -721,21 +721,26 @@ pub trait Entity: EntityEventSource + Send + Sync {
     ///
     /// Mirrors vanilla `Entity.getRootVehicle` using session IDs for object identity.
     fn root_vehicle_id(&self) -> i32 {
-        let mut root_id = self.id();
-        let mut vehicle = self.vehicle();
-        let mut visited = Vec::new();
+        self.root_vehicle().map_or(self.id(), |entity| entity.id())
+    }
 
-        while let Some(entity) = vehicle {
-            let entity_id = entity.id();
-            if visited.contains(&entity_id) {
-                break;
+    /// Returns this entity's root vehicle, if this entity is riding one.
+    ///
+    /// Mirrors vanilla `Entity.getRootVehicle`.
+    fn root_vehicle(&self) -> Option<SharedEntity> {
+        let mut root = self.vehicle()?;
+        let mut visited = FxHashSet::default();
+        visited.insert(self.id());
+
+        loop {
+            if !visited.insert(root.id()) {
+                return Some(root);
             }
-            visited.push(entity_id);
-            root_id = entity_id;
-            vehicle = entity.vehicle();
+            let Some(next) = root.vehicle() else {
+                return Some(root);
+            };
+            root = next;
         }
-
-        root_id
     }
 
     /// Returns whether this entity and `other` share the same root vehicle.
@@ -1006,6 +1011,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
             self.entity_type(),
             &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
         )
+    }
+
+    /// Returns whether vanilla excludes this vehicle from floating kicks.
+    fn is_flying_vehicle(&self) -> bool {
+        false
     }
 
     /// Returns the movement vector vanilla exposes for block-contact logic.
