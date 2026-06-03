@@ -25,7 +25,7 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_game_events,
 };
-use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_mob_effects};
+use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
@@ -2893,6 +2893,19 @@ pub trait LivingEntity: Entity {
         self.default_can_freeze()
     }
 
+    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
+    fn default_living_can_walk_on_powder_snow(&self) -> bool {
+        if self.default_can_walk_on_powder_snow() {
+            return true;
+        }
+
+        let mut has_leather_boots = false;
+        self.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
+            has_leather_boots = item_stack.is(&vanilla_items::ITEMS.leather_boots);
+        });
+        has_leather_boots
+    }
+
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
         self.living_base()
@@ -4276,6 +4289,33 @@ mod tests {
         );
 
         assert!(entity.default_living_can_freeze());
+    }
+
+    #[test]
+    fn living_powder_snow_walkability_uses_feet_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        assert!(!entity.default_living_can_walk_on_powder_snow());
+
+        entity.equip(
+            EquipmentSlot::Feet,
+            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+        );
+
+        assert!(entity.default_living_can_walk_on_powder_snow());
+    }
+
+    #[test]
+    fn living_powder_snow_walkability_ignores_non_feet_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+        );
+
+        assert!(!entity.default_living_can_walk_on_powder_snow());
     }
 
     #[test]

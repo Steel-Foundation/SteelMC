@@ -69,7 +69,7 @@ use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{sound_events, vanilla_attributes, vanilla_entities, vanilla_items};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
@@ -1360,15 +1360,7 @@ impl Entity for Player {
     }
 
     fn can_walk_on_powder_snow(&self) -> bool {
-        if self.default_can_walk_on_powder_snow() {
-            return true;
-        }
-
-        self.inventory
-            .lock()
-            .equipment()
-            .get_ref(EquipmentSlot::Feet)
-            .is(&vanilla_items::ITEMS.leather_boots)
+        self.default_living_can_walk_on_powder_snow()
     }
 
     fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
