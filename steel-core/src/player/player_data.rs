@@ -269,7 +269,9 @@ impl PersistentPlayerData {
 
         if restore_location {
             // Position
-            player.set_position_local(DVec3::new(self.pos[0], self.pos[1], self.pos[2]));
+            player
+                .base()
+                .set_position_local(DVec3::new(self.pos[0], self.pos[1], self.pos[2]));
 
             // Rotation
             player.set_rotation((self.rotation[0], self.rotation[1]));

@@ -39,25 +39,19 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                                 .get_player()
                                 .ok_or(CommandError::InvalidRequirement)?;
 
-                            teleport_to_pos(&targets, pos, player.rotation(), context);
-
-                            Ok(())
+                            teleport_to_pos(&targets, pos, player.rotation(), context)
                         },
                     )
                     .then(argument("rotation", RotationArgument).executes(
                         |((((), targets), pos), rotation): MultipleRotationArgs,
                          context: &mut CommandContext| {
-                            teleport_to_pos(&targets, pos, rotation, context);
-
-                            Ok(())
+                            teleport_to_pos(&targets, pos, rotation, context)
                         },
                     )),
             )
             .then(argument("destination", PlayerArgument::one()).executes(
                 |(((), targets), destination): MultipleEntityArgs, context: &mut CommandContext| {
-                    teleport_to_player(&targets, &destination, context);
-
-                    Ok(())
+                    teleport_to_player(&targets, &destination, context)
                 },
             )),
     )
@@ -70,9 +64,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                     .ok_or(CommandError::InvalidRequirement)?;
                 let rotation = player.rotation();
 
-                teleport_to_pos(&[player], pos, rotation, context);
-
-                Ok(())
+                teleport_to_pos(&[player], pos, rotation, context)
             })
             .then(argument("rotation", RotationArgument).executes(
                 |(((), pos), rotation), context: &mut CommandContext| {
@@ -81,8 +73,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                         .clone()
                         .ok_or(CommandError::InvalidRequirement)?;
 
-                    teleport_to_pos(&[player], pos, rotation, context);
-                    Ok(())
+                    teleport_to_pos(&[player], pos, rotation, context)
                 },
             )),
     )
@@ -93,18 +84,18 @@ fn teleport_to_pos(
     pos: DVec3,
     rotation: (f32, f32),
     ctx: &mut CommandContext,
-) {
+) -> Result<(), CommandError> {
     if !ctx.world.is_in_valid_bounds(BlockPos::from(pos)) {
         ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_INVALID_POSITION
                 .message([] as [TextComponent; 0])
                 .into(),
         );
-        return;
+        return Ok(());
     }
 
     for player in targets {
-        player.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1);
+        teleport_player(player, pos.x, pos.y, pos.z, rotation.0, rotation.1)?;
     }
 
     if targets.len() == 1 {
@@ -137,13 +128,14 @@ fn teleport_to_pos(
                 .into(),
         );
     }
+    Ok(())
 }
 
 fn teleport_to_player(
     targets: &[Arc<Player>],
     destination: &[Arc<Player>],
     ctx: &mut CommandContext,
-) {
+) -> Result<(), CommandError> {
     let destination = destination
         .first()
         .expect("destination should not be empty");
@@ -152,7 +144,7 @@ fn teleport_to_player(
     let (yaw, pitch) = destination.rotation();
 
     for player in targets {
-        player.teleport(pos.x, pos.y, pos.z, yaw, pitch);
+        teleport_player(player, pos.x, pos.y, pos.z, yaw, pitch)?;
     }
 
     if targets.len() == 1 {
@@ -181,4 +173,21 @@ fn teleport_to_player(
                 .into(),
         );
     }
+    Ok(())
+}
+
+fn teleport_player(
+    player: &Player,
+    x: f64,
+    y: f64,
+    z: f64,
+    yaw: f32,
+    pitch: f32,
+) -> Result<(), CommandError> {
+    player.teleport(x, y, z, yaw, pitch).map_err(|error| {
+        CommandError::CommandFailed(Box::new(TextComponent::plain(format!(
+            "Failed to teleport {}: {error}",
+            player.gameprofile.name
+        ))))
+    })
 }

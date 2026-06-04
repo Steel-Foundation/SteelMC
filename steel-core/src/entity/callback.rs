@@ -43,6 +43,11 @@ impl RemovalReason {
 ///
 /// Mirrors vanilla's `EntityInLevelCallback`.
 pub trait EntityLevelCallback: Send + Sync {
+    /// Returns whether direct local position writes may bypass lifecycle callbacks.
+    fn allows_local_position_update(&self) -> bool {
+        false
+    }
+
     /// Called before an entity position change is committed.
     fn validate_move(&self, old_pos: DVec3, new_pos: DVec3) -> Result<(), EntityMoveError>;
 
@@ -57,6 +62,10 @@ pub trait EntityLevelCallback: Send + Sync {
 pub struct NullEntityCallback;
 
 impl EntityLevelCallback for NullEntityCallback {
+    fn allows_local_position_update(&self) -> bool {
+        true
+    }
+
     fn validate_move(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
         Ok(())
     }

@@ -98,7 +98,12 @@ impl EndCrystalEntity {
 
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
     pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        self.set_position_local(position);
+        if let Err(error) = self.base.try_set_position(position) {
+            panic!(
+                "failed to commit end crystal {} snap position: {error}",
+                self.base.id()
+            );
+        }
         self.base.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
     }

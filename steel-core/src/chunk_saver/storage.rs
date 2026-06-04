@@ -934,7 +934,7 @@ impl ChunkStorage {
                     if let Some(world) = level.upgrade()
                         && let Err(error) = world.register_loaded_entity(entity)
                     {
-                        log::warn!("Failed to register loaded chunk entity: {error}");
+                        panic!("failed to register loaded chunk entity: {error}");
                     }
                 }
             }

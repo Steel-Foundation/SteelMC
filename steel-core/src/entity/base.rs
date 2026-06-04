@@ -1385,9 +1385,9 @@ impl EntityBase {
         let old_pos = self.state.lock().position;
         let callback = self.level_callback.lock().clone();
         callback.validate_move(old_pos, pos)?;
-        self.set_position_local(pos);
+        self.set_position_local_unchecked(pos);
         if let Err(error) = callback.on_move_committed(old_pos, pos) {
-            self.set_position_local(old_pos);
+            self.set_position_local_unchecked(old_pos);
             return Err(error);
         }
         Ok(())
@@ -1396,7 +1396,18 @@ impl EntityBase {
     /// Sets position without consulting world lifecycle callbacks.
     ///
     /// Use this for construction, loading, proto-staged entities, and tests.
-    pub fn set_position_local(&self, pos: DVec3) {
+    pub(crate) fn set_position_local(&self, pos: DVec3) {
+        let callback = self.level_callback.lock().clone();
+        if !callback.allows_local_position_update() {
+            panic!(
+                "entity {} local position update bypassed world entity manager",
+                self.id
+            );
+        }
+        self.set_position_local_unchecked(pos);
+    }
+
+    fn set_position_local_unchecked(&self, pos: DVec3) {
         require_finite_position(pos, "position");
         {
             let mut state = self.state.lock();
@@ -2205,6 +2216,20 @@ mod tests {
             Err(EntityMoveError::NotLive { entity_id: 1 })
         ));
         assert_vec3_close(base.position(), DVec3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "entity 1 local position update bypassed world entity manager")]
+    fn set_position_local_panics_when_callback_requires_manager_commit() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(1.0, 2.0, 3.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.set_level_callback(Arc::new(CountingCallback::default()));
+
+        base.set_position_local(DVec3::new(4.0, 5.0, 6.0));
     }
 
     #[test]

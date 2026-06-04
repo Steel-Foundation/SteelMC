@@ -1906,13 +1906,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().try_set_position(pos)
     }
 
-    /// Sets the entity's position without touching world indexes.
-    ///
-    /// Use only for construction, loading, proto staging, and controlled tests.
-    fn set_position_local(&self, pos: DVec3) {
-        self.base().set_position_local(pos);
-    }
-
     /// Sets the vanilla movement-trace old position to the current position.
     fn set_old_position_to_current(&self) {
         self.base().set_old_position_to_current();
@@ -2429,7 +2422,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Moves the entity without collision physics.
     fn move_without_physics(&self, delta: DVec3) -> Option<MoveResult> {
         let final_position = self.position() + delta;
-        self.try_set_position(final_position).ok()?;
+        if let Err(error) = self.try_set_position(final_position) {
+            panic!(
+                "failed to commit entity {} no-physics movement: {error}",
+                self.id()
+            );
+        }
         self.base().clear_collision_flags();
         self.refresh_fluid_contact();
 
@@ -2487,7 +2485,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         // Update entity state
         if should_apply_resolved_movement(movement, result.actual_movement) {
             self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
-            self.try_set_position(result.final_position).ok()?;
+            if let Err(error) = self.try_set_position(result.final_position) {
+                panic!(
+                    "failed to commit entity {} resolved movement: {error}",
+                    self.id()
+                );
+            }
         }
         let vertical_state_update =
             EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
@@ -3918,11 +3921,11 @@ mod tests {
     use crate::inventory::equipment::EquipmentSlot;
 
     use super::{
-        Entity, EntityBase, EntityFluidContact, EntityVerticalMovementStateUpdate, LivingEntity,
-        LivingEntityBase, LivingTravelInput, RemovalReason, SharedEntity,
-        closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
-        fall_flying_free_fall_interval, get_input_vector, should_apply_resolved_movement,
-        trapdoor_usable_as_ladder_state,
+        Entity, EntityBase, EntityFluidContact, EntityLevelCallback, EntityMoveError,
+        EntityVerticalMovementStateUpdate, LivingEntity, LivingEntityBase, LivingTravelInput,
+        RemovalReason, SharedEntity, closest_open_space_direction, fall_damage_reset_clip_target,
+        fall_flying_collision_damage, fall_flying_free_fall_interval, get_input_vector,
+        should_apply_resolved_movement, trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -3949,6 +3952,28 @@ mod tests {
         fn is_pushable(&self) -> bool {
             true
         }
+    }
+
+    struct CommitRejectingCallback {
+        entity_id: i32,
+    }
+
+    impl EntityLevelCallback for CommitRejectingCallback {
+        fn validate_move(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+            Ok(())
+        }
+
+        fn on_move_committed(
+            &self,
+            _old_pos: DVec3,
+            _new_pos: DVec3,
+        ) -> Result<(), EntityMoveError> {
+            Err(EntityMoveError::NotLive {
+                entity_id: self.entity_id,
+            })
+        }
+
+        fn on_remove(&self, _reason: RemovalReason) {}
     }
 
     struct KnownMovementTestEntity {
@@ -4204,6 +4229,19 @@ mod tests {
             DVec3::new(1.0, 0.0, 0.0),
             DVec3::ZERO
         ));
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to commit entity 1 no-physics movement")]
+    fn move_without_physics_panics_when_position_commit_rejects() {
+        init_test_registry();
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+        entity.set_no_physics(true);
+        entity.set_level_callback(Arc::new(CommitRejectingCallback {
+            entity_id: entity.id(),
+        }));
+
+        let _ = entity.move_without_physics(DVec3::new(1.0, 0.0, 0.0));
     }
 
     #[test]
@@ -4830,7 +4868,7 @@ mod tests {
 
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();
-        vehicle.set_position_local(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.base().set_position_local(DVec3::new(2.0, 0.0, 0.0));
         vehicle.base().advance_base_tick_state();
 
         assert!(vehicle.has_controlling_passenger());
@@ -4854,7 +4892,7 @@ mod tests {
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(non_player_controller));
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();
-        vehicle.set_position_local(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.base().set_position_local(DVec3::new(2.0, 0.0, 0.0));
         vehicle.base().advance_base_tick_state();
 
         assert_vec3_close(vehicle.known_movement(), DVec3::new(4.0, 0.0, 4.0));

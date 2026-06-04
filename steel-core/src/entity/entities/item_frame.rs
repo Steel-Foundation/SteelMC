@@ -92,8 +92,13 @@ impl ItemFrameEntity {
     fn recalculate_position(&self) {
         let block_pos = *self.block_pos.lock();
         let direction = *self.entity_data.lock().hanging_entity.direction.get();
-        self.base
-            .set_position_local(Self::frame_center(block_pos, direction));
+        let position = Self::frame_center(block_pos, direction);
+        if let Err(error) = self.base.try_set_position(position) {
+            panic!(
+                "failed to commit item frame {} position recalculation: {error}",
+                self.base.id()
+            );
+        }
         self.base.set_bounding_box(Self::frame_bounding_box(
             block_pos,
             direction,

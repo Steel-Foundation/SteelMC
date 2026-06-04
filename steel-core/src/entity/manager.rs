@@ -308,6 +308,12 @@ impl WorldEntityManager {
 
         let entry = EntityEntry::new(entity, ownership);
         let mut state = self.state.write();
+        if Self::contains_id(&state, entry.entity.id()) {
+            panic!(
+                "entity id {} is already registered in the world entity manager",
+                entry.entity.id()
+            );
+        }
         if Self::contains_uuid(&state, entry.uuid) {
             return Err(AddEntityError::DuplicateUuid {
                 entity_id: entry.entity.id(),
@@ -693,6 +699,20 @@ impl WorldEntityManager {
                 .any(|entry| entry.uuid == uuid)
     }
 
+    fn contains_id(state: &ManagerState, entity_id: i32) -> bool {
+        state.live_by_id.contains_key(&entity_id)
+            || state
+                .unloading_by_chunk
+                .values()
+                .flatten()
+                .any(|entry| entry.entity.id() == entity_id)
+            || state
+                .save_pending_by_chunk
+                .values()
+                .flatten()
+                .any(|entry| entry.entity.id() == entity_id)
+    }
+
     fn push_saveable_entity(
         result: &mut Vec<SharedEntity>,
         seen_ids: &mut FxHashSet<i32>,
@@ -902,7 +922,7 @@ mod tests {
 
         let new_position = DVec3::new(17.0, 64.0, 1.0);
         assert!(manager.validate_move(entity.id(), new_position).is_ok());
-        entity.set_position_local(new_position);
+        entity.base().set_position_local(new_position);
         let update = match manager.commit_move(entity.id(), new_position) {
             Ok(update) => update,
             Err(error) => panic!("move into unloaded chunk should commit: {error}"),
@@ -1105,6 +1125,29 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "entity id 1 is already registered in the world entity manager")]
+    fn add_live_entity_panics_on_duplicate_id_in_save_pending_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let pending = entity(1, 46, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(pending, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .remove_live_entity(1, RemovalReason::UnloadedToChunk)
+                .is_some()
+        );
+
+        let duplicate = entity(1, 47, DVec3::new(2.0, 64.0, 1.0));
+        let _ = manager.add_live_entity(duplicate, EntityOwnership::ManagerOwned);
+    }
+
+    #[test]
     fn add_live_entity_rejects_duplicate_uuid_in_unloading_entities() {
         let manager = WorldEntityManager::new();
         let chunk = ChunkPos::new(0, 0);
@@ -1128,6 +1171,25 @@ mod tests {
                 uuid: duplicate_uuid,
             }) if duplicate_uuid == uuid
         ));
+    }
+
+    #[test]
+    #[should_panic(expected = "entity id 1 is already registered in the world entity manager")]
+    fn add_live_entity_panics_on_duplicate_id_in_unloading_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let unloading = entity(1, 48, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(unloading, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert_eq!(manager.begin_chunk_unload(chunk).len(), 1);
+
+        let duplicate = entity(1, 49, DVec3::new(2.0, 64.0, 1.0));
+        let _ = manager.add_live_entity(duplicate, EntityOwnership::ManagerOwned);
     }
 
     #[test]

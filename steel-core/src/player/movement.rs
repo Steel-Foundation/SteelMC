@@ -245,7 +245,13 @@ impl Player {
 
         if self.is_passenger() {
             let passenger_pos = self.position();
-            let _ = self.try_set_position(passenger_pos);
+            if let Err(error) = self.try_set_position(passenger_pos) {
+                log::warn!(
+                    "Failed to refresh passenger player {} position during movement: {error}",
+                    self.id()
+                );
+                return;
+            }
             self.set_rotation((target_yaw, target_pitch));
             world.chunk_map.update_player_status(self);
             self.broadcast_accepted_movement(
@@ -268,13 +274,18 @@ impl Player {
             let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
             if moved_dist_sq > 1.0 {
-                self.teleport(
+                if let Err(error) = self.teleport(
                     start_pos.x,
                     start_pos.y,
                     start_pos.z,
                     target_yaw,
                     target_pitch,
-                );
+                ) {
+                    log::warn!(
+                        "Failed to correct sleeping player {} movement: {error}",
+                        self.id()
+                    );
+                }
                 return;
             }
         } else {
@@ -301,13 +312,18 @@ impl Player {
                     } * f64::from(delta_packets);
 
                     if moved_dist_sq - self.velocity().length_squared() > threshold {
-                        self.teleport(
+                        if let Err(error) = self.teleport(
                             start_pos.x,
                             start_pos.y,
                             start_pos.z,
                             current_rotation.0,
                             current_rotation.1,
-                        );
+                        ) {
+                            log::warn!(
+                                "Failed to correct too-fast player {} movement: {error}",
+                                self.id()
+                            );
+                        }
                         return;
                     }
                 }
@@ -322,16 +338,21 @@ impl Player {
                 self.jump_from_ground();
             }
 
-            let Some(_move_result) = self.move_entity(MoverType::Player, move_delta) else {
-                self.teleport(
+            if self.move_entity(MoverType::Player, move_delta).is_none() {
+                if let Err(error) = self.teleport(
                     start_pos.x,
                     start_pos.y,
                     start_pos.z,
                     target_yaw,
                     target_pitch,
-                );
+                ) {
+                    panic!(
+                        "failed to correct rejected player {} movement: {error}",
+                        self.id()
+                    );
+                }
                 return;
-            };
+            }
 
             let error_delta = movement_error_delta(target_pos, self.position());
             let error_dist_sq = error_delta.length_squared();
@@ -363,13 +384,18 @@ impl Player {
             })
             .rejects()
             {
-                self.teleport(
+                if let Err(error) = self.teleport(
                     start_pos.x,
                     start_pos.y,
                     start_pos.z,
                     target_yaw,
                     target_pitch,
-                );
+                ) {
+                    log::warn!(
+                        "Failed to correct collided player {} movement: {error}",
+                        self.id()
+                    );
+                }
                 self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
                 self.remove_latest_movement_recording();
                 return;
@@ -412,7 +438,7 @@ impl Player {
                     "Rejected accepted player movement for entity {}: {error}",
                     self.id()
                 );
-                if let Err(teleport_error) = self.try_teleport(
+                if let Err(teleport_error) = self.teleport(
                     start_pos.x,
                     start_pos.y,
                     start_pos.z,
@@ -564,7 +590,12 @@ impl Player {
         })
         .rejects()
         {
-            let _ = vehicle.try_set_position(old_position);
+            if let Err(error) = vehicle.try_set_position(old_position) {
+                log::warn!(
+                    "Failed to roll vehicle {} back after rejected movement: {error}",
+                    vehicle.id()
+                );
+            }
             vehicle.refresh_fluid_contact();
             vehicle.set_rotation((target_yaw, target_pitch));
             self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
@@ -767,13 +798,7 @@ impl Player {
     /// Until acknowledged, movement packets from the client will be rejected.
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
-    pub fn teleport(&self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) {
-        if let Err(error) = self.try_teleport(x, y, z, yaw, pitch) {
-            log::warn!("Failed to teleport player entity {}: {error}", self.id());
-        }
-    }
-
-    fn try_teleport(
+    pub fn teleport(
         &self,
         x: f64,
         y: f64,

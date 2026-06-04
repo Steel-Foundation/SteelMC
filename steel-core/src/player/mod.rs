@@ -383,7 +383,12 @@ impl Player {
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
-        let _ = self.try_set_position(tick_position);
+        if let Err(error) = self.try_set_position(tick_position) {
+            panic!(
+                "failed to restore player {} tick position after ai_step: {error}",
+                self.id()
+            );
+        }
         self.refresh_fluid_contact();
 
         self.tick_ack_block_changes();
@@ -1062,13 +1067,20 @@ impl Player {
         let world = self.get_world();
 
         // Set position and rotation
-        self.set_position_local(position);
+        self.base.set_position_local(position);
         self.set_rotation(rotation);
         self.set_old_position_to_current();
         self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);
+        if let Err(error) =
+            self.teleport(position.x, position.y, position.z, rotation.0, rotation.1)
+        {
+            panic!(
+                "failed to synchronize player {} spawn position: {error}",
+                self.id()
+            );
+        }
 
         // Abilities and held slot
         self.send_abilities();
@@ -1394,7 +1406,12 @@ impl Entity for Player {
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
             let rotation = teleport_transition.rotation;
-            self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1);
+            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1) {
+                panic!(
+                    "failed to commit same-world portal teleport for player {}: {error}",
+                    self.id()
+                );
+            }
         } else {
             self.reset(new_world, ResetReason::WorldChange);
             // TODO: set portal cooldown from teleport_transition.portal_cooldown

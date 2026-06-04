@@ -226,7 +226,7 @@ impl LevelChunk {
         if let Some(world) = world {
             for entity in entities {
                 if let Err(error) = world.register_loaded_entity(entity) {
-                    log::warn!("Failed to register promoted proto entity: {error}");
+                    panic!("failed to register promoted proto entity: {error}");
                 }
             }
         }
