@@ -1379,7 +1379,7 @@ impl EntityBase {
     }
 
     /// Sets the entity's position through the active level callback.
-    #[must_use]
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
     pub fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         require_finite_position(pos, "position");
         let old_pos = self.state.lock().position;
@@ -1398,12 +1398,11 @@ impl EntityBase {
     /// Use this for construction, loading, proto-staged entities, and tests.
     pub(crate) fn set_position_local(&self, pos: DVec3) {
         let callback = self.level_callback.lock().clone();
-        if !callback.allows_local_position_update() {
-            panic!(
-                "entity {} local position update bypassed world entity manager",
-                self.id
-            );
-        }
+        assert!(
+            callback.allows_local_position_update(),
+            "entity {} local position update bypassed world entity manager",
+            self.id
+        );
         self.set_position_local_unchecked(pos);
     }
 

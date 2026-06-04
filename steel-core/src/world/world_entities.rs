@@ -7,7 +7,10 @@ use steel_protocol::packets::game::{
 use tokio::time::Instant;
 
 use crate::{
-    entity::{Entity, EntityOwnership, NullEntityCallback, PlayerEntityCallback, SharedEntity},
+    entity::{
+        Entity, EntityOwnership, NullEntityCallback, PlayerEntityCallback, RemovalReason,
+        SharedEntity,
+    },
     player::connection::NetworkConnection,
     player::{Player, ResetReason},
     world::World,
@@ -38,7 +41,7 @@ impl World {
             .remove(entity_id, |id| self.players.get_by_entity_id(id));
 
         self.entity_manager()
-            .remove_live_entity(entity_id, crate::entity::RemovalReason::ChangedWorld);
+            .remove_live_entity(entity_id, RemovalReason::ChangedWorld);
         player.set_level_callback(Arc::new(NullEntityCallback));
     }
 

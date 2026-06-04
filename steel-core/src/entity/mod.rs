@@ -882,10 +882,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
     fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
-        let passenger_index = match self.passenger_index(passenger) {
-            Some(passenger_index) => passenger_index,
-            None => 0,
-        };
+        let passenger_index = self.passenger_index(passenger).unwrap_or_default();
         dimensions.attachments.get_clamped(
             EntityAttachment::Passenger,
             passenger_index,
@@ -911,7 +908,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
         let riding_position = self.passenger_riding_position(passenger);
         let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
-        let _ = passenger.try_set_position(riding_position - vehicle_attachment);
+        if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
+            log::debug!(
+                "Failed to position passenger {} riding entity {}: {error}",
+                passenger.id(),
+                self.id()
+            );
+        }
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -1901,7 +1904,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
-    #[must_use]
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
     }
@@ -2423,10 +2426,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn move_without_physics(&self, delta: DVec3) -> Option<MoveResult> {
         let final_position = self.position() + delta;
         if let Err(error) = self.try_set_position(final_position) {
-            panic!(
-                "failed to commit entity {} no-physics movement: {error}",
+            log::debug!(
+                "Rejected no-physics movement for entity {}: {error}",
                 self.id()
             );
+            return None;
         }
         self.base().clear_collision_flags();
         self.refresh_fluid_contact();
@@ -2486,10 +2490,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         if should_apply_resolved_movement(movement, result.actual_movement) {
             self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
             if let Err(error) = self.try_set_position(result.final_position) {
-                panic!(
-                    "failed to commit entity {} resolved movement: {error}",
+                log::debug!(
+                    "Rejected resolved movement for entity {}: {error}",
                     self.id()
                 );
+                self.remove_latest_movement_recording();
+                return None;
             }
         }
         let vertical_state_update =
@@ -4232,8 +4238,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "failed to commit entity 1 no-physics movement")]
-    fn move_without_physics_panics_when_position_commit_rejects() {
+    fn move_without_physics_returns_none_when_position_commit_rejects() {
         init_test_registry();
         let entity = PushableTestEntity::shared(1, DVec3::ZERO);
         entity.set_no_physics(true);
@@ -4241,7 +4246,10 @@ mod tests {
             entity_id: entity.id(),
         }));
 
-        let _ = entity.move_without_physics(DVec3::new(1.0, 0.0, 0.0));
+        let result = entity.move_without_physics(DVec3::new(1.0, 0.0, 0.0));
+
+        assert!(result.is_none());
+        assert_vec3_close(entity.position(), DVec3::ZERO);
     }
 
     #[test]

@@ -5,6 +5,7 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
+use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
@@ -19,6 +20,13 @@ use super::{NullEntityCallback, RemovalReason, SharedEntity, tick_vehicle_passen
 /// Error returned when adding an entity to the runtime world fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddEntityError {
+    /// The entity is in a chunk that is not active in the world entity manager.
+    ChunkNotLoaded {
+        /// Entity network ID.
+        entity_id: i32,
+        /// Chunk containing the entity.
+        chunk: ChunkPos,
+    },
     /// Another live entity with the same persistent UUID is already registered.
     DuplicateUuid {
         /// Entity network ID.
@@ -36,6 +44,9 @@ pub enum AddEntityError {
 impl fmt::Display for AddEntityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ChunkNotLoaded { entity_id, chunk } => {
+                write!(f, "entity {entity_id} is in non-loaded chunk {chunk:?}")
+            }
             Self::DuplicateUuid { entity_id, uuid } => {
                 write!(f, "entity {entity_id} has duplicate UUID {uuid}")
             }
@@ -46,7 +57,7 @@ impl fmt::Display for AddEntityError {
     }
 }
 
-impl std::error::Error for AddEntityError {}
+impl Error for AddEntityError {}
 
 /// Error returned when a live entity move cannot be committed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +72,13 @@ pub enum EntityMoveError {
         /// Entity network ID.
         entity_id: i32,
     },
+    /// The entity tried to move into a chunk outside active world ownership.
+    UnloadedDestination {
+        /// Entity network ID.
+        entity_id: i32,
+        /// Destination chunk.
+        chunk: ChunkPos,
+    },
 }
 
 impl fmt::Display for EntityMoveError {
@@ -72,11 +90,17 @@ impl fmt::Display for EntityMoveError {
             Self::Inactive { entity_id } => {
                 write!(f, "entity {entity_id} is inactive outside live world state")
             }
+            Self::UnloadedDestination { entity_id, chunk } => {
+                write!(
+                    f,
+                    "entity {entity_id} cannot move into non-loaded chunk {chunk:?}"
+                )
+            }
         }
     }
 }
 
-impl std::error::Error for EntityMoveError {}
+impl Error for EntityMoveError {}
 
 /// Whether the manager owns persistence for an entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,6 +319,11 @@ impl WorldEntityManager {
     }
 
     /// Registers a live runtime entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an entity with the same session network ID is already present. Duplicate runtime
+    /// IDs indicate corrupted manager ownership and cannot be recovered without losing identity.
     pub fn add_live_entity(
         &self,
         entity: SharedEntity,
@@ -308,16 +337,22 @@ impl WorldEntityManager {
 
         let entry = EntityEntry::new(entity, ownership);
         let mut state = self.state.write();
-        if Self::contains_id(&state, entry.entity.id()) {
-            panic!(
-                "entity id {} is already registered in the world entity manager",
-                entry.entity.id()
-            );
-        }
+        assert!(
+            !Self::contains_id(&state, entry.entity.id()),
+            "entity id {} is already registered in the world entity manager",
+            entry.entity.id()
+        );
         if Self::contains_uuid(&state, entry.uuid) {
             return Err(AddEntityError::DuplicateUuid {
                 entity_id: entry.entity.id(),
                 uuid: entry.uuid,
+            });
+        }
+        if ownership == EntityOwnership::ManagerOwned && !state.loaded_chunks.contains(&entry.chunk)
+        {
+            return Err(AddEntityError::ChunkNotLoaded {
+                entity_id: entry.entity.id(),
+                chunk: entry.chunk,
             });
         }
 
@@ -375,11 +410,22 @@ impl WorldEntityManager {
     }
 
     /// Validates that a live entity can move to `new_pos`.
-    pub fn validate_move(&self, entity_id: i32, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+    pub fn validate_move(&self, entity_id: i32, new_pos: DVec3) -> Result<(), EntityMoveError> {
         let state = self.state.read();
-        if !state.live_by_id.contains_key(&entity_id) {
+        let Some(entry) = state.live_by_id.get(&entity_id) else {
             return Err(EntityMoveError::NotLive { entity_id });
         };
+
+        if entry.ownership == EntityOwnership::ManagerOwned {
+            let new_section = SectionPos::from_entity_pos(new_pos);
+            let new_chunk = ChunkPos::new(new_section.x(), new_section.z());
+            if !state.loaded_chunks.contains(&new_chunk) {
+                return Err(EntityMoveError::UnloadedDestination {
+                    entity_id,
+                    chunk: new_chunk,
+                });
+            }
+        }
 
         Ok(())
     }
@@ -593,6 +639,10 @@ impl WorldEntityManager {
         for chunk in tickable_chunks {
             let entities = self.manager_owned_entities_in_chunk(*chunk);
             for entity in entities {
+                if !self.is_live_manager_owned_in_chunk(entity.id(), *chunk) {
+                    continue;
+                }
+
                 if entity.is_removed() || entity.was_ticked_this_tick(tick_count) {
                     continue;
                 }
@@ -624,6 +674,13 @@ impl WorldEntityManager {
             .unwrap_or_default()
     }
 
+    fn is_live_manager_owned_in_chunk(&self, entity_id: i32, chunk: ChunkPos) -> bool {
+        let state = self.state.read();
+        state.live_by_id.get(&entity_id).is_some_and(|entry| {
+            entry.ownership == EntityOwnership::ManagerOwned && entry.chunk == chunk
+        })
+    }
+
     fn is_valid_passenger_or_stop_riding(entity: &SharedEntity) -> bool {
         let Some(vehicle) = entity.vehicle() else {
             return false;
@@ -644,12 +701,11 @@ impl WorldEntityManager {
 
         let mut vehicle = entity.vehicle();
         while let Some(current) = vehicle {
-            if !visited.insert(current.id()) {
-                panic!(
-                    "cyclic passenger relationship involving entity {}",
-                    entity.id()
-                );
-            }
+            assert!(
+                visited.insert(current.id()),
+                "cyclic passenger relationship involving entity {}",
+                entity.id()
+            );
             vehicle = current.vehicle();
         }
     }
@@ -663,15 +719,15 @@ impl WorldEntityManager {
 
     fn insert_live_entry(state: &mut ManagerState, entry: EntityEntry) {
         let entity_id = entry.entity.id();
-        if state.live_by_id.contains_key(&entity_id) {
-            panic!("entity id {entity_id} is already registered in the world entity manager");
-        }
-        if state.live_by_uuid.insert(entry.uuid, entity_id).is_some() {
-            panic!(
-                "entity uuid {} is already registered in the world entity manager",
-                entry.uuid
-            );
-        }
+        assert!(
+            !state.live_by_id.contains_key(&entity_id),
+            "entity id {entity_id} is already registered in the world entity manager"
+        );
+        assert!(
+            state.live_by_uuid.insert(entry.uuid, entity_id).is_none(),
+            "entity uuid {} is already registered in the world entity manager",
+            entry.uuid
+        );
         state
             .by_section
             .entry(entry.section)
@@ -722,12 +778,11 @@ impl WorldEntityManager {
         if !entry.should_save() || !seen_ids.insert(entry.entity.id()) {
             return;
         }
-        if !seen_uuids.insert(entry.uuid) {
-            panic!(
-                "duplicate saveable entity uuid {} in world entity manager",
-                entry.uuid
-            );
-        }
+        assert!(
+            seen_uuids.insert(entry.uuid),
+            "duplicate saveable entity uuid {} in world entity manager",
+            entry.uuid
+        );
         result.push(entry.entity.clone());
     }
 
@@ -841,13 +896,29 @@ mod tests {
     }
 
     #[test]
-    fn add_live_entity_accepts_unloaded_destination() {
+    fn add_live_entity_rejects_manager_owned_unloaded_chunk() {
+        let manager = WorldEntityManager::new();
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+
+        assert!(matches!(
+            manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned),
+            Err(AddEntityError::ChunkNotLoaded {
+                entity_id: 1,
+                chunk,
+            }) if chunk == ChunkPos::new(0, 0)
+        ));
+        assert_eq!(manager.count(), 0);
+        assert!(manager.get_by_id(entity.id()).is_none());
+    }
+
+    #[test]
+    fn add_live_entity_accepts_external_unloaded_chunk() {
         let manager = WorldEntityManager::new();
         let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
 
         assert!(
             manager
-                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .add_live_entity(entity.clone(), EntityOwnership::External)
                 .is_ok()
         );
         assert_eq!(manager.count(), 1);
@@ -909,9 +980,10 @@ mod tests {
     }
 
     #[test]
-    fn committed_move_updates_chunk_index_for_unloaded_destination() {
+    fn committed_move_updates_chunk_index_for_loaded_destination() {
         let manager = WorldEntityManager::new();
         load_chunk(&manager, ChunkPos::new(0, 0));
+        load_chunk(&manager, ChunkPos::new(1, 0));
 
         let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
         assert!(
@@ -937,6 +1009,35 @@ mod tests {
         let new_chunk_entities = manager.live_entities_in_chunk(ChunkPos::new(1, 0));
         assert_eq!(new_chunk_entities.len(), 1);
         assert!(Arc::ptr_eq(&entity, &new_chunk_entities[0]));
+    }
+
+    #[test]
+    fn validate_move_rejects_manager_owned_unloaded_destination() {
+        let manager = WorldEntityManager::new();
+        load_chunk(&manager, ChunkPos::new(0, 0));
+
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let new_position = DVec3::new(17.0, 64.0, 1.0);
+
+        assert!(matches!(
+            manager.validate_move(entity.id(), new_position),
+            Err(EntityMoveError::UnloadedDestination {
+                entity_id: 1,
+                chunk,
+            }) if chunk == ChunkPos::new(1, 0)
+        ));
+        assert_eq!(manager.live_entities_in_chunk(ChunkPos::new(0, 0)).len(), 1);
+        assert!(
+            manager
+                .live_entities_in_chunk(ChunkPos::new(1, 0))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1251,6 +1352,7 @@ mod tests {
         let saved_chunk = ChunkPos::new(0, 0);
         let unsaved_chunk = ChunkPos::new(1, 0);
         load_chunk(&manager, saved_chunk);
+        load_chunk(&manager, unsaved_chunk);
 
         let saved = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
         let unsaved = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
@@ -1288,11 +1390,11 @@ mod tests {
         let chunk = ChunkPos::new(0, 0);
         load_chunk(&manager, chunk);
 
-        let managed = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let manager_owned = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
         let external = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
         assert!(
             manager
-                .add_live_entity(managed.clone(), EntityOwnership::ManagerOwned)
+                .add_live_entity(manager_owned.clone(), EntityOwnership::ManagerOwned)
                 .is_ok()
         );
         assert!(
@@ -1304,8 +1406,8 @@ mod tests {
         let dirty_chunks = manager.tick_entities(12, &[chunk]);
 
         assert!(dirty_chunks.contains(&chunk));
-        assert!(managed.was_ticked_this_tick(12));
-        assert_eq!(managed.tick_count(), 1);
+        assert!(manager_owned.was_ticked_this_tick(12));
+        assert_eq!(manager_owned.tick_count(), 1);
         assert!(!external.was_ticked_this_tick(12));
         assert_eq!(external.tick_count(), 0);
     }

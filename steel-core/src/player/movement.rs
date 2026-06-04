@@ -197,6 +197,11 @@ impl Player {
     /// Handles a move player packet.
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.handleMovePlayer()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the server cannot restore the player to the last accepted position after rejecting
+    /// invalid movement. That indicates world entity state refused an authoritative correction.
     #[expect(
         clippy::too_many_lines,
         reason = "matches vanilla handleMovePlayer; splitting would hurt readability"

@@ -649,11 +649,10 @@ impl ChunkStorage {
         entity_id: i32,
         chunk_pos: ChunkPos,
     ) {
-        if !seen_uuids.insert(uuid) {
-            panic!(
-                "duplicate saveable entity uuid {uuid} while preparing chunk {chunk_pos:?} for save; latest entity id {entity_id}"
-            );
-        }
+        assert!(
+            seen_uuids.insert(uuid),
+            "duplicate saveable entity uuid {uuid} while preparing chunk {chunk_pos:?} for save; latest entity id {entity_id}"
+        );
     }
 
     /// Converts chunk data to persistent format.
@@ -877,6 +876,10 @@ impl ChunkStorage {
     /// * `min_y` - The minimum Y coordinate of the world
     /// * `height` - The total height of the world
     /// * `level` - Weak reference to the world for `LevelChunk`
+    #[expect(
+        clippy::too_many_lines,
+        reason = "chunk persistence conversion is a linear field-by-field transform"
+    )]
     pub(crate) fn persistent_to_chunk(
         persistent: &PersistentChunk,
         pos: ChunkPos,
@@ -930,12 +933,13 @@ impl ChunkStorage {
             for persistent_entity in &persistent.entities {
                 if let Some(entity) =
                     Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
+                    && let Some(world) = level.upgrade()
+                    && let Err(error) = world.register_loaded_entity(entity)
                 {
-                    if let Some(world) = level.upgrade()
-                        && let Err(error) = world.register_loaded_entity(entity)
-                    {
-                        panic!("failed to register loaded chunk entity: {error}");
-                    }
+                    tracing::warn!(
+                        chunk = ?pos,
+                        "Skipping loaded chunk entity that could not be registered: {error}"
+                    );
                 }
             }
 
@@ -2451,6 +2455,8 @@ impl ChunkStorage {
 
 #[cfg(test)]
 mod tests {
+    use std::slice;
+
     use super::*;
     use std::sync::{Arc, Once};
 
@@ -2695,7 +2701,7 @@ mod tests {
         ));
 
         let Some(prepared) =
-            ChunkStorage::prepare_chunk_save(&chunk, std::slice::from_ref(&entity), true)
+            ChunkStorage::prepare_chunk_save(&chunk, slice::from_ref(&entity), true)
         else {
             panic!("forced runtime entity save should prepare a chunk save");
         };

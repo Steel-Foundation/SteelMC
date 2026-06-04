@@ -2754,9 +2754,21 @@ impl World {
         Ok(())
     }
 
+    fn has_full_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| chunk.as_full().is_some())
+            .unwrap_or(false)
+    }
+
     /// Adds a runtime entity to the world.
     pub fn try_add_entity(self: &Arc<Self>, entity: SharedEntity) -> Result<(), AddEntityError> {
         let chunk_pos = ChunkPos::from_entity_pos(entity.position());
+        if !self.has_full_chunk(chunk_pos) {
+            return Err(AddEntityError::ChunkNotLoaded {
+                entity_id: entity.id(),
+                chunk: chunk_pos,
+            });
+        }
         self.register_loaded_entity(entity)?;
         self.mark_chunk_dirty(chunk_pos);
         Ok(())

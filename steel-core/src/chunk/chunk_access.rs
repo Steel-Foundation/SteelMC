@@ -518,7 +518,8 @@ impl ChunkAccess {
                     return false;
                 };
                 if let Err(error) = world.register_loaded_entity(entity) {
-                    panic!("failed to register entity in full chunk: {error}");
+                    log::warn!("Failed to register entity in full chunk: {error}");
+                    return false;
                 }
                 chunk.dirty.store(true, Ordering::Release);
                 true

@@ -135,12 +135,7 @@ impl EntityLevelCallback for PlayerEntityCallback {
             .entity_manager()
             .validate_move(self.entity_id, new_pos)
             .inspect_err(|error| {
-                log::warn!(
-                    "Rejected player entity move from {:?} to {:?}: {}",
-                    old_pos,
-                    new_pos,
-                    error
-                );
+                log::warn!("Rejected player entity move from {old_pos:?} to {new_pos:?}: {error}");
             })
     }
 
@@ -156,10 +151,7 @@ impl EntityLevelCallback for PlayerEntityCallback {
             .commit_move(self.entity_id, new_pos)
             .inspect_err(|error| {
                 log::warn!(
-                    "Failed to commit player entity move from {:?} to {:?}: {}",
-                    old_pos,
-                    new_pos,
-                    error
+                    "Failed to commit player entity move from {old_pos:?} to {new_pos:?}: {error}"
                 );
             })?;
 
@@ -199,7 +191,7 @@ impl EntityChunkCallback {
     /// Creates a new callback for an entity.
     #[must_use]
     pub const fn new(entity_id: i32, world: Weak<World>) -> Self {
-        Self { world, entity_id }
+        Self { entity_id, world }
     }
 }
 
@@ -215,12 +207,7 @@ impl EntityLevelCallback for EntityChunkCallback {
             .entity_manager()
             .validate_move(self.entity_id, new_pos)
             .inspect_err(|error| {
-                log::warn!(
-                    "Rejected entity move from {:?} to {:?}: {}",
-                    old_pos,
-                    new_pos,
-                    error
-                );
+                log::warn!("Rejected entity move from {old_pos:?} to {new_pos:?}: {error}");
             })
     }
 
@@ -235,12 +222,7 @@ impl EntityLevelCallback for EntityChunkCallback {
             .entity_manager()
             .commit_move(self.entity_id, new_pos)
             .inspect_err(|error| {
-                log::warn!(
-                    "Failed to commit entity move from {:?} to {:?}: {}",
-                    old_pos,
-                    new_pos,
-                    error
-                );
+                log::warn!("Failed to commit entity move from {old_pos:?} to {new_pos:?}: {error}");
             })?;
 
         world.mark_chunk_dirty(update.new_chunk);

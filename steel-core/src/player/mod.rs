@@ -359,6 +359,11 @@ impl Player {
     }
 
     /// Ticks the player.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
+    /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "world coordinates are always within i32 range in a valid Minecraft world"

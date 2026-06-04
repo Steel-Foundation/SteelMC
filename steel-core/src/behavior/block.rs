@@ -317,7 +317,14 @@ pub(crate) fn push_entities_up(
             &added_collision,
             -1.0,
         );
-        let _ = entity.try_set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0));
+        if let Err(error) =
+            entity.try_set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0))
+        {
+            log::debug!(
+                "Failed to push entity {} up after block collision change at {pos:?}: {error}",
+                entity.id()
+            );
+        }
     }
 
     new_state
