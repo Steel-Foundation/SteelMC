@@ -39,6 +39,9 @@ use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
 
+/// Shared Java socket writer.
+pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+
 /// Builder for creating packet bundles.
 ///
 /// Used with [`JavaConnection::send_bundle`] to send multiple packets atomically.
@@ -89,7 +92,7 @@ pub struct JavaConnection {
     outgoing_packets: UnboundedSender<EncodedPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
-    network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+    network_writer: JavaNetworkWriter,
     id: u64,
 
     player: Weak<Player>,
@@ -103,7 +106,7 @@ impl JavaConnection {
         outgoing_packets: UnboundedSender<EncodedPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
-        network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+        network_writer: JavaNetworkWriter,
         id: u64,
         player: Weak<Player>,
     ) -> Self {
@@ -121,6 +124,18 @@ impl JavaConnection {
             }),
             latency: SyncMutex::new(0),
         }
+    }
+
+    async fn write_packet_now(&self, packet: &EncodedPacket) -> Result<(), PacketError> {
+        let mut network_writer = self.network_writer.lock().await;
+        let Some(network_writer) = network_writer.as_mut() else {
+            return Err(PacketError::ConnectionClosed);
+        };
+        network_writer.write_packet(packet).await
+    }
+
+    async fn release_network_writer(&self) {
+        self.network_writer.lock().await.take();
     }
 
     /// Ticks the connection.
@@ -444,9 +459,7 @@ impl JavaConnection {
                 }
                 packet = sender_recv.recv() => {
                     if let Some(packet) = packet {
-                        let write_result = async {
-                            self.network_writer.lock().await.write_packet(&packet).await
-                        };
+                        let write_result = self.write_packet_now(&packet);
                         select! {
                             biased;
                             () = self.wait_for_close() => break,
@@ -467,6 +480,8 @@ impl JavaConnection {
                 }
             }
         }
+
+        self.release_network_writer().await;
 
         let Some(player) = self.player.upgrade() else {
             return;

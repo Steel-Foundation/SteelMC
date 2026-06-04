@@ -12,7 +12,9 @@ use std::{
 };
 
 use crossbeam::atomic::AtomicCell;
-use steel_core::player::{ClientInformation, GameProfile, PlayerConnection};
+use steel_core::player::{
+    ClientInformation, GameProfile, PlayerConnection, networking::JavaNetworkWriter,
+};
 use steel_core::server::Server;
 use steel_protocol::{
     packet_reader::TCPNetworkDecoder,
@@ -35,10 +37,7 @@ use text_components::{
 };
 use tokio::{
     io::{BufReader, BufWriter},
-    net::{
-        TcpStream,
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-    },
+    net::{TcpStream, tcp::OwnedReadHalf},
     select,
     sync::{
         Notify,
@@ -124,7 +123,7 @@ pub struct JavaTcpClient {
     /// A queue of encoded packets to send to the network.
     pub outgoing_queue: UnboundedSender<EncodedPacket>,
     /// The packet encoder for outgoing packets.
-    pub network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+    pub network_writer: JavaNetworkWriter,
     /// Current compression settings.
     pub compression: Arc<AtomicCell<Option<CompressionInfo>>>,
 
@@ -169,8 +168,8 @@ impl JavaTcpClient {
             cancel_token,
 
             outgoing_queue,
-            network_writer: Arc::new(AsyncMutex::new(TCPNetworkEncoder::new(BufWriter::new(
-                write,
+            network_writer: Arc::new(AsyncMutex::new(Some(TCPNetworkEncoder::new(
+                BufWriter::new(write),
             )))),
             compression: Arc::new(AtomicCell::new(None)),
             server,
@@ -198,7 +197,7 @@ impl JavaTcpClient {
         let packet = EncodedPacket::from_bare(packet, compression, protocol)
             .expect("Failed to encode packet");
 
-        if let Err(err) = self.network_writer.lock().await.write_packet(&packet).await
+        if let Err(err) = Self::write_network_packet(&self.network_writer, &packet).await
             && !self.cancel_token.is_cancelled()
         {
             log::warn!("Failed to send packet to client {}: {}", self.id, err);
@@ -208,12 +207,27 @@ impl JavaTcpClient {
 
     /// Sends an already encoded packet immediately, without queuing.
     pub async fn send_packet_now(&self, packet: &EncodedPacket) {
-        if let Err(err) = self.network_writer.lock().await.write_packet(packet).await
+        if let Err(err) = Self::write_network_packet(&self.network_writer, packet).await
             && !self.cancel_token.is_cancelled()
         {
             log::warn!("Failed to send packet to client {}: {}", self.id, err);
             self.close();
         }
+    }
+
+    async fn write_network_packet(
+        network_writer: &JavaNetworkWriter,
+        packet: &EncodedPacket,
+    ) -> Result<(), PacketError> {
+        let mut network_writer = network_writer.lock().await;
+        let Some(network_writer) = network_writer.as_mut() else {
+            return Err(PacketError::ConnectionClosed);
+        };
+        network_writer.write_packet(packet).await
+    }
+
+    async fn release_network_writer(network_writer: &JavaNetworkWriter) {
+        network_writer.lock().await.take();
     }
 
     /// Encodes and queues a packet to be sent.
@@ -263,9 +277,7 @@ impl JavaTcpClient {
                     }
                     packet = sender_recv.recv() => {
                         if let Some(packet) = packet {
-                            let write_result = async {
-                                network_writer.lock().await.write_packet(&packet).await
-                            };
+                            let write_result = Self::write_network_packet(&network_writer, &packet);
                             select! {
                                 biased;
                                 () = cancel_token.cancelled() => break,
@@ -285,7 +297,12 @@ impl JavaTcpClient {
                             Ok(connection_update) => {
                                 match connection_update {
                                     ConnectionUpdate::EnableEncryption(key) => {
-                                        network_writer.lock().await.set_encryption(&key);
+                                        let mut writer = network_writer.lock().await;
+                                        let Some(writer) = writer.as_mut() else {
+                                            cancel_token.cancel();
+                                            continue;
+                                        };
+                                        writer.set_encryption(&key);
                                         connection_updated.notify_waiters();
                                     },
                                     ConnectionUpdate::Upgrade(upgrade) => {
@@ -306,15 +323,18 @@ impl JavaTcpClient {
             }
 
             drop(cancel_token);
-            drop(network_writer);
             drop(connection_updates_recv);
             drop(connection_updated);
 
             if let Some(connection) = connection {
+                drop(network_writer);
                 match &*connection {
                     PlayerConnection::Java(java) => java.sender(sender_recv).await,
                     PlayerConnection::Other(_) => unreachable!("Expected Java connection"),
                 }
+            } else {
+                Self::release_network_writer(&network_writer).await;
+                drop(network_writer);
             }
         });
     }
