@@ -237,8 +237,7 @@ fn parse_flat_config(config: &toml::Value) -> Result<FlatGeneratorConfig, String
         .map_err(|e| format!("invalid minecraft:flat config: {e}"))
 }
 
-fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_overworld(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &OVERWORLD,
@@ -252,8 +251,7 @@ fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, 
     })
 }
 
-fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_nether(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_NETHER,
@@ -267,8 +265,7 @@ fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Str
     })
 }
 
-fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_end(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_END,
@@ -281,7 +278,6 @@ fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String
 
 fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let parsed = parse_flat_config(config)?;
-    validate_flat_config(config)?;
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     let normalized_config = normalized_flat_config(&parsed);
     let FlatGeneratorConfig {
