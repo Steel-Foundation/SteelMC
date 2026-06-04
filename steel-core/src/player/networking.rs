@@ -438,15 +438,24 @@ impl JavaConnection {
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
+                biased;
                 () = self.wait_for_close() => {
                     break;
                 }
                 packet = sender_recv.recv() => {
                     if let Some(packet) = packet {
-                        if let Err(err) = self.network_writer.lock().await.write_packet(&packet).await
-                        {
-                            log::warn!("Failed to send packet to client {}: {err}", self.id);
-                            self.close();
+                        let write_result = async {
+                            self.network_writer.lock().await.write_packet(&packet).await
+                        };
+                        select! {
+                            biased;
+                            () = self.wait_for_close() => break,
+                            result = write_result => {
+                                if let Err(err) = result {
+                                    log::warn!("Failed to send packet to client {}: {err}", self.id);
+                                    self.close();
+                                }
+                            }
                         }
                     } else {
                         //log::warn!(
@@ -462,6 +471,9 @@ impl JavaConnection {
         let Some(player) = self.player.upgrade() else {
             return;
         };
+        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
+            return;
+        }
         let world = player.get_world();
         world.remove_player(player).await;
     }

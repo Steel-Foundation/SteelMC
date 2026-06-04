@@ -257,15 +257,24 @@ impl JavaTcpClient {
             let mut connection = None;
             loop {
                 select! {
+                    biased;
                     () = cancel_token.cancelled() => {
                         break;
                     }
                     packet = sender_recv.recv() => {
                         if let Some(packet) = packet {
-                            if let Err(err) = network_writer.lock().await.write_packet(&packet).await
-                            {
-                                log::warn!("Failed to send packet to client {id}: {err}");
-                                cancel_token.cancel();
+                            let write_result = async {
+                                network_writer.lock().await.write_packet(&packet).await
+                            };
+                            select! {
+                                biased;
+                                () = cancel_token.cancelled() => break,
+                                result = write_result => {
+                                    if let Err(err) = result {
+                                        log::warn!("Failed to send packet to client {id}: {err}");
+                                        cancel_token.cancel();
+                                    }
+                                }
                             }
                         } else {
                             cancel_token.cancel();
