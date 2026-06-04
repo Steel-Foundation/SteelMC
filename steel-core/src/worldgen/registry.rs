@@ -237,6 +237,7 @@ fn parse_flat_config(config: &toml::Value) -> Result<FlatGeneratorConfig, String
         .map_err(|e| format!("invalid minecraft:flat config: {e}"))
 }
 
+#[expect(clippy::unnecessary_wraps, reason="because of flat generator")]
 fn create_overworld(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
@@ -251,6 +252,7 @@ fn create_overworld(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput,
     })
 }
 
+#[expect(clippy::unnecessary_wraps, reason="because of flat generator")]
 fn create_nether(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
@@ -265,6 +267,7 @@ fn create_nether(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, St
     })
 }
 
+#[expect(clippy::unnecessary_wraps, reason="because of flat generator")]
 fn create_end(_config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let seed = seed as u64;
     Ok(GeneratorOutput {
