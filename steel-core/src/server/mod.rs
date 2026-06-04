@@ -34,7 +34,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     mem,
     path::Path,
-    sync::Arc,
+    sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
@@ -132,6 +132,39 @@ struct DomainSwitchRequest {
     restore_saved_location: bool,
 }
 
+struct PendingPlayerJoin {
+    player: Arc<Player>,
+    state: Result<DomainPlayerState, String>,
+}
+
+struct PlayerJoinQueue {
+    sender: mpsc::Sender<PendingPlayerJoin>,
+    receiver: SyncMutex<mpsc::Receiver<PendingPlayerJoin>>,
+}
+
+impl PlayerJoinQueue {
+    fn new() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        Self {
+            sender,
+            receiver: SyncMutex::new(receiver),
+        }
+    }
+
+    fn send(&self, join: PendingPlayerJoin) {
+        let _ = self.sender.send(join);
+    }
+
+    fn drain(&self) -> Vec<PendingPlayerJoin> {
+        let receiver = self.receiver.lock();
+        let mut joins = Vec::new();
+        while let Ok(join) = receiver.try_recv() {
+            joins.push(join);
+        }
+        joins
+    }
+}
+
 /// The main server struct.
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
@@ -152,6 +185,8 @@ pub struct Server {
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Player joins prepared by async I/O and finalized at the game tick safe point.
+    pending_player_joins: PlayerJoinQueue,
     /// Queued world changes to process after the tick.
     pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Queued domain switches to process after world ticks.
@@ -289,24 +324,49 @@ impl Server {
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             jobs: ServerJobQueue::new(),
             player_data_storage,
+            pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
     }
 
-    /// Adds a player to the server.
+    /// Queues initial player join work.
     ///
-    /// # Panics
-    /// Panics if the registry is not initialized.
-    pub async fn add_player(&self, player: Arc<Player>) {
-        let Ok(target_domain) = self.load_join_domain(&player).await else {
-            player.disconnect("Failed to load player data");
+    /// Persistent data is loaded asynchronously, then world insertion is finalized at the
+    /// game tick safe point so the socket reader can enter play immediately.
+    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
+        if player.connection.closed() {
             return;
-        };
-        let state = match self
-            .load_domain_player_state(&player, &target_domain, None, true)
+        }
+
+        let server = Arc::clone(self);
+        tokio::spawn(async move {
+            let state = server.prepare_player_join(&player).await;
+            server
+                .pending_player_joins
+                .send(PendingPlayerJoin { player, state });
+        });
+    }
+
+    async fn prepare_player_join(&self, player: &Player) -> Result<DomainPlayerState, String> {
+        let target_domain = self.load_join_domain(player).await?;
+        self.load_domain_player_state(player, &target_domain, None, true)
             .await
-        {
+    }
+
+    fn process_player_joins(&self) {
+        for join in self.pending_player_joins.drain() {
+            self.finish_prepared_player_join(join);
+        }
+    }
+
+    fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
+        let PendingPlayerJoin { player, state } = join;
+        if player.connection.closed() {
+            return;
+        }
+
+        let state = match state {
             Ok(state) => state,
             Err(error) => {
                 log::error!(
@@ -321,14 +381,17 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
-        player.reset(state.world.clone(), ResetReason::InitialJoin);
+        player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
         let pos = player.position();
         let rotation = player.rotation();
         player.spawn(pos, rotation, ResetReason::InitialJoin);
+        if !player.connection.closed() {
+            player.mark_joined_world();
+        }
     }
 
-    async fn load_join_domain(&self, player: &Player) -> Result<String, ()> {
+    async fn load_join_domain(&self, player: &Player) -> Result<String, String> {
         match self
             .player_data_storage
             .load_global(player.gameprofile.id)
@@ -346,13 +409,7 @@ impl Server {
                 Ok(self.worlds.default_domain().to_owned())
             }
             Ok(None) => Ok(self.worlds.default_domain().to_owned()),
-            Err(e) => {
-                log::error!(
-                    "Failed to load global player data for {}: {e}",
-                    player.gameprofile.name
-                );
-                Err(())
-            }
+            Err(e) => Err(format!("failed to load global player data: {e}")),
         }
     }
 
@@ -648,6 +705,7 @@ impl Server {
 
             self.tick_worlds_game(tick_count, runs_normally).await;
             self.tick_jobs(tick_count, runs_normally);
+            self.process_player_joins();
 
             {
                 let server = self.clone();

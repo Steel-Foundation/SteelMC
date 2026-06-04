@@ -1,6 +1,7 @@
 /// Client lifecycle flags that gate gameplay packet handling.
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct PlayerLifecycleState {
+    joined_world: bool,
     client_loaded: bool,
     domain_switching: bool,
 }
@@ -9,6 +10,15 @@ impl PlayerLifecycleState {
     #[must_use]
     pub(super) const fn client_loaded(self) -> bool {
         self.client_loaded
+    }
+
+    #[must_use]
+    pub(super) const fn joined_world(self) -> bool {
+        self.joined_world
+    }
+
+    pub(super) const fn set_joined_world(&mut self, joined_world: bool) {
+        self.joined_world = joined_world;
     }
 
     pub(super) const fn set_client_loaded(&mut self, client_loaded: bool) {
@@ -58,5 +68,16 @@ mod tests {
         assert!(state.client_loaded());
         state.set_client_loaded(false);
         assert!(!state.client_loaded());
+    }
+
+    #[test]
+    fn joined_world_flag_is_explicit() {
+        let mut state = PlayerLifecycleState::default();
+
+        assert!(!state.joined_world());
+        state.set_joined_world(true);
+        assert!(state.joined_world());
+        state.set_joined_world(false);
+        assert!(!state.joined_world());
     }
 }

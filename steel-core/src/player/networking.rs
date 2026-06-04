@@ -222,6 +222,19 @@ impl JavaConnection {
         self.cancel_token.cancelled().await;
     }
 
+    const fn can_process_before_join(packet_id: i32) -> bool {
+        matches!(
+            packet_id,
+            play::S_KEEP_ALIVE
+                | play::S_PING_REQUEST
+                | play::S_CLIENT_INFORMATION
+                | play::C_CUSTOM_PAYLOAD
+                | play::S_CHAT_SESSION_UPDATE
+                | play::S_CHAT_ACK
+                | play::S_CLIENT_TICK_END
+        )
+    }
+
     /// Processes a packet from the client.
     #[expect(
         clippy::too_many_lines,
@@ -234,6 +247,10 @@ impl JavaConnection {
         server: Arc<Server>,
     ) -> Result<(), PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
+
+        if !player.has_joined_world() && !Self::can_process_before_join(packet.id) {
+            return Ok(());
+        }
 
         if player.is_domain_switching()
             && !matches!(packet.id, play::S_KEEP_ALIVE | play::S_PING_REQUEST)

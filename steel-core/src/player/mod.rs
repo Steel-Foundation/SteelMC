@@ -959,6 +959,17 @@ impl Player {
         self.lifecycle.lock().domain_switching()
     }
 
+    /// Returns whether the server has inserted this player into a world.
+    #[must_use]
+    pub fn has_joined_world(&self) -> bool {
+        self.lifecycle.lock().joined_world()
+    }
+
+    /// Marks this player as inserted into a world.
+    pub(crate) fn mark_joined_world(&self) {
+        self.lifecycle.lock().set_joined_world(true);
+    }
+
     /// Returns whether the client has sent its play-loaded signal.
     #[must_use]
     pub fn has_client_loaded(&self) -> bool {
