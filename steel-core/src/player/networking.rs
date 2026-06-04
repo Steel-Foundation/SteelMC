@@ -418,8 +418,6 @@ impl JavaConnection {
 
     /// Sends packets to the client.
     ///
-    /// # Panics
-    /// - If the player is not available.
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
@@ -444,7 +442,9 @@ impl JavaConnection {
             }
         }
 
-        let player = self.player.upgrade().expect("Player is not available");
+        let Some(player) = self.player.upgrade() else {
+            return;
+        };
         let world = player.get_world();
         world.remove_player(player).await;
     }

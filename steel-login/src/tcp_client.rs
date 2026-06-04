@@ -53,8 +53,6 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub enum ConnectionUpdate {
     /// Enable encryption on the connection.
     EnableEncryption([u8; 16]),
-    /// Enable compression on the connection.
-    EnableCompression(CompressionInfo),
     /// Upgrade the connection to the play state.
     Upgrade(Arc<PlayerConnection>),
 }
@@ -63,11 +61,46 @@ impl Debug for ConnectionUpdate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::EnableEncryption(arg0) => f.debug_tuple("EnableEncryption").field(arg0).finish(),
-            Self::EnableCompression(arg0) => {
-                f.debug_tuple("EnableCompression").field(arg0).finish()
-            }
             Self::Upgrade(_) => f.debug_tuple("Upgrade").finish(),
         }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ConnectionAction {
+    reader_encryption: Option<[u8; 16]>,
+    reader_compression: Option<CompressionInfo>,
+    upgrade: Option<Arc<PlayerConnection>>,
+}
+
+impl ConnectionAction {
+    pub(crate) const fn none() -> Self {
+        Self {
+            reader_encryption: None,
+            reader_compression: None,
+            upgrade: None,
+        }
+    }
+
+    pub(crate) const fn reader_compression(compression: CompressionInfo) -> Self {
+        Self {
+            reader_encryption: None,
+            reader_compression: Some(compression),
+            upgrade: None,
+        }
+    }
+
+    pub(crate) const fn upgrade(connection: Arc<PlayerConnection>) -> Self {
+        Self {
+            reader_encryption: None,
+            reader_compression: None,
+            upgrade: Some(connection),
+        }
+    }
+
+    pub(crate) const fn with_reader_encryption(mut self, key: [u8; 16]) -> Self {
+        self.reader_encryption = Some(key);
+        self
     }
 }
 
@@ -250,7 +283,6 @@ impl JavaTcpClient {
                                         connection = Some(upgrade);
                                         break;
                                     }
-                                    ConnectionUpdate::EnableCompression(_) => ()
                                 }
                             }
                             Err(err) => {
@@ -287,7 +319,6 @@ impl JavaTcpClient {
         let cancel_token = self.cancel_token.clone();
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
-        let connection_updated = self.connection_updated.clone();
 
         let self_clone = self.clone();
 
@@ -301,10 +332,24 @@ impl JavaTcpClient {
                     packet = reader.get_raw_packet() => {
                         match packet {
                             Ok(packet) => {
-                                if let Err(err) = self_clone.process_packet(packet).await {
-                                    log::warn!(
-                                        "Failed to get packet from client {id}: {err}",
-                                    );
+                                match self_clone.process_packet(packet).await {
+                                    Ok(action) => {
+                                        if let Some(key) = action.reader_encryption {
+                                            reader.set_encryption(&key);
+                                        }
+                                        if let Some(compression) = action.reader_compression {
+                                            reader.set_compression(compression.threshold);
+                                        }
+                                        if let Some(upgrade) = action.upgrade {
+                                            connection = Some(upgrade);
+                                            break;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        log::warn!(
+                                            "Failed to get packet from client {id}: {err}",
+                                        );
+                                    }
                                 }
                             }
                             Err(err) => {
@@ -315,13 +360,7 @@ impl JavaTcpClient {
                     }
                     connection_update = connection_updates_recv.recv() => {
                         match connection_update {
-                            Ok(ConnectionUpdate::EnableEncryption(key)) => {
-                                reader.set_encryption(&key);
-                            }
-                            Ok(ConnectionUpdate::EnableCompression(compression)) => {
-                                reader.set_compression(compression.threshold);
-                                connection_updated.notify_waiters();
-                            },
+                            Ok(ConnectionUpdate::EnableEncryption(_)) => {}
                             Ok(ConnectionUpdate::Upgrade(upgrade)) => {
                                 connection = Some(upgrade);
                                 break;
@@ -339,7 +378,6 @@ impl JavaTcpClient {
 
             drop(cancel_token);
             drop(connection_updates_recv);
-            drop(connection_updated);
 
             if let Some(connection) = connection {
                 let server = self_clone.server.clone();
@@ -353,10 +391,16 @@ impl JavaTcpClient {
         });
     }
 
-    async fn process_packet(&self, packet: RawPacket) -> Result<(), PacketError> {
+    async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
         match self.protocol.load() {
-            ConnectionProtocol::Handshake => self.handle_handshake(packet).await,
-            ConnectionProtocol::Status => self.handle_status(packet).await,
+            ConnectionProtocol::Handshake => {
+                self.handle_handshake(packet).await?;
+                Ok(ConnectionAction::none())
+            }
+            ConnectionProtocol::Status => {
+                self.handle_status(packet).await?;
+                Ok(ConnectionAction::none())
+            }
             ConnectionProtocol::Login => self.handle_login(packet).await,
             ConnectionProtocol::Config => self.handle_config(packet).await,
             ConnectionProtocol::Play => Err(PacketError::InvalidProtocol("Play".to_string())),
@@ -417,42 +461,48 @@ impl JavaTcpClient {
     }
 
     /// Handles a login packet.
-    pub async fn handle_login(&self, packet: RawPacket) -> Result<(), PacketError> {
+    pub(crate) async fn handle_login(
+        &self,
+        packet: RawPacket,
+    ) -> Result<ConnectionAction, PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
 
         match packet.id {
-            login_packets::S_HELLO => self.handle_hello(SHello::read_packet(data)?).await,
-            login_packets::S_KEY => self.handle_key(SKey::read_packet(data)?).await,
+            login_packets::S_HELLO => Ok(self.handle_hello(SHello::read_packet(data)?).await),
+            login_packets::S_KEY => Ok(self.handle_key(SKey::read_packet(data)?).await),
             login_packets::S_LOGIN_ACKNOWLEDGED => {
                 self.handle_login_acknowledged().await;
+                Ok(ConnectionAction::none())
             }
-            _ => return Err(PacketError::InvalidProtocol("Login".to_string())),
+            _ => Err(PacketError::InvalidProtocol("Login".to_string())),
         }
-        Ok(())
     }
 
     /// Handles a configuration packet.
-    pub async fn handle_config(&self, packet: RawPacket) -> Result<(), PacketError> {
+    pub(crate) async fn handle_config(
+        &self,
+        packet: RawPacket,
+    ) -> Result<ConnectionAction, PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
 
         match packet.id {
             config::S_CUSTOM_PAYLOAD => {
                 self.handle_config_custom_payload(SCustomPayload::read_packet(data)?);
+                Ok(ConnectionAction::none())
             }
             config::S_CLIENT_INFORMATION => {
                 self.handle_client_information(SClientInformation::read_packet(data)?)
                     .await;
+                Ok(ConnectionAction::none())
             }
             config::S_SELECT_KNOWN_PACKS => {
                 self.handle_select_known_packs(SSelectKnownPacks::read_packet(data)?)
                     .await;
+                Ok(ConnectionAction::none())
             }
-            config::S_FINISH_CONFIGURATION => {
-                self.finish_configuration().await;
-            }
-            _ => return Err(PacketError::InvalidProtocol("Config".to_string())),
+            config::S_FINISH_CONFIGURATION => Ok(self.finish_configuration().await),
+            _ => Err(PacketError::InvalidProtocol("Config".to_string())),
         }
-        Ok(())
     }
 
     /// Kicks the client with a given reason.
