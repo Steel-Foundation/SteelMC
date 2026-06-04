@@ -443,6 +443,15 @@ impl WorldEntityManager {
 
         let new_section = SectionPos::from_entity_pos(new_pos);
         let new_chunk = ChunkPos::new(new_section.x(), new_section.z());
+        if current.ownership == EntityOwnership::ManagerOwned
+            && !state.loaded_chunks.contains(&new_chunk)
+        {
+            return Err(EntityMoveError::UnloadedDestination {
+                entity_id,
+                chunk: new_chunk,
+            });
+        }
+
         let old_section = current.section;
         let old_chunk = current.chunk;
         if old_section == new_section && old_chunk == new_chunk {
@@ -1027,6 +1036,39 @@ mod tests {
 
         assert!(matches!(
             manager.validate_move(entity.id(), new_position),
+            Err(EntityMoveError::UnloadedDestination {
+                entity_id: 1,
+                chunk,
+            }) if chunk == ChunkPos::new(1, 0)
+        ));
+        assert_eq!(manager.live_entities_in_chunk(ChunkPos::new(0, 0)).len(), 1);
+        assert!(
+            manager
+                .live_entities_in_chunk(ChunkPos::new(1, 0))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn commit_move_rejects_destination_unloaded_after_validation() {
+        let manager = WorldEntityManager::new();
+        load_chunk(&manager, ChunkPos::new(0, 0));
+        load_chunk(&manager, ChunkPos::new(1, 0));
+
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let new_position = DVec3::new(17.0, 64.0, 1.0);
+        assert!(manager.validate_move(entity.id(), new_position).is_ok());
+        assert!(manager.begin_chunk_unload(ChunkPos::new(1, 0)).is_empty());
+        entity.base().set_position_local(new_position);
+
+        assert!(matches!(
+            manager.commit_move(entity.id(), new_position),
             Err(EntityMoveError::UnloadedDestination {
                 entity_id: 1,
                 chunk,

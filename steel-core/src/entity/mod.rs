@@ -596,7 +596,7 @@ pub use movement_sync::{
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
-pub use storage::EntityStorage;
+pub(crate) use storage::EntityStorage;
 pub use synced_data::EntitySyncedData;
 pub(crate) use ticking::tick_vehicle_passengers;
 pub use tracker::EntityTracker;
@@ -1043,7 +1043,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Called every game tick when the entity is in a ticked chunk.
     ///
     /// Use `self.level()` to access the world for physics, block queries, etc.
-    /// The caller (`EntityStorage`) handles post-tick dirty data sync.
+    /// The caller handles post-tick dirty data sync.
     ///
     /// Steel keeps the fallback empty because many vanilla subclasses override
     /// tick without calling `super.tick()`.
@@ -2771,7 +2771,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Marks this entity as ticked for the given server tick.
     ///
-    /// Called by `EntityStorage::tick()` before ticking an entity.
+    /// Called by `WorldEntityManager` before ticking an entity.
     fn mark_ticked(&self, server_tick: i32) {
         self.base().mark_ticked(server_tick);
     }
