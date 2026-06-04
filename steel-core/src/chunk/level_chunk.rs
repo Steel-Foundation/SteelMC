@@ -30,7 +30,6 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::Sections,
 };
-use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
@@ -62,8 +61,6 @@ pub struct LevelChunk {
     level: Weak<World>,
     /// Block entities stored in this chunk.
     block_entities: BlockEntityStorage,
-    /// Entities stored in this chunk.
-    pub entities: EntityStorage,
     /// Scheduled block ticks pending in this chunk.
     pub block_ticks: SyncMutex<BlockTickList>,
     /// Scheduled fluid ticks pending in this chunk.
@@ -93,7 +90,7 @@ impl LevelChunk {
     pub fn tick(
         &self,
         random_tick_speed: u32,
-        tick_count: i32,
+        _tick_count: i32,
         ready_block_ticks: &mut Vec<BlockTick>,
         ready_fluid_ticks: &mut Vec<FluidTick>,
     ) {
@@ -103,15 +100,6 @@ impl LevelChunk {
 
         // Tick block entities regardless of random tick speed
         self.tick_block_entities();
-
-        // Tick entities in this chunk
-        if let Some(world) = self.get_level() {
-            let ticked_entities = self.entities.tick(&world, self.pos, tick_count);
-            if ticked_entities {
-                // Mark chunk dirty since entity state may have changed
-                self.dirty.store(true, Ordering::Release);
-            }
-        }
 
         if random_tick_speed == 0 {
             return;
@@ -215,7 +203,8 @@ impl LevelChunk {
         let block_ticks = proto_chunk.block_ticks.into_inner();
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
         let block_entities = proto_chunk.block_entities;
-        let entities = proto_chunk.entities;
+        let entities = proto_chunk.entities.get_all();
+        let world = level.upgrade();
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -228,14 +217,19 @@ impl LevelChunk {
             height,
             level,
             block_entities,
-            entities,
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
         };
-        let _ = chunk.register_existing_entities();
+        if let Some(world) = world {
+            for entity in entities {
+                if let Err(error) = world.register_loaded_entity(entity) {
+                    log::warn!("Failed to register promoted proto entity: {error}");
+                }
+            }
+        }
         chunk
     }
 
@@ -288,7 +282,6 @@ impl LevelChunk {
             height,
             level,
             block_entities: BlockEntityStorage::new(),
-            entities: EntityStorage::new(),
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
@@ -465,61 +458,6 @@ impl LevelChunk {
     pub fn add_and_register_block_entity(&self, block_entity: SharedBlockEntity) {
         self.block_entities.add_and_register(block_entity);
         self.mark_unsaved();
-    }
-
-    /// Adds an entity to this chunk and registers it with all world systems.
-    ///
-    /// This is the main entry point for adding entities. It handles:
-    /// 1. Adding to chunk's entity storage
-    /// 2. Setting up the level callback for position tracking
-    /// 3. Registering in entity cache for fast lookups
-    /// 4. Adding to entity tracker and sending spawn packets to nearby players
-    /// 5. Marking the chunk dirty for persistence
-    ///
-    /// Returns `false` if the world reference is no longer valid.
-    pub fn add_and_register_entity(&self, entity: SharedEntity) -> bool {
-        let Some(world) = self.level.upgrade() else {
-            return false;
-        };
-
-        // Add to chunk storage
-        self.entities.add(entity.clone());
-        Self::register_entity_with_world(&entity, &world);
-
-        // Mark chunk dirty for persistence
-        self.mark_unsaved();
-
-        true
-    }
-
-    fn register_existing_entities(&self) -> bool {
-        let Some(world) = self.level.upgrade() else {
-            return false;
-        };
-
-        for entity in self.entities.get_all() {
-            Self::register_entity_with_world(&entity, &world);
-        }
-
-        true
-    }
-
-    fn register_entity_with_world(entity: &SharedEntity, world: &Arc<World>) {
-        use crate::entity::EntityChunkCallback;
-
-        // Set up callback for chunk/section tracking
-        let callback = Arc::new(EntityChunkCallback::new(entity, Arc::downgrade(world)));
-        entity.set_level_callback(callback);
-
-        // Register in entity cache (for fast lookups)
-        world.entity_cache().register(entity);
-
-        // Add to entity tracker and send spawn packets to nearby players
-        world.entity_tracker().add(
-            entity,
-            |chunk| world.player_area_map.get_tracking_players(chunk),
-            |id| world.players.get_by_entity_id(id),
-        );
     }
 
     /// Updates the ticking status of a block entity.

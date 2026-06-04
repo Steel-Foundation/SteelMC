@@ -1,5 +1,5 @@
 use rayon::ThreadPool;
-use rustc_hash::FxBuildHasher;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::{
     io, mem,
     sync::{
@@ -574,6 +574,8 @@ impl ChunkMap {
             };
 
         if let Some(level) = new_level {
+            let world = self.world_gen_context.world();
+            world.on_entity_chunk_loaded(pos);
             let old = chunk_holder.swap_load_level(level);
             chunk_holder.set_simulation_level(new_simulation_level);
             if old != Some(level) {
@@ -592,6 +594,7 @@ impl ChunkMap {
 
             // Clean up POI data for this chunk column
             let world = self.world_gen_context.world();
+            world.on_entity_chunk_unload_start(pos);
             world.poi_storage.lock().remove_chunk(pos);
 
             // Move to unloading_chunks for deferred unload
@@ -659,6 +662,7 @@ impl ChunkMap {
             timings.total_chunks = total_chunks;
             timings.tickable_count = tickable_chunks.len();
 
+            let mut tickable_full_chunks = Vec::with_capacity(tickable_chunks.len());
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
@@ -669,6 +673,7 @@ impl ChunkMap {
                 let start = Instant::now();
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                        tickable_full_chunks.push(holder.get_pos());
                         chunk_guard.tick(
                             random_tick_speed,
                             tick_count as i32,
@@ -678,6 +683,13 @@ impl ChunkMap {
                     }
                 }
                 timings.tick_chunks = start.elapsed();
+            }
+
+            let dirty_entity_chunks = world
+                .entity_manager()
+                .tick_entities(tick_count as i32, &tickable_full_chunks);
+            for chunk in dirty_entity_chunks {
+                world.mark_chunk_dirty(chunk);
             }
         }
 
@@ -815,6 +827,7 @@ impl ChunkMap {
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
     #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
     async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
+        let chunk_pos = chunk_holder.get_pos();
         // Prepare chunk data while holding the lock, then release before async I/O
         let prepared = {
             let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
@@ -826,7 +839,12 @@ impl ChunkMap {
                 .persisted_status()
                 .expect("The check above confirmed it exists");
 
-            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard);
+            let world = self.world_gen_context.world();
+            let runtime_entities = world
+                .entity_manager()
+                .get_saveable_entities_for_chunk(chunk_pos);
+            let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
+            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard, &runtime_entities, force);
 
             // Clear dirty flag while we still have the lock (only if we're actually saving)
             if prepared.is_some() {
@@ -839,11 +857,18 @@ impl ChunkMap {
         let (prepared, status) = prepared;
 
         // Save chunk data if dirty
-        if let Some(prepared) = prepared {
-            let result = self.storage.save_chunk_data(prepared, status).await;
-
-            if let Err(e) = result {
-                tracing::error!("Error saving chunk: {e}");
+        if let Some(mut prepared) = prepared {
+            let saved_runtime_entity_ids = mem::take(&mut prepared.saved_runtime_entity_ids);
+            let world = self.world_gen_context.world();
+            match self.storage.save_chunk_data(prepared, status).await {
+                Ok(true) => world
+                    .entity_manager()
+                    .on_chunk_saved(chunk_pos, &saved_runtime_entity_ids),
+                Ok(false) => world.mark_chunk_dirty(chunk_pos),
+                Err(e) => {
+                    tracing::error!("Error saving chunk: {e}");
+                    world.mark_chunk_dirty(chunk_pos);
+                }
             }
         }
     }
@@ -861,8 +886,13 @@ impl ChunkMap {
                 let is_dirty = holder
                     .try_chunk(ChunkStatus::StructureStarts)
                     .is_some_and(|chunk| chunk.is_dirty());
+                let has_save_pending_entities = self
+                    .world_gen_context
+                    .world()
+                    .entity_manager()
+                    .has_save_pending_for_chunk(*pos);
 
-                if is_dirty {
+                if is_dirty || has_save_pending_entities {
                     // Save the chunk, keep until next tick when it's clean
                     let holder_clone = holder.clone();
                     let map_clone = self.clone();
@@ -871,10 +901,14 @@ impl ChunkMap {
                     });
                     true // keep until clean
                 } else if holder.try_chunk(ChunkStatus::Empty).is_none() {
+                    let world = self.world_gen_context.world();
+                    world.on_entity_chunk_unload_finalized(*pos);
                     false
                 } else {
                     // Clean and no refs - release region handle and remove
                     let pos = *pos;
+                    let world = self.world_gen_context.world();
+                    world.on_entity_chunk_unload_finalized(pos);
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
                         if let Err(e) = map_clone.storage.release_chunk(pos).await {
@@ -1015,11 +1049,13 @@ impl ChunkMap {
             });
             chunks
         };
+        let mut covered_chunk_positions = FxHashSet::default();
 
         tracing::info!(chunk_count = all_chunks.len(), "Saving chunks");
 
         // Save all chunks that have data
         for holder in &all_chunks {
+            let chunk_pos = holder.get_pos();
             let prepared = {
                 let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
                     continue;
@@ -1027,21 +1063,65 @@ impl ChunkMap {
                 let Some(status) = holder.persisted_status() else {
                     continue;
                 };
-                let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+                let world = self.world_gen_context.world();
+                let runtime_entities = world
+                    .entity_manager()
+                    .get_saveable_entities_for_chunk(chunk_pos);
+                let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
+                let Some(prepared) =
+                    ChunkStorage::prepare_chunk_save(&chunk, &runtime_entities, force)
+                else {
+                    if !force {
+                        covered_chunk_positions.insert(chunk_pos);
+                    }
                     continue; // Not dirty
                 };
                 chunk.clear_dirty();
                 (prepared, status)
             };
 
-            let (prepared, status) = prepared;
+            let (mut prepared, status) = prepared;
+            let saved_runtime_entity_ids = mem::take(&mut prepared.saved_runtime_entity_ids);
+            let world = self.world_gen_context.world();
             match self.storage.save_chunk_data(prepared, status).await {
-                Ok(true) => saved_count += 1,
-                Ok(false) => {} // Not dirty
+                Ok(true) => {
+                    world
+                        .entity_manager()
+                        .on_chunk_saved(chunk_pos, &saved_runtime_entity_ids);
+                    covered_chunk_positions.insert(chunk_pos);
+                    saved_count += 1;
+                }
+                Ok(false) => world.mark_chunk_dirty(chunk_pos),
                 Err(e) => {
                     tracing::error!(chunk = ?holder.get_pos(), "Failed to save chunk: {e}");
+                    world.mark_chunk_dirty(chunk_pos);
                 }
             }
+        }
+
+        let world = self.world_gen_context.world();
+        let covered_chunk_positions = covered_chunk_positions.into_iter().collect::<Vec<_>>();
+        let unsaved_entities = world
+            .entity_manager()
+            .saveable_entities_outside_chunks(&covered_chunk_positions);
+        if !unsaved_entities.is_empty() {
+            let chunk_count = unsaved_entities
+                .iter()
+                .map(|entity| entity.chunk)
+                .collect::<FxHashSet<_>>()
+                .len();
+            let sample = unsaved_entities
+                .iter()
+                .take(16)
+                .map(|entity| format!("{}:{}@{:?}", entity.entity_id, entity.uuid, entity.chunk))
+                .collect::<Vec<_>>()
+                .join(", ");
+            tracing::warn!(
+                entity_count = unsaved_entities.len(),
+                chunk_count,
+                sample = %sample,
+                "Saveable runtime entities remain in chunks without save holders after chunk save"
+            );
         }
 
         // Close all region files (flushes headers and releases file handles)

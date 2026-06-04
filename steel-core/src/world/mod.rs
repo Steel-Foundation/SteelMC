@@ -79,7 +79,8 @@ use crate::{
     chunk::heightmap::HeightmapType,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
-        Entity, EntityCache, EntityMovementSyncPacket, EntityTracker, RemovalReason, SharedEntity,
+        AddEntityError, Entity, EntityChunkCallback, EntityMovementSyncPacket, EntityOwnership,
+        EntityTracker, InactiveEntityCallback, SharedEntity, WorldEntityManager,
         entities::ItemEntity,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
@@ -255,9 +256,8 @@ pub struct World {
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
-    /// Entity cache for fast entity lookups by ID, UUID, or spatial position.
-    /// Uses `Weak` references - entities are owned by chunks.
-    entity_cache: EntityCache,
+    /// Central runtime entity ownership and lookup.
+    entity_manager: WorldEntityManager,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
@@ -362,7 +362,7 @@ impl World {
                 sea_level,
                 default_gamemode,
                 tick_runs_normally: AtomicBool::new(true),
-                entity_cache: EntityCache::new(),
+                entity_manager: WorldEntityManager::new(),
                 entity_tracker: EntityTracker::new(),
                 weather: SyncMutex::new(weather),
                 random: SyncMutex::new(LegacyRandom::from_seed(rand::random())),
@@ -1799,7 +1799,9 @@ impl World {
                 DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
-            self.add_entity(entity);
+            if let Err(error) = self.try_add_entity(entity) {
+                log::warn!("Failed to drop item stack entity: {error}");
+            }
         }
     }
 
@@ -2716,10 +2718,10 @@ impl World {
 
     // === Entity Methods ===
 
-    /// Returns a reference to the entity cache.
+    /// Returns the runtime entity manager.
     #[must_use]
-    pub const fn entity_cache(&self) -> &EntityCache {
-        &self.entity_cache
+    pub const fn entity_manager(&self) -> &WorldEntityManager {
+        &self.entity_manager
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
@@ -2728,23 +2730,62 @@ impl World {
         &self.entity_tracker
     }
 
-    /// Adds an entity to the world.
-    ///
-    /// This delegates to the chunk's `add_and_register_entity` method which handles:
-    /// - Adding to chunk storage
-    /// - Setting up level callback
-    /// - Registering in entity cache
-    /// - Adding to entity tracker and sending spawn packets
-    /// - Marking the chunk dirty
-    pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
-        let pos = entity.position();
-        let chunk_pos = ChunkPos::from_entity_pos(pos);
+    fn attach_managed_entity_callback(self: &Arc<Self>, entity: &SharedEntity) {
+        let callback = Arc::new(EntityChunkCallback::new(entity.id(), Arc::downgrade(self)));
+        entity.set_level_callback(callback);
+    }
 
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            if let Some(c) = chunk.as_full() {
-                c.add_and_register_entity(entity.clone());
-            }
-        });
+    pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
+        self.entity_tracker.add(
+            entity,
+            |chunk| self.player_area_map.get_tracking_players(chunk),
+            |id| self.players.get_by_entity_id(id),
+        );
+    }
+
+    pub(crate) fn register_loaded_entity(
+        self: &Arc<Self>,
+        entity: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        self.entity_manager
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+        self.attach_managed_entity_callback(&entity);
+        self.add_entity_to_tracker(&entity);
+        Ok(())
+    }
+
+    /// Adds a runtime entity to the world.
+    pub fn try_add_entity(self: &Arc<Self>, entity: SharedEntity) -> Result<(), AddEntityError> {
+        let chunk_pos = ChunkPos::from_entity_pos(entity.position());
+        self.register_loaded_entity(entity)?;
+        self.mark_chunk_dirty(chunk_pos);
+        Ok(())
+    }
+
+    pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
+        let result = self.entity_manager.on_chunk_loaded(pos);
+        if result.needs_save {
+            self.mark_chunk_dirty(pos);
+        }
+        for entity in result.restored {
+            self.attach_managed_entity_callback(&entity);
+            self.add_entity_to_tracker(&entity);
+        }
+    }
+
+    pub(crate) fn on_entity_chunk_unload_start(self: &Arc<Self>, pos: ChunkPos) {
+        let entities = self.entity_manager.begin_chunk_unload(pos);
+        for entity in entities {
+            let entity_id = entity.id();
+            self.entity_tracker.remove(entity_id, |player_id| {
+                self.players.get_by_entity_id(player_id)
+            });
+            entity.set_level_callback(Arc::new(InactiveEntityCallback::new(entity_id)));
+        }
+    }
+
+    pub(crate) fn on_entity_chunk_unload_finalized(&self, pos: ChunkPos) {
+        self.entity_manager.finalize_chunk_unload(pos);
     }
 
     /// Spawns an item entity at the given position.
@@ -2783,7 +2824,10 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        self.add_entity(entity.clone());
+        if let Err(error) = self.try_add_entity(entity.clone()) {
+            log::warn!("Failed to spawn item entity: {error}");
+            return None;
+        }
         Some(entity)
     }
 
@@ -2894,18 +2938,18 @@ impl World {
 
     /// Gets an entity by its network ID.
     ///
-    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    /// Returns `None` if the entity is not live in the world.
     #[must_use]
     pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
-        self.entity_cache.get_by_id(id)
+        self.entity_manager.get_by_id(id)
     }
 
     /// Gets an entity by its UUID.
     ///
-    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    /// Returns `None` if the entity is not live in the world.
     #[must_use]
     pub fn get_entity_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
-        self.entity_cache.get_by_uuid(uuid)
+        self.entity_manager.get_by_uuid(uuid)
     }
 
     /// Gets all entities intersecting the given bounding box.
@@ -2913,7 +2957,7 @@ impl World {
     /// Only returns entities in loaded chunks.
     #[must_use]
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
-        self.entity_cache.get_entities_in_aabb(aabb)
+        self.entity_manager.get_entities_in_aabb(aabb)
     }
 
     /// Gets entities matching vanilla's pushable entity selector for `pusher`.
@@ -2932,79 +2976,6 @@ impl World {
             .filter(|entity| !entity.is_spectator())
             .filter(|entity| entity.is_pushable())
             .collect()
-    }
-
-    /// Moves an entity's Arc between chunks when it crosses a chunk boundary.
-    ///
-    /// Called by `EntityChunkCallback` when an entity moves between chunks.
-    pub fn move_entity_between_chunks(&self, entity_id: i32, from: ChunkPos, to: ChunkPos) -> bool {
-        if from == to {
-            return true;
-        }
-
-        let target_is_full = self
-            .chunk_map
-            .with_full_chunk(to, |chunk| chunk.as_full().is_some())
-            .unwrap_or(false);
-        if !target_is_full {
-            return false;
-        }
-
-        // Remove Arc from old chunk
-        let entity = self
-            .chunk_map
-            .with_full_chunk(from, |chunk| {
-                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
-            })
-            .flatten();
-
-        // Add Arc to new chunk
-        if let Some(entity) = entity {
-            self.chunk_map.with_full_chunk(to, |chunk| {
-                if let Some(c) = chunk.as_full() {
-                    c.entities.add(entity);
-                }
-            });
-            return true;
-        }
-
-        false
-    }
-
-    /// Internal method to remove an entity from the world.
-    ///
-    /// Called by `EntityChunkCallback::on_remove`.
-    pub fn remove_entity_internal(
-        &self,
-        entity_id: i32,
-        chunk_pos: ChunkPos,
-        reason: RemovalReason,
-    ) {
-        self.entity_tracker.remove(entity_id, |player_id| {
-            self.players.get_by_entity_id(player_id)
-        });
-
-        // Saveable removals stay in chunk storage until persistence consumes them.
-        let entity: Option<SharedEntity> = self
-            .chunk_map
-            .with_full_chunk(chunk_pos, |chunk| {
-                chunk.as_full().and_then(|c| {
-                    if reason.should_save() {
-                        c.entities.get(entity_id)
-                    } else {
-                        c.entities.remove(entity_id)
-                    }
-                })
-            })
-            .flatten();
-
-        // Unregister from cache
-        if let Some(entity) = entity {
-            let pos = entity.position();
-            let section = SectionPos::from_entity_pos(pos);
-            self.entity_cache
-                .unregister(entity_id, entity.uuid(), section);
-        }
     }
 
     /// Registers a game event listener in a chunk section.

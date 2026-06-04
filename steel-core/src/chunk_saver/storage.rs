@@ -6,17 +6,21 @@ use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
-use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest, SharedEntity};
+use crate::entity::{ENTITIES, Entity, EntityFireFreezeState, EntityLoadRequest, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
+use rustc_hash::FxHashSet;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
 use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{io, sync::Weak};
+use std::{
+    io,
+    sync::{Arc, Weak},
+};
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
@@ -496,7 +500,7 @@ impl ChunkStorage {
     /// If the region was already open (has loaded chunks), the header update is
     /// deferred. If this call opened the region, it will be closed after saving.
     ///
-    /// If the chunk is not dirty, this is a no-op and returns `Ok(false)`.
+    /// If the chunk is not dirty and `force` is false, this is a no-op.
     /// Returns `Ok(true)` if the chunk was saved.
     /// Prepares chunk data for saving. Call this while holding the chunk lock,
     /// then pass the result to `save_chunk_data` after releasing the lock.
@@ -505,8 +509,12 @@ impl ChunkStorage {
         clippy::similar_names,
         reason = "`pois` vs `pos` are semantically distinct"
     )]
-    pub fn prepare_chunk_save(chunk: &ChunkAccess) -> Option<PreparedChunkSave> {
-        if !chunk.is_dirty() {
+    pub fn prepare_chunk_save(
+        chunk: &ChunkAccess,
+        runtime_entities: &[SharedEntity],
+        force: bool,
+    ) -> Option<PreparedChunkSave> {
+        if !force && !chunk.is_dirty() {
             return None;
         }
 
@@ -514,7 +522,41 @@ impl ChunkStorage {
 
         let block_entities = chunk.get_block_entities();
 
-        let entities = chunk.get_saveable_entities();
+        let mut seen_entity_ids = FxHashSet::default();
+        let mut seen_entity_uuids = FxHashSet::default();
+        let mut entities = Vec::new();
+        for entity in chunk.get_saveable_entities() {
+            if !Self::entity_position_is_finite(entity.as_ref()) {
+                Self::warn_skipping_non_finite_entity(entity.as_ref());
+                continue;
+            }
+            if seen_entity_ids.insert(entity.id()) {
+                Self::assert_unique_save_uuid(
+                    &mut seen_entity_uuids,
+                    entity.uuid(),
+                    entity.id(),
+                    pos,
+                );
+                entities.push(entity);
+            }
+        }
+        let mut saved_runtime_entity_ids = Vec::new();
+        for entity in runtime_entities {
+            if !Self::entity_position_is_finite(entity.as_ref()) {
+                Self::warn_skipping_non_finite_entity(entity.as_ref());
+                continue;
+            }
+            if seen_entity_ids.insert(entity.id()) {
+                Self::assert_unique_save_uuid(
+                    &mut seen_entity_uuids,
+                    entity.uuid(),
+                    entity.id(),
+                    pos,
+                );
+                saved_runtime_entity_ids.push(entity.id());
+                entities.push(Arc::clone(entity));
+            }
+        }
 
         // Serialize scheduled ticks
         let (block_ticks, fluid_ticks) = match chunk {
@@ -581,7 +623,37 @@ impl ChunkStorage {
             pos,
         );
 
-        Some(PreparedChunkSave { pos, persistent })
+        Some(PreparedChunkSave {
+            pos,
+            persistent,
+            saved_runtime_entity_ids,
+        })
+    }
+
+    fn entity_position_is_finite(entity: &dyn Entity) -> bool {
+        let pos = entity.position();
+        pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite()
+    }
+
+    fn warn_skipping_non_finite_entity(entity: &dyn Entity) {
+        tracing::warn!(
+            uuid = ?entity.uuid(),
+            "Entity has non-finite position {:?}, skipping save",
+            entity.position()
+        );
+    }
+
+    fn assert_unique_save_uuid(
+        seen_uuids: &mut FxHashSet<uuid::Uuid>,
+        uuid: uuid::Uuid,
+        entity_id: i32,
+        chunk_pos: ChunkPos,
+    ) {
+        if !seen_uuids.insert(uuid) {
+            panic!(
+                "duplicate saveable entity uuid {uuid} while preparing chunk {chunk_pos:?} for save; latest entity id {entity_id}"
+            );
+        }
     }
 
     /// Converts chunk data to persistent format.
@@ -859,7 +931,11 @@ impl ChunkStorage {
                 if let Some(entity) =
                     Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
                 {
-                    chunk.add_and_register_entity(entity);
+                    if let Some(world) = level.upgrade()
+                        && let Err(error) = world.register_loaded_entity(entity)
+                    {
+                        log::warn!("Failed to register loaded chunk entity: {error}");
+                    }
                 }
             }
 
@@ -2380,13 +2456,14 @@ mod tests {
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
-    use crate::entity::{Entity, entities::EndCrystalEntity, init_entities, next_entity_id};
+    use crate::entity::{
+        Entity, SharedEntity, entities::EndCrystalEntity, init_entities, next_entity_id,
+    };
     use glam::DVec3;
     use rustc_hash::FxHashMap;
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
-    use steel_registry::vanilla_entities;
     use steel_utils::types::UpdateFlags;
     use steel_worldgen::structure::StructureReferenceSet;
 
@@ -2428,7 +2505,7 @@ mod tests {
         drop(proto.get_or_create_carving_mask());
         let chunk = ChunkAccess::Proto(proto);
 
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.carving_mask, Some(Vec::new()));
@@ -2461,7 +2538,7 @@ mod tests {
         }
         let chunk = ChunkAccess::Proto(proto);
 
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert!(
@@ -2504,7 +2581,7 @@ mod tests {
         let packed = ProtoChunk::pack_postprocessing_offset(marked);
         let chunk = ChunkAccess::Proto(proto);
 
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
 
@@ -2540,7 +2617,7 @@ mod tests {
         assert!(proto.get_block_entity(block_pos).is_some());
 
         let chunk = ChunkAccess::Proto(proto);
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.block_entities.len(), 1);
@@ -2581,7 +2658,7 @@ mod tests {
         proto.add_entity(crystal);
 
         let chunk = ChunkAccess::Proto(proto);
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.entities.len(), 1);
@@ -2601,15 +2678,30 @@ mod tests {
         };
         assert_eq!(loaded_proto.get_entities().len(), 1);
 
-        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
-        let entities = full.entities.get_all();
-        assert_eq!(entities.len(), 1);
-        assert_eq!(
-            entities[0].entity_type().id(),
-            vanilla_entities::END_CRYSTAL.id()
-        );
-        assert!((entities[0].fall_distance() - 3.75).abs() <= f64::EPSILON);
-        assert!(entities[0].is_no_gravity());
+        let _full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+    }
+
+    #[test]
+    fn prepared_save_reports_serialized_runtime_entity_ids() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let chunk = ChunkAccess::Proto(proto);
+        let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 6.0, 7.5),
+            Weak::new(),
+        ));
+
+        let Some(prepared) =
+            ChunkStorage::prepare_chunk_save(&chunk, std::slice::from_ref(&entity), true)
+        else {
+            panic!("forced runtime entity save should prepare a chunk save");
+        };
+
+        assert_eq!(prepared.saved_runtime_entity_ids, vec![entity.id()]);
+        assert_eq!(prepared.persistent.entities.len(), 1);
     }
 
     #[test]
@@ -2637,7 +2729,7 @@ mod tests {
         proto.add_and_register_block_entity(entity);
 
         let chunk = ChunkAccess::Proto(proto);
-        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.block_entities.len(), 1);

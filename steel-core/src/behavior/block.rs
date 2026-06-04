@@ -317,7 +317,7 @@ pub(crate) fn push_entities_up(
             &added_collision,
             -1.0,
         );
-        entity.set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0));
+        let _ = entity.try_set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0));
     }
 
     new_state

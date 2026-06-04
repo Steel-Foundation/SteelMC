@@ -282,7 +282,7 @@ mod tests {
         }
 
         fn with_position(self, position: DVec3) -> Self {
-            self.base.set_position(position);
+            self.base.set_position_local(position);
             self
         }
 

@@ -64,7 +64,7 @@ const CHUNK_SCHEDULING_TPS: u64 = 20;
 
 fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
     let spawn = world.level_data.read().data().spawn.clone();
-    player.set_position(DVec3::new(
+    player.set_position_local(DVec3::new(
         f64::from(spawn.x),
         f64::from(spawn.y),
         f64::from(spawn.z),

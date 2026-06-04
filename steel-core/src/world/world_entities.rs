@@ -4,11 +4,10 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
 };
-use steel_utils::SectionPos;
 use tokio::time::Instant;
 
 use crate::{
-    entity::{Entity, NullEntityCallback, PlayerEntityCallback, SharedEntity},
+    entity::{Entity, EntityOwnership, NullEntityCallback, PlayerEntityCallback, SharedEntity},
     player::connection::NetworkConnection,
     player::{Player, ResetReason},
     world::World,
@@ -16,11 +15,7 @@ use crate::{
 
 impl World {
     fn attach_player_entity_callback(self: &Arc<Self>, player: &Arc<Player>) {
-        let callback = Arc::new(PlayerEntityCallback::new(
-            player.id(),
-            player.position(),
-            Arc::downgrade(self),
-        ));
+        let callback = Arc::new(PlayerEntityCallback::new(player.id(), Arc::downgrade(self)));
         player.set_level_callback(callback);
     }
 
@@ -28,12 +23,13 @@ impl World {
         self.attach_player_entity_callback(player);
 
         let entity: SharedEntity = player.clone();
-        self.entity_cache.register(&entity);
-        self.entity_tracker.add(
-            &entity,
-            |chunk| self.player_area_map.get_tracking_players(chunk),
-            |id| self.players.get_by_entity_id(id),
-        );
+        if let Err(error) = self
+            .entity_manager()
+            .add_live_entity(entity.clone(), EntityOwnership::External)
+        {
+            panic!("failed to register player entity: {error}");
+        }
+        self.add_entity_to_tracker(&entity);
     }
 
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
@@ -41,9 +37,8 @@ impl World {
         self.entity_tracker
             .remove(entity_id, |id| self.players.get_by_entity_id(id));
 
-        let section = SectionPos::from_entity_pos(player.position());
-        self.entity_cache
-            .unregister(entity_id, player.uuid(), section);
+        self.entity_manager()
+            .remove_live_entity(entity_id, crate::entity::RemovalReason::ChangedWorld);
         player.set_level_callback(Arc::new(NullEntityCallback));
     }
 

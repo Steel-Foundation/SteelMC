@@ -552,13 +552,13 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 pub mod attribute;
 mod base;
 mod block_effects;
-mod cache;
 mod callback;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
 mod inside_block_effects;
 mod living_base;
+mod manager;
 mod movement_sync;
 mod registry;
 mod shared_flags;
@@ -574,16 +574,19 @@ pub use base::{
     EntityMovementEmission, EntityMovementFlags, EntityMovementProgress,
     EntityVerticalMovementStateUpdate,
 };
-pub use cache::EntityCache;
 pub use callback::{
-    EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
-    RemovalReason,
+    EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,
+    PlayerEntityCallback, RemovalReason,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
 pub use living_base::{ActiveMobEffect, DEATH_DURATION, LivingEntityBase, LivingTravelInput};
+pub use manager::{
+    AddEntityError, ChunkEntityLoadResult, EntityMoveError, EntityMoveUpdate, EntityOwnership,
+    WorldEntityManager,
+};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -619,6 +622,16 @@ pub struct AcceptedClientMovement {
     pub movement: DVec3,
     /// Whether vanilla resets fall distance after the movement is applied.
     pub reset_fall_distance: bool,
+}
+
+/// Result of applying accepted client-authored movement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptedClientMovementOutcome {
+    /// Movement applied and regular post-processing should continue.
+    Applied,
+    /// Movement applied, but follow-up processing should stop because the
+    /// entity handled a terminal side effect such as death.
+    Handled,
 }
 
 /// Object-safe access to an entity trait object from default `Entity` methods.
@@ -898,7 +911,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
         let riding_position = self.passenger_riding_position(passenger);
         let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
-        passenger.set_position(riding_position - vehicle_attachment);
+        let _ = passenger.try_set_position(riding_position - vehicle_attachment);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -1845,9 +1858,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
         &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
-    ) -> bool {
+    ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
-            self.set_position(position);
+            self.try_set_position(position)?;
             self.refresh_fluid_contact();
         }
 
@@ -1858,13 +1871,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
             accepted.movement,
         );
         if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
-            return true;
+            return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
             self.reset_fall_distance();
         }
 
-        false
+        Ok(AcceptedClientMovementOutcome::Applied)
     }
 
     /// Applies final state accepted from a client-authored movement packet.
@@ -1872,7 +1885,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
-    ) -> bool {
+    ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         self.default_apply_accepted_client_movement(world, accepted)
     }
 
@@ -1881,15 +1894,23 @@ pub trait Entity: EntityEventSource + Send + Sync {
         &self,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
-    ) -> bool {
+    ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         accepted.horizontal_collision = self.horizontal_collision();
         accepted.reset_fall_distance = false;
         self.default_apply_accepted_client_movement(world, accepted)
     }
 
-    /// Sets the entity's position.
-    fn set_position(&self, pos: DVec3) {
-        self.base().set_position(pos);
+    /// Attempts to set the entity's position through world lifecycle validation.
+    #[must_use]
+    fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.base().try_set_position(pos)
+    }
+
+    /// Sets the entity's position without touching world indexes.
+    ///
+    /// Use only for construction, loading, proto staging, and controlled tests.
+    fn set_position_local(&self, pos: DVec3) {
+        self.base().set_position_local(pos);
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -2406,13 +2427,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Moves the entity without collision physics.
-    fn move_without_physics(&self, delta: DVec3) -> MoveResult {
+    fn move_without_physics(&self, delta: DVec3) -> Option<MoveResult> {
         let final_position = self.position() + delta;
-        self.set_position(final_position);
+        self.try_set_position(final_position).ok()?;
         self.base().clear_collision_flags();
         self.refresh_fluid_contact();
 
-        MoveResult {
+        Some(MoveResult {
             final_position,
             actual_movement: delta,
             on_ground: self.on_ground(),
@@ -2421,7 +2442,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             x_collision: false,
             z_collision: false,
             final_aabb: self.bounding_box(),
-        }
+        })
     }
 
     /// Moves the entity with collision detection.
@@ -2431,7 +2452,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
-            return Some(self.move_without_physics(delta));
+            return self.move_without_physics(delta);
         }
 
         let mut movement = delta;
@@ -2466,7 +2487,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         // Update entity state
         if should_apply_resolved_movement(movement, result.actual_movement) {
             self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
-            self.set_position(result.final_position);
+            self.try_set_position(result.final_position).ok()?;
         }
         let vertical_state_update =
             EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
@@ -4809,7 +4830,7 @@ mod tests {
 
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();
-        vehicle.set_position(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.set_position_local(DVec3::new(2.0, 0.0, 0.0));
         vehicle.base().advance_base_tick_state();
 
         assert!(vehicle.has_controlling_passenger());
@@ -4833,7 +4854,7 @@ mod tests {
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(non_player_controller));
         vehicle.set_velocity(DVec3::new(4.0, 0.0, 4.0));
         vehicle.base().advance_base_tick_state();
-        vehicle.set_position(DVec3::new(2.0, 0.0, 0.0));
+        vehicle.set_position_local(DVec3::new(2.0, 0.0, 0.0));
         vehicle.base().advance_base_tick_state();
 
         assert_vec3_close(vehicle.known_movement(), DVec3::new(4.0, 0.0, 4.0));

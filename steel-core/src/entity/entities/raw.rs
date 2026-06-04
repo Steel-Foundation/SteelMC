@@ -44,7 +44,7 @@ impl RawEntity {
 
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
     pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        self.set_position(position);
+        self.set_position_local(position);
         self.base.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
     }

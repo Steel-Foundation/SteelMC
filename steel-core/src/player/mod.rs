@@ -383,7 +383,7 @@ impl Player {
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
-        self.set_position(tick_position);
+        let _ = self.try_set_position(tick_position);
         self.refresh_fluid_contact();
 
         self.tick_ack_block_changes();
@@ -1062,7 +1062,7 @@ impl Player {
         let world = self.get_world();
 
         // Set position and rotation
-        self.set_position(position);
+        self.set_position_local(position);
         self.set_rotation(rotation);
         self.set_old_position_to_current();
         self.movement.lock().reset_for_position_sync(position);

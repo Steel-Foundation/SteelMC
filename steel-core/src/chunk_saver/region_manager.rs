@@ -46,6 +46,8 @@ pub struct PreparedChunkSave {
     pub pos: ChunkPos,
     /// The serialized chunk data.
     pub persistent: PersistentChunk,
+    /// Runtime manager entity IDs that were included in `persistent.entities`.
+    pub saved_runtime_entity_ids: Vec<i32>,
 }
 
 /// An open region file with its header.

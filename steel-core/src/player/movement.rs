@@ -16,7 +16,10 @@ use steel_registry::vanilla_mob_effects;
 use steel_utils::translations;
 use steel_utils::types::GameType;
 
-use crate::entity::{AcceptedClientMovement, Entity, LivingEntity, get_input_vector};
+use crate::entity::{
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
+    get_input_vector,
+};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
     is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
@@ -242,7 +245,7 @@ impl Player {
 
         if self.is_passenger() {
             let passenger_pos = self.position();
-            self.set_position(passenger_pos);
+            let _ = self.try_set_position(passenger_pos);
             self.set_rotation((target_yaw, target_pitch));
             world.chunk_map.update_player_status(self);
             self.broadcast_accepted_movement(
@@ -391,7 +394,7 @@ impl Player {
         }
 
         let client_delta = target_pos - start_pos;
-        if self.apply_accepted_client_movement(
+        match self.apply_accepted_client_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
@@ -402,7 +405,28 @@ impl Player {
                 reset_fall_distance: moved_upwards,
             },
         ) {
-            return;
+            Ok(AcceptedClientMovementOutcome::Applied) => {}
+            Ok(AcceptedClientMovementOutcome::Handled) => return,
+            Err(error) => {
+                log::warn!(
+                    "Rejected accepted player movement for entity {}: {error}",
+                    self.id()
+                );
+                if let Err(teleport_error) = self.try_teleport(
+                    start_pos.x,
+                    start_pos.y,
+                    start_pos.z,
+                    target_yaw,
+                    target_pitch,
+                ) {
+                    log::warn!(
+                        "Failed to correct rejected player movement for entity {}: {teleport_error}",
+                        self.id()
+                    );
+                }
+                self.remove_latest_movement_recording();
+                return;
+            }
         }
         world.chunk_map.update_player_status(self);
 
@@ -540,7 +564,7 @@ impl Player {
         })
         .rejects()
         {
-            vehicle.set_position(old_position);
+            let _ = vehicle.try_set_position(old_position);
             vehicle.refresh_fluid_contact();
             vehicle.set_rotation((target_yaw, target_pitch));
             self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
@@ -549,10 +573,7 @@ impl Player {
         }
 
         let client_delta = target_pos - old_position;
-        self.movement
-            .lock()
-            .set_last_known_client_movement(client_delta);
-        if vehicle.apply_accepted_client_vehicle_movement(
+        match vehicle.apply_accepted_client_vehicle_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
@@ -563,8 +584,29 @@ impl Player {
                 reset_fall_distance: false,
             },
         ) {
-            return;
+            Ok(AcceptedClientMovementOutcome::Applied) => {}
+            Ok(AcceptedClientMovementOutcome::Handled) => return,
+            Err(error) => {
+                log::warn!(
+                    "Rejected accepted vehicle movement for entity {}: {error}",
+                    vehicle.id()
+                );
+                if let Err(rollback_error) = vehicle.try_set_position(old_position) {
+                    log::warn!(
+                        "Failed to roll vehicle {} back after rejected movement: {rollback_error}",
+                        vehicle.id()
+                    );
+                }
+                vehicle.refresh_fluid_contact();
+                vehicle.set_rotation((target_yaw, target_pitch));
+                self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+                vehicle.remove_latest_movement_recording();
+                return;
+            }
         }
+        self.movement
+            .lock()
+            .set_last_known_client_movement(client_delta);
         world.chunk_map.update_player_status(self);
         self.record_client_vehicle_floating(
             &world,
@@ -726,7 +768,22 @@ impl Player {
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) {
+        if let Err(error) = self.try_teleport(x, y, z, yaw, pitch) {
+            log::warn!("Failed to teleport player entity {}: {error}", self.id());
+        }
+    }
+
+    fn try_teleport(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), EntityMoveError> {
         let pos = DVec3::new(x, y, z);
+
+        self.try_set_position(pos)?;
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -736,7 +793,6 @@ impl Player {
             id
         };
 
-        self.set_position(pos);
         self.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
         {
@@ -746,6 +802,7 @@ impl Player {
         }
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
+        Ok(())
     }
 
     /// Handles a teleport acknowledgment from the client.
@@ -755,7 +812,15 @@ impl Player {
         let mut tp = self.teleport_state.lock();
 
         if let Some(pos) = tp.try_accept(packet.teleport_id) {
-            self.set_position(pos);
+            drop(tp);
+            if let Err(error) = self.try_set_position(pos) {
+                log::warn!(
+                    "Failed to commit accepted teleport for player entity {}: {error}",
+                    self.id()
+                );
+                self.teleport_state.lock().awaiting_position = Some(pos);
+                return;
+            }
             self.set_old_position_to_current();
             let mut movement = self.movement.lock();
             movement.mark_last_good_position(pos);

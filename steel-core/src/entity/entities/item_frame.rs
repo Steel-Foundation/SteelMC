@@ -93,7 +93,7 @@ impl ItemFrameEntity {
         let block_pos = *self.block_pos.lock();
         let direction = *self.entity_data.lock().hanging_entity.direction.get();
         self.base
-            .set_position(Self::frame_center(block_pos, direction));
+            .set_position_local(Self::frame_center(block_pos, direction));
         self.base.set_bounding_box(Self::frame_bounding_box(
             block_pos,
             direction,

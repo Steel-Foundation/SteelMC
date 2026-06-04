@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, InsideBlockEffectType, NullEntityCallback, RemovalReason, SharedEntity,
-    WeakEntity,
+    EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback, RemovalReason,
+    SharedEntity, WeakEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::world::World;
@@ -1378,10 +1378,27 @@ impl EntityBase {
         *self.level_callback.lock() = callback;
     }
 
-    /// Sets the entity's position and notifies the callback.
-    pub fn set_position(&self, pos: DVec3) {
+    /// Sets the entity's position through the active level callback.
+    #[must_use]
+    pub fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         require_finite_position(pos, "position");
-        let old_pos = {
+        let old_pos = self.state.lock().position;
+        let callback = self.level_callback.lock().clone();
+        callback.validate_move(old_pos, pos)?;
+        self.set_position_local(pos);
+        if let Err(error) = callback.on_move_committed(old_pos, pos) {
+            self.set_position_local(old_pos);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Sets position without consulting world lifecycle callbacks.
+    ///
+    /// Use this for construction, loading, proto-staged entities, and tests.
+    pub fn set_position_local(&self, pos: DVec3) {
+        require_finite_position(pos, "position");
+        {
             let mut state = self.state.lock();
             let old = state.position;
             state.position = pos;
@@ -1391,9 +1408,7 @@ impl EntityBase {
             {
                 state.in_block_state = None;
             }
-            old
-        };
-        self.level_callback.lock().on_move(old_pos, pos);
+        }
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -1877,8 +1892,9 @@ impl EntityBase {
 mod tests {
     use super::{
         DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState, EntityFireFreezeState,
-        EntityFluidContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
-        EntityMovementProgress, EntityPistonMovement, EntityVerticalMovementStateUpdate,
+        EntityFluidContact, EntityMoveError, EntityMovement, EntityMovementEmission,
+        EntityMovementFlags, EntityMovementProgress, EntityPistonMovement,
+        EntityVerticalMovementStateUpdate,
     };
     use std::sync::{Arc, Weak};
 
@@ -1984,11 +2000,39 @@ mod tests {
     }
 
     impl EntityLevelCallback for CountingCallback {
-        fn on_move(&self, _old_pos: DVec3, _new_pos: DVec3) {}
+        fn validate_move(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+            Ok(())
+        }
+
+        fn on_move_committed(
+            &self,
+            _old_pos: DVec3,
+            _new_pos: DVec3,
+        ) -> Result<(), EntityMoveError> {
+            Ok(())
+        }
 
         fn on_remove(&self, reason: RemovalReason) {
             self.removals.lock().push(reason);
         }
+    }
+
+    struct CommitRejectingCallback;
+
+    impl EntityLevelCallback for CommitRejectingCallback {
+        fn validate_move(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+            Ok(())
+        }
+
+        fn on_move_committed(
+            &self,
+            _old_pos: DVec3,
+            _new_pos: DVec3,
+        ) -> Result<(), EntityMoveError> {
+            Err(EntityMoveError::NotLive { entity_id: 1 })
+        }
+
+        fn on_remove(&self, _reason: RemovalReason) {}
     }
 
     #[test]
@@ -2142,6 +2186,25 @@ mod tests {
         assert!(!base.clear_removed());
         assert!(!base.is_removed());
         assert_eq!(base.removal_reason(), None);
+    }
+
+    #[test]
+    fn try_set_position_rolls_back_when_commit_fails() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(1.0, 2.0, 3.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.set_level_callback(Arc::new(CommitRejectingCallback));
+
+        let result = base.try_set_position(DVec3::new(4.0, 5.0, 6.0));
+
+        assert!(matches!(
+            result,
+            Err(EntityMoveError::NotLive { entity_id: 1 })
+        ));
+        assert_vec3_close(base.position(), DVec3::new(1.0, 2.0, 3.0));
     }
 
     #[test]
@@ -2501,7 +2564,7 @@ mod tests {
         );
 
         assert_vec3_close(base.old_position(), DVec3::new(1.0, 2.0, 3.0));
-        base.set_position(DVec3::new(4.0, 5.0, 6.0));
+        base.set_position_local(DVec3::new(4.0, 5.0, 6.0));
         assert_vec3_close(base.position(), DVec3::new(4.0, 5.0, 6.0));
         assert_vec3_close(base.old_position(), DVec3::new(1.0, 2.0, 3.0));
 
@@ -2560,7 +2623,7 @@ mod tests {
             Weak::<World>::new(),
         );
 
-        base.set_position(DVec3::new(f64::NAN, 0.0, 0.0));
+        base.set_position_local(DVec3::new(f64::NAN, 0.0, 0.0));
     }
 
     #[test]
@@ -2598,11 +2661,11 @@ mod tests {
             Weak::<World>::new(),
         );
 
-        base.set_position(DVec3::new(4.0, 2.0, 3.0));
+        base.set_position_local(DVec3::new(4.0, 2.0, 3.0));
         base.advance_base_tick_state();
         assert_vec3_close(base.known_speed(), DVec3::ZERO);
 
-        base.set_position(DVec3::new(7.0, 1.5, -1.0));
+        base.set_position_local(DVec3::new(7.0, 1.5, -1.0));
         base.advance_base_tick_state();
         assert_vec3_close(base.known_speed(), DVec3::new(3.0, -0.5, -4.0));
     }
@@ -2657,7 +2720,7 @@ mod tests {
         assert!(base.last_movements_for_block_effects().is_empty());
 
         base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
-        base.set_position(DVec3::new(1.0, 0.0, 0.0));
+        base.set_position_local(DVec3::new(1.0, 0.0, 0.0));
         let finalized = base.take_movements_for_block_effects();
         assert_eq!(base.last_movements_for_block_effects(), finalized);
 
@@ -2681,7 +2744,7 @@ mod tests {
             DVec3::new(1.0, 64.0, 0.0),
             DVec3::new(1.0, 0.0, 0.0),
         ));
-        base.set_position(DVec3::new(2.0, 64.0, 0.0));
+        base.set_position_local(DVec3::new(2.0, 64.0, 0.0));
 
         let movements = base.take_movements_for_block_effects();
 
@@ -2713,7 +2776,7 @@ mod tests {
         ));
 
         base.remove_latest_movement_recording();
-        base.set_position(DVec3::new(1.0, 0.0, 0.0));
+        base.set_position_local(DVec3::new(1.0, 0.0, 0.0));
 
         let movements = base.take_movements_for_block_effects();
 
@@ -2737,7 +2800,7 @@ mod tests {
             let to = DVec3::new(f64::from(x + 1), 0.0, 0.0);
             base.record_movement_this_tick(EntityMovement::new(from, to));
         }
-        base.set_position(DVec3::new(101.0, 0.0, 0.0));
+        base.set_position_local(DVec3::new(101.0, 0.0, 0.0));
 
         let movements = base.take_movements_for_block_effects();
 
