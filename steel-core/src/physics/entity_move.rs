@@ -236,9 +236,7 @@ fn can_fall_at_least(
         aabb.max_z() - EDGE_COLLISION_EPSILON + delta_z,
     );
 
-    world
-        .get_collisions_with_context(&fall_aabb, state.block_collision_context())
-        .is_empty()
+    !world.has_collision_with_context(&fall_aabb, state.block_collision_context())
 }
 
 /// Returns the axis step order for collision resolution.

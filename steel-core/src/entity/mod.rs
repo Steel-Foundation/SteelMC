@@ -728,13 +728,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let target_box = self.bounding_box().move_vec(delta);
         let collision_world =
             WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
-        if !collision_world
-            .get_collisions_with_context(
-                &target_box.deflate(COLLISION_EPSILON),
-                physics_state_for_move(self.as_entity_event_source()).block_collision_context(),
-            )
-            .is_empty()
-        {
+        if collision_world.has_collision_with_context(
+            &target_box.deflate(COLLISION_EPSILON),
+            physics_state_for_move(self.as_entity_event_source()).block_collision_context(),
+        ) {
             return false;
         }
 
@@ -1751,12 +1748,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let collision_world =
             WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
         // TODO: Include world-border collision once Steel has world-border physics.
-        let colliding = !collision_world
-            .get_collisions_with_context(
-                &self.bounding_box().deflate(NO_PHYSICS_COLLISION_EPSILON),
-                BlockCollisionContext::empty(),
-            )
-            .is_empty();
+        let colliding = collision_world.has_collision_with_context(
+            &self.bounding_box().deflate(NO_PHYSICS_COLLISION_EPSILON),
+            BlockCollisionContext::empty(),
+        );
         self.set_no_physics(colliding);
         if colliding {
             let bounding_box = self.bounding_box();

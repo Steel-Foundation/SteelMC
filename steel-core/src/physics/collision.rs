@@ -30,6 +30,11 @@ pub trait CollisionWorld {
     /// Returns a list of world-space AABBs representing solid block collisions.
     fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb>;
 
+    /// Returns whether any block collision shape intersects with the given AABB.
+    fn has_block_collision(&self, aabb: &WorldAabb) -> bool {
+        !self.get_block_collisions(aabb).is_empty()
+    }
+
     /// Queries all block collision shapes with a vanilla collision context.
     fn get_block_collisions_with_context(
         &self,
@@ -38,6 +43,17 @@ pub trait CollisionWorld {
     ) -> Vec<WorldAabb> {
         let _ = context;
         self.get_block_collisions(aabb)
+    }
+
+    /// Returns whether any block collision shape intersects with the given AABB and context.
+    fn has_block_collision_with_context(
+        &self,
+        aabb: &WorldAabb,
+        context: BlockCollisionContext,
+    ) -> bool {
+        !self
+            .get_block_collisions_with_context(aabb, context)
+            .is_empty()
     }
 
     /// Queries all entity collision shapes intersecting the given AABB.
@@ -50,6 +66,11 @@ pub trait CollisionWorld {
         Vec::new()
     }
 
+    /// Returns whether any entity collision shape intersects with the given AABB.
+    fn has_entity_collision(&self, aabb: &WorldAabb) -> bool {
+        !self.get_entity_collisions(aabb).is_empty()
+    }
+
     /// Queries entity collisions followed by block collisions with a vanilla context.
     fn get_collisions_with_context(
         &self,
@@ -59,6 +80,11 @@ pub trait CollisionWorld {
         let mut collisions = self.get_entity_collisions(aabb);
         collisions.extend(self.get_block_collisions_with_context(aabb, context));
         collisions
+    }
+
+    /// Returns whether any entity or block collision shape intersects with the given AABB.
+    fn has_collision_with_context(&self, aabb: &WorldAabb, context: BlockCollisionContext) -> bool {
+        self.has_entity_collision(aabb) || self.has_block_collision_with_context(aabb, context)
     }
 
     /// Gets collision shapes for vanilla pre-move checks.
@@ -211,12 +237,10 @@ impl<'a> WorldCollisionProvider<'a> {
         entity_bottom: f64,
         descending: bool,
     ) -> bool {
-        !self
-            .get_collisions_with_context(
-                &aabb.deflate(COLLISION_EPSILON),
-                self.entity_collision_context(entity_bottom, descending, false),
-            )
-            .is_empty()
+        self.has_collision_with_context(
+            &aabb.deflate(COLLISION_EPSILON),
+            self.entity_collision_context(entity_bottom, descending, false),
+        )
     }
 
     /// Finds the block supporting an entity within `aabb`.
@@ -314,20 +338,16 @@ const fn bottom_center(aabb: WorldAabb) -> DVec3 {
 /// Returns whether an entity box intersects any block collision shape.
 #[must_use]
 pub fn has_block_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
-    !world
-        .get_block_collisions(&aabb.deflate(COLLISION_EPSILON))
-        .is_empty()
+    world.has_block_collision(&aabb.deflate(COLLISION_EPSILON))
 }
 
 /// Returns whether an entity box intersects any entity or block collision shape.
 #[must_use]
 pub fn has_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
-    !world
-        .get_collisions_with_context(
-            &aabb.deflate(COLLISION_EPSILON),
-            BlockCollisionContext::empty(),
-        )
-        .is_empty()
+    world.has_collision_with_context(
+        &aabb.deflate(COLLISION_EPSILON),
+        BlockCollisionContext::empty(),
+    )
 }
 
 /// Returns whether `new_aabb` collides with shapes that `old_aabb` did not.
@@ -341,14 +361,12 @@ pub fn is_colliding_with_new_shapes(
     descending: bool,
 ) -> bool {
     let old_shape = old_aabb.deflate(COLLISION_EPSILON);
-    let collisions = world.get_pre_move_collisions(
+    for collision_aabb in world.get_pre_move_collisions(
         &new_aabb.deflate(COLLISION_EPSILON),
         bottom_center(old_aabb),
         descending,
-    );
-
-    for collision_aabb in &collisions {
-        if !join_is_not_empty(collision_aabb, &old_shape) {
+    ) {
+        if !join_is_not_empty(&collision_aabb, &old_shape) {
             return true;
         }
     }
@@ -412,6 +430,51 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         collisions
     }
 
+    fn has_block_collision_with_context(
+        &self,
+        aabb: &WorldAabb,
+        context: BlockCollisionContext,
+    ) -> bool {
+        let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
+
+        for y in bounds.min_y..=bounds.max_y {
+            for z in bounds.min_z..=bounds.max_z {
+                for x in bounds.min_x..=bounds.max_x {
+                    let cursor_type = bounds.cursor_type(x, y, z);
+                    if cursor_type == CollisionCursorType::Corner {
+                        continue;
+                    }
+
+                    let block_pos = BlockPos::new(x, y, z);
+                    let block_state = self.world.get_block_state(block_pos);
+
+                    if block_state.is_air() {
+                        continue;
+                    }
+
+                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+
+                    if collision_shape.is_empty() {
+                        continue;
+                    }
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
+                        continue;
+                    }
+
+                    for shape_aabb in collision_shape {
+                        let world_aabb = translate_shape(shape_aabb, block_pos);
+
+                        if aabb.intersects(world_aabb) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     fn get_pre_move_collisions(
         &self,
         aabb: &WorldAabb,
@@ -444,6 +507,28 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
             })
             .map(|entity| entity.bounding_box())
             .collect()
+    }
+
+    fn has_entity_collision(&self, aabb: &WorldAabb) -> bool {
+        if aabb.size() < ENTITY_COLLISION_EPSILON {
+            return false;
+        }
+
+        let query = aabb.inflate(ENTITY_COLLISION_EPSILON);
+        self.world
+            .get_entities_in_aabb(&query)
+            .into_iter()
+            .any(|entity| {
+                !entity.is_removed()
+                    && match self.source {
+                        Some(source) => {
+                            entity.id() != source.id()
+                                && !entity.is_spectator()
+                                && source.can_collide_with(entity.as_ref())
+                        }
+                        None => !entity.is_spectator() && entity.can_be_collided_with(None),
+                    }
+            })
     }
 }
 

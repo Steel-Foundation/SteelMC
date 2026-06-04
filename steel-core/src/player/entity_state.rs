@@ -122,15 +122,13 @@ impl Player {
     fn can_player_fit_within_blocks_and_entities_when(&self, pose: EntityPose) -> bool {
         let world = self.get_world();
         let collision_world = WorldCollisionProvider::for_entity(&world, self);
-        collision_world
-            .get_collisions_with_context(
-                &self
-                    .bounding_box_for_pose(pose)
-                    .deflate(POSE_COLLISION_EPSILON),
-                BlockCollisionContext::entity(self.position().y, self.is_descending())
-                    .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow()),
-            )
-            .is_empty()
+        !collision_world.has_collision_with_context(
+            &self
+                .bounding_box_for_pose(pose)
+                .deflate(POSE_COLLISION_EPSILON),
+            BlockCollisionContext::entity(self.position().y, self.is_descending())
+                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow()),
+        )
     }
 
     pub(super) fn reset_entity_state(&self) {
