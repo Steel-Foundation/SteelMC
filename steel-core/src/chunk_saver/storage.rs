@@ -418,6 +418,16 @@ pub enum ChunkStorage {
     RamOnly(RamOnlyStorage),
 }
 
+/// Runtime chunk data loaded from persistence.
+pub struct LoadedChunk {
+    /// The deserialized chunk.
+    pub chunk: ChunkAccess,
+    /// The highest persisted status for the chunk.
+    pub status: ChunkStatus,
+    /// Full-chunk entities waiting for lifecycle-approved world registration.
+    pub pending_entities: Vec<SharedEntity>,
+}
+
 impl ChunkStorage {
     /// Loads a chunk from storage.
     ///
@@ -430,7 +440,7 @@ impl ChunkStorage {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> io::Result<Option<(ChunkAccess, ChunkStatus)>> {
+    ) -> io::Result<Option<LoadedChunk>> {
         match self {
             Self::Disk(rm) => rm.load_chunk(pos, min_y, height, level).await,
             Self::RamOnly(ram) => ram.load_chunk(pos, min_y, height, level).await,
@@ -887,7 +897,7 @@ impl ChunkStorage {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> ChunkAccess {
+    ) -> LoadedChunk {
         let sections: Vec<ChunkSection> = persistent
             .sections
             .iter()
@@ -929,17 +939,12 @@ impl ChunkStorage {
                 }
             }
 
-            // Load entities
+            let mut pending_entities = Vec::with_capacity(persistent.entities.len());
             for persistent_entity in &persistent.entities {
                 if let Some(entity) =
                     Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
-                    && let Some(world) = level.upgrade()
-                    && let Err(error) = world.register_loaded_entity(entity)
                 {
-                    tracing::warn!(
-                        chunk = ?pos,
-                        "Skipping loaded chunk entity that could not be registered: {error}"
-                    );
+                    pending_entities.push(entity);
                 }
             }
 
@@ -965,7 +970,11 @@ impl ChunkStorage {
             // Clear dirty flag since we just loaded (add_and_register marks dirty)
             chunk.dirty.store(false, Ordering::Release);
 
-            ChunkAccess::Full(chunk)
+            LoadedChunk {
+                chunk: ChunkAccess::Full(chunk),
+                status,
+                pending_entities,
+            }
         } else {
             let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
             let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
@@ -1012,7 +1021,11 @@ impl ChunkStorage {
 
             chunk.dirty.store(false, Ordering::Release);
 
-            ChunkAccess::Proto(chunk)
+            LoadedChunk {
+                chunk: ChunkAccess::Proto(chunk),
+                status,
+                pending_entities: Vec::new(),
+            }
         }
     }
 
@@ -2524,7 +2537,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("carvers status should load as proto chunk");
         };
 
@@ -2563,7 +2576,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("carvers status should load as proto chunk");
         };
 
@@ -2601,7 +2614,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("noise status should load as proto chunk");
         };
 
@@ -2636,7 +2649,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("features status should load as proto chunk");
         };
         assert!(loaded_proto.get_block_entity(block_pos).is_some());
@@ -2679,7 +2692,8 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        assert!(loaded.pending_entities.is_empty());
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("features status should load as proto chunk");
         };
         assert_eq!(loaded_proto.get_entities().len(), 1);
@@ -2708,6 +2722,40 @@ mod tests {
 
         assert_eq!(prepared.saved_runtime_entity_ids, vec![entity.id()]);
         assert_eq!(prepared.persistent.entities.len(), 1);
+    }
+
+    #[test]
+    fn full_chunk_load_defers_entities_to_world_registration() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let chunk = ChunkAccess::Proto(proto);
+        let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 6.0, 7.5),
+            Weak::new(),
+        ));
+
+        let Some(prepared) =
+            ChunkStorage::prepare_chunk_save(&chunk, slice::from_ref(&entity), true)
+        else {
+            panic!("forced runtime entity save should prepare a chunk save");
+        };
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Full,
+            0,
+            16,
+            Weak::new(),
+        );
+
+        assert!(matches!(loaded.chunk, ChunkAccess::Full(_)));
+        assert_eq!(loaded.status, ChunkStatus::Full);
+        assert_eq!(loaded.pending_entities.len(), 1);
+        assert_eq!(loaded.pending_entities[0].uuid(), entity.uuid());
     }
 
     #[test]
@@ -2748,7 +2796,7 @@ mod tests {
             16,
             Weak::new(),
         );
-        let ChunkAccess::Proto(loaded_proto) = loaded else {
+        let ChunkAccess::Proto(loaded_proto) = loaded.chunk else {
             panic!("features status should load as proto chunk");
         };
         let Some(loaded_entity) = loaded_proto.get_block_entity(block_pos) else {

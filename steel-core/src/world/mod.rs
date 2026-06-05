@@ -2754,6 +2754,35 @@ impl World {
         Ok(())
     }
 
+    pub(crate) fn register_loaded_chunk_entities(
+        self: &Arc<Self>,
+        source_chunk: ChunkPos,
+        persisted_status: ChunkStatus,
+        entities: Vec<SharedEntity>,
+    ) {
+        for entity in entities {
+            let entity_id = entity.id();
+            let entity_uuid = entity.uuid();
+            let entity_type = entity.entity_type();
+            let entity_pos = entity.position();
+            let entity_chunk = ChunkPos::from_entity_pos(entity_pos);
+
+            if let Err(error) = self.register_loaded_entity(entity) {
+                tracing::warn!(
+                    source_chunk = ?source_chunk,
+                    ?persisted_status,
+                    entity_id,
+                    uuid = ?entity_uuid,
+                    entity_type = ?entity_type.key,
+                    position = ?entity_pos,
+                    entity_chunk = ?entity_chunk,
+                    "Skipping loaded chunk entity that could not be registered: {error}; source_chunk={source_chunk:?}, persisted_status={persisted_status:?}, entity_id={entity_id}, uuid={entity_uuid}, entity_type={:?}, position={entity_pos:?}, entity_chunk={entity_chunk:?}",
+                    entity_type.key,
+                );
+            }
+        }
+    }
+
     fn has_full_chunk(&self, chunk_pos: ChunkPos) -> bool {
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.as_full().is_some())

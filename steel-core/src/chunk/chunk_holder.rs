@@ -435,7 +435,7 @@ impl ChunkHolder {
 
                 if chunk_exists {
                     // Try to load the chunk from disk
-                    if let Ok(Some((chunk, status))) = storage
+                    if let Ok(Some(loaded)) = storage
                         .load_chunk(
                             self_clone.pos,
                             self_clone.min_y(),
@@ -444,7 +444,33 @@ impl ChunkHolder {
                         )
                         .await
                     {
-                        self_clone.insert_chunk(chunk, status);
+                        let loaded_status = loaded.status;
+                        if self_clone.is_status_disallowed(target_status) {
+                            tracing::debug!(
+                                chunk = ?self_clone.pos,
+                                ?target_status,
+                                ?loaded_status,
+                                load_level = ?self_clone.load_level(),
+                                simulation_level = ?self_clone.simulation_level(),
+                                current_status = ?self_clone.persisted_status(),
+                                "Dropping storage load that completed after chunk holder target became disallowed: chunk={:?}, target_status={:?}, loaded_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                                self_clone.pos,
+                                target_status,
+                                loaded_status,
+                                self_clone.load_level(),
+                                self_clone.simulation_level(),
+                                self_clone.persisted_status(),
+                            );
+                            return None;
+                        }
+                        self_clone.insert_chunk(loaded.chunk, loaded_status);
+                        if !loaded.pending_entities.is_empty() {
+                            context.world().register_loaded_chunk_entities(
+                                self_clone.pos,
+                                loaded_status,
+                                loaded.pending_entities,
+                            );
+                        }
                     } else {
                         // Chunk existed but failed to load - generate fresh
                         let holder_for_notify = self_clone.clone();
