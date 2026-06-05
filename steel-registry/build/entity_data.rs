@@ -406,9 +406,17 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
         "painting_variant" => {
             registry_default_expr("vanilla_painting_variants", default, serializer)
         }
-        "copper_golem_state" => {
-            ordinal_default_expr(default, serializer, &["IDLE", "ACTIVE", "WEATHERED"])
-        }
+        "copper_golem_state" => ordinal_default_expr(
+            default,
+            serializer,
+            &[
+                "IDLE",
+                "GETTING_ITEM",
+                "GETTING_NO_ITEM",
+                "DROPPING_ITEM",
+                "DROPPING_NO_ITEM",
+            ],
+        ),
         "weathering_copper_state" => ordinal_default_expr(
             default,
             serializer,

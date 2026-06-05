@@ -12,7 +12,9 @@ use tokio::{fs, io};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
-use super::player_data::{PersistentAbilities, PersistentPlayerData, PersistentSlot};
+use super::player_data::{
+    PLAYER_DATA_VERSION, PersistentAbilities, PersistentPlayerData, PersistentSlot,
+};
 use crate::config::StorageSelection;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
@@ -21,7 +23,9 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 1;
+const PLAYER_STORAGE_VERSION: u16 = 2;
+const GLOBAL_STORAGE_VERSION: u16 = 1;
+const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
 /// Server-wide player data.
 #[derive(Debug, Clone)]
@@ -247,7 +251,7 @@ impl FilePlayerDataStorage {
 
     async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         let file = GlobalPlayerDataFile {
-            data_version: 1,
+            data_version: GLOBAL_PLAYER_DATA_VERSION,
             last_active_domain: data.last_active_domain.clone(),
         };
         let bytes = encode_global_file(&file)?;
@@ -351,6 +355,16 @@ impl PlayerDataFile {
     }
 
     fn into_persistent(self) -> io::Result<PersistentPlayerData> {
+        if self.data_version != PLAYER_DATA_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported player data payload version {}",
+                    self.data_version
+                ),
+            ));
+        }
+
         let mut inventory = Vec::with_capacity(self.inventory.len());
         for slot in self.inventory {
             inventory.push(PersistentSlot {
@@ -423,37 +437,53 @@ fn item_from_nbt_bytes(bytes: &[u8]) -> io::Result<ItemStack> {
 }
 
 fn encode_player_file(file: &PlayerDataFile) -> io::Result<Vec<u8>> {
-    encode_file(PLAYER_MAGIC, wincode::serialize(file))
+    encode_file(
+        PLAYER_MAGIC,
+        PLAYER_STORAGE_VERSION,
+        wincode::serialize(file),
+    )
 }
 
 fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
-    let payload = decode_file(PLAYER_MAGIC, bytes)?;
+    let payload = decode_file(PLAYER_MAGIC, PLAYER_STORAGE_VERSION, bytes)?;
     wincode::deserialize(&payload)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
 fn encode_global_file(file: &GlobalPlayerDataFile) -> io::Result<Vec<u8>> {
-    encode_file(GLOBAL_MAGIC, wincode::serialize(file))
+    encode_file(
+        GLOBAL_MAGIC,
+        GLOBAL_STORAGE_VERSION,
+        wincode::serialize(file),
+    )
 }
 
 fn decode_global_file(bytes: &[u8]) -> io::Result<GlobalPlayerDataFile> {
-    let payload = decode_file(GLOBAL_MAGIC, bytes)?;
+    let payload = decode_file(GLOBAL_MAGIC, GLOBAL_STORAGE_VERSION, bytes)?;
     wincode::deserialize(&payload)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
-fn encode_file(magic: [u8; 4], serialized: wincode::WriteResult<Vec<u8>>) -> io::Result<Vec<u8>> {
+fn encode_file(
+    magic: [u8; 4],
+    version: u16,
+    serialized: wincode::WriteResult<Vec<u8>>,
+) -> io::Result<Vec<u8>> {
     let payload =
         serialized.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let compressed = zstd::encode_all(&payload[..], 3)?;
     let mut bytes = Vec::with_capacity(6 + compressed.len());
     bytes.extend_from_slice(&magic);
-    bytes.extend_from_slice(&PLAYER_STORAGE_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&version.to_le_bytes());
     bytes.extend_from_slice(&compressed);
     Ok(bytes)
 }
 
-fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
+fn decode_file(
+    expected_magic: [u8; 4],
+    expected_version: u16,
+    bytes: &[u8],
+) -> io::Result<Vec<u8>> {
     if bytes.len() < 6 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -467,10 +497,10 @@ fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
         ));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != PLAYER_STORAGE_VERSION {
+    if version != expected_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("unsupported player data version {version}"),
+            format!("unsupported player data storage version {version}"),
         ));
     }
     zstd::decode_all(&bytes[6..])
@@ -480,10 +510,9 @@ fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn player_file_roundtrip_preserves_domain_world_data() {
-        let file = PlayerDataFile {
-            data_version: 1,
+    fn sample_player_file(data_version: i32) -> PlayerDataFile {
+        PlayerDataFile {
+            data_version,
             pos: [1.0, 2.0, 3.0],
             motion: [0.0, 0.0, 0.0],
             rotation: [90.0, 10.0],
@@ -517,11 +546,20 @@ mod tests {
             experience_progress: 0.5,
             experience_total: 32,
             score: 9,
-        };
+        }
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_domain_world_data() {
+        let file = sample_player_file(PLAYER_DATA_VERSION);
 
         let encoded = encode_player_file(&file).expect("player file should encode");
         let decoded = decode_player_file(&encoded).expect("player file should decode");
 
+        assert_eq!(
+            u16::from_le_bytes([encoded[4], encoded[5]]),
+            PLAYER_STORAGE_VERSION
+        );
         assert_eq!(decoded.world, "lobby:void");
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
@@ -531,13 +569,28 @@ mod tests {
     #[test]
     fn global_file_roundtrip_preserves_last_active_domain() {
         let file = GlobalPlayerDataFile {
-            data_version: 1,
+            data_version: GLOBAL_PLAYER_DATA_VERSION,
             last_active_domain: "minecraft".to_owned(),
         };
 
         let encoded = encode_global_file(&file).expect("global file should encode");
         let decoded = decode_global_file(&encoded).expect("global file should decode");
 
+        assert_eq!(
+            u16::from_le_bytes([encoded[4], encoded[5]]),
+            GLOBAL_STORAGE_VERSION
+        );
         assert_eq!(decoded.last_active_domain, "minecraft");
+    }
+
+    #[test]
+    fn stale_player_payload_version_is_rejected() {
+        let file = sample_player_file(PLAYER_DATA_VERSION - 1);
+
+        let error = file
+            .into_persistent()
+            .expect_err("stale payload should fail");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 }

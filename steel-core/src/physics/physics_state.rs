@@ -37,6 +37,9 @@ pub(crate) struct EntityPhysicsState {
 
     /// Whether vanilla lets this entity walk on powder snow.
     can_walk_on_powder_snow: bool,
+
+    /// Whether vanilla collision context should treat this entity as a falling block.
+    is_falling_block: bool,
 }
 
 impl EntityPhysicsState {
@@ -55,6 +58,7 @@ impl EntityPhysicsState {
             fall_distance: 0.0,
             descending: false,
             can_walk_on_powder_snow: false,
+            is_falling_block: false,
         }
     }
 
@@ -124,6 +128,7 @@ impl EntityPhysicsState {
         BlockCollisionContext::entity(self.position.y, self.descending)
             .with_fall_distance(self.fall_distance)
             .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow)
+            .with_falling_block(self.is_falling_block)
     }
 
     /// Returns a copy with the pre-movement ground flag set.
@@ -158,6 +163,13 @@ impl EntityPhysicsState {
     #[must_use]
     pub const fn with_can_walk_on_powder_snow(mut self, can_walk_on_powder_snow: bool) -> Self {
         self.can_walk_on_powder_snow = can_walk_on_powder_snow;
+        self
+    }
+
+    /// Returns a copy with falling-block collision context set.
+    #[must_use]
+    pub const fn with_falling_block(mut self, is_falling_block: bool) -> Self {
+        self.is_falling_block = is_falling_block;
         self
     }
 }

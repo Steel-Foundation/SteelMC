@@ -5,7 +5,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::VoxelShape},
-    vanilla_blocks,
+    vanilla_blocks, vanilla_entities,
 };
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
@@ -221,6 +221,7 @@ impl<'a> WorldCollisionProvider<'a> {
             context
                 .with_fall_distance(source.fall_distance())
                 .with_can_walk_on_powder_snow(source.can_walk_on_powder_snow())
+                .with_falling_block(source.entity_type() == &vanilla_entities::FALLING_BLOCK)
         } else {
             context
         }

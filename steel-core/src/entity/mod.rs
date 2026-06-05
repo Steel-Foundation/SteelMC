@@ -295,6 +295,7 @@ fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
         entity.backs_off_from_edge(),
         entity.is_descending(),
         entity.can_walk_on_powder_snow(),
+        entity.entity_type() == &vanilla_entities::FALLING_BLOCK,
     )
 }
 

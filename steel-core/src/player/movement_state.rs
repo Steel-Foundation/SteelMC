@@ -11,6 +11,8 @@ pub struct MovementState {
     client_movement: ClientAuthoredMovementState,
     /// Vanilla validation state for the controlled root vehicle.
     client_vehicle_movement: ClientAuthoredMovementState,
+    /// Whether vanilla accepted player-authored movement during the current client tick.
+    received_movement_this_tick: bool,
     /// Entity id of the controlled root vehicle tracked this tick.
     client_vehicle_id: Option<i32>,
     /// Latest vanilla client input snapshot sent by the player.
@@ -23,6 +25,7 @@ impl MovementState {
         Self {
             client_movement: ClientAuthoredMovementState::new(),
             client_vehicle_movement: ClientAuthoredMovementState::new(),
+            received_movement_this_tick: false,
             client_vehicle_id: None,
             last_client_input: PlayerInput::EMPTY,
         }
@@ -69,6 +72,7 @@ impl MovementState {
     /// Resets movement validation bases after a server position sync.
     pub(super) const fn reset_for_position_sync(&mut self, position: DVec3) {
         self.client_movement.reset_for_position_sync(position);
+        self.received_movement_this_tick = false;
     }
 
     /// Returns the current vanilla first-good and last-good validation positions.
@@ -103,11 +107,21 @@ impl MovementState {
     pub(super) const fn set_last_known_client_movement(&mut self, movement: DVec3) {
         self.client_movement
             .set_last_known_client_movement(movement);
+        self.received_movement_this_tick = true;
     }
 
     /// Clears the last accepted client movement vector.
     pub(super) const fn reset_last_known_client_movement(&mut self) {
         self.client_movement.reset_last_known_client_movement();
+        self.received_movement_this_tick = false;
+    }
+
+    /// Applies vanilla client-tick-end known-movement handling.
+    pub(super) const fn finish_client_tick(&mut self) {
+        if !self.received_movement_this_tick {
+            self.client_movement.reset_last_known_client_movement();
+        }
+        self.received_movement_this_tick = false;
     }
 
     /// Returns the last accepted client movement vector.
@@ -182,6 +196,28 @@ mod tests {
     fn movement_state_starts_with_zero_known_client_movement() {
         let state = MovementState::new();
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn client_tick_end_clears_known_movement_without_accepted_movement() {
+        let mut state = MovementState::new();
+        state.set_last_known_client_movement(DVec3::new(0.1, 0.0, 0.0));
+        state.finish_client_tick();
+
+        state.finish_client_tick();
+
+        assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn client_tick_end_keeps_known_movement_after_accepted_movement() {
+        let mut state = MovementState::new();
+        let movement = DVec3::new(0.1, 0.0, 0.0);
+
+        state.set_last_known_client_movement(movement);
+        state.finish_client_tick();
+
+        assert_eq!(state.last_known_client_movement(), movement);
     }
 
     #[test]

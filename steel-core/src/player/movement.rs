@@ -3,8 +3,6 @@
 //! This module handles server-side movement simulation and anti-cheat checks.
 //! It implements collision detection and physics similar to vanilla Minecraft.
 
-use std::sync::Arc;
-
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer,
@@ -63,13 +61,6 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
         degrees += 360.0;
     }
     degrees
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AcceptedMovementBroadcast {
-    has_pos: bool,
-    has_rot: bool,
-    client_delta: DVec3,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -241,8 +232,8 @@ impl Player {
         let is_creative = game_mode == GameType::Creative;
         let world = self.get_world();
         let tick_runs_normally = world.tick_runs_normally();
-        let mut moved_upwards = false;
-        let mut floating_check = None;
+        let moved_upwards;
+        let floating_check;
 
         if self.is_passenger() {
             let passenger_pos = self.position();
@@ -255,14 +246,6 @@ impl Player {
             }
             self.set_rotation((target_yaw, target_pitch));
             world.chunk_map.update_player_status(self);
-            self.broadcast_accepted_movement(
-                &world,
-                AcceptedMovementBroadcast {
-                    has_pos: false,
-                    has_rot: packet.has_rot,
-                    client_delta: DVec3::ZERO,
-                },
-            );
             return;
         }
 
@@ -289,6 +272,7 @@ impl Player {
                 }
                 return;
             }
+            return;
         } else {
             let dx = target_pos.x - first_good.x;
             let dy = target_pos.y - first_good.y;
@@ -469,14 +453,9 @@ impl Player {
             .lock()
             .mark_last_good_position(self.position());
 
-        self.broadcast_accepted_movement(
-            &world,
-            AcceptedMovementBroadcast {
-                has_pos: packet.has_pos,
-                has_rot: packet.has_rot,
-                client_delta,
-            },
-        );
+        self.movement
+            .lock()
+            .set_last_known_client_movement(client_delta);
     }
 
     /// Handles a controlled-vehicle movement packet.
@@ -648,20 +627,6 @@ impl Player {
         self.movement
             .lock()
             .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
-    }
-
-    fn broadcast_accepted_movement(
-        &self,
-        _world: &Arc<World>,
-        movement: AcceptedMovementBroadcast,
-    ) {
-        if !movement.has_pos && !movement.has_rot {
-            return;
-        }
-
-        self.movement
-            .lock()
-            .set_last_known_client_movement(movement.client_delta);
     }
 
     fn record_client_floating(

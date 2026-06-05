@@ -1045,6 +1045,7 @@ impl EntityBase {
         backs_off_from_edge: bool,
         descending: bool,
         can_walk_on_powder_snow: bool,
+        is_falling_block: bool,
     ) -> EntityPhysicsState {
         let state = self.state.lock();
         EntityPhysicsState::new(state.position, state.bounding_box, max_up_step)
@@ -1053,6 +1054,7 @@ impl EntityBase {
             .with_fall_distance(state.fall_distance)
             .with_descending(descending)
             .with_can_walk_on_powder_snow(can_walk_on_powder_snow)
+            .with_falling_block(is_falling_block)
     }
 
     /// Gets the entity's current pose.
@@ -2570,7 +2572,7 @@ mod tests {
             Weak::<World>::new(),
         );
 
-        let physics_state = base.physics_state(0.6, true, true, true);
+        let physics_state = base.physics_state(0.6, true, true, true, false);
         let block_collision_context = physics_state.block_collision_context();
 
         assert_vec3_close(physics_state.position(), position);

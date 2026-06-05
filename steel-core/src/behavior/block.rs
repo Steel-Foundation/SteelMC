@@ -42,6 +42,7 @@ pub struct BlockCollisionContext {
     entity_bottom: Option<f64>,
     fall_distance: f64,
     can_walk_on_powder_snow: bool,
+    is_falling_block: bool,
     descending: bool,
     placement: bool,
 }
@@ -54,6 +55,7 @@ impl BlockCollisionContext {
             entity_bottom: None,
             fall_distance: 0.0,
             can_walk_on_powder_snow: false,
+            is_falling_block: false,
             descending: false,
             placement: false,
         }
@@ -66,6 +68,7 @@ impl BlockCollisionContext {
             entity_bottom: Some(entity_bottom),
             fall_distance: 0.0,
             can_walk_on_powder_snow: false,
+            is_falling_block: false,
             descending,
             placement: false,
         }
@@ -78,6 +81,7 @@ impl BlockCollisionContext {
             entity_bottom: Some(entity_bottom),
             fall_distance: 0.0,
             can_walk_on_powder_snow: false,
+            is_falling_block: false,
             descending,
             placement: true,
         }
@@ -97,6 +101,13 @@ impl BlockCollisionContext {
         self
     }
 
+    /// Returns a copy with vanilla falling-block collision context.
+    #[must_use]
+    pub const fn with_falling_block(mut self, is_falling_block: bool) -> Self {
+        self.is_falling_block = is_falling_block;
+        self
+    }
+
     /// Returns accumulated vanilla fall distance for context-sensitive block collision.
     #[must_use]
     pub const fn fall_distance(self) -> f64 {
@@ -107,6 +118,12 @@ impl BlockCollisionContext {
     #[must_use]
     pub const fn can_walk_on_powder_snow(self) -> bool {
         self.can_walk_on_powder_snow
+    }
+
+    /// Returns whether the source entity is a vanilla falling block.
+    #[must_use]
+    pub const fn is_falling_block(self) -> bool {
+        self.is_falling_block
     }
 
     /// Returns whether the source entity is descending through context-sensitive blocks.

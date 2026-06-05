@@ -524,9 +524,8 @@ impl Player {
     }
 
     /// Handles the end of a client tick.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub const fn handle_client_tick_end(&self) {
-        //log::info!("Hello from the other side!");
+    pub fn handle_client_tick_end(&self) {
+        self.movement.lock().finish_client_tick();
     }
 
     fn push_entities(&self, world: &Arc<World>) {
@@ -1195,7 +1194,7 @@ impl Entity for Player {
 
     fn broadcast_to_player(&self, player: &Player) -> bool {
         if player.is_spectator() {
-            player.id() == self.id()
+            true
         } else {
             !self.is_spectator()
         }

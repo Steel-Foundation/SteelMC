@@ -523,7 +523,7 @@ const CENTER_SUPPORT_MIN: f64 = 7.0 / 16.0;
 const CENTER_SUPPORT_MAX: f64 = 9.0 / 16.0;
 const CENTER_SUPPORT_Y_MAX: f64 = 10.0 / 16.0;
 
-/// Rigid support requires coverage except for a 2-pixel border.
+/// Vanilla `SupportType.RIGID`: `Shapes.block() ONLY_FIRST Block.column(12.0, 0.0, 16.0)`.
 const RIGID_BORDER: f64 = 0.125; // 2/16
 
 /// Checks if a shape fully covers a face (for `SupportType::Full`).
@@ -574,60 +574,37 @@ pub fn is_face_center_supported(shape: VoxelShape, direction: Direction) -> bool
 
 /// Checks if a shape provides rigid support on a face.
 ///
-/// Rigid support requires coverage of most of the face except a small border.
+/// Rigid support requires coverage of vanilla's fixed 3D support mask.
 #[must_use]
 pub fn is_face_rigid_supported(shape: VoxelShape, direction: Direction) -> bool {
     if shape.is_empty() {
         return false;
     }
 
-    // For rigid support, we need the shape to cover from RIGID_BORDER to 1-RIGID_BORDER
-    let min_bound = RIGID_BORDER;
-    let max_bound = 1.0 - RIGID_BORDER;
-
     match direction {
-        Direction::Down => shape.iter().any(|aabb| {
-            aabb.min_y() <= 0.0
-                && aabb.min_x() <= min_bound
-                && aabb.max_x() >= max_bound
-                && aabb.min_z() <= min_bound
-                && aabb.max_z() >= max_bound
-        }),
-        Direction::Up => shape.iter().any(|aabb| {
-            aabb.max_y() >= 1.0
-                && aabb.min_x() <= min_bound
-                && aabb.max_x() >= max_bound
-                && aabb.min_z() <= min_bound
-                && aabb.max_z() >= max_bound
-        }),
-        Direction::North => shape.iter().any(|aabb| {
-            aabb.min_z() <= 0.0
-                && aabb.min_x() <= min_bound
-                && aabb.max_x() >= max_bound
-                && aabb.min_y() <= min_bound
-                && aabb.max_y() >= max_bound
-        }),
-        Direction::South => shape.iter().any(|aabb| {
-            aabb.max_z() >= 1.0
-                && aabb.min_x() <= min_bound
-                && aabb.max_x() >= max_bound
-                && aabb.min_y() <= min_bound
-                && aabb.max_y() >= max_bound
-        }),
-        Direction::West => shape.iter().any(|aabb| {
-            aabb.min_x() <= 0.0
-                && aabb.min_y() <= min_bound
-                && aabb.max_y() >= max_bound
-                && aabb.min_z() <= min_bound
-                && aabb.max_z() >= max_bound
-        }),
-        Direction::East => shape.iter().any(|aabb| {
-            aabb.max_x() >= 1.0
-                && aabb.min_y() <= min_bound
-                && aabb.max_y() >= max_bound
-                && aabb.min_z() <= min_bound
-                && aabb.max_z() >= max_bound
-        }),
+        Direction::Down | Direction::Up => {
+            face_rectangles_cover(shape, direction, 0.0, RIGID_BORDER, 0.0, 1.0)
+                && face_rectangles_cover(shape, direction, 1.0 - RIGID_BORDER, 1.0, 0.0, 1.0)
+                && face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    0.0,
+                    RIGID_BORDER,
+                )
+                && face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0,
+                )
+        }
+        Direction::North | Direction::South | Direction::West | Direction::East => {
+            is_face_full(shape, direction)
+        }
     }
 }
 
@@ -814,6 +791,57 @@ mod tests {
     const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
         &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
 
+    const RIGID_TOP_RING: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, RIGID_BORDER, 1.0, 1.0),
+        BlockLocalAabb::new(1.0 - RIGID_BORDER, 0.0, 0.0, 1.0, 1.0, 1.0),
+        BlockLocalAabb::new(
+            RIGID_BORDER,
+            0.0,
+            0.0,
+            1.0 - RIGID_BORDER,
+            1.0,
+            RIGID_BORDER,
+        ),
+        BlockLocalAabb::new(
+            RIGID_BORDER,
+            0.0,
+            1.0 - RIGID_BORDER,
+            1.0 - RIGID_BORDER,
+            1.0,
+            1.0,
+        ),
+    ];
+
+    const RIGID_CENTER_PANEL: &[BlockLocalAabb] = &[BlockLocalAabb::new(
+        RIGID_BORDER,
+        0.0,
+        RIGID_BORDER,
+        1.0 - RIGID_BORDER,
+        1.0,
+        1.0 - RIGID_BORDER,
+    )];
+
+    const RIGID_WEST_FACE_RING: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, RIGID_BORDER, 1.0),
+        BlockLocalAabb::new(0.0, 1.0 - RIGID_BORDER, 0.0, 1.0, 1.0, 1.0),
+        BlockLocalAabb::new(
+            0.0,
+            RIGID_BORDER,
+            0.0,
+            1.0,
+            1.0 - RIGID_BORDER,
+            RIGID_BORDER,
+        ),
+        BlockLocalAabb::new(
+            0.0,
+            RIGID_BORDER,
+            1.0 - RIGID_BORDER,
+            1.0,
+            1.0 - RIGID_BORDER,
+            1.0,
+        ),
+    ];
+
     #[test]
     fn boolean_op_matches_vanilla_truth_table() {
         assert!(BooleanOp::OnlyFirst.apply(true, false));
@@ -917,6 +945,30 @@ mod tests {
         assert!(is_face_full(
             VoxelShape::from_boxes(VANILLA_AZALEA_SHAPE),
             Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_accepts_border_ring_covered_by_multiple_boxes() {
+        assert!(is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_TOP_RING),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_rejects_center_panel_without_border_ring() {
+        assert!(!is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_CENTER_PANEL),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_rejects_side_border_ring_without_full_face() {
+        assert!(!is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_WEST_FACE_RING),
+            Direction::West
         ));
     }
 }

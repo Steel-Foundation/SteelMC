@@ -1847,6 +1847,7 @@ impl World {
                 DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
+            entity.set_default_pickup_delay();
             if let Err(error) = self.try_add_entity(entity) {
                 log::warn!("Failed to drop item stack entity: {error}");
             }

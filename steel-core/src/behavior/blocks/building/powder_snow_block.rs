@@ -90,7 +90,10 @@ impl BlockBehavior for PowderSnowBlock {
             pos,
             BlockCollisionContext::entity(entity.position().y, entity.is_descending())
                 .with_fall_distance(entity.fall_distance())
-                .with_can_walk_on_powder_snow(entity.can_walk_on_powder_snow()),
+                .with_can_walk_on_powder_snow(entity.can_walk_on_powder_snow())
+                .with_falling_block(
+                    entity.entity_type() == &steel_registry::vanilla_entities::FALLING_BLOCK,
+                ),
         );
         if collision_shape.is_empty() {
             self.default_get_entity_inside_collision_shape(state, world, pos, entity)
@@ -112,9 +115,10 @@ impl BlockBehavior for PowderSnowBlock {
         if context.fall_distance() > NUM_BLOCKS_TO_FALL_INTO_BLOCK {
             return FALLING_COLLISION_SHAPE;
         }
-        if context.can_walk_on_powder_snow()
-            && context.is_above(VoxelShape::FULL_BLOCK, pos, false)
-            && !context.is_descending()
+        if context.is_falling_block()
+            || (context.can_walk_on_powder_snow()
+                && context.is_above(VoxelShape::FULL_BLOCK, pos, false)
+                && !context.is_descending())
         {
             return self.default_get_collision_shape(state, world, pos, context);
         }
@@ -282,6 +286,22 @@ mod tests {
 
         assert_eq!(non_walkable_shape, VoxelShape::EMPTY);
         assert_eq!(descending_shape, VoxelShape::EMPTY);
+    }
+
+    #[test]
+    fn falling_blocks_use_default_powder_snow_collision_shape() {
+        test_support::init_test_registry();
+        let behavior = powder_snow();
+        let state = powder_snow_state();
+        let pos = BlockPos::new(0, 64, 0);
+        let context = BlockCollisionContext::entity(64.0, true).with_falling_block(true);
+
+        let shape = behavior.get_collision_shape(state, &EmptyLevel, pos, context);
+
+        assert_eq!(
+            shape,
+            behavior.default_get_collision_shape(state, &EmptyLevel, pos, context)
+        );
     }
 
     #[test]

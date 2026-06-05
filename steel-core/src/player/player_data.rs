@@ -13,7 +13,7 @@ use super::{Player, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 1;
+pub const PLAYER_DATA_VERSION: i32 = 2;
 
 /// Persistent player data saved by Steel's storage backend.
 ///

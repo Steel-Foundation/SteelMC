@@ -13,7 +13,6 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
@@ -38,9 +37,8 @@ pub struct LavaFluid;
 
 impl LavaFluid {
     /// Returns true if this world uses fast lava (nether-like).
-    // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
     fn is_fast_lava(world: &Arc<World>) -> bool {
-        world.dimension_type.key == vanilla_dimension_types::THE_NETHER.key
+        world.dimension_type.fast_lava
     }
 
     /// Returns vanilla's lava current scale for entity fluid pushing.
