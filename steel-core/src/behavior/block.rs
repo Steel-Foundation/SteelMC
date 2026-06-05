@@ -154,6 +154,8 @@ pub struct EntityFallOnFacts {
     pub bounding_box_width: f64,
     /// Current entity bounding-box height.
     pub bounding_box_height: f64,
+    /// Vanilla small and big living-entity fall sounds.
+    pub fall_sounds: (i32, i32),
 }
 
 impl EntityFallOnFacts {
@@ -164,12 +166,14 @@ impl EntityFallOnFacts {
         is_living_entity: bool,
         bounding_box_width: f64,
         bounding_box_height: f64,
+        fall_sounds: (i32, i32),
     ) -> Self {
         Self {
             entity_type,
             is_living_entity,
             bounding_box_width,
             bounding_box_height,
+            fall_sounds,
         }
     }
 
@@ -182,6 +186,7 @@ impl EntityFallOnFacts {
             entity.is_living_entity(),
             bounding_box.width(),
             bounding_box.height(),
+            entity.fall_sounds(),
         )
     }
 
@@ -1120,7 +1125,16 @@ mod tests {
 
     #[test]
     fn fall_on_facts_use_vanilla_width_squared_height_formula() {
-        let facts = EntityFallOnFacts::new(&vanilla_entities::PLAYER, true, 0.6, 1.8);
+        let facts = EntityFallOnFacts::new(
+            &vanilla_entities::PLAYER,
+            true,
+            0.6,
+            1.8,
+            (
+                steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
+                steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+            ),
+        );
 
         assert!(facts.is_player());
         assert!(facts.is_living_entity);

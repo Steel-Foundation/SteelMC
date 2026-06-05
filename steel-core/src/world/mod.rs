@@ -1058,12 +1058,8 @@ impl World {
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
-            let server_tick = tick_count as i32;
             self.players.iter_players(|_uuid, player| {
-                if !player.was_ticked_this_tick(server_tick) {
-                    player.mark_ticked(server_tick);
-                    player.tick(server_tick);
-                }
+                player.tick();
                 true
             });
             start.elapsed()
@@ -2836,6 +2832,10 @@ impl World {
     }
 
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
+        // Entity chunk membership follows chunk-holder ownership, not full
+        // LevelChunk readiness. A moved entity would have to outrun every
+        // proto layer in one tick to land outside a retained holder; shutdown
+        // save diagnostics report that unexpected case.
         let result = self.entity_manager.on_chunk_loaded(pos);
         if result.needs_save {
             self.mark_chunk_dirty(pos);

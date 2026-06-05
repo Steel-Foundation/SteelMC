@@ -385,8 +385,11 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         let pos = player.position();
         let rotation = player.rotation();
+        let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
+        if !admitted {
+            return;
+        }
         player.mark_joined_world();
-        player.spawn(pos, rotation, ResetReason::InitialJoin);
         if player.connection.closed() {
             tokio::spawn(async move {
                 state.world.remove_player(player).await;
@@ -1031,7 +1034,9 @@ impl Server {
         Self::apply_domain_player_state(&player, &target_state);
         let pos = player.position();
         let rotation = player.rotation();
-        player.spawn(pos, rotation, ResetReason::WorldChange);
+        if !player.spawn(pos, rotation, ResetReason::WorldChange) {
+            return Err("failed to add player to target world".to_owned());
+        }
 
         if let Err(e) = self
             .player_data_storage

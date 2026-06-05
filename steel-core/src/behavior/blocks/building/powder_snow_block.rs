@@ -8,13 +8,18 @@ use steel_registry::{vanilla_entities, vanilla_game_rules};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
-    behavior::{BlockBehavior, BlockCollisionContext, BlockPlaceContext},
+    behavior::{
+        BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
+        EntityFallOnContext,
+    },
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
     world::{LevelReader, World},
 };
 
 const IN_BLOCK_SPEED_MULTIPLIER: DVec3 = DVec3::new(0.9, 1.5, 0.9);
 const NUM_BLOCKS_TO_FALL_INTO_BLOCK: f64 = 2.5;
+const MIN_FALL_DISTANCE_FOR_SOUND: f64 = 4.0;
+const MIN_FALL_DISTANCE_FOR_BIG_SOUND: f64 = 7.0;
 const FALLING_COLLISION_BOXES: &[BlockLocalAabb] =
     &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.9, 1.0)];
 const FALLING_COLLISION_SHAPE: VoxelShape = VoxelShape::from_boxes(FALLING_COLLISION_BOXES);
@@ -35,11 +40,41 @@ impl PowderSnowBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    #[must_use]
+    fn fall_sound(context: EntityFallOnContext<'_>) -> Option<i32> {
+        if context.fall_distance < MIN_FALL_DISTANCE_FOR_SOUND || !context.entity.is_living_entity {
+            return None;
+        }
+
+        let (small, big) = context.entity.fall_sounds;
+        Some(if context.fall_distance < MIN_FALL_DISTANCE_FOR_BIG_SOUND {
+            small
+        } else {
+            big
+        })
+    }
 }
 
 impl BlockBehavior for PowderSnowBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn fall_on(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        if let Some(sound) = Self::fall_sound(context)
+            && let Some(entity) = context.source_entity()
+        {
+            entity.play_sound(sound, 1.0, 1.0);
+        }
+
+        None
     }
 
     fn get_entity_inside_collision_shape(
@@ -126,7 +161,9 @@ impl BlockBehavior for PowderSnowBlock {
 mod tests {
     use super::*;
 
-    use steel_registry::{test_support, vanilla_blocks};
+    use steel_registry::{sound_events, test_support, vanilla_blocks, vanilla_entities};
+
+    use crate::behavior::EntityFallOnFacts;
 
     struct EmptyLevel;
 
@@ -154,6 +191,39 @@ mod tests {
 
     fn powder_snow_state() -> BlockStateId {
         vanilla_blocks::POWDER_SNOW.default_state()
+    }
+
+    fn fall_context(fall_distance: f64, is_living_entity: bool) -> EntityFallOnContext<'static> {
+        EntityFallOnContext::new(
+            fall_distance,
+            false,
+            EntityFallOnFacts::new(
+                &vanilla_entities::PLAYER,
+                is_living_entity,
+                0.6,
+                1.8,
+                (
+                    sound_events::ENTITY_PLAYER_SMALL_FALL,
+                    sound_events::ENTITY_PLAYER_BIG_FALL,
+                ),
+            ),
+            None,
+        )
+    }
+
+    #[test]
+    fn powder_snow_fall_sound_uses_vanilla_living_thresholds() {
+        test_support::init_test_registry();
+        assert!(PowderSnowBlock::fall_sound(fall_context(3.99, true)).is_none());
+        assert_eq!(
+            PowderSnowBlock::fall_sound(fall_context(4.0, true)),
+            Some(sound_events::ENTITY_PLAYER_SMALL_FALL)
+        );
+        assert_eq!(
+            PowderSnowBlock::fall_sound(fall_context(7.0, true)),
+            Some(sound_events::ENTITY_PLAYER_BIG_FALL)
+        );
+        assert!(PowderSnowBlock::fall_sound(fall_context(7.0, false)).is_none());
     }
 
     #[test]

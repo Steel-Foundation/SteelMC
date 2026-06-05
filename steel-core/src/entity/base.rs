@@ -789,14 +789,12 @@ pub struct EntityBaseLoad {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EntityLifecycleState {
     removal_reason: Option<RemovalReason>,
-    last_world_tick: i32,
 }
 
 impl EntityLifecycleState {
     const fn new() -> Self {
         Self {
             removal_reason: None,
-            last_world_tick: -1,
         }
     }
 }
@@ -1811,6 +1809,14 @@ impl EntityBase {
         }
     }
 
+    /// Applies vanilla fluid-interaction fall-distance reset while touching water.
+    pub fn reset_fall_distance_in_water(&self) {
+        let mut state = self.state.lock();
+        if state.fluid_contact.water_height() > 0.0 {
+            state.fall_distance = 0.0;
+        }
+    }
+
     /// Sets whether this entity is touching the ground.
     pub fn set_on_ground(&self, on_ground: bool) {
         let mut state = self.state.lock();
@@ -1899,18 +1905,6 @@ impl EntityBase {
         } else {
             movement
         }
-    }
-
-    /// Checks if this entity was already ticked during the given server tick.
-    #[inline]
-    pub fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
-        self.lifecycle.lock().last_world_tick == server_tick
-    }
-
-    /// Marks this entity as ticked for the given server tick.
-    #[inline]
-    pub fn mark_ticked(&self, server_tick: i32) {
-        self.lifecycle.lock().last_world_tick = server_tick;
     }
 }
 
@@ -2186,7 +2180,7 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_state_tracks_removal_and_tick_guard() {
+    fn lifecycle_state_tracks_removal() {
         let base = EntityBase::new(
             1,
             DVec3::ZERO,
@@ -2197,11 +2191,6 @@ mod tests {
         base.set_level_callback(callback.clone());
 
         assert!(!base.is_removed());
-        assert!(!base.was_ticked_this_tick(12));
-
-        base.mark_ticked(12);
-        assert!(base.was_ticked_this_tick(12));
-        assert!(!base.was_ticked_this_tick(13));
 
         base.set_removed(RemovalReason::Discarded);
         base.set_removed(RemovalReason::Killed);
@@ -2904,6 +2893,39 @@ mod tests {
         base.dampen_fall_distance_in_lava();
 
         assert_f64_close(base.fall_distance(), 4.0);
+    }
+
+    #[test]
+    fn base_tick_water_contact_resets_fall_distance() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_fall_distance(8.0);
+        base.set_fluid_contact(EntityFluidContact::from_parts(0.25, 0.0, false, false));
+        base.reset_fall_distance_in_water();
+
+        assert_f64_close(base.fall_distance(), 0.0);
+    }
+
+    #[test]
+    fn water_reset_runs_before_lava_fall_distance_damping() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_fall_distance(8.0);
+        base.set_fluid_contact(EntityFluidContact::from_parts(0.25, 0.25, false, false));
+        base.reset_fall_distance_in_water();
+        base.dampen_fall_distance_in_lava();
+
+        assert_f64_close(base.fall_distance(), 0.0);
     }
 
     #[test]

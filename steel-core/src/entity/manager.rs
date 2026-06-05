@@ -15,7 +15,7 @@ use steel_utils::locks::SyncRwLock;
 use steel_utils::{ChunkPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
-use super::{NullEntityCallback, RemovalReason, SharedEntity, tick_vehicle_passengers};
+use super::{NullEntityCallback, RemovalReason, SharedEntity, tick_vehicle_passengers_with_ticked};
 
 /// Error returned when adding an entity to the runtime world fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,6 +190,7 @@ impl EntityEntry {
                     .entity
                     .removal_reason()
                     .is_some_and(RemovalReason::should_save))
+            && !self.entity.is_passenger()
             && self.entity.entity_type().can_serialize
     }
 }
@@ -667,10 +668,11 @@ impl WorldEntityManager {
     /// Ticks live entities in the supplied full simulated chunks.
     pub fn tick_entities(
         &self,
-        tick_count: i32,
+        _tick_count: i32,
         tickable_chunks: &[ChunkPos],
     ) -> FxHashSet<ChunkPos> {
         let mut dirty_chunks = FxHashSet::default();
+        let mut ticked_entities = FxHashSet::default();
         for chunk in tickable_chunks {
             let entities = self.manager_owned_entities_in_chunk(*chunk);
             for entity in entities {
@@ -678,7 +680,7 @@ impl WorldEntityManager {
                     continue;
                 }
 
-                if entity.is_removed() || entity.was_ticked_this_tick(tick_count) {
+                if entity.is_removed() {
                     continue;
                 }
 
@@ -686,7 +688,11 @@ impl WorldEntityManager {
                     continue;
                 }
 
-                Self::tick_non_passenger(&entity, tick_count);
+                if !ticked_entities.insert(entity.id()) {
+                    continue;
+                }
+
+                Self::tick_non_passenger(&entity, &mut ticked_entities);
                 dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
             }
         }
@@ -745,11 +751,10 @@ impl WorldEntityManager {
         }
     }
 
-    fn tick_non_passenger(entity: &SharedEntity, tick_count: i32) {
-        entity.mark_ticked(tick_count);
+    fn tick_non_passenger(entity: &SharedEntity, ticked_entities: &mut FxHashSet<i32>) {
         entity.advance_tick_count();
         entity.tick();
-        tick_vehicle_passengers(entity.as_ref(), tick_count, &mut |_entity| {});
+        tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, &mut |_entity| {});
     }
 
     fn insert_live_entry(state: &mut ManagerState, entry: EntityEntry) {
@@ -1178,7 +1183,7 @@ mod tests {
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
         saveable_ids.sort_unstable();
-        assert_eq!(saveable_ids, vec![1, 2]);
+        assert_eq!(saveable_ids, vec![1]);
 
         manager.finalize_chunk_unload(vehicle_chunk);
         assert!(vehicle.is_removed());
@@ -1521,9 +1526,7 @@ mod tests {
         let dirty_chunks = manager.tick_entities(12, &[chunk]);
 
         assert!(dirty_chunks.contains(&chunk));
-        assert!(manager_owned.was_ticked_this_tick(12));
         assert_eq!(manager_owned.tick_count(), 1);
-        assert!(!external.was_ticked_this_tick(12));
         assert_eq!(external.tick_count(), 0);
     }
 }

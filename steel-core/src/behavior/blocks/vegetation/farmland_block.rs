@@ -205,6 +205,10 @@ mod tests {
                 is_living_entity,
                 bounding_box_width,
                 bounding_box_height,
+                (
+                    steel_registry::sound_events::ENTITY_GENERIC_SMALL_FALL,
+                    steel_registry::sound_events::ENTITY_GENERIC_BIG_FALL,
+                ),
             ),
             None,
         )

@@ -464,7 +464,39 @@ impl ChunkHolder {
         thread_pool: Arc<rayon::ThreadPool>,
     ) -> Option<()> {
         let target_status = step.target_status;
-        let chunk_exists = storage.acquire_chunk(holder.pos).await.unwrap_or(false);
+        let chunk_exists = match storage.acquire_chunk(holder.pos).await {
+            Ok(chunk_exists) => chunk_exists,
+            Err(error) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to acquire chunk storage before load/generation: {error}",
+                );
+                return None;
+            }
+        };
+
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load after chunk holder target became disallowed before load/generation: chunk={:?}, target_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage task: {error}",
+                );
+            }
+            return None;
+        }
 
         if chunk_exists
             && let Ok(Some(loaded)) = storage
@@ -493,6 +525,12 @@ impl ChunkHolder {
                     holder.simulation_level(),
                     holder.persisted_status(),
                 );
+                if let Err(error) = storage.release_chunk(holder.pos).await {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to release canceled chunk storage load: {error}",
+                    );
+                }
                 return None;
             }
             holder.insert_chunk(loaded.chunk, loaded_status);
@@ -504,6 +542,29 @@ impl ChunkHolder {
                 );
             }
             return Some(());
+        }
+
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load after chunk holder target became disallowed after load attempt: chunk={:?}, target_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage task: {error}",
+                );
+            }
+            return None;
         }
 
         let holder_for_notify = holder.clone();

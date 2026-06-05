@@ -133,9 +133,27 @@ pub fn get_own_height(fluid_state: FluidState) -> f32 {
 /// the height is `1.0` (full block). Otherwise it is `get_own_height(fluid_state)`.
 #[must_use]
 pub fn get_height(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> f32 {
+    if fluid_state.is_empty() {
+        return 0.0;
+    }
+
     let above = pos.offset(0, 1, 0);
     let above_fluid = get_fluid_state(world, above);
-    if above_fluid.fluid_id == fluid_state.fluid_id {
+    let behavior = FLUID_BEHAVIORS.get_behavior(fluid_state.fluid_id);
+    get_height_with(fluid_state, above_fluid, |candidate| {
+        behavior.is_same(candidate.fluid_id)
+    })
+}
+
+fn get_height_with<S>(fluid_state: FluidState, above_fluid: FluidState, same_fluid: S) -> f32
+where
+    S: Fn(FluidState) -> bool,
+{
+    if fluid_state.is_empty() {
+        return 0.0;
+    }
+
+    if same_fluid(above_fluid) {
         1.0
     } else {
         get_own_height(fluid_state)
@@ -271,6 +289,42 @@ mod tests {
 
     fn same_water(candidate: FluidState) -> bool {
         candidate.is_water()
+    }
+
+    #[test]
+    fn height_treats_source_and_flowing_variants_as_same_fluid_above() {
+        init_test_registry();
+
+        assert_eq!(
+            get_height_with(
+                FluidState::source(&vanilla_fluids::WATER),
+                FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false),
+                same_water,
+            ),
+            1.0
+        );
+        assert_eq!(
+            get_height_with(
+                FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false),
+                FluidState::source(&vanilla_fluids::WATER),
+                same_water,
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn empty_fluid_height_is_zero() {
+        init_test_registry();
+
+        assert_eq!(
+            get_height_with(
+                FluidState::EMPTY,
+                FluidState::source(&vanilla_fluids::WATER),
+                same_water,
+            ),
+            0.0
+        );
     }
 
     #[test]

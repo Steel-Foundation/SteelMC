@@ -368,9 +368,11 @@ impl Player {
         clippy::cast_possible_truncation,
         reason = "world coordinates are always within i32 range in a valid Minecraft world"
     )]
-    pub fn tick(&self, server_tick: i32) {
+    pub fn tick(&self) {
         self.advance_tick();
-        self.advance_tick_count();
+        if !self.is_passenger() {
+            self.advance_tick_count();
+        }
 
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {
@@ -479,8 +481,10 @@ impl Player {
 
         self.connection.tick();
 
-        let mut post_tick = |_entity: &SharedEntity| {};
-        tick_vehicle_passengers(self, server_tick, &mut post_tick);
+        if !self.is_passenger() {
+            let mut post_tick = |_entity: &SharedEntity| {};
+            tick_vehicle_passengers(self, &mut post_tick);
+        }
     }
 
     /// Ticks the death animation timer.
@@ -882,7 +886,7 @@ impl Player {
         // TODO: send CInitializeBorder once world border is implemented
 
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
-        player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
+        let _ = player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
     }
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
@@ -1069,7 +1073,13 @@ impl Player {
     ///
     /// # Panics
     /// Panics if the `advance_time` gamerule is not a bool.
-    pub fn spawn(self: &Arc<Self>, position: DVec3, rotation: (f32, f32), reason: ResetReason) {
+    #[must_use]
+    pub fn spawn(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+        reason: ResetReason,
+    ) -> bool {
         let world = self.get_world();
 
         // Set position and rotation
@@ -1147,7 +1157,7 @@ impl Player {
                         world.key
                     );
                 }
-                world.add_player(self.clone(), reason);
+                world.add_player(self.clone(), reason)
             }
             ResetReason::Respawn => {
                 // Same world — re-enter chunk tracking
@@ -1160,6 +1170,7 @@ impl Player {
                     data: 0.0,
                 });
                 world.register_respawned_player_entity(self);
+                true
             }
         }
     }
@@ -1198,6 +1209,13 @@ impl Entity for Player {
     fn tick(&self) {
         // Player tick is handled separately by World::tick_game()
         // This is here for Entity trait compliance
+    }
+
+    fn fall_sounds(&self) -> (i32, i32) {
+        (
+            sound_events::ENTITY_PLAYER_SMALL_FALL,
+            sound_events::ENTITY_PLAYER_BIG_FALL,
+        )
     }
 
     fn is_living_entity(&self) -> bool {
@@ -1427,11 +1445,13 @@ impl Entity for Player {
         } else {
             self.reset(new_world, ResetReason::WorldChange);
             // TODO: set portal cooldown from teleport_transition.portal_cooldown
-            self.spawn(
+            if !self.spawn(
                 teleport_transition.position,
                 teleport_transition.rotation,
                 ResetReason::WorldChange,
-            );
+            ) {
+                return;
+            }
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
         }
@@ -1484,13 +1504,6 @@ impl LivingEntity for Player {
             .lock()
             .player_absorption
             .set(amount.max(0.0));
-    }
-
-    fn fall_sounds(&self) -> (i32, i32) {
-        (
-            sound_events::ENTITY_PLAYER_SMALL_FALL,
-            sound_events::ENTITY_PLAYER_BIG_FALL,
-        )
     }
 
     fn is_affected_by_fluids(&self) -> bool {

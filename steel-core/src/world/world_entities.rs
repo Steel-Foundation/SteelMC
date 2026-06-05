@@ -52,12 +52,11 @@ impl World {
 
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
+        let Some(player) = self.players.remove_player(&player).await else {
+            return;
+        };
         let uuid = player.gameprofile.id;
         let entity_id = player.id();
-
-        if self.players.remove(&uuid).await.is_none() {
-            return;
-        }
 
         self.unregister_player_entity(&player);
 
@@ -87,18 +86,16 @@ impl World {
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
     pub fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
-        let uuid = player.gameprofile.id;
+        let Some(player) = self.players.remove_player_sync(player) else {
+            return;
+        };
         let entity_id = player.id();
 
-        if self.players.remove_sync(&uuid).is_none() {
-            return;
-        }
-
-        self.unregister_player_entity(player);
+        self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
-        self.player_area_map.on_player_leave(player);
+        self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
-        self.chunk_map.remove_player(player);
+        self.chunk_map.remove_player(&player);
     }
 
     /// Adds a player to the world.
@@ -106,10 +103,11 @@ impl World {
     /// On `InitialJoin`, sends full tab list + entity spawn synchronization to/from all
     /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
-    pub fn add_player(self: &Arc<Self>, player: Arc<Player>, reason: ResetReason) {
+    #[must_use]
+    pub fn add_player(self: &Arc<Self>, player: Arc<Player>, reason: ResetReason) -> bool {
         if !self.players.insert(player.clone()) {
             player.connection.close();
-            return;
+            return false;
         }
 
         // Tab-list sync only needs the initial login path; world changes keep
@@ -130,6 +128,8 @@ impl World {
             event: GameEventType::ChangeGameMode,
             data: player.game_mode().into(),
         });
+
+        true
     }
 
     /// Sends full tab list synchronization for a newly joined player.

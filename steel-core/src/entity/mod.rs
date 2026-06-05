@@ -598,7 +598,7 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
 pub(crate) use storage::EntityStorage;
 pub use synced_data::EntitySyncedData;
-pub(crate) use ticking::tick_vehicle_passengers;
+pub(crate) use ticking::{tick_vehicle_passengers, tick_vehicle_passengers_with_ticked};
 pub use tracker::EntityTracker;
 
 /// Type alias for a shared entity reference.
@@ -1068,6 +1068,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().advance_base_tick_state();
         self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
+        self.base().reset_fall_distance_in_water();
         if self
             .base()
             .advance_fire_tick(self.fire_immune(), self.is_in_lava())
@@ -1325,6 +1326,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Advances vanilla `Entity.tickCount`.
     fn advance_tick_count(&self) {
         self.base().advance_tick_count();
+    }
+
+    /// Returns vanilla small and big fall sounds for this entity.
+    fn fall_sounds(&self) -> (i32, i32) {
+        (
+            sound_events::ENTITY_GENERIC_SMALL_FALL,
+            sound_events::ENTITY_GENERIC_BIG_FALL,
+        )
     }
 
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
@@ -2763,27 +2772,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: &BaseNbtCompound<'_>) {}
 
-    // === Tick Tracking ===
-    // These methods prevent double-ticking when an entity moves between chunks
-    // during the same server tick.
-
-    /// Checks if this entity was already ticked during the given server tick.
-    ///
-    /// This prevents double-ticking when an entity moves to a different chunk
-    /// during its tick, and that chunk gets ticked later in the same server tick.
-    ///
-    /// Returns `true` if already ticked this tick, `false` otherwise.
-    fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
-        self.base().was_ticked_this_tick(server_tick)
-    }
-
-    /// Marks this entity as ticked for the given server tick.
-    ///
-    /// Called by `WorldEntityManager` before ticking an entity.
-    fn mark_ticked(&self, server_tick: i32) {
-        self.base().mark_ticked(server_tick);
-    }
-
     /// Applies damage to this entity.
     ///
     /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
@@ -2863,14 +2851,6 @@ pub trait LivingEntity: Entity {
 
     /// Sets the absorption amount.
     fn set_absorption_amount(&self, amount: f32);
-
-    /// Returns vanilla small and big fall sounds for this living entity.
-    fn fall_sounds(&self) -> (i32, i32) {
-        (
-            sound_events::ENTITY_GENERIC_SMALL_FALL,
-            sound_events::ENTITY_GENERIC_BIG_FALL,
-        )
-    }
 
     /// Returns vanilla `LivingEntity.getFallDamageSound()`.
     fn fall_damage_sound(&self, damage: i32) -> i32 {

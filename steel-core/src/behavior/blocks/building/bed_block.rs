@@ -102,7 +102,16 @@ mod tests {
         let context = BedBlock::fall_context(EntityFallOnContext::new(
             12.0,
             false,
-            EntityFallOnFacts::new(&vanilla_entities::PLAYER, true, 0.6, 1.8),
+            EntityFallOnFacts::new(
+                &vanilla_entities::PLAYER,
+                true,
+                0.6,
+                1.8,
+                (
+                    steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
+                    steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+                ),
+            ),
             None,
         ));
 
