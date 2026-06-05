@@ -27,6 +27,7 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
+use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -1055,11 +1056,30 @@ impl World {
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
+        let tickable_entity_chunks = if runs_normally {
+            self.chunk_map.tickable_full_chunk_positions()
+        } else {
+            Vec::new()
+        };
+        let tickable_entity_chunk_set = tickable_entity_chunks
+            .iter()
+            .copied()
+            .collect::<FxHashSet<_>>();
+
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
             self.players.iter_players(|_uuid, player| {
                 player.tick();
+                if runs_normally && !player.is_passenger() {
+                    let dirty_chunks = self.entity_manager.tick_vehicle_passengers_for_root(
+                        player.as_ref(),
+                        &tickable_entity_chunk_set,
+                    );
+                    for chunk in dirty_chunks {
+                        self.mark_chunk_dirty(chunk);
+                    }
+                }
                 true
             });
             start.elapsed()
@@ -2844,15 +2864,20 @@ impl World {
             self.attach_managed_entity_callback(&entity);
             self.add_entity_to_tracker(&entity);
         }
+        for entity in result.tracking_started {
+            self.add_entity_to_tracker(&entity);
+        }
     }
 
     pub(crate) fn on_entity_chunk_unload_start(self: &Arc<Self>, pos: ChunkPos) {
-        let entities = self.entity_manager.begin_chunk_unload(pos);
-        for entity in entities {
-            let entity_id = entity.id();
-            self.entity_tracker.remove(entity_id, |player_id| {
+        let result = self.entity_manager.begin_chunk_unload(pos);
+        for entity in result.tracking_stopped {
+            self.entity_tracker.remove(entity.id(), |player_id| {
                 self.players.get_by_entity_id(player_id)
             });
+        }
+        for entity in result.retained {
+            let entity_id = entity.id();
             entity.set_level_callback(Arc::new(InactiveEntityCallback::new(entity_id)));
         }
     }

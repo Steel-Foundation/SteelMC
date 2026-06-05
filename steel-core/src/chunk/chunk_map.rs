@@ -773,6 +773,19 @@ impl ChunkMap {
         timings
     }
 
+    /// Returns full chunks whose simulation level currently allows entity ticks.
+    pub fn tickable_full_chunk_positions(&self) -> Vec<ChunkPos> {
+        let mut chunks = Vec::new();
+        self.chunks.iter_sync(|_, holder| {
+            if is_ticked(holder.simulation_level()) && holder.try_chunk(ChunkStatus::Full).is_some()
+            {
+                chunks.push(holder.get_pos());
+            }
+            true
+        });
+        chunks
+    }
+
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
         world: &Arc<World>,

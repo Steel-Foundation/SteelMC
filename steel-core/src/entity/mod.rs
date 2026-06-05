@@ -598,7 +598,7 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
 pub(crate) use storage::EntityStorage;
 pub use synced_data::EntitySyncedData;
-pub(crate) use ticking::{tick_vehicle_passengers, tick_vehicle_passengers_with_ticked};
+pub(crate) use ticking::tick_vehicle_passengers_with_ticked_if;
 pub use tracker::EntityTracker;
 
 /// Type alias for a shared entity reference.

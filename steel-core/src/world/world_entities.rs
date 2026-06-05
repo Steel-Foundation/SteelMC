@@ -4,6 +4,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
 };
+use steel_utils::ChunkPos;
 use tokio::time::Instant;
 
 use crate::{
@@ -35,6 +36,20 @@ impl World {
         self.add_entity_to_tracker(&entity);
     }
 
+    fn unride_player_for_removal(&self, player: &Player) {
+        // TODO: Preserve vanilla one-player RootVehicle trees in player data
+        // once player entity persistence moves to the new save format.
+        for passenger in player.passengers() {
+            passenger.stop_riding();
+            self.mark_chunk_dirty(ChunkPos::from_entity_pos(passenger.position()));
+        }
+
+        if let Some(vehicle) = player.vehicle() {
+            player.stop_riding();
+            self.mark_chunk_dirty(ChunkPos::from_entity_pos(vehicle.position()));
+        }
+    }
+
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
         let entity_id = player.id();
         self.entity_tracker
@@ -58,6 +73,7 @@ impl World {
         let uuid = player.gameprofile.id;
         let entity_id = player.id();
 
+        self.unride_player_for_removal(&player);
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -91,6 +107,7 @@ impl World {
         };
         let entity_id = player.id();
 
+        self.unride_player_for_removal(&player);
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);

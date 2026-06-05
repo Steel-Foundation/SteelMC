@@ -4,23 +4,15 @@ use rustc_hash::FxHashSet;
 
 use super::{Entity, SharedEntity};
 
-/// Recursively ticks direct and indirect passengers for a non-passenger vehicle.
+/// Recursively ticks vehicle passengers that are eligible in the caller's tick context.
 ///
-/// Mirrors vanilla `ServerLevel.tickPassenger`.
-pub(crate) fn tick_vehicle_passengers(
-    vehicle: &dyn Entity,
-    post_tick: &mut impl FnMut(&SharedEntity),
-) {
-    let mut ticked_entities = FxHashSet::default();
-    ticked_entities.insert(vehicle.id());
-    tick_vehicle_passengers_with_ticked(vehicle, &mut ticked_entities, post_tick);
-}
-
-/// Recursively ticks vehicle passengers using the caller's per-tick scheduler state.
-pub(crate) fn tick_vehicle_passengers_with_ticked(
+/// Mirrors vanilla `ServerLevel.tickPassenger`: invalid vehicle links are detached, and
+/// passengers only recurse when the server-level entity tick list says they may tick.
+pub(crate) fn tick_vehicle_passengers_with_ticked_if(
     vehicle: &dyn Entity,
     ticked_entities: &mut FxHashSet<i32>,
     post_tick: &mut impl FnMut(&SharedEntity),
+    can_tick: &mut impl FnMut(&SharedEntity) -> bool,
 ) {
     let mut visited = FxHashSet::default();
     visited.insert(vehicle.id());
@@ -31,6 +23,7 @@ pub(crate) fn tick_vehicle_passengers_with_ticked(
             &passenger,
             ticked_entities,
             post_tick,
+            can_tick,
             &mut visited,
         );
     }
@@ -41,6 +34,7 @@ fn tick_passenger(
     entity: &SharedEntity,
     ticked_entities: &mut FxHashSet<i32>,
     post_tick: &mut impl FnMut(&SharedEntity),
+    can_tick: &mut impl FnMut(&SharedEntity) -> bool,
     visited: &mut FxHashSet<i32>,
 ) {
     assert!(
@@ -59,7 +53,7 @@ fn tick_passenger(
         return;
     }
 
-    if ticked_entities.insert(entity.id()) {
+    if can_tick(entity) && ticked_entities.insert(entity.id()) {
         entity.advance_tick_count();
         entity.ride_tick();
         post_tick(entity);
@@ -70,6 +64,7 @@ fn tick_passenger(
                 &passenger,
                 ticked_entities,
                 post_tick,
+                can_tick,
                 visited,
             );
         }

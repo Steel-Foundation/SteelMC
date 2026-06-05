@@ -84,7 +84,7 @@ use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
-    RemovalReason, SharedEntity, tick_vehicle_passengers,
+    RemovalReason, SharedEntity,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -480,11 +480,6 @@ impl Player {
         }
 
         self.connection.tick();
-
-        if !self.is_passenger() {
-            let mut post_tick = |_entity: &SharedEntity| {};
-            tick_vehicle_passengers(self, &mut post_tick);
-        }
     }
 
     /// Ticks the death animation timer.

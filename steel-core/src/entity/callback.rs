@@ -231,13 +231,23 @@ impl EntityLevelCallback for EntityChunkCallback {
         }
 
         if update.section_changed() {
-            world.entity_tracker().on_entity_section_change(
-                self.entity_id,
-                update.old_chunk,
-                update.new_chunk,
-                |chunk| world.player_area_map.get_tracking_players(chunk),
-                |player_id| world.players.get_by_entity_id(player_id),
-            );
+            if update.became_inaccessible() {
+                world.entity_tracker().remove(self.entity_id, |player_id| {
+                    world.players.get_by_entity_id(player_id)
+                });
+            } else if update.became_accessible() {
+                if let Some(entity) = world.entity_manager().get_by_id(self.entity_id) {
+                    world.add_entity_to_tracker(&entity);
+                }
+            } else if update.new_accessible {
+                world.entity_tracker().on_entity_section_change(
+                    self.entity_id,
+                    update.old_chunk,
+                    update.new_chunk,
+                    |chunk| world.player_area_map.get_tracking_players(chunk),
+                    |player_id| world.players.get_by_entity_id(player_id),
+                );
+            }
         }
 
         Ok(())

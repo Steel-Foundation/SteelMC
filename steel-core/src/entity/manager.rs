@@ -15,7 +15,9 @@ use steel_utils::locks::SyncRwLock;
 use steel_utils::{ChunkPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
-use super::{NullEntityCallback, RemovalReason, SharedEntity, tick_vehicle_passengers_with_ticked};
+use super::{
+    Entity, NullEntityCallback, RemovalReason, SharedEntity, tick_vehicle_passengers_with_ticked_if,
+};
 
 /// Error returned when adding an entity to the runtime world fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +126,10 @@ pub struct EntityMoveUpdate {
     pub old_chunk: ChunkPos,
     /// New chunk membership.
     pub new_chunk: ChunkPos,
+    /// Whether the entity was visible to normal world/tracker queries before the move.
+    pub old_accessible: bool,
+    /// Whether the entity is visible to normal world/tracker queries after the move.
+    pub new_accessible: bool,
 }
 
 impl EntityMoveUpdate {
@@ -137,6 +143,24 @@ impl EntityMoveUpdate {
     #[must_use]
     pub fn chunk_changed(&self) -> bool {
         self.old_chunk != self.new_chunk
+    }
+
+    /// Returns whether the entity crossed an accessibility boundary.
+    #[must_use]
+    pub const fn accessibility_changed(&self) -> bool {
+        self.old_accessible != self.new_accessible
+    }
+
+    /// Returns whether this move made a previously hidden entity accessible.
+    #[must_use]
+    pub const fn became_accessible(&self) -> bool {
+        !self.old_accessible && self.new_accessible
+    }
+
+    /// Returns whether this move made a previously accessible entity hidden.
+    #[must_use]
+    pub const fn became_inaccessible(&self) -> bool {
+        self.old_accessible && !self.new_accessible
     }
 }
 
@@ -156,8 +180,19 @@ pub struct UnsavedEntityReport {
 pub struct ChunkEntityLoadResult {
     /// Retained entities restored to live world membership.
     pub restored: Vec<SharedEntity>,
+    /// Live entities in this chunk whose tracking became visible again.
+    pub tracking_started: Vec<SharedEntity>,
     /// Whether recovery created save-pending entity state for this chunk.
     pub needs_save: bool,
+}
+
+/// Entity changes produced when a chunk starts unloading.
+#[derive(Default)]
+pub struct ChunkEntityUnloadStart {
+    /// Entities removed from live ownership and retained for chunk recovery.
+    pub retained: Vec<SharedEntity>,
+    /// Entities whose tracker visibility should stop for this chunk transition.
+    pub tracking_stopped: Vec<SharedEntity>,
 }
 
 #[derive(Clone)]
@@ -184,6 +219,9 @@ impl EntityEntry {
 
     #[must_use]
     fn should_save(&self) -> bool {
+        // TODO: Mirror vanilla RootVehicle ownership once player entity-tree
+        // persistence is reworked. Vehicles with exactly one player passenger
+        // should be stored in player data instead of chunk data.
         self.ownership == EntityOwnership::ManagerOwned
             && (!self.entity.is_removed()
                 || self
@@ -234,39 +272,68 @@ impl WorldEntityManager {
     /// Marks a chunk as loaded and reactivates retained unloading entities.
     pub fn on_chunk_loaded(&self, pos: ChunkPos) -> ChunkEntityLoadResult {
         let mut state = self.state.write();
-        state.loaded_chunks.insert(pos);
+        let was_hidden = state.loaded_chunks.insert(pos);
 
-        let Some(entries) = state.unloading_by_chunk.remove(&pos) else {
-            return ChunkEntityLoadResult::default();
-        };
-
-        let mut result = ChunkEntityLoadResult {
-            restored: Vec::with_capacity(entries.len()),
-            needs_save: false,
-        };
-        for entry in entries {
-            if entry.entity.is_removed() {
-                if entry.should_save() {
-                    result.needs_save = true;
-                    state
-                        .save_pending_by_chunk
-                        .entry(pos)
-                        .or_default()
-                        .push(entry);
-                }
-                continue;
-            }
-
-            let entity = entry.entity.clone();
-            Self::insert_live_entry(&mut state, entry);
-            result.restored.push(entity);
+        let mut result = ChunkEntityLoadResult::default();
+        if was_hidden {
+            result.tracking_started = Self::live_manager_owned_entities_in_chunk(&state, pos);
         }
+
+        if let Some(entries) = state.unloading_by_chunk.remove(&pos) {
+            result.restored.reserve(entries.len());
+            for entry in entries {
+                if entry.entity.is_removed() {
+                    if entry.should_save() {
+                        result.needs_save = true;
+                        state
+                            .save_pending_by_chunk
+                            .entry(pos)
+                            .or_default()
+                            .push(entry);
+                    }
+                    continue;
+                }
+
+                let entity = entry.entity.clone();
+                Self::insert_live_entry(&mut state, entry);
+                result.restored.push(entity);
+            }
+        }
+
         result
     }
 
-    /// Moves manager-owned entities in `pos` out of live world membership while
+    fn live_manager_owned_entities_in_chunk(
+        state: &ManagerState,
+        chunk: ChunkPos,
+    ) -> Vec<SharedEntity> {
+        state
+            .by_chunk
+            .get(&chunk)
+            .map(|entity_ids| {
+                entity_ids
+                    .iter()
+                    .filter_map(|id| state.live_by_id.get(id))
+                    .filter(|entry| entry.ownership == EntityOwnership::ManagerOwned)
+                    .map(|entry| entry.entity.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn push_unique_entity(
+        entity: &SharedEntity,
+        seen: &mut FxHashSet<i32>,
+        entities: &mut Vec<SharedEntity>,
+    ) {
+        if seen.insert(entity.id()) {
+            entities.push(entity.clone());
+        }
+    }
+
+    /// Moves manager-owned root entities in `pos` out of live world membership while
     /// retaining them for possible chunk recovery.
-    pub fn begin_chunk_unload(&self, pos: ChunkPos) -> Vec<SharedEntity> {
+    pub fn begin_chunk_unload(&self, pos: ChunkPos) -> ChunkEntityUnloadStart {
         let mut state = self.state.write();
         state.loaded_chunks.remove(&pos);
 
@@ -276,16 +343,38 @@ impl WorldEntityManager {
             .map(|set| set.iter().copied().collect::<Vec<_>>())
             .unwrap_or_default();
 
-        let mut retained = Vec::new();
-        let mut entities = Vec::new();
-        let mut visited = FxHashSet::default();
+        let mut result = ChunkEntityUnloadStart::default();
+        let mut tracking_stopped_ids = FxHashSet::default();
+        let mut root_ids = Vec::new();
         for entity_id in ids {
+            let Some(entry) = state.live_by_id.get(&entity_id) else {
+                continue;
+            };
+            if entry.ownership != EntityOwnership::ManagerOwned {
+                continue;
+            }
+
+            Self::push_unique_entity(
+                &entry.entity,
+                &mut tracking_stopped_ids,
+                &mut result.tracking_stopped,
+            );
+            if !entry.entity.is_passenger() {
+                root_ids.push(entity_id);
+            }
+        }
+
+        let mut retained = Vec::new();
+        let mut visited = FxHashSet::default();
+        for entity_id in root_ids {
             Self::retain_unloading_entity_tree(
                 &mut state,
                 entity_id,
                 &mut visited,
                 &mut retained,
-                &mut entities,
+                &mut result.retained,
+                &mut tracking_stopped_ids,
+                &mut result.tracking_stopped,
             );
         }
 
@@ -297,7 +386,7 @@ impl WorldEntityManager {
                 .extend(retained);
         }
 
-        entities
+        result
     }
 
     fn retain_unloading_entity_tree(
@@ -305,7 +394,9 @@ impl WorldEntityManager {
         entity_id: i32,
         visited: &mut FxHashSet<i32>,
         retained: &mut Vec<EntityEntry>,
-        entities: &mut Vec<SharedEntity>,
+        retained_entities: &mut Vec<SharedEntity>,
+        tracking_stopped_ids: &mut FxHashSet<i32>,
+        tracking_stopped: &mut Vec<SharedEntity>,
     ) {
         if !visited.insert(entity_id) {
             return;
@@ -321,10 +412,19 @@ impl WorldEntityManager {
         }
 
         let passengers = entry.entity.passengers();
-        entities.push(Arc::clone(&entry.entity));
+        Self::push_unique_entity(&entry.entity, tracking_stopped_ids, tracking_stopped);
+        retained_entities.push(Arc::clone(&entry.entity));
         retained.push(entry);
         for passenger in passengers {
-            Self::retain_unloading_entity_tree(state, passenger.id(), visited, retained, entities);
+            Self::retain_unloading_entity_tree(
+                state,
+                passenger.id(),
+                visited,
+                retained,
+                retained_entities,
+                tracking_stopped_ids,
+                tracking_stopped,
+            );
         }
     }
 
@@ -446,7 +546,7 @@ impl WorldEntityManager {
         if entry.ownership == EntityOwnership::ManagerOwned {
             let new_section = SectionPos::from_entity_pos(new_pos);
             let new_chunk = ChunkPos::new(new_section.x(), new_section.z());
-            if !state.loaded_chunks.contains(&new_chunk) {
+            if !Self::can_move_manager_owned_to_chunk(&state, entry, new_chunk) {
                 return Err(EntityMoveError::UnloadedDestination {
                     entity_id,
                     chunk: new_chunk,
@@ -471,7 +571,7 @@ impl WorldEntityManager {
         let new_section = SectionPos::from_entity_pos(new_pos);
         let new_chunk = ChunkPos::new(new_section.x(), new_section.z());
         if current.ownership == EntityOwnership::ManagerOwned
-            && !state.loaded_chunks.contains(&new_chunk)
+            && !Self::can_move_manager_owned_to_chunk(&state, current, new_chunk)
         {
             return Err(EntityMoveError::UnloadedDestination {
                 entity_id,
@@ -481,6 +581,8 @@ impl WorldEntityManager {
 
         let old_section = current.section;
         let old_chunk = current.chunk;
+        let old_accessible = Self::is_accessible(&state, current);
+        let new_accessible = Self::is_accessible_at(&state, current.ownership, new_chunk);
         if old_section == new_section && old_chunk == new_chunk {
             return Ok(EntityMoveUpdate {
                 entity_id,
@@ -488,6 +590,8 @@ impl WorldEntityManager {
                 new_section,
                 old_chunk,
                 new_chunk,
+                old_accessible,
+                new_accessible,
             });
         }
 
@@ -516,7 +620,56 @@ impl WorldEntityManager {
             new_section,
             old_chunk,
             new_chunk,
+            old_accessible,
+            new_accessible,
         })
+    }
+
+    fn can_move_manager_owned_to_chunk(
+        state: &ManagerState,
+        entry: &EntityEntry,
+        new_chunk: ChunkPos,
+    ) -> bool {
+        state.loaded_chunks.contains(&new_chunk)
+            || (entry.entity.is_passenger()
+                && Self::has_live_loaded_root_vehicle(state, &entry.entity))
+    }
+
+    fn has_live_loaded_root_vehicle(state: &ManagerState, entity: &SharedEntity) -> bool {
+        let mut visited = FxHashSet::default();
+        visited.insert(entity.id());
+
+        let mut passenger = Arc::clone(entity);
+        let Some(mut vehicle) = passenger.vehicle() else {
+            return false;
+        };
+
+        loop {
+            assert!(
+                visited.insert(vehicle.id()),
+                "cyclic passenger relationship involving entity {}",
+                entity.id()
+            );
+            if vehicle.is_removed() || !vehicle.has_passenger(passenger.as_ref()) {
+                return false;
+            }
+
+            let Some(vehicle_entry) = state.live_by_id.get(&vehicle.id()) else {
+                return false;
+            };
+
+            let Some(next_vehicle) = vehicle.vehicle() else {
+                return match vehicle_entry.ownership {
+                    EntityOwnership::External => true,
+                    EntityOwnership::ManagerOwned => {
+                        state.loaded_chunks.contains(&vehicle_entry.chunk)
+                    }
+                };
+            };
+
+            passenger = vehicle;
+            vehicle = next_vehicle;
+        }
     }
 
     #[must_use]
@@ -568,7 +721,9 @@ impl WorldEntityManager {
                         let Some(entry) = state.live_by_id.get(entity_id) else {
                             continue;
                         };
-                        if entry.entity.bounding_box().intersects(*aabb) {
+                        if Self::is_accessible(&state, entry)
+                            && entry.entity.bounding_box().intersects(*aabb)
+                        {
                             result.push(entry.entity.clone());
                         }
                     }
@@ -673,6 +828,7 @@ impl WorldEntityManager {
     ) -> FxHashSet<ChunkPos> {
         let mut dirty_chunks = FxHashSet::default();
         let mut ticked_entities = FxHashSet::default();
+        let tickable_chunk_set = tickable_chunks.iter().copied().collect::<FxHashSet<_>>();
         for chunk in tickable_chunks {
             let entities = self.manager_owned_entities_in_chunk(*chunk);
             for entity in entities {
@@ -692,10 +848,32 @@ impl WorldEntityManager {
                     continue;
                 }
 
-                Self::tick_non_passenger(&entity, &mut ticked_entities);
-                dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+                self.tick_non_passenger(
+                    &entity,
+                    &mut ticked_entities,
+                    &tickable_chunk_set,
+                    &mut dirty_chunks,
+                );
             }
         }
+        dirty_chunks
+    }
+
+    /// Ticks eligible passengers for an externally ticked root, such as a player.
+    pub(crate) fn tick_vehicle_passengers_for_root(
+        &self,
+        vehicle: &dyn Entity,
+        tickable_chunks: &FxHashSet<ChunkPos>,
+    ) -> FxHashSet<ChunkPos> {
+        let mut dirty_chunks = FxHashSet::default();
+        let mut ticked_entities = FxHashSet::default();
+        ticked_entities.insert(vehicle.id());
+        self.tick_vehicle_passengers_with_ticked(
+            vehicle,
+            &mut ticked_entities,
+            tickable_chunks,
+            &mut dirty_chunks,
+        );
         dirty_chunks
     }
 
@@ -720,6 +898,14 @@ impl WorldEntityManager {
         state.live_by_id.get(&entity_id).is_some_and(|entry| {
             entry.ownership == EntityOwnership::ManagerOwned && entry.chunk == chunk
         })
+    }
+
+    fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {
+        Self::is_accessible_at(state, entry.ownership, entry.chunk)
+    }
+
+    fn is_accessible_at(state: &ManagerState, ownership: EntityOwnership, chunk: ChunkPos) -> bool {
+        ownership == EntityOwnership::External || state.loaded_chunks.contains(&chunk)
     }
 
     fn is_valid_passenger_or_stop_riding(entity: &SharedEntity) -> bool {
@@ -751,10 +937,54 @@ impl WorldEntityManager {
         }
     }
 
-    fn tick_non_passenger(entity: &SharedEntity, ticked_entities: &mut FxHashSet<i32>) {
+    fn tick_non_passenger(
+        &self,
+        entity: &SharedEntity,
+        ticked_entities: &mut FxHashSet<i32>,
+        tickable_chunks: &FxHashSet<ChunkPos>,
+        dirty_chunks: &mut FxHashSet<ChunkPos>,
+    ) {
         entity.advance_tick_count();
         entity.tick();
-        tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, &mut |_entity| {});
+        dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+        self.tick_vehicle_passengers_with_ticked(
+            entity.as_ref(),
+            ticked_entities,
+            tickable_chunks,
+            dirty_chunks,
+        );
+    }
+
+    fn tick_vehicle_passengers_with_ticked(
+        &self,
+        vehicle: &dyn Entity,
+        ticked_entities: &mut FxHashSet<i32>,
+        tickable_chunks: &FxHashSet<ChunkPos>,
+        dirty_chunks: &mut FxHashSet<ChunkPos>,
+    ) {
+        let mut post_tick = |entity: &SharedEntity| {
+            dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+        };
+        tick_vehicle_passengers_with_ticked_if(
+            vehicle,
+            ticked_entities,
+            &mut post_tick,
+            &mut |entity| self.can_tick_entity_now(entity.id(), tickable_chunks),
+        );
+    }
+
+    fn can_tick_entity_now(&self, entity_id: i32, tickable_chunks: &FxHashSet<ChunkPos>) -> bool {
+        let state = self.state.read();
+        let Some(entry) = state.live_by_id.get(&entity_id) else {
+            return false;
+        };
+
+        match entry.ownership {
+            EntityOwnership::External => true,
+            EntityOwnership::ManagerOwned => {
+                Self::is_accessible(&state, entry) && tickable_chunks.contains(&entry.chunk)
+            }
+        }
     }
 
     fn insert_live_entry(state: &mut ManagerState, entry: EntityEntry) {
@@ -1095,7 +1325,9 @@ mod tests {
 
         let new_position = DVec3::new(17.0, 64.0, 1.0);
         assert!(manager.validate_move(entity.id(), new_position).is_ok());
-        assert!(manager.begin_chunk_unload(ChunkPos::new(1, 0)).is_empty());
+        let unload = manager.begin_chunk_unload(ChunkPos::new(1, 0));
+        assert!(unload.retained.is_empty());
+        assert!(unload.tracking_stopped.is_empty());
         entity.base().set_position_local(new_position);
 
         assert!(matches!(
@@ -1126,9 +1358,11 @@ mod tests {
                 .is_ok()
         );
 
-        let retained = manager.begin_chunk_unload(chunk);
-        assert_eq!(retained.len(), 1);
-        assert!(Arc::ptr_eq(&entity, &retained[0]));
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
+        assert!(Arc::ptr_eq(&entity, &unload.retained[0]));
+        assert_eq!(unload.tracking_stopped.len(), 1);
+        assert!(Arc::ptr_eq(&entity, &unload.tracking_stopped[0]));
         assert!(manager.get_by_id(entity.id()).is_none());
 
         let result = manager.on_chunk_loaded(chunk);
@@ -1166,13 +1400,21 @@ mod tests {
                 .is_ok()
         );
 
-        let retained = manager.begin_chunk_unload(vehicle_chunk);
-        let mut retained_ids = retained
+        let unload = manager.begin_chunk_unload(vehicle_chunk);
+        let mut retained_ids = unload
+            .retained
             .iter()
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
         retained_ids.sort_unstable();
         assert_eq!(retained_ids, vec![1, 2]);
+        let mut tracking_stopped_ids = unload
+            .tracking_stopped
+            .iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        tracking_stopped_ids.sort_unstable();
+        assert_eq!(tracking_stopped_ids, vec![1, 2]);
         assert!(manager.get_by_id(vehicle.id()).is_none());
         assert!(manager.get_by_id(passenger.id()).is_none());
         assert!(manager.live_entities_in_chunk(passenger_chunk).is_empty());
@@ -1191,6 +1433,218 @@ mod tests {
     }
 
     #[test]
+    fn passenger_chunk_unload_hides_passenger_without_unloading_vehicle_tree() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let passenger_aabb = WorldAabb::new(16.5, 63.0, 0.5, 17.5, 65.0, 1.5);
+        assert_eq!(manager.get_entities_in_aabb(&passenger_aabb).len(), 1);
+
+        let unload = manager.begin_chunk_unload(passenger_chunk);
+
+        assert!(unload.retained.is_empty());
+        assert_eq!(unload.tracking_stopped.len(), 1);
+        assert!(Arc::ptr_eq(&passenger, &unload.tracking_stopped[0]));
+        assert!(manager.get_by_id(vehicle.id()).is_some());
+        assert!(manager.get_by_id(passenger.id()).is_some());
+        assert_eq!(manager.live_entities_in_chunk(passenger_chunk).len(), 1);
+        assert!(manager.get_entities_in_aabb(&passenger_aabb).is_empty());
+        assert!(
+            manager
+                .get_saveable_entities_for_chunk(passenger_chunk)
+                .is_empty()
+        );
+
+        let saveable = manager.get_saveable_entities_for_chunk(vehicle_chunk);
+        assert_eq!(saveable.len(), 1);
+        assert!(Arc::ptr_eq(&vehicle, &saveable[0]));
+
+        let result = manager.on_chunk_loaded(passenger_chunk);
+        assert!(result.restored.is_empty());
+        assert_eq!(result.tracking_started.len(), 1);
+        assert!(Arc::ptr_eq(&passenger, &result.tracking_started[0]));
+        assert_eq!(manager.get_entities_in_aabb(&passenger_aabb).len(), 1);
+    }
+
+    #[test]
+    fn attached_passenger_can_move_while_its_own_chunk_is_hidden() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let unload = manager.begin_chunk_unload(passenger_chunk);
+        assert!(unload.retained.is_empty());
+
+        let new_position = DVec3::new(18.0, 64.0, 1.0);
+        assert!(manager.validate_move(passenger.id(), new_position).is_ok());
+        passenger.base().set_position_local(new_position);
+        let update = match manager.commit_move(passenger.id(), new_position) {
+            Ok(update) => update,
+            Err(error) => panic!("attached passenger move should commit: {error}"),
+        };
+        assert_eq!(update.new_chunk, passenger_chunk);
+        assert!(!update.old_accessible);
+        assert!(!update.new_accessible);
+        assert!(!update.accessibility_changed());
+        assert_eq!(manager.live_entities_in_chunk(passenger_chunk).len(), 1);
+    }
+
+    #[test]
+    fn passenger_move_from_hidden_to_loaded_chunk_becomes_accessible() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let unload = manager.begin_chunk_unload(passenger_chunk);
+        assert!(unload.retained.is_empty());
+
+        let new_position = DVec3::new(2.0, 64.0, 1.0);
+        assert!(manager.validate_move(passenger.id(), new_position).is_ok());
+        passenger.base().set_position_local(new_position);
+        let update = match manager.commit_move(passenger.id(), new_position) {
+            Ok(update) => update,
+            Err(error) => panic!("attached passenger move should commit: {error}"),
+        };
+
+        assert_eq!(update.old_chunk, passenger_chunk);
+        assert_eq!(update.new_chunk, vehicle_chunk);
+        assert!(!update.old_accessible);
+        assert!(update.new_accessible);
+        assert!(update.became_accessible());
+    }
+
+    #[test]
+    fn passenger_move_from_loaded_to_hidden_chunk_becomes_inaccessible() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let unload = manager.begin_chunk_unload(passenger_chunk);
+        assert!(unload.retained.is_empty());
+        assert!(unload.tracking_stopped.is_empty());
+
+        let new_position = DVec3::new(17.0, 64.0, 1.0);
+        assert!(manager.validate_move(passenger.id(), new_position).is_ok());
+        passenger.base().set_position_local(new_position);
+        let update = match manager.commit_move(passenger.id(), new_position) {
+            Ok(update) => update,
+            Err(error) => panic!("attached passenger move should commit: {error}"),
+        };
+
+        assert_eq!(update.old_chunk, vehicle_chunk);
+        assert_eq!(update.new_chunk, passenger_chunk);
+        assert!(update.old_accessible);
+        assert!(!update.new_accessible);
+        assert!(update.became_inaccessible());
+    }
+
+    #[test]
+    fn hidden_chunk_passenger_is_not_ticked_by_loaded_vehicle() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let unload = manager.begin_chunk_unload(passenger_chunk);
+        assert!(unload.retained.is_empty());
+
+        manager.tick_entities(0, &[vehicle_chunk]);
+        assert_eq!(vehicle.tick_count(), 1);
+        assert_eq!(passenger.tick_count(), 0);
+
+        let result = manager.on_chunk_loaded(passenger_chunk);
+        assert_eq!(result.tracking_started.len(), 1);
+        manager.tick_entities(1, &[vehicle_chunk, passenger_chunk]);
+        assert_eq!(vehicle.tick_count(), 2);
+        assert_eq!(passenger.tick_count(), 1);
+    }
+
+    #[test]
     fn final_chunk_unload_marks_stale_arc_removed_and_allows_same_identity_to_reload() {
         let manager = WorldEntityManager::new();
         let chunk = ChunkPos::new(0, 0);
@@ -1204,8 +1658,8 @@ mod tests {
                 .is_ok()
         );
 
-        let retained = manager.begin_chunk_unload(chunk);
-        assert_eq!(retained.len(), 1);
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
         manager.finalize_chunk_unload(chunk);
 
         assert!(stale.is_removed());
@@ -1250,8 +1704,8 @@ mod tests {
         assert_eq!(live_saveable.len(), 1);
         assert!(Arc::ptr_eq(&live, &live_saveable[0]));
 
-        let retained = manager.begin_chunk_unload(chunk);
-        assert_eq!(retained.len(), 1);
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
         let unloading_saveable = manager.get_saveable_entities_for_chunk(chunk);
         assert_eq!(unloading_saveable.len(), 1);
         assert!(Arc::ptr_eq(&live, &unloading_saveable[0]));
@@ -1381,7 +1835,7 @@ mod tests {
                 .add_live_entity(unloading, EntityOwnership::ManagerOwned)
                 .is_ok()
         );
-        assert_eq!(manager.begin_chunk_unload(chunk).len(), 1);
+        assert_eq!(manager.begin_chunk_unload(chunk).retained.len(), 1);
 
         let duplicate = ManagerTestEntity::shared(2, uuid, DVec3::new(2.0, 64.0, 1.0));
 
@@ -1407,7 +1861,7 @@ mod tests {
                 .add_live_entity(unloading, EntityOwnership::ManagerOwned)
                 .is_ok()
         );
-        assert_eq!(manager.begin_chunk_unload(chunk).len(), 1);
+        assert_eq!(manager.begin_chunk_unload(chunk).retained.len(), 1);
 
         let duplicate = entity(1, 49, DVec3::new(2.0, 64.0, 1.0));
         let _ = manager.add_live_entity(duplicate, EntityOwnership::ManagerOwned);
@@ -1426,8 +1880,8 @@ mod tests {
                 .is_ok()
         );
 
-        let retained = manager.begin_chunk_unload(chunk);
-        assert_eq!(retained.len(), 1);
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
         removed.set_removed(RemovalReason::Discarded);
 
         let result = manager.on_chunk_loaded(chunk);
@@ -1451,8 +1905,8 @@ mod tests {
                 .is_ok()
         );
 
-        let retained = manager.begin_chunk_unload(chunk);
-        assert_eq!(retained.len(), 1);
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
         pending.set_removed(RemovalReason::UnloadedToChunk);
 
         let result = manager.on_chunk_loaded(chunk);
