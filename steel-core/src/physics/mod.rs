@@ -25,7 +25,6 @@ pub use entity_move::{MoveResult, MoverType};
 pub(crate) use movement_validation::ClientAuthoredMovementState;
 pub use movement_validation::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, movement_error_delta,
-    vanilla_post_move_y_dist,
 };
 pub(crate) use physics_state::EntityPhysicsState;
 pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_shape};

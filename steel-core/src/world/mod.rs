@@ -430,6 +430,23 @@ impl World {
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
 
+    /// Returns whether the block position is within vanilla spawnable bounds.
+    pub const fn is_in_spawnable_bounds(block_pos: BlockPos) -> bool {
+        !Self::is_outside_spawnable_height(block_pos.0.y)
+            && Self::is_in_world_bounds_horizontal(block_pos)
+    }
+
+    const fn is_in_world_bounds_horizontal(block_pos: BlockPos) -> bool {
+        block_pos.0.x >= -30_000_000
+            && block_pos.0.z >= -30_000_000
+            && block_pos.0.x < 30_000_000
+            && block_pos.0.z < 30_000_000
+    }
+
+    const fn is_outside_spawnable_height(y: i32) -> bool {
+        y < -20_000_000 || y >= 20_000_000
+    }
+
     /// Returns the maximum build height (one above the highest placeable block).
     /// This is `min_y + height`.
     #[must_use]
@@ -3140,6 +3157,27 @@ mod tests {
             diff.length_squared() < 1.0e-24,
             "expected {left:?} to equal {right:?}"
         );
+    }
+
+    #[test]
+    fn spawnable_bounds_match_vanilla_teleport_command_bounds() {
+        assert!(World::is_in_spawnable_bounds(BlockPos::new(0, 320, 0)));
+        assert!(World::is_in_spawnable_bounds(BlockPos::new(
+            29_999_999,
+            19_999_999,
+            -30_000_000
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            30_000_000, 0, 0
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            0,
+            -20_000_001,
+            0
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            0, 20_000_000, 0
+        )));
     }
 
     #[test]

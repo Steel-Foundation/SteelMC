@@ -169,16 +169,6 @@ pub fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
     DVec3::new(error_x, error_y, error_z)
 }
 
-/// Returns vanilla's post-move Y residual for floating validation.
-#[must_use]
-pub fn vanilla_post_move_y_dist(target_y: f64, simulated_y: f64) -> f64 {
-    let mut y_dist = target_y - simulated_y;
-    if y_dist > -Y_TOLERANCE || y_dist < Y_TOLERANCE {
-        y_dist = 0.0;
-    }
-    y_dist
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,13 +204,6 @@ mod tests {
             }
             .rejects()
         );
-    }
-
-    #[test]
-    #[expect(clippy::float_cmp, reason = "vanilla branch deliberately zeros Y")]
-    fn post_move_y_dist_matches_vanilla_y_branch() {
-        assert_eq!(vanilla_post_move_y_dist(64.0, 63.0), 0.0);
-        assert_eq!(vanilla_post_move_y_dist(64.0, 65.0), 0.0);
     }
 
     #[test]

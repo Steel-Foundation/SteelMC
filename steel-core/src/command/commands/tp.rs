@@ -14,6 +14,7 @@ use crate::{
     },
     entity::Entity,
     player::Player,
+    world::World,
 };
 
 type MultipleRotationArgs = ((((), Vec<Arc<Player>>), DVec3), (f32, f32));
@@ -85,7 +86,7 @@ fn teleport_to_pos(
     rotation: (f32, f32),
     ctx: &mut CommandContext,
 ) -> Result<(), CommandError> {
-    if !ctx.world.is_in_valid_bounds(BlockPos::from(pos)) {
+    if !World::is_in_spawnable_bounds(BlockPos::from(pos)) {
         ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_INVALID_POSITION
                 .message([] as [TextComponent; 0])
@@ -189,5 +190,13 @@ fn teleport_player(
             "Failed to teleport {}: {error}",
             player.gameprofile.name
         ))))
-    })
+    })?;
+
+    if !player.is_fall_flying() {
+        let velocity = player.velocity();
+        player.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
+        player.set_on_ground(true);
+    }
+
+    Ok(())
 }

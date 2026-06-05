@@ -22,7 +22,7 @@ use crate::entity::{
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
-    is_colliding_with_new_shapes, movement_error_delta, vanilla_post_move_y_dist,
+    is_colliding_with_new_shapes, movement_error_delta,
 };
 use crate::player::food_data::food_constants;
 use crate::player::{Player, PlayerInput};
@@ -406,10 +406,9 @@ impl Player {
                 return;
             }
 
-            floating_check = Some((
-                player_stands_on_something,
-                vanilla_post_move_y_dist(target_pos.y, self.position().y),
-            ));
+            // Vanilla saves this requested Y delta before recomputing the
+            // post-move residual used by moved-wrongly validation.
+            floating_check = Some((player_stands_on_something, move_delta.y));
 
             if packet.on_ground && self.is_sprinting() {
                 let dx = move_delta.x;
@@ -647,7 +646,7 @@ impl Player {
         self.record_client_vehicle_floating(
             &world,
             vehicle.as_ref(),
-            vanilla_post_move_y_dist(target_pos.y, vehicle.position().y),
+            move_delta.y,
             vehicle_rests_on_something,
         );
         self.movement
@@ -814,6 +813,7 @@ impl Player {
         let pos = DVec3::new(x, y, z);
 
         self.try_set_position(pos)?;
+        self.set_velocity(DVec3::ZERO);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -989,6 +989,13 @@ mod tests {
         };
 
         assert!(validation.can_violate());
+        assert!(
+            !PlayerFloatingValidation {
+                y_dist: -0.0784,
+                ..validation
+            }
+            .can_violate()
+        );
         assert!(
             !PlayerFloatingValidation {
                 has_levitation: true,
