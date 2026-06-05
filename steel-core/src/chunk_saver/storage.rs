@@ -6,10 +6,14 @@ use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
-use crate::entity::{ENTITIES, Entity, EntityFireFreezeState, EntityLoadRequest, SharedEntity};
+use crate::entity::{
+    ENTITIES, Entity, EntityBase, EntityFireFreezeState, EntityLoadRequest, RemovalReason,
+    SharedEntity,
+};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
+use glam::DVec3;
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
@@ -716,49 +720,7 @@ impl ChunkStorage {
             })
             .collect();
 
-        // Serialize entities
-        let persistent_entities: Vec<PersistentEntity> = entities
-            .iter()
-            .filter_map(|entity| {
-                let pos = entity.position();
-                let vel = entity.velocity();
-                let (yaw, pitch) = entity.rotation();
-                let fire_freeze = entity.fire_freeze_state();
-
-                // Validate position is finite (discard corrupted entities)
-                if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
-                    tracing::warn!(
-                        uuid = ?entity.uuid(),
-                        "Entity has non-finite position {:?}, skipping save",
-                        pos
-                    );
-                    return None;
-                }
-
-                // Serialize type-specific NBT data
-                let mut nbt = NbtCompound::new();
-                entity.save_additional(&mut nbt);
-                let mut nbt_bytes = Vec::new();
-                nbt.write(&mut nbt_bytes);
-
-                Some(PersistentEntity {
-                    entity_type: entity.entity_type().key.clone(),
-                    uuid: *entity.uuid().as_bytes(),
-                    pos: [pos.x, pos.y, pos.z],
-                    motion: [vel.x, vel.y, vel.z],
-                    rotation: [yaw, pitch],
-                    fall_distance: entity.fall_distance(),
-                    remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
-                    ticks_frozen: fire_freeze.ticks_frozen(),
-                    is_in_powder_snow: fire_freeze.is_in_powder_snow(),
-                    was_in_powder_snow: fire_freeze.was_in_powder_snow(),
-                    has_visual_fire: fire_freeze.has_visual_fire(),
-                    on_ground: entity.on_ground(),
-                    no_gravity: entity.is_no_gravity(),
-                    nbt_data: nbt_bytes,
-                })
-            })
-            .collect();
+        let persistent_entities = Self::entities_to_persistent(entities);
 
         PersistentChunk {
             last_modified: SystemTime::now()
@@ -778,6 +740,90 @@ impl ChunkStorage {
             structure_references,
             pois,
         }
+    }
+
+    fn entities_to_persistent(entities: &[SharedEntity]) -> Vec<PersistentEntity> {
+        let mut visited = FxHashSet::default();
+        entities
+            .iter()
+            .filter(|entity| !entity.is_passenger())
+            .filter_map(|entity| Self::entity_to_persistent(entity, &mut visited))
+            .collect()
+    }
+
+    fn entity_to_persistent(
+        entity: &SharedEntity,
+        visited: &mut FxHashSet<i32>,
+    ) -> Option<PersistentEntity> {
+        if !Self::entity_should_save(entity.as_ref()) {
+            return None;
+        }
+
+        if !visited.insert(entity.id()) {
+            tracing::warn!(
+                uuid = ?entity.uuid(),
+                "Entity passenger tree contains duplicate entity id {}, skipping duplicate save",
+                entity.id()
+            );
+            return None;
+        }
+
+        let pos = entity.position();
+        let stored_pos = if let Some(vehicle) = entity.vehicle() {
+            let vehicle_pos = vehicle.position();
+            DVec3::new(vehicle_pos.x, pos.y, vehicle_pos.z)
+        } else {
+            pos
+        };
+        let vel = entity.velocity();
+        let (yaw, pitch) = entity.rotation();
+        let fire_freeze = entity.fire_freeze_state();
+
+        if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
+            tracing::warn!(
+                uuid = ?entity.uuid(),
+                "Entity has non-finite position {:?}, skipping save",
+                stored_pos
+            );
+            return None;
+        }
+
+        let mut nbt = NbtCompound::new();
+        entity.save_additional(&mut nbt);
+        let mut nbt_bytes = Vec::new();
+        nbt.write(&mut nbt_bytes);
+
+        let passengers = entity
+            .passengers()
+            .iter()
+            .filter_map(|passenger| Self::entity_to_persistent(passenger, visited))
+            .collect();
+
+        Some(PersistentEntity {
+            entity_type: entity.entity_type().key.clone(),
+            uuid: *entity.uuid().as_bytes(),
+            pos: [stored_pos.x, stored_pos.y, stored_pos.z],
+            motion: [vel.x, vel.y, vel.z],
+            rotation: [yaw, pitch],
+            fall_distance: entity.fall_distance(),
+            remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
+            ticks_frozen: fire_freeze.ticks_frozen(),
+            is_in_powder_snow: fire_freeze.is_in_powder_snow(),
+            was_in_powder_snow: fire_freeze.was_in_powder_snow(),
+            has_visual_fire: fire_freeze.has_visual_fire(),
+            on_ground: entity.on_ground(),
+            no_gravity: entity.is_no_gravity(),
+            nbt_data: nbt_bytes,
+            passengers,
+        })
+    }
+
+    fn entity_should_save(entity: &dyn Entity) -> bool {
+        (!entity.is_removed()
+            || entity
+                .removal_reason()
+                .is_some_and(RemovalReason::should_save))
+            && entity.entity_type().can_serialize
     }
 
     /// Converts a runtime section to persistent format.
@@ -940,12 +986,11 @@ impl ChunkStorage {
             }
 
             let mut pending_entities = Vec::with_capacity(persistent.entities.len());
+            let level_weak = chunk.level_weak();
             for persistent_entity in &persistent.entities {
-                if let Some(entity) =
-                    Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
-                {
-                    pending_entities.push(entity);
-                }
+                let mut loaded_entities =
+                    Self::persistent_to_entity_tree_at_level(persistent_entity, pos, &level_weak);
+                pending_entities.append(&mut loaded_entities);
             }
 
             // Restore POI ticket state (populate_poi ran in from_disk, now apply saved occupancy)
@@ -1012,9 +1057,9 @@ impl ChunkStorage {
             }
 
             for persistent_entity in &persistent.entities {
-                if let Some(entity) =
-                    Self::persistent_to_entity_at_level(persistent_entity, pos, level.clone())
-                {
+                let loaded_entities =
+                    Self::persistent_to_entity_tree_at_level(persistent_entity, pos, &level);
+                for entity in loaded_entities {
                     chunk.add_entity(entity);
                 }
             }
@@ -1075,13 +1120,61 @@ impl ChunkStorage {
         }
     }
 
-    /// Converts a persistent entity to runtime format.
+    /// Converts a persistent entity tree to runtime format.
+    fn persistent_to_entity_tree_at_level(
+        persistent: &PersistentEntity,
+        chunk_pos: ChunkPos,
+        level: &Weak<World>,
+    ) -> Vec<SharedEntity> {
+        let mut entities = Vec::new();
+        let Some(entity) = Self::persistent_to_entity_at_level(persistent, chunk_pos, level) else {
+            return entities;
+        };
+
+        entities.push(Arc::clone(&entity));
+        for persistent_passenger in &persistent.passengers {
+            Self::load_persistent_passenger_tree(
+                persistent_passenger,
+                chunk_pos,
+                level,
+                &entity,
+                &mut entities,
+            );
+        }
+        entities
+    }
+
+    fn load_persistent_passenger_tree(
+        persistent: &PersistentEntity,
+        chunk_pos: ChunkPos,
+        level: &Weak<World>,
+        vehicle: &SharedEntity,
+        entities: &mut Vec<SharedEntity>,
+    ) {
+        let Some(passenger) = Self::persistent_to_entity_at_level(persistent, chunk_pos, level)
+        else {
+            return;
+        };
+
+        EntityBase::restore_passenger_relationship(vehicle, &passenger);
+        entities.push(Arc::clone(&passenger));
+        for persistent_passenger in &persistent.passengers {
+            Self::load_persistent_passenger_tree(
+                persistent_passenger,
+                chunk_pos,
+                level,
+                &passenger,
+                entities,
+            );
+        }
+    }
+
+    /// Converts one persistent entity to runtime format without loading passengers.
     fn persistent_to_entity_at_level(
         persistent: &PersistentEntity,
         chunk_pos: ChunkPos,
-        level: Weak<World>,
+        level: &Weak<World>,
     ) -> Option<SharedEntity> {
-        use glam::DVec3;
         use uuid::Uuid;
 
         // Reconstruct base fields
@@ -1159,7 +1252,7 @@ impl ChunkStorage {
                 ),
                 on_ground: persistent.on_ground,
                 no_gravity: persistent.no_gravity,
-                world: level,
+                world: Weak::clone(level),
             },
             &nbt,
         ))
@@ -2476,13 +2569,16 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use crate::entity::{
-        Entity, SharedEntity, entities::EndCrystalEntity, init_entities, next_entity_id,
+        Entity, SharedEntity,
+        entities::{EndCrystalEntity, RawEntity},
+        init_entities, next_entity_id,
     };
     use glam::DVec3;
     use rustc_hash::FxHashMap;
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
+    use steel_registry::vanilla_entities;
     use steel_utils::types::UpdateFlags;
     use steel_worldgen::structure::StructureReferenceSet;
 
@@ -2756,6 +2852,116 @@ mod tests {
         assert_eq!(loaded.status, ChunkStatus::Full);
         assert_eq!(loaded.pending_entities.len(), 1);
         assert_eq!(loaded.pending_entities[0].uuid(), entity.uuid());
+    }
+
+    #[test]
+    fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let chunk = ChunkAccess::Proto(proto);
+        let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 6.0, 7.5),
+            Weak::new(),
+        ));
+        let passenger: SharedEntity = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 8.0, 7.5),
+            Weak::new(),
+        ));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+        let vehicle_uuid = vehicle.uuid();
+        let passenger_uuid = passenger.uuid();
+        let entities = [Arc::clone(&vehicle), Arc::clone(&passenger)];
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &entities, true) else {
+            panic!("forced runtime entity save should prepare a chunk save");
+        };
+
+        assert_eq!(prepared.persistent.entities.len(), 1);
+        assert_eq!(
+            prepared.persistent.entities[0].uuid,
+            *vehicle_uuid.as_bytes()
+        );
+        assert_eq!(prepared.persistent.entities[0].passengers.len(), 1);
+        assert_eq!(
+            prepared.persistent.entities[0].passengers[0].uuid,
+            *passenger_uuid.as_bytes()
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Full,
+            0,
+            16,
+            Weak::new(),
+        );
+
+        assert!(matches!(loaded.chunk, ChunkAccess::Full(_)));
+        assert_eq!(loaded.pending_entities.len(), 2);
+        let Some(loaded_passenger) = loaded
+            .pending_entities
+            .iter()
+            .find(|entity| entity.uuid() == passenger_uuid)
+        else {
+            panic!("passenger should load into pending registration list");
+        };
+        let Some(loaded_vehicle) = loaded_passenger.vehicle() else {
+            panic!("passenger should restore its vehicle relationship");
+        };
+        assert_eq!(loaded_vehicle.uuid(), vehicle_uuid);
+        assert!(loaded_vehicle.has_passenger(loaded_passenger.as_ref()));
+    }
+
+    #[test]
+    fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let chunk = ChunkAccess::Proto(proto);
+        let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 6.0, 7.5),
+            Weak::new(),
+        ));
+        let passenger: SharedEntity = Arc::new(RawEntity::new(
+            next_entity_id(),
+            DVec3::new(5.5, 8.0, 7.5),
+            Weak::new(),
+            &vanilla_entities::PLAYER,
+        ));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+        let vehicle_uuid = vehicle.uuid();
+
+        let Some(prepared) =
+            ChunkStorage::prepare_chunk_save(&chunk, slice::from_ref(&vehicle), true)
+        else {
+            panic!("forced runtime entity save should prepare a chunk save");
+        };
+
+        assert_eq!(prepared.persistent.entities.len(), 1);
+        assert_eq!(
+            prepared.persistent.entities[0].uuid,
+            *vehicle_uuid.as_bytes()
+        );
+        assert!(prepared.persistent.entities[0].passengers.is_empty());
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Full,
+            0,
+            16,
+            Weak::new(),
+        );
+
+        assert!(matches!(loaded.chunk, ChunkAccess::Full(_)));
+        assert_eq!(loaded.pending_entities.len(), 1);
+        assert_eq!(loaded.pending_entities[0].uuid(), vehicle_uuid);
     }
 
     #[test]

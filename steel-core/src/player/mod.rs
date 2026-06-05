@@ -56,7 +56,7 @@ pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRespawn,
-    CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes, ClientCommandAction, SoundSource,
+    CSetHealth, CSetHeldSlot, CSetTime, ClientCommandAction, SoundSource,
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -474,16 +474,6 @@ impl Player {
                     total_experience: experience.total_points(),
                 });
                 experience.dirty = false;
-            }
-        }
-
-        {
-            let snapshots = self.attributes().lock().drain_dirty_sync();
-            if !snapshots.is_empty() {
-                let packet = CUpdateAttributes::new(self.id(), snapshots);
-                self.get_world()
-                    .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
-                self.send_packet(packet);
             }
         }
 
@@ -1097,6 +1087,7 @@ impl Player {
                 self.id()
             );
         }
+        self.reset_flying_ticks();
 
         // Abilities and held slot
         self.send_abilities();
@@ -1342,6 +1333,10 @@ impl Entity for Player {
         self.attributes().lock().syncable_snapshots()
     }
 
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
     fn max_up_step(&self) -> f32 {
         self.attributes()
             .lock()
@@ -1428,6 +1423,7 @@ impl Entity for Player {
                     self.id()
                 );
             }
+            self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
             // TODO: set portal cooldown from teleport_transition.portal_cooldown

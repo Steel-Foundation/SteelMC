@@ -277,17 +277,15 @@ impl WorldEntityManager {
 
         let mut retained = Vec::new();
         let mut entities = Vec::new();
+        let mut visited = FxHashSet::default();
         for entity_id in ids {
-            let Some(entry) = Self::remove_live_entry(&mut state, entity_id) else {
-                continue;
-            };
-
-            if entry.ownership == EntityOwnership::ManagerOwned {
-                entities.push(entry.entity.clone());
-                retained.push(entry);
-            } else {
-                Self::insert_live_entry(&mut state, entry);
-            }
+            Self::retain_unloading_entity_tree(
+                &mut state,
+                entity_id,
+                &mut visited,
+                &mut retained,
+                &mut entities,
+            );
         }
 
         if !retained.is_empty() {
@@ -299,6 +297,34 @@ impl WorldEntityManager {
         }
 
         entities
+    }
+
+    fn retain_unloading_entity_tree(
+        state: &mut ManagerState,
+        entity_id: i32,
+        visited: &mut FxHashSet<i32>,
+        retained: &mut Vec<EntityEntry>,
+        entities: &mut Vec<SharedEntity>,
+    ) {
+        if !visited.insert(entity_id) {
+            return;
+        }
+
+        let Some(entry) = Self::remove_live_entry(state, entity_id) else {
+            return;
+        };
+
+        if entry.ownership != EntityOwnership::ManagerOwned {
+            Self::insert_live_entry(state, entry);
+            return;
+        }
+
+        let passengers = entry.entity.passengers();
+        entities.push(Arc::clone(&entry.entity));
+        retained.push(entry);
+        for passenger in passengers {
+            Self::retain_unloading_entity_tree(state, passenger.id(), visited, retained, entities);
+        }
     }
 
     /// Finalizes an unloading chunk. Retained entities are detached and dropped.
@@ -1110,6 +1136,53 @@ mod tests {
         };
         assert!(Arc::ptr_eq(&entity, &live_entity));
         assert!(!entity.is_removed());
+    }
+
+    #[test]
+    fn chunk_unload_retains_manager_owned_passenger_tree() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let retained = manager.begin_chunk_unload(vehicle_chunk);
+        let mut retained_ids = retained
+            .iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        retained_ids.sort_unstable();
+        assert_eq!(retained_ids, vec![1, 2]);
+        assert!(manager.get_by_id(vehicle.id()).is_none());
+        assert!(manager.get_by_id(passenger.id()).is_none());
+        assert!(manager.live_entities_in_chunk(passenger_chunk).is_empty());
+
+        let saveable = manager.get_saveable_entities_for_chunk(vehicle_chunk);
+        let mut saveable_ids = saveable
+            .iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        saveable_ids.sort_unstable();
+        assert_eq!(saveable_ids, vec![1, 2]);
+
+        manager.finalize_chunk_unload(vehicle_chunk);
+        assert!(vehicle.is_removed());
+        assert!(passenger.is_removed());
     }
 
     #[test]

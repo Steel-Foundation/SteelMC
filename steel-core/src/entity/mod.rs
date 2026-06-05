@@ -1154,6 +1154,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         Vec::new()
     }
 
+    /// Drains syncable dirty attributes for per-tick tracking updates.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
+    /// living attributes after dirty entity data.
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        Vec::new()
+    }
+
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_removed()

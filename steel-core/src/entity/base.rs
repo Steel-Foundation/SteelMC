@@ -1240,6 +1240,22 @@ impl EntityBase {
         self.stop_riding_relationship();
     }
 
+    /// Restores a persisted passenger relationship without applying gameplay boarding rules.
+    pub(crate) fn restore_passenger_relationship(vehicle: &SharedEntity, passenger: &SharedEntity) {
+        passenger.base().stop_riding_relationship();
+        if vehicle.base().has_passenger_id(passenger.id()) {
+            return;
+        }
+
+        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
+        vehicle
+            .base()
+            .relationships
+            .lock()
+            .passengers
+            .push(Arc::downgrade(passenger));
+    }
+
     /// Sets the vanilla boarding cooldown in ticks.
     pub(crate) fn set_boarding_cooldown(&self, boarding_cooldown: i32) {
         self.relationships.lock().boarding_cooldown = boarding_cooldown;

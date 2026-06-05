@@ -385,9 +385,12 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         let pos = player.position();
         let rotation = player.rotation();
+        player.mark_joined_world();
         player.spawn(pos, rotation, ResetReason::InitialJoin);
-        if !player.connection.closed() {
-            player.mark_joined_world();
+        if player.connection.closed() {
+            tokio::spawn(async move {
+                state.world.remove_player(player).await;
+            });
         }
     }
 

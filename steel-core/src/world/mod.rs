@@ -19,7 +19,7 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CGameEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate,
-    CSetEntityData, CSound, CSystemChat, GameEventType, SoundSource,
+    CSetEntityData, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -1078,6 +1078,20 @@ impl World {
                 },
                 |entity_id, dirty_entity_data| {
                     let packet = CSetEntityData::new(entity_id, dirty_entity_data);
+                    let Ok(encoded) = EncodedPacket::from_bare(
+                        packet,
+                        self.compression,
+                        ConnectionProtocol::Play,
+                    ) else {
+                        return;
+                    };
+                    self.broadcast_to_entity_trackers_encoded(entity_id, encoded.clone(), None);
+                    if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                        player.connection.send_encoded(encoded);
+                    }
+                },
+                |entity_id, dirty_attributes| {
+                    let packet = CUpdateAttributes::new(entity_id, dirty_attributes);
                     let Ok(encoded) = EncodedPacket::from_bare(
                         packet,
                         self.compression,

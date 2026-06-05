@@ -243,7 +243,7 @@ impl JavaConnection {
             play::S_KEEP_ALIVE
                 | play::S_PING_REQUEST
                 | play::S_CLIENT_INFORMATION
-                | play::C_CUSTOM_PAYLOAD
+                | play::S_CUSTOM_PAYLOAD
                 | play::S_CHAT_SESSION_UPDATE
                 | play::S_CHAT_ACK
                 | play::S_CLIENT_TICK_END
@@ -277,7 +277,7 @@ impl JavaConnection {
             play::S_ACCEPT_TELEPORTATION => {
                 player.handle_accept_teleportation(SAcceptTeleportation::read_packet(data)?);
             }
-            play::C_CUSTOM_PAYLOAD => {
+            play::S_CUSTOM_PAYLOAD => {
                 player.handle_custom_payload(SCustomPayload::read_packet(data)?);
             }
             play::S_CHAT => {
@@ -491,6 +491,21 @@ impl JavaConnection {
         }
         let world = player.get_world();
         world.remove_player(player).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_join_custom_payload_uses_serverbound_play_packet_id() {
+        assert!(JavaConnection::can_process_before_join(
+            play::S_CUSTOM_PAYLOAD
+        ));
+        assert!(!JavaConnection::can_process_before_join(
+            play::C_CUSTOM_PAYLOAD
+        ));
     }
 }
 

@@ -234,6 +234,7 @@ impl EntityTracker {
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
         mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
         mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
+        mut broadcast_attributes: impl FnMut(i32, Vec<AttributeSnapshot>),
         mut broadcast_passengers: impl FnMut(i32, CSetPassengers, Vec<i32>),
     ) {
         let mut dead_entities = Vec::new();
@@ -241,6 +242,7 @@ impl EntityTracker {
         let mut passengers_to_broadcast = Vec::new();
         let mut packets_to_broadcast = Vec::new();
         let mut entity_data_to_broadcast = Vec::new();
+        let mut attributes_to_broadcast = Vec::new();
 
         self.entities.iter_sync(|entity_id, tracked| {
             let entity_id = *entity_id;
@@ -292,6 +294,10 @@ impl EntityTracker {
             if let Some(dirty_entity_data) = dirty_entity_data {
                 entity_data_to_broadcast.push((entity_id, dirty_entity_data));
             }
+            let dirty_attributes = entity.drain_dirty_syncable_attributes();
+            if !dirty_attributes.is_empty() {
+                attributes_to_broadcast.push((entity_id, dirty_attributes));
+            }
 
             true
         });
@@ -314,6 +320,10 @@ impl EntityTracker {
 
         for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
             broadcast_entity_data(entity_id, dirty_entity_data);
+        }
+
+        for (entity_id, dirty_attributes) in attributes_to_broadcast {
+            broadcast_attributes(entity_id, dirty_attributes);
         }
     }
 
@@ -654,6 +664,7 @@ mod tests {
     struct PairingTestEntity {
         base: EntityBase,
         attributes: Vec<AttributeSnapshot>,
+        dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
         passengers: SyncMutex<Vec<WeakEntity>>,
         vehicle: SyncMutex<Option<WeakEntity>>,
     }
@@ -668,6 +679,7 @@ mod tests {
                     Weak::new(),
                 ),
                 attributes,
+                dirty_attributes: SyncMutex::new(Vec::new()),
                 passengers: SyncMutex::new(Vec::new()),
                 vehicle: SyncMutex::new(None),
             })
@@ -688,6 +700,10 @@ mod tests {
         fn set_vehicle(&self, vehicle: &SharedEntity) {
             *self.vehicle.lock() = Some(Arc::downgrade(vehicle));
         }
+
+        fn set_dirty_attributes(&self, attributes: Vec<AttributeSnapshot>) {
+            *self.dirty_attributes.lock() = attributes;
+        }
     }
 
     impl Entity for PairingTestEntity {
@@ -701,6 +717,10 @@ mod tests {
 
         fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
             self.attributes.clone()
+        }
+
+        fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+            std::mem::take(&mut *self.dirty_attributes.lock())
         }
 
         fn vehicle(&self) -> Option<SharedEntity> {
@@ -799,6 +819,49 @@ mod tests {
     }
 
     #[test]
+    fn send_changes_broadcasts_dirty_attributes_once() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let entity_typed = PairingTestEntity::new(1, Vec::new());
+        let entity: SharedEntity = entity_typed.clone();
+        tracker.add(&entity, |_| Vec::new(), |_| None);
+
+        entity_typed.set_dirty_attributes(vec![AttributeSnapshot {
+            attribute_id: 7,
+            base_value: 2.5,
+            modifiers: Vec::new(),
+        }]);
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |entity_id, attributes| updates.push((entity_id, attributes)),
+            |_, _, _| {},
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 1);
+        assert_eq!(updates[0].1.len(), 1);
+        assert_eq!(updates[0].1[0].attribute_id, 7);
+        assert_eq!(updates[0].1[0].base_value, 2.5);
+
+        updates.clear();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |entity_id, attributes| updates.push((entity_id, attributes)),
+            |_, _, _| {},
+        );
+        assert!(updates.is_empty());
+    }
+
+    #[test]
     fn spawn_pairing_includes_passenger_packet_for_vehicle() {
         test_support::init_test_registry();
 
@@ -850,6 +913,7 @@ mod tests {
             |_| None,
             |_, _| {},
             |_, _| {},
+            |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {
                 excluded_player_ids.sort_unstable();
                 updates.push((entity_id, packet, excluded_player_ids));
@@ -861,6 +925,7 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
+            |_, _| {},
             |_, _| {},
             |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {
@@ -880,6 +945,7 @@ mod tests {
             |_| None,
             |_, _| {},
             |_, _| {},
+            |_, _| {},
             |entity_id, packet, excluded_player_ids| {
                 updates.push((entity_id, packet, excluded_player_ids));
             },
@@ -890,6 +956,7 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
+            |_, _| {},
             |_, _| {},
             |_, _| {},
             |entity_id, packet, mut excluded_player_ids| {

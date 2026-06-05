@@ -191,6 +191,7 @@ fn teleport_player(
             player.gameprofile.name
         ))))
     })?;
+    player.reset_flying_ticks();
 
     if !player.is_fall_flying() {
         let velocity = player.velocity();

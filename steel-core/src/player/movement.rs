@@ -132,19 +132,15 @@ impl Player {
 
         // Resend teleport after 20 ticks (~1 second) timeout
         if current_tick.wrapping_sub(tp.teleport_time) > 20 {
-            tp.teleport_time = current_tick;
-            let teleport_id = tp.teleport_id;
             drop(tp);
 
             let (yaw, pitch) = self.rotation();
-            self.send_packet(CPlayerPosition::absolute(
-                teleport_id,
-                pos.x,
-                pos.y,
-                pos.z,
-                yaw,
-                pitch,
-            ));
+            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, yaw, pitch) {
+                log::warn!(
+                    "Failed to resend pending teleport for player {}: {error}",
+                    self.id()
+                );
+            }
         }
         true
     }
@@ -828,11 +824,15 @@ impl Player {
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();
-            movement.reset_flying_ticks();
         }
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
         Ok(())
+    }
+
+    /// Resets vanilla floating violation counters after a successful high-level teleport.
+    pub(crate) fn reset_flying_ticks(&self) {
+        self.movement.lock().reset_flying_ticks();
     }
 
     /// Handles a teleport acknowledgment from the client.
@@ -855,7 +855,6 @@ impl Player {
             let mut movement = self.movement.lock();
             movement.mark_last_good_position(pos);
             movement.reset_last_known_client_movement();
-            movement.reset_flying_ticks();
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());

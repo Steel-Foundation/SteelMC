@@ -429,6 +429,8 @@ pub struct PersistentEntity {
     pub no_gravity: bool,
     /// Type-specific NBT data from `save_additional`.
     pub nbt_data: Vec<u8>,
+    /// Direct passengers nested under this entity.
+    pub passengers: Vec<PersistentEntity>,
 }
 
 /// A scheduled tick stored with a chunk.
