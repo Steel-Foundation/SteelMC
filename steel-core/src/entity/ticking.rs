@@ -27,12 +27,11 @@ fn tick_passenger(
     post_tick: &mut impl FnMut(&SharedEntity),
     visited: &mut FxHashSet<i32>,
 ) {
-    if !visited.insert(entity.id()) {
-        panic!(
-            "cyclic passenger relationship involving entity {}",
-            entity.id()
-        );
-    }
+    assert!(
+        visited.insert(entity.id()),
+        "cyclic passenger relationship involving entity {}",
+        entity.id()
+    );
 
     if entity.is_removed()
         || entity

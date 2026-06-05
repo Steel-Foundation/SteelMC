@@ -527,13 +527,16 @@ mod tests {
         let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
         let mut entity_data = PlayerEntityData::new();
 
-        assert_eq!(*entity_data.living_entity().health.get(), 1.0);
+        assert_eq!(
+            entity_data.living_entity().health.get().to_bits(),
+            1.0_f32.to_bits()
+        );
 
         base.initialize_synced_data(&mut entity_data);
 
         assert_eq!(
-            *entity_data.living_entity().health.get(),
-            vanilla_attributes::MAX_HEALTH.default_value as f32
+            entity_data.living_entity().health.get().to_bits(),
+            (vanilla_attributes::MAX_HEALTH.default_value as f32).to_bits()
         );
     }
 

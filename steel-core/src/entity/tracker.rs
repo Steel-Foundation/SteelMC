@@ -93,6 +93,9 @@ impl EntityTracker {
     /// The `get_players_in_chunk` callback should return player IDs in a given chunk
     /// (typically from `PlayerAreaMap::get_tracking_players`).
     /// The `get_player` callback should resolve a player ID to a `Player` reference.
+    ///
+    /// # Panics
+    /// Panics if the entity is removed or is already tracked.
     pub fn add(
         &self,
         entity: &SharedEntity,
@@ -143,9 +146,10 @@ impl EntityTracker {
             seen_by: SyncRwLock::new(players_to_notify),
         };
 
-        if self.entities.insert_sync(entity_id, tracked).is_err() {
-            panic!("entity {entity_id} is already tracked");
-        }
+        assert!(
+            self.entities.insert_sync(entity_id, tracked).is_ok(),
+            "entity {entity_id} is already tracked"
+        );
 
         // Send spawn packets to all nearby players
         for player_id in player_ids_to_notify {
@@ -653,7 +657,10 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::{
+        mem,
+        sync::{Arc, Weak},
+    };
 
     use steel_protocol::packets::game::AttributeSnapshot;
     use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities};
@@ -720,14 +727,11 @@ mod tests {
         }
 
         fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-            std::mem::take(&mut *self.dirty_attributes.lock())
+            mem::take(&mut *self.dirty_attributes.lock())
         }
 
         fn vehicle(&self) -> Option<SharedEntity> {
-            self.vehicle
-                .lock()
-                .as_ref()
-                .and_then(std::sync::Weak::upgrade)
+            self.vehicle.lock().as_ref().and_then(Weak::upgrade)
         }
 
         fn passengers(&self) -> Vec<SharedEntity> {
@@ -815,7 +819,10 @@ mod tests {
         assert_eq!(pairing.spawn_packet.id, entity.id());
         assert_eq!(pairing.attributes.len(), 1);
         assert_eq!(pairing.attributes[0].attribute_id, 7);
-        assert_eq!(pairing.attributes[0].base_value, 1.25);
+        assert_eq!(
+            pairing.attributes[0].base_value.to_bits(),
+            1.25_f64.to_bits()
+        );
     }
 
     #[test]
@@ -847,7 +854,7 @@ mod tests {
         assert_eq!(updates[0].0, 1);
         assert_eq!(updates[0].1.len(), 1);
         assert_eq!(updates[0].1[0].attribute_id, 7);
-        assert_eq!(updates[0].1[0].base_value, 2.5);
+        assert_eq!(updates[0].1[0].base_value.to_bits(), 2.5_f64.to_bits());
 
         updates.clear();
         tracker.send_changes(

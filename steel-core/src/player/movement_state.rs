@@ -19,7 +19,7 @@ pub struct MovementState {
 
 impl MovementState {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             client_movement: ClientAuthoredMovementState::new(),
             client_vehicle_movement: ClientAuthoredMovementState::new(),

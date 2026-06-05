@@ -256,6 +256,10 @@ pub struct AttributeMap {
 
 impl AttributeMap {
     /// Creates an `AttributeMap` from an entity type's default attributes
+    ///
+    /// # Panics
+    /// Panics if generated entity default attributes reference an attribute
+    /// that is missing from the generated vanilla registry.
     // TODO: Add AttributeSupplier for lazy instantiation when mob entities are implemented
     #[must_use]
     pub fn new_for_entity(entity_type: EntityTypeRef) -> Self {
@@ -501,8 +505,10 @@ mod tests {
         let attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
 
         assert_eq!(
-            attributes.required_value(vanilla_attributes::GRAVITY),
-            vanilla_attributes::GRAVITY.default_value
+            attributes
+                .required_value(vanilla_attributes::GRAVITY)
+                .to_bits(),
+            vanilla_attributes::GRAVITY.default_value.to_bits()
         );
     }
 }

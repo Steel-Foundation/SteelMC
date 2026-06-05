@@ -597,7 +597,7 @@ impl ServerEntityMovementSyncState {
         result
     }
 
-    fn should_process(self, needs_velocity_sync: bool, has_dirty_entity_data: bool) -> bool {
+    const fn should_process(self, needs_velocity_sync: bool, has_dirty_entity_data: bool) -> bool {
         needs_velocity_sync
             || has_dirty_entity_data
             || (self.update_interval > 0 && self.tick_count % self.update_interval == 0)
@@ -644,13 +644,12 @@ impl ServerEntityMovementSyncState {
             || self.was_riding
             || self.was_on_ground != update.on_ground;
 
-        if update.needs_velocity_sync || self.track_delta || update.force_velocity_sync {
-            if let Some(packet) = self
+        if (update.needs_velocity_sync || self.track_delta || update.force_velocity_sync)
+            && let Some(packet) = self
                 .velocity
                 .record_velocity_sync(update.entity_id, update.velocity)
-            {
-                result.packets.push(EntityMovementSyncPacket::from(packet));
-            }
+        {
+            result.packets.push(EntityMovementSyncPacket::from(packet));
         }
 
         if force_full {

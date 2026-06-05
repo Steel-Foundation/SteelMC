@@ -494,21 +494,6 @@ impl JavaConnection {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pre_join_custom_payload_uses_serverbound_play_packet_id() {
-        assert!(JavaConnection::can_process_before_join(
-            play::S_CUSTOM_PAYLOAD
-        ));
-        assert!(!JavaConnection::can_process_before_join(
-            play::C_CUSTOM_PAYLOAD
-        ));
-    }
-}
-
 impl TextResolutor for JavaConnection {
     fn resolve_content(&self, _resolvable: &Resolvable) -> TextComponent {
         TextComponent::new()
@@ -558,5 +543,20 @@ impl NetworkConnection for JavaConnection {
 
     fn closed(&self) -> bool {
         self.cancel_token.is_cancelled()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_join_custom_payload_uses_serverbound_play_packet_id() {
+        assert!(JavaConnection::can_process_before_join(
+            play::S_CUSTOM_PAYLOAD
+        ));
+        assert!(!JavaConnection::can_process_before_join(
+            play::C_CUSTOM_PAYLOAD
+        ));
     }
 }

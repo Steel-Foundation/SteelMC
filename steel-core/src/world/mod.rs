@@ -431,6 +431,7 @@ impl World {
     }
 
     /// Returns whether the block position is within vanilla spawnable bounds.
+    #[must_use]
     pub const fn is_in_spawnable_bounds(block_pos: BlockPos) -> bool {
         !Self::is_outside_spawnable_height(block_pos.0.y)
             && Self::is_in_world_bounds_horizontal(block_pos)

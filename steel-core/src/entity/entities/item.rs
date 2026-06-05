@@ -787,7 +787,7 @@ mod tests {
 
         assert!(velocity.x >= -0.1);
         assert!(velocity.x < 0.1);
-        assert_eq!(velocity.y, 0.2);
+        assert_eq!(velocity.y.to_bits(), 0.2_f64.to_bits());
         assert!(velocity.z >= -0.1);
         assert!(velocity.z < 0.1);
     }
