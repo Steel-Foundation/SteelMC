@@ -1121,12 +1121,10 @@ impl World {
                         player.connection.send_encoded(encoded);
                     }
                 },
-                |entity_id, packet, excluded_player_ids| {
-                    self.broadcast_to_entity_trackers_except_many(
-                        entity_id,
-                        packet,
-                        &excluded_player_ids,
-                    );
+                |player_id, packet| {
+                    if let Some(player) = self.players.get_by_entity_id(player_id) {
+                        player.send_packet(packet);
+                    }
                 },
             );
         }

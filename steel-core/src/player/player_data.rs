@@ -5,6 +5,7 @@
 use steel_registry::item_stack::ItemStack;
 
 use crate::{
+    chunk_saver::{ChunkStorage, PersistentEntity},
     entity::{Entity, EntityFireFreezeState, LivingEntity},
     inventory::container::Container,
 };
@@ -13,7 +14,7 @@ use super::{Player, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 2;
+pub const PLAYER_DATA_VERSION: i32 = 3;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -100,6 +101,18 @@ pub struct PersistentPlayerData {
     /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
     /// this value can be negative by using (/xp add ... -x)
     pub score: i32,
+
+    /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
+    pub root_vehicle: Option<PersistentRootVehicle>,
+}
+
+/// A vanilla `RootVehicle` tree persisted with player data.
+#[derive(Debug, Clone)]
+pub struct PersistentRootVehicle {
+    /// UUID of the direct vehicle the player should reattach to.
+    pub attach: [u8; 16],
+    /// Root vehicle entity tree.
+    pub entity: PersistentEntity,
 }
 
 /// Persistent abilities data.
@@ -166,6 +179,8 @@ impl PersistentPlayerData {
                 lock.score,
             )
         };
+        let root_vehicle = Self::root_vehicle_from_player(player)
+            .or_else(|| player.pending_root_vehicle_for_current_world());
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -202,7 +217,22 @@ impl PersistentPlayerData {
             experience_progress,
             experience_total,
             score,
+            root_vehicle,
         }
+    }
+
+    fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {
+        let vehicle = player.vehicle()?;
+        let root_vehicle = player.root_vehicle()?;
+        if root_vehicle.id() == player.id() || !root_vehicle.has_exactly_one_player_passenger() {
+            return None;
+        }
+
+        let entity = ChunkStorage::entity_tree_to_persistent(&root_vehicle)?;
+        Some(PersistentRootVehicle {
+            attach: *vehicle.uuid().as_bytes(),
+            entity,
+        })
     }
 }
 

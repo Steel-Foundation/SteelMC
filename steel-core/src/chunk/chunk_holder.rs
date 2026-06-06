@@ -498,8 +498,8 @@ impl ChunkHolder {
             return None;
         }
 
-        if chunk_exists
-            && let Ok(Some(loaded)) = storage
+        if chunk_exists {
+            let loaded = match storage
                 .load_chunk(
                     holder.pos,
                     holder.min_y(),
@@ -507,7 +507,36 @@ impl ChunkHolder {
                     context.weak_world(),
                 )
                 .await
-        {
+            {
+                Ok(Some(loaded)) => loaded,
+                Ok(None) => {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Chunk storage reported an existing chunk but load returned no chunk; aborting generation to avoid overwriting saved data",
+                    );
+                    if let Err(error) = storage.release_chunk(holder.pos).await {
+                        tracing::error!(
+                            chunk = ?holder.pos,
+                            "Failed to release chunk storage after missing load result: {error}",
+                        );
+                    }
+                    return None;
+                }
+                Err(error) => {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to load existing chunk; aborting generation to avoid overwriting saved data: {error}",
+                    );
+                    if let Err(release_error) = storage.release_chunk(holder.pos).await {
+                        tracing::error!(
+                            chunk = ?holder.pos,
+                            "Failed to release chunk storage after load failure: {release_error}",
+                        );
+                    }
+                    return None;
+                }
+            };
+
             let loaded_status = loaded.status;
             if holder.is_status_disallowed(target_status) {
                 tracing::debug!(

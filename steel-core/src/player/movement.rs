@@ -381,6 +381,7 @@ impl Player {
                         self.id()
                     );
                 }
+                self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
                 self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
                 self.remove_latest_movement_recording();
                 return;

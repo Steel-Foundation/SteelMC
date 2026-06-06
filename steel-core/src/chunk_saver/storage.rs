@@ -554,8 +554,9 @@ impl ChunkStorage {
                 entities.push(entity);
             }
         }
-        let mut saved_runtime_entity_ids = Vec::new();
+        let mut handled_runtime_entity_ids = Vec::new();
         for entity in runtime_entities {
+            handled_runtime_entity_ids.push(entity.id());
             if !Self::entity_position_is_finite(entity.as_ref()) {
                 Self::warn_skipping_non_finite_entity(entity.as_ref());
                 continue;
@@ -567,7 +568,6 @@ impl ChunkStorage {
                     entity.id(),
                     pos,
                 );
-                saved_runtime_entity_ids.push(entity.id());
                 entities.push(Arc::clone(entity));
             }
         }
@@ -640,7 +640,7 @@ impl ChunkStorage {
         Some(PreparedChunkSave {
             pos,
             persistent,
-            saved_runtime_entity_ids,
+            handled_runtime_entity_ids,
         })
     }
 
@@ -749,6 +749,11 @@ impl ChunkStorage {
             .filter(|entity| !entity.is_passenger())
             .filter_map(|entity| Self::entity_to_persistent(entity, &mut visited))
             .collect()
+    }
+
+    pub(crate) fn entity_tree_to_persistent(entity: &SharedEntity) -> Option<PersistentEntity> {
+        let mut visited = FxHashSet::default();
+        Self::entity_to_persistent(entity, &mut visited)
     }
 
     fn entity_to_persistent(
@@ -1121,7 +1126,7 @@ impl ChunkStorage {
     }
 
     /// Converts a persistent entity tree to runtime format.
-    fn persistent_to_entity_tree_at_level(
+    pub(crate) fn persistent_to_entity_tree_at_level(
         persistent: &PersistentEntity,
         chunk_pos: ChunkPos,
         level: &Weak<World>,
@@ -2798,7 +2803,7 @@ mod tests {
     }
 
     #[test]
-    fn prepared_save_reports_serialized_runtime_entity_ids() {
+    fn prepared_save_reports_handled_runtime_entity_ids() {
         init_runtime_registries();
 
         let pos = ChunkPos::new(0, 0);
@@ -2816,7 +2821,7 @@ mod tests {
             panic!("forced runtime entity save should prepare a chunk save");
         };
 
-        assert_eq!(prepared.saved_runtime_entity_ids, vec![entity.id()]);
+        assert_eq!(prepared.handled_runtime_entity_ids, vec![entity.id()]);
         assert_eq!(prepared.persistent.entities.len(), 1);
     }
 

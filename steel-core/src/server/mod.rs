@@ -10,20 +10,24 @@ pub mod worlds;
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
-use crate::chunk::chunk_map::GenerationTaskCap;
+use crate::chunk::{
+    chunk_access::ChunkStatus,
+    chunk_map::GenerationTaskCap,
+    chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+};
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::{Entity, SharedEntity, init_entities};
+use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entities};
 
-use crate::chunk_saver::registry::WorldStorageRegistry;
+use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, WorldGenerationSettings};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
-use crate::player::player_data::PersistentPlayerData;
+use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{TeleportTransition, WorldChangeRequest};
-use crate::server::jobs::ServerJobQueue;
+use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
@@ -40,8 +44,8 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CRemovePlayerInfo, CSystemChat, CTabList, CTickingState,
-    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -52,6 +56,7 @@ use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -162,6 +167,143 @@ impl PlayerJoinQueue {
             joins.push(join);
         }
         joins
+    }
+}
+
+struct RootVehicleRestoreJob {
+    player: Arc<Player>,
+    world: Arc<World>,
+    request: ChunkRequestHandle,
+    attach: [u8; 16],
+    root_uuid: [u8; 16],
+}
+
+impl RootVehicleRestoreJob {
+    fn new(
+        player: Arc<Player>,
+        world: Arc<World>,
+        root_vehicle: &PersistentRootVehicle,
+    ) -> Option<Self> {
+        let root_chunk = root_vehicle_chunk(root_vehicle)?;
+        let request = world.chunk_map.request_chunk(
+            root_chunk,
+            ChunkStatus::Empty,
+            ChunkTicketKind::PlayerSpawn,
+        );
+        Some(Self {
+            player,
+            world,
+            request,
+            attach: root_vehicle.attach,
+            root_uuid: root_vehicle.entity.uuid,
+        })
+    }
+}
+
+impl ServerJob for RootVehicleRestoreJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if self.player.connection.closed()
+            || !self.player.has_joined_world()
+            || !Arc::ptr_eq(&self.player.get_world(), &self.world)
+        {
+            return JobPoll::Finished;
+        }
+
+        match self.request.poll() {
+            ChunkRequestState::Pending { .. } => JobPoll::Pending,
+            ChunkRequestState::Cancelled => JobPoll::Finished,
+            ChunkRequestState::Ready => {
+                let Some(_ready) = self.request.ready_chunks() else {
+                    return JobPoll::Pending;
+                };
+                if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
+                    &self.world,
+                    self.attach,
+                    self.root_uuid,
+                ) {
+                    restore_root_vehicle_for_player(&self.player, &self.world, root_vehicle);
+                }
+                JobPoll::Finished
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.request.cancel();
+    }
+}
+
+fn root_vehicle_chunk(root_vehicle: &PersistentRootVehicle) -> Option<ChunkPos> {
+    let pos = DVec3::new(
+        root_vehicle.entity.pos[0],
+        root_vehicle.entity.pos[1],
+        root_vehicle.entity.pos[2],
+    );
+    if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+        tracing::warn!(
+            uuid = ?Uuid::from_bytes(root_vehicle.entity.uuid),
+            "Skipping persisted RootVehicle with non-finite root position {pos:?}",
+        );
+        return None;
+    }
+    Some(ChunkPos::from_entity_pos(pos))
+}
+
+fn restore_root_vehicle_for_player(
+    player: &Arc<Player>,
+    world: &Arc<World>,
+    root_vehicle: PersistentRootVehicle,
+) {
+    let Some(root_chunk) = root_vehicle_chunk(&root_vehicle) else {
+        return;
+    };
+    let level = Arc::downgrade(world);
+    let entities =
+        ChunkStorage::persistent_to_entity_tree_at_level(&root_vehicle.entity, root_chunk, &level);
+    if entities.is_empty() {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            "Persisted RootVehicle did not recreate any runtime entities",
+        );
+        return;
+    }
+
+    let attach_uuid = Uuid::from_bytes(root_vehicle.attach);
+    let Some(attach_entity) = entities
+        .iter()
+        .find(|entity| entity.uuid() == attach_uuid)
+        .cloned()
+    else {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            attach = ?attach_uuid,
+            "Discarding persisted RootVehicle because the attach entity is missing",
+        );
+        discard_restored_entities(&entities);
+        return;
+    };
+
+    let player_entity: SharedEntity = player.clone();
+    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
+    attach_entity.position_rider(player.as_ref());
+
+    for entity in &entities {
+        if let Err(error) = world.register_loaded_entity(entity.clone()) {
+            tracing::warn!(
+                player = %player.gameprofile.name,
+                entity_id = entity.id(),
+                uuid = ?entity.uuid(),
+                "Discarding persisted RootVehicle because an entity could not be registered: {error}",
+            );
+            discard_restored_entities(&entities);
+            return;
+        }
+    }
+}
+
+fn discard_restored_entities(entities: &[SharedEntity]) {
+    for entity in entities {
+        entity.set_removed(RemovalReason::Discarded);
     }
 }
 
@@ -390,6 +532,7 @@ impl Server {
             return;
         }
         player.mark_joined_world();
+        self.schedule_root_vehicle_restore(&player, &state);
         if player.connection.closed() {
             tokio::spawn(async move {
                 state.world.remove_player(player).await;
@@ -518,6 +661,31 @@ impl Server {
                 }
             }
             DomainPlayerData::FirstVisit => apply_first_visit_defaults(player, &state.world),
+        }
+    }
+
+    fn schedule_root_vehicle_restore(&self, player: &Arc<Player>, state: &DomainPlayerState) {
+        let Some(root_vehicle) = Self::root_vehicle_to_restore(state) else {
+            player.clear_pending_root_vehicle();
+            return;
+        };
+        player.set_pending_root_vehicle(&state.world, root_vehicle.clone());
+        let Some(job) =
+            RootVehicleRestoreJob::new(Arc::clone(player), Arc::clone(&state.world), &root_vehicle)
+        else {
+            player.clear_pending_root_vehicle();
+            return;
+        };
+        self.jobs.spawn(job);
+    }
+
+    fn root_vehicle_to_restore(state: &DomainPlayerState) -> Option<PersistentRootVehicle> {
+        match &state.data {
+            DomainPlayerData::Saved {
+                data,
+                restore_location: true,
+            } => data.root_vehicle.clone(),
+            DomainPlayerData::Saved { .. } | DomainPlayerData::FirstVisit => None,
         }
     }
 
@@ -985,26 +1153,21 @@ impl Server {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_world = player.get_world();
-        let current_domain = current_world.domain().to_owned();
+        let current_domain = player.get_world().domain().to_owned();
         if current_domain == target_domain {
             return Ok(());
         }
 
         let current_data = PersistentPlayerData::from_player(&player);
-        current_world.remove_player_for_world_change(&player);
-
         if let Err(e) = self
             .player_data_storage
             .save_domain_data(&current_domain, player.gameprofile.id, &current_data)
             .await
         {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Err(format!("failed to save current domain data: {e}"));
         }
 
         if player.connection.closed() {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Ok(());
         }
 
@@ -1019,24 +1182,23 @@ impl Server {
         {
             Ok(state) => state,
             Err(error) => {
-                Self::cleanup_removed_domain_switch_player(&current_world, &player);
                 return Err(error);
             }
         };
 
         if player.connection.closed() {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Ok(());
         }
 
         Self::apply_domain_player_state(&player, &target_state);
-        player.reset(target_state.world.clone(), ResetReason::WorldChange);
+        player.reset_after_domain_save(target_state.world.clone());
         Self::apply_domain_player_state(&player, &target_state);
         let pos = player.position();
         let rotation = player.rotation();
         if !player.spawn(pos, rotation, ResetReason::WorldChange) {
             return Err("failed to add player to target world".to_owned());
         }
+        self.schedule_root_vehicle_restore(&player, &target_state);
 
         if let Err(e) = self
             .player_data_storage
@@ -1055,11 +1217,6 @@ impl Server {
         }
 
         Ok(())
-    }
-
-    fn cleanup_removed_domain_switch_player(world: &World, player: &Player) {
-        world.broadcast_to_all(CRemovePlayerInfo::single(player.gameprofile.id));
-        player.cleanup();
     }
 
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]

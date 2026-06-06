@@ -819,6 +819,39 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().passengers()
     }
 
+    /// Counts indirect player passengers.
+    ///
+    /// Mirrors vanilla `Entity.countPlayerPassengers`.
+    fn count_player_passengers(&self) -> usize {
+        fn count_passenger_tree(
+            passengers: Vec<SharedEntity>,
+            visited: &mut FxHashSet<i32>,
+        ) -> usize {
+            let mut total = 0;
+            for passenger in passengers {
+                if !visited.insert(passenger.id()) {
+                    continue;
+                }
+                if passenger.entity_type() == &vanilla_entities::PLAYER {
+                    total += 1;
+                }
+                total += count_passenger_tree(passenger.passengers(), visited);
+            }
+            total
+        }
+
+        let mut visited = FxHashSet::default();
+        visited.insert(self.id());
+        count_passenger_tree(self.passengers(), &mut visited)
+    }
+
+    /// Returns whether this entity has exactly one indirect player passenger.
+    ///
+    /// Mirrors vanilla `Entity.hasExactlyOnePlayerPassenger`.
+    fn has_exactly_one_player_passenger(&self) -> bool {
+        self.count_player_passengers() == 1
+    }
+
     /// Gets this entity's first direct passenger.
     ///
     /// Mirrors vanilla `Entity.getFirstPassenger`.
@@ -2619,6 +2652,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let effect_state = world.get_block_state(effect_pos);
         self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
+    }
+
+    /// Refreshes vanilla supporting-block state before fall-damage side effects.
+    fn refresh_supporting_block_for_fall_damage(&self, movement: DVec3, on_ground: bool) {
+        let ground_contact = self.ground_contact_after_movement(on_ground, Some(movement));
+        self.base().set_ground_contact(ground_contact);
     }
 
     /// Mirrors vanilla `Entity.checkFallDamage`.

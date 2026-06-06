@@ -90,6 +90,7 @@ use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
+use crate::player::player_data::PersistentRootVehicle;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
 use steel_registry::vanilla_damage_types;
@@ -100,7 +101,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::{BlockPos, BlockStateId, ChunkPos};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 
 use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
@@ -254,6 +255,15 @@ pub struct Player {
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
+
+    /// Persisted RootVehicle payload awaiting live entity restoration.
+    pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
+}
+
+#[derive(Clone)]
+struct PendingRootVehicleRestore {
+    world: Identifier,
+    root_vehicle: PersistentRootVehicle,
 }
 
 impl Player {
@@ -355,6 +365,7 @@ impl Player {
             health_sync: SyncMutex::new(HealthSyncState::new()),
             experience: SyncMutex::new(Experience::default()),
             chunk_send_epoch: SyncMutex::new(0),
+            pending_root_vehicle: SyncMutex::new(None),
         }
     }
 
@@ -370,6 +381,7 @@ impl Player {
     )]
     pub fn tick(&self) {
         self.advance_tick();
+        self.tick_client_load_timeout();
         if !self.is_passenger() {
             self.advance_tick_count();
         }
@@ -969,6 +981,53 @@ impl Player {
         self.lifecycle.lock().set_client_loaded(client_loaded);
     }
 
+    fn tick_client_load_timeout(&self) {
+        self.lifecycle.lock().tick_client_load_timeout();
+    }
+
+    pub(crate) fn set_pending_root_vehicle(
+        &self,
+        world: &World,
+        root_vehicle: PersistentRootVehicle,
+    ) {
+        *self.pending_root_vehicle.lock() = Some(PendingRootVehicleRestore {
+            world: world.key.clone(),
+            root_vehicle,
+        });
+    }
+
+    pub(crate) fn clear_pending_root_vehicle(&self) {
+        *self.pending_root_vehicle.lock() = None;
+    }
+
+    pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
+        let world_key = self.get_world().key.clone();
+        self.pending_root_vehicle
+            .lock()
+            .as_ref()
+            .filter(|pending| pending.world == world_key)
+            .map(|pending| pending.root_vehicle.clone())
+    }
+
+    pub(crate) fn take_matching_pending_root_vehicle(
+        &self,
+        world: &World,
+        attach: [u8; 16],
+        root_uuid: [u8; 16],
+    ) -> Option<PersistentRootVehicle> {
+        let mut pending = self.pending_root_vehicle.lock();
+        let matches = pending.as_ref().is_some_and(|pending| {
+            pending.world == world.key
+                && pending.root_vehicle.attach == attach
+                && pending.root_vehicle.entity.uuid == root_uuid
+        });
+        if matches {
+            pending.take().map(|pending| pending.root_vehicle)
+        } else {
+            None
+        }
+    }
+
     /// Returns this player's local server tick count.
     #[must_use]
     pub fn tick_count(&self) -> i32 {
@@ -1004,6 +1063,21 @@ impl Player {
     /// constructed during respawn / world change, since vanilla recreates the
     /// player object. We reuse the same `Player`, so we reset manually.
     pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+        self.reset_inner(new_world, reason, false);
+    }
+
+    /// Resets for a domain switch after the current-domain data snapshot has
+    /// already captured the player's one-player `RootVehicle` tree.
+    pub(crate) fn reset_after_domain_save(self: &Arc<Self>, new_world: Arc<World>) {
+        self.reset_inner(new_world, ResetReason::WorldChange, true);
+    }
+
+    fn reset_inner(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        reason: ResetReason,
+        store_root_vehicle: bool,
+    ) {
         let old_world = self.get_world();
         let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
 
@@ -1011,7 +1085,11 @@ impl Player {
         if switching_worlds {
             self.do_close_container();
             self.send_packet(CContainerClose { container_id: 0 });
-            old_world.remove_player_for_world_change(self);
+            if store_root_vehicle {
+                old_world.remove_player_for_domain_switch(self);
+            } else {
+                old_world.remove_player_for_world_change(self);
+            }
             self.set_world(new_world.clone());
         }
 

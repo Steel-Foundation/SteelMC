@@ -399,7 +399,7 @@ pub struct PersistentBlockEntity {
 /// Unlike vanilla which stores entities in separate region files,
 /// Steel stores entities inline with chunk data for simplicity.
 /// Base entity fields are stored directly; type-specific data is in `nbt_data`.
-#[derive(SchemaWrite, SchemaRead)]
+#[derive(Debug, Clone, SchemaWrite, SchemaRead)]
 pub struct PersistentEntity {
     /// Entity type identifier (e.g., "minecraft:item").
     pub entity_type: Identifier,

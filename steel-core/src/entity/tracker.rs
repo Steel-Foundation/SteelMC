@@ -140,7 +140,7 @@ impl EntityTracker {
                 entity.entity_type().update_interval,
                 entity.entity_type().track_deltas,
             )),
-            last_passenger_ids: SyncMutex::new(direct_passenger_ids(entity.as_ref())),
+            last_passenger_ids: SyncMutex::new(self.direct_tracked_passenger_ids(entity.as_ref())),
             tracking_range,
             registered_chunk,
             seen_by: SyncRwLock::new(players_to_notify),
@@ -154,7 +154,7 @@ impl EntityTracker {
         // Send spawn packets to all nearby players
         for player_id in player_ids_to_notify {
             if let Some(player) = get_player(player_id) {
-                send_spawn_packets(entity, &player);
+                self.send_spawn_packets(entity, &player);
             }
         }
     }
@@ -162,9 +162,16 @@ impl EntityTracker {
     /// Stops tracking an entity and sends despawn to all tracking players.
     pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<Arc<Player>>) {
         if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
+            let entity = tracked.entity.upgrade();
             // Send despawn to all tracking players
             for player_id in tracked.seen_by.read().iter() {
                 if let Some(player) = get_player(*player_id) {
+                    if let Some(entity) = &entity
+                        && let Some(packet) =
+                            self.vehicle_passenger_packet_for_player(entity.as_ref(), *player_id)
+                    {
+                        player.send_packet(packet);
+                    }
                     player.send_packet(CRemoveEntities::single(entity_id));
                 }
             }
@@ -181,7 +188,7 @@ impl EntityTracker {
         let player_pos = player.position();
         let player_view_distance = view.view_distance;
 
-        let mut entity_ids_to_despawn = Vec::new();
+        let mut entities_to_despawn = Vec::new();
         let mut entities_to_spawn = Vec::new();
         let mut dead_entities = Vec::new();
 
@@ -203,24 +210,36 @@ impl EntityTracker {
                     player_view_distance,
                 );
 
-            let mut seen_by = tracked.seen_by.write();
-            if visible {
-                if seen_by.insert(player_id) {
-                    entities_to_spawn.push(entity);
+            let mut despawn = false;
+            {
+                let mut seen_by = tracked.seen_by.write();
+                if visible {
+                    if seen_by.insert(player_id) {
+                        entities_to_spawn.push(entity.clone());
+                    }
+                } else if seen_by.remove(&player_id) {
+                    despawn = true;
                 }
-            } else if seen_by.remove(&player_id) {
-                entity_ids_to_despawn.push(entity_id);
+            }
+
+            if despawn {
+                let vehicle_packet =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id);
+                entities_to_despawn.push((entity_id, vehicle_packet));
             }
 
             true
         });
 
-        for entity_id in entity_ids_to_despawn {
+        for (entity_id, vehicle_packet) in entities_to_despawn {
+            if let Some(packet) = vehicle_packet {
+                player.send_packet(packet);
+            }
             player.send_packet(CRemoveEntities::single(entity_id));
         }
 
         for entity in entities_to_spawn {
-            send_spawn_packets(&entity, player);
+            self.send_spawn_packets(&entity, player);
         }
 
         // Clean up dead entities we encountered
@@ -239,11 +258,11 @@ impl EntityTracker {
         mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
         mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
         mut broadcast_attributes: impl FnMut(i32, Vec<AttributeSnapshot>),
-        mut broadcast_passengers: impl FnMut(i32, CSetPassengers, Vec<i32>),
+        mut send_passengers: impl FnMut(i32, CSetPassengers),
     ) {
         let mut dead_entities = Vec::new();
         let mut entities_to_refresh = Vec::new();
-        let mut passengers_to_broadcast = Vec::new();
+        let mut passenger_packets_to_send = Vec::new();
         let mut packets_to_broadcast = Vec::new();
         let mut entity_data_to_broadcast = Vec::new();
         let mut attributes_to_broadcast = Vec::new();
@@ -259,15 +278,46 @@ impl EntityTracker {
                 return true;
             }
 
-            let passenger_ids = direct_passenger_ids(entity.as_ref());
+            let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
             {
                 let mut last_passenger_ids = tracked.last_passenger_ids.lock();
                 if *last_passenger_ids != passenger_ids {
-                    passengers_to_broadcast.push((
-                        entity_id,
-                        CSetPassengers::new(entity_id, passenger_ids.clone()),
-                        Vec::new(),
-                    ));
+                    let changed_player_passenger_ids = direct_player_passenger_delta(
+                        &last_passenger_ids,
+                        &passenger_ids,
+                        &get_player,
+                    );
+                    let seen_by = tracked.seen_by.read();
+                    for player_id in &changed_player_passenger_ids {
+                        if !seen_by.contains(player_id) {
+                            continue;
+                        }
+                        passenger_packets_to_send.push((
+                            *player_id,
+                            CSetPassengers::new(
+                                entity_id,
+                                self.direct_passenger_ids_seen_by_player(
+                                    entity.as_ref(),
+                                    *player_id,
+                                ),
+                            ),
+                        ));
+                    }
+                    for player_id in seen_by.iter() {
+                        if changed_player_passenger_ids.contains(player_id) {
+                            continue;
+                        }
+                        passenger_packets_to_send.push((
+                            *player_id,
+                            CSetPassengers::new(
+                                entity_id,
+                                self.direct_passenger_ids_seen_by_player(
+                                    entity.as_ref(),
+                                    *player_id,
+                                ),
+                            ),
+                        ));
+                    }
                     *last_passenger_ids = passenger_ids;
                     entities_to_refresh.push(entity_id);
                 }
@@ -310,12 +360,12 @@ impl EntityTracker {
             self.remove_dead_entity(entity_id);
         }
 
-        for entity_id in entities_to_refresh {
-            self.refresh_entity_players(entity_id, &get_players_in_chunk, &get_player);
+        for (player_id, packet) in passenger_packets_to_send {
+            send_passengers(player_id, packet);
         }
 
-        for (entity_id, packet, excluded_player_ids) in passengers_to_broadcast {
-            broadcast_passengers(entity_id, packet, excluded_player_ids);
+        for entity_id in entities_to_refresh {
+            self.refresh_entity_players(entity_id, &get_players_in_chunk, &get_player);
         }
 
         for (entity_id, packet) in packets_to_broadcast {
@@ -392,18 +442,24 @@ impl EntityTracker {
             entity_to_spawn = Some(entity);
         });
 
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+
         for player_id in players_to_remove {
             if let Some(player) = get_player(player_id) {
+                if let Some(packet) =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id)
+                {
+                    player.send_packet(packet);
+                }
                 player.send_packet(CRemoveEntities::single(entity_id));
             }
         }
 
-        let Some(entity) = entity_to_spawn else {
-            return;
-        };
         for player_id in players_to_add {
             if let Some(player) = get_player(player_id) {
-                send_spawn_packets(&entity, &player);
+                self.send_spawn_packets(&entity, &player);
             }
         }
     }
@@ -439,18 +495,24 @@ impl EntityTracker {
             entity_to_spawn = Some(entity);
         });
 
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+
         for player_id in players_to_remove {
             if let Some(player) = get_player(player_id) {
+                if let Some(packet) =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id)
+                {
+                    player.send_packet(packet);
+                }
                 player.send_packet(CRemoveEntities::single(entity_id));
             }
         }
 
-        let Some(entity) = entity_to_spawn else {
-            return;
-        };
         for player_id in players_to_add {
             if let Some(player) = get_player(player_id) {
-                send_spawn_packets(&entity, &player);
+                self.send_spawn_packets(&entity, &player);
             }
         }
     }
@@ -515,6 +577,89 @@ impl EntityTracker {
 
         players
     }
+
+    fn send_spawn_packets(&self, entity: &SharedEntity, player: &Player) {
+        let entity_id = entity.id();
+        self.spawn_pairing(entity, player.id())
+            .send_to(entity_id, player);
+    }
+
+    fn spawn_pairing(&self, entity: &SharedEntity, player_id: i32) -> EntitySpawnPairing {
+        EntitySpawnPairing::from_entity(
+            entity,
+            self.passenger_pairing_packets_for_player(entity.as_ref(), player_id),
+        )
+    }
+
+    fn passenger_pairing_packets_for_player(
+        &self,
+        entity: &dyn Entity,
+        player_id: i32,
+    ) -> Vec<CSetPassengers> {
+        let mut packets = Vec::new();
+        let passenger_ids = self.direct_passenger_ids_seen_by_player(entity, player_id);
+        if !passenger_ids.is_empty() {
+            packets.push(CSetPassengers::new(entity.id(), passenger_ids));
+        }
+
+        if let Some(vehicle) = entity.vehicle()
+            && self.entity_seen_by_player(vehicle.id(), player_id)
+        {
+            packets.push(CSetPassengers::new(
+                vehicle.id(),
+                self.direct_passenger_ids_seen_by_player(vehicle.as_ref(), player_id),
+            ));
+        }
+
+        packets
+    }
+
+    fn vehicle_passenger_packet_for_player(
+        &self,
+        entity: &dyn Entity,
+        player_id: i32,
+    ) -> Option<CSetPassengers> {
+        let vehicle = entity.vehicle()?;
+        if !self.entity_seen_by_player(vehicle.id(), player_id) {
+            return None;
+        }
+        Some(CSetPassengers::new(
+            vehicle.id(),
+            self.direct_passenger_ids_seen_by_player(vehicle.as_ref(), player_id),
+        ))
+    }
+
+    fn direct_tracked_passenger_ids(&self, entity: &dyn Entity) -> Vec<i32> {
+        entity
+            .passengers()
+            .into_iter()
+            .filter(|passenger| self.is_entity_tracked(passenger.id()))
+            .map(|passenger| passenger.id())
+            .collect()
+    }
+
+    fn direct_passenger_ids_seen_by_player(&self, entity: &dyn Entity, player_id: i32) -> Vec<i32> {
+        entity
+            .passengers()
+            .into_iter()
+            .filter(|passenger| {
+                passenger.id() == player_id || self.entity_seen_by_player(passenger.id(), player_id)
+            })
+            .map(|passenger| passenger.id())
+            .collect()
+    }
+
+    fn is_entity_tracked(&self, entity_id: i32) -> bool {
+        self.entities.read_sync(&entity_id, |_, _| ()).is_some()
+    }
+
+    fn entity_seen_by_player(&self, entity_id: i32, player_id: i32) -> bool {
+        self.entities
+            .read_sync(&entity_id, |_, tracked| {
+                tracked.seen_by.read().contains(&player_id)
+            })
+            .unwrap_or(false)
+    }
 }
 
 fn is_within_tracking_distance(
@@ -565,7 +710,7 @@ struct EntitySpawnPairing {
 }
 
 impl EntitySpawnPairing {
-    fn from_entity(entity: &SharedEntity) -> Self {
+    fn from_entity(entity: &SharedEntity, passenger_packets: Vec<CSetPassengers>) -> Self {
         let pos = entity.position();
         let vel = entity.velocity();
         let (yaw, pitch) = entity.rotation();
@@ -594,7 +739,7 @@ impl EntitySpawnPairing {
             },
             entity_data: entity.pack_all_entity_data(),
             attributes: entity.pack_syncable_attributes(),
-            passenger_packets: passenger_pairing_packets(entity.as_ref()),
+            passenger_packets,
         }
     }
 
@@ -620,39 +765,18 @@ impl EntitySpawnPairing {
     }
 }
 
-fn direct_passenger_ids(entity: &dyn Entity) -> Vec<i32> {
-    entity
-        .passengers()
-        .into_iter()
-        .map(|passenger| passenger.id())
+fn direct_player_passenger_delta(
+    old_passenger_ids: &[i32],
+    new_passenger_ids: &[i32],
+    get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+) -> Vec<i32> {
+    let old_passenger_ids = old_passenger_ids.iter().copied().collect::<FxHashSet<_>>();
+    let new_passenger_ids = new_passenger_ids.iter().copied().collect::<FxHashSet<_>>();
+    old_passenger_ids
+        .symmetric_difference(&new_passenger_ids)
+        .copied()
+        .filter(|entity_id| get_player(*entity_id).is_some())
         .collect()
-}
-
-fn passenger_pairing_packets(entity: &dyn Entity) -> Vec<CSetPassengers> {
-    let mut packets = Vec::new();
-    let passenger_ids = direct_passenger_ids(entity);
-    if !passenger_ids.is_empty() {
-        packets.push(CSetPassengers::new(entity.id(), passenger_ids));
-    }
-
-    if let Some(vehicle) = entity.vehicle() {
-        packets.push(CSetPassengers::new(
-            vehicle.id(),
-            direct_passenger_ids(vehicle.as_ref()),
-        ));
-    }
-
-    packets
-}
-
-/// Sends spawn pairing packets for an entity to a player.
-///
-/// Mirrors vanilla `ServerEntity.addPairing` / `sendPairingData`: add entity,
-/// metadata, syncable attributes, and future relationship/equipment packets are
-/// processed atomically by the client in a single tick.
-fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
-    let entity_id = entity.id();
-    EntitySpawnPairing::from_entity(entity).send_to(entity_id, player);
 }
 
 #[cfg(test)]
@@ -670,6 +794,7 @@ mod tests {
 
     struct PairingTestEntity {
         base: EntityBase,
+        entity_type: EntityTypeRef,
         attributes: Vec<AttributeSnapshot>,
         dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
         passengers: SyncMutex<Vec<WeakEntity>>,
@@ -678,13 +803,17 @@ mod tests {
 
     impl PairingTestEntity {
         fn new(id: i32, attributes: Vec<AttributeSnapshot>) -> Arc<Self> {
+            Self::new_with_type(id, &vanilla_entities::ITEM, attributes)
+        }
+
+        fn new_with_type(
+            id: i32,
+            entity_type: EntityTypeRef,
+            attributes: Vec<AttributeSnapshot>,
+        ) -> Arc<Self> {
             Arc::new(Self {
-                base: EntityBase::new(
-                    id,
-                    DVec3::ZERO,
-                    vanilla_entities::ITEM.dimensions,
-                    Weak::new(),
-                ),
+                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
                 attributes,
                 dirty_attributes: SyncMutex::new(Vec::new()),
                 passengers: SyncMutex::new(Vec::new()),
@@ -719,7 +848,7 @@ mod tests {
         }
 
         fn entity_type(&self) -> EntityTypeRef {
-            &vanilla_entities::ITEM
+            self.entity_type
         }
 
         fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
@@ -745,6 +874,39 @@ mod tests {
             });
             live_passengers
         }
+    }
+
+    fn track_entity_for_player(tracker: &EntityTracker, entity: &SharedEntity, player_id: i32) {
+        let pos = entity.position();
+        let mut seen_by = FxHashSet::default();
+        seen_by.insert(player_id);
+        let tracked = TrackedEntity {
+            entity: Arc::downgrade(entity),
+            server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
+                pos,
+                entity.velocity(),
+                entity.on_ground(),
+                entity.rotation(),
+                entity.rotation().0,
+                entity.entity_type().update_interval,
+                entity.entity_type().track_deltas,
+            )),
+            last_passenger_ids: SyncMutex::new(
+                tracker.direct_tracked_passenger_ids(entity.as_ref()),
+            ),
+            tracking_range: EntityTrackingRange::from_client_chunk_range(
+                entity.entity_type().client_tracking_range,
+            ),
+            registered_chunk: ChunkPos::from_entity_pos(pos),
+            seen_by: SyncRwLock::new(seen_by),
+        };
+        assert!(tracker.entities.insert_sync(entity.id(), tracked).is_ok());
+    }
+
+    fn mark_seen_by_player(tracker: &EntityTracker, entity_id: i32, player_id: i32) {
+        tracker.entities.update_sync(&entity_id, |_, tracked| {
+            tracked.seen_by.write().insert(player_id);
+        });
     }
 
     #[test]
@@ -814,7 +976,7 @@ mod tests {
             base_value: 1.25,
             modifiers: Vec::new(),
         }]);
-        let pairing = EntitySpawnPairing::from_entity(&entity);
+        let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
 
         assert_eq!(pairing.spawn_packet.id, entity.id());
         assert_eq!(pairing.attributes.len(), 1);
@@ -847,7 +1009,7 @@ mod tests {
             |_, _| {},
             |_, _| {},
             |entity_id, attributes| updates.push((entity_id, attributes)),
-            |_, _, _| {},
+            |_, _| {},
         );
 
         assert_eq!(updates.len(), 1);
@@ -863,22 +1025,40 @@ mod tests {
             |_, _| {},
             |_, _| {},
             |entity_id, attributes| updates.push((entity_id, attributes)),
-            |_, _, _| {},
+            |_, _| {},
         );
         assert!(updates.is_empty());
     }
 
     #[test]
-    fn spawn_pairing_includes_passenger_packet_for_vehicle() {
+    fn spawn_pairing_omits_untracked_passenger_for_vehicle() {
         test_support::init_test_registry();
 
+        let tracker = EntityTracker::new();
         let vehicle_typed = PairingTestEntity::new(1, Vec::new());
         let passenger_typed = PairingTestEntity::new(2, Vec::new());
         let passenger: SharedEntity = passenger_typed;
         vehicle_typed.add_passenger(&passenger);
         let vehicle: SharedEntity = vehicle_typed;
 
-        let pairing = EntitySpawnPairing::from_entity(&vehicle);
+        let pairing = tracker.spawn_pairing(&vehicle, 99);
+
+        assert!(pairing.passenger_packets.is_empty());
+    }
+
+    #[test]
+    fn spawn_pairing_includes_tracked_passenger_packet_for_vehicle() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        track_entity_for_player(&tracker, &passenger, 99);
+        let vehicle: SharedEntity = vehicle_typed;
+
+        let pairing = tracker.spawn_pairing(&vehicle, 99);
 
         assert_eq!(pairing.passenger_packets.len(), 1);
         assert_eq!(pairing.passenger_packets[0].vehicle_id, 1);
@@ -886,9 +1066,10 @@ mod tests {
     }
 
     #[test]
-    fn spawn_pairing_for_passenger_includes_vehicle_passenger_packet() {
+    fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
         test_support::init_test_registry();
 
+        let tracker = EntityTracker::new();
         let vehicle_typed = PairingTestEntity::new(1, Vec::new());
         let passenger_typed = PairingTestEntity::new(2, Vec::new());
         let passenger: SharedEntity = passenger_typed.clone();
@@ -896,7 +1077,26 @@ mod tests {
         let vehicle: SharedEntity = vehicle_typed;
         passenger_typed.set_vehicle(&vehicle);
 
-        let pairing = EntitySpawnPairing::from_entity(&passenger);
+        let pairing = tracker.spawn_pairing(&passenger, 99);
+
+        assert!(pairing.passenger_packets.is_empty());
+    }
+
+    #[test]
+    fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed.clone();
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        passenger_typed.set_vehicle(&vehicle);
+        track_entity_for_player(&tracker, &vehicle, 99);
+        track_entity_for_player(&tracker, &passenger, 99);
+
+        let pairing = tracker.spawn_pairing(&passenger, 99);
 
         assert_eq!(pairing.passenger_packets.len(), 1);
         assert_eq!(pairing.passenger_packets[0].vehicle_id, 1);
@@ -912,7 +1112,8 @@ mod tests {
         let vehicle: SharedEntity = vehicle_typed.clone();
         let passenger_typed = PairingTestEntity::new(2, Vec::new());
         let passenger: SharedEntity = passenger_typed;
-        tracker.add(&vehicle, |_| Vec::new(), |_| None);
+        track_entity_for_player(&tracker, &vehicle, 99);
+        track_entity_for_player(&tracker, &passenger, 99);
 
         let mut updates = Vec::new();
         tracker.send_changes(
@@ -921,9 +1122,8 @@ mod tests {
             |_, _| {},
             |_, _| {},
             |_, _| {},
-            |entity_id, packet, mut excluded_player_ids| {
-                excluded_player_ids.sort_unstable();
-                updates.push((entity_id, packet, excluded_player_ids));
+            |player_id, packet| {
+                updates.push((player_id, packet));
             },
         );
         assert!(updates.is_empty());
@@ -935,16 +1135,14 @@ mod tests {
             |_, _| {},
             |_, _| {},
             |_, _| {},
-            |entity_id, packet, mut excluded_player_ids| {
-                excluded_player_ids.sort_unstable();
-                updates.push((entity_id, packet, excluded_player_ids));
+            |player_id, packet| {
+                updates.push((player_id, packet));
             },
         );
         assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].0, 1);
+        assert_eq!(updates[0].0, 99);
         assert_eq!(updates[0].1.vehicle_id, 1);
         assert_eq!(updates[0].1.passenger_ids, vec![2]);
-        assert!(updates[0].2.is_empty());
 
         updates.clear();
         tracker.send_changes(
@@ -953,28 +1151,60 @@ mod tests {
             |_, _| {},
             |_, _| {},
             |_, _| {},
-            |entity_id, packet, excluded_player_ids| {
-                updates.push((entity_id, packet, excluded_player_ids));
+            |player_id, packet| {
+                updates.push((player_id, packet));
             },
         );
         assert!(updates.is_empty());
 
         vehicle_typed.clear_passengers();
+        mark_seen_by_player(&tracker, 1, 99);
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
             |_, _| {},
             |_, _| {},
             |_, _| {},
-            |entity_id, packet, mut excluded_player_ids| {
-                excluded_player_ids.sort_unstable();
-                updates.push((entity_id, packet, excluded_player_ids));
+            |player_id, packet| {
+                updates.push((player_id, packet));
             },
         );
         assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].0, 1);
+        assert_eq!(updates[0].0, 99);
         assert_eq!(updates[0].1.vehicle_id, 1);
         assert!(updates[0].1.passenger_ids.is_empty());
-        assert!(updates[0].2.is_empty());
+    }
+
+    #[test]
+    fn send_changes_removes_untracked_passenger_from_vehicle_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        track_entity_for_player(&tracker, &passenger, 99);
+        track_entity_for_player(&tracker, &vehicle, 99);
+
+        let _ = tracker.entities.remove_sync(&passenger.id());
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 99);
+        assert_eq!(updates[0].1.vehicle_id, 1);
+        assert!(updates[0].1.passenger_ids.is_empty());
     }
 }

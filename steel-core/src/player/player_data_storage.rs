@@ -13,8 +13,10 @@ use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
 use super::player_data::{
-    PLAYER_DATA_VERSION, PersistentAbilities, PersistentPlayerData, PersistentSlot,
+    PLAYER_DATA_VERSION, PersistentAbilities, PersistentPlayerData, PersistentRootVehicle,
+    PersistentSlot,
 };
+use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
@@ -23,7 +25,7 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 2;
+const PLAYER_STORAGE_VERSION: u16 = 3;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -76,6 +78,13 @@ struct PlayerDataFile {
     experience_progress: f32,
     experience_total: i32,
     score: i32,
+    root_vehicle: Option<RootVehicleFile>,
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RootVehicleFile {
+    attach: [u8; 16],
+    entity: PersistentEntity,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -351,6 +360,13 @@ impl PlayerDataFile {
             experience_progress: data.experience_progress,
             experience_total: data.experience_total,
             score: data.score,
+            root_vehicle: data
+                .root_vehicle
+                .clone()
+                .map(|root_vehicle| RootVehicleFile {
+                    attach: root_vehicle.attach,
+                    entity: root_vehicle.entity,
+                }),
         })
     }
 
@@ -408,6 +424,10 @@ impl PlayerDataFile {
             experience_progress: self.experience_progress,
             experience_total: self.experience_total,
             score: self.score,
+            root_vehicle: self.root_vehicle.map(|root_vehicle| PersistentRootVehicle {
+                attach: root_vehicle.attach,
+                entity: root_vehicle.entity,
+            }),
         })
     }
 }
@@ -546,6 +566,27 @@ mod tests {
             experience_progress: 0.5,
             experience_total: 32,
             score: 9,
+            root_vehicle: None,
+        }
+    }
+
+    fn sample_persistent_entity() -> PersistentEntity {
+        PersistentEntity {
+            entity_type: Identifier::vanilla_static("minecart"),
+            uuid: [7; 16],
+            pos: [4.0, 65.0, 6.0],
+            motion: [0.0, 0.0, 0.0],
+            rotation: [45.0, 0.0],
+            fall_distance: 0.0,
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
+            on_ground: true,
+            no_gravity: false,
+            nbt_data: Vec::new(),
+            passengers: Vec::new(),
         }
     }
 
@@ -581,6 +622,32 @@ mod tests {
             GLOBAL_STORAGE_VERSION
         );
         assert_eq!(decoded.last_active_domain, "minecraft");
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_root_vehicle() {
+        let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.root_vehicle = Some(RootVehicleFile {
+            attach: [3; 16],
+            entity: sample_persistent_entity(),
+        });
+
+        let encoded = encode_player_file(&file).expect("player file should encode");
+        let decoded = decode_player_file(&encoded).expect("player file should decode");
+        let persistent = decoded
+            .into_persistent()
+            .expect("player file should convert");
+
+        let Some(root_vehicle) = persistent.root_vehicle else {
+            panic!("root vehicle should survive roundtrip");
+        };
+        assert_eq!(root_vehicle.attach, [3; 16]);
+        assert_eq!(root_vehicle.entity.uuid, [7; 16]);
+        assert_eq!(
+            root_vehicle.entity.entity_type,
+            Identifier::vanilla_static("minecart")
+        );
+        assert_eq!(root_vehicle.entity.pos, [4.0, 65.0, 6.0]);
     }
 
     #[test]

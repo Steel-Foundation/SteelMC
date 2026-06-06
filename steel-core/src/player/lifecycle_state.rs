@@ -1,15 +1,27 @@
 /// Client lifecycle flags that gate gameplay packet handling.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct PlayerLifecycleState {
     joined_world: bool,
-    client_loaded: bool,
+    client_loaded_timeout: i32,
     domain_switching: bool,
+}
+
+const CLIENT_LOADED_TIMEOUT_TICKS: i32 = 60;
+
+impl Default for PlayerLifecycleState {
+    fn default() -> Self {
+        Self {
+            joined_world: false,
+            client_loaded_timeout: CLIENT_LOADED_TIMEOUT_TICKS,
+            domain_switching: false,
+        }
+    }
 }
 
 impl PlayerLifecycleState {
     #[must_use]
     pub(super) const fn client_loaded(self) -> bool {
-        self.client_loaded
+        self.client_loaded_timeout <= 0
     }
 
     #[must_use]
@@ -22,7 +34,17 @@ impl PlayerLifecycleState {
     }
 
     pub(super) const fn set_client_loaded(&mut self, client_loaded: bool) {
-        self.client_loaded = client_loaded;
+        self.client_loaded_timeout = if client_loaded {
+            0
+        } else {
+            CLIENT_LOADED_TIMEOUT_TICKS
+        };
+    }
+
+    pub(super) const fn tick_client_load_timeout(&mut self) {
+        if self.client_loaded_timeout > 0 {
+            self.client_loaded_timeout -= 1;
+        }
     }
 
     #[must_use]
@@ -46,7 +68,7 @@ impl PlayerLifecycleState {
 
 #[cfg(test)]
 mod tests {
-    use super::PlayerLifecycleState;
+    use super::{CLIENT_LOADED_TIMEOUT_TICKS, PlayerLifecycleState};
 
     #[test]
     fn domain_switch_starts_once_until_finished() {
@@ -68,6 +90,18 @@ mod tests {
         assert!(state.client_loaded());
         state.set_client_loaded(false);
         assert!(!state.client_loaded());
+    }
+
+    #[test]
+    fn client_load_timeout_eventually_marks_loaded() {
+        let mut state = PlayerLifecycleState::default();
+
+        for _ in 0..CLIENT_LOADED_TIMEOUT_TICKS {
+            assert!(!state.client_loaded());
+            state.tick_client_load_timeout();
+        }
+
+        assert!(state.client_loaded());
     }
 
     #[test]

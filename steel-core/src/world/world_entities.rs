@@ -13,6 +13,8 @@ use crate::{
         SharedEntity,
     },
     player::connection::NetworkConnection,
+    player::player_data::PersistentPlayerData,
+    player::player_data_storage::GlobalPlayerData,
     player::{Player, ResetReason},
     world::World,
 };
@@ -36,17 +38,36 @@ impl World {
         self.add_entity_to_tracker(&entity);
     }
 
-    fn unride_player_for_removal(&self, player: &Player) {
-        // TODO: Preserve vanilla one-player RootVehicle trees in player data
-        // once player entity persistence moves to the new save format.
+    fn unride_player_for_removal(&self, player: &Player, store_root_vehicle: bool) {
         for passenger in player.passengers() {
             passenger.stop_riding();
             self.mark_chunk_dirty(ChunkPos::from_entity_pos(passenger.position()));
         }
 
+        if store_root_vehicle
+            && let Some(root_vehicle) = player.root_vehicle()
+            && root_vehicle.id() != player.id()
+            && root_vehicle.has_exactly_one_player_passenger()
+        {
+            self.remove_root_vehicle_tree_stored_with_player(root_vehicle);
+            return;
+        }
+
         if let Some(vehicle) = player.vehicle() {
             player.stop_riding();
             self.mark_chunk_dirty(ChunkPos::from_entity_pos(vehicle.position()));
+        }
+    }
+
+    fn remove_root_vehicle_tree_stored_with_player(&self, entity: SharedEntity) {
+        let passengers = entity.passengers();
+        entity.set_removed(RemovalReason::StoredWithPlayer);
+
+        for passenger in passengers {
+            if passenger.entity_type() == &steel_registry::vanilla_entities::PLAYER {
+                continue;
+            }
+            self.remove_root_vehicle_tree_stored_with_player(passenger);
         }
     }
 
@@ -72,8 +93,10 @@ impl World {
         };
         let uuid = player.gameprofile.id;
         let entity_id = player.id();
+        let domain = self.domain().to_owned();
+        let player_data = PersistentPlayerData::from_player(&player);
 
-        self.unride_player_for_removal(&player);
+        self.unride_player_for_removal(&player, true);
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -87,8 +110,24 @@ impl World {
         // Save after world indexes are cleared so a fast reconnect cannot collide
         // with this player's stale entity ID/UUID cache entries.
         let server = player.server();
-        if let Err(e) = server.player_data_storage.save(&player).await {
-            log::error!("Failed to save player data for {uuid}: {e}");
+        if let Err(e) = server
+            .player_data_storage
+            .save_domain_data(&domain, uuid, &player_data)
+            .await
+        {
+            log::error!("Failed to save player domain data for {uuid}: {e}");
+        }
+        if let Err(e) = server
+            .player_data_storage
+            .save_global(
+                uuid,
+                &GlobalPlayerData {
+                    last_active_domain: domain,
+                },
+            )
+            .await
+        {
+            log::error!("Failed to save global player data for {uuid}: {e}");
         }
 
         self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
@@ -107,11 +146,26 @@ impl World {
         };
         let entity_id = player.id();
 
-        self.unride_player_for_removal(&player);
+        self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
+        self.chunk_map.remove_player(&player);
+    }
+
+    /// Removes a player during a domain switch after the caller has saved
+    /// the player's current-domain data.
+    pub fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
+        let Some(player) = self.players.remove_player_sync(player) else {
+            return;
+        };
+        let entity_id = player.id();
+
+        self.unride_player_for_removal(&player, true);
+        self.unregister_player_entity(&player);
+        self.entity_tracker().on_player_leave(entity_id);
+        self.player_area_map.on_player_leave(&player);
         self.chunk_map.remove_player(&player);
     }
 

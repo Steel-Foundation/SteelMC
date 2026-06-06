@@ -219,9 +219,6 @@ impl EntityEntry {
 
     #[must_use]
     fn should_save(&self) -> bool {
-        // TODO: Mirror vanilla RootVehicle ownership once player entity-tree
-        // persistence is reworked. Vehicles with exactly one player passenger
-        // should be stored in player data instead of chunk data.
         self.ownership == EntityOwnership::ManagerOwned
             && (!self.entity.is_removed()
                 || self
@@ -229,6 +226,7 @@ impl EntityEntry {
                     .removal_reason()
                     .is_some_and(RemovalReason::should_save))
             && !self.entity.is_passenger()
+            && !self.entity.has_exactly_one_player_passenger()
             && self.entity.entity_type().can_serialize
     }
 }

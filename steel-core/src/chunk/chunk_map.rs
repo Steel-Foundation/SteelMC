@@ -871,12 +871,12 @@ impl ChunkMap {
 
         // Save chunk data if dirty
         if let Some(mut prepared) = prepared {
-            let saved_runtime_entity_ids = mem::take(&mut prepared.saved_runtime_entity_ids);
+            let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
             let world = self.world_gen_context.world();
             match self.storage.save_chunk_data(prepared, status).await {
                 Ok(true) => world
                     .entity_manager()
-                    .on_chunk_saved(chunk_pos, &saved_runtime_entity_ids),
+                    .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids),
                 Ok(false) => world.mark_chunk_dirty(chunk_pos),
                 Err(e) => {
                     tracing::error!("Error saving chunk: {e}");
@@ -1094,13 +1094,13 @@ impl ChunkMap {
             };
 
             let (mut prepared, status) = prepared;
-            let saved_runtime_entity_ids = mem::take(&mut prepared.saved_runtime_entity_ids);
+            let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
             let world = self.world_gen_context.world();
             match self.storage.save_chunk_data(prepared, status).await {
                 Ok(true) => {
                     world
                         .entity_manager()
-                        .on_chunk_saved(chunk_pos, &saved_runtime_entity_ids);
+                        .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids);
                     covered_chunk_positions.insert(chunk_pos);
                     saved_count += 1;
                 }

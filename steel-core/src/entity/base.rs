@@ -1839,6 +1839,11 @@ impl EntityBase {
         state.ground_contact = ground_contact;
     }
 
+    /// Stores the current vanilla supporting-block snapshot.
+    pub fn set_ground_contact(&self, ground_contact: EntityGroundContact) {
+        self.state.lock().ground_contact = ground_contact;
+    }
+
     /// Stores the current vanilla fluid contact snapshot.
     pub fn set_fluid_contact(&self, fluid_contact: EntityFluidContact) {
         self.state.lock().fluid_contact = fluid_contact;

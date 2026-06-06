@@ -108,6 +108,7 @@ impl HoneyBlock {
 
     #[must_use]
     fn does_entity_do_slide_effects(entity: &dyn Entity) -> bool {
+        // TODO: Use the concrete boat entity abstraction once boat entities are implemented.
         if entity.is_living_entity()
             || REGISTRY
                 .entity_types

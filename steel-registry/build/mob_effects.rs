@@ -1,5 +1,4 @@
-use std::fs;
-
+use crate::generator_functions::{read_json_asset, sort_contiguous_registry_entries};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
@@ -32,13 +31,10 @@ impl MobEffectCategoryEntry {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/mob_effects.json");
+    const ASSET: &str = "build_assets/mob_effects.json";
 
-    let content = fs::read_to_string("build_assets/mob_effects.json").unwrap();
-    let mut effects: Vec<MobEffectEntry> = serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse mob_effects.json: {e}"));
-
-    effects.sort_by_key(|effect| effect.id);
+    let mut effects: Vec<MobEffectEntry> = read_json_asset(ASSET);
+    sort_contiguous_registry_entries(&mut effects, ASSET, |effect| usize::from(effect.id));
 
     let mut constants = TokenStream::new();
     let mut registrations = TokenStream::new();
