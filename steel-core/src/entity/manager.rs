@@ -5,9 +5,7 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::error::Error;
-use std::fmt;
-use std::sync::Arc;
+use std::{error::Error, fmt, slice, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -456,7 +454,7 @@ impl WorldEntityManager {
     ) -> Result<(), AddEntityError> {
         let entry = Self::checked_live_entry(entity, ownership)?;
         let mut state = self.state.write();
-        Self::validate_live_entries(&state, std::slice::from_ref(&entry), ownership)?;
+        Self::validate_live_entries(&state, slice::from_ref(&entry), ownership)?;
         Self::insert_live_entry(&mut state, entry);
         Ok(())
     }
@@ -465,6 +463,11 @@ impl WorldEntityManager {
     ///
     /// Use this for persisted vehicle/passenger trees so registration either
     /// publishes the whole tree or leaves world indexes unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity tree contains the same session network ID more
+    /// than once. Duplicate runtime IDs indicate corrupted ownership.
     pub fn add_live_entity_tree(
         &self,
         entities: &[SharedEntity],
@@ -1290,9 +1293,11 @@ mod tests {
 
         let existing_uuid = Uuid::from_u128(5);
         let existing = ManagerTestEntity::shared(1, existing_uuid, DVec3::new(1.0, 64.0, 1.0));
-        manager
-            .add_live_entity(Arc::clone(&existing), EntityOwnership::ManagerOwned)
-            .unwrap();
+        let result = manager.add_live_entity(Arc::clone(&existing), EntityOwnership::ManagerOwned);
+        assert!(
+            result.is_ok(),
+            "existing entity should register before duplicate UUID test: {result:?}"
+        );
 
         let vehicle = entity(2, 6, DVec3::new(2.0, 64.0, 2.0));
         let passenger = ManagerTestEntity::shared(3, existing_uuid, DVec3::new(2.0, 64.0, 2.0));

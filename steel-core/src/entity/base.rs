@@ -103,6 +103,15 @@ impl EntityMovement {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EntityPhysicsStateInput {
+    pub(crate) max_up_step: f32,
+    pub(crate) backs_off_from_edge: bool,
+    pub(crate) descending: bool,
+    pub(crate) can_walk_on_powder_snow: bool,
+    pub(crate) is_falling_block: bool,
+}
+
 #[derive(Debug, Default)]
 struct EntityMovementTrace {
     movement_this_tick: VecDeque<EntityMovement>,
@@ -1040,22 +1049,15 @@ impl EntityBase {
     }
 
     /// Returns the vanilla movement physics snapshot from the current base state.
-    pub(crate) fn physics_state(
-        &self,
-        max_up_step: f32,
-        backs_off_from_edge: bool,
-        descending: bool,
-        can_walk_on_powder_snow: bool,
-        is_falling_block: bool,
-    ) -> EntityPhysicsState {
+    pub(crate) fn physics_state(&self, input: EntityPhysicsStateInput) -> EntityPhysicsState {
         let state = self.state.lock();
-        EntityPhysicsState::new(state.position, state.bounding_box, max_up_step)
+        EntityPhysicsState::new(state.position, state.bounding_box, input.max_up_step)
             .with_on_ground(state.movement_flags.on_ground())
-            .with_backs_off_from_edge(backs_off_from_edge)
+            .with_backs_off_from_edge(input.backs_off_from_edge)
             .with_fall_distance(state.fall_distance)
-            .with_descending(descending)
-            .with_can_walk_on_powder_snow(can_walk_on_powder_snow)
-            .with_falling_block(is_falling_block)
+            .with_descending(input.descending)
+            .with_can_walk_on_powder_snow(input.can_walk_on_powder_snow)
+            .with_falling_block(input.is_falling_block)
     }
 
     /// Gets the entity's current pose.
@@ -1942,7 +1944,7 @@ mod tests {
     use super::{
         DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState, EntityFireFreezeState,
         EntityFluidContact, EntityMoveError, EntityMovement, EntityMovementEmission,
-        EntityMovementFlags, EntityMovementProgress, EntityPistonMovement,
+        EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
         EntityVerticalMovementStateUpdate,
     };
     use std::sync::{Arc, Weak};
@@ -2599,7 +2601,13 @@ mod tests {
             Weak::<World>::new(),
         );
 
-        let physics_state = base.physics_state(0.6, true, true, true, false);
+        let physics_state = base.physics_state(EntityPhysicsStateInput {
+            max_up_step: 0.6,
+            backs_off_from_edge: true,
+            descending: true,
+            can_walk_on_powder_snow: true,
+            is_falling_block: false,
+        });
         let block_collision_context = physics_state.block_collision_context();
 
         assert_vec3_close(physics_state.position(), position);

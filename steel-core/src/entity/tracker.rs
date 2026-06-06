@@ -129,7 +129,7 @@ impl EntityTracker {
         );
         let player_ids_to_notify: Vec<i32> = players_to_notify.iter().copied().collect();
 
-        let tracked = TrackedEntity {
+        let tracked_entity = TrackedEntity {
             entity: Arc::downgrade(entity),
             server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
                 pos,
@@ -147,7 +147,7 @@ impl EntityTracker {
         };
 
         assert!(
-            self.entities.insert_sync(entity_id, tracked).is_ok(),
+            self.entities.insert_sync(entity_id, tracked_entity).is_ok(),
             "entity {entity_id} is already tracked"
         );
 
@@ -865,7 +865,7 @@ mod tests {
         let pos = entity.position();
         let mut seen_by = FxHashSet::default();
         seen_by.insert(player_id);
-        let tracked = TrackedEntity {
+        let tracked_entity = TrackedEntity {
             entity: Arc::downgrade(entity),
             server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
                 pos,
@@ -885,7 +885,12 @@ mod tests {
             registered_chunk: ChunkPos::from_entity_pos(pos),
             seen_by: SyncRwLock::new(seen_by),
         };
-        assert!(tracker.entities.insert_sync(entity.id(), tracked).is_ok());
+        assert!(
+            tracker
+                .entities
+                .insert_sync(entity.id(), tracked_entity)
+                .is_ok()
+        );
     }
 
     fn mark_seen_by_player(tracker: &EntityTracker, entity_id: i32, player_id: i32) {
@@ -975,8 +980,8 @@ mod tests {
         let effective = effective_tracking_range(vehicle.as_ref(), base_range);
 
         assert_eq!(
-            effective.block_radius,
-            f64::from(passenger.entity_type().client_tracking_range) * BLOCKS_PER_CHUNK
+            effective.block_radius.to_bits(),
+            (f64::from(passenger.entity_type().client_tracking_range) * BLOCKS_PER_CHUNK).to_bits()
         );
     }
 

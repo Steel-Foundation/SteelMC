@@ -309,13 +309,13 @@ fn collided_with_fluid(
 }
 
 fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
-    entity.base().physics_state(
-        entity.max_up_step(),
-        entity.backs_off_from_edge(),
-        entity.is_descending(),
-        entity.can_walk_on_powder_snow(),
-        entity.entity_type() == &vanilla_entities::FALLING_BLOCK,
-    )
+    entity.base().physics_state(base::EntityPhysicsStateInput {
+        max_up_step: entity.max_up_step(),
+        backs_off_from_edge: entity.backs_off_from_edge(),
+        descending: entity.is_descending(),
+        can_walk_on_powder_snow: entity.can_walk_on_powder_snow(),
+        is_falling_block: entity.entity_type() == &vanilla_entities::FALLING_BLOCK,
+    })
 }
 
 /// Allocates a new unique entity ID.

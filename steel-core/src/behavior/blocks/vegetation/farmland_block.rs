@@ -182,7 +182,7 @@ impl BlockBehavior for FarmlandBlock {
 mod tests {
     use super::*;
 
-    use steel_registry::vanilla_entities;
+    use steel_registry::{sound_events, vanilla_entities};
 
     use crate::behavior::EntityFallOnFacts;
 
@@ -206,8 +206,8 @@ mod tests {
                 bounding_box_width,
                 bounding_box_height,
                 (
-                    &steel_registry::sound_events::ENTITY_GENERIC_SMALL_FALL,
-                    &steel_registry::sound_events::ENTITY_GENERIC_BIG_FALL,
+                    &sound_events::ENTITY_GENERIC_SMALL_FALL,
+                    &sound_events::ENTITY_GENERIC_BIG_FALL,
                 ),
             ),
             None,

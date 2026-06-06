@@ -294,8 +294,11 @@ mod tests {
 
         assert!(!sender.on_chunk_batch_received_by_client(64.0));
         assert_eq!(sender.unacknowledged_batches, 0);
-        assert_eq!(sender.desired_chunks_per_tick, START_CHUNKS_PER_TICK);
-        assert_eq!(sender.batch_quota, 0.0);
+        assert_eq!(
+            sender.desired_chunks_per_tick.to_bits(),
+            START_CHUNKS_PER_TICK.to_bits()
+        );
+        assert_eq!(sender.batch_quota.to_bits(), 0.0_f32.to_bits());
         assert_eq!(sender.max_unacknowledged_batches, 1);
     }
 
@@ -308,8 +311,11 @@ mod tests {
 
         assert!(sender.on_chunk_batch_received_by_client(f32::NAN));
         assert_eq!(sender.unacknowledged_batches, 0);
-        assert_eq!(sender.desired_chunks_per_tick, MIN_CHUNKS_PER_TICK);
-        assert_eq!(sender.batch_quota, 1.0);
+        assert_eq!(
+            sender.desired_chunks_per_tick.to_bits(),
+            MIN_CHUNKS_PER_TICK.to_bits()
+        );
+        assert_eq!(sender.batch_quota.to_bits(), 1.0_f32.to_bits());
         assert_eq!(
             sender.max_unacknowledged_batches,
             MAX_UNACKNOWLEDGED_BATCHES

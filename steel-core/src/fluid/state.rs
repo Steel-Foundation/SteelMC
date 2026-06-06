@@ -300,16 +300,18 @@ mod tests {
                 FluidState::source(&vanilla_fluids::WATER),
                 FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false),
                 same_water,
-            ),
-            1.0
+            )
+            .to_bits(),
+            1.0_f32.to_bits()
         );
         assert_eq!(
             get_height_with(
                 FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false),
                 FluidState::source(&vanilla_fluids::WATER),
                 same_water,
-            ),
-            1.0
+            )
+            .to_bits(),
+            1.0_f32.to_bits()
         );
     }
 
@@ -322,8 +324,9 @@ mod tests {
                 FluidState::EMPTY,
                 FluidState::source(&vanilla_fluids::WATER),
                 same_water,
-            ),
-            0.0
+            )
+            .to_bits(),
+            0.0_f32.to_bits()
         );
     }
 

@@ -499,79 +499,8 @@ impl ChunkHolder {
         }
 
         if chunk_exists {
-            let loaded = match storage
-                .load_chunk(
-                    holder.pos,
-                    holder.min_y(),
-                    holder.height(),
-                    context.weak_world(),
-                )
-                .await
-            {
-                Ok(Some(loaded)) => loaded,
-                Ok(None) => {
-                    tracing::error!(
-                        chunk = ?holder.pos,
-                        "Chunk storage reported an existing chunk but load returned no chunk; aborting generation to avoid overwriting saved data",
-                    );
-                    if let Err(error) = storage.release_chunk(holder.pos).await {
-                        tracing::error!(
-                            chunk = ?holder.pos,
-                            "Failed to release chunk storage after missing load result: {error}",
-                        );
-                    }
-                    return None;
-                }
-                Err(error) => {
-                    tracing::error!(
-                        chunk = ?holder.pos,
-                        "Failed to load existing chunk; aborting generation to avoid overwriting saved data: {error}",
-                    );
-                    if let Err(release_error) = storage.release_chunk(holder.pos).await {
-                        tracing::error!(
-                            chunk = ?holder.pos,
-                            "Failed to release chunk storage after load failure: {release_error}",
-                        );
-                    }
-                    return None;
-                }
-            };
-
-            let loaded_status = loaded.status;
-            if holder.is_status_disallowed(target_status) {
-                tracing::debug!(
-                    chunk = ?holder.pos,
-                    ?target_status,
-                    ?loaded_status,
-                    load_level = ?holder.load_level(),
-                    simulation_level = ?holder.simulation_level(),
-                    current_status = ?holder.persisted_status(),
-                    "Dropping storage load that completed after chunk holder target became disallowed: chunk={:?}, target_status={:?}, loaded_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
-                    holder.pos,
-                    target_status,
-                    loaded_status,
-                    holder.load_level(),
-                    holder.simulation_level(),
-                    holder.persisted_status(),
-                );
-                if let Err(error) = storage.release_chunk(holder.pos).await {
-                    tracing::error!(
-                        chunk = ?holder.pos,
-                        "Failed to release canceled chunk storage load: {error}",
-                    );
-                }
-                return None;
-            }
-            holder.insert_chunk(loaded.chunk, loaded_status);
-            context.world().on_entity_chunk_loaded(holder.pos);
-            if !loaded.pending_entities.is_empty() {
-                context.world().register_loaded_chunk_entities(
-                    holder.pos,
-                    loaded_status,
-                    loaded.pending_entities,
-                );
-            }
-            return Some(());
+            return Self::apply_existing_empty_step(&holder, target_status, &context, &storage)
+                .await;
         }
 
         if holder.is_status_disallowed(target_status) {
@@ -603,6 +532,88 @@ impl ChunkHolder {
         holder_for_notify.finish_generation_status(target_status);
         if target_status == ChunkStatus::Empty {
             world.on_entity_chunk_loaded(holder_for_notify.pos);
+        }
+        Some(())
+    }
+
+    async fn apply_existing_empty_step(
+        holder: &Arc<Self>,
+        target_status: ChunkStatus,
+        context: &Arc<WorldGenContext>,
+        storage: &Arc<ChunkStorage>,
+    ) -> Option<()> {
+        let loaded = match storage
+            .load_chunk(
+                holder.pos,
+                holder.min_y(),
+                holder.height(),
+                context.weak_world(),
+            )
+            .await
+        {
+            Ok(Some(loaded)) => loaded,
+            Ok(None) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Chunk storage reported an existing chunk but load returned no chunk; aborting generation to avoid overwriting saved data",
+                );
+                if let Err(error) = storage.release_chunk(holder.pos).await {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to release chunk storage after missing load result: {error}",
+                    );
+                }
+                return None;
+            }
+            Err(error) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to load existing chunk; aborting generation to avoid overwriting saved data: {error}",
+                );
+                if let Err(release_error) = storage.release_chunk(holder.pos).await {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to release chunk storage after load failure: {release_error}",
+                    );
+                }
+                return None;
+            }
+        };
+
+        let loaded_status = loaded.status;
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                ?loaded_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load that completed after chunk holder target became disallowed: chunk={:?}, target_status={:?}, loaded_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                loaded_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage load: {error}",
+                );
+            }
+            return None;
+        }
+
+        holder.insert_chunk(loaded.chunk, loaded_status);
+        context.world().on_entity_chunk_loaded(holder.pos);
+        if !loaded.pending_entities.is_empty() {
+            context.world().register_loaded_chunk_entities(
+                holder.pos,
+                loaded_status,
+                loaded.pending_entities,
+            );
         }
         Some(())
     }

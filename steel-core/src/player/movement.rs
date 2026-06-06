@@ -232,9 +232,6 @@ impl Player {
         let is_creative = game_mode == GameType::Creative;
         let world = self.get_world();
         let tick_runs_normally = world.tick_runs_normally();
-        let moved_upwards;
-        let floating_check;
-
         if self.is_passenger() {
             let passenger_pos = self.position();
             if let Err(error) = self.try_set_position(passenger_pos) {
@@ -273,134 +270,128 @@ impl Player {
                 return;
             }
             return;
-        } else {
-            let dx = target_pos.x - first_good.x;
-            let dy = target_pos.y - first_good.y;
-            let dz = target_pos.z - first_good.z;
-            let moved_dist_sq = dx * dx + dy * dy + dz * dz;
+        }
 
-            if tick_runs_normally {
-                let mut delta_packets = {
-                    let mut mv = self.movement.lock();
-                    mv.record_move_packet_delta()
-                };
+        let dx = target_pos.x - first_good.x;
+        let dy = target_pos.y - first_good.y;
+        let dz = target_pos.z - first_good.z;
+        let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if delta_packets > 5 {
-                    delta_packets = 1;
-                }
+        if tick_runs_normally {
+            let mut delta_packets = {
+                let mut mv = self.movement.lock();
+                mv.record_move_packet_delta()
+            };
 
-                if Self::should_validate_movement(&world, is_fall_flying) {
-                    let threshold = if is_fall_flying {
-                        SPEED_THRESHOLD_FLYING
-                    } else {
-                        SPEED_THRESHOLD_NORMAL
-                    } * f64::from(delta_packets);
+            if delta_packets > 5 {
+                delta_packets = 1;
+            }
 
-                    if moved_dist_sq - self.velocity().length_squared() > threshold {
-                        if let Err(error) = self.teleport(
-                            start_pos.x,
-                            start_pos.y,
-                            start_pos.z,
-                            current_rotation.0,
-                            current_rotation.1,
-                        ) {
-                            log::warn!(
-                                "Failed to correct too-fast player {} movement: {error}",
-                                self.id()
-                            );
-                        }
-                        return;
+            if Self::should_validate_movement(&world, is_fall_flying) {
+                let threshold = if is_fall_flying {
+                    SPEED_THRESHOLD_FLYING
+                } else {
+                    SPEED_THRESHOLD_NORMAL
+                } * f64::from(delta_packets);
+
+                if moved_dist_sq - self.velocity().length_squared() > threshold {
+                    if let Err(error) = self.teleport(
+                        start_pos.x,
+                        start_pos.y,
+                        start_pos.z,
+                        current_rotation.0,
+                        current_rotation.1,
+                    ) {
+                        log::warn!(
+                            "Failed to correct too-fast player {} movement: {error}",
+                            self.id()
+                        );
                     }
+                    return;
                 }
             }
+        }
 
-            let old_aabb = self.bounding_box();
-            let move_delta = target_pos - last_good;
-            moved_upwards = move_delta.y > 0.0;
-            let player_stands_on_something = self.vertical_collision_below();
+        let old_aabb = self.bounding_box();
+        let move_delta = target_pos - last_good;
+        let moved_upwards = move_delta.y > 0.0;
+        let player_stands_on_something = self.vertical_collision_below();
 
-            if was_on_ground && !packet.on_ground && moved_upwards {
-                self.jump_from_ground();
+        if was_on_ground && !packet.on_ground && moved_upwards {
+            self.jump_from_ground();
+        }
+
+        if self.move_entity(MoverType::Player, move_delta).is_none() {
+            if let Err(error) = self.teleport(
+                start_pos.x,
+                start_pos.y,
+                start_pos.z,
+                target_yaw,
+                target_pitch,
+            ) {
+                panic!(
+                    "failed to correct rejected player {} movement: {error}",
+                    self.id()
+                );
             }
+            return;
+        }
 
-            if self.move_entity(MoverType::Player, move_delta).is_none() {
-                if let Err(error) = self.teleport(
-                    start_pos.x,
-                    start_pos.y,
-                    start_pos.z,
-                    target_yaw,
-                    target_pitch,
-                ) {
-                    panic!(
-                        "failed to correct rejected player {} movement: {error}",
-                        self.id()
-                    );
-                }
-                return;
+        let error_delta = movement_error_delta(target_pos, self.position());
+        let error_dist_sq = error_delta.length_squared();
+        let in_impulse_grace = self.is_in_post_impulse_grace_time();
+        let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
+            && !is_creative
+            && !is_spectator
+            && !in_impulse_grace;
+
+        let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
+        let collision_world = WorldCollisionProvider::for_entity(&world, self);
+        let old_collision = collision_world.has_entity_context_collision(
+            old_aabb,
+            self.position().y,
+            self.is_descending(),
+        );
+        let new_collision =
+            is_colliding_with_new_shapes(&collision_world, old_aabb, new_aabb, self.is_crouching());
+
+        if (MovementCollisionValidation {
+            no_physics: self.no_physics(),
+            moved_wrongly: fail,
+            old_collision,
+            new_collision,
+        })
+        .rejects()
+        {
+            if let Err(error) = self.teleport(
+                start_pos.x,
+                start_pos.y,
+                start_pos.z,
+                target_yaw,
+                target_pitch,
+            ) {
+                log::warn!(
+                    "Failed to correct collided player {} movement: {error}",
+                    self.id()
+                );
             }
+            self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
+            self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+            self.remove_latest_movement_recording();
+            return;
+        }
 
-            let error_delta = movement_error_delta(target_pos, self.position());
-            let error_dist_sq = error_delta.length_squared();
-            let in_impulse_grace = self.is_in_post_impulse_grace_time();
-            let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
-                && !is_creative
-                && !is_spectator
-                && !in_impulse_grace;
+        // Vanilla saves this requested Y delta before recomputing the
+        // post-move residual used by moved-wrongly validation.
+        let floating_check = Some((player_stands_on_something, move_delta.y));
 
-            let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
-            let collision_world = WorldCollisionProvider::for_entity(&world, self);
-            let old_collision = collision_world.has_entity_context_collision(
-                old_aabb,
-                self.position().y,
-                self.is_descending(),
-            );
-            let new_collision = is_colliding_with_new_shapes(
-                &collision_world,
-                old_aabb,
-                new_aabb,
-                self.is_crouching(),
-            );
+        if packet.on_ground && self.is_sprinting() {
+            let dx = move_delta.x;
+            let dz = move_delta.z;
 
-            if (MovementCollisionValidation {
-                no_physics: self.no_physics(),
-                moved_wrongly: fail,
-                old_collision,
-                new_collision,
-            })
-            .rejects()
-            {
-                if let Err(error) = self.teleport(
-                    start_pos.x,
-                    start_pos.y,
-                    start_pos.z,
-                    target_yaw,
-                    target_pitch,
-                ) {
-                    log::warn!(
-                        "Failed to correct collided player {} movement: {error}",
-                        self.id()
-                    );
-                }
-                self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
-                self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
-                self.remove_latest_movement_recording();
-                return;
-            }
-
-            // Vanilla saves this requested Y delta before recomputing the
-            // post-move residual used by moved-wrongly validation.
-            floating_check = Some((player_stands_on_something, move_delta.y));
-
-            if packet.on_ground && self.is_sprinting() {
-                let dx = move_delta.x;
-                let dz = move_delta.z;
-
-                let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
-                if cm > 0 {
-                    self.cause_food_exhaustion(
-                        food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01,
-                    );
-                }
+            let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
+            if cm > 0 {
+                self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01);
             }
         }
 

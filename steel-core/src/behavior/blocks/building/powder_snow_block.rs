@@ -92,9 +92,7 @@ impl BlockBehavior for PowderSnowBlock {
             BlockCollisionContext::entity(entity.position().y, entity.is_descending())
                 .with_fall_distance(entity.fall_distance())
                 .with_can_walk_on_powder_snow(entity.can_walk_on_powder_snow())
-                .with_falling_block(
-                    entity.entity_type() == &steel_registry::vanilla_entities::FALLING_BLOCK,
-                ),
+                .with_falling_block(entity.entity_type() == &vanilla_entities::FALLING_BLOCK),
         );
         if collision_shape.is_empty() {
             self.default_get_entity_inside_collision_shape(state, world, pos, entity)

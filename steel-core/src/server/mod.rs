@@ -124,7 +124,7 @@ struct DomainPlayerState {
 
 enum DomainPlayerData {
     Saved {
-        data: PersistentPlayerData,
+        data: Box<PersistentPlayerData>,
         restore_location: bool,
     },
     FirstVisit,
@@ -600,7 +600,7 @@ impl Server {
                 Ok(DomainPlayerState {
                     world,
                     data: DomainPlayerData::Saved {
-                        data: saved_data,
+                        data: Box::new(saved_data),
                         restore_location,
                     },
                 })

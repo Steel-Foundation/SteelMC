@@ -647,7 +647,10 @@ mod tests {
             root_vehicle.entity.entity_type,
             Identifier::vanilla_static("minecart")
         );
-        assert_eq!(root_vehicle.entity.pos, [4.0, 65.0, 6.0]);
+        assert_eq!(
+            root_vehicle.entity.pos.map(f64::to_bits),
+            [4.0_f64.to_bits(), 65.0_f64.to_bits(), 6.0_f64.to_bits()]
+        );
     }
 
     #[test]

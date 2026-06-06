@@ -85,7 +85,7 @@ impl BlockBehavior for BedBlock {
 mod tests {
     use super::*;
 
-    use steel_registry::vanilla_entities;
+    use steel_registry::{sound_events, vanilla_entities};
 
     use crate::behavior::EntityFallOnFacts;
 
@@ -108,8 +108,8 @@ mod tests {
                 0.6,
                 1.8,
                 (
-                    &steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
-                    &steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+                    &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                    &sound_events::ENTITY_PLAYER_BIG_FALL,
                 ),
             ),
             None,

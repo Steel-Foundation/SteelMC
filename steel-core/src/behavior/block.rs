@@ -1141,6 +1141,8 @@ impl Default for BlockBehaviorRegistry {
 mod tests {
     use super::*;
 
+    use steel_registry::sound_events;
+
     #[test]
     fn fall_on_facts_use_vanilla_width_squared_height_formula() {
         let facts = EntityFallOnFacts::new(
@@ -1149,8 +1151,8 @@ mod tests {
             0.6,
             1.8,
             (
-                &steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
-                &steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+                &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                &sound_events::ENTITY_PLAYER_BIG_FALL,
             ),
         );
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
 };
+use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
 use tokio::time::Instant;
 
@@ -49,7 +50,7 @@ impl World {
             && root_vehicle.id() != player.id()
             && root_vehicle.has_exactly_one_player_passenger()
         {
-            self.remove_root_vehicle_tree_stored_with_player(root_vehicle);
+            Self::remove_root_vehicle_tree_stored_with_player(root_vehicle);
             return;
         }
 
@@ -59,15 +60,15 @@ impl World {
         }
     }
 
-    fn remove_root_vehicle_tree_stored_with_player(&self, entity: SharedEntity) {
+    fn remove_root_vehicle_tree_stored_with_player(entity: SharedEntity) {
         let passengers = entity.passengers();
         entity.set_removed(RemovalReason::StoredWithPlayer);
 
         for passenger in passengers {
-            if passenger.entity_type() == &steel_registry::vanilla_entities::PLAYER {
+            if passenger.entity_type() == &vanilla_entities::PLAYER {
                 continue;
             }
-            self.remove_root_vehicle_tree_stored_with_player(passenger);
+            Self::remove_root_vehicle_tree_stored_with_player(passenger);
         }
     }
 

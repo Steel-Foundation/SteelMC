@@ -77,13 +77,10 @@ impl PlayerMap {
     /// player that owns the UUID.
     pub async fn remove_player(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
         let uuid = player.gameprofile.id;
-        let Some((_, removed)) = self
+        let (_, removed) = self
             .by_uuid
             .remove_if_async(&uuid, |current| Arc::ptr_eq(current, player))
-            .await
-        else {
-            return None;
-        };
+            .await?;
         let _ = self
             .by_entity_id
             .remove_if_async(&removed.id(), |current| Arc::ptr_eq(current, &removed))
@@ -107,12 +104,9 @@ impl PlayerMap {
     /// Removes this exact player from both maps synchronously.
     pub fn remove_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
         let uuid = player.gameprofile.id;
-        let Some((_, removed)) = self
+        let (_, removed) = self
             .by_uuid
-            .remove_if_sync(&uuid, |current| Arc::ptr_eq(current, player))
-        else {
-            return None;
-        };
+            .remove_if_sync(&uuid, |current| Arc::ptr_eq(current, player))?;
         let _ = self
             .by_entity_id
             .remove_if_sync(&removed.id(), |current| Arc::ptr_eq(current, &removed));
