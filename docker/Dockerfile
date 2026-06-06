@@ -3,7 +3,7 @@ LABEL authors="junkydeveloper"
 
 WORKDIR /steel
 
-COPY . .
+COPY .. .
 RUN cargo build --release --locked
 FROM gcr.io/distroless/cc-debian13
 
