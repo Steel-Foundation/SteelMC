@@ -1,6 +1,7 @@
 services:
   steel:
     image: steel
+    build: .
     ports:
       - 25565:25565
     volumes:
