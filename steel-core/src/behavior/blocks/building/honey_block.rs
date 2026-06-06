@@ -3,10 +3,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
-use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
-use steel_registry::{
-    REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_types, vanilla_entities,
-};
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::random::Random as _;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
@@ -108,24 +105,14 @@ impl HoneyBlock {
 
     #[must_use]
     fn does_entity_do_slide_effects(entity: &dyn Entity) -> bool {
-        // TODO: Use the concrete boat entity abstraction once boat entities are implemented.
         if entity.is_living_entity()
-            || REGISTRY
-                .entity_types
-                .is_in_tag(entity.entity_type(), &EntityTypeTag::BOAT)
+            || entity.entity_type().is_abstract_boat
+            || entity.entity_type().is_abstract_minecart
         {
             return true;
         }
 
-        let entity_type = entity.entity_type();
-        entity_type == &vanilla_entities::TNT
-            || entity_type == &vanilla_entities::MINECART
-            || entity_type == &vanilla_entities::CHEST_MINECART
-            || entity_type == &vanilla_entities::COMMAND_BLOCK_MINECART
-            || entity_type == &vanilla_entities::FURNACE_MINECART
-            || entity_type == &vanilla_entities::HOPPER_MINECART
-            || entity_type == &vanilla_entities::SPAWNER_MINECART
-            || entity_type == &vanilla_entities::TNT_MINECART
+        entity.entity_type() == &vanilla_entities::TNT
     }
 
     fn do_slide_movement(entity: &dyn Entity) {

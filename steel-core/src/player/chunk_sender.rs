@@ -243,7 +243,14 @@ impl ChunkSender {
     ///
     /// The client sends back its desired chunks per tick based on how fast it can
     /// process chunks. We clamp this value and use it to adjust our sending rate.
-    pub const fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) {
+    pub const fn on_chunk_batch_received_by_client(
+        &mut self,
+        desired_chunks_per_tick: f32,
+    ) -> bool {
+        if self.unacknowledged_batches == 0 {
+            return false;
+        }
+
         self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
 
         // Handle NaN and clamp to valid range (vanilla uses 0.01-64, we use 0.01-500)
@@ -261,6 +268,7 @@ impl ChunkSender {
         // After receiving the first acknowledgement, allow more unacknowledged batches
         // for better pipelining (vanilla behavior)
         self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
+        true
     }
 }
 
@@ -273,5 +281,38 @@ impl Default for ChunkSender {
             batch_quota: 0.0,
             max_unacknowledged_batches: 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_batch_ack_without_outstanding_batch_does_not_update_pacing() {
+        let mut sender = ChunkSender::default();
+
+        assert!(!sender.on_chunk_batch_received_by_client(64.0));
+        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.desired_chunks_per_tick, START_CHUNKS_PER_TICK);
+        assert_eq!(sender.batch_quota, 0.0);
+        assert_eq!(sender.max_unacknowledged_batches, 1);
+    }
+
+    #[test]
+    fn chunk_batch_ack_updates_pacing_for_outstanding_batch() {
+        let mut sender = ChunkSender {
+            unacknowledged_batches: 1,
+            ..ChunkSender::default()
+        };
+
+        assert!(sender.on_chunk_batch_received_by_client(f32::NAN));
+        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.desired_chunks_per_tick, MIN_CHUNKS_PER_TICK);
+        assert_eq!(sender.batch_quota, 1.0);
+        assert_eq!(
+            sender.max_unacknowledged_batches,
+            MAX_UNACKNOWLEDGED_BATCHES
+        );
     }
 }

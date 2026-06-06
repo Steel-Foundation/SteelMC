@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, Copy)]
 pub(super) struct PlayerLifecycleState {
     joined_world: bool,
+    pending_client_loaded: bool,
     client_loaded_timeout: i32,
     domain_switching: bool,
 }
@@ -12,6 +13,7 @@ impl Default for PlayerLifecycleState {
     fn default() -> Self {
         Self {
             joined_world: false,
+            pending_client_loaded: false,
             client_loaded_timeout: CLIENT_LOADED_TIMEOUT_TICKS,
             domain_switching: false,
         }
@@ -34,11 +36,34 @@ impl PlayerLifecycleState {
     }
 
     pub(super) const fn set_client_loaded(&mut self, client_loaded: bool) {
+        if !client_loaded {
+            self.pending_client_loaded = false;
+        }
         self.client_loaded_timeout = if client_loaded {
             0
         } else {
             CLIENT_LOADED_TIMEOUT_TICKS
         };
+    }
+
+    pub(super) const fn mark_client_loaded_from_network(&mut self) -> bool {
+        if self.joined_world {
+            self.set_client_loaded(true);
+            return true;
+        }
+
+        self.pending_client_loaded = true;
+        false
+    }
+
+    pub(super) const fn apply_pending_client_loaded(&mut self) -> bool {
+        if !self.pending_client_loaded {
+            return false;
+        }
+
+        self.pending_client_loaded = false;
+        self.set_client_loaded(true);
+        true
     }
 
     pub(super) const fn tick_client_load_timeout(&mut self) {
@@ -86,10 +111,18 @@ mod tests {
         let mut state = PlayerLifecycleState::default();
 
         assert!(!state.client_loaded());
+        assert!(!state.mark_client_loaded_from_network());
+        assert!(!state.client_loaded());
+
+        state.set_joined_world(true);
+        assert!(state.apply_pending_client_loaded());
+        assert!(state.client_loaded());
+
         state.set_client_loaded(true);
         assert!(state.client_loaded());
         state.set_client_loaded(false);
         assert!(!state.client_loaded());
+        assert!(!state.apply_pending_client_loaded());
     }
 
     #[test]

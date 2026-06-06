@@ -26,6 +26,7 @@ use steel_utils::locks::SyncMutex;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
+    chunk_access::ChunkStatus,
     heightmap::{ChunkHeightmaps, HeightmapType},
     proto_chunk::ProtoChunk,
     section::Sections,
@@ -224,13 +225,7 @@ impl LevelChunk {
             postprocessing: SyncMutex::new(postprocessing),
         };
         if let Some(world) = world {
-            for entity in entities {
-                if let Err(error) = world.register_loaded_entity(entity) {
-                    log::warn!(
-                        "Skipping promoted proto entity that could not be registered: {error}"
-                    );
-                }
-            }
+            world.register_loaded_chunk_entities(chunk.pos, ChunkStatus::Full, entities);
         }
         chunk
     }

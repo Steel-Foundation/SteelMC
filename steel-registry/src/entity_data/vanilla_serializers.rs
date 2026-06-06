@@ -351,7 +351,7 @@ mod tests {
     use super::*;
 
     macro_rules! id {
-        ($name:literal) => {
+        ($name:expr) => {
             Identifier::vanilla_static($name)
         };
     }
@@ -361,16 +361,58 @@ mod tests {
         let mut registry = EntityDataSerializerRegistry::new();
         register_vanilla_entity_data_serializers(&mut registry);
 
-        // Verify key serializers have correct IDs
-        assert_eq!(registry.id_from_key(&id!("byte")), Some(0));
-        assert_eq!(registry.id_from_key(&id!("int")), Some(1));
-        assert_eq!(registry.id_from_key(&id!("long")), Some(2));
-        assert_eq!(registry.id_from_key(&id!("float")), Some(3));
-        assert_eq!(registry.id_from_key(&id!("boolean")), Some(8));
-        assert_eq!(registry.id_from_key(&id!("pose")), Some(20));
-        assert_eq!(registry.id_from_key(&id!("cat_sound_variant")), Some(22));
-        assert_eq!(registry.id_from_key(&id!("optional_global_pos")), Some(33));
-        assert_eq!(registry.id_from_key(&id!("humanoid_arm")), Some(42));
+        let expected_names = [
+            "byte",
+            "int",
+            "long",
+            "float",
+            "string",
+            "component",
+            "optional_component",
+            "item_stack",
+            "boolean",
+            "rotations",
+            "block_pos",
+            "optional_block_pos",
+            "direction",
+            "optional_living_entity_reference",
+            "block_state",
+            "optional_block_state",
+            "particle",
+            "particles",
+            "villager_data",
+            "optional_unsigned_int",
+            "pose",
+            "cat_variant",
+            "cat_sound_variant",
+            "cow_variant",
+            "cow_sound_variant",
+            "wolf_variant",
+            "wolf_sound_variant",
+            "frog_variant",
+            "pig_variant",
+            "pig_sound_variant",
+            "chicken_variant",
+            "chicken_sound_variant",
+            "zombie_nautilus_variant",
+            "optional_global_pos",
+            "painting_variant",
+            "sniffer_state",
+            "armadillo_state",
+            "copper_golem_state",
+            "weathering_copper_state",
+            "vector3",
+            "quaternion",
+            "resolvable_profile",
+            "humanoid_arm",
+        ];
+        for (expected_id, name) in expected_names.iter().enumerate() {
+            assert_eq!(
+                registry.id_from_key(&id!(name)),
+                Some(expected_id),
+                "serializer {name} must keep vanilla id {expected_id}"
+            );
+        }
 
         // Total count
         assert_eq!(registry.len(), 43);

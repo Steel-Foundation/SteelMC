@@ -187,7 +187,7 @@ impl RootVehicleRestoreJob {
         let root_chunk = root_vehicle_chunk(root_vehicle)?;
         let request = world.chunk_map.request_chunk(
             root_chunk,
-            ChunkStatus::Empty,
+            ChunkStatus::StructureStarts,
             ChunkTicketKind::PlayerSpawn,
         );
         Some(Self {
@@ -287,17 +287,20 @@ fn restore_root_vehicle_for_player(
     EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
     attach_entity.position_rider(player.as_ref());
 
+    if let Err(error) = world.register_loaded_entity_tree(&entities) {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            attach = ?attach_uuid,
+            root = ?Uuid::from_bytes(root_vehicle.entity.uuid),
+            "Discarding persisted RootVehicle because its entity tree could not be registered: {error}",
+        );
+        discard_restored_entities(&entities);
+        return;
+    }
+
+    world.mark_chunk_dirty(root_chunk);
     for entity in &entities {
-        if let Err(error) = world.register_loaded_entity(entity.clone()) {
-            tracing::warn!(
-                player = %player.gameprofile.name,
-                entity_id = entity.id(),
-                uuid = ?entity.uuid(),
-                "Discarding persisted RootVehicle because an entity could not be registered: {error}",
-            );
-            discard_restored_entities(&entities);
-            return;
-        }
+        world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
     }
 }
 
@@ -531,7 +534,9 @@ impl Server {
         if !admitted {
             return;
         }
-        player.mark_joined_world();
+        if player.mark_joined_world() {
+            player.send_inventory_to_remote();
+        }
         self.schedule_root_vehicle_restore(&player, &state);
         if player.connection.closed() {
             tokio::spawn(async move {
@@ -1190,9 +1195,10 @@ impl Server {
             return Ok(());
         }
 
-        Self::apply_domain_player_state(&player, &target_state);
-        player.reset_after_domain_save(target_state.world.clone());
-        Self::apply_domain_player_state(&player, &target_state);
+        let restore_player = Arc::clone(&player);
+        player.reset_after_domain_save_and_restore(target_state.world.clone(), || {
+            Self::apply_domain_player_state(&restore_player, &target_state);
+        });
         let pos = player.position();
         let rotation = player.rotation();
         if !player.spawn(pos, rotation, ResetReason::WorldChange) {

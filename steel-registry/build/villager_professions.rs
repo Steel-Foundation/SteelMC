@@ -5,6 +5,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use steel_utils::Identifier;
 
 #[derive(Deserialize)]
@@ -19,6 +20,7 @@ pub(crate) fn build() -> TokenStream {
 
     let mut villager_professions: Vec<VillagerProfessionEntry> = read_json_asset(ASSET);
     sort_contiguous_registry_entries(&mut villager_professions, ASSET, |entry| entry.id);
+    let sound_events: BTreeMap<String, i32> = read_json_asset("build_assets/sound_events.json");
 
     let mut constants = TokenStream::new();
     let mut registrations = TokenStream::new();
@@ -29,6 +31,15 @@ pub(crate) fn build() -> TokenStream {
             Span::call_site(),
         );
         let key = generate_identifier(&villager_profession.key);
+        if let Some(work_sound) = &villager_profession.work_sound {
+            let sound_event_const = work_sound.path.replace('.', "_").to_shouty_snake_case();
+            assert!(
+                sound_events.contains_key(&sound_event_const),
+                "Villager profession {} references missing work sound {}",
+                villager_profession.key,
+                work_sound
+            );
+        }
         let work_sound = generate_option(&villager_profession.work_sound, generate_identifier);
 
         constants.extend(quote! {

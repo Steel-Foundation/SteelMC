@@ -20,12 +20,18 @@ struct EntityTypeEntry {
     fire_immune: bool,
     summonable: bool,
     can_spawn_far_from_player: bool,
+    class_hierarchy: Vec<ClassHierarchyEntry>,
     #[serde(default = "default_can_serialize")]
     can_serialize: bool,
     #[serde(default)]
     flags: Option<FlagsEntry>,
     #[serde(default)]
     attributes: Option<FxHashMap<String, f64>>,
+}
+
+#[derive(Deserialize)]
+struct ClassHierarchyEntry {
+    simple_name: String,
 }
 
 #[derive(Deserialize)]
@@ -149,6 +155,14 @@ pub(crate) fn build() -> TokenStream {
         let summonable = entity_type.summonable;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
         let can_serialize = entity_type.can_serialize;
+        let is_abstract_boat = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractBoat");
+        let is_abstract_minecart = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractMinecart");
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -201,6 +215,8 @@ pub(crate) fn build() -> TokenStream {
                 summonable: #summonable,
                 can_spawn_far_from_player: #can_spawn_far,
                 can_serialize: #can_serialize,
+                is_abstract_boat: #is_abstract_boat,
+                is_abstract_minecart: #is_abstract_minecart,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,

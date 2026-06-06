@@ -454,34 +454,90 @@ impl WorldEntityManager {
         entity: SharedEntity,
         ownership: EntityOwnership,
     ) -> Result<(), AddEntityError> {
+        let entry = Self::checked_live_entry(entity, ownership)?;
+        let mut state = self.state.write();
+        Self::validate_live_entries(&state, std::slice::from_ref(&entry), ownership)?;
+        Self::insert_live_entry(&mut state, entry);
+        Ok(())
+    }
+
+    /// Adds a related group of live entities atomically.
+    ///
+    /// Use this for persisted vehicle/passenger trees so registration either
+    /// publishes the whole tree or leaves world indexes unchanged.
+    pub fn add_live_entity_tree(
+        &self,
+        entities: &[SharedEntity],
+        ownership: EntityOwnership,
+    ) -> Result<(), AddEntityError> {
+        let mut entries = Vec::with_capacity(entities.len());
+        for entity in entities {
+            entries.push(Self::checked_live_entry(Arc::clone(entity), ownership)?);
+        }
+
+        let mut seen_ids = FxHashSet::default();
+        let mut seen_uuids = FxHashSet::default();
+        for entry in &entries {
+            let entity_id = entry.entity.id();
+            assert!(
+                seen_ids.insert(entity_id),
+                "entity id {entity_id} appears more than once in a live entity tree"
+            );
+            if !seen_uuids.insert(entry.uuid) {
+                return Err(AddEntityError::DuplicateUuid {
+                    entity_id,
+                    uuid: entry.uuid,
+                });
+            }
+        }
+
+        let mut state = self.state.write();
+        Self::validate_live_entries(&state, &entries, ownership)?;
+        for entry in entries {
+            Self::insert_live_entry(&mut state, entry);
+        }
+        Ok(())
+    }
+
+    fn checked_live_entry(
+        entity: SharedEntity,
+        ownership: EntityOwnership,
+    ) -> Result<EntityEntry, AddEntityError> {
         if entity.is_removed() {
             return Err(AddEntityError::RemovedEntity {
                 entity_id: entity.id(),
             });
         }
 
-        let entry = EntityEntry::new(entity, ownership);
-        let mut state = self.state.write();
-        assert!(
-            !Self::contains_id(&state, entry.entity.id()),
-            "entity id {} is already registered in the world entity manager",
-            entry.entity.id()
-        );
-        if Self::contains_uuid(&state, entry.uuid) {
-            return Err(AddEntityError::DuplicateUuid {
-                entity_id: entry.entity.id(),
-                uuid: entry.uuid,
-            });
-        }
-        if ownership == EntityOwnership::ManagerOwned && !state.loaded_chunks.contains(&entry.chunk)
-        {
-            return Err(AddEntityError::ChunkNotLoaded {
-                entity_id: entry.entity.id(),
-                chunk: entry.chunk,
-            });
-        }
+        Ok(EntityEntry::new(entity, ownership))
+    }
 
-        Self::insert_live_entry(&mut state, entry);
+    fn validate_live_entries(
+        state: &ManagerState,
+        entries: &[EntityEntry],
+        ownership: EntityOwnership,
+    ) -> Result<(), AddEntityError> {
+        for entry in entries {
+            let entity_id = entry.entity.id();
+            assert!(
+                !Self::contains_id(state, entity_id),
+                "entity id {entity_id} is already registered in the world entity manager"
+            );
+            if Self::contains_uuid(state, entry.uuid) {
+                return Err(AddEntityError::DuplicateUuid {
+                    entity_id,
+                    uuid: entry.uuid,
+                });
+            }
+            if ownership == EntityOwnership::ManagerOwned
+                && !state.loaded_chunks.contains(&entry.chunk)
+            {
+                return Err(AddEntityError::ChunkNotLoaded {
+                    entity_id,
+                    chunk: entry.chunk,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -1224,6 +1280,36 @@ mod tests {
         };
         assert!(Arc::ptr_eq(&first, &live_first));
         assert!(manager.get_by_id(2).is_none());
+        assert_eq!(manager.count(), 1);
+    }
+
+    #[test]
+    fn add_live_entity_tree_rejects_duplicate_uuid_without_partial_registration() {
+        let manager = WorldEntityManager::new();
+        load_chunk(&manager, ChunkPos::new(0, 0));
+
+        let existing_uuid = Uuid::from_u128(5);
+        let existing = ManagerTestEntity::shared(1, existing_uuid, DVec3::new(1.0, 64.0, 1.0));
+        manager
+            .add_live_entity(Arc::clone(&existing), EntityOwnership::ManagerOwned)
+            .unwrap();
+
+        let vehicle = entity(2, 6, DVec3::new(2.0, 64.0, 2.0));
+        let passenger = ManagerTestEntity::shared(3, existing_uuid, DVec3::new(2.0, 64.0, 2.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        assert!(matches!(
+            manager.add_live_entity_tree(
+                &[Arc::clone(&vehicle), Arc::clone(&passenger)],
+                EntityOwnership::ManagerOwned,
+            ),
+            Err(AddEntityError::DuplicateUuid {
+                entity_id: 3,
+                uuid,
+            }) if uuid == existing_uuid
+        ));
+        assert!(manager.get_by_id(2).is_none());
+        assert!(manager.get_by_id(3).is_none());
         assert_eq!(manager.count(), 1);
     }
 

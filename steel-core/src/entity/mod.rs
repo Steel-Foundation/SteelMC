@@ -1202,6 +1202,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_removed()
     }
 
+    /// Returns whether this entity is alive for vanilla generic entity checks.
+    fn is_alive(&self) -> bool {
+        !self.is_removed()
+    }
+
     /// Returns why this entity was removed, if it has been removed.
     fn removal_reason(&self) -> Option<RemovalReason> {
         self.base().removal_reason()

@@ -81,7 +81,7 @@ use crate::{
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
         AddEntityError, Entity, EntityChunkCallback, EntityMovementSyncPacket, EntityOwnership,
-        EntityTracker, InactiveEntityCallback, SharedEntity, WorldEntityManager,
+        EntityTracker, InactiveEntityCallback, RemovalReason, SharedEntity, WorldEntityManager,
         entities::ItemEntity,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
@@ -1065,6 +1065,15 @@ impl World {
             .iter()
             .copied()
             .collect::<FxHashSet<_>>();
+
+        if runs_normally {
+            let dirty_chunks = self
+                .entity_manager
+                .tick_entities(tick_count as i32, &tickable_entity_chunks);
+            for chunk in dirty_chunks {
+                self.mark_chunk_dirty(chunk);
+            }
+        }
 
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
@@ -2801,32 +2810,114 @@ impl World {
         Ok(())
     }
 
+    pub(crate) fn register_loaded_entity_tree(
+        self: &Arc<Self>,
+        entities: &[SharedEntity],
+    ) -> Result<(), AddEntityError> {
+        self.entity_manager
+            .add_live_entity_tree(entities, EntityOwnership::ManagerOwned)?;
+        for entity in entities {
+            self.attach_managed_entity_callback(entity);
+            self.add_entity_to_tracker(entity);
+        }
+        Ok(())
+    }
+
     pub(crate) fn register_loaded_chunk_entities(
         self: &Arc<Self>,
         source_chunk: ChunkPos,
         persisted_status: ChunkStatus,
         entities: Vec<SharedEntity>,
     ) {
-        for entity in entities {
-            let entity_id = entity.id();
-            let entity_uuid = entity.uuid();
-            let entity_type = entity.entity_type();
-            let entity_pos = entity.position();
-            let entity_chunk = ChunkPos::from_entity_pos(entity_pos);
+        for tree in Self::loaded_entity_trees(entities) {
+            let Some(root) = tree.first() else {
+                continue;
+            };
+            let root_id = root.id();
+            let root_uuid = root.uuid();
+            let root_type = root.entity_type();
+            let root_pos = root.position();
+            let root_chunk = ChunkPos::from_entity_pos(root_pos);
+            let mut dirty_chunks = FxHashSet::default();
+            for entity in &tree {
+                let entity_chunk = ChunkPos::from_entity_pos(entity.position());
+                if entity_chunk != source_chunk {
+                    dirty_chunks.insert(source_chunk);
+                    dirty_chunks.insert(entity_chunk);
+                }
+            }
 
-            if let Err(error) = self.register_loaded_entity(entity) {
+            if let Err(error) = self.register_loaded_entity_tree(&tree) {
                 tracing::warn!(
                     source_chunk = ?source_chunk,
                     ?persisted_status,
-                    entity_id,
-                    uuid = ?entity_uuid,
-                    entity_type = ?entity_type.key,
-                    position = ?entity_pos,
-                    entity_chunk = ?entity_chunk,
-                    "Skipping loaded chunk entity that could not be registered: {error}; source_chunk={source_chunk:?}, persisted_status={persisted_status:?}, entity_id={entity_id}, uuid={entity_uuid}, entity_type={:?}, position={entity_pos:?}, entity_chunk={entity_chunk:?}",
-                    entity_type.key,
+                    root_id,
+                    uuid = ?root_uuid,
+                    entity_type = ?root_type.key,
+                    position = ?root_pos,
+                    entity_chunk = ?root_chunk,
+                    entity_count = tree.len(),
+                    "Discarding loaded chunk entity tree that could not be registered: {error}; source_chunk={source_chunk:?}, persisted_status={persisted_status:?}, root_id={root_id}, uuid={root_uuid}, entity_type={:?}, position={root_pos:?}, entity_chunk={root_chunk:?}, entity_count={}",
+                    root_type.key,
+                    tree.len(),
                 );
+                Self::discard_loaded_entity_tree(&tree);
+                self.mark_chunk_dirty(source_chunk);
+                continue;
             }
+
+            for chunk in dirty_chunks {
+                self.mark_chunk_dirty(chunk);
+            }
+        }
+    }
+
+    fn loaded_entity_trees(entities: Vec<SharedEntity>) -> Vec<Vec<SharedEntity>> {
+        let mut seen = FxHashSet::default();
+        let mut trees = Vec::new();
+
+        for entity in &entities {
+            if entity.is_passenger() {
+                continue;
+            }
+            let mut tree = Vec::new();
+            Self::collect_loaded_entity_tree(entity, &mut seen, &mut tree);
+            if !tree.is_empty() {
+                trees.push(tree);
+            }
+        }
+
+        for entity in &entities {
+            if seen.contains(&entity.id()) {
+                continue;
+            }
+            let mut tree = Vec::new();
+            Self::collect_loaded_entity_tree(entity, &mut seen, &mut tree);
+            if !tree.is_empty() {
+                trees.push(tree);
+            }
+        }
+
+        trees
+    }
+
+    fn collect_loaded_entity_tree(
+        entity: &SharedEntity,
+        seen: &mut FxHashSet<i32>,
+        tree: &mut Vec<SharedEntity>,
+    ) {
+        if !seen.insert(entity.id()) {
+            return;
+        }
+        tree.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_loaded_entity_tree(&passenger, seen, tree);
+        }
+    }
+
+    fn discard_loaded_entity_tree(entities: &[SharedEntity]) {
+        for entity in entities {
+            entity.set_removed(RemovalReason::Discarded);
         }
     }
 

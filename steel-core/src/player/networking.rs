@@ -31,7 +31,7 @@ use text_components::resolving::TextResolutor;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio_util::sync::CancellationToken;
 
 use crate::command::sender::CommandSender;
@@ -41,6 +41,14 @@ use crate::server::Server;
 
 /// Shared Java socket writer.
 pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+
+/// Outbound packet queue message for Java connections.
+pub enum OutboundPacket {
+    /// Normal packet write that may be interrupted by connection shutdown.
+    Packet(EncodedPacket),
+    /// Final disconnect packet that must be flushed before closing the socket.
+    Disconnect(EncodedPacket),
+}
 
 /// Builder for creating packet bundles.
 ///
@@ -89,7 +97,7 @@ struct KeepAliveTracker {
 
 /// A connection to a Java client.
 pub struct JavaConnection {
-    outgoing_packets: UnboundedSender<EncodedPacket>,
+    outgoing_packets: UnboundedSender<OutboundPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
     network_writer: JavaNetworkWriter,
@@ -103,7 +111,7 @@ pub struct JavaConnection {
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
     pub const fn new(
-        outgoing_packets: UnboundedSender<EncodedPacket>,
+        outgoing_packets: UnboundedSender<OutboundPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
         network_writer: JavaNetworkWriter,
@@ -194,7 +202,29 @@ impl JavaConnection {
 
     /// Disconnects the client.
     pub fn disconnect(&self, reason: impl Into<TextComponent>) {
-        self.send_packet(CDisconnect::new(&reason.into(), self));
+        let packet = match EncodedPacket::from_bare(
+            CDisconnect::new(&reason.into(), self),
+            self.compression,
+            ConnectionProtocol::Play,
+        ) {
+            Ok(packet) => packet,
+            Err(err) => {
+                log::warn!(
+                    "Failed to encode disconnect packet for client {}: {err}",
+                    self.id
+                );
+                self.close();
+                return;
+            }
+        };
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Disconnect(packet))
+            .is_err()
+        {
+            self.close();
+            return;
+        }
         self.close();
     }
 
@@ -206,7 +236,11 @@ impl JavaConnection {
     pub fn send_packet<P: ClientPacket>(&self, packet: P) {
         let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
-        if self.outgoing_packets.send(packet).is_err() {
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Packet(packet))
+            .is_err()
+        {
             self.close();
         }
     }
@@ -216,7 +250,11 @@ impl JavaConnection {
     /// # Panics
     /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
-        if self.outgoing_packets.send(packet).is_err() {
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Packet(packet))
+            .is_err()
+        {
             self.close();
         }
     }
@@ -240,13 +278,16 @@ impl JavaConnection {
     const fn can_process_before_join(packet_id: i32) -> bool {
         matches!(
             packet_id,
-            play::S_KEEP_ALIVE
+            play::S_ACCEPT_TELEPORTATION
+                | play::S_KEEP_ALIVE
                 | play::S_PING_REQUEST
                 | play::S_CLIENT_INFORMATION
                 | play::S_CUSTOM_PAYLOAD
+                | play::S_CHUNK_BATCH_RECEIVED
                 | play::S_CHAT_SESSION_UPDATE
                 | play::S_CHAT_ACK
                 | play::S_CLIENT_TICK_END
+                | play::S_PLAYER_LOADED
         )
     }
 
@@ -323,9 +364,10 @@ impl JavaConnection {
             }
             play::S_PLAYER_LOADED => {
                 let _ = SPlayerLoad::read_packet(data)?;
-                player.set_client_loaded(true);
-                // Send initial inventory to client
-                player.send_inventory_to_remote();
+                if player.mark_client_loaded_from_network() {
+                    // Send initial inventory to client
+                    player.send_inventory_to_remote();
+                }
             }
             play::S_CHAT_COMMAND => {
                 server.command_dispatcher.read().handle_command(
@@ -450,23 +492,41 @@ impl JavaConnection {
 
     /// Sends packets to the client.
     ///
-    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
+    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
         loop {
             select! {
                 biased;
                 () = self.wait_for_close() => {
+                    self.write_queued_disconnect(&mut sender_recv).await;
                     break;
                 }
-                packet = sender_recv.recv() => {
-                    if let Some(packet) = packet {
+                outbound = sender_recv.recv() => {
+                    if let Some(outbound) = outbound {
+                        let (packet, close_after_write) = match outbound {
+                            OutboundPacket::Packet(packet) => (packet, false),
+                            OutboundPacket::Disconnect(packet) => (packet, true),
+                        };
+
+                        if close_after_write {
+                            if let Err(err) = self.write_packet_now(&packet).await {
+                                log::warn!("Failed to send disconnect packet to client {}: {err}", self.id);
+                            }
+                            self.close();
+                            break;
+                        }
+
                         let write_result = self.write_packet_now(&packet);
                         select! {
                             biased;
-                            () = self.wait_for_close() => break,
+                            () = self.wait_for_close() => {
+                                self.write_queued_disconnect(&mut sender_recv).await;
+                                break;
+                            },
                             result = write_result => {
                                 if let Err(err) = result {
                                     log::warn!("Failed to send packet to client {}: {err}", self.id);
                                     self.close();
+                                    break;
                                 }
                             }
                         }
@@ -491,6 +551,27 @@ impl JavaConnection {
         }
         let world = player.get_world();
         world.remove_player(player).await;
+    }
+
+    async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
+        let mut disconnect_packet = None;
+        loop {
+            match sender_recv.try_recv() {
+                Ok(OutboundPacket::Packet(_)) => {}
+                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+
+        let Some(packet) = disconnect_packet else {
+            return;
+        };
+        if let Err(err) = self.write_packet_now(&packet).await {
+            log::warn!(
+                "Failed to send disconnect packet to client {} during close: {err}",
+                self.id
+            );
+        }
     }
 }
 
@@ -557,6 +638,19 @@ mod tests {
         ));
         assert!(!JavaConnection::can_process_before_join(
             play::C_CUSTOM_PAYLOAD
+        ));
+    }
+
+    #[test]
+    fn pre_join_allows_initial_play_acknowledgements() {
+        assert!(JavaConnection::can_process_before_join(
+            play::S_ACCEPT_TELEPORTATION
+        ));
+        assert!(JavaConnection::can_process_before_join(
+            play::S_CHUNK_BATCH_RECEIVED
+        ));
+        assert!(JavaConnection::can_process_before_join(
+            play::S_PLAYER_LOADED
         ));
     }
 }

@@ -13,7 +13,8 @@ use std::{
 
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
-    ClientInformation, GameProfile, PlayerConnection, networking::JavaNetworkWriter,
+    ClientInformation, GameProfile, PlayerConnection,
+    networking::{JavaNetworkWriter, OutboundPacket},
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -42,7 +43,7 @@ use tokio::{
     sync::{
         Notify,
         broadcast::{self, Sender, error::RecvError},
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        mpsc::{self, UnboundedReceiver, UnboundedSender, error::TryRecvError},
     },
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -121,7 +122,7 @@ pub struct JavaTcpClient {
     pub cancel_token: CancellationToken,
 
     /// A queue of encoded packets to send to the network.
-    pub outgoing_queue: UnboundedSender<EncodedPacket>,
+    pub outgoing_queue: UnboundedSender<OutboundPacket>,
     /// The packet encoder for outgoing packets.
     pub network_writer: JavaNetworkWriter,
     /// Current compression settings.
@@ -152,7 +153,7 @@ impl JavaTcpClient {
         task_tracker: TaskTracker,
     ) -> (
         Self,
-        UnboundedReceiver<EncodedPacket>,
+        UnboundedReceiver<OutboundPacket>,
         TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
     ) {
         let (read, write) = tcp_stream.into_split();
@@ -235,23 +236,27 @@ impl JavaTcpClient {
         let compression = self.compression.load();
         let protocol = self.protocol.load();
         let packet = EncodedPacket::from_bare(packet, compression, protocol)?;
-        self.outgoing_queue.send(packet).map_err(|e| {
-            PacketError::SendError(format!(
-                "Failed to send packet to client {}: {}",
-                self.id, e
-            ))
-        })?;
+        self.outgoing_queue
+            .send(OutboundPacket::Packet(packet))
+            .map_err(|e| {
+                PacketError::SendError(format!(
+                    "Failed to send packet to client {}: {}",
+                    self.id, e
+                ))
+            })?;
         Ok(())
     }
 
     /// Queues an already encoded packet to be sent.
     pub fn send_packet(&self, packet: EncodedPacket) -> Result<(), PacketError> {
-        self.outgoing_queue.send(packet).map_err(|e| {
-            PacketError::SendError(format!(
-                "Failed to send packet to client {}: {}",
-                self.id, e
-            ))
-        })?;
+        self.outgoing_queue
+            .send(OutboundPacket::Packet(packet))
+            .map_err(|e| {
+                PacketError::SendError(format!(
+                    "Failed to send packet to client {}: {}",
+                    self.id, e
+                ))
+            })?;
         Ok(())
     }
 
@@ -259,7 +264,7 @@ impl JavaTcpClient {
     /// This task will run until the client is closed or the cancellation token is cancelled.
     pub fn start_outgoing_packet_task(
         self: &Arc<Self>,
-        mut sender_recv: UnboundedReceiver<EncodedPacket>,
+        mut sender_recv: UnboundedReceiver<OutboundPacket>,
     ) {
         let cancel_token = self.cancel_token.clone();
         let network_writer = self.network_writer.clone();
@@ -273,14 +278,31 @@ impl JavaTcpClient {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
+                        Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
                         break;
                     }
-                    packet = sender_recv.recv() => {
-                        if let Some(packet) = packet {
+                    outbound = sender_recv.recv() => {
+                        if let Some(outbound) = outbound {
+                            let (packet, close_after_write) = match outbound {
+                                OutboundPacket::Packet(packet) => (packet, false),
+                                OutboundPacket::Disconnect(packet) => (packet, true),
+                            };
+
+                            if close_after_write {
+                                if let Err(err) = Self::write_network_packet(&network_writer, &packet).await {
+                                    log::warn!("Failed to send disconnect packet to client {id}: {err}");
+                                }
+                                cancel_token.cancel();
+                                break;
+                            }
+
                             let write_result = Self::write_network_packet(&network_writer, &packet);
                             select! {
                                 biased;
-                                () = cancel_token.cancelled() => break,
+                                () = cancel_token.cancelled() => {
+                                    Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                                    break;
+                                },
                                 result = write_result => {
                                     if let Err(err) = result {
                                         log::warn!("Failed to send packet to client {id}: {err}");
@@ -303,10 +325,11 @@ impl JavaTcpClient {
                                             continue;
                                         };
                                         writer.set_encryption(&key);
-                                        connection_updated.notify_waiters();
+                                        connection_updated.notify_one();
                                     },
                                     ConnectionUpdate::Upgrade(upgrade) => {
                                         connection = Some(upgrade);
+                                        connection_updated.notify_one();
                                         break;
                                     }
                                 }
@@ -337,6 +360,28 @@ impl JavaTcpClient {
                 drop(network_writer);
             }
         });
+    }
+
+    async fn write_queued_disconnect(
+        network_writer: &JavaNetworkWriter,
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+        id: u64,
+    ) {
+        let mut disconnect_packet = None;
+        loop {
+            match sender_recv.try_recv() {
+                Ok(OutboundPacket::Packet(_)) => {}
+                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+
+        let Some(packet) = disconnect_packet else {
+            return;
+        };
+        if let Err(err) = Self::write_network_packet(network_writer, &packet).await {
+            log::warn!("Failed to send disconnect packet to client {id} during close: {err}");
+        }
     }
 
     /// Starts a task that will receive packets from the client.

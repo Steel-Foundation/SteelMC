@@ -238,6 +238,10 @@ pub struct EntityType {
     /// Whether this entity type can be serialized to disk.
     /// Set to false for transient entities (lightning, fishing hooks, players).
     pub can_serialize: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractBoat`.
+    pub is_abstract_boat: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractMinecart`.
+    pub is_abstract_minecart: bool,
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,
@@ -379,5 +383,17 @@ mod tests {
 
         assert!(vanilla_entities::ITEM.track_deltas);
         assert!(vanilla_entities::ARROW.track_deltas);
+    }
+
+    #[test]
+    fn vanilla_class_hierarchy_flags_match_representative_entities() {
+        assert!(vanilla_entities::OAK_BOAT.is_abstract_boat);
+        assert!(vanilla_entities::OAK_CHEST_BOAT.is_abstract_boat);
+        assert!(!vanilla_entities::ITEM.is_abstract_boat);
+
+        assert!(vanilla_entities::MINECART.is_abstract_minecart);
+        assert!(vanilla_entities::CHEST_MINECART.is_abstract_minecart);
+        assert!(vanilla_entities::TNT_MINECART.is_abstract_minecart);
+        assert!(!vanilla_entities::ITEM.is_abstract_minecart);
     }
 }

@@ -206,7 +206,7 @@ impl EntityTracker {
                 && is_within_tracking_distance(
                     entity.position(),
                     player_pos,
-                    tracked.tracking_range,
+                    effective_tracking_range(entity.as_ref(), tracked.tracking_range),
                     player_view_distance,
                 );
 
@@ -965,6 +965,34 @@ mod tests {
             range,
             2,
         ));
+    }
+
+    #[test]
+    fn vehicle_effective_tracking_range_uses_widest_passenger_range() {
+        test_support::init_test_registry();
+
+        let vehicle_typed =
+            PairingTestEntity::new_with_type(1, &vanilla_entities::ITEM, Vec::new());
+        let passenger_typed =
+            PairingTestEntity::new_with_type(2, &vanilla_entities::PLAYER, Vec::new());
+        assert!(
+            passenger_typed.entity_type().client_tracking_range
+                > vehicle_typed.entity_type().client_tracking_range
+        );
+
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        let base_range = EntityTrackingRange::from_client_chunk_range(
+            vehicle.entity_type().client_tracking_range,
+        );
+
+        let effective = effective_tracking_range(vehicle.as_ref(), base_range);
+
+        assert_eq!(
+            effective.block_radius,
+            f64::from(passenger.entity_type().client_tracking_range) * BLOCKS_PER_CHUNK
+        );
     }
 
     #[test]

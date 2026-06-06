@@ -126,11 +126,17 @@ impl JavaTcpClient {
             )
         });
 
-        self.connection_updates
-            .send(ConnectionUpdate::Upgrade(Arc::clone(&player.connection)))
-            .expect("Failed to send connection update");
-
         let connection = Arc::clone(&player.connection);
+        if self
+            .connection_updates
+            .send(ConnectionUpdate::Upgrade(Arc::clone(&connection)))
+            .is_err()
+        {
+            self.kick("Failed to update connection state".into()).await;
+            return ConnectionAction::none();
+        }
+
+        self.connection_updated.notified().await;
         self.server.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)

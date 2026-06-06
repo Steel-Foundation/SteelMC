@@ -106,7 +106,7 @@ impl InsideBlockEffectCollector {
         self.flush_step();
 
         for effect in self.final_effects.drain(..) {
-            if entity.is_removed() {
+            if !entity.is_alive() {
                 break;
             }
             effect(entity);
@@ -154,11 +154,13 @@ mod tests {
     struct EffectTestEntity {
         base: EntityBase,
         calls: Arc<SyncMutex<Vec<&'static str>>>,
+        alive: Arc<SyncMutex<bool>>,
     }
 
     impl EffectTestEntity {
         fn new() -> Arc<Self> {
             let calls = Arc::new(SyncMutex::new(Vec::new()));
+            let alive = Arc::new(SyncMutex::new(true));
 
             Arc::new(Self {
                 base: EntityBase::new(
@@ -168,6 +170,7 @@ mod tests {
                     Weak::new(),
                 ),
                 calls,
+                alive,
             })
         }
     }
@@ -179,6 +182,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
+        }
+
+        fn is_alive(&self) -> bool {
+            !self.is_removed() && *self.alive.lock()
         }
 
         fn apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
@@ -234,5 +241,29 @@ mod tests {
         collector.apply_and_clear(entity.as_ref());
 
         assert_eq!(*entity.calls.lock(), vec!["before", "fire_ignite", "after"]);
+    }
+
+    #[test]
+    fn collector_stops_after_effect_makes_entity_not_alive() {
+        let entity = EffectTestEntity::new();
+        let mut collector = InsideBlockEffectCollector::new();
+
+        collector.advance_step(0);
+        collector.apply(InsideBlockEffectType::FireIgnite);
+        {
+            let calls = Arc::clone(&entity.calls);
+            let alive = Arc::clone(&entity.alive);
+            collector.run_after(
+                InsideBlockEffectType::FireIgnite,
+                Box::new(move |_| {
+                    calls.lock().push("kill");
+                    *alive.lock() = false;
+                }),
+            );
+        }
+        collector.apply(InsideBlockEffectType::LavaIgnite);
+        collector.apply_and_clear(entity.as_ref());
+
+        assert_eq!(*entity.calls.lock(), vec!["fire_ignite", "kill"]);
     }
 }

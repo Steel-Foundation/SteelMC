@@ -966,8 +966,13 @@ impl Player {
     }
 
     /// Marks this player as inserted into a world.
-    pub(crate) fn mark_joined_world(&self) {
-        self.lifecycle.lock().set_joined_world(true);
+    ///
+    /// Returns `true` when a client-loaded acknowledgement arrived before world
+    /// admission and was applied by this call.
+    pub(crate) fn mark_joined_world(&self) -> bool {
+        let mut lifecycle = self.lifecycle.lock();
+        lifecycle.set_joined_world(true);
+        lifecycle.apply_pending_client_loaded()
     }
 
     /// Returns whether the client has sent its play-loaded signal.
@@ -979,6 +984,13 @@ impl Player {
     /// Marks whether the client has loaded into play.
     pub fn set_client_loaded(&self, client_loaded: bool) {
         self.lifecycle.lock().set_client_loaded(client_loaded);
+    }
+
+    /// Applies or buffers the client's play-loaded acknowledgement.
+    ///
+    /// Returns `true` when the acknowledgement can run gameplay side effects now.
+    pub fn mark_client_loaded_from_network(&self) -> bool {
+        self.lifecycle.lock().mark_client_loaded_from_network()
     }
 
     fn tick_client_load_timeout(&self) {
@@ -1063,21 +1075,30 @@ impl Player {
     /// constructed during respawn / world change, since vanilla recreates the
     /// player object. We reuse the same `Player`, so we reset manually.
     pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
-        self.reset_inner(new_world, reason, false);
+        self.reset_inner_after(new_world, reason, false, || {});
     }
 
-    /// Resets for a domain switch after the current-domain data snapshot has
-    /// already captured the player's one-player `RootVehicle` tree.
-    pub(crate) fn reset_after_domain_save(self: &Arc<Self>, new_world: Arc<World>) {
-        self.reset_inner(new_world, ResetReason::WorldChange, true);
+    /// Resets for a domain switch and restores target-domain state after the
+    /// player has been detached from the old world's live entity indexes.
+    pub(crate) fn reset_after_domain_save_and_restore<F>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
+        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
     }
 
-    fn reset_inner(
+    fn reset_inner_after<F>(
         self: &Arc<Self>,
         new_world: Arc<World>,
         reason: ResetReason,
         store_root_vehicle: bool,
-    ) {
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
         let old_world = self.get_world();
         let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
 
@@ -1110,6 +1131,8 @@ impl Player {
         *self.chunk_sender.lock() = ChunkSender::default();
         *self.last_tracking_view.lock() = None;
         *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        restore_state();
 
         // --- Send CRespawn (not needed on initial join — CLogin already sent) ---
         if reason != ResetReason::InitialJoin {
@@ -1294,6 +1317,10 @@ impl Entity for Player {
         true
     }
 
+    fn is_alive(&self) -> bool {
+        !self.is_removed() && self.get_health() > 0.0
+    }
+
     fn forces_fall_flying_velocity_sync(&self) -> bool {
         self.is_fall_flying()
     }
@@ -1367,10 +1394,26 @@ impl Entity for Player {
     }
 
     fn known_movement(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_movement();
+        }
+
         self.movement.lock().last_known_client_movement()
     }
 
     fn known_speed(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_speed();
+        }
+
         self.movement.lock().last_known_client_movement()
     }
 

@@ -63,52 +63,52 @@ struct LayerDefinition {
     fields: Vec<SynchedDataEntry>,
 }
 
-/// Maps a serializer name to (Rust type, EntityData variant).
-fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str)> {
+/// Maps a serializer name to (Rust type, EntityData variant, vanilla serializer ID).
+fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str, i32)> {
     Some(match serializer {
-        "byte" => ("i8", "Byte"),
-        "int" => ("i32", "Int"),
-        "long" => ("i64", "Long"),
-        "float" => ("f32", "Float"),
-        "string" => ("String", "String"),
-        "component" => ("Box<TextComponent>", "Component"),
-        "optional_component" => ("Option<Box<TextComponent>>", "OptionalComponent"),
-        "item_stack" => ("ItemStack", "ItemStack"),
-        "boolean" => ("bool", "Boolean"),
-        "rotations" => ("Rotations", "Rotations"),
-        "block_pos" => ("BlockPos", "BlockPos"),
-        "optional_block_pos" => ("Option<BlockPos>", "OptionalBlockPos"),
-        "direction" => ("Direction", "Direction"),
-        "optional_living_entity_reference" => ("Option<Uuid>", "OptionalLivingEntityRef"),
-        "block_state" => ("BlockStateId", "BlockState"),
-        "optional_block_state" => ("Option<BlockStateId>", "OptionalBlockState"),
-        "particle" => ("ParticleData", "Particle"),
-        "particles" => ("ParticleList", "Particles"),
-        "villager_data" => ("VillagerData", "VillagerData"),
-        "optional_unsigned_int" => ("Option<u32>", "OptionalUnsignedInt"),
-        "pose" => ("EntityPose", "Pose"),
-        "cat_variant" => ("i32", "CatVariant"),
-        "cat_sound_variant" => ("i32", "CatSoundVariant"),
-        "cow_variant" => ("i32", "CowVariant"),
-        "cow_sound_variant" => ("i32", "CowSoundVariant"),
-        "wolf_variant" => ("i32", "WolfVariant"),
-        "wolf_sound_variant" => ("i32", "WolfSoundVariant"),
-        "frog_variant" => ("i32", "FrogVariant"),
-        "pig_variant" => ("i32", "PigVariant"),
-        "pig_sound_variant" => ("i32", "PigSoundVariant"),
-        "chicken_variant" => ("i32", "ChickenVariant"),
-        "chicken_sound_variant" => ("i32", "ChickenSoundVariant"),
-        "zombie_nautilus_variant" => ("i32", "ZombieNautilusVariant"),
-        "optional_global_pos" => ("Option<GlobalPos>", "OptionalGlobalPos"),
-        "painting_variant" => ("i32", "PaintingVariant"),
-        "sniffer_state" => ("SnifferState", "SnifferState"),
-        "armadillo_state" => ("ArmadilloState", "ArmadilloState"),
-        "copper_golem_state" => ("i32", "CopperGolemState"),
-        "weathering_copper_state" => ("i32", "WeatheringCopperState"),
-        "vector3" => ("Vector3f", "Vector3"),
-        "quaternion" => ("Quaternionf", "Quaternion"),
-        "resolvable_profile" => ("ResolvableProfile", "ResolvableProfile"),
-        "humanoid_arm" => ("HumanoidArm", "HumanoidArm"),
+        "byte" => ("i8", "Byte", 0),
+        "int" => ("i32", "Int", 1),
+        "long" => ("i64", "Long", 2),
+        "float" => ("f32", "Float", 3),
+        "string" => ("String", "String", 4),
+        "component" => ("Box<TextComponent>", "Component", 5),
+        "optional_component" => ("Option<Box<TextComponent>>", "OptionalComponent", 6),
+        "item_stack" => ("ItemStack", "ItemStack", 7),
+        "boolean" => ("bool", "Boolean", 8),
+        "rotations" => ("Rotations", "Rotations", 9),
+        "block_pos" => ("BlockPos", "BlockPos", 10),
+        "optional_block_pos" => ("Option<BlockPos>", "OptionalBlockPos", 11),
+        "direction" => ("Direction", "Direction", 12),
+        "optional_living_entity_reference" => ("Option<Uuid>", "OptionalLivingEntityRef", 13),
+        "block_state" => ("BlockStateId", "BlockState", 14),
+        "optional_block_state" => ("Option<BlockStateId>", "OptionalBlockState", 15),
+        "particle" => ("ParticleData", "Particle", 16),
+        "particles" => ("ParticleList", "Particles", 17),
+        "villager_data" => ("VillagerData", "VillagerData", 18),
+        "optional_unsigned_int" => ("Option<u32>", "OptionalUnsignedInt", 19),
+        "pose" => ("EntityPose", "Pose", 20),
+        "cat_variant" => ("i32", "CatVariant", 21),
+        "cat_sound_variant" => ("i32", "CatSoundVariant", 22),
+        "cow_variant" => ("i32", "CowVariant", 23),
+        "cow_sound_variant" => ("i32", "CowSoundVariant", 24),
+        "wolf_variant" => ("i32", "WolfVariant", 25),
+        "wolf_sound_variant" => ("i32", "WolfSoundVariant", 26),
+        "frog_variant" => ("i32", "FrogVariant", 27),
+        "pig_variant" => ("i32", "PigVariant", 28),
+        "pig_sound_variant" => ("i32", "PigSoundVariant", 29),
+        "chicken_variant" => ("i32", "ChickenVariant", 30),
+        "chicken_sound_variant" => ("i32", "ChickenSoundVariant", 31),
+        "zombie_nautilus_variant" => ("i32", "ZombieNautilusVariant", 32),
+        "optional_global_pos" => ("Option<GlobalPos>", "OptionalGlobalPos", 33),
+        "painting_variant" => ("i32", "PaintingVariant", 34),
+        "sniffer_state" => ("SnifferState", "SnifferState", 35),
+        "armadillo_state" => ("ArmadilloState", "ArmadilloState", 36),
+        "copper_golem_state" => ("i32", "CopperGolemState", 37),
+        "weathering_copper_state" => ("i32", "WeatheringCopperState", 38),
+        "vector3" => ("Vector3f", "Vector3", 39),
+        "quaternion" => ("Quaternionf", "Quaternion", 40),
+        "resolvable_profile" => ("ResolvableProfile", "ResolvableProfile", 41),
+        "humanoid_arm" => ("HumanoidArm", "HumanoidArm", 42),
         _ => return None,
     })
 }
@@ -153,14 +153,6 @@ fn required_i8(default: &Value, serializer: &str) -> i8 {
         .try_into()
         .unwrap_or_else(|_| {
             panic!("Integer default for {serializer} is out of i8 range: {default}")
-        })
-}
-
-fn required_u16(default: &Value, serializer: &str) -> u16 {
-    required_i64(default, serializer)
-        .try_into()
-        .unwrap_or_else(|_| {
-            panic!("Integer default for {serializer} is out of u16 range: {default}")
         })
 }
 
@@ -364,8 +356,9 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
         }
         "block_state" => {
             if default.as_i64().is_some() {
-                let v = required_u16(default, serializer);
-                quote! { BlockStateId(#v) }
+                panic!(
+                    "Raw numeric BlockStateId defaults are not allowed in generated entity data; use a block identifier for {serializer}"
+                );
             } else {
                 let block_ident = key_ident(default, serializer);
                 quote! { crate::vanilla_blocks::#block_ident.default_state() }
@@ -528,7 +521,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
 
 /// Generate the EntityData conversion expression for packing.
 fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
-    let (_, variant) = serializer_info(serializer)
+    let (_, variant, _) = serializer_info(serializer)
         .unwrap_or_else(|| panic!("Unknown entity data serializer: {serializer}"));
     let variant_ident = Ident::new(variant, Span::call_site());
 
@@ -955,12 +948,23 @@ pub(crate) fn build() -> TokenStream {
         }
 
         for data in &layer.fields {
-            let (rust_type, _) = serializer_info(&data.serializer).unwrap_or_else(|| {
-                panic!(
-                    "Unknown serializer '{}' for entity data layer '{}' field '{}'",
-                    data.serializer, layer.simple_name, data.name
-                )
-            });
+            let (rust_type, _, expected_serializer_id) = serializer_info(&data.serializer)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Unknown serializer '{}' for entity data layer '{}' field '{}'",
+                        data.serializer, layer.simple_name, data.name
+                    )
+                });
+            assert_eq!(
+                data.serializer_id,
+                expected_serializer_id,
+                "Serializer '{}' for entity data layer '{}' field '{}' has id {}, expected {}",
+                data.serializer,
+                layer.simple_name,
+                data.name,
+                data.serializer_id,
+                expected_serializer_id
+            );
 
             let field_name = sanitize_field_name(&data.name);
             let field_ident = Ident::new(&field_name, Span::call_site());
