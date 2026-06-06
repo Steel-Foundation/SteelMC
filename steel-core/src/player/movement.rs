@@ -351,7 +351,7 @@ impl Player {
             let collision_world = WorldCollisionProvider::for_entity(&world, self);
             let old_collision = collision_world.has_entity_context_collision(
                 old_aabb,
-                old_aabb.min_y(),
+                self.position().y,
                 self.is_descending(),
             );
             let new_collision = is_colliding_with_new_shapes(
@@ -552,7 +552,7 @@ impl Player {
         let collision_world = WorldCollisionProvider::for_entity(&world, vehicle.as_ref());
         let old_collision = collision_world.has_entity_context_collision(
             old_aabb,
-            old_aabb.min_y(),
+            vehicle.position().y,
             vehicle.is_descending(),
         );
         let new_collision = is_colliding_with_new_shapes(

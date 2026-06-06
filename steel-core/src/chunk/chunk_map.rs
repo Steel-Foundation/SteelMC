@@ -839,7 +839,9 @@ impl ChunkMap {
         // Prepare chunk data while holding the lock, then release before async I/O
         let prepared = {
             let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
-                // Chunk was at Empty stage so no need to save it
+                // Vanilla only persists chunks once they reach StructureStarts.
+                // Runtime entities in lower-status chunks are an accepted loss
+                // on unload/shutdown until those chunks cross that boundary.
                 return;
             };
 
@@ -1066,6 +1068,9 @@ impl ChunkMap {
             let chunk_pos = holder.get_pos();
             let prepared = {
                 let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
+                    // Matches save_chunk: StructureStarts is the first persisted
+                    // chunk status, so lower-status chunks do not own durable
+                    // runtime entity data.
                     continue;
                 };
                 let Some(status) = holder.persisted_status() else {

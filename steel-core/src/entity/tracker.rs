@@ -288,21 +288,6 @@ impl EntityTracker {
                         &get_player,
                     );
                     let seen_by = tracked.seen_by.read();
-                    for player_id in &changed_player_passenger_ids {
-                        if !seen_by.contains(player_id) {
-                            continue;
-                        }
-                        passenger_packets_to_send.push((
-                            *player_id,
-                            CSetPassengers::new(
-                                entity_id,
-                                self.direct_passenger_ids_seen_by_player(
-                                    entity.as_ref(),
-                                    *player_id,
-                                ),
-                            ),
-                        ));
-                    }
                     for player_id in seen_by.iter() {
                         if changed_player_passenger_ids.contains(player_id) {
                             continue;

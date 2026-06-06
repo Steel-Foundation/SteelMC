@@ -2755,7 +2755,7 @@ mod tests {
         };
         assert!(loaded_proto.get_block_entity(block_pos).is_some());
 
-        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new()).chunk;
         assert!(full.get_block_entity(block_pos).is_some());
     }
 
@@ -2799,7 +2799,8 @@ mod tests {
         };
         assert_eq!(loaded_proto.get_entities().len(), 1);
 
-        let _full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        let promoted = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        assert_eq!(promoted.pending_entities.len(), 1);
     }
 
     #[test]

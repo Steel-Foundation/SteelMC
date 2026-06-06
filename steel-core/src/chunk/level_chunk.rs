@@ -26,11 +26,11 @@ use steel_utils::locks::SyncMutex;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     heightmap::{ChunkHeightmaps, HeightmapType},
     proto_chunk::ProtoChunk,
     section::Sections,
 };
+use crate::entity::SharedEntity;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
@@ -72,6 +72,14 @@ pub struct LevelChunk {
     pub structure_references: SyncRwLock<StructureReferenceMap>,
     /// Vanilla proto postprocessing offsets carried through promotion and drained once.
     postprocessing: SyncMutex<Box<[Vec<u16>]>>,
+}
+
+/// Result of promoting a proto chunk to a full chunk.
+pub struct LevelChunkPromotion {
+    /// The promoted full chunk.
+    pub chunk: LevelChunk,
+    /// Entities that should be registered after the full chunk is published.
+    pub pending_entities: Vec<SharedEntity>,
 }
 
 impl LevelChunk {
@@ -180,7 +188,7 @@ impl LevelChunk {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> Self {
+    ) -> LevelChunkPromotion {
         // Ensure full chunks always have populated final heightmaps. Some stages
         // may not touch blocks (carvers are currently empty), so lazy final
         // heightmaps are not guaranteed to exist before promotion.
@@ -204,8 +212,7 @@ impl LevelChunk {
         let block_ticks = proto_chunk.block_ticks.into_inner();
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
         let block_entities = proto_chunk.block_entities;
-        let entities = proto_chunk.entities.get_all();
-        let world = level.upgrade();
+        let pending_entities = proto_chunk.entities.get_all();
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -224,10 +231,10 @@ impl LevelChunk {
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
         };
-        if let Some(world) = world {
-            world.register_loaded_chunk_entities(chunk.pos, ChunkStatus::Full, entities);
+        LevelChunkPromotion {
+            chunk,
+            pending_entities,
         }
-        chunk
     }
 
     /// Creates a new `LevelChunk` that was loaded from disk (not dirty).

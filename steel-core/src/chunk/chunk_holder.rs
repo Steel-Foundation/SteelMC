@@ -32,7 +32,7 @@ use crate::{
         chunk_access::{ChunkAccess, ChunkStatus},
         chunk_generation_task::ChunkGenerationTask,
         chunk_pyramid::ChunkStep,
-        level_chunk::LevelChunk,
+        level_chunk::{LevelChunk, LevelChunkPromotion},
     },
 };
 
@@ -681,7 +681,8 @@ impl ChunkHolder {
     /// # Panics
     /// Panics if the chunk is not at `ProtoChunk` stage or already full.
     pub fn upgrade_to_full(&self, level: Weak<World>) {
-        self.data.with_write(|chunk| {
+        let world = level.upgrade();
+        let promoted_entities = self.data.with_write(|chunk| {
             use std::mem::replace;
             let owned = replace(chunk, ChunkAccess::Unloaded);
 
@@ -689,14 +690,24 @@ impl ChunkHolder {
                 ChunkAccess::Proto(proto) => {
                     let min_y = proto.min_y();
                     let height = proto.height();
-                    *chunk = ChunkAccess::Full(LevelChunk::from_proto(proto, min_y, height, level));
+                    let LevelChunkPromotion {
+                        chunk: full,
+                        pending_entities,
+                    } = LevelChunk::from_proto(proto, min_y, height, level);
+                    let pos = full.pos;
+                    *chunk = ChunkAccess::Full(full);
+                    Some((pos, pending_entities))
                 }
                 ChunkAccess::Full(full) => {
                     *chunk = ChunkAccess::Full(full);
+                    None
                 }
                 ChunkAccess::Unloaded => panic!("Chunk is unloaded, cannot upgrade to full"),
             }
         });
+        if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
+            world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
+        }
     }
 
     fn post_process_generation(&self) {

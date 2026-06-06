@@ -163,6 +163,11 @@ impl BlockBehavior for HoneyBlock {
         _pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
+        if let Some(entity) = context.source_entity() {
+            entity.play_sound(&sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
+            entity.broadcast_entity_event(EntityStatus::HoneyJump);
+        }
+
         Some(EntityFallDamage::new(
             context.fall_distance,
             0.2,
@@ -179,9 +184,6 @@ impl BlockBehavior for HoneyBlock {
         _fall_damage: &EntityFallDamage,
         damage_applied: bool,
     ) {
-        entity.play_sound(&sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
-        entity.broadcast_entity_event(EntityStatus::HoneyJump);
-
         if damage_applied {
             let sound_type = state.get_block().config.sound_type;
             entity.play_sound(

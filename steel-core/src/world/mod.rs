@@ -2688,6 +2688,16 @@ impl World {
         self.destroy_block_with_limit(pos, drop_items, 512)
     }
 
+    /// Destroys a block with an entity source for game-event context.
+    pub fn destroy_block_by_entity(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        entity: &dyn Entity,
+    ) -> bool {
+        self.destroy_block_with_limit_and_entity(pos, drop_items, 512, Some(entity))
+    }
+
     /// Destroys a block at the given position, optionally dropping its loot.
     ///
     /// Sends destruction particles (skipping fire blocks), optionally drops
@@ -2697,6 +2707,16 @@ impl World {
         pos: BlockPos,
         drop_items: bool,
         recursion_left: i32,
+    ) -> bool {
+        self.destroy_block_with_limit_and_entity(pos, drop_items, recursion_left, None)
+    }
+
+    fn destroy_block_with_limit_and_entity(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        recursion_left: i32,
+        entity: Option<&dyn Entity>,
     ) -> bool {
         let state = self.get_block_state(pos);
         if state.is_air() {
@@ -2723,7 +2743,7 @@ impl World {
             self.game_event(
                 &vanilla_game_events::BLOCK_DESTROY,
                 pos,
-                &GameEventContext::new(None, Some(state)),
+                &GameEventContext::new(entity, Some(state)),
             );
         }
         destroyed
@@ -3082,10 +3102,10 @@ impl World {
     }
 
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
-        // Entity chunk membership follows chunk-holder ownership, not full
-        // LevelChunk readiness. A moved entity would have to outrun every
-        // proto layer in one tick to land outside a retained holder; shutdown
-        // save diagnostics report that unexpected case.
+        // Runtime entity membership follows retained chunk holders, so it
+        // starts at Empty rather than waiting for full LevelChunk readiness.
+        // Durable entity persistence still starts at StructureStarts; entities
+        // in lower-status chunks can be lost if those chunks unload first.
         let result = self.entity_manager.on_chunk_loaded(pos);
         if result.needs_save {
             self.mark_chunk_dirty(pos);

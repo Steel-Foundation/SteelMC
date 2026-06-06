@@ -173,7 +173,7 @@ pub(super) fn destroy_crop_on_ravager_contact(
             .as_bool()
             == Some(true),
     ) {
-        world.destroy_block(pos, true);
+        world.destroy_block_by_entity(pos, true, entity);
     }
 }
 

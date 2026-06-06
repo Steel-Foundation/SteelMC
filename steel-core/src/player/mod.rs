@@ -257,7 +257,7 @@ pub struct Player {
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
 
-    /// Persisted RootVehicle payload awaiting live entity restoration.
+    /// Persisted `RootVehicle` payload awaiting live entity restoration.
     pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
 }
 
