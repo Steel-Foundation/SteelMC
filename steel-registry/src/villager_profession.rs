@@ -1,10 +1,12 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::sound_event::SoundEventRef;
+
 #[derive(Debug)]
 pub struct VillagerProfession {
     pub key: Identifier,
-    pub work_sound: Option<Identifier>,
+    pub work_sound: Option<SoundEventRef>,
 }
 
 pub type VillagerProfessionRef = &'static VillagerProfession;

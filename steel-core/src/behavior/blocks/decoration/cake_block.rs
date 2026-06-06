@@ -142,7 +142,7 @@ impl BlockBehavior for CakeBlock {
                 return InteractionResult::TryEmptyHandInteraction;
             };
             world.play_block_sound(
-                sound_events::BLOCK_CAKE_ADD_CANDLE,
+                &sound_events::BLOCK_CAKE_ADD_CANDLE,
                 pos,
                 1.0,
                 1.0,

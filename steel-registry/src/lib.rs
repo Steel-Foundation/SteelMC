@@ -42,6 +42,7 @@ use crate::{
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
+    sound_event::SoundEventRegistry,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
     timeline::TimelineRegistry,
@@ -94,6 +95,7 @@ pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
+pub mod sound_event;
 pub mod structure;
 pub mod structure_processor;
 pub mod structure_set;
@@ -566,6 +568,7 @@ pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_tab
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
+pub const SOUND_EVENT_REGISTRY: Identifier = Identifier::vanilla_static("sound_event");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 pub const CONFIGURED_CARVER_REGISTRY: Identifier =
@@ -619,6 +622,7 @@ pub struct Registry {
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub game_events: GameEventRegistry,
+    pub sound_events: SoundEventRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
@@ -714,6 +718,7 @@ impl Registry {
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
+        sound_events::register_sound_events(&mut registry.sound_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
         vanilla_fluid_tags::FluidTag::register_fluid_tags(&mut registry.fluids);
@@ -785,6 +790,7 @@ impl Registry {
         self.block_entity_types.freeze();
         self.game_rules.freeze();
         self.game_events.freeze();
+        self.sound_events.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
@@ -972,6 +978,7 @@ impl Registry {
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             game_events: GameEventRegistry::new(),
+            sound_events: SoundEventRegistry::new(),
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),

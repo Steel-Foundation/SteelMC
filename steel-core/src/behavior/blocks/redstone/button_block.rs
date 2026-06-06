@@ -11,6 +11,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction};
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, vanilla_blocks, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
@@ -33,9 +34,9 @@ pub struct ButtonBlock {
     #[json_arg(value)]
     ticks_to_stay_pressed: i32,
     #[json_arg(sound_events, json = "type_button_click_on")]
-    sound_click_on: i32,
+    sound_click_on: SoundEventRef,
     #[json_arg(sound_events, json = "type_button_click_off")]
-    sound_click_off: i32,
+    sound_click_off: SoundEventRef,
 }
 
 impl ButtonBlock {
@@ -46,8 +47,8 @@ impl ButtonBlock {
     pub const fn new(
         block: BlockRef,
         ticks_to_stay_pressed: i32,
-        sound_click_on: i32,
-        sound_click_off: i32,
+        sound_click_on: SoundEventRef,
+        sound_click_off: SoundEventRef,
     ) -> Self {
         Self {
             block,

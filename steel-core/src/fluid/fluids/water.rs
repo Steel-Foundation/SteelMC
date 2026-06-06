@@ -97,7 +97,13 @@ impl FluidBehavior for WaterFluid {
             if rand::random_range(0u32..64) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.25 + 0.75;
                 let pitch: f32 = rand::random::<f32>() + 0.5;
-                world.play_block_sound(sound_events::BLOCK_WATER_AMBIENT, pos, volume, pitch, None);
+                world.play_block_sound(
+                    &sound_events::BLOCK_WATER_AMBIENT,
+                    pos,
+                    volume,
+                    pitch,
+                    None,
+                );
             }
         } else {
             // 1/10 chance for underwater particles

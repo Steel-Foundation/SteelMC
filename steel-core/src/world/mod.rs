@@ -38,6 +38,7 @@ use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
     BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
@@ -2673,7 +2674,7 @@ impl World {
     /// the one who triggered the sound, as they hear it client-side.
     ///
     /// # Arguments
-    /// * `sound_id` - The sound event registry ID (from `steel_registry::sound_events`)
+    /// * `sound` - The sound event to play
     /// * `source` - The sound source category
     /// * `pos` - The block position (sound plays at center of block)
     /// * `volume` - Volume multiplier (1.0 = normal)
@@ -2681,7 +2682,7 @@ impl World {
     /// * `exclude` - Optional entity ID to exclude from receiving the sound
     pub fn play_sound(
         &self,
-        sound_id: i32,
+        sound: SoundEventRef,
         source: SoundSource,
         pos: BlockPos,
         volume: f32,
@@ -2689,7 +2690,7 @@ impl World {
         exclude: Option<i32>,
     ) {
         self.play_sound_at(
-            sound_id,
+            sound,
             source,
             DVec3::new(
                 f64::from(pos.x()) + 0.5,
@@ -2705,7 +2706,7 @@ impl World {
     /// Plays a sound at an exact world position, broadcasting to nearby players.
     pub fn play_sound_at(
         &self,
-        sound_id: i32,
+        sound: SoundEventRef,
         source: SoundSource,
         pos: DVec3,
         volume: f32,
@@ -2722,7 +2723,7 @@ impl World {
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
 
-        let packet = CSound::new(sound_id, source, pos.x, pos.y, pos.z, volume, pitch, seed);
+        let packet = CSound::new(sound, source, pos.x, pos.y, pos.z, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -2756,20 +2757,20 @@ impl World {
     /// the sound type's volume and pitch modifiers.
     ///
     /// # Arguments
-    /// * `sound_id` - The sound event registry ID
+    /// * `sound` - The sound event to play
     /// * `pos` - The block position
     /// * `volume` - Base volume (typically from `SoundType`)
     /// * `pitch` - Base pitch (typically from `SoundType`)
     /// * `exclude` - Optional entity ID to exclude from receiving the sound
     pub fn play_block_sound(
         &self,
-        sound_id: i32,
+        sound: SoundEventRef,
         pos: BlockPos,
         volume: f32,
         pitch: f32,
         exclude: Option<i32>,
     ) {
-        self.play_sound(sound_id, SoundSource::Blocks, pos, volume, pitch, exclude);
+        self.play_sound(sound, SoundSource::Blocks, pos, volume, pitch, exclude);
     }
 
     // === Entity Methods ===

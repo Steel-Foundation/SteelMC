@@ -17,6 +17,7 @@ use steel_registry::entity_type::{EntityAttachment, EntityTypeRef};
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
@@ -1368,10 +1369,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Returns vanilla small and big fall sounds for this entity.
-    fn fall_sounds(&self) -> (i32, i32) {
+    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
         (
-            sound_events::ENTITY_GENERIC_SMALL_FALL,
-            sound_events::ENTITY_GENERIC_BIG_FALL,
+            &sound_events::ENTITY_GENERIC_SMALL_FALL,
+            &sound_events::ENTITY_GENERIC_BIG_FALL,
         )
     }
 
@@ -1552,7 +1553,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 let mut random = self.base().random().lock();
                 2.0 + random.next_f32() * 0.4
             };
-            self.play_sound(sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
+            self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
 
@@ -2131,8 +2132,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Returns this entity's vanilla swim sound.
-    fn swim_sound(&self) -> i32 {
-        sound_events::ENTITY_GENERIC_SWIM
+    fn swim_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_GENERIC_SWIM
     }
 
     /// Returns whether sounds from this entity are suppressed.
@@ -2157,14 +2158,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Plays an entity sound at the entity's exact position.
-    fn play_sound(&self, sound_id: i32, volume: f32, pitch: f32) {
+    fn play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
         if self.is_silent() {
             return;
         }
 
         if let Some(world) = self.level() {
             world.play_sound_at(
-                sound_id,
+                sound,
                 self.sound_source(),
                 self.position(),
                 volume,
@@ -2180,7 +2181,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             let mut random = self.base().random().lock();
             1.6 + (random.next_f32() - random.next_f32()) * 0.4
         };
-        self.play_sound(sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
+        self.play_sound(&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
     }
 
     /// Plays the base vanilla step sound for a block.
@@ -2235,7 +2236,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return;
         };
         self.play_sound(
-            sound_events::BLOCK_AMETHYST_BLOCK_CHIME,
+            &sound_events::BLOCK_AMETHYST_BLOCK_CHIME,
             sound.volume,
             sound.pitch,
         );
@@ -2898,7 +2899,7 @@ pub trait LivingEntity: Entity {
     fn set_absorption_amount(&self, amount: f32);
 
     /// Returns vanilla `LivingEntity.getFallDamageSound()`.
-    fn fall_damage_sound(&self, damage: i32) -> i32 {
+    fn fall_damage_sound(&self, damage: i32) -> SoundEventRef {
         let (small, big) = self.fall_sounds();
         if damage > 4 { big } else { small }
     }
@@ -4598,11 +4599,11 @@ mod tests {
 
         assert_eq!(
             entity.fall_damage_sound(4),
-            sound_events::ENTITY_GENERIC_SMALL_FALL
+            &sound_events::ENTITY_GENERIC_SMALL_FALL
         );
         assert_eq!(
             entity.fall_damage_sound(5),
-            sound_events::ENTITY_GENERIC_BIG_FALL
+            &sound_events::ENTITY_GENERIC_BIG_FALL
         );
     }
 

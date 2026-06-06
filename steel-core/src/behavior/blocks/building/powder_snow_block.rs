@@ -4,6 +4,7 @@ use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{vanilla_entities, vanilla_game_rules};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
@@ -42,7 +43,7 @@ impl PowderSnowBlock {
     }
 
     #[must_use]
-    fn fall_sound(context: EntityFallOnContext<'_>) -> Option<i32> {
+    fn fall_sound(context: EntityFallOnContext<'_>) -> Option<SoundEventRef> {
         if context.fall_distance < MIN_FALL_DISTANCE_FOR_SOUND || !context.entity.is_living_entity {
             return None;
         }
@@ -207,8 +208,8 @@ mod tests {
                 0.6,
                 1.8,
                 (
-                    sound_events::ENTITY_PLAYER_SMALL_FALL,
-                    sound_events::ENTITY_PLAYER_BIG_FALL,
+                    &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                    &sound_events::ENTITY_PLAYER_BIG_FALL,
                 ),
             ),
             None,
@@ -221,11 +222,11 @@ mod tests {
         assert!(PowderSnowBlock::fall_sound(fall_context(3.99, true)).is_none());
         assert_eq!(
             PowderSnowBlock::fall_sound(fall_context(4.0, true)),
-            Some(sound_events::ENTITY_PLAYER_SMALL_FALL)
+            Some(&sound_events::ENTITY_PLAYER_SMALL_FALL)
         );
         assert_eq!(
             PowderSnowBlock::fall_sound(fall_context(7.0, true)),
-            Some(sound_events::ENTITY_PLAYER_BIG_FALL)
+            Some(&sound_events::ENTITY_PLAYER_BIG_FALL)
         );
         assert!(PowderSnowBlock::fall_sound(fall_context(7.0, false)).is_none());
     }

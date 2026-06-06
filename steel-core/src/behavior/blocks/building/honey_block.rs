@@ -133,7 +133,7 @@ impl HoneyBlock {
             )
         };
         if play_sound {
-            entity.play_sound(sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
+            entity.play_sound(&sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
         }
         if broadcast_particles {
             entity.broadcast_entity_event(EntityStatus::HoneySlide);
@@ -179,7 +179,7 @@ impl BlockBehavior for HoneyBlock {
         _fall_damage: &EntityFallDamage,
         damage_applied: bool,
     ) {
-        entity.play_sound(sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
+        entity.play_sound(&sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
         entity.broadcast_entity_event(EntityStatus::HoneyJump);
 
         if damage_applied {

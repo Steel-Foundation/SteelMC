@@ -70,7 +70,7 @@ impl ItemBehavior for HoeItem {
         }
 
         context.world.play_block_sound(
-            sound_events::ITEM_HOE_TILL,
+            &sound_events::ITEM_HOE_TILL,
             context.hit_result.block_pos,
             1.0,
             1.0,

@@ -56,19 +56,19 @@ impl ItemBehavior for AxeItem {
                     .default_state()
                     .set_value(&AXIS_PROPERTY, old_axis);
 
-                (new_block_state, ITEM_AXE_STRIP, None)
+                (new_block_state, &ITEM_AXE_STRIP, None)
             } else if let Some(scraped_block) = previous_copper_stage(old_block) {
                 let new_block_state = REGISTRY
                     .blocks
                     .copy_matching_properties(old_block_state, scraped_block);
 
-                (new_block_state, ITEM_AXE_SCRAPE, Some(PARTICLES_SCRAPE))
+                (new_block_state, &ITEM_AXE_SCRAPE, Some(PARTICLES_SCRAPE))
             } else if let Some(unwaxed_block) = get_normal_from_waxed_variant(old_block) {
                 let new_block_state = REGISTRY
                     .blocks
                     .copy_matching_properties(old_block_state, unwaxed_block);
 
-                (new_block_state, ITEM_AXE_WAX_OFF, Some(PARTICLES_WAX_OFF))
+                (new_block_state, &ITEM_AXE_WAX_OFF, Some(PARTICLES_WAX_OFF))
             } else {
                 return InteractionResult::Pass;
             };

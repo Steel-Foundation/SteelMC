@@ -1,5 +1,7 @@
 use crate::shared_structs::{BiomeCondition, SpawnConditionEntry, TextComponentJson};
+use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use std::fs;
 use steel_utils::Identifier;
@@ -29,6 +31,17 @@ pub fn generate_identifier(resource: &Identifier) -> TokenStream {
     let namespace = resource.namespace.as_ref();
     let path = resource.path.as_ref();
     quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
+}
+
+pub fn generate_sound_event_ref(resource: &Identifier) -> TokenStream {
+    assert_eq!(
+        resource.namespace.as_ref(),
+        "minecraft",
+        "vanilla sound event references must use the minecraft namespace: {resource}"
+    );
+
+    let ident = Ident::new(&resource.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::sound_events::#ident }
 }
 
 pub fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream

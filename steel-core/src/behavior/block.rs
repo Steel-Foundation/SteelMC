@@ -11,6 +11,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
@@ -31,7 +32,7 @@ use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
-    pub sound: Option<i32>,
+    pub sound: Option<SoundEventRef>,
 }
 
 const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
@@ -172,7 +173,7 @@ pub struct EntityFallOnFacts {
     /// Current entity bounding-box height.
     pub bounding_box_height: f64,
     /// Vanilla small and big living-entity fall sounds.
-    pub fall_sounds: (i32, i32),
+    pub fall_sounds: (SoundEventRef, SoundEventRef),
 }
 
 impl EntityFallOnFacts {
@@ -183,7 +184,7 @@ impl EntityFallOnFacts {
         is_living_entity: bool,
         bounding_box_width: f64,
         bounding_box_height: f64,
-        fall_sounds: (i32, i32),
+        fall_sounds: (SoundEventRef, SoundEventRef),
     ) -> Self {
         Self {
             entity_type,
@@ -1148,8 +1149,8 @@ mod tests {
             0.6,
             1.8,
             (
-                steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
-                steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+                &steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
+                &steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
             ),
         );
 

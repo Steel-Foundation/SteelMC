@@ -108,8 +108,8 @@ mod tests {
                 0.6,
                 1.8,
                 (
-                    steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
-                    steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
+                    &steel_registry::sound_events::ENTITY_PLAYER_SMALL_FALL,
+                    &steel_registry::sound_events::ENTITY_PLAYER_BIG_FALL,
                 ),
             ),
             None,

@@ -63,6 +63,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
@@ -1306,10 +1307,10 @@ impl Entity for Player {
         // This is here for Entity trait compliance
     }
 
-    fn fall_sounds(&self) -> (i32, i32) {
+    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
         (
-            sound_events::ENTITY_PLAYER_SMALL_FALL,
-            sound_events::ENTITY_PLAYER_BIG_FALL,
+            &sound_events::ENTITY_PLAYER_SMALL_FALL,
+            &sound_events::ENTITY_PLAYER_BIG_FALL,
         )
     }
 
@@ -1505,8 +1506,8 @@ impl Entity for Player {
         SoundSource::Players
     }
 
-    fn swim_sound(&self) -> i32 {
-        sound_events::ENTITY_PLAYER_SWIM
+    fn swim_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SWIM
     }
 
     fn play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {

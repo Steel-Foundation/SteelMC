@@ -154,7 +154,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         }
 
         world.play_block_sound(
-            sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
+            &sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
             0.8 + rng.random::<f32>() * 0.4,
