@@ -1,13 +1,13 @@
-FROM rustlang/rust:nightly-bookworm AS builder
+FROM rustlang/rust:nightly-alpine3.23 AS builder
 LABEL authors="junkydeveloper"
 
 WORKDIR /steel
 
 COPY .. .
-RUN cargo build --release --locked
-FROM gcr.io/distroless/cc-debian13
+RUN cargo build --target x86_64-unknown-linux-musl --release --locked
+FROM alpine:3.23
 
-COPY --from=builder /steel/target/release/steel /
+COPY --chmod=777 --from=builder /steel/target/release/steel /
 
 EXPOSE 25565
 
