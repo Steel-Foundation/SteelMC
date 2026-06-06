@@ -5,6 +5,7 @@
 
 use std::fs;
 
+use crate::generator_functions::vanilla_variant_id;
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
@@ -225,23 +226,41 @@ fn optional_none_expr(serializer: &str, default: &Value) -> TokenStream {
     quote! { None }
 }
 
-fn registry_default_expr(module: &str, default: &Value, serializer: &str) -> TokenStream {
-    let module_ident = Ident::new(module, Span::call_site());
-    let value_ident = key_ident(default, serializer);
-    quote! { crate::#module_ident::#value_ident.id() as i32 }
+fn variant_registry_default_expr(module: &str, default: &Value, serializer: &str) -> TokenStream {
+    let default = required_string(default, serializer);
+    let subdir = module
+        .strip_prefix("vanilla_")
+        .and_then(|name| name.strip_suffix('s'))
+        .unwrap_or_else(|| panic!("Unsupported registry default module: {module}"));
+    let id = Literal::i32_unsuffixed(vanilla_variant_id(subdir, default) as i32);
+    quote! { #id }
 }
 
-fn registry_field_default_expr(
-    module: &str,
+#[derive(Deserialize)]
+struct ExtractedRegistryEntry {
+    id: i32,
+    key: String,
+}
+
+fn extracted_registry_default_expr(asset: &str, default: &Value, serializer: &str) -> TokenStream {
+    let key = required_string(default, serializer);
+    let entries: Vec<ExtractedRegistryEntry> = crate::generator_functions::read_json_asset(asset);
+    let id = entries
+        .iter()
+        .find(|entry| entry.key == key)
+        .unwrap_or_else(|| panic!("Unknown {serializer} registry default {key} in {asset}"))
+        .id;
+    let id = Literal::i32_unsuffixed(id);
+    quote! { #id }
+}
+
+fn extracted_registry_field_default_expr(
+    asset: &str,
     object: &serde_json::Map<String, Value>,
     serializer: &str,
     field: &str,
 ) -> TokenStream {
-    registry_default_expr(
-        module,
-        required_field(object, serializer, field),
-        serializer,
-    )
+    extracted_registry_default_expr(asset, required_field(object, serializer, field), serializer)
 }
 
 fn ordinal_default_expr(default: &Value, serializer: &str, names: &[&str]) -> TokenStream {
@@ -372,32 +391,38 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 quote! { Box::new(TextComponent::plain(#text)) }
             }
         }
-        "cat_variant" => registry_default_expr("vanilla_cat_variants", default, serializer),
+        "cat_variant" => variant_registry_default_expr("vanilla_cat_variants", default, serializer),
         "cat_sound_variant" => {
-            registry_default_expr("vanilla_cat_sound_variants", default, serializer)
+            variant_registry_default_expr("vanilla_cat_sound_variants", default, serializer)
         }
-        "cow_variant" => registry_default_expr("vanilla_cow_variants", default, serializer),
+        "cow_variant" => variant_registry_default_expr("vanilla_cow_variants", default, serializer),
         "cow_sound_variant" => {
-            registry_default_expr("vanilla_cow_sound_variants", default, serializer)
+            variant_registry_default_expr("vanilla_cow_sound_variants", default, serializer)
         }
-        "wolf_variant" => registry_default_expr("vanilla_wolf_variants", default, serializer),
+        "wolf_variant" => {
+            variant_registry_default_expr("vanilla_wolf_variants", default, serializer)
+        }
         "wolf_sound_variant" => {
-            registry_default_expr("vanilla_wolf_sound_variants", default, serializer)
+            variant_registry_default_expr("vanilla_wolf_sound_variants", default, serializer)
         }
-        "frog_variant" => registry_default_expr("vanilla_frog_variants", default, serializer),
-        "pig_variant" => registry_default_expr("vanilla_pig_variants", default, serializer),
+        "frog_variant" => {
+            variant_registry_default_expr("vanilla_frog_variants", default, serializer)
+        }
+        "pig_variant" => variant_registry_default_expr("vanilla_pig_variants", default, serializer),
         "pig_sound_variant" => {
-            registry_default_expr("vanilla_pig_sound_variants", default, serializer)
+            variant_registry_default_expr("vanilla_pig_sound_variants", default, serializer)
         }
-        "chicken_variant" => registry_default_expr("vanilla_chicken_variants", default, serializer),
+        "chicken_variant" => {
+            variant_registry_default_expr("vanilla_chicken_variants", default, serializer)
+        }
         "chicken_sound_variant" => {
-            registry_default_expr("vanilla_chicken_sound_variants", default, serializer)
+            variant_registry_default_expr("vanilla_chicken_sound_variants", default, serializer)
         }
         "zombie_nautilus_variant" => {
-            registry_default_expr("vanilla_zombie_nautilus_variants", default, serializer)
+            variant_registry_default_expr("vanilla_zombie_nautilus_variants", default, serializer)
         }
         "painting_variant" => {
-            registry_default_expr("vanilla_painting_variants", default, serializer)
+            variant_registry_default_expr("vanilla_painting_variants", default, serializer)
         }
         "copper_golem_state" => ordinal_default_expr(
             default,
@@ -460,9 +485,14 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 "Expected villager_data default with type/profession/level, got {default}"
             );
 
-            let vt = registry_field_default_expr("vanilla_villager_types", obj, serializer, "type");
-            let prof = registry_field_default_expr(
-                "vanilla_villager_professions",
+            let vt = extracted_registry_field_default_expr(
+                "build_assets/villager_types.json",
+                obj,
+                serializer,
+                "type",
+            );
+            let prof = extracted_registry_field_default_expr(
+                "build_assets/villager_professions.json",
                 obj,
                 serializer,
                 "profession",
@@ -479,8 +509,12 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 "Expected particle default with type/options, got {default}"
             );
 
-            let particle_type =
-                registry_field_default_expr("vanilla_particle_types", obj, serializer, "type");
+            let particle_type = extracted_registry_field_default_expr(
+                "build_assets/particle_types.json",
+                obj,
+                serializer,
+                "type",
+            );
             let options = required_object(required_field(obj, serializer, "options"), serializer);
             let kind = required_string(required_field(options, serializer, "kind"), serializer);
 

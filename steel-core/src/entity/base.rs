@@ -11,6 +11,7 @@ use std::{
 use glam::DVec3;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
+use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
@@ -1248,12 +1249,16 @@ impl EntityBase {
         }
 
         passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
-        vehicle
-            .base()
-            .relationships
-            .lock()
-            .passengers
-            .push(Arc::downgrade(passenger));
+        let passenger_ref = Arc::downgrade(passenger);
+        let mut vehicle_relationships = vehicle.base().relationships.lock();
+        let first_passenger_is_player = vehicle_relationships
+            .first_passenger()
+            .is_some_and(|first| first.entity_type() == &vanilla_entities::PLAYER);
+        if passenger.entity_type() == &vanilla_entities::PLAYER && !first_passenger_is_player {
+            vehicle_relationships.passengers.insert(0, passenger_ref);
+        } else {
+            vehicle_relationships.passengers.push(passenger_ref);
+        }
     }
 
     /// Sets the vanilla boarding cooldown in ticks.
@@ -1366,6 +1371,23 @@ impl EntityBase {
     }
 
     fn clear_vehicle_if(&self, vehicle_id: i32) -> bool {
+        {
+            let mut relationships = self.relationships.lock();
+            let Some(vehicle) = relationships.vehicle() else {
+                return false;
+            };
+            if vehicle.id() != vehicle_id {
+                return false;
+            }
+        }
+
+        if let Err(error) = self.try_set_position(self.position()) {
+            log::warn!(
+                "Failed to refresh passenger {} manager position before clearing vehicle {vehicle_id}: {error}",
+                self.id
+            );
+        }
+
         let mut relationships = self.relationships.lock();
         let Some(vehicle) = relationships.vehicle() else {
             return false;

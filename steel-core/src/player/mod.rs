@@ -396,6 +396,7 @@ impl Player {
 
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(tick_position);
+        self.set_old_position_to_current();
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();

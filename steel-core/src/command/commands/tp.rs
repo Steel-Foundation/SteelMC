@@ -95,22 +95,16 @@ fn teleport_to_pos(
         return Ok(());
     }
 
-    for player in targets {
+    let targets = current_players(targets, ctx)?;
+    for player in &targets {
         teleport_player(player, pos.x, pos.y, pos.z, rotation.0, rotation.1)?;
     }
 
-    if targets.len() == 1 {
+    if let [target] = targets.as_slice() {
         ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_LOCATION_SINGLE
                 .message([
-                    TextComponent::from(
-                        targets
-                            .first()
-                            .expect("targets cannot be empty")
-                            .gameprofile
-                            .name
-                            .clone(),
-                    ),
+                    TextComponent::from(target.gameprofile.name.clone()),
                     TextComponent::from(format!("{:.2}", pos.x)),
                     TextComponent::from(format!("{:.2}", pos.y)),
                     TextComponent::from(format!("{:.2}", pos.z)),
@@ -137,29 +131,24 @@ fn teleport_to_player(
     destination: &[Arc<Player>],
     ctx: &mut CommandContext,
 ) -> Result<(), CommandError> {
-    let destination = destination
-        .first()
-        .expect("destination should not be empty");
+    let Some(destination) = destination.first() else {
+        return Err(no_player_found());
+    };
+    let destination = current_player(destination, ctx).ok_or_else(no_player_found)?;
 
     let pos = destination.position();
     let (yaw, pitch) = destination.rotation();
 
-    for player in targets {
+    let targets = current_players(targets, ctx)?;
+    for player in &targets {
         teleport_player(player, pos.x, pos.y, pos.z, yaw, pitch)?;
     }
 
-    if targets.len() == 1 {
+    if let [target] = targets.as_slice() {
         ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_SINGLE
                 .message([
-                    TextComponent::from(
-                        targets
-                            .first()
-                            .expect("targets cannot be empty")
-                            .gameprofile
-                            .name
-                            .clone(),
-                    ),
+                    TextComponent::from(target.gameprofile.name.clone()),
                     TextComponent::from(destination.gameprofile.name.clone()),
                 ])
                 .into(),
@@ -175,6 +164,37 @@ fn teleport_to_player(
         );
     }
     Ok(())
+}
+
+fn current_players(
+    players: &[Arc<Player>],
+    ctx: &CommandContext,
+) -> Result<Vec<Arc<Player>>, CommandError> {
+    let current_players = ctx.server.get_players();
+    let players = players
+        .iter()
+        .filter_map(|player| {
+            current_players
+                .iter()
+                .find(|current| current.uuid() == player.uuid())
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    if players.is_empty() {
+        return Err(no_player_found());
+    }
+    Ok(players)
+}
+
+fn current_player(player: &Player, ctx: &CommandContext) -> Option<Arc<Player>> {
+    ctx.server
+        .get_players()
+        .into_iter()
+        .find(|current| current.uuid() == player.uuid())
+}
+
+fn no_player_found() -> CommandError {
+    CommandError::CommandFailed(Box::new(TextComponent::const_plain("No player was found")))
 }
 
 fn teleport_player(

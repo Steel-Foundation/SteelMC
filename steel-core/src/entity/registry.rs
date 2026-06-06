@@ -154,6 +154,7 @@ impl EntityRegistry {
         let entity = load_factory(load);
         entity.set_no_gravity(no_gravity);
         entity.load_additional(nbt);
+        entity.sync_base_fire_freeze_entity_data();
         Some(entity)
     }
 
@@ -171,6 +172,7 @@ impl EntityRegistry {
             let entity = load_factory(load);
             entity.set_no_gravity(no_gravity);
             entity.load_additional(nbt);
+            entity.sync_base_fire_freeze_entity_data();
             return entity;
         }
 

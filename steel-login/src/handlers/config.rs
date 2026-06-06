@@ -136,7 +136,10 @@ impl JavaTcpClient {
             return ConnectionAction::none();
         }
 
-        self.connection_updated.notified().await;
+        tokio::select! {
+            () = self.connection_updated.notified() => {}
+            () = self.cancel_token.cancelled() => return ConnectionAction::none(),
+        }
         self.server.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)

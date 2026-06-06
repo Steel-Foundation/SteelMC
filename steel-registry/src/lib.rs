@@ -1083,6 +1083,10 @@ mod tests {
         let entity_effect = Identifier::vanilla_static("entity_effect");
         let plains = Identifier::vanilla_static("plains");
         let none = Identifier::vanilla_static("none");
+        let tabby = Identifier::vanilla_static("tabby");
+        let angry = Identifier::vanilla_static("angry");
+        let big = Identifier::vanilla_static("big");
+        let earth = Identifier::vanilla_static("earth");
 
         assert_eq!(
             registry.particle_types.by_id(21).map(|entry| &entry.key),
@@ -1098,6 +1102,25 @@ mod tests {
                 .by_id(0)
                 .map(|entry| &entry.key),
             Some(&none)
+        );
+        assert_eq!(
+            registry.cat_variants.by_id(0).map(|entry| &entry.key),
+            Some(&tabby)
+        );
+        assert_eq!(
+            registry
+                .wolf_sound_variants
+                .by_id(3)
+                .map(|entry| &entry.key),
+            Some(&angry)
+        );
+        assert_eq!(
+            registry.pig_sound_variants.by_id(1).map(|entry| &entry.key),
+            Some(&big)
+        );
+        assert_eq!(
+            registry.painting_variants.by_id(25).map(|entry| &entry.key),
+            Some(&earth)
         );
     }
 

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::{
     io,
     sync::{
-        Arc, Weak,
+        Arc, LazyLock, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
@@ -29,6 +29,7 @@ use steel_protocol::{
 
 use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
+use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{VoxelShape, is_face_full};
@@ -51,8 +52,9 @@ use steel_registry::{
 use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
-    random::legacy_random::LegacyRandom,
+    random::{RandomSource, legacy_random::LegacyRandom},
 };
+use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -90,6 +92,21 @@ use crate::{
     player::{LastSeen, Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
+
+static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
+    PerlinSimplexNoise::new(&mut random, &[0])
+});
+
+static FROZEN_BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(3456));
+    PerlinSimplexNoise::new(&mut random, &[-2, -1, 0])
+});
+
+static BIOME_INFO_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(2345));
+    PerlinSimplexNoise::new(&mut random, &[0])
+});
 
 /// Block shape channel used by vanilla-style world clipping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +170,7 @@ mod weather;
 mod world_entities;
 
 pub use crate::config::WorldStorageConfig;
+use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 pub use level_reader::{LevelReader, ScheduledTickAccess};
 pub use player_area_map::PlayerAreaMap;
@@ -1296,6 +1314,20 @@ impl World {
         self.is_raining_with_guard(&guard)
     }
 
+    /// Checks whether rain reaches the given block position.
+    ///
+    /// Mirrors vanilla `Level.isRainingAt`: global rain state, sky exposure,
+    /// motion-blocking height, and biome precipitation must all allow rain.
+    pub fn is_raining_at(&self, pos: BlockPos) -> bool {
+        if !self.is_raining() || !self.can_see_sky_for_precipitation(pos) {
+            return false;
+        }
+
+        self.biome_at(pos).is_some_and(|biome| {
+            biome.has_precipitation && self.biome_temperature(biome, pos) >= 0.15
+        })
+    }
+
     /// Checks whether the rain level is sufficient to render rain clientside using the provided guard.
     pub fn is_raining_with_guard(&self, guard: &Weather) -> bool {
         guard.rain_level > 0.2 && self.can_have_weather()
@@ -1321,6 +1353,113 @@ impl World {
         self.dimension_type.has_skylight
             && !self.dimension_type.has_ceiling
             && self.dimension_type.key != vanilla_dimension_types::THE_END.key
+    }
+
+    fn can_see_sky_for_precipitation(&self, pos: BlockPos) -> bool {
+        if self.raw_brightness(pos, 0) < 15 {
+            return false;
+        }
+
+        self.height_at(HeightmapType::MotionBlocking, pos.x(), pos.z())
+            .is_some_and(|height| height <= pos.y())
+    }
+
+    fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
+        let biome_zoom_seed = obfuscate_biome_seed(self.seed());
+        let mut missing_chunk = false;
+        let biome_id = fuzzed_biome_at_block(
+            biome_zoom_seed,
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            |quart_x, quart_y, quart_z| {
+                self.noise_biome_id(quart_x, quart_y, quart_z)
+                    .unwrap_or_else(|| {
+                        missing_chunk = true;
+                        0
+                    })
+            },
+        );
+
+        if missing_chunk {
+            return None;
+        }
+
+        REGISTRY.biomes.by_id(usize::from(biome_id))
+    }
+
+    fn noise_biome_id(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> Option<u16> {
+        let chunk_pos = ChunkPos::new(quart_x >> 2, quart_z >> 2);
+        let local_quart_x = (quart_x & 3) as usize;
+        let local_quart_z = (quart_z & 3) as usize;
+
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            let sections = chunk.sections();
+            let (section_index, local_quart_y) =
+                Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
+            let section = sections.sections.get(section_index)?;
+            Some(
+                section
+                    .read()
+                    .biomes
+                    .get(local_quart_x, local_quart_y, local_quart_z),
+            )
+        })?
+    }
+
+    fn biome_quart_y_indices(
+        min_y: i32,
+        section_count: usize,
+        quart_y: i32,
+    ) -> Option<(usize, usize)> {
+        let total_quart_y = section_count.checked_mul(4)?;
+        if total_quart_y == 0 {
+            return None;
+        }
+
+        let relative_quart_y = i64::from(quart_y) - i64::from(min_y >> 2);
+        let max_relative_quart_y = total_quart_y - 1;
+        let clamped_relative_quart_y = if relative_quart_y <= 0 {
+            0
+        } else {
+            usize::try_from(relative_quart_y).map_or(max_relative_quart_y, |relative| {
+                relative.min(max_relative_quart_y)
+            })
+        };
+
+        Some((clamped_relative_quart_y / 4, clamped_relative_quart_y & 3))
+    }
+
+    fn biome_temperature(&self, biome: BiomeRef, pos: BlockPos) -> f32 {
+        let modified_temp = match biome.temperature_modifier {
+            TemperatureModifier::None => biome.temperature,
+            TemperatureModifier::Frozen => {
+                let large = FROZEN_BIOME_TEMPERATURE_NOISE
+                    .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
+                    * 7.0;
+                let edge =
+                    BIOME_INFO_NOISE.get_value(f64::from(pos.x()) * 0.2, f64::from(pos.z()) * 0.2);
+                if large + edge < 0.3 {
+                    let small = BIOME_INFO_NOISE
+                        .get_value(f64::from(pos.x()) * 0.09, f64::from(pos.z()) * 0.09);
+                    if small < 0.8 {
+                        return 0.2;
+                    }
+                }
+                biome.temperature
+            }
+        };
+
+        let snow_level = self.sea_level + 17;
+        if pos.y() <= snow_level {
+            return modified_temp;
+        }
+
+        let noise = BIOME_TEMPERATURE_NOISE
+            .get_value(f64::from(pos.x()) / 8.0, f64::from(pos.z()) / 8.0)
+            as f32
+            * 8.0;
+        modified_temp - (noise + pos.y() as f32 - snow_level as f32) * 0.05 / 40.0
     }
 
     /// Schedules a block tick at the given position.

@@ -99,16 +99,130 @@ pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> V
     let dir = format!("build_assets/builtin_datapacks/minecraft/{subdir}");
     println!("cargo:rerun-if-changed={dir}/");
     let mut out = Vec::new();
-    for entry in fs::read_dir(&dir).unwrap() {
-        let path = entry.unwrap().path();
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("Failed to read {dir}: {e}")) {
+        let path = entry
+            .unwrap_or_else(|e| panic!("Failed to read entry in {dir}: {e}"))
+            .path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let name = path.file_stem().unwrap().to_str().unwrap().to_string();
-        let content = fs::read_to_string(&path).unwrap();
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_else(|| panic!("Invalid variant file name in {dir}: {}", path.display()))
+            .to_string();
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
         let value: T = serde_json::from_str(&content)
             .unwrap_or_else(|e| panic!("Failed to parse {}: {}", name, e));
         out.push((name, value));
     }
+    let order = vanilla_variant_order(subdir);
+    out.sort_by_key(|(name, _)| {
+        order
+            .iter()
+            .position(|ordered| *ordered == name)
+            .unwrap_or_else(|| panic!("Unknown vanilla {subdir} variant in extracted data: {name}"))
+    });
+    assert_eq!(
+        out.len(),
+        order.len(),
+        "Expected {} vanilla {subdir} variants, got {}",
+        order.len(),
+        out.len()
+    );
     out
+}
+
+pub fn vanilla_variant_id(subdir: &str, key: &str) -> usize {
+    let path = key.strip_prefix("minecraft:").unwrap_or(key);
+    vanilla_variant_order(subdir)
+        .iter()
+        .position(|ordered| *ordered == path)
+        .unwrap_or_else(|| panic!("Unknown vanilla {subdir} variant default: {key}"))
+}
+
+fn vanilla_variant_order(subdir: &str) -> &'static [&'static str] {
+    match subdir {
+        "cat_variant" => &[
+            "tabby",
+            "black",
+            "red",
+            "siamese",
+            "british_shorthair",
+            "calico",
+            "persian",
+            "ragdoll",
+            "white",
+            "jellie",
+            "all_black",
+        ],
+        "cat_sound_variant" => &["classic", "royal"],
+        "cow_variant" => &["temperate", "warm", "cold"],
+        "cow_sound_variant" => &["classic", "moody"],
+        "wolf_variant" => &[
+            "pale", "spotted", "snowy", "black", "ashen", "rusty", "woods", "chestnut", "striped",
+        ],
+        "wolf_sound_variant" => &["classic", "puglin", "sad", "angry", "grumpy", "big", "cute"],
+        "frog_variant" => &["temperate", "warm", "cold"],
+        "pig_variant" => &["temperate", "warm", "cold"],
+        "pig_sound_variant" => &["classic", "big", "mini"],
+        "chicken_variant" => &["temperate", "warm", "cold"],
+        "chicken_sound_variant" => &["classic", "picky"],
+        "zombie_nautilus_variant" => &["temperate", "warm"],
+        "painting_variant" => &[
+            "kebab",
+            "aztec",
+            "alban",
+            "aztec2",
+            "bomb",
+            "plant",
+            "wasteland",
+            "pool",
+            "courbet",
+            "sea",
+            "sunset",
+            "creebet",
+            "wanderer",
+            "graham",
+            "match",
+            "bust",
+            "stage",
+            "void",
+            "skull_and_roses",
+            "wither",
+            "fighters",
+            "pointer",
+            "pigscene",
+            "burning_skull",
+            "skeleton",
+            "earth",
+            "wind",
+            "water",
+            "fire",
+            "donkey_kong",
+            "baroque",
+            "humble",
+            "meditative",
+            "prairie_ride",
+            "unpacked",
+            "backyard",
+            "bouquet",
+            "cavebird",
+            "changing",
+            "cotan",
+            "endboss",
+            "fern",
+            "finding",
+            "lowmist",
+            "orb",
+            "owlemons",
+            "passage",
+            "pond",
+            "sunflowers",
+            "tides",
+            "dennis",
+        ],
+        _ => panic!("Missing vanilla variant order for {subdir}"),
+    }
 }

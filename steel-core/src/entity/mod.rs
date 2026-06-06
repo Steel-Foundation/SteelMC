@@ -154,6 +154,10 @@ fn finish_inside_block_effects(
         return;
     }
 
+    if is_in_rain(entity) {
+        entity.clear_fire();
+    }
+
     let extinguished = before_effects.was_on_fire && !entity.is_on_fire()
         || before_effects.was_freezing && !entity.is_freezing();
     if extinguished {
@@ -167,6 +171,20 @@ fn finish_inside_block_effects(
     } else {
         entity.sync_base_fire_freeze_entity_data();
     }
+}
+
+fn is_in_rain(entity: &dyn Entity) -> bool {
+    let Some(world) = entity.level() else {
+        return false;
+    };
+
+    let pos = entity.block_position();
+    world.is_raining_at(pos)
+        || world.is_raining_at(BlockPos::new(
+            pos.x(),
+            entity.bounding_box().max_y().floor() as i32,
+            pos.z(),
+        ))
 }
 
 fn closest_open_space_direction(

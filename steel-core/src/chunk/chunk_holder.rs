@@ -563,6 +563,7 @@ impl ChunkHolder {
                 return None;
             }
             holder.insert_chunk(loaded.chunk, loaded_status);
+            context.world().on_entity_chunk_loaded(holder.pos);
             if !loaded.pending_entities.is_empty() {
                 context.world().register_loaded_chunk_entities(
                     holder.pos,
@@ -597,8 +598,12 @@ impl ChunkHolder {
         }
 
         let holder_for_notify = holder.clone();
+        let world = context.world();
         Self::run_step_task(thread_pool, step, context, cache, holder).await;
         holder_for_notify.finish_generation_status(target_status);
+        if target_status == ChunkStatus::Empty {
+            world.on_entity_chunk_loaded(holder_for_notify.pos);
+        }
         Some(())
     }
 

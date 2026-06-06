@@ -574,12 +574,14 @@ impl ChunkMap {
             };
 
         if let Some(level) = new_level {
-            let world = self.world_gen_context.world();
-            world.on_entity_chunk_loaded(pos);
             let old = chunk_holder.swap_load_level(level);
             chunk_holder.set_simulation_level(new_simulation_level);
             if old != Some(level) {
                 chunk_holder.update_highest_allowed_status(Some(level));
+            }
+            if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
+                let world = self.world_gen_context.world();
+                world.on_entity_chunk_loaded(pos);
             }
             Some(chunk_holder)
         } else {
@@ -683,13 +685,6 @@ impl ChunkMap {
                     }
                 }
                 timings.tick_chunks = start.elapsed();
-            }
-
-            let dirty_entity_chunks = world
-                .entity_manager()
-                .tick_entities(tick_count as i32, &tickable_full_chunks);
-            for chunk in dirty_entity_chunks {
-                world.mark_chunk_dirty(chunk);
             }
         }
 

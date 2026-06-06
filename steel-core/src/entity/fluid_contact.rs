@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
-use steel_utils::{BlockPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb};
 
 use crate::fluid::{get_flow, get_fluid_state, get_height};
 use crate::world::World;
@@ -50,6 +50,18 @@ impl EntityFluidCurrent {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FluidScanBounds {
+    interaction_box: WorldAabb,
+    entity_y: f64,
+    x0: i32,
+    y0: i32,
+    z0: i32,
+    x1: i32,
+    y1: i32,
+    z1: i32,
+}
+
 /// Fluid heights intersecting an entity's current bounding box.
 ///
 /// Mirrors the body-height and eye-fluid tracking part of vanilla's
@@ -87,12 +99,21 @@ impl EntityFluidContact {
     /// Scans the world for water/lava touching `bounding_box`.
     #[must_use]
     pub fn scan(world: &Arc<World>, position: DVec3, eye_y: f64, bounding_box: WorldAabb) -> Self {
-        Self::scan_with(
-            bounding_box,
+        let Some(bounds) = Self::scan_bounds(bounding_box) else {
+            return Self::default();
+        };
+        if !has_fluid_and_loaded(world, bounds) {
+            return Self::default();
+        }
+
+        Self::scan_with_bounds(
+            bounds,
             position,
             eye_y,
+            false,
             |pos| get_fluid_state(world, pos),
             |pos, fluid_state| get_height(world, pos, fluid_state),
+            |_pos, _fluid_state| DVec3::ZERO,
         )
     }
 
@@ -105,8 +126,15 @@ impl EntityFluidContact {
         bounding_box: WorldAabb,
         include_current: bool,
     ) -> Self {
-        Self::scan_with_flow(
-            bounding_box,
+        let Some(bounds) = Self::scan_bounds(bounding_box) else {
+            return Self::default();
+        };
+        if !has_fluid_and_loaded(world, bounds) {
+            return Self::default();
+        }
+
+        Self::scan_with_bounds(
+            bounds,
             position,
             eye_y,
             include_current,
@@ -152,6 +180,7 @@ impl EntityFluidContact {
         self.lava_current.impulse(is_player, old_velocity, scale)
     }
 
+    #[cfg(test)]
     fn scan_with(
         bounding_box: WorldAabb,
         position: DVec3,
@@ -170,18 +199,35 @@ impl EntityFluidContact {
         )
     }
 
+    #[cfg(test)]
     fn scan_with_flow(
         bounding_box: WorldAabb,
         position: DVec3,
         eye_y: f64,
         include_current: bool,
-        mut fluid_at: impl FnMut(BlockPos) -> FluidState,
-        mut height_at: impl FnMut(BlockPos, FluidState) -> f32,
-        mut flow_at: impl FnMut(BlockPos, FluidState) -> DVec3,
+        fluid_at: impl FnMut(BlockPos) -> FluidState,
+        height_at: impl FnMut(BlockPos, FluidState) -> f32,
+        flow_at: impl FnMut(BlockPos, FluidState) -> DVec3,
     ) -> Self {
+        let Some(bounds) = Self::scan_bounds(bounding_box) else {
+            return Self::default();
+        };
+
+        Self::scan_with_bounds(
+            bounds,
+            position,
+            eye_y,
+            include_current,
+            fluid_at,
+            height_at,
+            flow_at,
+        )
+    }
+
+    fn scan_bounds(bounding_box: WorldAabb) -> Option<FluidScanBounds> {
         let interaction_box = bounding_box.deflate(FLUID_INTERACTION_MARGIN);
         if interaction_box.is_empty() {
-            return Self::default();
+            return None;
         }
 
         let x0 = interaction_box.min_x().floor() as i32;
@@ -191,17 +237,37 @@ impl EntityFluidContact {
         let y1 = interaction_box.max_y().ceil() as i32 - 1;
         let z1 = interaction_box.max_z().ceil() as i32 - 1;
         if x0 > x1 || y0 > y1 || z0 > z1 {
-            return Self::default();
+            return None;
         }
 
+        Some(FluidScanBounds {
+            interaction_box,
+            entity_y: bounding_box.min_y(),
+            x0,
+            y0,
+            z0,
+            x1,
+            y1,
+            z1,
+        })
+    }
+
+    fn scan_with_bounds(
+        bounds: FluidScanBounds,
+        position: DVec3,
+        eye_y: f64,
+        include_current: bool,
+        mut fluid_at: impl FnMut(BlockPos) -> FluidState,
+        mut height_at: impl FnMut(BlockPos, FluidState) -> f32,
+        mut flow_at: impl FnMut(BlockPos, FluidState) -> DVec3,
+    ) -> Self {
         let mut contact = Self::default();
-        let entity_y = bounding_box.min_y();
         let eye_block_x = position.x.floor() as i32;
         let eye_block_z = position.z.floor() as i32;
 
-        for x in x0..=x1 {
-            for y in y0..=y1 {
-                for z in z0..=z1 {
+        for x in bounds.x0..=bounds.x1 {
+            for y in bounds.y0..=bounds.y1 {
+                for z in bounds.z0..=bounds.z1 {
                     let pos = BlockPos::new(x, y, z);
                     let fluid_state = fluid_at(pos);
                     if fluid_state.is_empty() {
@@ -210,7 +276,7 @@ impl EntityFluidContact {
 
                     let fluid_bottom = f64::from(y);
                     let fluid_top = fluid_bottom + f64::from(height_at(pos, fluid_state));
-                    if fluid_top < interaction_box.min_y() {
+                    if fluid_top < bounds.interaction_box.min_y() {
                         continue;
                     }
 
@@ -218,7 +284,7 @@ impl EntityFluidContact {
                         && z == eye_block_z
                         && eye_y >= fluid_bottom
                         && eye_y <= fluid_top;
-                    let height = fluid_top - entity_y;
+                    let height = fluid_top - bounds.entity_y;
                     if fluid_state.is_water() {
                         contact.water_height = contact.water_height.max(height);
                         contact.eye_in_water |= eye_inside;
@@ -246,6 +312,54 @@ impl EntityFluidContact {
 
         contact
     }
+}
+
+#[expect(
+    clippy::similar_names,
+    reason = "axis-paired bounds mirror vanilla hasFluidAndLoaded"
+)]
+fn has_fluid_and_loaded(world: &World, bounds: FluidScanBounds) -> bool {
+    let section_x0 = SectionPos::block_to_section_coord(bounds.x0 - 1);
+    let section_y0 = SectionPos::block_to_section_coord(bounds.y0);
+    let section_z0 = SectionPos::block_to_section_coord(bounds.z0 - 1);
+    let section_x1 = SectionPos::block_to_section_coord(bounds.x1 + 1);
+    let section_y1 = SectionPos::block_to_section_coord(bounds.y1);
+    let section_z1 = SectionPos::block_to_section_coord(bounds.z1 + 1);
+
+    let mut has_fluid = false;
+    for chunk_z in section_z0..=section_z1 {
+        for chunk_x in section_x0..=section_x1 {
+            let Some(chunk_has_fluid) =
+                world
+                    .chunk_map
+                    .with_full_chunk(ChunkPos::new(chunk_x, chunk_z), |chunk| {
+                        let min_section_y = SectionPos::block_to_section_coord(chunk.min_y());
+                        let sections = &chunk.sections().sections;
+                        let mut chunk_has_fluid = false;
+
+                        for section_y in section_y0..=section_y1 {
+                            let section_index = section_y - min_section_y;
+                            let Ok(section_index) = usize::try_from(section_index) else {
+                                continue;
+                            };
+                            let Some(section) = sections.get(section_index) else {
+                                continue;
+                            };
+
+                            chunk_has_fluid |= section.read().has_fluid();
+                        }
+
+                        chunk_has_fluid
+                    })
+            else {
+                return false;
+            };
+
+            has_fluid |= chunk_has_fluid;
+        }
+    }
+
+    has_fluid
 }
 
 #[cfg(test)]
