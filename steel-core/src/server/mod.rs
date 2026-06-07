@@ -10,20 +10,24 @@ pub mod worlds;
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
-use crate::chunk::chunk_map::GenerationTaskCap;
+use crate::chunk::{
+    chunk_access::ChunkStatus,
+    chunk_map::GenerationTaskCap,
+    chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+};
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::{SharedEntity, init_entities};
+use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entities};
 
-use crate::chunk_saver::registry::WorldStorageRegistry;
+use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, WorldGenerationSettings};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
-use crate::player::player_data::PersistentPlayerData;
+use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{TeleportTransition, WorldChangeRequest};
-use crate::server::jobs::ServerJobQueue;
+use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
@@ -34,14 +38,14 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     mem,
     path::Path,
-    sync::Arc,
+    sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CRemovePlayerInfo, CSystemChat, CTabList, CTickingState,
-    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -52,6 +56,7 @@ use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -64,11 +69,13 @@ const CHUNK_SCHEDULING_TPS: u64 = 20;
 
 fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
     let spawn = world.level_data.read().data().spawn.clone();
-    *player.position.lock() =
-        DVec3::new(f64::from(spawn.x), f64::from(spawn.y), f64::from(spawn.z));
-    player.rotation.store((spawn.angle, 0.0));
-    player.game_mode.store(world.default_gamemode);
-    player.prev_game_mode.store(world.default_gamemode);
+    player.base().set_position_local(DVec3::new(
+        f64::from(spawn.x),
+        f64::from(spawn.y),
+        f64::from(spawn.z),
+    ));
+    player.set_rotation((spawn.angle, 0.0));
+    player.restore_game_modes(world.default_gamemode, world.default_gamemode);
     player
         .abilities
         .lock()
@@ -117,7 +124,7 @@ struct DomainPlayerState {
 
 enum DomainPlayerData {
     Saved {
-        data: PersistentPlayerData,
+        data: Box<PersistentPlayerData>,
         restore_location: bool,
     },
     FirstVisit,
@@ -128,6 +135,179 @@ struct DomainSwitchRequest {
     target_domain: String,
     target_world: Option<Arc<World>>,
     restore_saved_location: bool,
+}
+
+struct PendingPlayerJoin {
+    player: Arc<Player>,
+    state: Result<DomainPlayerState, String>,
+}
+
+struct PlayerJoinQueue {
+    sender: mpsc::Sender<PendingPlayerJoin>,
+    receiver: SyncMutex<mpsc::Receiver<PendingPlayerJoin>>,
+}
+
+impl PlayerJoinQueue {
+    fn new() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        Self {
+            sender,
+            receiver: SyncMutex::new(receiver),
+        }
+    }
+
+    fn send(&self, join: PendingPlayerJoin) {
+        let _ = self.sender.send(join);
+    }
+
+    fn drain(&self) -> Vec<PendingPlayerJoin> {
+        let receiver = self.receiver.lock();
+        let mut joins = Vec::new();
+        while let Ok(join) = receiver.try_recv() {
+            joins.push(join);
+        }
+        joins
+    }
+}
+
+struct RootVehicleRestoreJob {
+    player: Arc<Player>,
+    world: Arc<World>,
+    request: ChunkRequestHandle,
+    attach: [u8; 16],
+    root_uuid: [u8; 16],
+}
+
+impl RootVehicleRestoreJob {
+    fn new(
+        player: Arc<Player>,
+        world: Arc<World>,
+        root_vehicle: &PersistentRootVehicle,
+    ) -> Option<Self> {
+        let root_chunk = root_vehicle_chunk(root_vehicle)?;
+        let request = world.chunk_map.request_chunk(
+            root_chunk,
+            ChunkStatus::StructureStarts,
+            ChunkTicketKind::PlayerSpawn,
+        );
+        Some(Self {
+            player,
+            world,
+            request,
+            attach: root_vehicle.attach,
+            root_uuid: root_vehicle.entity.uuid,
+        })
+    }
+}
+
+impl ServerJob for RootVehicleRestoreJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if self.player.connection.closed()
+            || !self.player.has_joined_world()
+            || !Arc::ptr_eq(&self.player.get_world(), &self.world)
+        {
+            return JobPoll::Finished;
+        }
+
+        match self.request.poll() {
+            ChunkRequestState::Pending { .. } => JobPoll::Pending,
+            ChunkRequestState::Cancelled => JobPoll::Finished,
+            ChunkRequestState::Ready => {
+                let Some(_ready) = self.request.ready_chunks() else {
+                    return JobPoll::Pending;
+                };
+                if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
+                    &self.world,
+                    self.attach,
+                    self.root_uuid,
+                ) {
+                    restore_root_vehicle_for_player(&self.player, &self.world, root_vehicle);
+                }
+                JobPoll::Finished
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.request.cancel();
+    }
+}
+
+fn root_vehicle_chunk(root_vehicle: &PersistentRootVehicle) -> Option<ChunkPos> {
+    let pos = DVec3::new(
+        root_vehicle.entity.pos[0],
+        root_vehicle.entity.pos[1],
+        root_vehicle.entity.pos[2],
+    );
+    if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+        tracing::warn!(
+            uuid = ?Uuid::from_bytes(root_vehicle.entity.uuid),
+            "Skipping persisted RootVehicle with non-finite root position {pos:?}",
+        );
+        return None;
+    }
+    Some(ChunkPos::from_entity_pos(pos))
+}
+
+fn restore_root_vehicle_for_player(
+    player: &Arc<Player>,
+    world: &Arc<World>,
+    root_vehicle: PersistentRootVehicle,
+) {
+    let Some(root_chunk) = root_vehicle_chunk(&root_vehicle) else {
+        return;
+    };
+    let level = Arc::downgrade(world);
+    let entities =
+        ChunkStorage::persistent_to_entity_tree_at_level(&root_vehicle.entity, root_chunk, &level);
+    if entities.is_empty() {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            "Persisted RootVehicle did not recreate any runtime entities",
+        );
+        return;
+    }
+
+    let attach_uuid = Uuid::from_bytes(root_vehicle.attach);
+    let Some(attach_entity) = entities
+        .iter()
+        .find(|entity| entity.uuid() == attach_uuid)
+        .cloned()
+    else {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            attach = ?attach_uuid,
+            "Discarding persisted RootVehicle because the attach entity is missing",
+        );
+        discard_restored_entities(&entities);
+        return;
+    };
+
+    let player_entity: SharedEntity = player.clone();
+    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
+    attach_entity.position_rider(player.as_ref());
+
+    if let Err(error) = world.register_loaded_entity_tree(&entities) {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            attach = ?attach_uuid,
+            root = ?Uuid::from_bytes(root_vehicle.entity.uuid),
+            "Discarding persisted RootVehicle because its entity tree could not be registered: {error}",
+        );
+        discard_restored_entities(&entities);
+        return;
+    }
+
+    world.mark_chunk_dirty(root_chunk);
+    for entity in &entities {
+        world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
+    }
+}
+
+fn discard_restored_entities(entities: &[SharedEntity]) {
+    for entity in entities {
+        entity.set_removed(RemovalReason::Discarded);
+    }
 }
 
 /// The main server struct.
@@ -150,6 +330,8 @@ pub struct Server {
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Player joins prepared by async I/O and finalized at the game tick safe point.
+    pending_player_joins: PlayerJoinQueue,
     /// Queued world changes to process after the tick.
     pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Queued domain switches to process after world ticks.
@@ -287,24 +469,49 @@ impl Server {
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             jobs: ServerJobQueue::new(),
             player_data_storage,
+            pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
     }
 
-    /// Adds a player to the server.
+    /// Queues initial player join work.
     ///
-    /// # Panics
-    /// Panics if the registry is not initialized.
-    pub async fn add_player(&self, player: Arc<Player>) {
-        let Ok(target_domain) = self.load_join_domain(&player).await else {
-            player.disconnect("Failed to load player data");
+    /// Persistent data is loaded asynchronously, then world insertion is finalized at the
+    /// game tick safe point so the socket reader can enter play immediately.
+    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
+        if player.connection.closed() {
             return;
-        };
-        let state = match self
-            .load_domain_player_state(&player, &target_domain, None, true)
+        }
+
+        let server = Arc::clone(self);
+        tokio::spawn(async move {
+            let state = server.prepare_player_join(&player).await;
+            server
+                .pending_player_joins
+                .send(PendingPlayerJoin { player, state });
+        });
+    }
+
+    async fn prepare_player_join(&self, player: &Player) -> Result<DomainPlayerState, String> {
+        let target_domain = self.load_join_domain(player).await?;
+        self.load_domain_player_state(player, &target_domain, None, true)
             .await
-        {
+    }
+
+    fn process_player_joins(&self) {
+        for join in self.pending_player_joins.drain() {
+            self.finish_prepared_player_join(join);
+        }
+    }
+
+    fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
+        let PendingPlayerJoin { player, state } = join;
+        if player.connection.closed() {
+            return;
+        }
+
+        let state = match state {
             Ok(state) => state,
             Err(error) => {
                 log::error!(
@@ -319,14 +526,26 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
-        player.reset(state.world.clone(), ResetReason::InitialJoin);
+        player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
-        let pos = *player.position.lock();
-        let rotation = player.rotation.load();
-        player.spawn(pos, rotation, ResetReason::InitialJoin);
+        let pos = player.position();
+        let rotation = player.rotation();
+        let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
+        if !admitted {
+            return;
+        }
+        if player.mark_joined_world() {
+            player.send_inventory_to_remote();
+        }
+        self.schedule_root_vehicle_restore(&player, &state);
+        if player.connection.closed() {
+            tokio::spawn(async move {
+                state.world.remove_player(player).await;
+            });
+        }
     }
 
-    async fn load_join_domain(&self, player: &Player) -> Result<String, ()> {
+    async fn load_join_domain(&self, player: &Player) -> Result<String, String> {
         match self
             .player_data_storage
             .load_global(player.gameprofile.id)
@@ -344,13 +563,7 @@ impl Server {
                 Ok(self.worlds.default_domain().to_owned())
             }
             Ok(None) => Ok(self.worlds.default_domain().to_owned()),
-            Err(e) => {
-                log::error!(
-                    "Failed to load global player data for {}: {e}",
-                    player.gameprofile.name
-                );
-                Err(())
-            }
+            Err(e) => Err(format!("failed to load global player data: {e}")),
         }
     }
 
@@ -387,7 +600,7 @@ impl Server {
                 Ok(DomainPlayerState {
                     world,
                     data: DomainPlayerData::Saved {
-                        data: saved_data,
+                        data: Box::new(saved_data),
                         restore_location,
                     },
                 })
@@ -456,6 +669,31 @@ impl Server {
         }
     }
 
+    fn schedule_root_vehicle_restore(&self, player: &Arc<Player>, state: &DomainPlayerState) {
+        let Some(root_vehicle) = Self::root_vehicle_to_restore(state) else {
+            player.clear_pending_root_vehicle();
+            return;
+        };
+        player.set_pending_root_vehicle(&state.world, root_vehicle.clone());
+        let Some(job) =
+            RootVehicleRestoreJob::new(Arc::clone(player), Arc::clone(&state.world), &root_vehicle)
+        else {
+            player.clear_pending_root_vehicle();
+            return;
+        };
+        self.jobs.spawn(job);
+    }
+
+    fn root_vehicle_to_restore(state: &DomainPlayerState) -> Option<PersistentRootVehicle> {
+        match &state.data {
+            DomainPlayerData::Saved {
+                data,
+                restore_location: true,
+            } => data.root_vehicle.clone(),
+            DomainPlayerData::Saved { .. } | DomainPlayerData::FirstVisit => None,
+        }
+    }
+
     fn send_login_packet(&self, player: &Player, world: &World) {
         let reduced_debug_info =
             world.get_game_rule(&REDUCED_DEBUG_INFO) == GameRuleValue::Bool(true);
@@ -468,7 +706,7 @@ impl Server {
         let hashed_seed = world.obfuscated_seed();
 
         player.send_packet(CLogin {
-            player_id: player.id,
+            player_id: player.id(),
             hardcore: false,
             levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
@@ -481,8 +719,8 @@ impl Server {
                 dimension_type: world.dimension_type.id() as i32,
                 dimension: world.key.clone(),
                 seed: hashed_seed,
-                game_type: player.game_mode.load(),
-                previous_game_type: Some(player.prev_game_mode.load()),
+                game_type: player.game_mode(),
+                previous_game_type: Some(player.previous_game_mode()),
                 is_debug: false,
                 is_flat: world.is_flat,
                 last_death_location: None,
@@ -646,6 +884,7 @@ impl Server {
 
             self.tick_worlds_game(tick_count, runs_normally).await;
             self.tick_jobs(tick_count, runs_normally);
+            self.process_player_joins();
 
             {
                 let server = self.clone();
@@ -919,26 +1158,21 @@ impl Server {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_world = player.get_world();
-        let current_domain = current_world.domain().to_owned();
+        let current_domain = player.get_world().domain().to_owned();
         if current_domain == target_domain {
             return Ok(());
         }
 
         let current_data = PersistentPlayerData::from_player(&player);
-        current_world.remove_player_for_world_change(&player);
-
         if let Err(e) = self
             .player_data_storage
             .save_domain_data(&current_domain, player.gameprofile.id, &current_data)
             .await
         {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Err(format!("failed to save current domain data: {e}"));
         }
 
         if player.connection.closed() {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Ok(());
         }
 
@@ -953,22 +1187,24 @@ impl Server {
         {
             Ok(state) => state,
             Err(error) => {
-                Self::cleanup_removed_domain_switch_player(&current_world, &player);
                 return Err(error);
             }
         };
 
         if player.connection.closed() {
-            Self::cleanup_removed_domain_switch_player(&current_world, &player);
             return Ok(());
         }
 
-        Self::apply_domain_player_state(&player, &target_state);
-        player.reset(target_state.world.clone(), ResetReason::WorldChange);
-        Self::apply_domain_player_state(&player, &target_state);
-        let pos = *player.position.lock();
-        let rotation = player.rotation.load();
-        player.spawn(pos, rotation, ResetReason::WorldChange);
+        let restore_player = Arc::clone(&player);
+        player.reset_after_domain_save_and_restore(target_state.world.clone(), || {
+            Self::apply_domain_player_state(&restore_player, &target_state);
+        });
+        let pos = player.position();
+        let rotation = player.rotation();
+        if !player.spawn(pos, rotation, ResetReason::WorldChange) {
+            return Err("failed to add player to target world".to_owned());
+        }
+        self.schedule_root_vehicle_restore(&player, &target_state);
 
         if let Err(e) = self
             .player_data_storage
@@ -987,11 +1223,6 @@ impl Server {
         }
 
         Ok(())
-    }
-
-    fn cleanup_removed_domain_switch_player(world: &World, player: &Player) {
-        world.broadcast_to_all(CRemovePlayerInfo::single(player.gameprofile.id));
-        player.cleanup();
     }
 
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
@@ -1142,7 +1373,7 @@ impl Server {
 
         // TODO: Set permissions level to match player's level.
         player.send_packet(CEntityEvent {
-            entity_id: player.id,
+            entity_id: player.id(),
             event: EntityStatus::PermissionLevelOwners,
         });
 
@@ -1150,7 +1381,7 @@ impl Server {
 
         player.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
-            data: player.game_mode.load().into(),
+            data: player.game_mode().into(),
         });
     }
     /// Queues a world change to be processed after the current tick.

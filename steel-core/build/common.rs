@@ -246,7 +246,7 @@ pub(crate) fn generate_arg(
                 let const_ident = to_block_ident(name);
                 // vanilla_blocks statics are owned `Block` values; constructors
                 // expect `BlockRef = &'static Block`, so auto-borrow here.
-                if module == "vanilla_blocks" {
+                if module == "vanilla_blocks" || module == "sound_events" {
                     quote! { &#module_ident::#const_ident }
                 } else {
                     quote! { #module_ident::#const_ident }

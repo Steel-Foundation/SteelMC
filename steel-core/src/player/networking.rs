@@ -1,6 +1,5 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,9 +15,9 @@ use steel_protocol::packets::game::{
     SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
-    SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand,
-    SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSwing,
-    SUseItem, SUseItemOn,
+    SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
+    SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
+    SSwing, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -32,13 +31,24 @@ use text_components::resolving::TextResolutor;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio_util::sync::CancellationToken;
 
 use crate::command::sender::CommandSender;
 use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
+
+/// Shared Java socket writer.
+pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+
+/// Outbound packet queue message for Java connections.
+pub enum OutboundPacket {
+    /// Normal packet write that may be interrupted by connection shutdown.
+    Packet(EncodedPacket),
+    /// Final disconnect packet that must be flushed before closing the socket.
+    Disconnect(EncodedPacket),
+}
 
 /// Builder for creating packet bundles.
 ///
@@ -87,10 +97,10 @@ struct KeepAliveTracker {
 
 /// A connection to a Java client.
 pub struct JavaConnection {
-    outgoing_packets: UnboundedSender<EncodedPacket>,
+    outgoing_packets: UnboundedSender<OutboundPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
-    network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+    network_writer: JavaNetworkWriter,
     id: u64,
 
     player: Weak<Player>,
@@ -101,10 +111,10 @@ pub struct JavaConnection {
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
     pub const fn new(
-        outgoing_packets: UnboundedSender<EncodedPacket>,
+        outgoing_packets: UnboundedSender<OutboundPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
-        network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+        network_writer: JavaNetworkWriter,
         id: u64,
         player: Weak<Player>,
     ) -> Self {
@@ -122,6 +132,18 @@ impl JavaConnection {
             }),
             latency: SyncMutex::new(0),
         }
+    }
+
+    async fn write_packet_now(&self, packet: &EncodedPacket) -> Result<(), PacketError> {
+        let mut network_writer = self.network_writer.lock().await;
+        let Some(network_writer) = network_writer.as_mut() else {
+            return Err(PacketError::ConnectionClosed);
+        };
+        network_writer.write_packet(packet).await
+    }
+
+    async fn release_network_writer(&self) {
+        self.network_writer.lock().await.take();
     }
 
     /// Ticks the connection.
@@ -180,7 +202,29 @@ impl JavaConnection {
 
     /// Disconnects the client.
     pub fn disconnect(&self, reason: impl Into<TextComponent>) {
-        self.send_packet(CDisconnect::new(&reason.into(), self));
+        let packet = match EncodedPacket::from_bare(
+            CDisconnect::new(&reason.into(), self),
+            self.compression,
+            ConnectionProtocol::Play,
+        ) {
+            Ok(packet) => packet,
+            Err(err) => {
+                log::warn!(
+                    "Failed to encode disconnect packet for client {}: {err}",
+                    self.id
+                );
+                self.close();
+                return;
+            }
+        };
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Disconnect(packet))
+            .is_err()
+        {
+            self.close();
+            return;
+        }
         self.close();
     }
 
@@ -192,7 +236,11 @@ impl JavaConnection {
     pub fn send_packet<P: ClientPacket>(&self, packet: P) {
         let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
-        if self.outgoing_packets.send(packet).is_err() {
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Packet(packet))
+            .is_err()
+        {
             self.close();
         }
     }
@@ -202,7 +250,11 @@ impl JavaConnection {
     /// # Panics
     /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
-        if self.outgoing_packets.send(packet).is_err() {
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Packet(packet))
+            .is_err()
+        {
             self.close();
         }
     }
@@ -223,6 +275,22 @@ impl JavaConnection {
         self.cancel_token.cancelled().await;
     }
 
+    const fn can_process_before_join(packet_id: i32) -> bool {
+        matches!(
+            packet_id,
+            play::S_ACCEPT_TELEPORTATION
+                | play::S_KEEP_ALIVE
+                | play::S_PING_REQUEST
+                | play::S_CLIENT_INFORMATION
+                | play::S_CUSTOM_PAYLOAD
+                | play::S_CHUNK_BATCH_RECEIVED
+                | play::S_CHAT_SESSION_UPDATE
+                | play::S_CHAT_ACK
+                | play::S_CLIENT_TICK_END
+                | play::S_PLAYER_LOADED
+        )
+    }
+
     /// Processes a packet from the client.
     #[expect(
         clippy::too_many_lines,
@@ -236,6 +304,10 @@ impl JavaConnection {
     ) -> Result<(), PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
 
+        if !player.has_joined_world() && !Self::can_process_before_join(packet.id) {
+            return Ok(());
+        }
+
         if player.is_domain_switching()
             && !matches!(packet.id, play::S_KEEP_ALIVE | play::S_PING_REQUEST)
         {
@@ -246,7 +318,7 @@ impl JavaConnection {
             play::S_ACCEPT_TELEPORTATION => {
                 player.handle_accept_teleportation(SAcceptTeleportation::read_packet(data)?);
             }
-            play::C_CUSTOM_PAYLOAD => {
+            play::S_CUSTOM_PAYLOAD => {
                 player.handle_custom_payload(SCustomPayload::read_packet(data)?);
             }
             play::S_CHAT => {
@@ -287,11 +359,15 @@ impl JavaConnection {
             play::S_MOVE_PLAYER_STATUS_ONLY => {
                 player.handle_move_player(SMovePlayerStatusOnly::read_packet(data)?.into());
             }
+            play::S_MOVE_VEHICLE => {
+                player.handle_move_vehicle(SMoveVehicle::read_packet(data)?);
+            }
             play::S_PLAYER_LOADED => {
                 let _ = SPlayerLoad::read_packet(data)?;
-                player.client_loaded.store(true, Ordering::Relaxed);
-                // Send initial inventory to client
-                player.send_inventory_to_remote();
+                if player.mark_client_loaded_from_network() {
+                    // Send initial inventory to client
+                    player.send_inventory_to_remote();
+                }
             }
             play::S_CHAT_COMMAND => {
                 server.command_dispatcher.read().handle_command(
@@ -416,20 +492,43 @@ impl JavaConnection {
 
     /// Sends packets to the client.
     ///
-    /// # Panics
-    /// - If the player is not available.
-    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
+    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
         loop {
             select! {
+                biased;
                 () = self.wait_for_close() => {
+                    self.write_queued_disconnect(&mut sender_recv).await;
                     break;
                 }
-                packet = sender_recv.recv() => {
-                    if let Some(packet) = packet {
-                        if let Err(err) = self.network_writer.lock().await.write_packet(&packet).await
-                        {
-                            log::warn!("Failed to send packet to client {}: {err}", self.id);
+                outbound = sender_recv.recv() => {
+                    if let Some(outbound) = outbound {
+                        let (packet, close_after_write) = match outbound {
+                            OutboundPacket::Packet(packet) => (packet, false),
+                            OutboundPacket::Disconnect(packet) => (packet, true),
+                        };
+
+                        if close_after_write {
+                            if let Err(err) = self.write_packet_now(&packet).await {
+                                log::warn!("Failed to send disconnect packet to client {}: {err}", self.id);
+                            }
                             self.close();
+                            break;
+                        }
+
+                        let write_result = self.write_packet_now(&packet);
+                        select! {
+                            biased;
+                            () = self.wait_for_close() => {
+                                self.write_queued_disconnect(&mut sender_recv).await;
+                                break;
+                            },
+                            result = write_result => {
+                                if let Err(err) = result {
+                                    log::warn!("Failed to send packet to client {}: {err}", self.id);
+                                    self.close();
+                                    break;
+                                }
+                            }
                         }
                     } else {
                         //log::warn!(
@@ -442,9 +541,37 @@ impl JavaConnection {
             }
         }
 
-        let player = self.player.upgrade().expect("Player is not available");
+        self.release_network_writer().await;
+
+        let Some(player) = self.player.upgrade() else {
+            return;
+        };
+        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
+            return;
+        }
         let world = player.get_world();
         world.remove_player(player).await;
+    }
+
+    async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
+        let mut disconnect_packet = None;
+        loop {
+            match sender_recv.try_recv() {
+                Ok(OutboundPacket::Packet(_)) => {}
+                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+
+        let Some(packet) = disconnect_packet else {
+            return;
+        };
+        if let Err(err) = self.write_packet_now(&packet).await {
+            log::warn!(
+                "Failed to send disconnect packet to client {} during close: {err}",
+                self.id
+            );
+        }
     }
 }
 
@@ -497,5 +624,33 @@ impl NetworkConnection for JavaConnection {
 
     fn closed(&self) -> bool {
         self.cancel_token.is_cancelled()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_join_custom_payload_uses_serverbound_play_packet_id() {
+        assert!(JavaConnection::can_process_before_join(
+            play::S_CUSTOM_PAYLOAD
+        ));
+        assert!(!JavaConnection::can_process_before_join(
+            play::C_CUSTOM_PAYLOAD
+        ));
+    }
+
+    #[test]
+    fn pre_join_allows_initial_play_acknowledgements() {
+        assert!(JavaConnection::can_process_before_join(
+            play::S_ACCEPT_TELEPORTATION
+        ));
+        assert!(JavaConnection::can_process_before_join(
+            play::S_CHUNK_BATCH_RECEIVED
+        ));
+        assert!(JavaConnection::can_process_before_join(
+            play::S_PLAYER_LOADED
+        ));
     }
 }

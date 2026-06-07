@@ -59,6 +59,9 @@ pub struct ServerConfig {
     pub online_mode: bool,
     /// Whether the server should use encryption.
     pub encryption: bool,
+    /// Whether vanilla floating/flying movement checks permit unauthorized flight.
+    #[serde(default)]
+    pub allow_flight: bool,
     /// The message of the day.
     pub motd: String,
     /// Whether to use a favicon.
@@ -83,6 +86,7 @@ impl ServerConfig {
             simulation_distance: self.simulation_distance,
             online_mode: self.online_mode,
             encryption: self.encryption,
+            allow_flight: self.allow_flight,
             motd: self.motd,
             use_favicon: self.use_favicon,
             favicon: self.favicon,
@@ -218,8 +222,30 @@ mod tests {
     #[test]
     fn packaged_configs_parse() {
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        assert!(!config.server.allow_flight);
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
         assert!(!worlds.domains.is_empty());
+    }
+
+    #[test]
+    fn server_config_defaults_allow_flight_to_false() {
+        let input = r#"
+            [server]
+            server_port = 25565
+            max_players = 20
+            view_distance = 10
+            simulation_distance = 10
+            online_mode = true
+            encryption = true
+            motd = "A Steel Server"
+            use_favicon = false
+            favicon = "config/favicon.png"
+            enforce_secure_chat = false
+        "#;
+
+        let config: SteelConfig = toml::from_str(input).expect("config should parse");
+
+        assert!(!config.server.allow_flight);
     }
 }

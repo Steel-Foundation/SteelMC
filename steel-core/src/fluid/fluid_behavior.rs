@@ -2,7 +2,9 @@
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
 use std::sync::Arc;
 
-use crate::entity::Entity;
+use glam::DVec3;
+
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
@@ -71,7 +73,18 @@ pub trait FluidBehavior: Send + Sync {
     }
 
     /// Called when an entity is inside this fluid.
-    fn entity_inside(&self, _world: &mut World, _pos: BlockPos, _entity: &mut dyn Entity) {}
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn entity_inside(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+    }
 
     /// Gets the explosion resistance of this fluid.
     fn explosion_resistance(&self) -> f32 {
@@ -108,17 +121,12 @@ pub trait FluidBehavior: Send + Sync {
         self.tick_delay(world)
     }
 
-    /// Returns the x component of the flow velocity at a position (used for entity physics).
-    ///
-    /// Determines how strongly entities/items are pushed horizontally.
-    // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    fn get_flow_x(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
-        0.0
-    }
-
-    /// Returns the z component of the flow velocity at a position (used for entity physics).
-    // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    fn get_flow_z(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
-        0.0
+    /// Returns this fluid state's vanilla flow vector at a position.
+    #[expect(
+        unused_variables,
+        reason = "default implementation is used by empty/non-flowing fluids"
+    )]
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        DVec3::ZERO
     }
 }

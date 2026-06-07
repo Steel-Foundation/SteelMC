@@ -8,6 +8,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 
+use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
 use crate::player::Player;
@@ -208,7 +209,7 @@ impl<'a> UseOnContext<'a> {
             return None;
         }
 
-        let (yaw, pitch) = self.player.rotation.load();
+        let (yaw, pitch) = self.player.rotation();
 
         Some(BlockPlaceContext {
             clicked_pos,

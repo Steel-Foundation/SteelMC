@@ -35,16 +35,21 @@ use crate::{
     jukebox_song::JukeboxSongRegistry,
     loot_table::LootTableRegistry,
     menu_type::MenuTypeRegistry,
+    mob_effect::MobEffectRegistry,
     painting_variant::PaintingVariantRegistry,
+    particle_type::ParticleTypeRegistry,
     pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
+    sound_event::SoundEventRegistry,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
+    villager_profession::VillagerProfessionRegistry,
+    villager_type::VillagerTypeRegistry,
     wolf_sound_variant::WolfSoundVariantRegistry,
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
@@ -83,11 +88,14 @@ pub mod jukebox_song;
 pub mod loot_table;
 mod macros;
 pub mod menu_type;
+pub mod mob_effect;
 pub mod painting_variant;
+pub mod particle_type;
 pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
+pub mod sound_event;
 pub mod structure;
 pub mod structure_processor;
 pub mod structure_set;
@@ -95,6 +103,8 @@ pub mod template_pool;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
+pub mod villager_profession;
+pub mod villager_type;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
@@ -217,6 +227,21 @@ pub mod vanilla_painting_variants;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_particle_types.rs"]
+pub mod vanilla_particle_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_villager_types.rs"]
+pub mod vanilla_villager_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_villager_professions.rs"]
+pub mod vanilla_villager_professions;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_dimension_types.rs"]
 pub mod vanilla_dimension_types;
 
@@ -254,6 +279,11 @@ pub mod vanilla_dialog_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_menu_types.rs"]
 pub mod vanilla_menu_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_mob_effects.rs"]
+pub mod vanilla_mob_effects;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -518,6 +548,10 @@ pub const CAT_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_var
 pub const COW_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_variant");
 pub const CHICKEN_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("chicken_variant");
 pub const PAINTING_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("painting_variant");
+pub const PARTICLE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("particle_type");
+pub const VILLAGER_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("villager_type");
+pub const VILLAGER_PROFESSION_REGISTRY: Identifier =
+    Identifier::vanilla_static("villager_profession");
 pub const DIMENSION_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("dimension_type");
 pub const DAMAGE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("damage_type");
 pub const BANNER_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("banner_pattern");
@@ -526,6 +560,7 @@ pub const JUKEBOX_SONG_REGISTRY: Identifier = Identifier::vanilla_static("jukebo
 pub const INSTRUMENT_REGISTRY: Identifier = Identifier::vanilla_static("instrument");
 pub const DIALOG_REGISTRY: Identifier = Identifier::vanilla_static("dialog");
 pub const MENU_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("menu");
+pub const MOB_EFFECT_REGISTRY: Identifier = Identifier::vanilla_static("mob_effect");
 pub const ZOMBIE_NAUTILUS_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("zombie_nautilus_variant");
 pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline");
@@ -533,6 +568,7 @@ pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_tab
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
+pub const SOUND_EVENT_REGISTRY: Identifier = Identifier::vanilla_static("sound_event");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 pub const CONFIGURED_CARVER_REGISTRY: Identifier =
@@ -567,6 +603,9 @@ pub struct Registry {
     pub cow_variants: CowVariantRegistry,
     pub chicken_variants: ChickenVariantRegistry,
     pub painting_variants: PaintingVariantRegistry,
+    pub particle_types: ParticleTypeRegistry,
+    pub villager_types: VillagerTypeRegistry,
+    pub villager_professions: VillagerProfessionRegistry,
     pub dimension_types: DimensionTypeRegistry,
     pub damage_types: DamageTypeRegistry,
     pub banner_patterns: BannerPatternRegistry,
@@ -574,6 +613,7 @@ pub struct Registry {
     pub instruments: InstrumentRegistry,
     pub dialogs: DialogRegistry,
     pub menu_types: MenuTypeRegistry,
+    pub mob_effects: MobEffectRegistry,
     pub zombie_nautilus_variants: ZombieNautilusVariantRegistry,
     pub timelines: TimelineRegistry,
     pub recipes: RecipeRegistry,
@@ -582,6 +622,7 @@ pub struct Registry {
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub game_events: GameEventRegistry,
+    pub sound_events: SoundEventRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
@@ -639,6 +680,11 @@ impl Registry {
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
+        vanilla_particle_types::register_particle_types(&mut registry.particle_types);
+        vanilla_villager_types::register_villager_types(&mut registry.villager_types);
+        vanilla_villager_professions::register_villager_professions(
+            &mut registry.villager_professions,
+        );
         vanilla_painting_variant_tags::PaintingVariantTag::register_painting_variant_tags(
             &mut registry.painting_variants,
         );
@@ -657,6 +703,7 @@ impl Registry {
         vanilla_dialogs::register_dialogs(&mut registry.dialogs);
         vanilla_dialog_tags::DialogTag::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
+        vanilla_mob_effects::register_mob_effects(&mut registry.mob_effects);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,
         );
@@ -671,6 +718,7 @@ impl Registry {
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
+        sound_events::register_sound_events(&mut registry.sound_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
         vanilla_fluid_tags::FluidTag::register_fluid_tags(&mut registry.fluids);
@@ -723,6 +771,9 @@ impl Registry {
         self.cow_variants.freeze();
         self.chicken_variants.freeze();
         self.painting_variants.freeze();
+        self.particle_types.freeze();
+        self.villager_types.freeze();
+        self.villager_professions.freeze();
         self.dimension_types.freeze();
         self.damage_types.freeze();
         self.banner_patterns.freeze();
@@ -730,6 +781,7 @@ impl Registry {
         self.instruments.freeze();
         self.dialogs.freeze();
         self.menu_types.freeze();
+        self.mob_effects.freeze();
         self.zombie_nautilus_variants.freeze();
         self.timelines.freeze();
         self.recipes.freeze();
@@ -738,6 +790,7 @@ impl Registry {
         self.block_entity_types.freeze();
         self.game_rules.freeze();
         self.game_events.freeze();
+        self.sound_events.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
@@ -906,6 +959,9 @@ impl Registry {
             cow_variants: CowVariantRegistry::new(),
             chicken_variants: ChickenVariantRegistry::new(),
             painting_variants: PaintingVariantRegistry::new(),
+            particle_types: ParticleTypeRegistry::new(),
+            villager_types: VillagerTypeRegistry::new(),
+            villager_professions: VillagerProfessionRegistry::new(),
             dimension_types: DimensionTypeRegistry::new(),
             damage_types: DamageTypeRegistry::new(),
             banner_patterns: BannerPatternRegistry::new(),
@@ -913,6 +969,7 @@ impl Registry {
             instruments: InstrumentRegistry::new(),
             dialogs: DialogRegistry::new(),
             menu_types: MenuTypeRegistry::new(),
+            mob_effects: MobEffectRegistry::new(),
             zombie_nautilus_variants: ZombieNautilusVariantRegistry::new(),
             timelines: TimelineRegistry::new(),
             recipes: RecipeRegistry::new(),
@@ -921,6 +978,7 @@ impl Registry {
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             game_events: GameEventRegistry::new(),
+            sound_events: SoundEventRegistry::new(),
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
@@ -1016,6 +1074,53 @@ mod tests {
                 .placed_features
                 .by_key(&Identifier::vanilla_static("ore_diamond"))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn vanilla_static_entity_data_registries_initialize_in_vanilla_order() {
+        let registry = Registry::new_vanilla();
+        let entity_effect = Identifier::vanilla_static("entity_effect");
+        let plains = Identifier::vanilla_static("plains");
+        let none = Identifier::vanilla_static("none");
+        let tabby = Identifier::vanilla_static("tabby");
+        let angry = Identifier::vanilla_static("angry");
+        let big = Identifier::vanilla_static("big");
+        let earth = Identifier::vanilla_static("earth");
+
+        assert_eq!(
+            registry.particle_types.by_id(21).map(|entry| &entry.key),
+            Some(&entity_effect)
+        );
+        assert_eq!(
+            registry.villager_types.by_id(2).map(|entry| &entry.key),
+            Some(&plains)
+        );
+        assert_eq!(
+            registry
+                .villager_professions
+                .by_id(0)
+                .map(|entry| &entry.key),
+            Some(&none)
+        );
+        assert_eq!(
+            registry.cat_variants.by_id(0).map(|entry| &entry.key),
+            Some(&tabby)
+        );
+        assert_eq!(
+            registry
+                .wolf_sound_variants
+                .by_id(3)
+                .map(|entry| &entry.key),
+            Some(&angry)
+        );
+        assert_eq!(
+            registry.pig_sound_variants.by_id(1).map(|entry| &entry.key),
+            Some(&big)
+        );
+        assert_eq!(
+            registry.painting_variants.by_id(25).map(|entry| &entry.key),
+            Some(&earth)
         );
     }
 

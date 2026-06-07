@@ -5,14 +5,18 @@ mod chat_state;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
+mod container_counter;
 mod entity_state;
 /// Experience System
 pub mod experience;
 pub mod food_data;
 /// Game mode specific logic for player interactions.
 pub mod game_mode;
+mod game_mode_state;
 mod game_profile;
 mod health_sync;
+mod input_state;
+mod lifecycle_state;
 pub mod message_chain;
 mod message_validator;
 pub mod movement;
@@ -25,65 +29,69 @@ pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
 mod teleport_state;
+mod tick_state;
 
 pub use abilities::Abilities;
 use chat_state::ChatState;
-use entity_state::EntityState;
+use container_counter::ContainerCounter;
 use food_data::FoodData;
 use glam::DVec3;
 use health_sync::HealthSyncState;
+pub use input_state::PlayerInput;
+use lifecycle_state::PlayerLifecycleState;
 pub use message_validator::LastSeenMessagesValidator;
 use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::CSetExperience,
+    packets::game::{CSetEntityData, CSetExperience},
 };
 use teleport_state::TeleportState;
+use tick_state::PlayerTickState;
 
 use block_breaking::BlockBreakingManager;
-use crossbeam::atomic::AtomicCell;
 use enum_dispatch::enum_dispatch;
+use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
-use std::sync::{
-    Arc, Weak,
-    atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering},
-};
+use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
-    CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
-    CRespawn, CSetEntityData, CSetHealth, CSetHeldSlot, CSetTime, CUpdateAttributes,
-    ClientCommandAction,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRespawn,
+    CSetHealth, CSetHeldSlot, CSetTime, ClientCommandAction, SoundSource,
 };
 use steel_registry::RegistryEntry;
-use steel_registry::blocks::shapes::AABBd;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
-    ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
+    ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{vanilla_attributes, vanilla_entities};
+use steel_registry::{sound_events, vanilla_attributes, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::Random as _;
 use steel_utils::types::{Difficulty, GameType};
 use text_components::TextComponent;
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{content::Resolvable, custom::CustomData};
-use uuid::Uuid;
 
 use crate::config::RuntimeConfig;
-use crate::entity::attribute::AttributeMap;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityLevelCallback, LivingEntityBase, NullEntityCallback,
-    RemovalReason,
+    DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
+    RemovalReason, SharedEntity,
 };
-use crate::inventory::SyncPlayerInv;
+use crate::fluid::get_fluid_state;
+use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
+use crate::physics::MoveResult;
 use crate::player::experience::Experience;
+use crate::player::player_data::PersistentRootVehicle;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
 use steel_registry::vanilla_damage_types;
@@ -94,11 +102,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::BlockPos;
-
-use steel_utils::ChunkPos;
-
-use crate::entity::LivingEntity;
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 
 use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
@@ -182,27 +186,17 @@ pub struct Player {
     /// Runtime configuration shared with the server.
     pub(crate) config: Arc<RuntimeConfig>,
 
-    /// The entity ID assigned to this player.
-    pub id: i32,
+    /// Common entity fields (id, uuid, position, rotation, removal, callback).
+    base: EntityBase,
 
-    /// Whether the player has finished loading the client.
-    pub client_loaded: AtomicBool,
+    /// Client lifecycle flags.
+    lifecycle: SyncMutex<PlayerLifecycleState>,
 
-    /// The player's position.
-    pub position: SyncMutex<DVec3>,
-    /// The player's rotation (yaw, pitch).
-    pub rotation: AtomicCell<(f32, f32)>,
     /// Movement tracking state
     pub(crate) movement: SyncMutex<MovementState>,
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     entity_data: SyncMutex<PlayerEntityData>,
-
-    /// The player's movement speed.
-    speed: AtomicCell<f32>,
-
-    /// Entity attribute map (movement speed, max health, gravity, etc.).
-    attributes: SyncMutex<AttributeMap>,
 
     /// The last chunk position of the player.
     pub last_chunk_pos: SyncMutex<ChunkPos>,
@@ -218,11 +212,8 @@ pub struct Player {
     /// Chat state: message counters, signature cache, validator, session, chain.
     pub chat: SyncMutex<ChatState>,
 
-    /// The player's current game mode (Survival, Creative, Adventure, Spectator)
-    pub game_mode: AtomicCell<GameType>,
-
-    /// The player's last game mode
-    pub prev_game_mode: AtomicCell<GameType>,
+    /// Current and previous game mode.
+    game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: SyncPlayerInv,
@@ -235,19 +226,13 @@ pub struct Player {
     open_menu: SyncMutex<Option<Box<dyn MenuInstance>>>,
 
     /// Counter for generating container IDs (1-100, wraps around).
-    container_counter: AtomicU8,
-
-    /// Tracks the last acknowledged block change sequence number.
-    ack_block_changes_up_to: AtomicI32,
+    container_counter: SyncMutex<ContainerCounter>,
 
     /// Pending server-initiated teleport state (ID, position, timeout).
     teleport_state: SyncMutex<TeleportState>,
 
-    /// Local tick counter (incremented each tick).
-    tick_count: AtomicI32,
-
-    /// Physical state flags (sleeping, fall flying, on ground).
-    pub(crate) entity_state: SyncMutex<EntityState>,
+    /// Local tick and once-per-tick packet state.
+    tick_state: SyncMutex<PlayerTickState>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
     pub abilities: SyncMutex<Abilities>,
@@ -255,9 +240,9 @@ pub struct Player {
     /// Block breaking state machine.
     pub block_breaking: SyncMutex<BlockBreakingManager>,
 
-    /// Shared living-entity fields (`death_processed`, `invulnerable_time`, `last_hurt`).
+    /// Shared living-entity runtime fields (attributes, speed, damage/death state).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
-    living_base: SyncMutex<LivingEntityBase>,
+    living_base: LivingEntityBase,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
     pub food_data: SyncMutex<FoodData>,
@@ -265,20 +250,21 @@ pub struct Player {
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
 
-    /// Whether the player has been removed from the world.
-    removed: AtomicBool,
-    /// Whether the player is between domain saves/loads and should ignore gameplay packets.
-    domain_switching: AtomicBool,
-
-    /// Callback for entity lifecycle events (movement between chunks, removal).
-    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
-
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
 
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
-    pub chunk_send_epoch: AtomicU32,
+    pub chunk_send_epoch: SyncMutex<u32>,
+
+    /// Persisted `RootVehicle` payload awaiting live entity restoration.
+    pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
+}
+
+#[derive(Clone)]
+struct PendingRootVehicleRestore {
+    world: Identifier,
+    root_vehicle: PersistentRootVehicle,
 }
 
 impl Player {
@@ -286,21 +272,37 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let (yaw, pitch) = self.rotation();
-        let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
         let block_interaction_range = self
-            .attributes
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);
-        let direction = DVec3::new(
-            -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
-            -pitch_rad.sin() * block_interaction_range,
-            pitch_rad.cos() * yaw_rad.cos() * block_interaction_range,
-        );
+        let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
         (start_pos, end_pos)
+    }
+
+    /// Returns the player's current game mode.
+    #[must_use]
+    pub fn game_mode(&self) -> GameType {
+        self.game_modes.lock().current()
+    }
+
+    /// Returns the player's previous game mode.
+    #[must_use]
+    pub fn previous_game_mode(&self) -> GameType {
+        self.game_modes.lock().previous()
+    }
+
+    /// Restores current and previous game mode from persistent player data.
+    pub(crate) fn restore_game_modes(&self, current: GameType, previous: GameType) {
+        self.game_modes.lock().set_pair(current, previous);
+    }
+
+    /// Changes the current game mode and records the old current mode as previous.
+    fn change_game_mode_state(&self, game_mode: GameType) -> bool {
+        self.game_modes.lock().change_current(game_mode)
     }
 
     /// Creates a new player.
@@ -320,13 +322,9 @@ impl Player {
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
-        let max_health = attributes
-            .get_value(vanilla_attributes::MAX_HEALTH)
-            .unwrap_or(20.0) as f32;
-        let speed = attributes
-            .get_value(vanilla_attributes::MOVEMENT_SPEED)
-            .unwrap_or(0.1) as f32;
+        let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let player_uuid = gameprofile.id;
+        let world_ref = Arc::downgrade(&world);
 
         Self {
             gameprofile,
@@ -335,90 +333,103 @@ impl Player {
             world: ArcSwap::new(world),
             server,
             config,
-            id: entity_id,
-            client_loaded: AtomicBool::new(false),
-            position: SyncMutex::new(pos),
-            rotation: AtomicCell::new((0.0, 0.0)),
+            base: EntityBase::with_uuid(
+                entity_id,
+                player_uuid,
+                pos,
+                Self::dimensions_for_pose(EntityPose::Standing),
+                world_ref,
+            ),
+            lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
-                data.health.set(max_health);
+                living_base.initialize_synced_data(&mut data);
                 data
             }),
-            speed: AtomicCell::new(speed),
-            attributes: SyncMutex::new(attributes),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
             chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
             chat: SyncMutex::new(ChatState::new()),
-            game_mode: AtomicCell::new(GameType::Survival),
-            prev_game_mode: AtomicCell::new(GameType::Survival),
+            game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
-            container_counter: AtomicU8::new(0),
-            ack_block_changes_up_to: AtomicI32::new(-1),
+            container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
-            tick_count: AtomicI32::new(0),
-            entity_state: SyncMutex::new(EntityState::new()),
+            tick_state: SyncMutex::new(PlayerTickState::new()),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
-            living_base: SyncMutex::new(LivingEntityBase::new()),
+            living_base,
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
-            removed: AtomicBool::new(false),
-            domain_switching: AtomicBool::new(false),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             experience: SyncMutex::new(Experience::default()),
-            chunk_send_epoch: AtomicU32::new(0),
+            chunk_send_epoch: SyncMutex::new(0),
+            pending_root_vehicle: SyncMutex::new(None),
         }
     }
 
     /// Ticks the player.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
+    /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "world coordinates are always within i32 range in a valid Minecraft world"
     )]
     pub fn tick(&self) {
-        self.tick_count.fetch_add(1, Ordering::Relaxed);
-
-        // Reset first_good_position to current position at start of tick (vanilla: resetPosition)
-        {
-            let mut mv = self.movement.lock();
-            mv.first_good_position = *self.position.lock();
-            mv.known_move_packet_count = mv.received_move_packet_count;
+        self.advance_tick();
+        self.tick_client_load_timeout();
+        if !self.is_passenger() {
+            self.advance_tick_count();
         }
 
-        self.apply_gravity();
+        self.set_no_physics(self.is_spectator());
+        if self.is_spectator() || self.is_passenger() {
+            self.set_on_ground(false);
+        }
+
+        let tick_position = self.position();
+
+        // Vanilla: ServerGamePacketListenerImpl.resetPosition().
+        self.movement.lock().reset_for_tick(tick_position);
+        self.set_old_position_to_current();
+        self.reset_vehicle_movement_for_tick();
+
+        self.default_tick();
+        self.update_swimming();
+        self.ai_step();
+
+        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
+        if let Err(error) = self.try_set_position(tick_position) {
+            panic!(
+                "failed to restore player {} tick position after ai_step: {error}",
+                self.id()
+            );
+        }
+        self.refresh_fluid_contact();
+
         self.tick_ack_block_changes();
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             //return;
         }
-
-        let current_pos = *self.position.lock();
-        let chunk_pos = ChunkPos::from_entity_pos(current_pos);
-
-        *self.last_chunk_pos.lock() = chunk_pos;
 
         let world = self.get_world();
         world.chunk_map.update_player_status(self);
 
-        {
-            let mut living_base = self.living_base.lock();
-            if living_base.invulnerable_time > 0 {
-                living_base.invulnerable_time -= 1;
-            }
-        }
+        self.living_base.decrement_invulnerable_time();
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             self.tick_death();
         } else {
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
-            self.check_inside_blocks();
-            self.check_below_world();
+            self.apply_effects_from_blocks();
+            self.push_entities(&world);
 
             // TODO: Implement remaining player ticking logic here
             // - Managing game mode specific logic
@@ -426,13 +437,7 @@ impl Player {
             // - Handling falling
 
             // aiStep in vanilla
-            if let Some(speed) = self
-                .attributes
-                .lock()
-                .get_value(vanilla_attributes::MOVEMENT_SPEED)
-            {
-                self.speed.store(speed as f32);
-            }
+            self.living_base.refresh_speed_from_attributes();
 
             self.update_player_attributes();
             self.tick_regeneration();
@@ -442,15 +447,21 @@ impl Player {
             }
         }
 
+        if self.disconnect_if_floating_too_long() {
+            return;
+        }
+        if self.disconnect_if_vehicle_floating_too_long() {
+            return;
+        }
+
         self.refresh_dirty_attributes();
+        self.tick_living_state();
 
         self.broadcast_inventory_changes();
         self.update_pose();
-        self.update_shared_flags();
-        self.sync_entity_data();
 
         {
-            let health = *self.entity_data.lock().health.get();
+            let health = self.get_health();
             let (food, saturation) = {
                 let food_data = self.food_data.lock();
                 (food_data.food_level, food_data.saturation_level)
@@ -482,26 +493,13 @@ impl Player {
             }
         }
 
-        {
-            let snapshots = self.attributes.lock().drain_dirty_sync();
-            if !snapshots.is_empty() {
-                let packet = CUpdateAttributes::new(self.id, snapshots);
-                let chunk_pos = *self.last_chunk_pos.lock();
-                self.get_world()
-                    .broadcast_to_nearby(chunk_pos, packet, None);
-            }
-        }
-
         self.connection.tick();
     }
 
     /// Ticks the death animation timer.
     /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
     fn tick_death(&self) {
-        let death_time = {
-            let mut living_base = self.living_base.lock();
-            living_base.increment_death_time()
-        };
+        let death_time = self.living_base.increment_death_time();
 
         if death_time >= DEATH_DURATION && !self.is_removed() {
             let world = self.get_world();
@@ -509,24 +507,27 @@ impl Player {
             world.broadcast_to_nearby(
                 chunk_pos,
                 CEntityEvent {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     event: EntityStatus::Poof,
                 },
                 None,
             );
 
-            world.broadcast_to_all(CRemoveEntities::single(self.id));
+            world.unregister_player_entity(self);
+            world.entity_tracker().on_player_leave(self.id());
+            world.player_area_map.remove_by_entity_id(self.id());
+            world.chunk_map.remove_player(self);
             self.set_removed(RemovalReason::Killed);
         }
     }
 
-    /// Syncs dirty entity data to nearby players.
+    /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
-            let packet = CSetEntityData::new(self.id, dirty_values);
-            let chunk_pos = *self.last_chunk_pos.lock();
+            let packet = CSetEntityData::new(self.id(), dirty_values);
             self.get_world()
-                .broadcast_to_nearby(chunk_pos, packet, None);
+                .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+            self.send_packet(packet);
         }
     }
 
@@ -537,51 +538,69 @@ impl Player {
     }
 
     /// Handles the end of a client tick.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub const fn handle_client_tick_end(&self) {
-        //log::info!("Hello from the other side!");
+    pub fn handle_client_tick_end(&self) {
+        self.movement.lock().finish_client_tick();
     }
 
-    /// Checks all blocks overlapping the player's AABB and calls `entity_inside`
-    /// on each block's behavior (e.g. cactus damage, fire ignition).
-    fn check_inside_blocks(&self) {
-        use crate::behavior::BLOCK_BEHAVIORS;
-        use steel_registry::blocks::block_state_ext::BlockStateExt;
+    fn push_entities(&self, world: &Arc<World>) {
+        if !world.tick_runs_normally() {
+            return;
+        }
 
-        let world = self.get_world();
-        let aabb = self.bounding_box().deflate(1.0E-5);
+        let pusher = self as &dyn Entity;
+        let pushable_entities = world.get_pushable_entities(pusher, &self.bounding_box());
+        if pushable_entities.is_empty() {
+            return;
+        }
 
-        let min_x = aabb.min_x.floor() as i32;
-        let min_y = aabb.min_y.floor() as i32;
-        let min_z = aabb.min_z.floor() as i32;
-        let max_x = aabb.max_x.floor() as i32;
-        let max_y = aabb.max_y.floor() as i32;
-        let max_z = aabb.max_z.floor() as i32;
+        self.apply_entity_cramming_damage(world, &pushable_entities);
 
-        for x in min_x..=max_x {
-            for y in min_y..=max_y {
-                for z in min_z..=max_z {
-                    let pos = BlockPos::new(x, y, z);
-                    let state = world.get_block_state(pos);
-                    if state.is_air() {
-                        continue;
-                    }
-                    let block = state.get_block();
-                    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-                    behavior.entity_inside(state, &world, pos, self as &dyn Entity);
-                }
-            }
+        for entity in pushable_entities {
+            entity.push_entity(pusher);
         }
     }
 
-    fn check_below_world(&self) {
-        let pos = *self.position.lock();
-        if pos.y < f64::from(self.get_world().get_min_y() - 64) {
+    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
+        let max_cramming = world
+            .get_game_rule(&MAX_ENTITY_CRAMMING)
+            .as_int()
+            .unwrap_or(24);
+
+        if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
+            return;
+        }
+
+        let random_roll = self.base.random().lock().next_i32_bounded(4);
+        let non_passenger_count = pushable_entities
+            .iter()
+            .filter(|entity| !entity.is_passenger())
+            .count();
+
+        if Self::should_apply_entity_cramming_damage(
+            max_cramming,
+            pushable_entities.len(),
+            non_passenger_count,
+            random_roll,
+        ) {
             self.hurt(
-                &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
-                4.0,
+                &DamageSource::environment(&vanilla_damage_types::CRAMMING),
+                6.0,
             );
         }
+    }
+
+    const fn should_apply_entity_cramming_damage(
+        max_cramming: i32,
+        pushable_count: usize,
+        non_passenger_count: usize,
+        random_roll: i32,
+    ) -> bool {
+        if max_cramming <= 0 || random_roll != 0 {
+            return false;
+        }
+
+        let threshold = (max_cramming - 1) as usize;
+        pushable_count > threshold && non_passenger_count > threshold
     }
 
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
@@ -601,7 +620,7 @@ impl Player {
             }
         }
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             return false;
         }
 
@@ -639,24 +658,11 @@ impl Player {
             return false;
         }
 
-        let (took_full_damage, effective_amount) = {
-            let mut living_base = self.living_base.lock();
-            if living_base.death_processed {
-                return false;
-            }
-
-            if living_base.invulnerable_time > 10 && !source.bypasses_cooldown() {
-                if amount <= living_base.last_hurt {
-                    return false;
-                }
-                let effective = amount - living_base.last_hurt;
-                living_base.last_hurt = amount;
-                (false, effective)
-            } else {
-                living_base.last_hurt = amount;
-                living_base.invulnerable_time = 20;
-                (true, amount)
-            }
+        let Some((took_full_damage, effective_amount)) = self
+            .living_base
+            .apply_damage_cooldown(amount, source.bypasses_cooldown())
+        else {
+            return false;
         };
 
         // TODO: Vanilla LivingEntity.hurtServer applies item blocking (shield) before
@@ -680,7 +686,7 @@ impl Player {
             world.broadcast_to_nearby(
                 chunk_pos,
                 CDamageEvent {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     source_type_id: type_id,
                     source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
                     source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
@@ -689,18 +695,18 @@ impl Player {
                 None,
             );
 
-            let (yaw, _) = self.rotation.load();
+            let (yaw, _) = self.rotation();
             world.broadcast_to_nearby(
                 chunk_pos,
                 CHurtAnimation {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     yaw,
                 },
                 None,
             );
         }
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             self.die(source);
         }
 
@@ -720,20 +726,16 @@ impl Player {
         // TODO: absorption handling
         self.cause_food_exhaustion(source.damage_type.exhaustion);
 
-        let mut entity_data = self.entity_data.lock();
-        let new_health = (*entity_data.health.get() - amount).max(0.0);
-        entity_data.health.set(new_health);
+        self.set_health(self.get_health() - amount);
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
     fn die(&self, source: &DamageSource) {
-        {
-            let mut living_base = self.living_base.lock();
-            if self.removed.load(Ordering::Relaxed) || living_base.death_processed {
-                return;
-            }
-
-            living_base.death_processed = true;
+        if self.is_removed() {
+            return;
+        }
+        if !self.living_base.mark_death_processed() {
+            return;
         }
 
         {
@@ -756,7 +758,7 @@ impl Player {
         world.broadcast_to_nearby(
             chunk_pos,
             CEntityEvent {
-                entity_id: self.id,
+                entity_id: self.id(),
                 event: EntityStatus::Death,
             },
             None,
@@ -777,7 +779,7 @@ impl Player {
         .component();
 
         self.send_packet(CPlayerCombatKill {
-            player_id: self.id,
+            player_id: self.id(),
             message: if show_death_messages {
                 death_message.clone()
             } else {
@@ -823,48 +825,42 @@ impl Player {
     /// # Panics
     /// If the player dies in a world that doesn't exist.
     pub fn respawn(&self) {
-        let health = *self.entity_data.lock().health.get();
+        let health = self.get_health();
         if !Self::should_process_respawn(health) {
             return;
         }
 
-        {
-            let mut living_base = self.living_base.lock();
-            living_base.reset_death_state();
-        };
+        self.living_base.reset_death_state();
 
-        let was_removed = self.removed.swap(false, Ordering::AcqRel);
+        let was_removed = self.base.clear_removed();
         let world = self.get_world();
-
-        // Only send CRemoveEntities if tick_death() hasn't already removed us
-        // (tick_death sends CRemoveEntities + set_removed at DEATH_DURATION).
-        // NOTE: Since we reuse the same entity ID (unlike vanilla which creates a
-        // fresh ServerPlayer), clients may briefly see remove+re-add in the same
-        // frame if respawn races with tick_death's DEATH_DURATION removal.
-        if !was_removed {
-            world.broadcast_to_all(CRemoveEntities::single(self.id));
-        }
 
         // Respawn-specific state: reset health and pose
         {
             let mut entity_data = self.entity_data.lock();
-            entity_data.health.set(self.get_max_health());
-            entity_data.pose.set(EntityPose::Standing);
+            entity_data
+                .living_entity_mut()
+                .health
+                .set(self.get_max_health());
+            entity_data.base_mut().pose.set(EntityPose::Standing);
         }
 
         // Reset food data to defaults
         *self.food_data.lock() = FoodData::new();
 
         // Clear transient attribute modifiers (sprint, potion effects, etc.)
-        self.attributes.lock().remove_all_transient();
+        self.attributes().lock().remove_all_transient();
 
         self.health_sync.lock().reset_for_respawn();
 
         // TODO: bed/respawn anchor lookup, send NO_RESPAWN_BLOCK_AVAILABLE if missing
 
-        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
             return;
         };
+        if !was_removed {
+            world.unregister_player_entity(self);
+        }
 
         // Shared reset (clears transient state, sends CRespawn)
         player_arc.reset(world.clone(), ResetReason::Respawn);
@@ -885,7 +881,7 @@ impl Player {
         {
             let mut experience = self.experience.lock();
             if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
-                && self.game_mode.load() != GameType::Spectator
+                && self.game_mode() != GameType::Spectator
             {
                 // TODO: drop XP orbs (min(level * 7, 100))
                 experience.set_total_points(0);
@@ -897,36 +893,8 @@ impl Player {
         // TODO: send mob effect packets once effects are implemented
         // TODO: send CInitializeBorder once world border is implemented
 
-        // Broadcast respawned entity to other players
-        // Vanilla: ChunkMap.addEntity -> addPairing -> sendPairingData
-        // TODO: also send SetEquipment + UpdateAttributes in the bundle
-        let player_type_id = vanilla_entities::PLAYER.id() as i32;
-        let spawn_packet = CAddEntity::player(
-            self.id,
-            self.gameprofile.id,
-            player_type_id,
-            spawn.x,
-            spawn.y,
-            spawn.z,
-            0.0,
-            0.0,
-        );
-        let entity_data = self.entity_data.lock().pack_all();
-        let entity_id = self.id;
-        world.players.iter_players(|_, p| {
-            if p.id != entity_id {
-                p.send_bundle(|bundle| {
-                    bundle.add(spawn_packet.clone());
-                    if !entity_data.is_empty() {
-                        bundle.add(CSetEntityData::new(entity_id, entity_data.clone()));
-                    }
-                });
-            }
-            true
-        });
-
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
-        player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
+        let _ = player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
     }
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
@@ -974,24 +942,129 @@ impl Player {
     /// This is used when the correct world isn't known at construction time
     /// (e.g., when loading saved player data determines the actual world).
     pub fn set_world(&self, world: Arc<World>) {
+        self.base.set_world(Arc::downgrade(&world));
         self.world.store(world);
     }
 
     /// Marks the player as switching domains if they are not already in a transition.
     pub fn begin_domain_switch(&self) -> bool {
-        self.domain_switching
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.lifecycle.lock().begin_domain_switch()
     }
 
     /// Clears the domain-switch transition marker.
     pub fn finish_domain_switch(&self) {
-        self.domain_switching.store(false, Ordering::Release);
+        self.lifecycle.lock().finish_domain_switch();
     }
 
     /// Returns whether this player is currently switching domains.
     pub fn is_domain_switching(&self) -> bool {
-        self.domain_switching.load(Ordering::Acquire)
+        self.lifecycle.lock().domain_switching()
+    }
+
+    /// Returns whether the server has inserted this player into a world.
+    #[must_use]
+    pub fn has_joined_world(&self) -> bool {
+        self.lifecycle.lock().joined_world()
+    }
+
+    /// Marks this player as inserted into a world.
+    ///
+    /// Returns `true` when a client-loaded acknowledgement arrived before world
+    /// admission and was applied by this call.
+    pub(crate) fn mark_joined_world(&self) -> bool {
+        let mut lifecycle = self.lifecycle.lock();
+        lifecycle.set_joined_world(true);
+        lifecycle.apply_pending_client_loaded()
+    }
+
+    /// Returns whether the client has sent its play-loaded signal.
+    #[must_use]
+    pub fn has_client_loaded(&self) -> bool {
+        self.lifecycle.lock().client_loaded()
+    }
+
+    /// Marks whether the client has loaded into play.
+    pub fn set_client_loaded(&self, client_loaded: bool) {
+        self.lifecycle.lock().set_client_loaded(client_loaded);
+    }
+
+    /// Applies or buffers the client's play-loaded acknowledgement.
+    ///
+    /// Returns `true` when the acknowledgement can run gameplay side effects now.
+    pub fn mark_client_loaded_from_network(&self) -> bool {
+        self.lifecycle.lock().mark_client_loaded_from_network()
+    }
+
+    fn tick_client_load_timeout(&self) {
+        self.lifecycle.lock().tick_client_load_timeout();
+    }
+
+    pub(crate) fn set_pending_root_vehicle(
+        &self,
+        world: &World,
+        root_vehicle: PersistentRootVehicle,
+    ) {
+        *self.pending_root_vehicle.lock() = Some(PendingRootVehicleRestore {
+            world: world.key.clone(),
+            root_vehicle,
+        });
+    }
+
+    pub(crate) fn clear_pending_root_vehicle(&self) {
+        *self.pending_root_vehicle.lock() = None;
+    }
+
+    pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
+        let world_key = self.get_world().key.clone();
+        self.pending_root_vehicle
+            .lock()
+            .as_ref()
+            .filter(|pending| pending.world == world_key)
+            .map(|pending| pending.root_vehicle.clone())
+    }
+
+    pub(crate) fn take_matching_pending_root_vehicle(
+        &self,
+        world: &World,
+        attach: [u8; 16],
+        root_uuid: [u8; 16],
+    ) -> Option<PersistentRootVehicle> {
+        let mut pending = self.pending_root_vehicle.lock();
+        let matches = pending.as_ref().is_some_and(|pending| {
+            pending.world == world.key
+                && pending.root_vehicle.attach == attach
+                && pending.root_vehicle.entity.uuid == root_uuid
+        });
+        if matches {
+            pending.take().map(|pending| pending.root_vehicle)
+        } else {
+            None
+        }
+    }
+
+    /// Returns this player's local server tick count.
+    #[must_use]
+    pub fn tick_count(&self) -> i32 {
+        self.tick_state.lock().tick_count()
+    }
+
+    /// Advances this player's local server tick count.
+    fn advance_tick(&self) {
+        self.tick_state.lock().advance_tick();
+    }
+
+    fn primary_step_sound_block_pos(&self, affecting_pos: BlockPos) -> BlockPos {
+        let above_pos = affecting_pos.above();
+        let above_state = self.get_world().get_block_state(above_pos);
+        let above_block = above_state.get_block();
+
+        if above_block.has_tag(&BlockTag::INSIDE_STEP_SOUND_BLOCKS)
+            || above_block.has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+        {
+            above_pos
+        } else {
+            affecting_pos
+        }
     }
 
     /// Resets the player's transient state and prepares them for a new world.
@@ -1004,6 +1077,30 @@ impl Player {
     /// constructed during respawn / world change, since vanilla recreates the
     /// player object. We reuse the same `Player`, so we reset manually.
     pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+        self.reset_inner_after(new_world, reason, false, || {});
+    }
+
+    /// Resets for a domain switch and restores target-domain state after the
+    /// player has been detached from the old world's live entity indexes.
+    pub(crate) fn reset_after_domain_save_and_restore<F>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
+        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
+    }
+
+    fn reset_inner_after<F>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        reason: ResetReason,
+        store_root_vehicle: bool,
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
         let old_world = self.get_world();
         let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
 
@@ -1011,29 +1108,33 @@ impl Player {
         if switching_worlds {
             self.do_close_container();
             self.send_packet(CContainerClose { container_id: 0 });
-            old_world.remove_player_for_world_change(self);
+            if store_root_vehicle {
+                old_world.remove_player_for_domain_switch(self);
+            } else {
+                old_world.remove_player_for_world_change(self);
+            }
             self.set_world(new_world.clone());
         }
 
         // --- Reset transient state ---
-        self.client_loaded.store(false, Ordering::Relaxed);
-        self.movement.lock().delta_movement = DVec3::default();
-        {
-            let mut es = self.entity_state.lock();
-            es.on_ground = false;
-            es.fall_flying = false;
-            es.sleeping = false;
-            es.crouching = false;
-            es.sprinting = false;
-        }
+        self.set_client_loaded(false);
+        self.set_velocity(DVec3::ZERO);
+        self.movement.lock().reset_last_known_client_movement();
+        self.set_on_ground(false);
+        self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
 
         // Reset chunk tracking — bump generation counter so the chunk sending tick
         // discards any in-flight batch encoded against the old world.
-        self.chunk_send_epoch.fetch_add(1, Ordering::Release);
+        {
+            let mut chunk_send_epoch = self.chunk_send_epoch.lock();
+            *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
+        }
         *self.chunk_sender.lock() = ChunkSender::default();
         *self.last_tracking_view.lock() = None;
         *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        restore_state();
 
         // --- Send CRespawn (not needed on initial join — CLogin already sent) ---
         if reason != ResetReason::InitialJoin {
@@ -1047,8 +1148,8 @@ impl Player {
                 dimension_type: new_world.dimension_type.id() as i32,
                 dimension_name: new_world.key.clone(),
                 hashed_seed: new_world.obfuscated_seed(),
-                gamemode: self.game_mode.load() as u8,
-                previous_gamemode: self.prev_game_mode.load() as i8,
+                gamemode: self.game_mode() as u8,
+                previous_gamemode: self.previous_game_mode() as i8,
                 is_debug: false,
                 is_flat: new_world.is_flat,
                 has_death_location: false,
@@ -1069,23 +1170,31 @@ impl Player {
     ///
     /// # Panics
     /// Panics if the `advance_time` gamerule is not a bool.
-    pub fn spawn(self: &Arc<Self>, position: DVec3, rotation: (f32, f32), reason: ResetReason) {
+    #[must_use]
+    pub fn spawn(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+        reason: ResetReason,
+    ) -> bool {
         let world = self.get_world();
 
         // Set position and rotation
-        *self.position.lock() = position;
-        self.rotation.store(rotation);
-        {
-            let mut mv = self.movement.lock();
-            mv.prev_position = position;
-            mv.last_good_position = position;
-            mv.first_good_position = position;
-            mv.received_move_packet_count = 0;
-            mv.known_move_packet_count = 0;
-        }
+        self.base.set_position_local(position);
+        self.set_rotation(rotation);
+        self.set_old_position_to_current();
+        self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);
+        if let Err(error) =
+            self.teleport(position.x, position.y, position.z, rotation.0, rotation.1)
+        {
+            panic!(
+                "failed to synchronize player {} spawn position: {error}",
+                self.id()
+            );
+        }
+        self.reset_flying_ticks();
 
         // Abilities and held slot
         self.send_abilities();
@@ -1145,18 +1254,20 @@ impl Player {
                         world.key
                     );
                 }
-                world.add_player(self.clone(), reason);
+                world.add_player(self.clone(), reason)
             }
             ResetReason::Respawn => {
                 // Same world — re-enter chunk tracking
-                world.player_area_map.remove_by_entity_id(self.id);
+                world.player_area_map.remove_by_entity_id(self.id());
                 world.chunk_map.remove_player(self);
-                world.entity_tracker().on_player_leave(self.id);
+                world.entity_tracker().on_player_leave(self.id());
 
                 self.send_packet(CGameEvent {
                     event: GameEventType::LevelChunksLoadStart,
                     data: 0.0,
                 });
+                world.register_respawned_player_entity(self);
+                true
             }
         }
     }
@@ -1176,35 +1287,19 @@ pub enum ResetReason {
 }
 
 impl Entity for Player {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PLAYER
     }
 
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn uuid(&self) -> Uuid {
-        self.gameprofile.id
-    }
-
-    fn position(&self) -> DVec3 {
-        *self.position.lock()
-    }
-
-    fn bounding_box(&self) -> AABBd {
-        let pos = self.position();
-        // Player hitbox: 0.6 wide, 1.8 tall (standing)
-        // TODO: Adjust for pose (crouching, swimming, etc.)
-        let half_width = 0.3;
-        let height = 1.8;
-        AABBd {
-            min_x: pos.x - half_width,
-            min_y: pos.y,
-            min_z: pos.z - half_width,
-            max_x: pos.x + half_width,
-            max_y: pos.y + height,
-            max_z: pos.z + half_width,
+    fn broadcast_to_player(&self, player: &Player) -> bool {
+        if player.is_spectator() {
+            true
+        } else {
+            !self.is_spectator()
         }
     }
 
@@ -1213,55 +1308,237 @@ impl Entity for Player {
         // This is here for Entity trait compliance
     }
 
-    fn level(&self) -> Option<Arc<World>> {
-        Some(self.world.load_full())
+    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
+        (
+            &sound_events::ENTITY_PLAYER_SMALL_FALL,
+            &sound_events::ENTITY_PLAYER_BIG_FALL,
+        )
     }
 
-    fn is_removed(&self) -> bool {
-        self.removed.load(Ordering::Relaxed)
+    fn is_living_entity(&self) -> bool {
+        true
     }
 
-    fn set_removed(&self, reason: RemovalReason) {
-        if !self.removed.swap(true, Ordering::AcqRel) {
-            self.level_callback.lock().on_remove(reason);
+    fn is_alive(&self) -> bool {
+        !self.is_removed() && self.get_health() > 0.0
+    }
+
+    fn forces_fall_flying_velocity_sync(&self) -> bool {
+        self.is_fall_flying()
+    }
+
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
+    fn is_pickable(&self) -> bool {
+        !self.is_spectator() && !self.is_removed()
+    }
+
+    fn is_pushable(&self) -> bool {
+        self.get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
+    }
+
+    fn on_climbable(&self) -> bool {
+        Player::on_climbable(self)
+    }
+
+    fn is_spectator(&self) -> bool {
+        self.game_mode() == GameType::Spectator
+    }
+
+    fn fire_immune_ticks(&self) -> i32 {
+        20
+    }
+
+    fn remaining_fire_ticks_cap(&self) -> Option<i32> {
+        self.abilities.lock().invulnerable.then_some(1)
+    }
+
+    fn get_default_gravity(&self) -> f64 {
+        LivingEntity::get_attribute_gravity(self)
+    }
+
+    fn fire_ignite_extra_ticks(&self) -> i32 {
+        self.get_world().random().lock().next_i32_between(1, 2)
+    }
+
+    fn can_freeze(&self) -> bool {
+        if self.is_spectator() {
+            return false;
+        }
+
+        self.default_living_can_freeze()
+    }
+
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        if !self.is_flying() {
+            self.default_make_stuck_in_block(state, speed_multiplier);
+        }
+
+        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+    }
+
+    fn can_be_hit_by_projectile(&self) -> bool {
+        self.get_health() > 0.0 && self.is_pickable()
+    }
+
+    fn uses_client_movement_packets(&self) -> bool {
+        true
+    }
+
+    fn can_simulate_movement(&self) -> bool {
+        true
+    }
+
+    fn is_effective_ai(&self) -> bool {
+        true
+    }
+
+    fn known_movement(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_movement();
+        }
+
+        self.movement.lock().last_known_client_movement()
+    }
+
+    fn known_speed(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_speed();
+        }
+
+        self.movement.lock().last_known_client_movement()
+    }
+
+    fn is_suppressing_bounce(&self) -> bool {
+        self.is_crouching()
+    }
+
+    fn cause_fall_damage(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        if self.abilities.lock().may_fly {
+            return false;
+        }
+
+        // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
+        if self.is_fall_damage_immune() {
+            return false;
+        }
+
+        let attributes = self.attributes().lock();
+        let safe_fall_distance = attributes
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(3.0);
+        let fall_damage_multiplier = attributes
+            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
+            .unwrap_or(1.0);
+        drop(attributes);
+
+        let damage = LivingEntityBase::calculate_fall_damage(
+            fall_distance,
+            damage_modifier,
+            safe_fall_distance,
+            fall_damage_multiplier,
+        );
+        if damage <= 0 {
+            return false;
+        }
+
+        self.hurt(source, damage as f32)
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
+    }
+
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
+    fn max_up_step(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::STEP_HEIGHT)
+            .unwrap_or(0.6) as f32
+    }
+
+    fn backs_off_from_edge(&self) -> bool {
+        self.is_crouching() && !self.is_flying()
+    }
+
+    fn is_pushed_by_fluid(&self) -> bool {
+        !self.is_flying()
+    }
+
+    fn is_crouching(&self) -> bool {
+        Player::is_crouching(self)
+    }
+
+    fn can_walk_on_powder_snow(&self) -> bool {
+        self.default_living_can_walk_on_powder_snow()
+    }
+
+    fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
+        world.may_interact(self, pos)
+    }
+
+    fn is_swimming(&self) -> bool {
+        Player::is_swimming(self)
+    }
+
+    fn sound_source(&self) -> SoundSource {
+        SoundSource::Players
+    }
+
+    fn swim_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SWIM
+    }
+
+    fn play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {
+        if self.is_in_water() {
+            self.water_swim_sound();
+            self.play_muffled_step_sound(on_state);
+            return;
+        }
+
+        let primary_step_sound_pos = self.primary_step_sound_block_pos(on_pos);
+        if primary_step_sound_pos == on_pos {
+            self.play_block_step_sound(on_state);
+        } else {
+            let primary_state = self.get_world().get_block_state(primary_step_sound_pos);
+            if primary_state
+                .get_block()
+                .has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+            {
+                self.play_combination_step_sounds(primary_state, on_state);
+            } else {
+                self.play_block_step_sound(primary_state);
+            }
         }
     }
 
-    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
-        *self.level_callback.lock() = callback;
-    }
-
-    fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
-        Some(self)
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        self.movement.lock().delta_movement
-    }
-
-    fn on_ground(&self) -> bool {
-        self.entity_state.lock().on_ground
-    }
-
-    /// Returns the eye height for the current pose.
-    ///
-    /// Vanilla eye heights from `Avatar.POSES`:
-    /// - Standing: 1.62
-    /// - Crouching: 1.27
-    /// - Swimming/FallFlying/SpinAttack: 0.4
-    /// - Sleeping: 0.2
-    fn get_eye_height(&self) -> f64 {
-        match self.get_desired_pose() {
-            EntityPose::Sneaking => 1.27,
-            EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => 0.4,
-            EntityPose::Sleeping => 0.2,
-            // Standing and all other poses use default player eye height
-            _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
-        }
+    fn on_below_world(&self) {
+        self.hurt(
+            &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
+            4.0,
+        );
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
@@ -1275,15 +1552,23 @@ impl Entity for Player {
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
             let rotation = teleport_transition.rotation;
-            self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1);
+            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1) {
+                panic!(
+                    "failed to commit same-world portal teleport for player {}: {error}",
+                    self.id()
+                );
+            }
+            self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
             // TODO: set portal cooldown from teleport_transition.portal_cooldown
-            self.spawn(
+            if !self.spawn(
                 teleport_transition.position,
                 teleport_transition.rotation,
                 ResetReason::WorldChange,
-            );
+            ) {
+                return;
+            }
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
         }
@@ -1291,22 +1576,40 @@ impl Entity for Player {
 }
 
 impl LivingEntity for Player {
-    fn attributes(&self) -> &SyncMutex<AttributeMap> {
-        &self.attributes
-    }
-
     fn get_health(&self) -> f32 {
-        *self.entity_data.lock().health.get()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.entity_data.lock().health.set(clamped);
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
 
-    fn living_base(&self) -> &SyncMutex<LivingEntityBase> {
+    fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+        let inventory = self.inventory.lock();
+        visitor(inventory.equipment().get_ref(slot));
+    }
+
+    fn with_equipment_slot_mut(
+        &self,
+        slot: EquipmentSlot,
+        visitor: &mut dyn FnMut(&mut ItemStack),
+    ) {
+        let mut inventory = self.inventory.lock();
+        visitor(inventory.equipment_mut().get_mut(slot));
+    }
+
+    fn has_infinite_materials(&self) -> bool {
+        Player::has_infinite_materials(self)
     }
 
     fn get_absorption_amount(&self) -> f32 {
@@ -1320,21 +1623,85 @@ impl LivingEntity for Player {
             .set(amount.max(0.0));
     }
 
-    fn is_sprinting(&self) -> bool {
-        self.entity_state.lock().sprinting
+    fn is_affected_by_fluids(&self) -> bool {
+        !self.is_flying()
     }
 
-    fn set_sprinting(&self, sprinting: bool) {
-        self.entity_state.lock().sprinting = sprinting;
-        self.apply_sprint_speed_modifier(sprinting);
+    fn can_glide(&self) -> bool {
+        !self.is_flying() && self.default_can_glide()
     }
 
-    fn get_speed(&self) -> f32 {
-        self.speed.load()
+    fn is_immobile(&self) -> bool {
+        self.default_is_immobile() || self.is_sleeping()
     }
 
-    fn set_speed(&self, speed: f32) {
-        self.speed.store(speed);
+    fn jump_from_ground(&self) {
+        self.default_jump_from_ground();
+        // TODO: Award Stats.JUMP once player statistics exist.
+        if self.is_sprinting() {
+            self.cause_food_exhaustion(0.2);
+        } else {
+            self.cause_food_exhaustion(0.05);
+        }
+    }
+
+    fn ai_step(&self) -> Option<MoveResult> {
+        if self.is_flying() && !self.is_passenger() {
+            self.reset_fall_distance();
+        }
+
+        self.default_ai_step()
+    }
+
+    fn travel(&self, input: DVec3) -> Option<MoveResult> {
+        if self.is_passenger() {
+            return self.default_travel(input);
+        }
+
+        if self.is_swimming() {
+            let look_angle_y = self.look_angle().y;
+            let multiplier = if look_angle_y < -0.2 { 0.085 } else { 0.06 };
+            let has_fluid_above = self.level().is_some_and(|world| {
+                let position = self.position();
+                let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
+                !get_fluid_state(&world, pos).is_empty()
+            });
+            if look_angle_y <= 0.0 || self.is_jumping() || has_fluid_above {
+                let velocity = self.velocity();
+                self.set_velocity(
+                    velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
+                );
+            }
+        }
+
+        if self.is_flying() {
+            let original_movement_y = self.velocity().y;
+            let result = self.default_travel(input);
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(
+                velocity.x,
+                original_movement_y * 0.6,
+                velocity.z,
+            ));
+            result
+        } else {
+            self.default_travel(input)
+        }
+    }
+
+    fn get_flying_speed(&self) -> f32 {
+        if self.is_flying() && !self.is_passenger() {
+            let flying_speed = self.abilities.lock().flying_speed;
+            if self.is_sprinting() {
+                flying_speed * 2.0
+            } else {
+                flying_speed
+            }
+        } else if self.is_sprinting() {
+            0.025_999_999
+        } else {
+            0.02
+        }
     }
 }
 
@@ -1380,5 +1747,22 @@ mod tests {
 
         assert!(input.death_processed);
         assert!(!Player::should_process_respawn(input.health));
+    }
+
+    #[test]
+    fn entity_cramming_requires_random_zero_and_threshold_overflow() {
+        assert!(Player::should_apply_entity_cramming_damage(24, 24, 24, 0));
+        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 24, 1));
+        assert!(!Player::should_apply_entity_cramming_damage(24, 23, 24, 0));
+    }
+
+    #[test]
+    fn entity_cramming_counts_only_non_passengers_for_damage() {
+        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 23, 0));
+    }
+
+    #[test]
+    fn entity_cramming_disabled_when_gamerule_is_zero() {
+        assert!(!Player::should_apply_entity_cramming_damage(0, 100, 100, 0));
     }
 }

@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::sound_event::SoundEventRef;
+
 /// Represents a set of sounds for a cat variant from a data pack JSON file.
 #[derive(Debug)]
 pub struct CatSoundVariant {
@@ -12,38 +14,38 @@ pub struct CatSoundVariant {
 }
 #[derive(Debug)]
 pub struct CatAge {
-    pub ambient_sound: Identifier,
-    pub beg_for_food_sound: Identifier,
-    pub death_sound: Identifier,
-    pub eat_sound: Identifier,
-    pub hiss_sound: Identifier,
-    pub hurt_sound: Identifier,
-    pub purr_sound: Identifier,
-    pub purreow_sound: Identifier,
-    pub stray_ambient_sound: Identifier,
+    pub ambient_sound: SoundEventRef,
+    pub beg_for_food_sound: SoundEventRef,
+    pub death_sound: SoundEventRef,
+    pub eat_sound: SoundEventRef,
+    pub hiss_sound: SoundEventRef,
+    pub hurt_sound: SoundEventRef,
+    pub purr_sound: SoundEventRef,
+    pub purreow_sound: SoundEventRef,
+    pub stray_ambient_sound: SoundEventRef,
 }
 
 impl ToNbtTag for &CatAge {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut component = NbtCompound::new();
-        let s = self.ambient_sound.to_string();
+        let s = self.ambient_sound.key.to_string();
         component.insert("ambient_sound", s.as_str());
-        let s = self.beg_for_food_sound.to_string();
+        let s = self.beg_for_food_sound.key.to_string();
         component.insert("beg_for_food_sound", s.as_str());
-        let s = self.death_sound.to_string();
+        let s = self.death_sound.key.to_string();
         component.insert("death_sound", s.as_str());
-        let s = self.eat_sound.to_string();
+        let s = self.eat_sound.key.to_string();
         component.insert("eat_sound", s.as_str());
-        let s = self.hiss_sound.to_string();
+        let s = self.hiss_sound.key.to_string();
         component.insert("hiss_sound", s.as_str());
-        let s = self.hurt_sound.to_string();
+        let s = self.hurt_sound.key.to_string();
         component.insert("hurt_sound", s.as_str());
-        let s = self.purr_sound.to_string();
+        let s = self.purr_sound.key.to_string();
         component.insert("purr_sound", s.as_str());
-        let s = self.purreow_sound.to_string();
+        let s = self.purreow_sound.key.to_string();
         component.insert("purreow_sound", s.as_str());
-        let s = self.stray_ambient_sound.to_string();
+        let s = self.stray_ambient_sound.key.to_string();
         component.insert("stray_ambient_sound", s.as_str());
         NbtTag::Compound(component)
     }

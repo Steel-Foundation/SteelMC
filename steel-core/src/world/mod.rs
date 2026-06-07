@@ -4,7 +4,7 @@ use std::path::Path;
 use std::{
     io,
     sync::{
-        Arc, Weak,
+        Arc, LazyLock, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
@@ -15,10 +15,11 @@ use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
+use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CGameEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate,
-    CRemoveEntities, CSound, CSystemChat, GameEventType, SoundSource,
+    CSetEntityData, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -26,24 +27,34 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
+use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
+use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
-use steel_registry::fluid::FluidRef;
+use steel_registry::blocks::shapes::{VoxelShape, is_face_full};
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
-use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_game_rules::{
+    BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
+};
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 use steel_registry::{vanilla_blocks, vanilla_game_events};
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::{
+    locks::{SyncMutex, SyncRwLock},
+    random::{RandomSource, legacy_random::LegacyRandom},
+};
+use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -58,9 +69,8 @@ pub enum RaytraceAction {
     ImmediateHit,
 }
 
-use glam::DVec3;
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos,
+    BlockLocalAabb, BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos, WorldAabb,
     types::{Difficulty, GameType, UpdateFlags},
 };
 use tokio::{runtime::Runtime, time::Instant};
@@ -72,12 +82,83 @@ use crate::{
     block_entity::SharedBlockEntity,
     chunk::heightmap::HeightmapType,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
-    entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
-    fluid::fluid_state_to_block,
+    entity::{
+        AddEntityError, Entity, EntityChunkCallback, EntityMovementSyncPacket, EntityOwnership,
+        EntityTracker, InactiveEntityCallback, RemovalReason, SharedEntity, WorldEntityManager,
+        entities::ItemEntity,
+    },
+    fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, WorldGenerationSettings},
     player::{LastSeen, Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
+
+static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
+    PerlinSimplexNoise::new(&mut random, &[0])
+});
+
+static FROZEN_BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(3456));
+    PerlinSimplexNoise::new(&mut random, &[-2, -1, 0])
+});
+
+static BIOME_INFO_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
+    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(2345));
+    PerlinSimplexNoise::new(&mut random, &[0])
+});
+
+/// Block shape channel used by vanilla-style world clipping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipBlockShape {
+    /// `ClipContext.Block.COLLIDER`
+    Collider,
+    /// `ClipContext.Block.OUTLINE`
+    Outline,
+    /// `ClipContext.Block.VISUAL`
+    Visual,
+    /// `ClipContext.Block.FALLDAMAGE_RESETTING`
+    FallDamageResetting {
+        /// Whether the clip context entity is a player.
+        entity_is_player: bool,
+    },
+}
+
+/// Fluid shape filter used by vanilla-style world clipping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipFluid {
+    /// `ClipContext.Fluid.NONE`
+    None,
+    /// `ClipContext.Fluid.SOURCE_ONLY`
+    SourceOnly,
+    /// `ClipContext.Fluid.ANY`
+    Any,
+    /// `ClipContext.Fluid.WATER`
+    Water,
+}
+
+/// Result of a vanilla-style world clip.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClipHitResult {
+    /// Exact hit location in world coordinates.
+    pub location: DVec3,
+    /// Hit face, or the miss direction for misses.
+    pub direction: Direction,
+    /// Block position containing the hit or miss endpoint.
+    pub block_pos: BlockPos,
+    /// Whether this result is a miss.
+    pub miss: bool,
+    /// Whether the ray started inside the hit shape.
+    pub inside: bool,
+}
+
+impl ClipHitResult {
+    /// Returns whether this clip missed all selected block and fluid shapes.
+    #[must_use]
+    pub const fn is_miss(self) -> bool {
+        self.miss
+    }
+}
 
 pub mod game_event_context;
 pub mod game_event_listener;
@@ -89,6 +170,7 @@ mod weather;
 mod world_entities;
 
 pub use crate::config::WorldStorageConfig;
+use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 pub use level_reader::{LevelReader, ScheduledTickAccess};
 pub use player_area_map::PlayerAreaMap;
@@ -194,13 +276,14 @@ pub struct World {
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
-    /// Entity cache for fast entity lookups by ID, UUID, or spatial position.
-    /// Uses `Weak` references - entities are owned by chunks.
-    entity_cache: EntityCache,
+    /// Central runtime entity ownership and lookup.
+    entity_manager: WorldEntityManager,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
+    /// Vanilla `Level.random` runtime random source.
+    random: SyncMutex<LegacyRandom>,
     /// Monotonic counter for `sub_tick_order` on scheduled ticks.
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
@@ -299,9 +382,10 @@ impl World {
                 sea_level,
                 default_gamemode,
                 tick_runs_normally: AtomicBool::new(true),
-                entity_cache: EntityCache::new(),
+                entity_manager: WorldEntityManager::new(),
                 entity_tracker: EntityTracker::new(),
                 weather: SyncMutex::new(weather),
+                random: SyncMutex::new(LegacyRandom::from_seed(rand::random())),
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
@@ -364,6 +448,24 @@ impl World {
     pub const fn is_in_valid_bounds(&self, block_pos: BlockPos) -> bool {
         !self.is_outside_build_height(block_pos.0.y)
             && self.is_in_valid_bounds_horizontal(block_pos)
+    }
+
+    /// Returns whether the block position is within vanilla spawnable bounds.
+    #[must_use]
+    pub const fn is_in_spawnable_bounds(block_pos: BlockPos) -> bool {
+        !Self::is_outside_spawnable_height(block_pos.0.y)
+            && Self::is_in_world_bounds_horizontal(block_pos)
+    }
+
+    const fn is_in_world_bounds_horizontal(block_pos: BlockPos) -> bool {
+        block_pos.0.x >= -30_000_000
+            && block_pos.0.z >= -30_000_000
+            && block_pos.0.x < 30_000_000
+            && block_pos.0.z < 30_000_000
+    }
+
+    const fn is_outside_spawnable_height(y: i32) -> bool {
+        y < -20_000_000 || y >= 20_000_000
     }
 
     /// Returns the maximum build height (one above the highest placeable block).
@@ -539,15 +641,10 @@ impl World {
         self.is_in_valid_bounds(pos)
     }
 
-    /// Player dimensions matching vanilla Minecraft.
-    const PLAYER_WIDTH: f64 = 0.6;
-    const PLAYER_HEIGHT: f64 = 1.8;
-
     /// Checks if a block's collision shape at the given position is unobstructed by entities.
     ///
     /// This is the Rust equivalent of vanilla's `Level.isUnobstructed(BlockState, BlockPos, CollisionContext)`.
     /// In vanilla, this checks all entities with `blocksBuilding=true` (players, mobs, boats, etc.).
-    /// Currently only checks players since other entities aren't fully implemented.
     ///
     /// Returns `true` if the position is clear, `false` if an entity would obstruct placement.
     #[must_use]
@@ -556,33 +653,16 @@ impl World {
             return true;
         }
 
-        // TODO: Check other entities with blocksBuilding=true (mobs, boats, minecarts, etc.)
-        let mut obstructed = false;
-        self.players.iter_players(|_uuid, player| {
-            let player_pos = player.position.lock();
-            let half_width = Self::PLAYER_WIDTH / 2.0;
-            let player_aabb = AABBd::new(
-                player_pos.x - half_width,
-                player_pos.y,
-                player_pos.z - half_width,
-                player_pos.x + half_width,
-                player_pos.y + Self::PLAYER_HEIGHT,
-                player_pos.z + half_width,
-            );
-
-            // Check if any block AABB intersects with the player
-            for block_aabb in collision_shape {
-                let world_aabb = block_aabb.at_block(pos.x(), pos.y(), pos.z());
-                if player_aabb.intersects_block_aabb(&world_aabb) {
-                    obstructed = true;
-                    return false; // stop iteration
+        for block_aabb in collision_shape {
+            let world_aabb = block_aabb.at_block(pos);
+            for entity in self.get_entities_in_aabb(&world_aabb) {
+                if entity.blocks_building() && entity.bounding_box().intersects(world_aabb) {
+                    return false;
                 }
             }
+        }
 
-            true // continue iteration
-        });
-
-        !obstructed
+        true
     }
 
     /// Returns whether the tick rate is running normally.
@@ -653,6 +733,12 @@ impl World {
         self.level_data.read().data().seed
     }
 
+    /// Returns this world's vanilla runtime random source.
+    #[must_use]
+    pub const fn random(&self) -> &SyncMutex<LegacyRandom> {
+        &self.random
+    }
+
     /// Gets the obfuscated seed for sending to clients.
     ///
     /// This uses SHA-256 hashing to prevent clients from easily extracting
@@ -685,6 +771,33 @@ impl World {
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    /// Returns whether every block state in the vanilla AABB block range is air.
+    ///
+    /// Matches `BlockGetter.getBlockStates(AABB)` using
+    /// `BlockPos.betweenClosedStream(AABB)`: both min and max coordinates are
+    /// floored before iterating the inclusive block range.
+    #[must_use]
+    pub fn block_states_in_aabb_are_air(&self, aabb: WorldAabb) -> bool {
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().floor() as i32;
+        let max_y = aabb.max_y().floor() as i32;
+        let max_z = aabb.max_z().floor() as i32;
+
+        for y in min_y..=max_y {
+            for z in min_z..=max_z {
+                for x in min_x..=max_x {
+                    if !self.get_block_state(BlockPos::new(x, y, z)).is_air() {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
     }
 
     /// Gets a block state for generation postprocessing.
@@ -962,15 +1075,87 @@ impl World {
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
+        let tickable_entity_chunks = if runs_normally {
+            self.chunk_map.tickable_full_chunk_positions()
+        } else {
+            Vec::new()
+        };
+        let tickable_entity_chunk_set = tickable_entity_chunks
+            .iter()
+            .copied()
+            .collect::<FxHashSet<_>>();
+
+        if runs_normally {
+            let dirty_chunks = self
+                .entity_manager
+                .tick_entities(tick_count as i32, &tickable_entity_chunks);
+            for chunk in dirty_chunks {
+                self.mark_chunk_dirty(chunk);
+            }
+        }
+
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
             self.players.iter_players(|_uuid, player| {
                 player.tick();
+                if runs_normally && !player.is_passenger() {
+                    let dirty_chunks = self.entity_manager.tick_vehicle_passengers_for_root(
+                        player.as_ref(),
+                        &tickable_entity_chunk_set,
+                    );
+                    for chunk in dirty_chunks {
+                        self.mark_chunk_dirty(chunk);
+                    }
+                }
                 true
             });
             start.elapsed()
         };
+
+        {
+            let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
+            self.entity_tracker.send_changes(
+                |chunk| self.player_area_map.get_tracking_players(chunk),
+                |player_id| self.players.get_by_entity_id(player_id),
+                |entity_id, packet| {
+                    self.broadcast_movement_sync_to_entity_trackers(entity_id, packet, None);
+                },
+                |entity_id, dirty_entity_data| {
+                    let packet = CSetEntityData::new(entity_id, dirty_entity_data);
+                    let Ok(encoded) = EncodedPacket::from_bare(
+                        packet,
+                        self.compression,
+                        ConnectionProtocol::Play,
+                    ) else {
+                        return;
+                    };
+                    self.broadcast_to_entity_trackers_encoded(entity_id, encoded.clone(), None);
+                    if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                        player.connection.send_encoded(encoded);
+                    }
+                },
+                |entity_id, dirty_attributes| {
+                    let packet = CUpdateAttributes::new(entity_id, dirty_attributes);
+                    let Ok(encoded) = EncodedPacket::from_bare(
+                        packet,
+                        self.compression,
+                        ConnectionProtocol::Play,
+                    ) else {
+                        return;
+                    };
+                    self.broadcast_to_entity_trackers_encoded(entity_id, encoded.clone(), None);
+                    if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                        player.connection.send_encoded(encoded);
+                    }
+                },
+                |player_id, packet| {
+                    if let Some(player) = self.players.get_by_entity_id(player_id) {
+                        player.send_packet(packet);
+                    }
+                },
+            );
+        }
 
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
             let _span = tracing::trace_span!("broadcast_latency").entered();
@@ -1129,6 +1314,20 @@ impl World {
         self.is_raining_with_guard(&guard)
     }
 
+    /// Checks whether rain reaches the given block position.
+    ///
+    /// Mirrors vanilla `Level.isRainingAt`: global rain state, sky exposure,
+    /// motion-blocking height, and biome precipitation must all allow rain.
+    pub fn is_raining_at(&self, pos: BlockPos) -> bool {
+        if !self.is_raining() || !self.can_see_sky_for_precipitation(pos) {
+            return false;
+        }
+
+        self.biome_at(pos).is_some_and(|biome| {
+            biome.has_precipitation && self.biome_temperature(biome, pos) >= 0.15
+        })
+    }
+
     /// Checks whether the rain level is sufficient to render rain clientside using the provided guard.
     pub fn is_raining_with_guard(&self, guard: &Weather) -> bool {
         guard.rain_level > 0.2 && self.can_have_weather()
@@ -1154,6 +1353,113 @@ impl World {
         self.dimension_type.has_skylight
             && !self.dimension_type.has_ceiling
             && self.dimension_type.key != vanilla_dimension_types::THE_END.key
+    }
+
+    fn can_see_sky_for_precipitation(&self, pos: BlockPos) -> bool {
+        if self.raw_brightness(pos, 0) < 15 {
+            return false;
+        }
+
+        self.height_at(HeightmapType::MotionBlocking, pos.x(), pos.z())
+            .is_some_and(|height| height <= pos.y())
+    }
+
+    fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
+        let biome_zoom_seed = obfuscate_biome_seed(self.seed());
+        let mut missing_chunk = false;
+        let biome_id = fuzzed_biome_at_block(
+            biome_zoom_seed,
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            |quart_x, quart_y, quart_z| {
+                self.noise_biome_id(quart_x, quart_y, quart_z)
+                    .unwrap_or_else(|| {
+                        missing_chunk = true;
+                        0
+                    })
+            },
+        );
+
+        if missing_chunk {
+            return None;
+        }
+
+        REGISTRY.biomes.by_id(usize::from(biome_id))
+    }
+
+    fn noise_biome_id(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> Option<u16> {
+        let chunk_pos = ChunkPos::new(quart_x >> 2, quart_z >> 2);
+        let local_quart_x = (quart_x & 3) as usize;
+        let local_quart_z = (quart_z & 3) as usize;
+
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            let sections = chunk.sections();
+            let (section_index, local_quart_y) =
+                Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
+            let section = sections.sections.get(section_index)?;
+            Some(
+                section
+                    .read()
+                    .biomes
+                    .get(local_quart_x, local_quart_y, local_quart_z),
+            )
+        })?
+    }
+
+    fn biome_quart_y_indices(
+        min_y: i32,
+        section_count: usize,
+        quart_y: i32,
+    ) -> Option<(usize, usize)> {
+        let total_quart_y = section_count.checked_mul(4)?;
+        if total_quart_y == 0 {
+            return None;
+        }
+
+        let relative_quart_y = i64::from(quart_y) - i64::from(min_y >> 2);
+        let max_relative_quart_y = total_quart_y - 1;
+        let clamped_relative_quart_y = if relative_quart_y <= 0 {
+            0
+        } else {
+            usize::try_from(relative_quart_y).map_or(max_relative_quart_y, |relative| {
+                relative.min(max_relative_quart_y)
+            })
+        };
+
+        Some((clamped_relative_quart_y / 4, clamped_relative_quart_y & 3))
+    }
+
+    fn biome_temperature(&self, biome: BiomeRef, pos: BlockPos) -> f32 {
+        let modified_temp = match biome.temperature_modifier {
+            TemperatureModifier::None => biome.temperature,
+            TemperatureModifier::Frozen => {
+                let large = FROZEN_BIOME_TEMPERATURE_NOISE
+                    .get_value(f64::from(pos.x()) * 0.05, f64::from(pos.z()) * 0.05)
+                    * 7.0;
+                let edge =
+                    BIOME_INFO_NOISE.get_value(f64::from(pos.x()) * 0.2, f64::from(pos.z()) * 0.2);
+                if large + edge < 0.3 {
+                    let small = BIOME_INFO_NOISE
+                        .get_value(f64::from(pos.x()) * 0.09, f64::from(pos.z()) * 0.09);
+                    if small < 0.8 {
+                        return 0.2;
+                    }
+                }
+                biome.temperature
+            }
+        };
+
+        let snow_level = self.sea_level + 17;
+        if pos.y() <= snow_level {
+            return modified_temp;
+        }
+
+        let noise = BIOME_TEMPERATURE_NOISE
+            .get_value(f64::from(pos.x()) / 8.0, f64::from(pos.z()) / 8.0)
+            as f32
+            * 8.0;
+        modified_temp - (noise + pos.y() as f32 - snow_level as f32) * 0.05 / 40.0
     }
 
     /// Schedules a block tick at the given position.
@@ -1414,7 +1720,7 @@ impl World {
     /// Broadcasts an already-encoded packet to all players except one.
     pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: i32) {
         self.players.iter_players(|_, player| {
-            if player.id != exclude {
+            if player.id() != exclude {
                 player.connection.send_encoded(packet.clone());
             }
             true
@@ -1468,6 +1774,101 @@ impl World {
                 player.connection.send_encoded(packet.clone());
             }
         }
+    }
+
+    /// Broadcasts a packet to players currently tracking an entity.
+    pub fn broadcast_to_entity_trackers<P: ClientPacket>(
+        &self,
+        entity_id: i32,
+        packet: P,
+        exclude: Option<i32>,
+    ) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+    }
+
+    /// Broadcasts a packet to players tracking an entity, excluding several players.
+    pub fn broadcast_to_entity_trackers_except_many<P: ClientPacket>(
+        &self,
+        entity_id: i32,
+        packet: P,
+        excluded_player_ids: &[i32],
+    ) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if excluded_player_ids.contains(&player_id) {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                player.connection.send_encoded(encoded.clone());
+            }
+        }
+    }
+
+    /// Broadcasts an entity movement sync packet to players currently tracking an entity.
+    pub fn broadcast_movement_sync_to_entity_trackers(
+        &self,
+        entity_id: i32,
+        packet: EntityMovementSyncPacket,
+        exclude: Option<i32>,
+    ) {
+        let Some(encoded) = self.encode_movement_sync_packet(packet) else {
+            return;
+        };
+        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+    }
+
+    /// Broadcasts an already-encoded packet to players currently tracking an entity.
+    pub fn broadcast_to_entity_trackers_encoded(
+        &self,
+        entity_id: i32,
+        packet: EncodedPacket,
+        exclude: Option<i32>,
+    ) {
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if Some(player_id) == exclude {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                player.connection.send_encoded(packet.clone());
+            }
+        }
+    }
+
+    fn encode_movement_sync_packet(
+        &self,
+        packet: EntityMovementSyncPacket,
+    ) -> Option<EncodedPacket> {
+        let encoded = match packet {
+            EntityMovementSyncPacket::Position(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::PositionRotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::Rotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::HeadRotation(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::PositionSync(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+            EntityMovementSyncPacket::Velocity(packet) => {
+                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            }
+        };
+        encoded.ok()
     }
 
     /// Saves all dirty chunks in this world to disk.
@@ -1594,7 +1995,9 @@ impl World {
                 Arc::downgrade(self),
             ));
             entity.set_default_pickup_delay();
-            self.add_entity(entity);
+            if let Err(error) = self.try_add_entity(entity) {
+                log::warn!("Failed to drop item stack entity: {error}");
+            }
         }
     }
 
@@ -1606,44 +2009,385 @@ impl World {
         to: DVec3,
     ) -> (bool, Option<Direction>) {
         let state = self.get_block_state(block_pos);
-        let bounding_boxes = state.get_outline_shape();
+        let shape = state.get_outline_shape();
 
-        if bounding_boxes.is_empty() {
-            return (false, None);
+        match Self::clip_shape(block_pos, from, to, shape) {
+            Some(hit) => (true, Some(hit.direction)),
+            None => (false, None),
+        }
+    }
+
+    /// Performs a vanilla-style block/fluid clip in the world.
+    #[must_use]
+    pub fn clip(
+        &self,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        block_shape: ClipBlockShape,
+        fluid: ClipFluid,
+    ) -> ClipHitResult {
+        if start_pos == end_pos {
+            return Self::clip_miss(start_pos, end_pos);
         }
 
-        // Vanilla parity: pick the *closest* AABB hit across all boxes in the shape,
-        // matching VoxelShape.clip() which finds the minimum entry t-parameter.
+        let adjust = -1.0e-7f64;
+        let to = end_pos.lerp(start_pos, adjust);
+        let from = start_pos.lerp(end_pos, adjust);
+
+        let mut block = BlockPos::new(
+            from.x.floor() as i32,
+            from.y.floor() as i32,
+            from.z.floor() as i32,
+        );
+
+        if let Some(hit) = self.clip_block_and_fluid(block, start_pos, end_pos, block_shape, fluid)
+        {
+            return hit;
+        }
+
+        let difference = to - from;
+
+        let step = difference.signum().as_ivec3();
+
+        let delta = DVec3::new(
+            if step.x == 0 {
+                f64::MAX
+            } else {
+                (f64::from(step.x)) / difference.x
+            },
+            if step.y == 0 {
+                f64::MAX
+            } else {
+                (f64::from(step.y)) / difference.y
+            },
+            if step.z == 0 {
+                f64::MAX
+            } else {
+                (f64::from(step.z)) / difference.z
+            },
+        );
+
+        let mut next = DVec3::new(
+            delta.x
+                * (if step.x > 0 {
+                    1.0 - (from.x - from.x.floor())
+                } else {
+                    from.x - from.x.floor()
+                }),
+            delta.y
+                * (if step.y > 0 {
+                    1.0 - (from.y - from.y.floor())
+                } else {
+                    from.y - from.y.floor()
+                }),
+            delta.z
+                * (if step.z > 0 {
+                    1.0 - (from.z - from.z.floor())
+                } else {
+                    from.z - from.z.floor()
+                }),
+        );
+
+        while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
+            if next.x < next.y && next.x < next.z {
+                block.0.x += step.x;
+                next.x += delta.x;
+            } else if next.y < next.z {
+                block.0.y += step.y;
+                next.y += delta.y;
+            } else {
+                block.0.z += step.z;
+                next.z += delta.z;
+            }
+
+            if let Some(hit) =
+                self.clip_block_and_fluid(block, start_pos, end_pos, block_shape, fluid)
+            {
+                return hit;
+            }
+        }
+
+        Self::clip_miss(start_pos, end_pos)
+    }
+
+    fn clip_block_and_fluid(
+        &self,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        block_shape: ClipBlockShape,
+        fluid: ClipFluid,
+    ) -> Option<ClipHitResult> {
+        let state = self.get_block_state(pos);
+        let block_result =
+            Self::clip_shape(pos, from, to, self.clip_block_shape(state, block_shape))
+                .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
+        let fluid_result = self.clip_fluid_shape(pos, from, to, state, fluid);
+
+        match (block_result, fluid_result) {
+            (Some(block_hit), Some(fluid_hit)) => {
+                let block_distance = from.distance_squared(block_hit.location);
+                let fluid_distance = from.distance_squared(fluid_hit.location);
+                if block_distance <= fluid_distance {
+                    Some(block_hit)
+                } else {
+                    Some(fluid_hit)
+                }
+            }
+            (Some(hit), None) | (None, Some(hit)) => Some(hit),
+            (None, None) => None,
+        }
+    }
+
+    fn clip_with_interaction_override(
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        state: BlockStateId,
+        block_hit: ClipHitResult,
+    ) -> ClipHitResult {
+        let Some(override_hit) = Self::clip_shape(pos, from, to, state.get_interaction_shape())
+        else {
+            return block_hit;
+        };
+
+        if from.distance_squared(override_hit.location) < from.distance_squared(block_hit.location)
+        {
+            ClipHitResult {
+                direction: override_hit.direction,
+                ..block_hit
+            }
+        } else {
+            block_hit
+        }
+    }
+
+    fn clip_block_shape(&self, state: BlockStateId, shape: ClipBlockShape) -> VoxelShape {
+        match shape {
+            ClipBlockShape::Collider => state.get_collision_shape(),
+            ClipBlockShape::Outline => state.get_outline_shape(),
+            ClipBlockShape::Visual => state.get_visual_shape(),
+            ClipBlockShape::FallDamageResetting { entity_is_player } => {
+                self.fall_damage_resetting_shape(state, entity_is_player)
+            }
+        }
+    }
+
+    fn fall_damage_resetting_shape(
+        &self,
+        state: BlockStateId,
+        entity_is_player: bool,
+    ) -> VoxelShape {
+        let block = state.get_block();
+        if block.has_tag(&BlockTag::FALL_DAMAGE_RESETTING) {
+            return VoxelShape::FULL_BLOCK;
+        }
+
+        if !entity_is_player {
+            return VoxelShape::EMPTY;
+        }
+
+        if block == &vanilla_blocks::END_GATEWAY || block == &vanilla_blocks::END_PORTAL {
+            return VoxelShape::FULL_BLOCK;
+        }
+
+        if block == &vanilla_blocks::NETHER_PORTAL
+            && self.get_game_rule(&PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) == GameRuleValue::Int(0)
+        {
+            return VoxelShape::FULL_BLOCK;
+        }
+
+        VoxelShape::EMPTY
+    }
+
+    fn clip_fluid_shape(
+        &self,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        state: BlockStateId,
+        fluid: ClipFluid,
+    ) -> Option<ClipHitResult> {
+        let fluid_state = state.get_fluid_state();
+        let can_pick = match fluid {
+            ClipFluid::None => false,
+            ClipFluid::SourceOnly => fluid_state.is_source(),
+            ClipFluid::Any => !fluid_state.is_empty(),
+            ClipFluid::Water => fluid_state.is_water(),
+        };
+        if !can_pick {
+            return None;
+        }
+
+        let height = self.fluid_clip_height(pos, fluid_state);
+        Self::clip_local_aabb(
+            pos,
+            from,
+            to,
+            BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, height, 1.0),
+        )
+    }
+
+    fn fluid_clip_height(&self, pos: BlockPos, fluid_state: FluidState) -> f64 {
+        let above_fluid = self.get_block_state(pos.above()).get_fluid_state();
+        if above_fluid.fluid_id == fluid_state.fluid_id {
+            1.0
+        } else {
+            f64::from(fluid_state.own_height())
+        }
+    }
+
+    fn clip_shape(
+        block_pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        shape: VoxelShape,
+    ) -> Option<ClipHitResult> {
+        if shape.is_empty() {
+            return None;
+        }
+
+        if (to - from).length_squared() < 1.0e-7 {
+            return None;
+        }
+
+        let block_vec = DVec3::new(
+            f64::from(block_pos.x()),
+            f64::from(block_pos.y()),
+            f64::from(block_pos.z()),
+        );
+        let inside_test_point = from + (to - from) * 0.001;
+        if Self::shape_contains_world_point(shape, block_vec, inside_test_point) {
+            return Some(ClipHitResult {
+                location: inside_test_point,
+                direction: Self::approximate_nearest_direction(to - from).opposite(),
+                block_pos,
+                miss: false,
+                inside: true,
+            });
+        }
+
         let mut closest: Option<(f64, Direction)> = None;
 
-        for shape in bounding_boxes {
-            let block_vec = DVec3::new(
-                f64::from(block_pos.x()),
-                f64::from(block_pos.y()),
-                f64::from(block_pos.z()),
-            );
-            let world_min = DVec3::new(
-                f64::from(shape.min_x),
-                f64::from(shape.min_y),
-                f64::from(shape.min_z),
-            ) + block_vec;
-            let world_max = DVec3::new(
-                f64::from(shape.max_x),
-                f64::from(shape.max_y),
-                f64::from(shape.max_z),
-            ) + block_vec;
+        for shape in shape {
+            let world_min = DVec3::new(shape.min_x(), shape.min_y(), shape.min_z()) + block_vec;
+            let world_max = DVec3::new(shape.max_x(), shape.max_y(), shape.max_z()) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
+                && hit.0 > 0.0
+                && hit.0 < 1.0
                 && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
             {
                 closest = Some(hit);
             }
         }
 
-        match closest {
-            Some((_, dir)) => (true, Some(dir)),
-            None => (false, None),
+        closest.map(|(t, direction)| ClipHitResult {
+            location: from + (to - from) * t,
+            direction,
+            block_pos,
+            miss: false,
+            inside: false,
+        })
+    }
+
+    fn clip_local_aabb(
+        block_pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        aabb: BlockLocalAabb,
+    ) -> Option<ClipHitResult> {
+        if aabb.is_empty() {
+            return None;
         }
+
+        if (to - from).length_squared() < 1.0e-7 {
+            return None;
+        }
+
+        let block_vec = DVec3::new(
+            f64::from(block_pos.x()),
+            f64::from(block_pos.y()),
+            f64::from(block_pos.z()),
+        );
+        let inside_test_point = from + (to - from) * 0.001;
+        if Self::local_aabb_contains_world_point(aabb, block_vec, inside_test_point) {
+            return Some(ClipHitResult {
+                location: inside_test_point,
+                direction: Self::approximate_nearest_direction(to - from).opposite(),
+                block_pos,
+                miss: false,
+                inside: true,
+            });
+        }
+
+        let world_min = DVec3::new(aabb.min_x(), aabb.min_y(), aabb.min_z()) + block_vec;
+        let world_max = DVec3::new(aabb.max_x(), aabb.max_y(), aabb.max_z()) + block_vec;
+        Self::intersects_aabb_with_t(from, to, world_min, world_max).and_then(|(t, direction)| {
+            if t > 0.0 && t < 1.0 {
+                Some(ClipHitResult {
+                    location: from + (to - from) * t,
+                    direction,
+                    block_pos,
+                    miss: false,
+                    inside: false,
+                })
+            } else {
+                None
+            }
+        })
+    }
+
+    fn shape_contains_world_point(shape: VoxelShape, block_vec: DVec3, point: DVec3) -> bool {
+        shape
+            .into_iter()
+            .any(|aabb| Self::local_aabb_contains_world_point(*aabb, block_vec, point))
+    }
+
+    fn local_aabb_contains_world_point(
+        aabb: BlockLocalAabb,
+        block_vec: DVec3,
+        point: DVec3,
+    ) -> bool {
+        let local = point - block_vec;
+        !aabb.is_empty()
+            && local.x >= aabb.min_x()
+            && local.x <= aabb.max_x()
+            && local.y >= aabb.min_y()
+            && local.y <= aabb.max_y()
+            && local.z >= aabb.min_z()
+            && local.z <= aabb.max_z()
+    }
+
+    fn clip_miss(from: DVec3, to: DVec3) -> ClipHitResult {
+        ClipHitResult {
+            location: to,
+            direction: Self::approximate_nearest_direction(from - to),
+            block_pos: BlockPos::from(to),
+            miss: true,
+            inside: false,
+        }
+    }
+
+    fn approximate_nearest_direction(vector: DVec3) -> Direction {
+        let mut result = Direction::North;
+        let mut highest_dot = 0.0;
+        for direction in [
+            Direction::Down,
+            Direction::Up,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ] {
+            let (x, y, z) = direction.offset();
+            let dot = vector.dot(DVec3::new(f64::from(x), f64::from(y), f64::from(z)));
+            if dot > highest_dot {
+                highest_dot = dot;
+                result = direction;
+            }
+        }
+        result
     }
 
     /// Ray-AABB intersection returning the entry t-parameter and the hit face.
@@ -1887,7 +2631,7 @@ impl World {
                 continue;
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
+                let player_pos = player.position();
                 let dx = player_pos.x - event_pos.0;
                 let dy = player_pos.y - event_pos.1;
                 let dz = player_pos.z - event_pos.2;
@@ -1944,6 +2688,16 @@ impl World {
         self.destroy_block_with_limit(pos, drop_items, 512)
     }
 
+    /// Destroys a block with an entity source for game-event context.
+    pub fn destroy_block_by_entity(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        entity: &dyn Entity,
+    ) -> bool {
+        self.destroy_block_with_limit_and_entity(pos, drop_items, 512, Some(entity))
+    }
+
     /// Destroys a block at the given position, optionally dropping its loot.
     ///
     /// Sends destruction particles (skipping fire blocks), optionally drops
@@ -1953,6 +2707,16 @@ impl World {
         pos: BlockPos,
         drop_items: bool,
         recursion_left: i32,
+    ) -> bool {
+        self.destroy_block_with_limit_and_entity(pos, drop_items, recursion_left, None)
+    }
+
+    fn destroy_block_with_limit_and_entity(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        recursion_left: i32,
+        entity: Option<&dyn Entity>,
     ) -> bool {
         let state = self.get_block_state(pos);
         if state.is_air() {
@@ -1979,7 +2743,7 @@ impl World {
             self.game_event(
                 &vanilla_game_events::BLOCK_DESTROY,
                 pos,
-                &GameEventContext::new(None, Some(state)),
+                &GameEventContext::new(entity, Some(state)),
             );
         }
         destroyed
@@ -2049,7 +2813,7 @@ impl World {
 
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
+                let player_pos = player.position();
                 let dx = player_pos.x - event_pos.0;
                 let dy = player_pos.y - event_pos.1;
                 let dz = player_pos.z - event_pos.2;
@@ -2069,7 +2833,7 @@ impl World {
     /// the one who triggered the sound, as they hear it client-side.
     ///
     /// # Arguments
-    /// * `sound_id` - The sound event registry ID (from `steel_registry::sound_events`)
+    /// * `sound` - The sound event to play
     /// * `source` - The sound source category
     /// * `pos` - The block position (sound plays at center of block)
     /// * `volume` - Volume multiplier (1.0 = normal)
@@ -2077,9 +2841,33 @@ impl World {
     /// * `exclude` - Optional entity ID to exclude from receiving the sound
     pub fn play_sound(
         &self,
-        sound_id: i32,
+        sound: SoundEventRef,
         source: SoundSource,
         pos: BlockPos,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+        self.play_sound_at(
+            sound,
+            source,
+            DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+
+    /// Plays a sound at an exact world position, broadcasting to nearby players.
+    pub fn play_sound_at(
+        &self,
+        sound: SoundEventRef,
+        source: SoundSource,
+        pos: DVec3,
         volume: f32,
         pitch: f32,
         exclude: Option<i32>,
@@ -2087,23 +2875,14 @@ impl World {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
         let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
+            SectionPos::block_to_section_coord(pos.x.floor() as i32),
+            SectionPos::block_to_section_coord(pos.z.floor() as i32),
         );
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
 
-        let packet = CSound::new(
-            sound_id,
-            source,
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-            volume,
-            pitch,
-            seed,
-        );
+        let packet = CSound::new(sound, source, pos.x, pos.y, pos.z, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -2112,22 +2891,16 @@ impl World {
         };
 
         // Get players tracking this chunk, then filter by 64-block distance
-        let sound_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
             if exclude == Some(entity_id) {
                 continue;
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
-                let dx = player_pos.x - sound_pos.0;
-                let dy = player_pos.y - sound_pos.1;
-                let dz = player_pos.z - sound_pos.2;
+                let player_pos = player.position();
+                let dx = player_pos.x - pos.x;
+                let dy = player_pos.y - pos.y;
+                let dz = player_pos.z - pos.z;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
@@ -2143,28 +2916,28 @@ impl World {
     /// the sound type's volume and pitch modifiers.
     ///
     /// # Arguments
-    /// * `sound_id` - The sound event registry ID
+    /// * `sound` - The sound event to play
     /// * `pos` - The block position
     /// * `volume` - Base volume (typically from `SoundType`)
     /// * `pitch` - Base pitch (typically from `SoundType`)
     /// * `exclude` - Optional entity ID to exclude from receiving the sound
     pub fn play_block_sound(
         &self,
-        sound_id: i32,
+        sound: SoundEventRef,
         pos: BlockPos,
         volume: f32,
         pitch: f32,
         exclude: Option<i32>,
     ) {
-        self.play_sound(sound_id, SoundSource::Blocks, pos, volume, pitch, exclude);
+        self.play_sound(sound, SoundSource::Blocks, pos, volume, pitch, exclude);
     }
 
     // === Entity Methods ===
 
-    /// Returns a reference to the entity cache.
+    /// Returns the runtime entity manager.
     #[must_use]
-    pub const fn entity_cache(&self) -> &EntityCache {
-        &self.entity_cache
+    pub const fn entity_manager(&self) -> &WorldEntityManager {
+        &self.entity_manager
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
@@ -2173,29 +2946,199 @@ impl World {
         &self.entity_tracker
     }
 
-    /// Adds an entity to the world.
-    ///
-    /// This delegates to the chunk's `add_and_register_entity` method which handles:
-    /// - Adding to chunk storage
-    /// - Setting up level callback
-    /// - Registering in entity cache
-    /// - Adding to entity tracker and sending spawn packets
-    /// - Marking the chunk dirty
-    pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
-        let pos = entity.position();
-        let chunk_pos = ChunkPos::from_entity_pos(pos);
+    fn attach_managed_entity_callback(self: &Arc<Self>, entity: &SharedEntity) {
+        let callback = Arc::new(EntityChunkCallback::new(entity.id(), Arc::downgrade(self)));
+        entity.set_level_callback(callback);
+    }
 
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            if let Some(c) = chunk.as_full() {
-                c.add_and_register_entity(entity.clone());
+    pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
+        self.entity_tracker.add(
+            entity,
+            |chunk| self.player_area_map.get_tracking_players(chunk),
+            |id| self.players.get_by_entity_id(id),
+        );
+    }
+
+    pub(crate) fn register_loaded_entity(
+        self: &Arc<Self>,
+        entity: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        self.entity_manager
+            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+        self.attach_managed_entity_callback(&entity);
+        self.add_entity_to_tracker(&entity);
+        Ok(())
+    }
+
+    pub(crate) fn register_loaded_entity_tree(
+        self: &Arc<Self>,
+        entities: &[SharedEntity],
+    ) -> Result<(), AddEntityError> {
+        self.entity_manager
+            .add_live_entity_tree(entities, EntityOwnership::ManagerOwned)?;
+        for entity in entities {
+            self.attach_managed_entity_callback(entity);
+            self.add_entity_to_tracker(entity);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn register_loaded_chunk_entities(
+        self: &Arc<Self>,
+        source_chunk: ChunkPos,
+        persisted_status: ChunkStatus,
+        entities: Vec<SharedEntity>,
+    ) {
+        for tree in Self::loaded_entity_trees(entities) {
+            let Some(root) = tree.first() else {
+                continue;
+            };
+            let root_id = root.id();
+            let root_uuid = root.uuid();
+            let root_type = root.entity_type();
+            let root_pos = root.position();
+            let root_chunk = ChunkPos::from_entity_pos(root_pos);
+            let mut dirty_chunks = FxHashSet::default();
+            for entity in &tree {
+                let entity_chunk = ChunkPos::from_entity_pos(entity.position());
+                if entity_chunk != source_chunk {
+                    dirty_chunks.insert(source_chunk);
+                    dirty_chunks.insert(entity_chunk);
+                }
             }
-        });
+
+            if let Err(error) = self.register_loaded_entity_tree(&tree) {
+                tracing::warn!(
+                    source_chunk = ?source_chunk,
+                    ?persisted_status,
+                    root_id,
+                    uuid = ?root_uuid,
+                    entity_type = ?root_type.key,
+                    position = ?root_pos,
+                    entity_chunk = ?root_chunk,
+                    entity_count = tree.len(),
+                    "Discarding loaded chunk entity tree that could not be registered: {error}; source_chunk={source_chunk:?}, persisted_status={persisted_status:?}, root_id={root_id}, uuid={root_uuid}, entity_type={:?}, position={root_pos:?}, entity_chunk={root_chunk:?}, entity_count={}",
+                    root_type.key,
+                    tree.len(),
+                );
+                Self::discard_loaded_entity_tree(&tree);
+                self.mark_chunk_dirty(source_chunk);
+                continue;
+            }
+
+            for chunk in dirty_chunks {
+                self.mark_chunk_dirty(chunk);
+            }
+        }
+    }
+
+    fn loaded_entity_trees(entities: Vec<SharedEntity>) -> Vec<Vec<SharedEntity>> {
+        let mut seen = FxHashSet::default();
+        let mut trees = Vec::new();
+
+        for entity in &entities {
+            if entity.is_passenger() {
+                continue;
+            }
+            let mut tree = Vec::new();
+            Self::collect_loaded_entity_tree(entity, &mut seen, &mut tree);
+            if !tree.is_empty() {
+                trees.push(tree);
+            }
+        }
+
+        for entity in &entities {
+            if seen.contains(&entity.id()) {
+                continue;
+            }
+            let mut tree = Vec::new();
+            Self::collect_loaded_entity_tree(entity, &mut seen, &mut tree);
+            if !tree.is_empty() {
+                trees.push(tree);
+            }
+        }
+
+        trees
+    }
+
+    fn collect_loaded_entity_tree(
+        entity: &SharedEntity,
+        seen: &mut FxHashSet<i32>,
+        tree: &mut Vec<SharedEntity>,
+    ) {
+        if !seen.insert(entity.id()) {
+            return;
+        }
+        tree.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_loaded_entity_tree(&passenger, seen, tree);
+        }
+    }
+
+    fn discard_loaded_entity_tree(entities: &[SharedEntity]) {
+        for entity in entities {
+            entity.set_removed(RemovalReason::Discarded);
+        }
+    }
+
+    fn has_full_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| chunk.as_full().is_some())
+            .unwrap_or(false)
+    }
+
+    /// Adds a runtime entity to the world.
+    pub fn try_add_entity(self: &Arc<Self>, entity: SharedEntity) -> Result<(), AddEntityError> {
+        let chunk_pos = ChunkPos::from_entity_pos(entity.position());
+        if !self.has_full_chunk(chunk_pos) {
+            return Err(AddEntityError::ChunkNotLoaded {
+                entity_id: entity.id(),
+                chunk: chunk_pos,
+            });
+        }
+        self.register_loaded_entity(entity)?;
+        self.mark_chunk_dirty(chunk_pos);
+        Ok(())
+    }
+
+    pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
+        // Runtime entity membership follows retained chunk holders, so it
+        // starts at Empty rather than waiting for full LevelChunk readiness.
+        // Durable entity persistence still starts at StructureStarts; entities
+        // in lower-status chunks can be lost if those chunks unload first.
+        let result = self.entity_manager.on_chunk_loaded(pos);
+        if result.needs_save {
+            self.mark_chunk_dirty(pos);
+        }
+        for entity in result.restored {
+            self.attach_managed_entity_callback(&entity);
+            self.add_entity_to_tracker(&entity);
+        }
+        for entity in result.tracking_started {
+            self.add_entity_to_tracker(&entity);
+        }
+    }
+
+    pub(crate) fn on_entity_chunk_unload_start(self: &Arc<Self>, pos: ChunkPos) {
+        let result = self.entity_manager.begin_chunk_unload(pos);
+        for entity in result.tracking_stopped {
+            self.entity_tracker.remove(entity.id(), |player_id| {
+                self.players.get_by_entity_id(player_id)
+            });
+        }
+        for entity in result.retained {
+            let entity_id = entity.id();
+            entity.set_level_callback(Arc::new(InactiveEntityCallback::new(entity_id)));
+        }
+    }
+
+    pub(crate) fn on_entity_chunk_unload_finalized(&self, pos: ChunkPos) {
+        self.entity_manager.finalize_chunk_unload(pos);
     }
 
     /// Spawns an item entity at the given position.
     ///
     /// This is a convenience method for dropping items in the world.
-    /// The item will have a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
@@ -2229,9 +3172,10 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        entity.set_default_pickup_delay();
-
-        self.add_entity(entity.clone());
+        if let Err(error) = self.try_add_entity(entity.clone()) {
+            log::warn!("Failed to spawn item entity: {error}");
+            return None;
+        }
         Some(entity)
     }
 
@@ -2264,7 +3208,9 @@ impl World {
         let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
         let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
 
-        self.spawn_item(DVec3::new(x, y, z), item)
+        let entity = self.spawn_item(DVec3::new(x, y, z), item)?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Drops an item from a block face with directional velocity.
@@ -2329,89 +3275,55 @@ impl World {
             f64::from(step_z) * 0.1
         };
 
-        self.spawn_item_with_velocity(
+        let entity = self.spawn_item_with_velocity(
             DVec3::new(x, y, z),
             item,
             DVec3::new(delta_x, delta_y, delta_z),
-        )
+        )?;
+        entity.set_default_pickup_delay();
+        Some(entity)
     }
 
     /// Gets an entity by its network ID.
     ///
-    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    /// Returns `None` if the entity is not live in the world.
     #[must_use]
     pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
-        self.entity_cache.get_by_id(id)
+        self.entity_manager.get_by_id(id)
     }
 
     /// Gets an entity by its UUID.
     ///
-    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    /// Returns `None` if the entity is not live in the world.
     #[must_use]
     pub fn get_entity_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
-        self.entity_cache.get_by_uuid(uuid)
+        self.entity_manager.get_by_uuid(uuid)
     }
 
     /// Gets all entities intersecting the given bounding box.
     ///
     /// Only returns entities in loaded chunks.
     #[must_use]
-    pub fn get_entities_in_aabb(&self, aabb: &AABBd) -> Vec<SharedEntity> {
-        self.entity_cache.get_entities_in_aabb(aabb)
+    pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
+        self.entity_manager.get_entities_in_aabb(aabb)
     }
 
-    /// Moves an entity's Arc between chunks when it crosses a chunk boundary.
+    /// Gets entities matching vanilla's pushable entity selector for `pusher`.
     ///
-    /// Called by `EntityChunkCallback` when an entity moves between chunks.
-    pub fn move_entity_between_chunks(&self, entity_id: i32, from: ChunkPos, to: ChunkPos) {
-        // Remove Arc from old chunk
-        let entity = self
-            .chunk_map
-            .with_full_chunk(from, |chunk| {
-                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
-            })
-            .flatten();
-
-        // Add Arc to new chunk
-        if let Some(entity) = entity {
-            self.chunk_map.with_full_chunk(to, |chunk| {
-                if let Some(c) = chunk.as_full() {
-                    c.entities.add(entity);
-                }
-            });
-        }
-    }
-
-    /// Internal method to remove an entity from the world.
-    ///
-    /// Called by `EntityChunkCallback::on_remove`.
-    pub fn remove_entity_internal(
+    /// Vanilla also checks team collision rules; Steel has no teams yet, so this
+    /// currently matches the null-team path where collision is allowed.
+    #[must_use]
+    pub fn get_pushable_entities(
         &self,
-        entity_id: i32,
-        chunk_pos: ChunkPos,
-        reason: RemovalReason,
-    ) {
-        // Remove from chunk storage
-        let entity: Option<SharedEntity> = self
-            .chunk_map
-            .with_full_chunk(chunk_pos, |chunk| {
-                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
-            })
-            .flatten();
-
-        // Unregister from cache
-        if let Some(entity) = entity {
-            let pos = entity.position();
-            let section = SectionPos::from_entity_pos(pos);
-            self.entity_cache
-                .unregister(entity_id, entity.uuid(), section);
-
-            // Broadcast remove packet if entity was destroyed
-            if reason.should_destroy() {
-                let packet = CRemoveEntities::single(entity_id);
-                self.broadcast_to_nearby(chunk_pos, packet, None);
-            }
-        }
+        pusher: &dyn Entity,
+        aabb: &WorldAabb,
+    ) -> Vec<SharedEntity> {
+        self.get_entities_in_aabb(aabb)
+            .into_iter()
+            .filter(|entity| entity.id() != pusher.id())
+            .filter(|entity| !entity.is_spectator())
+            .filter(|entity| entity.is_pushable())
+            .collect()
     }
 
     /// Registers a game event listener in a chunk section.
@@ -2439,11 +3351,24 @@ impl World {
         pos: BlockPos,
         context: &GameEventContext,
     ) {
-        let source_pos = DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
+        self.game_event_at(
+            event,
+            DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            context,
         );
+    }
+
+    /// Dispatches a game event from an exact world position.
+    pub fn game_event_at(
+        self: &Arc<Self>,
+        event: GameEventRef,
+        source_pos: DVec3,
+        context: &GameEventContext,
+    ) {
         self.game_event_listeners
             .dispatch(self, event, source_pos, context);
     }
@@ -2505,5 +3430,91 @@ impl ScheduledTickAccess for Arc<World> {
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
+    const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
+    static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    fn assert_vec3_close(left: DVec3, right: DVec3) {
+        let diff = left - right;
+        assert!(
+            diff.length_squared() < 1.0e-24,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    #[test]
+    fn spawnable_bounds_match_vanilla_teleport_command_bounds() {
+        assert!(World::is_in_spawnable_bounds(BlockPos::new(0, 320, 0)));
+        assert!(World::is_in_spawnable_bounds(BlockPos::new(
+            29_999_999,
+            19_999_999,
+            -30_000_000
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            30_000_000, 0, 0
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            0,
+            -20_000_001,
+            0
+        )));
+        assert!(!World::is_in_spawnable_bounds(BlockPos::new(
+            0, 20_000_000, 0
+        )));
+    }
+
+    #[test]
+    fn clip_shape_hits_closest_block_face() {
+        let Some(hit) = World::clip_shape(
+            BlockPos::ZERO,
+            DVec3::new(-1.0, 0.5, 0.5),
+            DVec3::new(1.0, 0.5, 0.5),
+            VoxelShape::from_boxes(SPLIT_BLOCK),
+        ) else {
+            panic!("expected shape hit");
+        };
+
+        assert!(!hit.inside);
+        assert_eq!(hit.direction, Direction::West);
+        assert_eq!(hit.block_pos, BlockPos::ZERO);
+        assert_vec3_close(hit.location, DVec3::new(0.0, 0.5, 0.5));
+    }
+
+    #[test]
+    fn clip_shape_reports_inside_start_like_vanilla_voxel_shape() {
+        let Some(hit) = World::clip_shape(
+            BlockPos::ZERO,
+            DVec3::new(0.5, 0.5, 0.5),
+            DVec3::new(2.5, 0.5, 0.5),
+            VoxelShape::FULL_BLOCK,
+        ) else {
+            panic!("expected inside shape hit");
+        };
+
+        assert!(hit.inside);
+        assert_eq!(hit.direction, Direction::West);
+        assert_vec3_close(hit.location, DVec3::new(0.502, 0.5, 0.5));
+    }
+
+    #[test]
+    fn clip_local_aabb_supports_runtime_fluid_heights() {
+        let Some(hit) = World::clip_local_aabb(
+            BlockPos::ZERO,
+            DVec3::new(0.5, 2.0, 0.5),
+            DVec3::new(0.5, 0.0, 0.5),
+            BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0),
+        ) else {
+            panic!("expected fluid shape hit");
+        };
+
+        assert_eq!(hit.direction, Direction::Up);
+        assert_vec3_close(hit.location, DVec3::new(0.5, 0.5, 0.5));
     }
 }

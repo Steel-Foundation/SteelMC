@@ -7,6 +7,7 @@ use steel_utils::Identifier;
 
 use crate::REGISTRY;
 use crate::TaggedRegistryExt;
+use crate::sound_event::SoundEventRef;
 
 #[derive(Debug)]
 pub struct Biome {
@@ -43,7 +44,7 @@ pub struct BiomeEffects {
     pub dry_foliage_color: Option<i32>,
     pub grass_color_modifier: GrassColorModifier,
     pub music: Option<Vec<WeightedMusic>>,
-    pub ambient_sound: Option<Identifier>,
+    pub ambient_sound: Option<SoundEventRef>,
     pub additions_sound: Option<AdditionsSound>,
     pub mood_sound: Option<MoodSound>,
     pub particle: Option<Particle>,
@@ -88,18 +89,18 @@ pub struct Music {
     pub replace_current_music: bool,
     pub max_delay: i32,
     pub min_delay: i32,
-    pub sound: Identifier,
+    pub sound: SoundEventRef,
 }
 
 #[derive(Debug)]
 pub struct AdditionsSound {
-    pub sound: Identifier,
+    pub sound: SoundEventRef,
     pub tick_chance: f64,
 }
 
 #[derive(Debug)]
 pub struct MoodSound {
-    pub sound: Identifier,
+    pub sound: SoundEventRef,
     pub tick_delay: i32,
     pub block_search_extent: i32,
     pub offset: f64,
@@ -160,19 +161,19 @@ impl ToNbtTag for &Biome {
             }
         }
         if let Some(ambient_sound) = &self.effects.ambient_sound {
-            let s = ambient_sound.to_string();
+            let s = ambient_sound.key.to_string();
             effects.insert("ambient_sound", s.as_str());
         }
         if let Some(additions) = &self.effects.additions_sound {
             let mut a = NbtCompound::new();
-            let s = additions.sound.to_string();
+            let s = additions.sound.key.to_string();
             a.insert("sound", s.as_str());
             a.insert("tick_chance", additions.tick_chance);
             effects.insert("additions_sound", NbtTag::Compound(a));
         }
         if let Some(mood) = &self.effects.mood_sound {
             let mut m = NbtCompound::new();
-            let s = mood.sound.to_string();
+            let s = mood.sound.key.to_string();
             m.insert("sound", s.as_str());
             m.insert("tick_delay", mood.tick_delay);
             m.insert("block_search_extent", mood.block_search_extent);
@@ -197,7 +198,7 @@ impl ToNbtTag for &Biome {
                     data.insert("replace_current_music", wm.data.replace_current_music);
                     data.insert("max_delay", wm.data.max_delay);
                     data.insert("min_delay", wm.data.min_delay);
-                    let s = wm.data.sound.to_string();
+                    let s = wm.data.sound.key.to_string();
                     data.insert("sound", s.as_str());
                     wmc.insert("data", NbtTag::Compound(data));
                     wmc.insert("weight", wm.weight);

@@ -20,6 +20,7 @@ use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
 use crate::block_entity::BlockEntity;
+use crate::entity::Entity;
 use crate::world::World;
 
 /// Maximum distance (in blocks) a player can be from a sign while editing.
@@ -327,7 +328,7 @@ impl BlockEntity for SignBlockEntity {
                 .get_by_uuid(&editor_uuid)
                 .is_none_or(|player| {
                     let pos = self.pos;
-                    let player_pos = *player.position.lock();
+                    let player_pos = player.position();
                     let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
                     let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
                     let dz = player_pos.z - f64::from(pos.0.z) - 0.5;

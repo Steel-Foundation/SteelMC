@@ -256,6 +256,10 @@ pub struct AttributeMap {
 
 impl AttributeMap {
     /// Creates an `AttributeMap` from an entity type's default attributes
+    ///
+    /// # Panics
+    /// Panics if generated entity default attributes reference an attribute
+    /// that is missing from the generated vanilla registry.
     // TODO: Add AttributeSupplier for lazy instantiation when mob entities are implemented
     #[must_use]
     pub fn new_for_entity(entity_type: EntityTypeRef) -> Self {
@@ -265,11 +269,16 @@ impl AttributeMap {
 
         for &(attr_name, base_value) in entity_type.default_attributes {
             let key = Identifier::vanilla_static(attr_name);
-            if let Some(id) = REGISTRY.attributes.id_from_key(&key)
-                && let Some(attr) = REGISTRY.attributes.by_id(id)
-            {
-                instances[id] = Some(AttributeInstance::new(attr, base_value));
-            }
+            let Some(id) = REGISTRY.attributes.id_from_key(&key) else {
+                panic!(
+                    "default attributes for entity type {} reference unregistered attribute {key}",
+                    entity_type.key
+                );
+            };
+            let Some(attr) = REGISTRY.attributes.by_id(id) else {
+                panic!("attribute registry id {id} for default attribute {key} is not registered");
+            };
+            instances[id] = Some(AttributeInstance::new(attr, base_value));
         }
 
         Self {
@@ -296,6 +305,22 @@ impl AttributeMap {
             .get(id)?
             .as_ref()
             .map(AttributeInstance::value)
+    }
+
+    /// Gets the calculated value of an attribute that must exist on this entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity type was not constructed with the requested
+    /// attribute. Vanilla's `AttributeSupplier.getValue` is a hard failure for
+    /// missing attributes; using this keeps required living attributes from
+    /// silently falling back to unrelated defaults.
+    #[must_use]
+    pub fn required_value(&self, attribute: AttributeRef) -> f64 {
+        let Some(value) = self.get_value(attribute) else {
+            panic!("required attribute {} is missing", attribute.key);
+        };
+        value
     }
 
     /// Gets the base value of an attribute
@@ -455,5 +480,35 @@ impl AttributeMap {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, test_support, vanilla_attributes, vanilla_entities};
+
+    use super::*;
+
+    #[test]
+    fn all_generated_entity_default_attributes_resolve() {
+        test_support::init_test_registry();
+
+        for (_, entity_type) in REGISTRY.entity_types.iter() {
+            let _ = AttributeMap::new_for_entity(entity_type);
+        }
+    }
+
+    #[test]
+    fn player_gravity_is_initialized_from_default_attributes() {
+        test_support::init_test_registry();
+
+        let attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+
+        assert_eq!(
+            attributes
+                .required_value(vanilla_attributes::GRAVITY)
+                .to_bits(),
+            vanilla_attributes::GRAVITY.default_value.to_bits()
+        );
     }
 }

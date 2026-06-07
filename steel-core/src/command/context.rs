@@ -4,6 +4,7 @@ use std::sync::Arc;
 use glam::DVec3;
 
 use crate::command::sender::CommandSender;
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::server::Server;
 use crate::world::World;
@@ -56,7 +57,7 @@ impl CommandContext {
                     f64::from(world_spawn.y),
                     f64::from(world_spawn.z),
                 ),
-                |p| *p.position.lock(),
+                |p| p.position(),
             );
 
         Self {

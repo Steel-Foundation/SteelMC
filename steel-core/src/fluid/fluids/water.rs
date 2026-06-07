@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::sound_events;
@@ -12,7 +13,8 @@ use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
+use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
 use crate::world::World;
 
@@ -54,6 +56,10 @@ impl FluidBehavior for WaterFluid {
         }
     }
 
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        flowing_fluid_flow(world, pos, fluid_state)
+    }
+
     /// Water can only be replaced from below and only by non-water fluids.
     fn can_be_replaced_with(
         &self,
@@ -72,6 +78,17 @@ impl FluidBehavior for WaterFluid {
         world.destroy_block_effect(pos, u32::from(state.0), None);
     }
 
+    /// Vanilla parity: `WaterFluid.entityInside()` extinguishes fire.
+    fn entity_inside(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+        effect_collector.apply(InsideBlockEffectType::Extinguish);
+    }
+
     /// Flowing water: 1/64 chance for ambient sound.
     /// Source water: 1/10 chance for underwater particles.
     fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
@@ -80,7 +97,13 @@ impl FluidBehavior for WaterFluid {
             if rand::random_range(0u32..64) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.25 + 0.75;
                 let pitch: f32 = rand::random::<f32>() + 0.5;
-                world.play_block_sound(sound_events::BLOCK_WATER_AMBIENT, pos, volume, pitch, None);
+                world.play_block_sound(
+                    &sound_events::BLOCK_WATER_AMBIENT,
+                    pos,
+                    volume,
+                    pitch,
+                    None,
+                );
             }
         } else {
             // 1/10 chance for underwater particles

@@ -13,6 +13,8 @@ simulation_distance = 10
 online_mode = true
 # Whether to enable encryption for client-server communication
 encryption = true
+# Whether the server allows unauthorized client flight
+allow_flight = false
 # Message of the day displayed in server lists
 motd = "A Steel Server"
 # Whether to use a custom favicon for the server

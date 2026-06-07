@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -12,18 +13,21 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
-use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
+use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{
     FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
     is_water_fluid, lava_id,
 };
 use crate::world::World;
+const NORMAL_LAVA_ENTITY_FLOW_SCALE: f64 = 0.002_333_333_333_333_333_5;
+const FAST_LAVA_ENTITY_FLOW_SCALE: f64 = 0.007;
+
 /// Lava fluid implementation.
 ///
 /// Implements [`FluidBehavior`] with lava-specific parameters and
@@ -33,9 +37,17 @@ pub struct LavaFluid;
 
 impl LavaFluid {
     /// Returns true if this world uses fast lava (nether-like).
-    // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
     fn is_fast_lava(world: &Arc<World>) -> bool {
-        world.dimension_type.key == vanilla_dimension_types::THE_NETHER.key
+        world.dimension_type.fast_lava
+    }
+
+    /// Returns vanilla's lava current scale for entity fluid pushing.
+    pub(crate) fn entity_flow_scale(world: &Arc<World>) -> f64 {
+        if Self::is_fast_lava(world) {
+            FAST_LAVA_ENTITY_FLOW_SCALE
+        } else {
+            NORMAL_LAVA_ENTITY_FLOW_SCALE
+        }
     }
 }
 
@@ -74,6 +86,10 @@ impl FluidBehavior for LavaFluid {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => false,
         }
+    }
+
+    fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
+        flowing_fluid_flow(world, pos, fluid_state)
     }
 
     /// Vanilla parity: `LavaFluid.canBeReplacedWith()`.
@@ -125,6 +141,22 @@ impl FluidBehavior for LavaFluid {
         world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
     }
 
+    /// Vanilla parity: `LavaFluid.entityInside()` clears freezing, ignites, then applies lava damage.
+    fn entity_inside(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+    ) {
+        effect_collector.apply(InsideBlockEffectType::ClearFreeze);
+        effect_collector.apply(InsideBlockEffectType::LavaIgnite);
+        effect_collector.run_after(
+            InsideBlockEffectType::LavaIgnite,
+            Box::new(|entity| entity.lava_hurt()),
+        );
+    }
+
     /// Vanilla parity: `LavaFluid.animateTick()`.
     /// Plays pop (1/100) and ambient (1/200) sounds when air is above.
     fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, _state: FluidState) {
@@ -135,13 +167,13 @@ impl FluidBehavior for LavaFluid {
             if rand::random_range(0u32..100) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
                 let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
-                world.play_block_sound(sound_events::BLOCK_LAVA_POP, pos, volume, pitch, None);
+                world.play_block_sound(&sound_events::BLOCK_LAVA_POP, pos, volume, pitch, None);
             }
 
             if rand::random_range(0u32..200) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
                 let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
-                world.play_block_sound(sound_events::BLOCK_LAVA_AMBIENT, pos, volume, pitch, None);
+                world.play_block_sound(&sound_events::BLOCK_LAVA_AMBIENT, pos, volume, pitch, None);
             }
         }
     }

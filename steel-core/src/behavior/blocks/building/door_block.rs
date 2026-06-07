@@ -14,6 +14,7 @@ use steel_registry::{
         properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
         shapes,
     },
+    sound_event::SoundEventRef,
     vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{
@@ -28,6 +29,7 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
         InventoryAccess,
     },
+    entity::Entity,
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
@@ -40,9 +42,9 @@ pub struct DoorBlock {
     #[json_arg(value, json = "type_can_open_by_hand")]
     can_open_by_hand: bool,
     #[json_arg(sound_events, json = "type_door_open")]
-    sound_open: i32,
+    sound_open: SoundEventRef,
     #[json_arg(sound_events, json = "type_door_close")]
-    sound_close: i32,
+    sound_close: SoundEventRef,
 }
 
 impl DoorBlock {
@@ -54,8 +56,8 @@ impl DoorBlock {
     pub const fn new(
         block: BlockRef,
         can_open_by_hand: bool,
-        sound_open: i32,
-        sound_close: i32,
+        sound_open: SoundEventRef,
+        sound_close: SoundEventRef,
     ) -> Self {
         Self {
             block,
@@ -169,7 +171,7 @@ impl DoorBlock {
             replacement,
             UpdateFlags::UPDATE_ALL | UpdateFlags::UPDATE_SUPPRESS_DROPS,
         );
-        world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id));
+        world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id()));
     }
 
     fn play_sound(&self, world: &Arc<World>, pos: BlockPos, open: bool, exclude: Option<i32>) {
@@ -301,7 +303,7 @@ impl BlockBehavior for DoorBlock {
         let open = !state.get_value(&BlockStateProperties::OPEN);
         let new_state = state.set_value(&BlockStateProperties::OPEN, open);
         world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS);
-        self.play_sound(world, pos, open, Some(player.id));
+        self.play_sound(world, pos, open, Some(player.id()));
         let event = if open {
             &vanilla_game_events::BLOCK_OPEN
         } else {
@@ -361,9 +363,9 @@ pub struct WeatheringCopperDoorBlock {
     #[json_arg(value, json = "type_can_open_by_hand")]
     can_open_by_hand: bool,
     #[json_arg(sound_events, json = "type_door_open")]
-    sound_open: i32,
+    sound_open: SoundEventRef,
     #[json_arg(sound_events, json = "type_door_close")]
-    sound_close: i32,
+    sound_close: SoundEventRef,
 }
 
 impl WeatheringCopperDoorBlock {
@@ -373,8 +375,8 @@ impl WeatheringCopperDoorBlock {
         block: BlockRef,
         weather_state: WeatherState,
         can_open_by_hand: bool,
-        sound_open: i32,
-        sound_close: i32,
+        sound_open: SoundEventRef,
+        sound_close: SoundEventRef,
     ) -> Self {
         Self {
             block,
@@ -477,7 +479,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{sound_events, test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use super::*;
@@ -529,7 +531,12 @@ mod tests {
     #[test]
     fn lower_half_copies_transformed_upper_half_state() {
         init_test_registry();
-        let behavior = DoorBlock::new(&vanilla_blocks::SPRUCE_DOOR, true, 0, 0);
+        let behavior = DoorBlock::new(
+            &vanilla_blocks::SPRUCE_DOOR,
+            true,
+            &sound_events::BLOCK_WOODEN_DOOR_OPEN,
+            &sound_events::BLOCK_WOODEN_DOOR_CLOSE,
+        );
         let lower = vanilla_blocks::SPRUCE_DOOR
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::West)

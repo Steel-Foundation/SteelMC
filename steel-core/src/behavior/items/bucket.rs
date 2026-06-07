@@ -155,7 +155,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 
         context
             .world
-            .play_block_sound(sound_events::ITEM_BUCKET_FILL, hit_pos, 1.0, 1.0, None);
+            .play_block_sound(&sound_events::ITEM_BUCKET_FILL, hit_pos, 1.0, 1.0, None);
 
         consume_bucket(context, &vanilla_items::ITEMS.water_bucket);
 
@@ -250,7 +250,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             behavior.place_liquid(context.world, pos, state, source_water);
             context
                 .world
-                .play_block_sound(sound_events::ITEM_BUCKET_EMPTY, pos, 1.0, 1.0, None);
+                .play_block_sound(&sound_events::ITEM_BUCKET_EMPTY, pos, 1.0, 1.0, None);
             consume_bucket(context, &vanilla_items::ITEMS.bucket);
             return Some(InteractionResult::Success);
         }
@@ -293,14 +293,14 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
                     .world
                     .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
 
-                let sound_id = if is_water_bucket {
-                    sound_events::ITEM_BUCKET_EMPTY
+                let sound_event = if is_water_bucket {
+                    &sound_events::ITEM_BUCKET_EMPTY
                 } else {
-                    sound_events::ITEM_BUCKET_EMPTY_LAVA
+                    &sound_events::ITEM_BUCKET_EMPTY_LAVA
                 };
                 context
                     .world
-                    .play_block_sound(sound_id, pos, 1.0, 1.0, None);
+                    .play_block_sound(sound_event, pos, 1.0, 1.0, None);
 
                 consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);

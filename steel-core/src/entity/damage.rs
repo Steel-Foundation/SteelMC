@@ -1,7 +1,10 @@
 //! Damage source system.
 
 use glam::DVec3;
-use steel_registry::damage_type::{DamageScaling, DamageType};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
+    vanilla_damage_type_tags,
+};
 
 /// Describes how an entity was damaged.
 #[derive(Debug, Clone)]
@@ -29,10 +32,15 @@ impl DamageSource {
     }
 
     /// Whether this damage bypasses creative/spectator invulnerability.
-    /// TODO: use damage type tag query once `DamageTypeRegistry` supports tags
     #[must_use]
     pub fn bypasses_invulnerability(&self) -> bool {
-        matches!(&*self.damage_type.key.path, "out_of_world" | "generic_kill")
+        self.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_INVULNERABILITY)
+    }
+
+    /// Returns whether this damage type is in the given vanilla damage-type tag.
+    #[must_use]
+    pub fn is(&self, tag: &steel_utils::Identifier) -> bool {
+        REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 
     /// Whether this damage bypasses the invulnerability cooldown timer.

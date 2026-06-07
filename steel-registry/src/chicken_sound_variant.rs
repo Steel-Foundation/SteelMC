@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::sound_event::SoundEventRef;
+
 /// Represents a set of sounds for a chicken variant from a data pack JSON file.
 #[derive(Debug)]
 pub struct ChickenSoundVariant {
@@ -12,23 +14,23 @@ pub struct ChickenSoundVariant {
 }
 #[derive(Debug)]
 pub struct ChickenAge {
-    pub ambient_sound: Identifier,
-    pub death_sound: Identifier,
-    pub hurt_sound: Identifier,
-    pub step_sound: Identifier,
+    pub ambient_sound: SoundEventRef,
+    pub death_sound: SoundEventRef,
+    pub hurt_sound: SoundEventRef,
+    pub step_sound: SoundEventRef,
 }
 
 impl ToNbtTag for &ChickenAge {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut adult = NbtCompound::new();
-        let s = self.ambient_sound.to_string();
+        let s = self.ambient_sound.key.to_string();
         adult.insert("ambient_sound", s.as_str());
-        let s = self.death_sound.to_string();
+        let s = self.death_sound.key.to_string();
         adult.insert("death_sound", s.as_str());
-        let s = self.hurt_sound.to_string();
+        let s = self.hurt_sound.key.to_string();
         adult.insert("hurt_sound", s.as_str());
-        let s = self.step_sound.to_string();
+        let s = self.step_sound.key.to_string();
         adult.insert("step_sound", s.as_str());
         NbtTag::Compound(adult)
     }

@@ -1,5 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_SOUND;
+use steel_registry::sound_event::SoundEventRef;
 
 /// Sound source categories (matches vanilla SoundSource enum order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +34,10 @@ impl SoundSource {
 #[derive(WriteTo, ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_SOUND)]
 pub struct CSound {
-    /// The sound event registry ID (VarInt).
-    /// Use `steel_registry::sound_events` for sound constants.
+    /// The holder-encoded sound event ID (VarInt).
+    ///
+    /// Vanilla reserves `0` for direct sound events, so registered sound events
+    /// are encoded as `registry_id + 1`.
     #[write(as = VarInt)]
     pub sound_id: i32,
     /// The sound source category (VarInt).
@@ -58,7 +61,7 @@ impl CSound {
     /// Creates a new sound packet.
     ///
     /// # Arguments
-    /// * `sound_id` - Sound event registry ID
+    /// * `sound` - Sound event to play
     /// * `source` - Sound source category
     /// * `x`, `y`, `z` - Position in block coordinates (will be scaled by 8)
     /// * `volume` - Volume multiplier (1.0 = normal)
@@ -67,7 +70,7 @@ impl CSound {
     #[must_use]
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        sound_id: i32,
+        sound: SoundEventRef,
         source: SoundSource,
         x: f64,
         y: f64,
@@ -77,7 +80,7 @@ impl CSound {
         seed: i64,
     ) -> Self {
         Self {
-            sound_id,
+            sound_id: sound.packet_holder_id(),
             source: source.as_varint(),
             x: (x * 8.0) as i32,
             y: (y * 8.0) as i32,
@@ -91,21 +94,21 @@ impl CSound {
     /// Creates a block sound packet at the center of a block position.
     ///
     /// # Arguments
-    /// * `sound_id` - Sound event registry ID
+    /// * `sound` - Sound event to play
     /// * `pos` - Block position (will be centered at +0.5)
     /// * `volume` - Volume multiplier
     /// * `pitch` - Pitch multiplier
     /// * `seed` - Random seed
     #[must_use]
     pub fn block_sound(
-        sound_id: i32,
+        sound: SoundEventRef,
         pos: steel_utils::BlockPos,
         volume: f32,
         pitch: f32,
         seed: i64,
     ) -> Self {
         Self::new(
-            sound_id,
+            sound,
             SoundSource::Blocks,
             f64::from(pos.x()) + 0.5,
             f64::from(pos.y()) + 0.5,
@@ -114,5 +117,44 @@ impl CSound {
             pitch,
             seed,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use steel_registry::{REGISTRY, Registry, sound_events};
+    use steel_utils::BlockPos;
+
+    use super::CSound;
+
+    static INIT_REGISTRY: Once = Once::new();
+
+    fn init_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            let _ = REGISTRY.init(registry);
+        });
+    }
+
+    #[test]
+    fn registered_sound_packet_uses_holder_id() {
+        init_registry();
+
+        let packet = CSound::block_sound(
+            &sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON,
+            BlockPos::ZERO,
+            1.0,
+            1.0,
+            0,
+        );
+
+        assert_eq!(
+            sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON.packet_holder_id(),
+            1841
+        );
+        assert_eq!(packet.sound_id, 1841);
     }
 }
