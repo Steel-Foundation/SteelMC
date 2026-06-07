@@ -17,17 +17,26 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  IMAGE_DESCRIPTION: Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_pair: linux-amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            platform_pair: linux-arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -42,7 +51,7 @@ jobs:
             type=raw,value=nightly,enable=${{ github.event_name == 'push' }}
             type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
           annotations: |
-            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
+            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
 
       - name: Create Pelican Docker metadata
         id: meta-pelican
@@ -54,7 +63,7 @@ jobs:
             type=raw,value=nightly-pelican,enable=${{ github.event_name == 'push' }}
             type=raw,value=${{ github.event.release.tag_name }}-pelican,enable=${{ github.event_name == 'release' }}
           annotations: |
-            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
+            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -65,6 +74,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker images
+        id: build
         uses: docker/bake-action@v6
         with:
           source: .
@@ -77,4 +87,91 @@ jobs:
             cwd://${{ steps.meta-pelican.outputs.bake-file-labels }}
             cwd://${{ steps.meta-pelican.outputs.bake-file-annotations }}
           targets: normal,pelican
-          push: ${{ github.event_name != 'pull_request' }}
+          set: |
+            *.platform=${{ matrix.platform }}
+            *.output=type=image,push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+
+      - name: Export digests
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests/normal" "${RUNNER_TEMP}/digests/pelican"
+          printf '%s' '${{ steps.build.outputs.metadata }}' > "${RUNNER_TEMP}/metadata.json"
+
+          normal_digest="$(jq -r '.normal["containerimage.digest"]' "${RUNNER_TEMP}/metadata.json")"
+          pelican_digest="$(jq -r '.pelican["containerimage.digest"]' "${RUNNER_TEMP}/metadata.json")"
+
+          touch "${RUNNER_TEMP}/digests/normal/${normal_digest#sha256:}"
+          touch "${RUNNER_TEMP}/digests/pelican/${pelican_digest#sha256:}"
+
+      - name: Upload digests
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.platform_pair }}
+          path: |
+            ${{ runner.temp }}/digests/normal/*
+            ${{ runner.temp }}/digests/pelican/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge ${{ matrix.variant }} manifest
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs:
+      - docker
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: normal
+            tag_suffix: ""
+          - variant: pelican
+            tag_suffix: "-pelican"
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=nightly${{ matrix.tag_suffix }},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ github.event.release.tag_name }}${{ matrix.tag_suffix }},enable=${{ github.event_name == 'release' }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-platform manifest
+        working-directory: ${{ runner.temp }}/digests/${{ matrix.variant }}
+        shell: bash
+        run: |
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=("-t" "${tag}")
+          done < <(jq -r '.tags[]' <<< "${DOCKER_METADATA_OUTPUT_JSON}")
+
+          source_args=()
+          for digest_file in *; do
+            source_args+=("${REGISTRY}/${IMAGE_NAME}@sha256:${digest_file}")
+          done
+
+          docker buildx imagetools create \
+            "${tag_args[@]}" \
+            --annotation "index:org.opencontainers.image.description=${IMAGE_DESCRIPTION}" \
+            "${source_args[@]}"
