@@ -1,6 +1,6 @@
 services:
   steel:
-    image: steel
+    image: ghcr.io/junkydeveloper/steelmc:nightly
     build:
       context: ..
       dockerfile: docker/Dockerfile

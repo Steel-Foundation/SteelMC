@@ -85,6 +85,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: false
           outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
 
       - name: Build Pelican Docker image
@@ -97,6 +98,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta-pelican.outputs.labels }}
           annotations: ${{ steps.meta-pelican.outputs.annotations }}
+          provenance: false
           outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
 
       - name: Export digests
