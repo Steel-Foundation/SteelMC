@@ -20,9 +20,9 @@ use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::behavior::InventoryAccess;
 use crate::player::Player;
 use crate::world::{ScheduledTickAccess, World};
 
@@ -132,7 +132,7 @@ impl BlockBehavior for FenceGateBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
-        _inv: &mut InventoryAccess
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let mut new_state = state;
         if new_state.get_value(&OPEN) {

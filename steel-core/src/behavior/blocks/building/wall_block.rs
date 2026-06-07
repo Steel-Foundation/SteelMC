@@ -8,17 +8,17 @@
 //! and tagged `// is_covered` so it can be wired up once shapes land.
 
 use steel_macros::block_behavior;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
-use steel_registry::blocks::BlockRef;
 use steel_registry::vanilla_block_tags::{
-    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALLS_TAG, WALL_POST_OVERRIDE_TAG,
+    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALL_POST_OVERRIDE_TAG, WALLS_TAG,
 };
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_fluids::WATER;
-use steel_registry::{TaggedRegistryExt, REGISTRY};
+use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;

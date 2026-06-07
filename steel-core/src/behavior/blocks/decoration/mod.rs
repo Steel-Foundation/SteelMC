@@ -1,7 +1,7 @@
 mod cake_block;
 mod candle_block;
-mod chain_block;
 mod candle_cake_block;
+mod chain_block;
 mod sign_block;
 mod torch_block;
 
