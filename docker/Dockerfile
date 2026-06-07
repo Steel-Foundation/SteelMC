@@ -20,8 +20,8 @@ EXPOSE 25565
 
 CMD ["/bin/ash", "/entrypoint-pelican.sh"]
 
-FROM alpine:3.23 AS normal
-
+FROM scratch AS normal
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --chmod=777 --from=builder /steel/target/release/steel /
 
 EXPOSE 25565
