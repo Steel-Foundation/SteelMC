@@ -1,0 +1,36 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL",
+    "meta": {
+        "version": "PLCN_v3",
+        "update_url": null
+    },
+    "exported_at": "2026-06-06T23:16:08+00:00",
+    "name": "SteelMC",
+    "author": "Junkydeveloper@gmail.com",
+    "uuid": "27da0627-af46-41af-ba2f-8b0968c4226f",
+    "description": null,
+    "icon": null,
+    "tags": [],
+    "features": [],
+    "docker_images": {
+        "Steel": "steel"
+    },
+    "file_denylist": [],
+    "startup_commands": {
+        "Start Steel": "/home/container/steel"
+    },
+    "config": {
+        "files": "{}",
+        "startup": "{}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": null,
+            "container": "alpine",
+            "entrypoint": "ash"
+        }
+    },
+    "variables": []
+}

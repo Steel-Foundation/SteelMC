@@ -4,7 +4,7 @@ LABEL authors="junkydeveloper"
 WORKDIR /steel
 
 COPY .. .
-RUN cargo build --target x86_64-unknown-linux-musl --release --locked
+RUN cargo build --release --locked
 FROM alpine:3.23
 
 COPY --chmod=777 --from=builder /steel/target/release/steel /
