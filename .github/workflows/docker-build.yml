@@ -58,3 +58,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: |
+            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
