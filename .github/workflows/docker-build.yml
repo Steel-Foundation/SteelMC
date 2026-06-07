@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - feat/docker-pelican
   pull_request:
   release:
     types:
