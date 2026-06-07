@@ -16,10 +16,13 @@ RUN adduser --disabled-password --home /home/container container
 USER container
 ENV USER=container HOME=/home/container
 
-COPY --chmod=777 --from=builder /steel/target/release/steel /server/steel
-WORKDIR /server
+COPY --chmod=777 --from=builder /steel/target/release/steel /bin/steel
+COPY docker/entrypoint-pelican.sh /entrypoint-pelican.sh
+WORKDIR /home/container
 
 EXPOSE 25565
+
+CMD ["/bin/ash", "/entrypoint-pelican.sh"]
 
 FROM alpine:3.23 AS normal
 
