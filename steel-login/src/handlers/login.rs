@@ -126,7 +126,13 @@ impl JavaTcpClient {
 
             let server_hash = signed_bytes_be_to_hex(server_hash);
 
-            match mojang_authenticate(&profile.name, &server_hash).await {
+            match mojang_authenticate(
+                &profile.name,
+                &server_hash,
+                self.server.config.auth_server.as_deref(),
+            )
+            .await
+            {
                 Ok(new_profile) => *profile = new_profile,
                 Err(error) => {
                     self.kick(match error {

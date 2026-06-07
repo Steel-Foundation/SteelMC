@@ -41,6 +41,11 @@
           "description": "Whether to use Mojang's authentication service",
           "default": true
         },
+        "auth_server": {
+          "type": "string",
+          "description": "Optional authentication endpoint for online-mode hasJoined checks. Omit to use Mojang's session server.",
+          "format": "uri"
+        },
         "encryption": {
           "type": "boolean",
           "description": "Whether to enable encryption for client-server communication",

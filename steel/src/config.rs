@@ -57,6 +57,8 @@ pub struct ServerConfig {
     pub simulation_distance: u8,
     /// Whether the server is in online mode.
     pub online_mode: bool,
+    /// Optional authentication endpoint for online-mode `hasJoined` checks.
+    pub auth_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
     /// The message of the day.
@@ -82,6 +84,7 @@ impl ServerConfig {
             view_distance: self.view_distance,
             simulation_distance: self.simulation_distance,
             online_mode: self.online_mode,
+            auth_server: self.auth_server,
             encryption: self.encryption,
             motd: self.motd,
             use_favicon: self.use_favicon,
@@ -221,5 +224,21 @@ mod tests {
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
         assert!(!worlds.domains.is_empty());
+    }
+
+    #[test]
+    fn configured_auth_server_flows_to_runtime_config() {
+        let auth_server = "https://auth.example.com/session/minecraft/hasJoined";
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            &format!("online_mode = true\nauth_server = \"{auth_server}\""),
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(config.server.auth_server.as_deref(), Some(auth_server));
+        assert_eq!(
+            config.server.into_runtime_config().auth_server.as_deref(),
+            Some(auth_server)
+        );
     }
 }

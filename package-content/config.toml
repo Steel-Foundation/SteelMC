@@ -11,6 +11,8 @@ view_distance = 10
 simulation_distance = 10
 # Whether to use Mojang's authentication service
 online_mode = true
+# Optional authentication endpoint for online mode. Omit to use Mojang's session server.
+# auth_server = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
 # Whether to enable encryption for client-server communication
 encryption = true
 # Message of the day displayed in server lists
