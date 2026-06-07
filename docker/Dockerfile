@@ -16,8 +16,8 @@ RUN adduser --disabled-password --home /home/container container
 USER container
 ENV USER=container HOME=/home/container
 
-COPY --chmod=777 --from=builder /steel/target/release/steel /home/container/steel
-WORKDIR /home/container
+COPY --chmod=777 --from=builder /steel/target/release/steel /server/steel
+WORKDIR /server
 
 EXPOSE 25565
 
