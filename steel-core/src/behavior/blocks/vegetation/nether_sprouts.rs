@@ -1,8 +1,7 @@
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_block_tags,
+    vanilla_block_tags::BlockTag,
 };
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -63,9 +62,8 @@ impl BlockBehavior for NetherSproutsBlock {
 
 impl Vegetation for NetherSproutsBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        REGISTRY.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::SUPPORTS_NETHER_SPROUTS_TAG,
-        )
+        state
+            .get_block()
+            .has_tag(&BlockTag::SUPPORTS_NETHER_SPROUTS)
     }
 }

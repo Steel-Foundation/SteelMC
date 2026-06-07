@@ -14,7 +14,8 @@ use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use tokio::time::sleep;
 
 use steel_core::chunk::chunk_access::ChunkStatus;
-use steel_core::chunk::chunk_ticket_manager::MAX_VIEW_DISTANCE;
+use steel_core::chunk::chunk_map::GenerationTaskCap;
+use steel_core::chunk::chunk_ticket_manager::ChunkTicket;
 use steel_core::server::Server;
 use steel_core::world::World;
 use steel_utils::{ChunkPos, SectionPos};
@@ -105,13 +106,13 @@ async fn pregen_overworld(
         center_chunk.0.y,
     );
 
-    let ticket_level = MAX_VIEW_DISTANCE - 3;
+    let ticket = ChunkTicket::full_chunks(3);
     let ticket_positions = build_ticket_positions(center_chunk, pregen_radius);
 
     {
         let mut tickets = world.chunk_map.chunk_tickets.lock();
         for pos in &ticket_positions {
-            tickets.add_ticket(*pos, ticket_level);
+            tickets.add_ticket(*pos, ticket);
         }
     }
 
@@ -140,7 +141,7 @@ async fn pregen_overworld(
     {
         let mut tickets = world.chunk_map.chunk_tickets.lock();
         for pos in &ticket_positions {
-            tickets.remove_ticket(*pos, ticket_level);
+            tickets.remove_ticket(*pos, ticket);
         }
     }
 
@@ -182,7 +183,9 @@ async fn generate_with_display(
     let mut last_render = Instant::now();
 
     loop {
-        world.chunk_map.tick_scheduling();
+        world
+            .chunk_map
+            .tick_scheduling(GenerationTaskCap::RespectMaxCap);
 
         let mut completed = 0;
         let mut pending_dependencies = false;
@@ -243,7 +246,9 @@ async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32
     let start = Instant::now();
 
     loop {
-        world.chunk_map.tick_scheduling();
+        world
+            .chunk_map
+            .tick_scheduling(GenerationTaskCap::RespectMaxCap);
 
         // Count completed chunks
         let completed = count_full_chunks(world, center_chunk, radius);

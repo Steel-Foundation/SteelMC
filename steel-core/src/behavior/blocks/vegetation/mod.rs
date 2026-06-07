@@ -143,10 +143,9 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Dir
 use steel_registry::blocks::shapes;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::FluidState;
-use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -161,7 +160,7 @@ pub(super) fn survives_on_tag(
     tag: BlockTagRef<'_>,
 ) -> bool {
     let below = world.get_block_state(pos.below());
-    REGISTRY.blocks.is_in_tag(below.get_block(), tag)
+    below.get_block().has_tag(tag)
 }
 
 pub(super) fn default_surviving_state(
@@ -275,10 +274,10 @@ pub(super) fn growing_plant_can_survive(
 
 pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let attached_state = world.get_block_state(pos.below());
-    if REGISTRY.blocks.is_in_tag(
-        attached_state.get_block(),
-        &vanilla_block_tags::CANNOT_SUPPORT_KELP_TAG,
-    ) {
+    if attached_state
+        .get_block()
+        .has_tag(&BlockTag::CANNOT_SUPPORT_KELP)
+    {
         return false;
     }
 

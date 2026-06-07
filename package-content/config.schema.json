@@ -46,6 +46,11 @@
           "description": "Whether to enable encryption for client-server communication",
           "default": true
         },
+        "allow_flight": {
+          "type": "boolean",
+          "description": "Whether the server allows unauthorised client flight",
+          "default": false
+        },
         "motd": {
           "type": "string",
           "description": "Message of the day displayed in server lists",

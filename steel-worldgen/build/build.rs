@@ -4,7 +4,7 @@
     reason = "build-script modules include parser shapes and generated-code helpers"
 )]
 
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, io, path::Path, process::Command};
 
 mod density;
 mod density_functions;
@@ -38,6 +38,10 @@ pub fn main() {
         fs::write(&path, content).expect("failed to write generated worldgen file");
     }
 
+    if FMT && let Err(err) = format_generated_rust_files(&out_dir) {
+        panic!("failed to rustfmt generated worldgen files: {err}");
+    }
+
     let df = density_functions::build();
     let df_dir = out_dir.join("vanilla_density_functions");
     fs::create_dir_all(&df_dir).expect("failed to create generated density function directory");
@@ -61,10 +65,27 @@ pub fn main() {
         fs::write(&path, content).expect("failed to write generated density function index");
     }
 
-    if FMT && let Ok(entries) = fs::read_dir(&df_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let _ = Command::new("rustfmt").arg(path).output();
+    if FMT && let Err(err) = format_generated_rust_files(&df_dir) {
+        panic!("failed to rustfmt generated density function files: {err}");
+    }
+}
+
+fn format_generated_rust_files(dir: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().is_none_or(|extension| extension != "rs") {
+            continue;
+        }
+
+        let output = Command::new("rustfmt").arg(&path).output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(io::Error::other(format!(
+                "rustfmt failed for {}: {stderr}",
+                path.display()
+            )));
         }
     }
+
+    Ok(())
 }

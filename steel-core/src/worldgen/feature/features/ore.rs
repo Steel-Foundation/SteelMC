@@ -2,12 +2,12 @@ use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use crate::chunk::section::{BlockStateSectionCounts, ChunkSection};
-use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
+use steel_math::trig;
 use steel_utils::PackedSectionBlockPos;
-use steel_utils::math::mth;
+use steel_worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_ore_feature(
@@ -82,7 +82,7 @@ impl FeatureDecorationRunner {
         for i in 0..size {
             let step = i as f32 / config.size as f32;
             let size_factor = random.next_f64() * f64::from(config.size) / 16.0;
-            let radius_wave = mth::sin(f64::from(PI * step)) + 1.0;
+            let radius_wave = trig::sin(f64::from(PI * step)) + 1.0;
             let radius = f64::from(radius_wave) * size_factor + 1.0;
             vein_nodes[i] = [
                 lerp(f64::from(step), x0, x1),

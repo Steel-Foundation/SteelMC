@@ -8,11 +8,11 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
 use crate::entity::{entities::RawEntity, next_entity_id};
-use crate::world::structure::ocean_monument::{
+use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::ocean_monument::{
     OceanMonumentChildPiece, OceanMonumentChildPieceKind, OceanMonumentPieceData,
     OceanMonumentRoomData,
 };
-use crate::worldgen::region::WorldGenRegion;
 
 use super::StructurePiecePlacer;
 use super::scattered_feature::ScatteredFeaturePlacer;

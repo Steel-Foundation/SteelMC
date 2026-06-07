@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::generator_functions::{generate_identifier, generate_text_component};
+use crate::generator_functions::{generate_sound_event_ref, generate_text_component};
 use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -45,7 +45,6 @@ pub(crate) fn build() -> TokenStream {
         };
         use steel_utils::Identifier;
         use text_components::{TextComponent, translation::TranslatedMessage};
-        use std::borrow::Cow;
     });
 
     // Generate static jukebox song definitions
@@ -63,7 +62,7 @@ pub(crate) fn build() -> TokenStream {
         let jukebox_song_name_str = jukebox_song_name.clone();
 
         let key = quote! { Identifier::vanilla_static(#jukebox_song_name_str) };
-        let sound_event = generate_identifier(&jukebox_song.sound_event);
+        let sound_event = generate_sound_event_ref(&jukebox_song.sound_event);
         let description = generate_text_component(&jukebox_song.description);
         let length_in_seconds = jukebox_song.length_in_seconds;
         let comparator_output = jukebox_song.comparator_output;

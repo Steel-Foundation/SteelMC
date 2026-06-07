@@ -1,3 +1,5 @@
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use super::super::vanilla_collections::JavaBlockPosSet;
@@ -39,7 +41,7 @@ impl FeatureDecorationRunner {
         let Some(bounds) = TreeBounds::from_placement(&placement) else {
             return false;
         };
-        Self::update_tree_leaves(region, registry, bounds, &placement);
+        Self::update_tree_leaves(region, bounds, &placement);
         true
     }
 
@@ -64,7 +66,7 @@ impl FeatureDecorationRunner {
         }
 
         let clipped_tree_height =
-            Self::max_free_tree_height(region, registry, tree_height, trunk_origin, config);
+            Self::max_free_tree_height(region, tree_height, trunk_origin, config);
         let min_clipped_height = Self::tree_min_clipped_height(&config.minimum_size);
         if clipped_tree_height < tree_height
             && min_clipped_height.is_none_or(|height| clipped_tree_height < height)
@@ -142,7 +144,6 @@ impl FeatureDecorationRunner {
 
     fn max_free_tree_height(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         max_tree_height: i32,
         tree_pos: BlockPos,
         config: &TreeConfiguration,
@@ -152,7 +153,7 @@ impl FeatureDecorationRunner {
             for x in -radius..=radius {
                 for z in -radius..=radius {
                     let pos = tree_pos.offset(x, y, z);
-                    if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer)
+                    if !Self::tree_trunk_placer_is_free(region, pos, &config.trunk_placer)
                         || (!config.ignore_vines && Self::tree_is_vine(region, pos))
                     {
                         return y - 2;
@@ -164,37 +165,29 @@ impl FeatureDecorationRunner {
         max_tree_height
     }
 
-    fn tree_valid_pos(region: &WorldGenRegion<'_>, registry: &Registry, pos: BlockPos) -> bool {
+    fn tree_valid_pos(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
-        state.is_air()
-            || registry.blocks.is_in_tag(
-                state.get_block(),
-                &vanilla_block_tags::REPLACEABLE_BY_TREES_TAG,
-            )
+        state.is_air() || state.get_block().has_tag(&BlockTag::REPLACEABLE_BY_TREES)
     }
 
     fn tree_trunk_placer_is_free(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         trunk_placer: &TrunkPlacer,
     ) -> bool {
         let state = region.block_state(pos);
-        Self::tree_valid_pos_for_trunk_placer(region, registry, pos, trunk_placer)
-            || registry
-                .blocks
-                .is_in_tag(state.get_block(), &vanilla_block_tags::LOGS_TAG)
+        Self::tree_valid_pos_for_trunk_placer(region, pos, trunk_placer)
+            || state.get_block().has_tag(&BlockTag::LOGS)
     }
 
     fn tree_valid_pos_for_trunk_placer(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         trunk_placer: &TrunkPlacer,
     ) -> bool {
         match trunk_placer {
             TrunkPlacer::UpwardsBranching(placer) => {
-                Self::tree_valid_pos_or_tag(region, registry, pos, &placer.can_grow_through)
+                Self::tree_valid_pos_or_tag(region, pos, &placer.can_grow_through)
             }
             TrunkPlacer::Straight(_)
             | TrunkPlacer::Forking(_)
@@ -203,35 +196,19 @@ impl FeatureDecorationRunner {
             | TrunkPlacer::DarkOak(_)
             | TrunkPlacer::MegaJungle(_)
             | TrunkPlacer::Bending(_)
-            | TrunkPlacer::Cherry(_) => Self::tree_valid_pos(region, registry, pos),
+            | TrunkPlacer::Cherry(_) => Self::tree_valid_pos(region, pos),
         }
     }
 
-    fn tree_valid_pos_or_tag(
-        region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        pos: BlockPos,
-        tag: &Identifier,
-    ) -> bool {
+    fn tree_valid_pos_or_tag(region: &WorldGenRegion<'_>, pos: BlockPos, tag: &Identifier) -> bool {
         let state = region.block_state(pos);
-        state.is_air()
-            || registry.blocks.is_in_tag(
-                state.get_block(),
-                &vanilla_block_tags::REPLACEABLE_BY_TREES_TAG,
-            )
-            || registry.blocks.is_in_tag(state.get_block(), tag)
+        let block = state.get_block();
+        state.is_air() || block.has_tag(&BlockTag::REPLACEABLE_BY_TREES) || block.has_tag(tag)
     }
 
-    fn tree_is_air_or_leaves(
-        region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        pos: BlockPos,
-    ) -> bool {
+    fn tree_is_air_or_leaves(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
-        state.is_air()
-            || registry
-                .blocks
-                .is_in_tag(state.get_block(), &vanilla_block_tags::LEAVES_TAG)
+        state.is_air() || state.get_block().has_tag(&BlockTag::LEAVES)
     }
 
     fn tree_is_vine(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {

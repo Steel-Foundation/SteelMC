@@ -3,13 +3,13 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, DoubleBlockHalf, EnumProperty, IntProperty},
     },
-    vanilla_block_tags, vanilla_blocks, vanilla_entities, vanilla_game_rules,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -19,10 +19,11 @@ use crate::{
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
+            crop_block::destroy_crop_on_ravager_contact,
             vegetation_block::{double_plant_can_survive, double_plant_update_shape},
         },
     },
-    entity::Entity,
+    entity::{Entity, InsideBlockEffectCollector},
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
@@ -58,10 +59,7 @@ impl PitcherCropBlock {
                 let block_state = world.get_block_state(check_pos);
                 let mut block_speed = 0.0f32;
 
-                if steel_registry::REGISTRY.blocks.is_in_tag(
-                    block_state.get_block(),
-                    &vanilla_block_tags::GROWS_CROPS_TAG,
-                ) {
+                if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
                     block_speed = 1.0;
                     // Check moisture level (defaults to 0 for non-farmland blocks)
                     let moisture = block_state
@@ -204,15 +202,10 @@ impl BlockBehavior for PitcherCropBlock {
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
     ) {
-        if entity.entity_type() == &vanilla_entities::RAVAGER
-            && world
-                .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-                .as_bool()
-                == Some(true)
-        {
-            world.destroy_block(pos, true);
-        }
+        destroy_crop_on_ravager_contact(world, pos, entity);
     }
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
@@ -239,9 +232,7 @@ impl BlockBehavior for PitcherCropBlock {
 
 impl Vegetation for PitcherCropBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
+        state.get_block().has_tag(&BlockTag::SUPPORTS_CROPS)
     }
 }
 

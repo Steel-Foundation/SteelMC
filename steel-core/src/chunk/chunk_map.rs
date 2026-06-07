@@ -1,13 +1,10 @@
-use rayon::{
-    ThreadPool,
-    iter::{IntoParallelIterator, ParallelIterator},
-};
-use rustc_hash::FxBuildHasher;
+use rayon::ThreadPool;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::{
     io, mem,
     sync::{
         Arc, Weak,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -20,6 +17,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
@@ -28,17 +26,30 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, is_full, is_ticked,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
-use crate::chunk::{chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask};
+use crate::chunk::{
+    chunk_access::{ChunkAccess, ChunkStatus},
+    chunk_generation_task::ChunkGenerationTask,
+};
 use crate::chunk_saver::ChunkStorage;
-use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
+use crate::{entity::Entity, player::Player};
+
+const GENERATION_THREAD_MULTIPLE: usize = 2;
+
+/// Whether a scheduling tick should enforce the generation task cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenerationTaskCap {
+    /// Normal server ticking path.
+    RespectMaxCap,
+    /// Startup/manual path only; drains all pending generation tasks.
+    IgnoreMaxCap,
+}
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -98,9 +109,59 @@ pub struct ChunkMap {
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
     last_tickable_len: AtomicUsize,
+    /// Number of top-level generation tasks currently running.
+    running_generation_tasks: AtomicUsize,
+    /// Wakes the generation refill loop when pending/running task state changes.
+    generation_refill_notify: Notify,
+    /// Cancels the generation refill loop without cancelling active generation tasks.
+    generation_refill_cancel_token: CancellationToken,
+    /// Fast shutdown flag for the generation refill loop.
+    generation_refill_stopped: AtomicBool,
+    /// Whether the notify-driven refill loop has been started for this map.
+    generation_refill_started: AtomicBool,
     /// Parent cancellation token for all generation tasks.
     /// Child tokens are created per-task; cancelling this cancels everything.
     pub cancel_token: CancellationToken,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GenerationTaskPriority {
+    simulation_bucket: u8,
+    simulation_level: ChunkTicketLevel,
+    load_level: ChunkTicketLevel,
+}
+
+impl GenerationTaskPriority {
+    const fn for_levels(
+        load_level: Option<ChunkTicketLevel>,
+        simulation_level: Option<ChunkTicketLevel>,
+    ) -> Self {
+        let simulation_bucket = if simulation_level.is_some() { 0 } else { 1 };
+        Self {
+            simulation_bucket,
+            simulation_level: match simulation_level {
+                Some(level) => level,
+                None => ChunkTicketLevel::MAX,
+            },
+            load_level: match load_level {
+                Some(level) => level,
+                None => ChunkTicketLevel::MAX,
+            },
+        }
+    }
+}
+
+struct RunningGenerationTaskPermit {
+    chunk_map: Arc<ChunkMap>,
+}
+
+impl Drop for RunningGenerationTaskPermit {
+    fn drop(&mut self) {
+        self.chunk_map
+            .running_generation_tasks
+            .fetch_sub(1, Ordering::AcqRel);
+        self.chunk_map.notify_generation_refill();
+    }
 }
 
 impl ChunkMap {
@@ -128,7 +189,54 @@ impl ChunkMap {
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
             last_tickable_len: AtomicUsize::new(0),
+            running_generation_tasks: AtomicUsize::new(0),
+            generation_refill_notify: Notify::new(),
+            generation_refill_cancel_token: CancellationToken::new(),
+            generation_refill_stopped: AtomicBool::new(false),
+            generation_refill_started: AtomicBool::new(false),
             cancel_token: CancellationToken::new(),
+        }
+    }
+
+    /// Starts the notify-driven generation refill loop for this chunk map.
+    pub fn start_generation_refill_loop(self: &Arc<Self>) {
+        if self.generation_refill_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let chunk_map = Arc::clone(self);
+        self.task_tracker.spawn_on(
+            async move {
+                loop {
+                    tokio::select! {
+                        () = chunk_map.generation_refill_cancel_token.cancelled() => break,
+                        () = chunk_map.generation_refill_notify.notified() => {
+                            chunk_map.run_generation_tasks_b(GenerationTaskCap::RespectMaxCap);
+                        }
+                    }
+                }
+            },
+            self.chunk_runtime.handle(),
+        );
+    }
+
+    /// Stops the generation refill loop. Active generation tasks are left alone.
+    pub fn stop_generation_refill_loop(&self) {
+        self.generation_refill_stopped
+            .store(true, Ordering::Release);
+        self.generation_refill_cancel_token.cancel();
+        self.generation_refill_notify.notify_waiters();
+    }
+
+    pub(crate) fn notify_generation_refill(&self) {
+        self.generation_refill_notify.notify_one();
+    }
+
+    fn run_or_notify_generation_refill(&self) {
+        if self.generation_refill_started.load(Ordering::Acquire) {
+            self.notify_generation_refill();
+        } else {
+            self.run_generation_tasks_b(GenerationTaskCap::RespectMaxCap);
         }
     }
 
@@ -158,6 +266,9 @@ impl ChunkMap {
     }
 
     /// Loads full chunks in a square radius, runs `f`, then removes the temporary ticket.
+    ///
+    /// This bypasses the generation task cap while waiting, so it should only
+    /// be used outside normally ticking server situations.
     pub async fn with_full_chunks_in_radius<F, R>(
         self: &Arc<Self>,
         center: ChunkPos,
@@ -167,10 +278,12 @@ impl ChunkMap {
     where
         F: FnOnce() -> R,
     {
-        let ticket_level = MAX_VIEW_DISTANCE.saturating_sub(radius);
+        let ticket = ChunkTicket::full_chunks(radius);
 
-        self.chunk_tickets.lock().add_ticket(center, ticket_level);
-        self.tick_scheduling();
+        self.chunk_tickets.lock().add_ticket(center, ticket);
+        // This helper is used before the normal scheduling loop is driving
+        // generation, so it drains queued startup work immediately.
+        self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
 
         let mut holders = Vec::new();
         let radius = i32::from(radius);
@@ -178,10 +291,8 @@ impl ChunkMap {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
                 let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
-                    self.chunk_tickets
-                        .lock()
-                        .remove_ticket(center, ticket_level);
-                    self.tick_scheduling();
+                    self.chunk_tickets.lock().remove_ticket(center, ticket);
+                    self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
                     return None;
                 };
                 holders.push(holder);
@@ -190,19 +301,15 @@ impl ChunkMap {
 
         for holder in holders {
             if holder.await_chunk(ChunkStatus::Full).await.is_none() {
-                self.chunk_tickets
-                    .lock()
-                    .remove_ticket(center, ticket_level);
-                self.tick_scheduling();
+                self.chunk_tickets.lock().remove_ticket(center, ticket);
+                self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
                 return None;
             }
         }
 
         let result = f();
-        self.chunk_tickets
-            .lock()
-            .remove_ticket(center, ticket_level);
-        self.tick_scheduling();
+        self.chunk_tickets.lock().remove_ticket(center, ticket);
+        self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
 
         Some(result)
     }
@@ -352,47 +459,103 @@ impl ChunkMap {
             self.generation_pool.clone(),
             self.cancel_token.child_token(),
         ));
-        self.pending_generation_tasks.lock().push(task.clone());
+        self.pending_generation_tasks.lock().push(Arc::clone(&task));
         task
     }
 
     /// Runs queued generation tasks.
     #[instrument(level = "trace", skip(self))]
-    pub fn run_generation_tasks_b(&self) {
+    pub fn run_generation_tasks_b(&self, generation_task_cap: GenerationTaskCap) {
+        if generation_task_cap == GenerationTaskCap::RespectMaxCap
+            && self.generation_refill_stopped.load(Ordering::Acquire)
+        {
+            return;
+        }
+
         let mut pending = self.pending_generation_tasks.lock();
         if pending.is_empty() {
             return;
         }
-        let task_count = pending.len();
-        tracing::trace!(task_count, "Running generation tasks");
-        let tasks = pending.drain(..).collect::<Vec<_>>();
+
+        pending.retain(|task| !task.is_cancelled());
+        if pending.is_empty() {
+            return;
+        }
+
+        let running_tasks = self.running_generation_tasks.load(Ordering::Acquire);
+        let max_running_tasks = self.max_running_generation_tasks();
+        let task_count = match generation_task_cap {
+            GenerationTaskCap::RespectMaxCap => {
+                let available_slots = max_running_tasks.saturating_sub(running_tasks);
+                if available_slots == 0 {
+                    tracing::trace!(
+                        pending = pending.len(),
+                        running_tasks,
+                        max_running_tasks,
+                        "Generation task cap reached"
+                    );
+                    return;
+                }
+
+                let task_count = pending.len().min(available_slots);
+                if task_count < pending.len() {
+                    pending.sort_by_cached_key(|task| Self::generation_task_priority(task));
+                }
+                task_count
+            }
+            GenerationTaskCap::IgnoreMaxCap => pending.len(),
+        };
+        tracing::trace!(
+            task_count,
+            pending = pending.len(),
+            running_tasks,
+            max_running_tasks,
+            ?generation_task_cap,
+            "Running generation tasks"
+        );
+        let tasks = pending.drain(..task_count).collect::<Vec<_>>();
+        self.running_generation_tasks
+            .fetch_add(tasks.len(), Ordering::AcqRel);
         drop(pending); // Release lock before spawning
 
         for task in tasks {
-            self.task_tracker
-                .spawn_on(async move { task.run().await }, self.chunk_runtime.handle());
+            let permit = RunningGenerationTaskPermit {
+                chunk_map: task.chunk_map.clone(),
+            };
+            self.task_tracker.spawn_on(
+                async move {
+                    let _permit = permit;
+                    task.run().await;
+                },
+                self.chunk_runtime.handle(),
+            );
         }
+    }
+
+    fn max_running_generation_tasks(&self) -> usize {
+        self.generation_pool.current_num_threads().max(1) * GENERATION_THREAD_MULTIPLE
+    }
+
+    fn generation_task_priority(task: &ChunkGenerationTask) -> GenerationTaskPriority {
+        let holder = task.center_holder();
+        GenerationTaskPriority::for_levels(holder.load_level(), holder.simulation_level())
     }
 
     /// Updates scheduling for a chunk based on its new level.
     /// Returns the chunk holder if it is active.
     #[inline]
-    #[expect(
-        clippy::missing_panics_doc,
-        clippy::unwrap_used,
-        reason = "unwrap is on new_level which was already checked non-None via new_level?"
-    )]
     pub fn update_chunk_level(
         self: &Arc<Self>,
         pos: ChunkPos,
-        new_level: Option<u8>,
+        new_level: Option<ChunkTicketLevel>,
+        new_simulation_level: Option<ChunkTicketLevel>,
     ) -> Option<Arc<ChunkHolder>> {
         // Recover from unloading if possible, else create new holder.
         let chunk_holder =
             if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
                 holder
             } else {
-                new_level?;
+                let level = new_level?;
 
                 if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
                     let _ = self.chunks.insert_sync(pos, entry.1.clone());
@@ -400,7 +563,8 @@ impl ChunkMap {
                 } else {
                     let holder = Arc::new(ChunkHolder::new(
                         pos,
-                        new_level.unwrap(),
+                        level,
+                        new_simulation_level,
                         self.world_gen_context.min_y(),
                         self.world_gen_context.height(),
                     ));
@@ -410,22 +574,29 @@ impl ChunkMap {
             };
 
         if let Some(level) = new_level {
-            let old = chunk_holder.ticket_level.swap(level, Ordering::Relaxed);
-            if old != level {
-                chunk_holder.update_highest_allowed_status(level);
+            let old = chunk_holder.swap_load_level(level);
+            chunk_holder.set_simulation_level(new_simulation_level);
+            if old != Some(level) {
+                chunk_holder.update_highest_allowed_status(Some(level));
+            }
+            if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
+                let world = self.world_gen_context.world();
+                world.on_entity_chunk_loaded(pos);
             }
             Some(chunk_holder)
         } else {
             //log::info!("Unloading chunk at {pos:?}");
             chunk_holder.cancel_generation_task();
-            chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
-            chunk_holder.update_highest_allowed_status(u8::MAX);
+            chunk_holder.clear_load_level();
+            chunk_holder.set_simulation_level(None);
+            chunk_holder.update_highest_allowed_status(None);
             // Wake any await_chunk futures so generation tasks holding refs to
             // this chunk can detect the status is disallowed and exit.
             chunk_holder.wake_all_watchers();
 
             // Clean up POI data for this chunk column
             let world = self.world_gen_context.world();
+            world.on_entity_chunk_unload_start(pos);
             world.poi_storage.lock().remove_chunk(pos);
 
             // Move to unloading_chunks for deferred unload
@@ -482,8 +653,7 @@ impl ChunkMap {
             let mut tickable_chunks = Vec::with_capacity(last_len);
             self.chunks.iter_sync(|_, holder| {
                 total_chunks += 1;
-                let level = holder.ticket_level.load(Ordering::Relaxed);
-                if is_ticked(level, world.view_distance, world.simulation_distance) {
+                if is_ticked(holder.simulation_level()) {
                     tickable_chunks.push(holder.clone());
                 }
                 true
@@ -494,6 +664,7 @@ impl ChunkMap {
             timings.total_chunks = total_chunks;
             timings.tickable_count = tickable_chunks.len();
 
+            let mut tickable_full_chunks = Vec::with_capacity(tickable_chunks.len());
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
@@ -504,6 +675,7 @@ impl ChunkMap {
                 let start = Instant::now();
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                        tickable_full_chunks.push(holder.get_pos());
                         chunk_guard.tick(
                             random_tick_speed,
                             tick_count as i32,
@@ -526,7 +698,10 @@ impl ChunkMap {
     ///
     /// Runs on its own independent tick loop, separate from the game tick.
     #[instrument(level = "trace", skip(self), name = "chunk_map_scheduling_tick")]
-    pub fn tick_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+    pub fn tick_scheduling(
+        self: &Arc<Self>,
+        generation_task_cap: GenerationTaskCap,
+    ) -> ChunkMapSchedulingTimings {
         let mut timings = ChunkMapSchedulingTimings::default();
 
         // Only hold the ticket lock for run_all_updates — holder creation and
@@ -547,8 +722,12 @@ impl ChunkMap {
             let result = changes
                 .iter()
                 .filter_map(|change| {
-                    self.update_chunk_level(change.pos, change.new_level)
-                        .map(|holder| (holder, change.new_level))
+                    self.update_chunk_level(
+                        change.pos,
+                        change.new_level,
+                        change.new_simulation_level,
+                    )
+                    .map(|holder| (holder, change.new_level))
                 })
                 .collect();
             timings.holder_creation = start.elapsed();
@@ -558,27 +737,13 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("schedule_generation").entered();
             let start = Instant::now();
-            let scheduled_count = if holders_to_schedule.len() < 100 {
-                holders_to_schedule
-                    .iter()
-                    .filter(|(holder, level)| {
-                        level.is_some_and(is_full)
-                            && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
-                    })
-                    .count()
-            } else {
-                let self_ref = self;
-                self.generation_pool.install(|| {
-                    holders_to_schedule
-                        .into_par_iter()
-                        .filter(|(holder, level)| {
-                            level.is_some_and(is_full)
-                                && holder
-                                    .schedule_chunk_generation_task_b(ChunkStatus::Full, self_ref)
-                        })
-                        .count()
+            let scheduled_count = holders_to_schedule
+                .iter()
+                .filter(|(holder, level)| {
+                    level.is_some_and(is_full)
+                        && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
                 })
-            };
+                .count();
             timings.schedule_generation = start.elapsed();
             timings.scheduled_count = scheduled_count;
         }
@@ -586,7 +751,10 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("run_generation").entered();
             let start = Instant::now();
-            self.run_generation_tasks_b();
+            match generation_task_cap {
+                GenerationTaskCap::RespectMaxCap => self.run_or_notify_generation_refill(),
+                GenerationTaskCap::IgnoreMaxCap => self.run_generation_tasks_b(generation_task_cap),
+            }
             timings.run_generation = start.elapsed();
         }
 
@@ -598,6 +766,19 @@ impl ChunkMap {
         }
 
         timings
+    }
+
+    /// Returns full chunks whose simulation level currently allows entity ticks.
+    pub fn tickable_full_chunk_positions(&self) -> Vec<ChunkPos> {
+        let mut chunks = Vec::new();
+        self.chunks.iter_sync(|_, holder| {
+            if is_ticked(holder.simulation_level()) && holder.try_chunk(ChunkStatus::Full).is_some()
+            {
+                chunks.push(holder.get_pos());
+            }
+            true
+        });
+        chunks
     }
 
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
@@ -654,10 +835,13 @@ impl ChunkMap {
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
     #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
     async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
+        let chunk_pos = chunk_holder.get_pos();
         // Prepare chunk data while holding the lock, then release before async I/O
         let prepared = {
             let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
-                // Chunk was at Empty stage so no need to save it
+                // Vanilla only persists chunks once they reach StructureStarts.
+                // Runtime entities in lower-status chunks are an accepted loss
+                // on unload/shutdown until those chunks cross that boundary.
                 return;
             };
 
@@ -665,7 +849,12 @@ impl ChunkMap {
                 .persisted_status()
                 .expect("The check above confirmed it exists");
 
-            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard);
+            let world = self.world_gen_context.world();
+            let runtime_entities = world
+                .entity_manager()
+                .get_saveable_entities_for_chunk(chunk_pos);
+            let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
+            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard, &runtime_entities, force);
 
             // Clear dirty flag while we still have the lock (only if we're actually saving)
             if prepared.is_some() {
@@ -678,11 +867,18 @@ impl ChunkMap {
         let (prepared, status) = prepared;
 
         // Save chunk data if dirty
-        if let Some(prepared) = prepared {
-            let result = self.storage.save_chunk_data(prepared, status).await;
-
-            if let Err(e) = result {
-                tracing::error!("Error saving chunk: {e}");
+        if let Some(mut prepared) = prepared {
+            let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
+            let world = self.world_gen_context.world();
+            match self.storage.save_chunk_data(prepared, status).await {
+                Ok(true) => world
+                    .entity_manager()
+                    .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids),
+                Ok(false) => world.mark_chunk_dirty(chunk_pos),
+                Err(e) => {
+                    tracing::error!("Error saving chunk: {e}");
+                    world.mark_chunk_dirty(chunk_pos);
+                }
             }
         }
     }
@@ -700,8 +896,13 @@ impl ChunkMap {
                 let is_dirty = holder
                     .try_chunk(ChunkStatus::StructureStarts)
                     .is_some_and(|chunk| chunk.is_dirty());
+                let has_save_pending_entities = self
+                    .world_gen_context
+                    .world()
+                    .entity_manager()
+                    .has_save_pending_for_chunk(*pos);
 
-                if is_dirty {
+                if is_dirty || has_save_pending_entities {
                     // Save the chunk, keep until next tick when it's clean
                     let holder_clone = holder.clone();
                     let map_clone = self.clone();
@@ -710,10 +911,14 @@ impl ChunkMap {
                     });
                     true // keep until clean
                 } else if holder.try_chunk(ChunkStatus::Empty).is_none() {
+                    let world = self.world_gen_context.world();
+                    world.on_entity_chunk_unload_finalized(*pos);
                     false
                 } else {
                     // Clean and no refs - release region handle and remove
                     let pos = *pos;
+                    let world = self.world_gen_context.world();
+                    world.on_entity_chunk_unload_finalized(pos);
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
                         if let Err(e) = map_clone.storage.release_chunk(pos).await {
@@ -730,29 +935,27 @@ impl ChunkMap {
 
     /// Updates the player's status in the chunk map.
     pub fn update_player_status(&self, player: &Player) {
-        let current_chunk_pos = *player.last_chunk_pos.lock();
+        let current_chunk_pos = ChunkPos::from_entity_pos(player.position());
+        *player.last_chunk_pos.lock() = current_chunk_pos;
         let view_distance = player.view_distance();
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
+        let world = self.world_gen_context.world();
         let mut last_view_guard = player.last_tracking_view.lock();
 
         if last_view_guard.as_ref() != Some(&new_view) {
             let mut chunk_tickets = self.chunk_tickets.lock();
 
-            let world = self.world_gen_context.world();
+            let new_ticket = ChunkTicket::player(new_view.view_distance, world.simulation_distance);
 
             if let Some(last_view) = last_view_guard.as_ref() {
                 if last_view.center != new_view.center
                     || last_view.view_distance != new_view.view_distance
                 {
-                    chunk_tickets.remove_ticket(
-                        last_view.center,
-                        MAX_VIEW_DISTANCE.saturating_sub(last_view.view_distance),
-                    );
-                    chunk_tickets.add_ticket(
-                        new_view.center,
-                        MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
-                    );
+                    let old_ticket =
+                        ChunkTicket::player(last_view.view_distance, world.simulation_distance);
+                    chunk_tickets.remove_ticket(last_view.center, old_ticket);
+                    chunk_tickets.add_ticket(new_view.center, new_ticket);
 
                     player.send_packet(CSetChunkCenter {
                         x: new_view.center.0.x,
@@ -784,22 +987,12 @@ impl ChunkMap {
 
                 // Update the player area map with the diff
                 world.player_area_map.on_player_view_change(
-                    player.id,
-                    &added_chunks,
-                    &removed_chunks,
-                );
-
-                // Update entity tracking for this player (only check added/removed chunks)
-                world.entity_tracker().on_player_view_change(
-                    player,
+                    player.id(),
                     &added_chunks,
                     &removed_chunks,
                 );
             } else {
-                chunk_tickets.add_ticket(
-                    new_view.center,
-                    MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
-                );
+                chunk_tickets.add_ticket(new_view.center, new_ticket);
 
                 // Send initial chunk cache center to client
                 player.send_packet(CSetChunkCenter {
@@ -815,13 +1008,16 @@ impl ChunkMap {
 
                 // First time - add all chunks in view to player area map
                 world.player_area_map.on_player_join(player, &new_view);
-
-                // Initial entity tracking for this player
-                world.entity_tracker().on_player_join(player, &new_view);
             }
 
             *last_view_guard = Some(new_view);
         }
+        drop(last_view_guard);
+
+        // Entity visibility also depends on exact player position, not only
+        // chunk-view changes. Vanilla refreshes tracked entities for accepted
+        // movement within the same chunk as well.
+        world.entity_tracker().update_player(player, &new_view);
     }
 
     /// Removes a player from the chunk map.
@@ -831,10 +1027,9 @@ impl ChunkMap {
         if let Some(last_view) = last_view_guard.take() {
             drop(last_view_guard);
             let mut chunk_tickets = self.chunk_tickets.lock();
-            chunk_tickets.remove_ticket(
-                last_view.center,
-                MAX_VIEW_DISTANCE.saturating_sub(last_view.view_distance),
-            );
+            let world = self.world_gen_context.world();
+            let ticket = ChunkTicket::player(last_view.view_distance, world.simulation_distance);
+            chunk_tickets.remove_ticket(last_view.center, ticket);
         }
     }
 
@@ -864,33 +1059,82 @@ impl ChunkMap {
             });
             chunks
         };
+        let mut covered_chunk_positions = FxHashSet::default();
 
         tracing::info!(chunk_count = all_chunks.len(), "Saving chunks");
 
         // Save all chunks that have data
         for holder in &all_chunks {
+            let chunk_pos = holder.get_pos();
             let prepared = {
                 let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
+                    // Matches save_chunk: StructureStarts is the first persisted
+                    // chunk status, so lower-status chunks do not own durable
+                    // runtime entity data.
                     continue;
                 };
                 let Some(status) = holder.persisted_status() else {
                     continue;
                 };
-                let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+                let world = self.world_gen_context.world();
+                let runtime_entities = world
+                    .entity_manager()
+                    .get_saveable_entities_for_chunk(chunk_pos);
+                let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
+                let Some(prepared) =
+                    ChunkStorage::prepare_chunk_save(&chunk, &runtime_entities, force)
+                else {
+                    if !force {
+                        covered_chunk_positions.insert(chunk_pos);
+                    }
                     continue; // Not dirty
                 };
                 chunk.clear_dirty();
                 (prepared, status)
             };
 
-            let (prepared, status) = prepared;
+            let (mut prepared, status) = prepared;
+            let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
+            let world = self.world_gen_context.world();
             match self.storage.save_chunk_data(prepared, status).await {
-                Ok(true) => saved_count += 1,
-                Ok(false) => {} // Not dirty
+                Ok(true) => {
+                    world
+                        .entity_manager()
+                        .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids);
+                    covered_chunk_positions.insert(chunk_pos);
+                    saved_count += 1;
+                }
+                Ok(false) => world.mark_chunk_dirty(chunk_pos),
                 Err(e) => {
                     tracing::error!(chunk = ?holder.get_pos(), "Failed to save chunk: {e}");
+                    world.mark_chunk_dirty(chunk_pos);
                 }
             }
+        }
+
+        let world = self.world_gen_context.world();
+        let covered_chunk_positions = covered_chunk_positions.into_iter().collect::<Vec<_>>();
+        let unsaved_entities = world
+            .entity_manager()
+            .saveable_entities_outside_chunks(&covered_chunk_positions);
+        if !unsaved_entities.is_empty() {
+            let chunk_count = unsaved_entities
+                .iter()
+                .map(|entity| entity.chunk)
+                .collect::<FxHashSet<_>>()
+                .len();
+            let sample = unsaved_entities
+                .iter()
+                .take(16)
+                .map(|entity| format!("{}:{}@{:?}", entity.entity_id, entity.uuid, entity.chunk))
+                .collect::<Vec<_>>()
+                .join(", ");
+            tracing::warn!(
+                entity_count = unsaved_entities.len(),
+                chunk_count,
+                sample = %sample,
+                "Saveable runtime entities remain in chunks without save holders after chunk save"
+            );
         }
 
         // Close all region files (flushes headers and releases file handles)
@@ -905,5 +1149,52 @@ impl ChunkMap {
         );
 
         Ok(saved_count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_priority_prefers_simulation_tickets() {
+        let normal_strong = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(8)),
+            None,
+        );
+        let simulated_weak = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(1)),
+            Some(ChunkTicketLevel::for_full_chunk_radius(1)),
+        );
+
+        assert!(simulated_weak < normal_strong);
+    }
+
+    #[test]
+    fn generation_priority_orders_simulation_by_simulation_level() {
+        let weaker_simulation = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(8)),
+            Some(ChunkTicketLevel::for_full_chunk_radius(1)),
+        );
+        let stronger_simulation = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(1)),
+            Some(ChunkTicketLevel::for_full_chunk_radius(4)),
+        );
+
+        assert!(stronger_simulation < weaker_simulation);
+    }
+
+    #[test]
+    fn generation_priority_orders_normal_by_load_level() {
+        let weaker_load = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(1)),
+            None,
+        );
+        let stronger_load = GenerationTaskPriority::for_levels(
+            Some(ChunkTicketLevel::for_full_chunk_radius(4)),
+            None,
+        );
+
+        assert!(stronger_load < weaker_load);
     }
 }

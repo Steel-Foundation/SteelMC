@@ -15,7 +15,7 @@ use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
 use steel_registry::blocks::properties::{BlockStateProperties, Half};
 use steel_registry::blocks::{self};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
 use steel_registry::shared_structs::BlockStateData;
 use steel_registry::structure::LiquidSettingsData;
@@ -24,9 +24,10 @@ use steel_registry::structure_processor::{
     StructureProcessorKind, StructureRuleTestData,
 };
 use steel_registry::template_pool::Projection;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_block_entity_types, vanilla_block_tags,
-    vanilla_blocks, vanilla_template_pools,
+    Registry, RegistryExt, TaggedRegistryExt, vanilla_block_entity_types, vanilla_blocks,
+    vanilla_template_pools,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -39,10 +40,10 @@ use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::ENTITIES;
-use crate::world::structure::{StructureBlockIgnore, StructureMirror};
+use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest};
 use crate::worldgen::region::WorldGenRegion;
-use crate::worldgen::state_resolver::WorldgenStateResolver;
+use steel_worldgen::state_resolver::WorldgenStateResolver;
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 /// Loaded vanilla structure template payload.
 ///
@@ -75,7 +76,9 @@ struct StructureEntityInfo {
     entity_type: EntityTypeRef,
     rotation: (f32, f32),
     velocity: DVec3,
+    fall_distance: f64,
     on_ground: bool,
+    no_gravity: bool,
     nbt: NbtCompound,
 }
 
@@ -342,7 +345,9 @@ impl StructureTemplate {
             })?;
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
+            let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
+            let no_gravity = entity_nbt.byte("NoGravity").is_some_and(|value| value != 0);
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);
 
@@ -352,7 +357,9 @@ impl StructureTemplate {
                 entity_type,
                 rotation,
                 velocity,
+                fall_distance,
                 on_ground,
+                no_gravity,
                 nbt,
             });
         }
@@ -381,7 +388,16 @@ impl StructureTemplate {
     }
 
     fn strip_entity_base_fields(nbt: &mut NbtCompound) {
-        for field in ["id", "Pos", "Motion", "Rotation", "UUID", "OnGround"] {
+        for field in [
+            "id",
+            "Pos",
+            "Motion",
+            "Rotation",
+            "UUID",
+            "fall_distance",
+            "OnGround",
+            "NoGravity",
+        ] {
             let _ = nbt.remove(field);
         }
     }
@@ -811,13 +827,18 @@ impl StructureTemplate {
             };
 
             let runtime_entity = ENTITIES.create_and_load_or_raw(
-                entity.entity_type,
-                pos,
-                Uuid::new_v4(),
-                entity.velocity,
-                rotation,
-                entity.on_ground,
-                region.weak_world(),
+                EntityLoadRequest {
+                    entity_type: entity.entity_type,
+                    position: pos,
+                    uuid: Uuid::new_v4(),
+                    velocity: entity.velocity,
+                    rotation,
+                    fall_distance: entity.fall_distance,
+                    fire_freeze: EntityFireFreezeState::new(),
+                    on_ground: entity.on_ground,
+                    no_gravity: entity.no_gravity,
+                    world: region.weak_world(),
+                },
                 &nbt,
             );
             let _ = region.add_fresh_entity(runtime_entity);
@@ -1232,7 +1253,7 @@ impl StructureTemplate {
             StructureProcessorKind::ProtectedBlocks { cannot_replace } => {
                 let existing =
                     Self::block_for_state(registry, region.block_state(current.world_pos));
-                (!registry.blocks.is_in_tag(existing, cannot_replace)).then_some(current)
+                (!existing.has_tag(cannot_replace)).then_some(current)
             }
             StructureProcessorKind::Rule { rules } => {
                 let mut rule_random =
@@ -1300,20 +1321,11 @@ impl StructureTemplate {
             || block == &vanilla_blocks::CHISELED_STONE_BRICKS
         {
             Self::maybe_replace_full_stone_block(registry, mossiness, random)
-        } else if registry
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::STAIRS_TAG)
-        {
+        } else if block.has_tag(&BlockTag::STAIRS) {
             Self::maybe_replace_stairs(registry, current.state, mossiness, random)
-        } else if registry
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::SLABS_TAG)
-        {
+        } else if block.has_tag(&BlockTag::SLABS) {
             Self::maybe_replace_slab(registry, current.state, mossiness, random)
-        } else if registry
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::WALLS_TAG)
-        {
+        } else if block.has_tag(&BlockTag::WALLS) {
             Self::maybe_replace_wall(registry, current.state, mossiness, random)
         } else if block == &vanilla_blocks::OBSIDIAN {
             Self::maybe_replace_obsidian(registry, random)
@@ -2342,27 +2354,17 @@ impl StructureTemplate {
     }
 }
 
-impl StructureBlockIgnore {
-    fn ignores(self, registry: &Registry, state: BlockStateId) -> bool {
-        match self {
-            Self::None => false,
-            Self::StructureBlock => {
-                StructureTemplate::block_for_state(registry, state)
-                    == &vanilla_blocks::STRUCTURE_BLOCK
-            }
-            Self::StructureAndAir => {
-                let block = StructureTemplate::block_for_state(registry, state);
-                block == &vanilla_blocks::STRUCTURE_BLOCK || block == &vanilla_blocks::AIR
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
+    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_entities;
+
+    fn test_registry() -> Registry {
+        init_test_registry();
+        Registry::new_vanilla()
+    }
 
     #[test]
     fn zero_position_with_transform_matches_vanilla_rotation_offsets() {
@@ -2429,7 +2431,7 @@ mod tests {
 
     #[test]
     fn village_template_loads_entity_payloads() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let template = StructureTemplate::load_vanilla(
             &registry,
             &Identifier::vanilla_static("village/plains/villagers/unemployed"),
@@ -2447,7 +2449,7 @@ mod tests {
 
     #[test]
     fn brushable_append_loot_infers_block_entity_without_container_reseed() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let suspicious_sand = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::SUSPICIOUS_SAND);
@@ -2541,7 +2543,7 @@ mod tests {
 
     #[test]
     fn mirrored_door_transform_toggles_hinge() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let door = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::SPRUCE_DOOR);
@@ -2579,7 +2581,7 @@ mod tests {
 
     #[test]
     fn jigsaw_replacement_uses_final_state_and_removes_nbt() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let mut nbt = NbtCompound::new();
         nbt.insert(
             "final_state",
@@ -2610,7 +2612,7 @@ mod tests {
 
     #[test]
     fn jigsaw_replacement_accepts_trailing_text_like_vanilla_parser() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let final_state = "minecraft:acacia_fence[east=false,north=false,south=false,waterlogged=false,west=false]]";
         let expected = "minecraft:acacia_fence[east=false,north=false,south=false,waterlogged=false,west=false]";
 
@@ -2622,7 +2624,7 @@ mod tests {
 
     #[test]
     fn jigsaw_replacement_drops_structure_void_final_state() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let mut nbt = NbtCompound::new();
         nbt.insert(
             "final_state",
@@ -2642,7 +2644,7 @@ mod tests {
 
     #[test]
     fn structure_block_ignore_modes_match_vanilla_single_variants() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let structure_block = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::STRUCTURE_BLOCK);
@@ -2658,7 +2660,7 @@ mod tests {
 
     #[test]
     fn block_age_processor_preserves_slab_properties() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let slab = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::STONE_BRICK_SLAB);
@@ -2691,7 +2693,7 @@ mod tests {
 
     #[test]
     fn lava_submerged_processor_keeps_non_full_blocks_as_lava() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let slab = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::STONE_BRICK_SLAB);
@@ -2713,7 +2715,7 @@ mod tests {
 
     #[test]
     fn blackstone_replace_processor_preserves_stair_orientation() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let stairs = registry
             .blocks
             .get_default_state_id(&vanilla_blocks::STONE_BRICK_STAIRS);
@@ -2753,7 +2755,7 @@ mod tests {
 
     #[test]
     fn data_markers_read_shipwreck_structure_blocks() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let template = StructureTemplate::load_vanilla(
             &registry,
             &Identifier::vanilla_static("shipwreck/with_mast"),
@@ -2786,7 +2788,7 @@ mod tests {
 
     #[test]
     fn data_markers_read_igloo_chest_structure_block() {
-        let registry = Registry::new_vanilla();
+        let registry = test_registry();
         let template =
             StructureTemplate::load_vanilla(&registry, &Identifier::vanilla_static("igloo/bottom"))
                 .expect("igloo bottom template should be bundled");

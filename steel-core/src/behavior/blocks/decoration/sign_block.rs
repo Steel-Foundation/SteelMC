@@ -21,6 +21,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -90,7 +91,7 @@ fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> 
     let sign_y_rot = get_sign_rotation_degrees(state);
 
     // Calculate player's angle relative to the sign center
-    let player_pos = *player.position.lock();
+    let player_pos = player.position();
     let dx = player_pos.x - (f64::from(pos.0.x) + 0.5);
     let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 

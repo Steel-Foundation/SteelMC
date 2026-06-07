@@ -3,8 +3,6 @@
 //! Manages food level, saturation, and exhaustion — the three values that
 //! control natural health regeneration and starvation damage.
 
-use std::sync::atomic::Ordering;
-
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_game_rules::NATURAL_HEALTH_REGENERATION;
@@ -268,7 +266,7 @@ impl Player {
         let difficulty = world.level_data.read().data().difficulty;
         let natural_regen =
             world.get_game_rule(&NATURAL_HEALTH_REGENERATION) == GameRuleValue::Bool(true);
-        let tick = self.tick_count.load(Ordering::Relaxed);
+        let tick = self.tick_count();
 
         if difficulty == Difficulty::Peaceful && natural_regen {
             if tick % 20 == 0 {
@@ -326,24 +324,6 @@ impl Player {
     pub fn is_hurt(&self) -> bool {
         let health = self.get_health();
         health > 0.0 && health < self.get_max_health()
-    }
-
-    /// If the player's health is at or below zero (e.g. they disconnected while dead),
-    /// resets health to max so they don't enter a zombie state on rejoin.
-    /// Returns `true` if health was reset.
-    pub fn reset_health_if_dead(&self) -> bool {
-        let mut entity_data = self.entity_data.lock();
-        let health = *entity_data.health.get();
-        if health <= 0.0 {
-            entity_data.health.set(self.get_max_health());
-            drop(entity_data);
-
-            let mut living_base = self.living_base.lock();
-            living_base.reset_death_state();
-            true
-        } else {
-            false
-        }
     }
 }
 

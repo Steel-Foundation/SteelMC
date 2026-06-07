@@ -1,10 +1,11 @@
 use std::fs;
 
-use crate::generator_functions::generate_option;
+use crate::generator_functions::{generate_option, generate_sound_event_ref};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug)]
 pub struct DimensionTypeJson {
@@ -195,7 +196,8 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
 }
 
 fn generate_mood_sound(mood: &MoodJson) -> TokenStream {
-    let sound = mood.sound.as_str();
+    let sound = parse_sound_event(&mood.sound);
+    let sound = generate_sound_event_ref(&sound);
     let tick_delay = mood.tick_delay;
     let block_search_extent = mood.block_search_extent;
     let offset = mood.offset;
@@ -210,7 +212,8 @@ fn generate_mood_sound(mood: &MoodJson) -> TokenStream {
 }
 
 fn generate_music_entry(entry: &MusicEntryJson) -> TokenStream {
-    let sound = entry.sound.as_str();
+    let sound = parse_sound_event(&entry.sound);
+    let sound = generate_sound_event_ref(&sound);
     let min_delay = entry.min_delay;
     let max_delay = entry.max_delay;
     let replace_current_music = entry.replace_current_music;
@@ -222,6 +225,12 @@ fn generate_music_entry(entry: &MusicEntryJson) -> TokenStream {
             replace_current_music: #replace_current_music,
         }
     }
+}
+
+fn parse_sound_event(sound: &str) -> Identifier {
+    sound
+        .parse()
+        .unwrap_or_else(|e| panic!("Invalid dimension sound event '{sound}': {e}"))
 }
 
 fn generate_background_music(bg: &BackgroundMusicJson) -> TokenStream {

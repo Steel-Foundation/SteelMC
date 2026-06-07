@@ -1,6 +1,6 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::vanilla_fluids;
+use crate::{TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -25,6 +25,13 @@ pub struct Fluid {
     pub tick_delay: u32,
     /// Explosion resistance.
     pub explosion_resistance: f32,
+}
+
+impl Fluid {
+    /// Returns `true` if this fluid is tagged with the given tag.
+    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+        REGISTRY.fluids.is_in_tag(self, tag)
+    }
 }
 
 pub type FluidRef = &'static Fluid;
@@ -202,24 +209,18 @@ crate::impl_tagged_registry!(FluidRegistry, fluids_by_key, "fluid");
 
 // --- Fluid type checking helpers ---
 
-use crate::{REGISTRY, TaggedRegistryExt, vanilla_fluid_tags};
+use crate::REGISTRY;
 
 /// Returns true if the given `FluidRef` is water (including flowing water).
 #[must_use]
 pub fn is_water_fluid(fluid: FluidRef) -> bool {
-    !fluid.is_empty
-        && REGISTRY
-            .fluids
-            .is_in_tag(fluid, &vanilla_fluid_tags::WATER_TAG)
+    !fluid.is_empty && fluid.has_tag(&FluidTag::WATER)
 }
 
 /// Returns true if the given `FluidRef` is lava (including flowing lava).
 #[must_use]
 pub fn is_lava_fluid(fluid: FluidRef) -> bool {
-    !fluid.is_empty
-        && REGISTRY
-            .fluids
-            .is_in_tag(fluid, &vanilla_fluid_tags::LAVA_TAG)
+    !fluid.is_empty && fluid.has_tag(&FluidTag::LAVA)
 }
 
 /// Extension trait for `FluidState` type-checking methods.

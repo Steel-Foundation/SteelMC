@@ -19,12 +19,12 @@ pub trait BlockStateExt {
     #[must_use]
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId;
     fn get_property_str(&self, name: &str) -> Option<String>;
-    fn get_collision_shape(&self) -> &'static [blocks::shapes::AABB];
-    fn get_support_shape(&self) -> &'static [blocks::shapes::AABB];
-    fn get_outline_shape(&self) -> &'static [blocks::shapes::AABB];
-    fn get_occlusion_shape(&self) -> &'static [blocks::shapes::AABB];
-    fn get_interaction_shape(&self) -> &'static [blocks::shapes::AABB];
-    fn get_visual_shape(&self) -> &'static [blocks::shapes::AABB];
+    fn get_collision_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_support_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_outline_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_occlusion_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_interaction_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_visual_shape(&self) -> blocks::shapes::VoxelShape;
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
     fn is_face_sturdy(&self, direction: Direction) -> bool;
@@ -89,27 +89,27 @@ impl BlockStateExt for BlockStateId {
             .map(|(_, v)| v.to_string())
     }
 
-    fn get_collision_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_collision_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_collision_shape(*self)
     }
 
-    fn get_support_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_support_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_support_shape(*self)
     }
 
-    fn get_outline_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_outline_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_outline_shape(*self)
     }
 
-    fn get_occlusion_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_occlusion_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_occlusion_shape(*self)
     }
 
-    fn get_interaction_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_interaction_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_interaction_shape(*self)
     }
 
-    fn get_visual_shape(&self) -> &'static [blocks::shapes::AABB] {
+    fn get_visual_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_visual_shape(*self)
     }
 
@@ -141,7 +141,7 @@ impl BlockStateExt for BlockStateId {
             return false;
         }
         let bounds = blocks::shapes::bounding_box(shape);
-        bounds.get_size() >= 0.729_166_7 || bounds.height() >= 1.0
+        bounds.size() >= 0.729_166_7 || bounds.height() >= 1.0
     }
 
     fn blocks_motion(&self) -> bool {

@@ -17,11 +17,11 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_access::ChunkStatus;
 use crate::world::World;
 
 use super::{
-    ChunkStorage, PersistentChunk,
+    ChunkStorage, LoadedChunk, PersistentChunk,
     format::{
         CHUNK_TABLE_SIZE, FILE_HEADER_SIZE, FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE,
         REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
@@ -46,6 +46,8 @@ pub struct PreparedChunkSave {
     pub pos: ChunkPos,
     /// The serialized chunk data.
     pub persistent: PersistentChunk,
+    /// Runtime manager entity IDs that were either serialized or explicitly skipped.
+    pub handled_runtime_entity_ids: Vec<i32>,
 }
 
 /// An open region file with its header.
@@ -239,6 +241,24 @@ impl RegionManager {
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
 
+        // Serialize the prepared data
+        let data = wincode::serialize(&prepared.persistent)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+
+        // Compress with zstd
+        let compressed = zstd::encode_all(&data[..], 3)?;
+
+        if compressed.len() > MAX_CHUNK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Chunk too large: {} bytes (max {})",
+                    compressed.len(),
+                    MAX_CHUNK_SIZE
+                ),
+            ));
+        }
+
         let mut regions = self.regions.write().await;
 
         // Track if we opened the region (so we can close it after)
@@ -252,29 +272,6 @@ impl RegionManager {
             regions.insert(region_pos, handle);
             regions.get_mut(&region_pos).expect("just inserted")
         };
-
-        // Serialize the prepared data
-        let persistent = prepared.persistent;
-        let data = wincode::serialize(&persistent)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        // Compress with zstd
-        let compressed = zstd::encode_all(&data[..], 3)?;
-
-        if compressed.len() > MAX_CHUNK_SIZE {
-            // Clean up if we opened the region
-            if we_opened_region {
-                regions.remove(&region_pos);
-            }
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Chunk too large: {} bytes (max {})",
-                    compressed.len(),
-                    MAX_CHUNK_SIZE
-                ),
-            ));
-        }
 
         // Find space for the chunk
         let sectors_needed = compressed.len().div_ceil(SECTOR_SIZE) as u32;
@@ -334,28 +331,32 @@ impl RegionManager {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> io::Result<Option<(ChunkAccess, ChunkStatus)>> {
+    ) -> io::Result<Option<LoadedChunk>> {
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
 
-        let mut regions = self.regions.write().await;
+        let (compressed, status) = {
+            let mut regions = self.regions.write().await;
 
-        // Get the region (should already be open via acquire_chunk)
-        let Some(handle) = regions.get_mut(&region_pos) else {
-            log::warn!("load_chunk called without acquire_chunk for region {region_pos:?}");
-            return Ok(None);
+            // Get the region (should already be open via acquire_chunk)
+            let Some(handle) = regions.get_mut(&region_pos) else {
+                log::warn!("load_chunk called without acquire_chunk for region {region_pos:?}");
+                return Ok(None);
+            };
+
+            // Check if chunk exists
+            let entry = handle.header.entries[index];
+            if !entry.exists() {
+                return Ok(None);
+            }
+
+            // Read chunk data from disk
+            let compressed =
+                Self::read_chunk_data(&mut handle.file, entry.sector_offset, entry.size_bytes)
+                    .await?;
+            (compressed, entry.status)
         };
-
-        // Check if chunk exists
-        let entry = handle.header.entries[index];
-        if !entry.exists() {
-            return Ok(None);
-        }
-
-        // Read chunk data from disk
-        let compressed =
-            Self::read_chunk_data(&mut handle.file, entry.sector_offset, entry.size_bytes).await?;
 
         // Decompress
         let data = zstd::decode_all(&compressed[..])?;
@@ -365,11 +366,14 @@ impl RegionManager {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         // Convert to runtime format (persistent is dropped after this - no duplication!)
-        let status = entry.status;
-        let chunk =
-            ChunkStorage::persistent_to_chunk(&persistent, pos, status, min_y, height, level);
-
-        Ok(Some((chunk, status)))
+        Ok(Some(ChunkStorage::persistent_to_chunk(
+            &persistent,
+            pos,
+            status,
+            min_y,
+            height,
+            level,
+        )))
     }
 
     /// Acquires a chunk, incrementing the region's reference count.

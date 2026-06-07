@@ -1,0 +1,30 @@
+[
+  {
+    "id": 0,
+    "key": "minecraft:desert"
+  },
+  {
+    "id": 1,
+    "key": "minecraft:jungle"
+  },
+  {
+    "id": 2,
+    "key": "minecraft:plains"
+  },
+  {
+    "id": 3,
+    "key": "minecraft:savanna"
+  },
+  {
+    "id": 4,
+    "key": "minecraft:snow"
+  },
+  {
+    "id": 5,
+    "key": "minecraft:swamp"
+  },
+  {
+    "id": 6,
+    "key": "minecraft:taiga"
+  }
+]

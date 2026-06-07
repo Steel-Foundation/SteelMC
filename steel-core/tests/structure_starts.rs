@@ -20,13 +20,13 @@ use serde_json::{Value, json};
 use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::world::structure::{
-    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
-};
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_utils::Rotation;
 use steel_utils::{ChunkPos, Direction, Identifier};
+use steel_worldgen::structure::{
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
+};
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 struct ExpectedBoundingBox {
@@ -218,10 +218,10 @@ const DIMENSION_ORDER: &[&str] = &["overworld", "the_nether", "the_end"];
 )]
 fn structure_starts_inner() {
     use steel_core::worldgen::{
-        BiomeSourceKind, ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator,
-        OverworldGenerator,
+        ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
     };
     use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
+    use steel_worldgen::biomes::BiomeSourceKind;
 
     let mut registry = Registry::new_vanilla();
     registry.freeze();

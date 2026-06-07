@@ -1,12 +1,12 @@
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, DoubleBlockHalf},
     },
-    vanilla_block_tags, vanilla_blocks,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
+use steel_utils::{BlockPos, BlockStateId, Direction, axis::Axis};
 
 use crate::{
     behavior::BlockBehavior,
@@ -17,10 +17,7 @@ use crate::{
 pub trait Vegetation {
     /// Checks if the vegetation block can be placed on the given block state below on the given position below.
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        REGISTRY.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::SUPPORTS_VEGETATION_TAG,
-        )
+        state.get_block().has_tag(&BlockTag::SUPPORTS_VEGETATION)
     }
 }
 

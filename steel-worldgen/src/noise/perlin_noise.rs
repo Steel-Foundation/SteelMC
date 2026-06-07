@@ -5,11 +5,7 @@
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-
-/// Round-off constant for coordinate wrapping to prevent precision loss.
-/// This is 2^25 = 33554432.
-const ROUND_OFF: f64 = 33_554_432.0;
-const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
+use steel_math::wrap;
 
 /// Octave-based Perlin noise generator.
 ///
@@ -276,22 +272,6 @@ impl PerlinNoise {
     }
 }
 
-/// Wrap a coordinate to prevent precision loss at large values.
-///
-/// This wraps the coordinate to the range `[-ROUND_OFF/2, ROUND_OFF/2]` to
-/// maintain numerical precision for coordinates far from the origin.
-///
-/// Public because `BlendedNoise` calls this directly on per-octave coordinates.
-#[inline]
-#[must_use]
-pub fn wrap(x: f64) -> f64 {
-    if (-HALF_ROUND_OFF..HALF_ROUND_OFF).contains(&x) {
-        return x;
-    }
-
-    x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,35 +347,5 @@ mod tests {
             (v1 - v2).abs() > 0.001,
             "Two PerlinNoise from sequential random should differ: v1={v1}, v2={v2}",
         );
-    }
-
-    #[test]
-    fn test_wrap() {
-        fn wrap_reference(x: f64) -> f64 {
-            x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
-        }
-
-        // Small values should be unchanged
-        assert!((wrap(100.0) - 100.0).abs() < 1e-10);
-        assert!((wrap(-100.0) - (-100.0)).abs() < 1e-10);
-
-        // Very large values should be wrapped
-        let large = 100_000_000.0;
-        let wrapped = wrap(large);
-        assert!(wrapped.abs() < ROUND_OFF);
-
-        for x in [
-            -HALF_ROUND_OFF,
-            -HALF_ROUND_OFF + 1.0,
-            0.0,
-            HALF_ROUND_OFF - 1.0,
-            HALF_ROUND_OFF,
-            ROUND_OFF,
-            -ROUND_OFF,
-            100_000_000.0,
-            -100_000_000.0,
-        ] {
-            assert!((wrap(x) - wrap_reference(x)).abs() < 1e-15);
-        }
     }
 }

@@ -6,8 +6,10 @@ use rustc_hash::FxHashSet;
 use steel_utils::ChunkPos;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_holder::ChunkHolder, chunk_map::ChunkMap,
-    chunk_ticket_manager::ticket_level_for_status,
+    chunk_access::ChunkStatus,
+    chunk_holder::ChunkHolder,
+    chunk_map::ChunkMap,
+    chunk_ticket_manager::{ChunkTicket, ticket_level_for_status},
 };
 
 /// Why a chunk request is holding tickets.
@@ -64,7 +66,7 @@ struct ChunkRequestInner {
     positions: Box<[ChunkPos]>,
     status: ChunkStatus,
     ticket_kind: ChunkTicketKind,
-    ticket_level: u8,
+    ticket: ChunkTicket,
 }
 
 /// Handle for a ticketed chunk request.
@@ -78,13 +80,21 @@ pub struct ChunkRequestHandle {
 
 impl ChunkRequestHandle {
     pub(crate) fn new(chunk_map: Arc<ChunkMap>, request: ChunkRequest) -> Self {
+        let ticket = ChunkTicket::loading(ticket_level_for_status(request.status));
+        Self::new_with_ticket(chunk_map, request, ticket)
+    }
+
+    fn new_with_ticket(
+        chunk_map: Arc<ChunkMap>,
+        request: ChunkRequest,
+        ticket: ChunkTicket,
+    ) -> Self {
         let positions = dedupe_positions(request.positions);
 
-        let ticket_level = ticket_level_for_status(request.status);
         {
             let mut tickets = chunk_map.chunk_tickets.lock();
             for &pos in &positions {
-                tickets.add_ticket(pos, ticket_level);
+                tickets.add_ticket(pos, ticket);
             }
         }
 
@@ -94,7 +104,7 @@ impl ChunkRequestHandle {
                 positions,
                 status: request.status,
                 ticket_kind: request.ticket_kind,
-                ticket_level,
+                ticket,
             }),
         }
     }
@@ -195,7 +205,7 @@ impl ChunkRequestHandle {
 
         let mut tickets = inner.chunk_map.chunk_tickets.lock();
         for pos in inner.positions {
-            tickets.remove_ticket(pos, inner.ticket_level);
+            tickets.remove_ticket(pos, inner.ticket);
         }
     }
 }

@@ -6,8 +6,8 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
-use crate::world::structure::fortress::FortressPieceData;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::fortress::FortressPieceData;
 
 use super::{StructurePiecePlacer, scattered_feature::ScatteredFeaturePlacer};
 

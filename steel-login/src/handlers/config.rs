@@ -15,7 +15,7 @@ use steel_protocol::packets::shared_implementation::KnownPack;
 use steel_protocol::utils::ConnectionProtocol;
 use steel_utils::Identifier;
 
-use crate::tcp_client::{ConnectionUpdate, JavaTcpClient};
+use crate::tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient};
 
 const BRAND_PAYLOAD: [u8; 5] = *b"Steel";
 
@@ -88,7 +88,7 @@ impl JavaTcpClient {
     ///
     /// # Panics
     /// This function will panic if the game profile is empty, should be impossible at this point.
-    pub async fn finish_configuration(&self) {
+    pub(crate) async fn finish_configuration(&self) -> ConnectionAction {
         self.protocol.store(ConnectionProtocol::Play);
 
         let gameprofile = self
@@ -126,10 +126,22 @@ impl JavaTcpClient {
             )
         });
 
-        self.connection_updates
-            .send(ConnectionUpdate::Upgrade(player.connection.clone()))
-            .expect("Failed to send connection update");
+        let connection = Arc::clone(&player.connection);
+        if self
+            .connection_updates
+            .send(ConnectionUpdate::Upgrade(Arc::clone(&connection)))
+            .is_err()
+        {
+            self.kick("Failed to update connection state".into()).await;
+            return ConnectionAction::none();
+        }
 
-        self.server.add_player(player).await;
+        tokio::select! {
+            () = self.connection_updated.notified() => {}
+            () = self.cancel_token.cancelled() => return ConnectionAction::none(),
+        }
+        self.server.queue_player_join(player);
+
+        ConnectionAction::upgrade(connection)
     }
 }

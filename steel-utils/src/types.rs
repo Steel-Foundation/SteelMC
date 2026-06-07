@@ -17,10 +17,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
 
 use crate::{
+    axis::Axis,
     codec::VarInt,
     direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::Axis,
     serial::{ReadFrom, WriteTo},
 };
 

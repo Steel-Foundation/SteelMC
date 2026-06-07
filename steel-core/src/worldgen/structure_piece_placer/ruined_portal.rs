@@ -3,14 +3,15 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::blocks::shapes;
 use steel_registry::structure::RuinedPortalPlacementData;
-use steel_registry::{Registry, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks};
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_blocks;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BoundingBox, Direction, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
-use crate::world::structure::RuinedPortalProperties;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::RuinedPortalProperties;
 
 use super::StructurePiecePlacer;
 
@@ -27,7 +28,7 @@ const RUINED_PORTAL_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
 impl StructurePiecePlacer {
     pub(super) fn post_process_ruined_portal(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         portal_box: BoundingBox,
@@ -35,7 +36,6 @@ impl StructurePiecePlacer {
     ) {
         Self::spread_ruined_portal_netherrack(
             region,
-            registry,
             vertical_placement,
             properties,
             portal_box,
@@ -148,7 +148,7 @@ impl StructurePiecePlacer {
 
     fn spread_ruined_portal_netherrack(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         portal_box: BoundingBox,
@@ -187,7 +187,6 @@ impl StructurePiecePlacer {
                 if (y - portal_box.min_y).abs() > 3
                     || !Self::can_replace_with_ruined_portal_netherrack_or_magma(
                         region,
-                        registry,
                         vertical_placement,
                         pos,
                     )
@@ -211,28 +210,24 @@ impl StructurePiecePlacer {
 
     fn can_replace_with_ruined_portal_netherrack_or_magma(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
+
         vertical_placement: RuinedPortalPlacementData,
         pos: BlockPos,
     ) -> bool {
         let state = region.block_state(pos);
         Self::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-            registry,
             vertical_placement,
             state.get_block(),
         )
     }
 
     fn can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-        registry: &Registry,
         vertical_placement: RuinedPortalPlacementData,
         block: BlockRef,
     ) -> bool {
         block != &vanilla_blocks::AIR
             && block != &vanilla_blocks::OBSIDIAN
-            && !registry
-                .blocks
-                .is_in_tag(block, &vanilla_block_tags::FEATURES_CANNOT_REPLACE_TAG)
+            && !block.has_tag(&BlockTag::FEATURES_CANNOT_REPLACE)
             && (vertical_placement == RuinedPortalPlacementData::InNether
                 || block != &vanilla_blocks::LAVA)
     }
@@ -284,46 +279,40 @@ impl StructurePiecePlacer {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::Registry;
+    use steel_registry::test_support::init_test_registry;
 
     use super::*;
 
     #[test]
     fn ruined_portal_netherrack_replacement_matches_vanilla_air_checks() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
+        init_test_registry();
 
         assert!(
             StructurePiecePlacer::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-                &registry,
                 RuinedPortalPlacementData::InNether,
                 &vanilla_blocks::CAVE_AIR,
             )
         );
         assert!(
             !StructurePiecePlacer::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-                &registry,
                 RuinedPortalPlacementData::InNether,
                 &vanilla_blocks::AIR,
             )
         );
         assert!(
             !StructurePiecePlacer::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-                &registry,
                 RuinedPortalPlacementData::InNether,
                 &vanilla_blocks::OBSIDIAN,
             )
         );
         assert!(
             StructurePiecePlacer::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-                &registry,
                 RuinedPortalPlacementData::InNether,
                 &vanilla_blocks::LAVA,
             )
         );
         assert!(
             !StructurePiecePlacer::can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
-                &registry,
                 RuinedPortalPlacementData::OnLandSurface,
                 &vanilla_blocks::LAVA,
             )

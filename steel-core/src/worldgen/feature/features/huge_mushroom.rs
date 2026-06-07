@@ -3,6 +3,8 @@
     reason = "mushroom cap side flags mirror vanilla block properties"
 )]
 
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
@@ -118,11 +120,7 @@ impl FeatureDecorationRunner {
             for dx in -radius..=radius {
                 for dz in -radius..=radius {
                     let state = region.block_state(origin.offset(dx, dy, dz));
-                    if !state.is_air()
-                        && !registry
-                            .blocks
-                            .is_in_tag(state.get_block(), &vanilla_block_tags::LEAVES_TAG)
-                    {
+                    if !state.is_air() && !state.get_block().has_tag(&BlockTag::LEAVES) {
                         return false;
                     }
                 }
@@ -171,7 +169,7 @@ impl FeatureDecorationRunner {
                         Self::set_mushroom_horizontal_properties(state, west, east, north, south);
                 }
 
-                Self::place_huge_mushroom_block(region, registry, pos, state);
+                Self::place_huge_mushroom_block(region, pos, state);
             }
         }
     }
@@ -226,7 +224,7 @@ impl FeatureDecorationRunner {
                         );
                     }
 
-                    Self::place_huge_mushroom_block(region, registry, pos, state);
+                    Self::place_huge_mushroom_block(region, pos, state);
                 }
             }
         }
@@ -249,22 +247,20 @@ impl FeatureDecorationRunner {
                 &config.stem_provider,
                 origin,
             );
-            Self::place_huge_mushroom_block(region, registry, pos, state);
+            Self::place_huge_mushroom_block(region, pos, state);
         }
     }
 
     fn place_huge_mushroom_block(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         state: BlockStateId,
     ) {
         let current_state = region.block_state(pos);
         if current_state.is_air()
-            || registry.blocks.is_in_tag(
-                current_state.get_block(),
-                &vanilla_block_tags::REPLACEABLE_BY_MUSHROOMS_TAG,
-            )
+            || current_state
+                .get_block()
+                .has_tag(&BlockTag::REPLACEABLE_BY_MUSHROOMS)
         {
             let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
         }

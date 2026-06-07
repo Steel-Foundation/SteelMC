@@ -1,5 +1,5 @@
 use steel_macros::block_behavior;
-use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -25,7 +25,7 @@ impl FlowerBedBlock {
 
 impl BlockBehavior for FlowerBedBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
+        survives_on_tag(world, pos, &BlockTag::SUPPORTS_VEGETATION)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

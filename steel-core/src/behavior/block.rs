@@ -2,29 +2,396 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_damage_types;
+use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
-use crate::entity::Entity;
+use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
+use crate::physics::collide;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
-    pub sound: Option<i32>,
+    pub sound: Option<SoundEventRef>,
+}
+
+const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
+
+/// Entity facts used by vanilla `CollisionContext` for block collision shapes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockCollisionContext {
+    entity_bottom: Option<f64>,
+    fall_distance: f64,
+    can_walk_on_powder_snow: bool,
+    is_falling_block: bool,
+    descending: bool,
+    placement: bool,
+}
+
+impl BlockCollisionContext {
+    /// Collision context for source-less collision queries.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            entity_bottom: None,
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending: false,
+            placement: false,
+        }
+    }
+
+    /// Collision context for normal entity movement.
+    #[must_use]
+    pub const fn entity(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending,
+            placement: false,
+        }
+    }
+
+    /// Collision context for vanilla pre-move collision validation.
+    #[must_use]
+    pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending,
+            placement: true,
+        }
+    }
+
+    /// Returns a copy with vanilla accumulated fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns a copy with vanilla powder-snow walkability.
+    #[must_use]
+    pub const fn with_can_walk_on_powder_snow(mut self, can_walk_on_powder_snow: bool) -> Self {
+        self.can_walk_on_powder_snow = can_walk_on_powder_snow;
+        self
+    }
+
+    /// Returns a copy with vanilla falling-block collision context.
+    #[must_use]
+    pub const fn with_falling_block(mut self, is_falling_block: bool) -> Self {
+        self.is_falling_block = is_falling_block;
+        self
+    }
+
+    /// Returns accumulated vanilla fall distance for context-sensitive block collision.
+    #[must_use]
+    pub const fn fall_distance(self) -> f64 {
+        self.fall_distance
+    }
+
+    /// Returns whether the source entity can walk on powder snow.
+    #[must_use]
+    pub const fn can_walk_on_powder_snow(self) -> bool {
+        self.can_walk_on_powder_snow
+    }
+
+    /// Returns whether the source entity is a vanilla falling block.
+    #[must_use]
+    pub const fn is_falling_block(self) -> bool {
+        self.is_falling_block
+    }
+
+    /// Returns whether the source entity is descending through context-sensitive blocks.
+    #[must_use]
+    pub const fn is_descending(self) -> bool {
+        self.descending
+    }
+
+    /// Returns whether this context is used for placement-style collision checks.
+    #[must_use]
+    pub const fn is_placement(self) -> bool {
+        self.placement
+    }
+
+    /// Vanilla `EntityCollisionContext.isAbove`.
+    #[must_use]
+    pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
+        let Some(entity_bottom) = self.entity_bottom else {
+            return default_value;
+        };
+
+        entity_bottom > f64::from(pos.y()) + shape.max(Axis::Y) - COLLISION_CONTEXT_ABOVE_EPSILON
+    }
+}
+
+/// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityLandingContext {
+    /// Entity velocity before the block landing hook adjusts it.
+    pub velocity: DVec3,
+    /// Whether the entity uses vanilla living-entity bounce behavior.
+    pub is_living_entity: bool,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityFallOnFacts {
+    /// Vanilla entity type of the landing entity.
+    pub entity_type: EntityTypeRef,
+    /// Whether the landing entity implements vanilla living-entity behavior.
+    pub is_living_entity: bool,
+    /// Current entity bounding-box X/Z width.
+    pub bounding_box_width: f64,
+    /// Current entity bounding-box height.
+    pub bounding_box_height: f64,
+    /// Vanilla small and big living-entity fall sounds.
+    pub fall_sounds: (SoundEventRef, SoundEventRef),
+}
+
+impl EntityFallOnFacts {
+    /// Creates fall-on facts from explicit entity values.
+    #[must_use]
+    pub const fn new(
+        entity_type: EntityTypeRef,
+        is_living_entity: bool,
+        bounding_box_width: f64,
+        bounding_box_height: f64,
+        fall_sounds: (SoundEventRef, SoundEventRef),
+    ) -> Self {
+        Self {
+            entity_type,
+            is_living_entity,
+            bounding_box_width,
+            bounding_box_height,
+            fall_sounds,
+        }
+    }
+
+    /// Creates fall-on facts from an entity.
+    #[must_use]
+    pub fn from_entity(entity: &dyn Entity) -> Self {
+        let bounding_box = entity.bounding_box();
+        Self::new(
+            entity.entity_type(),
+            entity.is_living_entity(),
+            bounding_box.width(),
+            bounding_box.height(),
+            entity.fall_sounds(),
+        )
+    }
+
+    /// Returns true for vanilla players.
+    #[must_use]
+    pub fn is_player(self) -> bool {
+        self.entity_type == &vanilla_entities::PLAYER
+    }
+
+    /// Vanilla farmland trampling size check:
+    /// `getBbWidth() * getBbWidth() * getBbHeight()`.
+    #[must_use]
+    pub fn bounding_box_width_squared_height(self) -> f64 {
+        self.bounding_box_width * self.bounding_box_width * self.bounding_box_height
+    }
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Clone, Copy)]
+pub struct EntityFallOnContext<'a> {
+    /// Accumulated vanilla fall distance at landing time.
+    pub fall_distance: f64,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+    /// Entity facts available to vanilla fall-on hooks.
+    pub entity: EntityFallOnFacts,
+    /// Source entity for vanilla side effects such as game events.
+    pub source_entity: Option<&'a dyn Entity>,
+}
+
+impl<'a> EntityFallOnContext<'a> {
+    /// Creates a fall-on context for a ground collision.
+    #[must_use]
+    pub const fn new(
+        fall_distance: f64,
+        suppresses_bounce: bool,
+        entity: EntityFallOnFacts,
+        source_entity: Option<&'a dyn Entity>,
+    ) -> Self {
+        Self {
+            fall_distance,
+            suppresses_bounce,
+            entity,
+            source_entity,
+        }
+    }
+
+    /// Creates a fall-on context from a landing entity.
+    #[must_use]
+    pub fn from_entity(fall_distance: f64, entity: &'a dyn Entity) -> Self {
+        Self::new(
+            fall_distance,
+            entity.is_suppressing_bounce(),
+            EntityFallOnFacts::from_entity(entity),
+            Some(entity),
+        )
+    }
+
+    /// Returns this context with a transformed fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns the source entity for vanilla side effects.
+    #[must_use]
+    pub const fn source_entity(self) -> Option<&'a dyn Entity> {
+        self.source_entity
+    }
+}
+
+/// Fall damage requested by a block landing hook.
+#[derive(Debug, Clone)]
+pub struct EntityFallDamage {
+    /// Fall distance to pass to `Entity.causeFallDamage`.
+    pub fall_distance: f64,
+    /// Block-specific damage multiplier.
+    pub damage_modifier: f32,
+    /// Damage source for this landing.
+    pub source: DamageSource,
+}
+
+impl EntityFallDamage {
+    /// Creates a fall-damage action.
+    #[must_use]
+    pub const fn new(fall_distance: f64, damage_modifier: f32, source: DamageSource) -> Self {
+        Self {
+            fall_distance,
+            damage_modifier,
+            source,
+        }
+    }
+}
+
+impl EntityLandingContext {
+    /// Creates a landing context for a vertical movement collision.
+    #[must_use]
+    pub const fn new(velocity: DVec3, is_living_entity: bool, suppresses_bounce: bool) -> Self {
+        Self {
+            velocity,
+            is_living_entity,
+            suppresses_bounce,
+        }
+    }
+
+    /// Vanilla default `Block.updateEntityMovementAfterFallOn` result.
+    #[must_use]
+    pub const fn default_velocity_after_fall_on(self) -> DVec3 {
+        DVec3::new(self.velocity.x, 0.0, self.velocity.z)
+    }
+}
+
+/// Vanilla `Block.pushEntitiesUp` for block-state replacements that add collision.
+///
+/// Returns `new_state` so callers can mirror vanilla call sites that transform
+/// the replacement state before setting it in the world.
+pub(crate) fn push_entities_up(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> BlockStateId {
+    let added_collision = added_collision_boxes(old_state, new_state, world, pos);
+    let Some(query_box) = world_aabb_bounds(&added_collision) else {
+        return new_state;
+    };
+
+    for entity in world.get_entities_in_aabb(&query_box) {
+        let offset = collide(
+            Axis::Y,
+            &entity.bounding_box().move_by(0.0, 1.0, 0.0),
+            &added_collision,
+            -1.0,
+        );
+        if let Err(error) =
+            entity.try_set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0))
+        {
+            log::debug!(
+                "Failed to push entity {} up after block collision change at {pos:?}: {error}",
+                entity.id()
+            );
+        }
+    }
+
+    new_state
+}
+
+fn added_collision_boxes(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> Vec<WorldAabb> {
+    let context = BlockCollisionContext::empty();
+    let old_shape = BLOCK_BEHAVIORS
+        .get_behavior(old_state.get_block())
+        .get_collision_shape(old_state, world.as_ref(), pos, context);
+    let new_shape = BLOCK_BEHAVIORS
+        .get_behavior(new_state.get_block())
+        .get_collision_shape(new_state, world.as_ref(), pos, context);
+
+    join_unoptimized_boxes(old_shape, new_shape, BooleanOp::OnlySecond)
+        .into_iter()
+        .map(|aabb| aabb.at_block(pos))
+        .collect()
+}
+
+fn world_aabb_bounds(boxes: &[WorldAabb]) -> Option<WorldAabb> {
+    let first = boxes.first()?;
+    let mut min_x = first.min_x();
+    let mut min_y = first.min_y();
+    let mut min_z = first.min_z();
+    let mut max_x = first.max_x();
+    let mut max_y = first.max_y();
+    let mut max_z = first.max_z();
+
+    for aabb in boxes {
+        min_x = min_x.min(aabb.min_x());
+        min_y = min_y.min(aabb.min_y());
+        min_z = min_z.min(aabb.min_z());
+        max_x = max_x.max(aabb.max_x());
+        max_y = max_y.max(aabb.max_y());
+        max_z = max_z.max(aabb.max_z());
+    }
+
+    Some(WorldAabb::new(min_x, min_y, min_z, max_x, max_y, max_z))
 }
 
 /// Trait defining the behavior of a block.
@@ -291,6 +658,66 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Vanilla baseline for `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation uses static registry shape"
+    )]
+    fn default_get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        state.get_collision_shape()
+    }
+
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Overrides that mirror vanilla `super.getCollisionShape(...)` should call
+    /// [`Self::default_get_collision_shape`].
+    fn get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        self.default_get_collision_shape(state, world, pos, context)
+    }
+
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    ///
+    /// Vanilla baseline for
+    /// `BlockState.getEntityInsideCollisionShape(BlockGetter, BlockPos, Entity)`.
+    #[expect(
+        unused_variables,
+        reason = "vanilla default is a full block independent of state, world, position, and entity"
+    )]
+    fn default_get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        VoxelShape::FULL_BLOCK
+    }
+
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    fn get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        self.default_get_entity_inside_collision_shape(state, world, pos, entity)
+    }
+
     /// Called on random tick for blocks that support random ticking.
     ///
     /// This is only called if `is_randomly_ticking()` returns true.
@@ -326,6 +753,25 @@ pub trait BlockBehavior: Send + Sync {
         // Default: no-op
     }
 
+    /// Default entity-inside hook.
+    ///
+    /// Overrides that mirror vanilla `super.entityInside(...)` should call
+    /// [`Self::default_entity_inside`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn default_entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+    }
+
     /// Called when an entity is inside this block's collision area.
     ///
     /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
@@ -335,18 +781,127 @@ pub trait BlockBehavior: Send + Sync {
     /// * `world` - The world
     /// * `pos` - The position of the block
     /// * `entity` - The entity inside the block
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
     fn entity_inside(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
     ) {
-        // Default: no-op
+        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
+    }
+
+    /// Default fall-on hook.
+    ///
+    /// Overrides that mirror vanilla `super.fallOn(...)` should call
+    /// [`Self::default_fall_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn default_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        Some(EntityFallDamage::new(
+            context.fall_distance,
+            1.0,
+            DamageSource::environment(&vanilla_damage_types::FALL),
+        ))
+    }
+
+    /// Called when an entity lands on this block.
+    ///
+    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        self.default_fall_on(state, world, pos, context)
+    }
+
+    /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
+    ///
+    /// Vanilla parity hook for block-specific fall side effects that depend on
+    /// whether `Entity.causeFallDamage` returned true.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn after_fall_on_damage(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_damage: &EntityFallDamage,
+        damage_applied: bool,
+    ) {
+    }
+
+    /// Default post-fall movement hook.
+    ///
+    /// Overrides that mirror vanilla `super.updateEntityMovementAfterFallOn(...)`
+    /// should call [`Self::default_update_entity_movement_after_fall_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn default_update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        context.default_velocity_after_fall_on()
+    }
+
+    /// Updates entity velocity after a vertical movement collision with this block.
+    ///
+    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
+    /// Steel returns the velocity to apply so movement resolution keeps entity
+    /// state changes centralized in [`Entity::move_entity`].
+    fn update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    }
+
+    /// Default step-on hook.
+    ///
+    /// Overrides that mirror vanilla `super.stepOn(...)` should call
+    /// [`Self::default_step_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn default_step_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+    }
+
+    /// Called when an entity steps on this block while on ground.
+    ///
+    /// Vanilla parity: `Block.stepOn(Level, BlockPos, BlockState, Entity)`.
+    fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        self.default_step_on(state, world, pos, entity);
     }
 
     // === Block Entity Methods ===
@@ -579,5 +1134,41 @@ impl BlockBehaviorRegistry {
 impl Default for BlockBehaviorRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use steel_registry::sound_events;
+
+    #[test]
+    fn fall_on_facts_use_vanilla_width_squared_height_formula() {
+        let facts = EntityFallOnFacts::new(
+            &vanilla_entities::PLAYER,
+            true,
+            0.6,
+            1.8,
+            (
+                &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                &sound_events::ENTITY_PLAYER_BIG_FALL,
+            ),
+        );
+
+        assert!(facts.is_player());
+        assert!(facts.is_living_entity);
+        assert!((facts.bounding_box_width_squared_height() - 0.648).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn world_aabb_bounds_contains_all_boxes() {
+        let bounds = world_aabb_bounds(&[
+            WorldAabb::new(1.0, 2.0, 3.0, 2.0, 3.0, 4.0),
+            WorldAabb::new(-1.0, 4.0, 2.0, 0.0, 5.0, 6.0),
+        ])
+        .expect("non-empty boxes should have bounds");
+
+        assert_eq!(bounds, WorldAabb::new(-1.0, 2.0, 2.0, 2.0, 5.0, 6.0));
     }
 }

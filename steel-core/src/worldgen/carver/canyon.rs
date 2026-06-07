@@ -6,9 +6,9 @@
 
 use std::f32::consts::{PI, TAU};
 
+use steel_math::trig;
 use steel_registry::carver::CanyonCarverConfiguration;
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 
@@ -134,11 +134,11 @@ where
                 current_step as f32,
             );
 
-            let xc = mth::cos(f64::from(state.vertical_rotation));
-            let xs = mth::sin(f64::from(state.vertical_rotation));
-            state.x += f64::from(mth::cos(f64::from(state.horizontal_rotation)) * xc);
+            let xc = trig::cos(f64::from(state.vertical_rotation));
+            let xs = trig::sin(f64::from(state.vertical_rotation));
+            state.x += f64::from(trig::cos(f64::from(state.horizontal_rotation)) * xc);
             state.y += f64::from(xs);
-            state.z += f64::from(mth::sin(f64::from(state.horizontal_rotation)) * xc);
+            state.z += f64::from(trig::sin(f64::from(state.horizontal_rotation)) * xc);
             state.vertical_rotation *= 0.7;
             state.vertical_rotation += x_rota * 0.05;
             state.horizontal_rotation += y_rota * 0.05;

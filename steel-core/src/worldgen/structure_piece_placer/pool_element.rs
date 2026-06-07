@@ -5,12 +5,12 @@ use steel_registry::{Registry, RegistryExt};
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BoundingBox, Identifier, Rotation};
 
-use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 use super::StructurePiecePlacer;
 

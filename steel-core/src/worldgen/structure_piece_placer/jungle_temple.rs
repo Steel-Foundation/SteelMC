@@ -5,8 +5,8 @@ use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
-use crate::world::structure::jungle_temple::JungleTemplePieceData;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::jungle_temple::JungleTemplePieceData;
 
 use super::StructurePiecePlacer;
 use super::scattered_feature::ScatteredFeaturePlacer;

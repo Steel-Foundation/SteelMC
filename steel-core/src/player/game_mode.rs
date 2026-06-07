@@ -3,7 +3,7 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 use steel_protocol::packets::game::{
     AnimateAction, CAnimate, CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent,
@@ -26,8 +26,8 @@ use crate::behavior::{
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::command::commands::gamemode::get_gamemode_translation;
-use crate::entity::Entity;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
+use crate::entity::{Entity, LivingEntity};
 use crate::inventory::menu::Menu;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
@@ -59,7 +59,7 @@ pub fn use_item_on(
 
     // Spectator mode: can only open menus
     // TODO: Implement menu providers for blocks like chests
-    if player.game_mode.load() == GameType::Spectator {
+    if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
     }
 
@@ -156,7 +156,7 @@ pub fn use_item_on(
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
 pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
     // Spectator mode: can only open menus
-    if player.game_mode.load() == GameType::Spectator {
+    if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
     }
 
@@ -197,13 +197,9 @@ impl Player {
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
     pub fn set_game_mode(&self, gamemode: GameType) -> bool {
-        let current_gamemode = self.game_mode.load();
-        if current_gamemode == gamemode {
+        if !self.change_game_mode_state(gamemode) {
             return false;
         }
-
-        self.prev_game_mode.store(self.game_mode.load());
-        self.game_mode.store(gamemode);
 
         // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
         self.abilities.lock().update_for_game_mode(gamemode);
@@ -270,8 +266,8 @@ impl Player {
     /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
     /// range modifiers every tick.
     pub(super) fn update_player_attributes(&self) {
-        let is_creative = self.game_mode.load() == GameType::Creative;
-        let mut attrs = self.attributes.lock();
+        let is_creative = self.game_mode() == GameType::Creative;
+        let mut attrs = self.attributes().lock();
 
         if is_creative {
             attrs.set_modifier(
@@ -307,7 +303,7 @@ impl Player {
     /// Returns true if player has infinite materials (Creative mode).
     #[must_use]
     pub fn has_infinite_materials(&self) -> bool {
-        self.game_mode.load() == GameType::Creative
+        self.game_mode() == GameType::Creative
     }
 
     /// Acknowledges block changes up to the given sequence number.
@@ -315,16 +311,12 @@ impl Player {
     /// The ack is batched and sent once per tick (in `tick_ack_block_changes`),
     /// matching vanilla behavior.
     pub fn ack_block_changes_up_to(&self, sequence: i32) {
-        let current = self.ack_block_changes_up_to.load(Ordering::Relaxed);
-        if sequence > current {
-            self.ack_block_changes_up_to
-                .store(sequence, Ordering::Relaxed);
-        }
+        self.tick_state.lock().ack_block_changes_up_to(sequence);
     }
 
     /// Sends pending block change ack if any. Called once per tick.
     pub(super) fn tick_ack_block_changes(&self) {
-        let sequence = self.ack_block_changes_up_to.swap(-1, Ordering::Relaxed);
+        let sequence = self.tick_state.lock().take_ack_block_changes_up_to();
         if sequence > -1 {
             self.send_packet(CBlockChangedAck { sequence });
         }
@@ -346,7 +338,7 @@ impl Player {
         pos: BlockPos,
         buffer: f64,
     ) -> bool {
-        let player_pos = *self.position.lock();
+        let player_pos = self.position();
         let eye_y = player_pos.y + self.get_eye_height();
 
         let min_x = f64::from(pos.x());
@@ -362,7 +354,7 @@ impl Player {
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
         let base_range = self
-            .attributes
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);
@@ -373,7 +365,7 @@ impl Player {
     /// Returns true if player is sneaking (secondary use active).
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
-        self.entity_state.lock().crouching
+        self.is_crouching()
     }
 
     /// Sends block update packets for a position and its neighbor.
@@ -401,10 +393,10 @@ impl Player {
             InteractionHand::MainHand => AnimateAction::SwingMainHand,
             InteractionHand::OffHand => AnimateAction::SwingOffHand,
         };
-        let packet = CAnimate::new(self.id, action);
+        let packet = CAnimate::new(self.id(), action);
 
         let chunk = *self.last_chunk_pos.lock();
-        let exclude = if update_self { None } else { Some(self.id) };
+        let exclude = if update_self { None } else { Some(self.id()) };
         self.get_world().broadcast_to_nearby(chunk, packet, exclude);
     }
 
@@ -412,7 +404,7 @@ impl Player {
     ///
     /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
     pub fn handle_use_item_on(&self, packet: SUseItemOn) {
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             return;
         }
 

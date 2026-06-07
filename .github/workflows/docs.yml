@@ -16,6 +16,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.1.1
+      - name: Setup Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
       - name: Generate documentation
         run: |
           cargo doc --all --no-deps --document-private-items --all-features

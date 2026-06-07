@@ -14,7 +14,7 @@ use steel_utils::{
 
 use steel_utils::Identifier;
 
-use super::{EntityData, EntityDataSerializerRegistry};
+use super::{EntityData, EntityDataSerializerRegistry, ParticleData, ParticleOptions};
 
 /// Simple serializer: extract value and call `.write(buf)`.
 macro_rules! ser_write {
@@ -63,12 +63,16 @@ ser_write!(ser_block_state, BlockState);
 // VarInt serializers (for i32 holder/registry IDs)
 ser_varint!(ser_int, Int);
 ser_varint!(ser_cat_variant, CatVariant);
+ser_varint!(ser_cat_sound_variant, CatSoundVariant);
 ser_varint!(ser_cow_variant, CowVariant);
+ser_varint!(ser_cow_sound_variant, CowSoundVariant);
 ser_varint!(ser_wolf_variant, WolfVariant);
 ser_varint!(ser_wolf_sound_variant, WolfSoundVariant);
 ser_varint!(ser_frog_variant, FrogVariant);
 ser_varint!(ser_pig_variant, PigVariant);
+ser_varint!(ser_pig_sound_variant, PigSoundVariant);
 ser_varint!(ser_chicken_variant, ChickenVariant);
+ser_varint!(ser_chicken_sound_variant, ChickenSoundVariant);
 ser_varint!(ser_zombie_nautilus_variant, ZombieNautilusVariant);
 ser_varint!(ser_painting_variant, PaintingVariant);
 ser_varint!(ser_copper_golem_state, CopperGolemState);
@@ -164,12 +168,17 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
     }
 }
 
+fn write_particle(particle: &ParticleData, buf: &mut Vec<u8>) -> io::Result<()> {
+    VarInt(particle.particle_type).write(buf)?;
+    match &particle.options {
+        ParticleOptions::None => Ok(()),
+        ParticleOptions::Color { color } => color.write(buf),
+    }
+}
+
 fn ser_particle(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::Particle(v) => {
-            VarInt(v.particle_type).write(buf)
-            // TODO: Write particle-specific options based on type
-        }
+        EntityData::Particle(v) => write_particle(v, buf),
         _ => Err(io::Error::other("Expected Particle")),
     }
 }
@@ -179,8 +188,7 @@ fn ser_particles(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
         EntityData::Particles(v) => {
             VarInt(v.particles.len() as i32).write(buf)?;
             for particle in &v.particles {
-                VarInt(particle.particle_type).write(buf)?;
-                // TODO: Write particle-specific options
+                write_particle(particle, buf)?;
             }
             Ok(())
         }
@@ -249,10 +257,16 @@ fn ser_quaternion(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 fn ser_resolvable_profile(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
         EntityData::ResolvableProfile(_v) => {
-            // TODO: Implement proper profile serialization
-            // For now, write "no name, no UUID" which is the empty profile
-            false.write(buf)?; // has name
-            false.write(buf) // has UUID
+            // Vanilla default is ResolvableProfile.Static.EMPTY:
+            // Either::right(Partial.EMPTY), then PlayerSkin.Patch.EMPTY.
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            VarInt(0).write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)?;
+            false.write(buf)
         }
         _ => Err(io::Error::other("Expected ResolvableProfile")),
     }
@@ -306,33 +320,38 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
     reg!("optional_unsigned_int", ser_optional_unsigned_int); // 19
     reg!("pose", ser_pose); // 20
     reg!("cat_variant", ser_cat_variant); // 21
-    reg!("cow_variant", ser_cow_variant); // 22
-    reg!("wolf_variant", ser_wolf_variant); // 23
-    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 24
-    reg!("frog_variant", ser_frog_variant); // 25
-    reg!("pig_variant", ser_pig_variant); // 26
-    reg!("chicken_variant", ser_chicken_variant); // 27
-    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 28
-    reg!("optional_global_pos", ser_optional_global_pos); // 29
-    reg!("painting_variant", ser_painting_variant); // 30
-    reg!("sniffer_state", ser_sniffer_state); // 31
-    reg!("armadillo_state", ser_armadillo_state); // 32
-    reg!("copper_golem_state", ser_copper_golem_state); // 33
-    reg!("weathering_copper_state", ser_weathering_copper_state); // 34
-    reg!("vector3", ser_vector3); // 35
-    reg!("quaternion", ser_quaternion); // 36
-    reg!("resolvable_profile", ser_resolvable_profile); // 37
-    reg!("humanoid_arm", ser_humanoid_arm); // 38
+    reg!("cat_sound_variant", ser_cat_sound_variant); // 22
+    reg!("cow_variant", ser_cow_variant); // 23
+    reg!("cow_sound_variant", ser_cow_sound_variant); // 24
+    reg!("wolf_variant", ser_wolf_variant); // 25
+    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 26
+    reg!("frog_variant", ser_frog_variant); // 27
+    reg!("pig_variant", ser_pig_variant); // 28
+    reg!("pig_sound_variant", ser_pig_sound_variant); // 29
+    reg!("chicken_variant", ser_chicken_variant); // 30
+    reg!("chicken_sound_variant", ser_chicken_sound_variant); // 31
+    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 32
+    reg!("optional_global_pos", ser_optional_global_pos); // 33
+    reg!("painting_variant", ser_painting_variant); // 34
+    reg!("sniffer_state", ser_sniffer_state); // 35
+    reg!("armadillo_state", ser_armadillo_state); // 36
+    reg!("copper_golem_state", ser_copper_golem_state); // 37
+    reg!("weathering_copper_state", ser_weathering_copper_state); // 38
+    reg!("vector3", ser_vector3); // 39
+    reg!("quaternion", ser_quaternion); // 40
+    reg!("resolvable_profile", ser_resolvable_profile); // 41
+    reg!("humanoid_arm", ser_humanoid_arm); // 42
 }
 
 #[cfg(test)]
 mod tests {
     use crate::RegistryExt;
+    use crate::entity_data::ResolvableProfile;
 
     use super::*;
 
     macro_rules! id {
-        ($name:literal) => {
+        ($name:expr) => {
             Identifier::vanilla_static($name)
         };
     }
@@ -342,17 +361,61 @@ mod tests {
         let mut registry = EntityDataSerializerRegistry::new();
         register_vanilla_entity_data_serializers(&mut registry);
 
-        // Verify key serializers have correct IDs
-        assert_eq!(registry.id_from_key(&id!("byte")), Some(0));
-        assert_eq!(registry.id_from_key(&id!("int")), Some(1));
-        assert_eq!(registry.id_from_key(&id!("long")), Some(2));
-        assert_eq!(registry.id_from_key(&id!("float")), Some(3));
-        assert_eq!(registry.id_from_key(&id!("boolean")), Some(8));
-        assert_eq!(registry.id_from_key(&id!("pose")), Some(20));
-        assert_eq!(registry.id_from_key(&id!("humanoid_arm")), Some(38));
+        let expected_names = [
+            "byte",
+            "int",
+            "long",
+            "float",
+            "string",
+            "component",
+            "optional_component",
+            "item_stack",
+            "boolean",
+            "rotations",
+            "block_pos",
+            "optional_block_pos",
+            "direction",
+            "optional_living_entity_reference",
+            "block_state",
+            "optional_block_state",
+            "particle",
+            "particles",
+            "villager_data",
+            "optional_unsigned_int",
+            "pose",
+            "cat_variant",
+            "cat_sound_variant",
+            "cow_variant",
+            "cow_sound_variant",
+            "wolf_variant",
+            "wolf_sound_variant",
+            "frog_variant",
+            "pig_variant",
+            "pig_sound_variant",
+            "chicken_variant",
+            "chicken_sound_variant",
+            "zombie_nautilus_variant",
+            "optional_global_pos",
+            "painting_variant",
+            "sniffer_state",
+            "armadillo_state",
+            "copper_golem_state",
+            "weathering_copper_state",
+            "vector3",
+            "quaternion",
+            "resolvable_profile",
+            "humanoid_arm",
+        ];
+        for (expected_id, name) in expected_names.iter().enumerate() {
+            assert_eq!(
+                registry.id_from_key(&id!(name)),
+                Some(expected_id),
+                "serializer {name} must keep vanilla id {expected_id}"
+            );
+        }
 
         // Total count
-        assert_eq!(registry.len(), 39);
+        assert_eq!(registry.len(), 43);
     }
 
     #[test]
@@ -383,5 +446,17 @@ mod tests {
         let mut buf = Vec::new();
         writer(&EntityData::Boolean(true), &mut buf).unwrap();
         assert_eq!(buf, vec![1]);
+    }
+
+    #[test]
+    fn empty_resolvable_profile_matches_vanilla_static_empty_shape() {
+        let mut buf = Vec::new();
+        ser_resolvable_profile(
+            &EntityData::ResolvableProfile(ResolvableProfile::default()),
+            &mut buf,
+        )
+        .unwrap();
+
+        assert_eq!(buf, vec![0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }
