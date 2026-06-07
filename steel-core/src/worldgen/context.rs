@@ -44,13 +44,32 @@ pub struct WorldGenContext {
     /// Weak reference to the world (to avoid circular Arc reference).
     /// Use `world()` to get a strong reference when needed.
     world: Weak<World>,
+    /// Cached dimension minimum build Y. Immutable for the world's lifetime;
+    /// cached here so per-block queries avoid a `Weak<World>::upgrade` (a
+    /// cross-thread atomic refcount round-trip) on every call.
+    min_y: i32,
+    /// Cached dimension build height. See [`Self::min_y`].
+    height: i32,
 }
 
 impl WorldGenContext {
     /// Creates a new `WorldGenContext`.
+    ///
+    /// `min_y`/`height` are the dimension's build bounds (`DimensionType::min_y`
+    /// / `::height`); they are cached rather than read from the world per call.
     #[must_use]
-    pub const fn new(generator: Arc<ChunkGeneratorType>, world: Weak<World>) -> Self {
-        Self { generator, world }
+    pub const fn new(
+        generator: Arc<ChunkGeneratorType>,
+        world: Weak<World>,
+        min_y: i32,
+        height: i32,
+    ) -> Self {
+        Self {
+            generator,
+            world,
+            min_y,
+            height,
+        }
     }
 
     /// Gets a strong reference to the world.
@@ -72,31 +91,31 @@ impl WorldGenContext {
 
     /// Returns the minimum Y coordinate of the world.
     #[must_use]
-    pub fn min_y(&self) -> i32 {
-        self.world().get_min_y()
+    pub const fn min_y(&self) -> i32 {
+        self.min_y
     }
 
     /// Returns the total height of the world in blocks.
     #[must_use]
-    pub fn height(&self) -> i32 {
-        self.world().get_height()
+    pub const fn height(&self) -> i32 {
+        self.height
     }
 
     /// Returns the minimum Y coordinate used by `WorldGenerationContext`.
     #[must_use]
     pub fn generation_min_y(&self) -> i32 {
-        self.world().get_min_y().max(self.generator.min_y())
+        self.min_y.max(self.generator.min_y())
     }
 
     /// Returns the height used by `WorldGenerationContext`.
     #[must_use]
     pub fn generation_height(&self) -> i32 {
-        self.world().get_height().min(self.generator.gen_depth())
+        self.height.min(self.generator.gen_depth())
     }
 
     #[must_use]
     /// How many sections this dimension has
-    pub fn section_count(&self) -> usize {
-        (self.height() / 16) as usize
+    pub const fn section_count(&self) -> usize {
+        (self.height / 16) as usize
     }
 }

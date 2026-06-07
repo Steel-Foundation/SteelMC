@@ -1338,7 +1338,12 @@ fn build_references_fixture(
     Arc<ChunkHolder>,
 ) {
     let generator_arc = Arc::new(generator);
-    let context = Arc::new(WorldGenContext::new(generator_arc.clone(), Weak::new()));
+    let context = Arc::new(WorldGenContext::new(
+        generator_arc.clone(),
+        Weak::new(),
+        dim.min_y,
+        dim.height,
+    ));
 
     let gen_for_factory = generator_arc.clone();
     let cache = Arc::new(StaticCache2D::create(0, 0, 8, move |x, z| {

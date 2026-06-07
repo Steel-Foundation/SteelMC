@@ -172,7 +172,7 @@ impl ChunkMap {
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        _dimension_type: DimensionTypeRef,
+        dimension_type: DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
@@ -183,7 +183,12 @@ impl ChunkMap {
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
-            world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
+            world_gen_context: Arc::new(WorldGenContext::new(
+                generator,
+                world,
+                dimension_type.min_y,
+                dimension_type.height,
+            )),
             generation_pool,
             chunk_runtime,
             storage,
