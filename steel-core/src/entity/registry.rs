@@ -15,7 +15,7 @@ use super::entities::{
     BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity, ItemFrameEntity,
     RawEntity,
 };
-use super::{SharedEntity, next_entity_id};
+use super::{EntityBaseLoad, EntityFireFreezeState, SharedEntity, next_entity_id};
 use crate::world::World;
 
 /// Factory function type for creating entities.
@@ -27,23 +27,52 @@ pub type EntityFactory = fn(i32, DVec3, Weak<World>) -> SharedEntity;
 
 /// Factory function type for loading entities from disk.
 ///
-/// Takes all base entity fields needed for reconstruction:
-/// - `entity_id`: Fresh ID from `next_entity_id()` (not persisted)
-/// - position: Restored position
-/// - uuid: Persisted UUID
-/// - velocity: Restored velocity
-/// - rotation: Restored (yaw, pitch)
-/// - `on_ground`: Restored ground state
-/// - world: Reference to the world
-pub type EntityLoadFactory = fn(
-    i32,         // entity_id
-    DVec3,       // position
-    Uuid,        // uuid
-    DVec3,       // velocity
-    (f32, f32),  // rotation (yaw, pitch)
-    bool,        // on_ground
-    Weak<World>, // world
-) -> SharedEntity;
+/// Takes all base entity fields needed for reconstruction.
+pub type EntityLoadFactory = fn(EntityBaseLoad) -> SharedEntity;
+
+/// Entity load request before the registry assigns a runtime ID.
+pub struct EntityLoadRequest {
+    /// Entity type to instantiate.
+    pub entity_type: EntityTypeRef,
+    /// Restored entity position.
+    pub position: DVec3,
+    /// Persisted entity UUID.
+    pub uuid: Uuid,
+    /// Restored velocity.
+    pub velocity: DVec3,
+    /// Restored yaw and pitch.
+    pub rotation: (f32, f32),
+    /// Restored accumulated fall distance.
+    pub fall_distance: f64,
+    /// Restored vanilla fire/freeze state.
+    pub fire_freeze: EntityFireFreezeState,
+    /// Restored ground-contact flag.
+    pub on_ground: bool,
+    /// Restored shared vanilla `NoGravity` flag.
+    pub no_gravity: bool,
+    /// World reference for the loaded entity.
+    pub world: Weak<World>,
+}
+
+impl EntityLoadRequest {
+    fn into_base_load(self) -> (EntityTypeRef, EntityBaseLoad) {
+        (
+            self.entity_type,
+            EntityBaseLoad {
+                id: next_entity_id(),
+                position: self.position,
+                uuid: self.uuid,
+                velocity: self.velocity,
+                rotation: self.rotation,
+                fall_distance: self.fall_distance,
+                fire_freeze: self.fire_freeze,
+                on_ground: self.on_ground,
+                no_gravity: self.no_gravity,
+                world: self.world,
+            },
+        )
+    }
+}
 
 /// Registry entry for an entity type.
 struct EntityEntry {
@@ -112,65 +141,43 @@ impl EntityRegistry {
     ///
     /// Returns `None` if no load factory is registered for the entity type.
     #[must_use]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "all fields are required to reconstruct a persisted entity"
-    )]
     pub fn create_and_load(
         &self,
-        entity_type: EntityTypeRef,
-        pos: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
+        request: EntityLoadRequest,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> Option<SharedEntity> {
+        let (entity_type, load) = request.into_base_load();
         let id = entity_type.id();
         let load_factory = self.entries.get(id)?.load_factory?;
+        let no_gravity = load.no_gravity;
 
-        let entity_id = next_entity_id();
-        let entity = load_factory(entity_id, pos, uuid, velocity, rotation, on_ground, world);
+        let entity = load_factory(load);
+        entity.set_no_gravity(no_gravity);
         entity.load_additional(nbt);
+        entity.sync_base_fire_freeze_entity_data();
         Some(entity)
     }
 
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
     #[must_use]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "all fields are required to reconstruct a persisted entity"
-    )]
     pub fn create_and_load_or_raw(
         &self,
-        entity_type: EntityTypeRef,
-        pos: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
+        request: EntityLoadRequest,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> SharedEntity {
+        let (entity_type, load) = request.into_base_load();
         let id = entity_type.id();
+        let no_gravity = load.no_gravity;
         if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
-            let entity_id = next_entity_id();
-            let entity = load_factory(entity_id, pos, uuid, velocity, rotation, on_ground, world);
+            let entity = load_factory(load);
+            entity.set_no_gravity(no_gravity);
             entity.load_additional(nbt);
+            entity.sync_base_fire_freeze_entity_data();
             return entity;
         }
 
-        let entity: SharedEntity = Arc::new(RawEntity::from_saved(
-            next_entity_id(),
-            pos,
-            uuid,
-            velocity,
-            rotation,
-            on_ground,
-            world,
-            entity_type,
-        ));
+        let entity: SharedEntity = Arc::new(RawEntity::from_saved(load, entity_type));
+        entity.set_no_gravity(no_gravity);
         entity.load_additional(nbt);
         entity
     }
@@ -235,49 +242,33 @@ pub fn init_entities() {
     registry.register(&vanilla_entities::BLOCK_DISPLAY, |id, pos, world| {
         Arc::new(BlockDisplayEntity::new(id, pos, world))
     });
-    registry.register_load(
-        &vanilla_entities::BLOCK_DISPLAY,
-        |id, pos, uuid, _velocity, _rotation, _on_ground, world| {
-            Arc::new(BlockDisplayEntity::from_saved(id, pos, uuid, world))
-        },
-    );
+    registry.register_load(&vanilla_entities::BLOCK_DISPLAY, |load| {
+        Arc::new(BlockDisplayEntity::from_saved(load))
+    });
 
     // Register item entity factory
     registry.register(&vanilla_entities::ITEM, |id, pos, world| {
         Arc::new(ItemEntity::new(id, pos, world))
     });
-    registry.register_load(
-        &vanilla_entities::ITEM,
-        |id, pos, uuid, velocity, rotation, on_ground, world| {
-            Arc::new(ItemEntity::from_saved(
-                id, pos, uuid, velocity, rotation, on_ground, world,
-            ))
-        },
-    );
+    registry.register_load(&vanilla_entities::ITEM, |load| {
+        Arc::new(ItemEntity::from_saved(load))
+    });
 
     // Register end crystal entity factory
     registry.register(&vanilla_entities::END_CRYSTAL, |id, pos, world| {
         Arc::new(EndCrystalEntity::new(id, pos, world))
     });
-    registry.register_load(
-        &vanilla_entities::END_CRYSTAL,
-        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
-            Arc::new(EndCrystalEntity::from_saved(id, pos, uuid, rotation, world))
-        },
-    );
+    registry.register_load(&vanilla_entities::END_CRYSTAL, |load| {
+        Arc::new(EndCrystalEntity::from_saved(load))
+    });
 
     // Register chest minecart entity factory
     registry.register(&vanilla_entities::CHEST_MINECART, |id, pos, world| {
         Arc::new(ChestMinecartEntity::new(id, pos, world))
     });
-    registry.register_load(
-        &vanilla_entities::CHEST_MINECART,
-        |id, pos, uuid, velocity, rotation, on_ground, world| {
-            Arc::new(ChestMinecartEntity::from_saved(
-                id, pos, uuid, velocity, rotation, on_ground, world,
-            ))
-        },
-    );
+    registry.register_load(&vanilla_entities::CHEST_MINECART, |load| {
+        Arc::new(ChestMinecartEntity::from_saved(load))
+    });
 
     registry.register(&vanilla_entities::ITEM_FRAME, |id, pos, world| {
         Arc::new(ItemFrameEntity::new(
@@ -291,12 +282,9 @@ pub fn init_entities() {
             world,
         ))
     });
-    registry.register_load(
-        &vanilla_entities::ITEM_FRAME,
-        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
-            Arc::new(ItemFrameEntity::from_saved(id, pos, uuid, rotation, world))
-        },
-    );
+    registry.register_load(&vanilla_entities::ITEM_FRAME, |load| {
+        Arc::new(ItemFrameEntity::from_saved(load))
+    });
 
     assert!(
         ENTITIES.set(registry).is_ok(),
@@ -326,13 +314,18 @@ mod tests {
             read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
 
         let entity = registry.create_and_load_or_raw(
-            &vanilla_entities::VILLAGER,
-            DVec3::new(1.0, 2.0, 3.0),
-            Uuid::from_u128(1),
-            DVec3::new(0.1, 0.0, 0.2),
-            (45.0, 10.0),
-            true,
-            Weak::new(),
+            EntityLoadRequest {
+                entity_type: &vanilla_entities::VILLAGER,
+                position: DVec3::new(1.0, 2.0, 3.0),
+                uuid: Uuid::from_u128(1),
+                velocity: DVec3::new(0.1, 0.0, 0.2),
+                rotation: (45.0, 10.0),
+                fall_distance: 2.25,
+                fire_freeze: EntityFireFreezeState::new(),
+                on_ground: true,
+                no_gravity: true,
+                world: Weak::new(),
+            },
             &borrowed,
         );
 
@@ -340,7 +333,9 @@ mod tests {
         assert_eq!(entity.position(), DVec3::new(1.0, 2.0, 3.0));
         assert_eq!(entity.velocity(), DVec3::new(0.1, 0.0, 0.2));
         assert_eq!(entity.rotation(), (45.0, 10.0));
+        assert!((entity.fall_distance() - 2.25).abs() <= f64::EPSILON);
         assert!(entity.on_ground());
+        assert!(entity.is_no_gravity());
 
         let mut saved = NbtCompound::new();
         entity.save_additional(&mut saved);

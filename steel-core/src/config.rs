@@ -38,6 +38,8 @@ pub struct RuntimeConfig {
     pub auth_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
+    /// Whether vanilla floating/flying movement checks permit unauthorized flight.
+    pub allow_flight: bool,
     /// The message of the day.
     pub motd: String,
     /// Whether to use a favicon.

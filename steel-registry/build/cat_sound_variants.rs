@@ -1,4 +1,4 @@
-use crate::generator_functions::{generate_identifier, read_variants_from_dir};
+use crate::generator_functions::{generate_sound_event_ref, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -34,7 +34,6 @@ pub(crate) fn build() -> TokenStream {
             CatSoundVariant, CatSoundVariantRegistry, CatAge
         };
         use steel_utils::Identifier;
-        use std::borrow::Cow;
     });
 
     // Generate static cat sound variant definitions
@@ -48,29 +47,32 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#cat_sound_variant_name_str) };
         let adult_ambient_sound =
-            generate_identifier(&cat_sound_variant.adult_sounds.ambient_sound);
+            generate_sound_event_ref(&cat_sound_variant.adult_sounds.ambient_sound);
         let adult_beg_for_food_sound =
-            generate_identifier(&cat_sound_variant.adult_sounds.beg_for_food_sound);
-        let adult_death_sound = generate_identifier(&cat_sound_variant.adult_sounds.death_sound);
-        let adult_eat_sound = generate_identifier(&cat_sound_variant.adult_sounds.eat_sound);
-        let adult_hiss_sound = generate_identifier(&cat_sound_variant.adult_sounds.hiss_sound);
-        let adult_hurt_sound = generate_identifier(&cat_sound_variant.adult_sounds.hurt_sound);
-        let adult_purr_sound = generate_identifier(&cat_sound_variant.adult_sounds.purr_sound);
+            generate_sound_event_ref(&cat_sound_variant.adult_sounds.beg_for_food_sound);
+        let adult_death_sound =
+            generate_sound_event_ref(&cat_sound_variant.adult_sounds.death_sound);
+        let adult_eat_sound = generate_sound_event_ref(&cat_sound_variant.adult_sounds.eat_sound);
+        let adult_hiss_sound = generate_sound_event_ref(&cat_sound_variant.adult_sounds.hiss_sound);
+        let adult_hurt_sound = generate_sound_event_ref(&cat_sound_variant.adult_sounds.hurt_sound);
+        let adult_purr_sound = generate_sound_event_ref(&cat_sound_variant.adult_sounds.purr_sound);
         let adult_purreow_sound =
-            generate_identifier(&cat_sound_variant.adult_sounds.purreow_sound);
+            generate_sound_event_ref(&cat_sound_variant.adult_sounds.purreow_sound);
         let adult_stray_ambient_sound =
-            generate_identifier(&cat_sound_variant.adult_sounds.stray_ambient_sound);
-        let baby_ambient_sound = generate_identifier(&cat_sound_variant.baby_sounds.ambient_sound);
+            generate_sound_event_ref(&cat_sound_variant.adult_sounds.stray_ambient_sound);
+        let baby_ambient_sound =
+            generate_sound_event_ref(&cat_sound_variant.baby_sounds.ambient_sound);
         let baby_beg_for_food_sound =
-            generate_identifier(&cat_sound_variant.baby_sounds.beg_for_food_sound);
-        let baby_death_sound = generate_identifier(&cat_sound_variant.baby_sounds.death_sound);
-        let baby_eat_sound = generate_identifier(&cat_sound_variant.baby_sounds.eat_sound);
-        let baby_hiss_sound = generate_identifier(&cat_sound_variant.baby_sounds.hiss_sound);
-        let baby_hurt_sound = generate_identifier(&cat_sound_variant.baby_sounds.hurt_sound);
-        let baby_purr_sound = generate_identifier(&cat_sound_variant.baby_sounds.purr_sound);
-        let baby_purreow_sound = generate_identifier(&cat_sound_variant.baby_sounds.purreow_sound);
+            generate_sound_event_ref(&cat_sound_variant.baby_sounds.beg_for_food_sound);
+        let baby_death_sound = generate_sound_event_ref(&cat_sound_variant.baby_sounds.death_sound);
+        let baby_eat_sound = generate_sound_event_ref(&cat_sound_variant.baby_sounds.eat_sound);
+        let baby_hiss_sound = generate_sound_event_ref(&cat_sound_variant.baby_sounds.hiss_sound);
+        let baby_hurt_sound = generate_sound_event_ref(&cat_sound_variant.baby_sounds.hurt_sound);
+        let baby_purr_sound = generate_sound_event_ref(&cat_sound_variant.baby_sounds.purr_sound);
+        let baby_purreow_sound =
+            generate_sound_event_ref(&cat_sound_variant.baby_sounds.purreow_sound);
         let baby_stray_ambient_sound =
-            generate_identifier(&cat_sound_variant.baby_sounds.stray_ambient_sound);
+            generate_sound_event_ref(&cat_sound_variant.baby_sounds.stray_ambient_sound);
 
         stream.extend(quote! {
             pub static #cat_sound_variant_ident: CatSoundVariant = CatSoundVariant {

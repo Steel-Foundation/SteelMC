@@ -189,6 +189,12 @@ impl ItemStack {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage()
     }
 
+    /// Returns vanilla `ItemStack.nextDamageWillBreak()`.
+    #[must_use]
+    pub fn next_damage_will_break(&self) -> bool {
+        self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage() - 1
+    }
+
     /// Damages the item and breaks it if durability reaches zero.
     ///
     /// Returns `true` if the item broke and should be removed/replaced.

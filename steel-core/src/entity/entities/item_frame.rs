@@ -2,22 +2,18 @@
 
 use std::sync::Weak;
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::data_components::vanilla_components::MAP_ID;
-use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Direction, axis::Axis};
-use uuid::Uuid;
+use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -29,7 +25,6 @@ pub struct ItemFrameEntity {
     base: EntityBase,
     entity_data: SyncMutex<ItemFrameEntityData>,
     block_pos: SyncMutex<BlockPos>,
-    rotation: AtomicCell<(f32, f32)>,
 }
 
 impl ItemFrameEntity {
@@ -37,33 +32,40 @@ impl ItemFrameEntity {
     #[must_use]
     pub fn new(id: i32, block_pos: BlockPos, direction: Direction, world: Weak<World>) -> Self {
         let entity = Self {
-            base: EntityBase::new(id, Self::frame_center(block_pos, direction), world),
+            base: EntityBase::new_with_state(
+                id,
+                EntityBaseState::new_with_bounding_box(
+                    Self::frame_center(block_pos, direction),
+                    vanilla_entities::ITEM_FRAME.dimensions,
+                    Self::frame_bounding_box(block_pos, direction, false),
+                )
+                .with_rotation(Self::rotation_for_direction(direction)),
+                world,
+            ),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(block_pos),
-            rotation: AtomicCell::new(Self::rotation_for_direction(direction)),
         };
-        entity.entity_data.lock().direction.set(direction);
+        entity
+            .entity_data
+            .lock()
+            .hanging_entity
+            .direction
+            .set(direction);
         entity
     }
 
     /// Creates an item frame from persistent entity data.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        rotation: (f32, f32),
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
+        let position = load.position;
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
+            base: EntityBase::from_load(load, vanilla_entities::ITEM_FRAME.dimensions),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(BlockPos::new(
                 position.x.floor() as i32,
                 position.y.floor() as i32,
                 position.z.floor() as i32,
             )),
-            rotation: AtomicCell::new(rotation),
         }
     }
 
@@ -77,15 +79,31 @@ impl ItemFrameEntity {
     }
 
     fn set_direction(&self, direction: Direction) {
-        self.entity_data.lock().direction.set(direction);
-        self.rotation.store(Self::rotation_for_direction(direction));
+        self.entity_data
+            .lock()
+            .hanging_entity
+            .direction
+            .set(direction);
+        self.base
+            .set_rotation(Self::rotation_for_direction(direction));
         self.recalculate_position();
     }
 
     fn recalculate_position(&self) {
         let block_pos = *self.block_pos.lock();
-        let direction = *self.entity_data.lock().direction.get();
-        self.set_position(Self::frame_center(block_pos, direction));
+        let direction = *self.entity_data.lock().hanging_entity.direction.get();
+        let position = Self::frame_center(block_pos, direction);
+        if let Err(error) = self.base.try_set_position(position) {
+            panic!(
+                "failed to commit item frame {} position recalculation: {error}",
+                self.base.id()
+            );
+        }
+        self.base.set_bounding_box(Self::frame_bounding_box(
+            block_pos,
+            direction,
+            self.has_framed_map(),
+        ));
     }
 
     fn has_framed_map(&self) -> bool {
@@ -113,22 +131,14 @@ impl ItemFrameEntity {
             (0.0, pitch)
         }
     }
-}
 
-impl Entity for ItemFrameEntity {
-    fn base(&self) -> Option<&EntityBase> {
-        Some(&self.base)
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM_FRAME
-    }
-
-    fn bounding_box(&self) -> AABBd {
-        let block_pos = *self.block_pos.lock();
-        let direction = *self.entity_data.lock().direction.get();
+    fn frame_bounding_box(
+        block_pos: BlockPos,
+        direction: Direction,
+        has_framed_map: bool,
+    ) -> WorldAabb {
         let center = Self::frame_center(block_pos, direction);
-        let size = if self.has_framed_map() { 1.0 } else { 0.75 };
+        let size = if has_framed_map { 1.0 } else { 0.75 };
         let x_size = if direction.axis() == Axis::X {
             0.0625
         } else {
@@ -144,30 +154,36 @@ impl Entity for ItemFrameEntity {
         } else {
             size
         };
-        AABBd {
-            min_x: center.x - x_size / 2.0,
-            min_y: center.y - y_size / 2.0,
-            min_z: center.z - z_size / 2.0,
-            max_x: center.x + x_size / 2.0,
-            max_y: center.y + y_size / 2.0,
-            max_z: center.z + z_size / 2.0,
-        }
+        WorldAabb::new(
+            center.x - x_size / 2.0,
+            center.y - y_size / 2.0,
+            center.z - z_size / 2.0,
+            center.x + x_size / 2.0,
+            center.y + y_size / 2.0,
+            center.z + z_size / 2.0,
+        )
+    }
+}
+
+impl Entity for ItemFrameEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM_FRAME
     }
 
     fn spawn_data(&self) -> i32 {
-        direction_3d_data_value(*self.entity_data.lock().direction.get())
+        direction_3d_data_value(*self.entity_data.lock().hanging_entity.direction.get())
     }
 
-    fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
-        self.entity_data.lock().pack_dirty()
+    fn is_pickable(&self) -> bool {
+        true
     }
 
-    fn pack_all_entity_data(&self) -> Vec<DataValue> {
-        self.entity_data.lock().pack_all()
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -186,7 +202,7 @@ impl Entity for ItemFrameEntity {
         nbt.insert("ItemDropChance", 1.0_f32);
         nbt.insert(
             "Facing",
-            direction_3d_data_value(*entity_data.direction.get()) as i8,
+            direction_3d_data_value(*entity_data.hanging_entity.direction.get()) as i8,
         );
         nbt.insert("Invisible", 0_i8);
         nbt.insert("Fixed", 0_i8);
@@ -221,6 +237,8 @@ impl Entity for ItemFrameEntity {
         if let Some(direction) = facing {
             self.set_direction(direction);
         }
+
+        self.recalculate_position();
     }
 }
 
@@ -284,5 +302,13 @@ mod tests {
             Some("minecraft:elytra".to_owned())
         );
         assert_eq!(item.int("count"), Some(1));
+    }
+
+    #[test]
+    fn item_frame_is_pickable_like_vanilla() {
+        let frame =
+            ItemFrameEntity::new(1, BlockPos::new(12, 80, 14), Direction::West, Weak::new());
+
+        assert!(frame.is_pickable());
     }
 }

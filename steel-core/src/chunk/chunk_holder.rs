@@ -23,14 +23,16 @@ pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
 use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status};
+use crate::chunk_saver::ChunkStorage;
 use crate::world::World;
+use crate::worldgen::WorldGenContext;
 use crate::{
     ChunkMap,
     chunk::{
         chunk_access::{ChunkAccess, ChunkStatus},
         chunk_generation_task::ChunkGenerationTask,
         chunk_pyramid::ChunkStep,
-        level_chunk::LevelChunk,
+        level_chunk::{LevelChunk, LevelChunkPromotion},
     },
 };
 
@@ -424,74 +426,22 @@ impl ChunkHolder {
 
         let cache = cache.clone();
         let context = chunk_map.world_gen_context.clone();
-        let task = step.task;
         let self_clone = self.clone();
         let storage = chunk_map.storage.clone();
 
         let future = chunk_map.task_tracker.spawn(async move {
-            if target_status == ChunkStatus::Empty {
-                // Acquire the region first (creates if needed, increments ref count)
-                let chunk_exists = storage.acquire_chunk(self_clone.pos).await.unwrap_or(false);
-
-                if chunk_exists {
-                    // Try to load the chunk from disk
-                    if let Ok(Some((chunk, status))) = storage
-                        .load_chunk(
-                            self_clone.pos,
-                            self_clone.min_y(),
-                            self_clone.height(),
-                            context.weak_world(),
-                        )
-                        .await
-                    {
-                        self_clone.insert_chunk(chunk, status);
-                    } else {
-                        // Chunk existed but failed to load - generate fresh
-                        let holder_for_notify = self_clone.clone();
-                        rayon_spawn(&thread_pool, move || {
-                            task(context, step, &cache, self_clone);
-                        })
-                        .await;
-                        holder_for_notify.finish_generation_status(target_status);
-                    }
-                } else {
-                    // Chunk doesn't exist - generate fresh
-                    let holder_for_notify = self_clone.clone();
-                    rayon_spawn(&thread_pool, move || {
-                        task(context, step, &cache, self_clone);
-                    })
-                    .await;
-                    holder_for_notify.finish_generation_status(target_status);
-                }
-                #[cfg(feature = "slow_chunk_gen")]
-                if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
-                    sleep(Duration::from_millis(200)).await;
-                }
-                Some(())
+            let result = if target_status == ChunkStatus::Empty {
+                Self::apply_empty_step(self_clone, step, context, cache, storage, thread_pool).await
             } else {
-                let parent_status = target_status
-                    .parent()
-                    .expect("Target status must have parent if not Empty");
+                Self::apply_generated_step(self_clone, step, context, cache, thread_pool).await
+            };
 
-                let has_parent = self_clone
-                    .persisted_status()
-                    .is_some_and(|status| parent_status <= status);
-                let self_clone2 = self_clone.clone();
-
-                assert!(has_parent, "Parent chunk missing");
-
-                rayon_spawn(&thread_pool, move || {
-                    task(context, step, &cache, self_clone);
-                })
-                .await;
-
-                self_clone2.finish_generation_status(target_status);
-                #[cfg(feature = "slow_chunk_gen")]
-                if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
-                    sleep(Duration::from_millis(200)).await;
-                }
-                Some(())
+            #[cfg(feature = "slow_chunk_gen")]
+            if result.is_some() && SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
+                sleep(Duration::from_millis(200)).await;
             }
+
+            result
         });
 
         Some(Box::pin(async move {
@@ -503,6 +453,206 @@ impl ChunkHolder {
                 }
             }
         }))
+    }
+
+    async fn apply_empty_step(
+        holder: Arc<Self>,
+        step: &'static ChunkStep,
+        context: Arc<WorldGenContext>,
+        cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        storage: Arc<ChunkStorage>,
+        thread_pool: Arc<rayon::ThreadPool>,
+    ) -> Option<()> {
+        let target_status = step.target_status;
+        let chunk_exists = match storage.acquire_chunk(holder.pos).await {
+            Ok(chunk_exists) => chunk_exists,
+            Err(error) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to acquire chunk storage before load/generation: {error}",
+                );
+                return None;
+            }
+        };
+
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load after chunk holder target became disallowed before load/generation: chunk={:?}, target_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage task: {error}",
+                );
+            }
+            return None;
+        }
+
+        if chunk_exists {
+            return Self::apply_existing_empty_step(&holder, target_status, &context, &storage)
+                .await;
+        }
+
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load after chunk holder target became disallowed after load attempt: chunk={:?}, target_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage task: {error}",
+                );
+            }
+            return None;
+        }
+
+        let holder_for_notify = holder.clone();
+        let world = context.world();
+        Self::run_step_task(thread_pool, step, context, cache, holder).await;
+        holder_for_notify.finish_generation_status(target_status);
+        if target_status == ChunkStatus::Empty {
+            world.on_entity_chunk_loaded(holder_for_notify.pos);
+        }
+        Some(())
+    }
+
+    async fn apply_existing_empty_step(
+        holder: &Arc<Self>,
+        target_status: ChunkStatus,
+        context: &Arc<WorldGenContext>,
+        storage: &Arc<ChunkStorage>,
+    ) -> Option<()> {
+        let loaded = match storage
+            .load_chunk(
+                holder.pos,
+                holder.min_y(),
+                holder.height(),
+                context.weak_world(),
+            )
+            .await
+        {
+            Ok(Some(loaded)) => loaded,
+            Ok(None) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Chunk storage reported an existing chunk but load returned no chunk; aborting generation to avoid overwriting saved data",
+                );
+                if let Err(error) = storage.release_chunk(holder.pos).await {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to release chunk storage after missing load result: {error}",
+                    );
+                }
+                return None;
+            }
+            Err(error) => {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to load existing chunk; aborting generation to avoid overwriting saved data: {error}",
+                );
+                if let Err(release_error) = storage.release_chunk(holder.pos).await {
+                    tracing::error!(
+                        chunk = ?holder.pos,
+                        "Failed to release chunk storage after load failure: {release_error}",
+                    );
+                }
+                return None;
+            }
+        };
+
+        let loaded_status = loaded.status;
+        if holder.is_status_disallowed(target_status) {
+            tracing::debug!(
+                chunk = ?holder.pos,
+                ?target_status,
+                ?loaded_status,
+                load_level = ?holder.load_level(),
+                simulation_level = ?holder.simulation_level(),
+                current_status = ?holder.persisted_status(),
+                "Dropping storage load that completed after chunk holder target became disallowed: chunk={:?}, target_status={:?}, loaded_status={:?}, load_level={:?}, simulation_level={:?}, current_status={:?}",
+                holder.pos,
+                target_status,
+                loaded_status,
+                holder.load_level(),
+                holder.simulation_level(),
+                holder.persisted_status(),
+            );
+            if let Err(error) = storage.release_chunk(holder.pos).await {
+                tracing::error!(
+                    chunk = ?holder.pos,
+                    "Failed to release canceled chunk storage load: {error}",
+                );
+            }
+            return None;
+        }
+
+        holder.insert_chunk(loaded.chunk, loaded_status);
+        context.world().on_entity_chunk_loaded(holder.pos);
+        if !loaded.pending_entities.is_empty() {
+            context.world().register_loaded_chunk_entities(
+                holder.pos,
+                loaded_status,
+                loaded.pending_entities,
+            );
+        }
+        Some(())
+    }
+
+    async fn apply_generated_step(
+        holder: Arc<Self>,
+        step: &'static ChunkStep,
+        context: Arc<WorldGenContext>,
+        cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        thread_pool: Arc<rayon::ThreadPool>,
+    ) -> Option<()> {
+        let target_status = step.target_status;
+        let Some(parent_status) = target_status.parent() else {
+            panic!("Target status must have parent if not Empty");
+        };
+        let has_parent = holder
+            .persisted_status()
+            .is_some_and(|status| parent_status <= status);
+        let holder_for_notify = holder.clone();
+
+        assert!(has_parent, "Parent chunk missing");
+
+        Self::run_step_task(thread_pool, step, context, cache, holder).await;
+        holder_for_notify.finish_generation_status(target_status);
+        Some(())
+    }
+
+    async fn run_step_task(
+        thread_pool: Arc<rayon::ThreadPool>,
+        step: &'static ChunkStep,
+        context: Arc<WorldGenContext>,
+        cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<Self>,
+    ) {
+        let task = step.task;
+        rayon_spawn(&thread_pool, move || {
+            task(context, step, &cache, holder);
+        })
+        .await;
     }
 
     fn acquire_status_bump(&self, status: ChunkStatus) -> bool {
@@ -542,7 +692,8 @@ impl ChunkHolder {
     /// # Panics
     /// Panics if the chunk is not at `ProtoChunk` stage or already full.
     pub fn upgrade_to_full(&self, level: Weak<World>) {
-        self.data.with_write(|chunk| {
+        let world = level.upgrade();
+        let promoted_entities = self.data.with_write(|chunk| {
             use std::mem::replace;
             let owned = replace(chunk, ChunkAccess::Unloaded);
 
@@ -550,14 +701,24 @@ impl ChunkHolder {
                 ChunkAccess::Proto(proto) => {
                     let min_y = proto.min_y();
                     let height = proto.height();
-                    *chunk = ChunkAccess::Full(LevelChunk::from_proto(proto, min_y, height, level));
+                    let LevelChunkPromotion {
+                        chunk: full,
+                        pending_entities,
+                    } = LevelChunk::from_proto(proto, min_y, height, level);
+                    let pos = full.pos;
+                    *chunk = ChunkAccess::Full(full);
+                    Some((pos, pending_entities))
                 }
                 ChunkAccess::Full(full) => {
                     *chunk = ChunkAccess::Full(full);
+                    None
                 }
                 ChunkAccess::Unloaded => panic!("Chunk is unloaded, cannot upgrade to full"),
             }
         });
+        if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
+            world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
+        }
     }
 
     fn post_process_generation(&self) {

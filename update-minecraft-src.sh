@@ -22,6 +22,14 @@ sed -i.bak "s/-Xmx4G/-Xmx8G/" "$TEMP_DIR/GitCraft/build.gradle" && rm -f "$TEMP_
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"
 echo "Running GitCraft..."
-./gradlew run --args="--override-repo-target=$MINECRAFT_SRC_DIR --only-unobfuscated --mappings=identity_unmapped --min-version=1.21.11 --only-stable"
+GITCRAFT_ARGS=(
+    "--override-repo-target=$MINECRAFT_SRC_DIR"
+    "--only-unobfuscated"
+    "--mappings=identity_unmapped"
+    "--min-version=1.21.11"
+    "--refresh-min-version=1.21.11_unobfuscated"
+    "--only-stable"
+)
+./gradlew run --args="${GITCRAFT_ARGS[*]}"
 
 echo "Done! minecraft-src has been updated."

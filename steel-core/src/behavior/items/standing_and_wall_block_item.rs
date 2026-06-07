@@ -18,6 +18,7 @@ use steel_utils::types::UpdateFlags;
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
 use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for items that place either a standing or wall variant of a block.
@@ -164,7 +165,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,

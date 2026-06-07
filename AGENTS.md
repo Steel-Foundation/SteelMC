@@ -1,10 +1,10 @@
 **ASK, DON'T GUESS** — Ambiguity is a stop signal. If types, error handling, or architecture is unclear, ask. No speculative coding.
 
+**HONEST BLOCKERS** — Don't hide uncertainty behind speculative changes or workarounds. State the real issue and ask the user for missing logs, paths, data, or vanilla references.
+
 **FOUNDATIONAL INTEGRITY** — Don't implement features on missing foundations. No stubs, mocks, or hardcoded values (`todo!()`, `const user = {id:1}`) unless explicitly prototyping.
 
-**VANILLA FUNCTIONALITY** - We should keep 1:1 Vanilla functionality. If a compromise can be made you MUST present the issue at hand to the user first.
-
-**BIOME DETERMINISM** - Steel and the SteelExtractor hash harness use deterministic per-sampler biome caching. Do not dismiss feature hash mismatches as vanilla `ThreadLocal` biome-cache nondeterminism, and do not add thread-local biome behavior without an explicit design discussion.
+**VANILLA FUNCTIONALITY** - Keep 1:1 Vanilla functionality. If a faster or more idiomatic Rust solution diverges from vanilla behavior or structure, get explicit permission first and leave a concise comment/doc explaining why.
 
 **SKETCHY WORKAROUND PROTOCOL** — Halt and ask permission before using:
 - `.clone()` to appease borrow checker, `.unwrap()`/`.expect()` in production, `unsafe`
@@ -13,7 +13,7 @@
 
 Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve root cause?"*
 
-**CONSTRUCTIVE DISSENT** — Challenge XY problems. *"I can do X, but it introduces [Issue]. Standard pattern is Y. How proceed?"*
+**CONSTRUCTIVE DISSENT** — Treat user claims as hypotheses. Verify against local code/vanilla, call out mismatches, and challenge XY problems. Before building a complex system, state the simplest vanilla-compatible design and ask when a simpler architecture would change scope.
 
 **Registries**
  - We should only generate what is needed. Does minecraft use a hardcoded transform? Then we do as well.
@@ -23,17 +23,17 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Avoid raw `BlockStateId` in generated registry data. Use `BlockRef` plus explicit properties/default-state resolution so registry ordering can still evolve for plugin support.
 
 **Code standard**
- - Usually vanilla is decent at naming stuff, sometimes we want to deviate from this though in cases where names are bad or non descriptive. Or we want a whole other solution to the system at hand. In that case we should add a doc comment above the struct, method or module that clearly states the differences so next time someone new picks it up they have an easy time understanding your system.
+ - Use vanilla names unless they are misleading or a Rust design is explicitly approved. Document intentional differences on the relevant struct, method, or module.
  - We should try to minimize code duplication, but a few lines are usually fine.
- - When working on foundation we must be extra sure we aren't taking any shortcuts or leaving stuff out, this can cause issues later down the line where a foundational system has to be completely redesigned. Foundational code is code like a system or interface other code depends on, an example being the block behavior trait, if that's badly designed from the start and we have 100 block implementations building off it good luck getting it changed.
- - No workarounds. Don't be lazy and skip creating a helper function just cause you only needed it once for your use case.
+ - Treat foundational systems with extra rigor; shortcuts in shared interfaces like block behavior become expensive once implementations depend on them.
+ - No workarounds. Create the right helper/abstraction when the code needs one.
  - Don't add trivial wrapper methods that just alias an existing method. If `height()` already exists, don't add `get_y_size()` that returns `self.height()`. Use the existing method directly.
  - Prefer associated functions on the relevant type over standalone free functions when there's a clear owner.
- - Try to not go deep in indentation, guard clauses are useful for this and rust has some really nice `if let` and `let Some() = x else {return}`
- - Don't use panics unless the case never happens or is fatal to the program. Otherwise use Results
+ - Avoid deep indentation; prefer guard clauses, `if let`, and `let Some(...) = ... else { return }`.
+ - Use `Result` for recoverable failures; panic only for impossible or fatal states.
  - Don't multithread something unless you can explain why it needs multithreading.
  - Don't use async unless you need disk or network I/O.
- - If you haven't fully implemented a feature, make sure to add a // TODO: comment
+ - If you haven't fully implemented a feature, add a `// TODO:` comment.
  - Keep comments concise
  - After fixing something don't leave a comment
  - Currently this project is in early development, we don't need to provide migrations
@@ -43,9 +43,12 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
   - Suppress clippy lints with `#[expect(clippy::lint_name, reason = "...")]`. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained
 
 **GENERATED CODE** — Never modify generated files directly:
-- `steel-registry/src/generated/` → modify `steel-registry/build/build.rs`
-- `steel-core/src/behavior/generated/` → modify `steel-core/build/items.rs` or `steel-core/build/blocks.rs`
-- When some data is missing from the extracted json files ALWAYS present the user with what data is required and they can provide you with a path of where the extractor code is.
+- `steel-registry/src/generated/` → modify `steel-registry/build/`
+- `steel-core/src/behavior/generated/` → modify `steel-core/build/`
+- `steel-worldgen/src/generated/` → modify `steel-worldgen/build/`
+- `steel-utils/src/generated/` → modify `steel-utils/build/`
+- Block/item behavior registration is generated from `#[block_behavior]` / `#[item_behavior]`; add annotated structs under `steel-core/src/behavior/`, not manual generated registration.
+- If extracted JSON data is missing, tell the user exactly what data is required; they can provide the extractor path.
 
 ## Build Commands
 
@@ -54,17 +57,18 @@ cargo build          # Build
 cargo run            # Run
 cargo check          # Fast compile check
 cargo test           # Tests
-cargo clippy --fix --allow-dirty  # Lint
+cargo clippy -r --all-targets --all-features  # CI lint
 cargo check -p steel-core          # Fast game/worldgen check
 ```
 
 Uses **nightly Rust**.
+Tooling: `ast-grep` is available for structural code search/rewrites.
 
 ## Architecture
 
 Steel = Minecraft 26.1 server in Rust.
 
-**Crates:** `steel` (thin wrapper) -> `steel-login` (initial connection) → `steel-core` (game logic) → `steel-protocol` (packets) → `steel-macros` (derives) → `steel-registry` (generated data) → `steel-utils` (common) → `steel-crypto` (encryption)
+**Crates:** `steel` (thin wrapper) -> `steel-login` (initial connection) → `steel-core` (game logic) → `steel-worldgen` (worldgen) → `steel-protocol` (packets) → `steel-macros` (derives) → `steel-registry` (generated data) → `steel-utils`/`steel-math` (common) → `steel-crypto` (encryption)
 
 ## Packets
 Serverbound = `ReadFrom`, Clientbound = `WriteTo`.
@@ -97,14 +101,15 @@ pub struct CAnimate {
 | Game logic | `steel-core/src/` |
 | Player | `steel-core/src/player/` (`networking.rs` = packet handlers) |
 | World | `steel-core/src/world/` |
-| Worldgen | `steel-core/src/worldgen/` |
+| Worldgen orchestration | `steel-core/src/worldgen/` |
+| Worldgen algorithms/data | `steel-worldgen/src/` |
 | Chunks | `steel-core/src/chunk/` |
 | Block/item behaviors | `steel-core/src/behavior/` |
 | Block entities | `steel-core/src/block_entity/` |
 | Entities | `steel-core/src/entity/` |
 | Inventory / menus | `steel-core/src/inventory/` |
 | Packets | `steel-protocol/src/packets/game/` |
-| Codegen build scripts | `steel-core/build/`, `steel-registry/build/` |
+| Codegen build scripts | `steel-core/build/`, `steel-registry/build/`, `steel-worldgen/build/`, `steel-utils/build/` |
 
 **Vanilla** (`minecraft-src/minecraft/`):
 | Area | Path |

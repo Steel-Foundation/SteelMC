@@ -202,6 +202,10 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 builder_calls
                     .push(quote! { .builder_set(vanilla_components::#component_ident, Some(())) });
             }
+            "minecraft:glider" => {
+                builder_calls
+                    .push(quote! { .builder_set(vanilla_components::#component_ident, Some(())) });
+            }
             "minecraft:enchantment_glint_override" => {
                 let val = value.as_bool().unwrap();
                 builder_calls.push(

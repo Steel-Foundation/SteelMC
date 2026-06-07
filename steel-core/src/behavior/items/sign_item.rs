@@ -21,6 +21,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
 use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
 
@@ -91,7 +92,7 @@ impl ItemBehavior for SignItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
@@ -259,7 +260,7 @@ impl ItemBehavior for HangingSignItem {
                 place_pos,
                 sound_type.volume,
                 sound_type.pitch,
-                Some(context.player.id),
+                Some(context.player.id()),
             );
         }
         context.world.game_event(

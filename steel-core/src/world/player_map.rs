@@ -5,7 +5,7 @@ use std::sync::Arc;
 use scc::HashMap;
 use uuid::Uuid;
 
-use crate::player::Player;
+use crate::{entity::Entity, player::Player};
 
 /// Thread-safe player storage with dual indexing.
 ///
@@ -37,15 +37,24 @@ impl PlayerMap {
     /// Inserts a player into both maps.
     ///
     /// Returns `true` if the player was inserted, `false` if a player with the same UUID already exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if another player already has the same entity ID. Entity IDs are
+    /// session-unique; accepting a duplicate would break entity lookup and
+    /// packet routing invariants.
     pub fn insert(&self, player: Arc<Player>) -> bool {
         let uuid = player.gameprofile.id;
-        let entity_id = player.id;
+        let entity_id = player.id();
 
         if self.by_uuid.insert_sync(uuid, player.clone()).is_err() {
             return false;
         }
 
-        let _ = self.by_entity_id.insert_sync(entity_id, player);
+        if self.by_entity_id.insert_sync(entity_id, player).is_err() {
+            let _ = self.by_uuid.remove_sync(&uuid);
+            panic!("player entity id {entity_id} is already registered");
+        }
         true
     }
 
@@ -54,11 +63,29 @@ impl PlayerMap {
     /// Returns the removed player if found.
     pub async fn remove(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_async(uuid).await {
-            let _ = self.by_entity_id.remove_async(&player.id).await;
+            let _ = self.by_entity_id.remove_async(&player.id()).await;
             Some(player)
         } else {
             None
         }
+    }
+
+    /// Removes this exact player from both maps.
+    ///
+    /// Returns the removed player if the UUID still maps to this same player
+    /// handle. A stale duplicate-login cleanup must not remove the accepted
+    /// player that owns the UUID.
+    pub async fn remove_player(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+        let uuid = player.gameprofile.id;
+        let (_, removed) = self
+            .by_uuid
+            .remove_if_async(&uuid, |current| Arc::ptr_eq(current, player))
+            .await?;
+        let _ = self
+            .by_entity_id
+            .remove_if_async(&removed.id(), |current| Arc::ptr_eq(current, &removed))
+            .await;
+        Some(removed)
     }
 
     /// Removes a player by UUID from both maps synchronously.
@@ -67,11 +94,23 @@ impl PlayerMap {
     /// (e.g., during world changes on the tick thread).
     pub fn remove_sync(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_sync(uuid) {
-            let _ = self.by_entity_id.remove_sync(&player.id);
+            let _ = self.by_entity_id.remove_sync(&player.id());
             Some(player)
         } else {
             None
         }
+    }
+
+    /// Removes this exact player from both maps synchronously.
+    pub fn remove_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+        let uuid = player.gameprofile.id;
+        let (_, removed) = self
+            .by_uuid
+            .remove_if_sync(&uuid, |current| Arc::ptr_eq(current, player))?;
+        let _ = self
+            .by_entity_id
+            .remove_if_sync(&removed.id(), |current| Arc::ptr_eq(current, &removed));
+        Some(removed)
     }
 
     /// Gets a player by UUID.

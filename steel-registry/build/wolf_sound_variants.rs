@@ -1,4 +1,4 @@
-use crate::generator_functions::{generate_identifier, read_variants_from_dir};
+use crate::generator_functions::{generate_sound_event_ref, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -32,7 +32,6 @@ pub(crate) fn build() -> TokenStream {
             WolfSoundVariant, WolfSoundVariantRegistry, WolfAge
         };
         use steel_utils::Identifier;
-        use std::borrow::Cow;
     });
 
     // Generate static wolf sound variant definitions
@@ -46,20 +45,30 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#wolf_sound_variant_name_str) };
         let adult_ambient_sound =
-            generate_identifier(&wolf_sound_variant.adult_sounds.ambient_sound);
-        let adult_death_sound = generate_identifier(&wolf_sound_variant.adult_sounds.death_sound);
-        let adult_growl_sound = generate_identifier(&wolf_sound_variant.adult_sounds.growl_sound);
-        let adult_hurt_sound = generate_identifier(&wolf_sound_variant.adult_sounds.hurt_sound);
-        let adult_pant_sound = generate_identifier(&wolf_sound_variant.adult_sounds.pant_sound);
-        let adult_whine_sound = generate_identifier(&wolf_sound_variant.adult_sounds.whine_sound);
-        let adult_step_sound = generate_identifier(&wolf_sound_variant.adult_sounds.step_sound);
-        let baby_ambient_sound = generate_identifier(&wolf_sound_variant.baby_sounds.ambient_sound);
-        let baby_death_sound = generate_identifier(&wolf_sound_variant.baby_sounds.death_sound);
-        let baby_growl_sound = generate_identifier(&wolf_sound_variant.baby_sounds.growl_sound);
-        let baby_hurt_sound = generate_identifier(&wolf_sound_variant.baby_sounds.hurt_sound);
-        let baby_pant_sound = generate_identifier(&wolf_sound_variant.baby_sounds.pant_sound);
-        let baby_whine_sound = generate_identifier(&wolf_sound_variant.baby_sounds.whine_sound);
-        let baby_step_sound = generate_identifier(&wolf_sound_variant.baby_sounds.step_sound);
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.ambient_sound);
+        let adult_death_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.death_sound);
+        let adult_growl_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.growl_sound);
+        let adult_hurt_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.hurt_sound);
+        let adult_pant_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.pant_sound);
+        let adult_whine_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.whine_sound);
+        let adult_step_sound =
+            generate_sound_event_ref(&wolf_sound_variant.adult_sounds.step_sound);
+        let baby_ambient_sound =
+            generate_sound_event_ref(&wolf_sound_variant.baby_sounds.ambient_sound);
+        let baby_death_sound =
+            generate_sound_event_ref(&wolf_sound_variant.baby_sounds.death_sound);
+        let baby_growl_sound =
+            generate_sound_event_ref(&wolf_sound_variant.baby_sounds.growl_sound);
+        let baby_hurt_sound = generate_sound_event_ref(&wolf_sound_variant.baby_sounds.hurt_sound);
+        let baby_pant_sound = generate_sound_event_ref(&wolf_sound_variant.baby_sounds.pant_sound);
+        let baby_whine_sound =
+            generate_sound_event_ref(&wolf_sound_variant.baby_sounds.whine_sound);
+        let baby_step_sound = generate_sound_event_ref(&wolf_sound_variant.baby_sounds.step_sound);
 
         stream.extend(quote! {
             pub static #wolf_sound_variant_ident: WolfSoundVariant = WolfSoundVariant {

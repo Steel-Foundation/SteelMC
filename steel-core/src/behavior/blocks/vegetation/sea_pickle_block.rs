@@ -27,7 +27,7 @@ impl SeaPickleBlock {
         state
             .get_collision_shape()
             .iter()
-            .any(|aabb| !aabb.is_empty() && aabb.max_y >= 1.0)
+            .any(|aabb| !aabb.is_empty() && aabb.max_y() >= 1.0)
             || state.is_face_sturdy(Direction::Up)
     }
 }

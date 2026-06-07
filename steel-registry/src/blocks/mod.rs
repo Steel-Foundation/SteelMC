@@ -12,7 +12,7 @@ use crate::blocks::properties::{DynProperty, Property};
 use crate::{RegistryExt, TaggedRegistryExt};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
-pub type ShapeFn = fn(u16) -> &'static [shapes::AABB];
+pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
 
 pub struct Block {
     pub key: Identifier,
@@ -47,13 +47,13 @@ impl std::fmt::Debug for Block {
 }
 
 /// Default shape function that returns a full block.
-const fn full_block_shape(_offset: u16) -> &'static [shapes::AABB] {
-    &[shapes::AABB::FULL_BLOCK]
+const fn full_block_shape(_offset: u16) -> shapes::VoxelShape {
+    shapes::VoxelShape::FULL_BLOCK
 }
 
 /// Default interaction shape function that returns an empty shape.
-const fn empty_shape(_offset: u16) -> &'static [shapes::AABB] {
-    &[]
+const fn empty_shape(_offset: u16) -> shapes::VoxelShape {
+    shapes::VoxelShape::EMPTY
 }
 
 impl Block {
@@ -98,37 +98,37 @@ impl Block {
 
     /// Gets the collision shape for a given state offset.
     #[inline]
-    pub fn get_collision_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_collision_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.collision_shape)(offset)
     }
 
     /// Gets the block support shape for a given state offset.
     #[inline]
-    pub fn get_support_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_support_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.support_shape)(offset)
     }
 
     /// Gets the outline shape for a given state offset.
     #[inline]
-    pub fn get_outline_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_outline_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.outline_shape)(offset)
     }
 
     /// Gets the occlusion shape for a given state offset.
     #[inline]
-    pub fn get_occlusion_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_occlusion_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.occlusion_shape)(offset)
     }
 
     /// Gets the interaction shape for a given state offset.
     #[inline]
-    pub fn get_interaction_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_interaction_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.interaction_shape)(offset)
     }
 
     /// Gets the visual shape for a given state offset.
     #[inline]
-    pub fn get_visual_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+    pub fn get_visual_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.visual_shape)(offset)
     }
 
@@ -550,11 +550,11 @@ impl BlockRegistry {
     fn shape_for_state(
         &self,
         state_id: BlockStateId,
-        shape: fn(&Block, u16) -> &'static [shapes::AABB],
-    ) -> &'static [shapes::AABB] {
+        shape: fn(&Block, u16) -> shapes::VoxelShape,
+    ) -> shapes::VoxelShape {
         let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
         let Some(block) = block else {
-            return &[shapes::AABB::FULL_BLOCK];
+            return shapes::VoxelShape::FULL_BLOCK;
         };
         let block_id = self
             .state_to_block_id
@@ -568,11 +568,10 @@ impl BlockRegistry {
 
     /// Gets the collision shape for a block state.
     ///
-    /// Returns a slice of AABBs that make up the collision shape.
-    /// For simple blocks this is typically a single full-block AABB.
-    /// For complex blocks like fences, this may be multiple AABBs.
+    /// For simple blocks this is typically a single full-block box.
+    /// For complex blocks like fences, this may be multiple boxes.
     #[must_use]
-    pub fn get_collision_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_collision_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_collision_shape)
     }
 
@@ -581,7 +580,7 @@ impl BlockRegistry {
     /// Vanilla support checks use `BlockState.getBlockSupportShape`, not collision shape,
     /// for `isFaceSturdy` and multiface side attachment.
     #[must_use]
-    pub fn get_support_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_support_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_support_shape)
     }
 
@@ -590,7 +589,7 @@ impl BlockRegistry {
     /// This is the shape shown when the player targets the block.
     /// Often the same as collision shape, but can differ (e.g., fences).
     #[must_use]
-    pub fn get_outline_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_outline_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_outline_shape)
     }
 
@@ -599,7 +598,7 @@ impl BlockRegistry {
     /// Vanilla caches this as `BlockState.getOcclusionShape()` and uses it for
     /// `isSolidRender`, light occlusion, and face occlusion.
     #[must_use]
-    pub fn get_occlusion_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_occlusion_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_occlusion_shape)
     }
 
@@ -608,7 +607,7 @@ impl BlockRegistry {
     /// Vanilla uses this as an interaction hit override after the primary raycast
     /// shape has already hit.
     #[must_use]
-    pub fn get_interaction_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_interaction_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_interaction_shape)
     }
 
@@ -617,7 +616,7 @@ impl BlockRegistry {
     /// Vanilla uses this for visual raycasts; it defaults to collision shape but
     /// differs for a few blocks such as fences, mud, soul sand, and powder snow.
     #[must_use]
-    pub fn get_visual_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    pub fn get_visual_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.shape_for_state(state_id, Block::get_visual_shape)
     }
 

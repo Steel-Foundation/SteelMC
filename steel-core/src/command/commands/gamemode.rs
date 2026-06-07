@@ -6,6 +6,7 @@ use crate::command::commands::{
 };
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
+use crate::entity::Entity;
 use crate::player::Player;
 use std::sync::Arc;
 use steel_utils::translations;
@@ -70,7 +71,7 @@ impl CommandExecutor<(((), GameType), Vec<Arc<Player>>)> for GameModeTargetComma
             if target.set_game_mode(gamemode) {
                 // Send feedback to sender if sender is not the target
                 let sender_is_target = if let Some(sender_player) = context.sender.get_player() {
-                    sender_player.id == target.id
+                    sender_player.id() == target.id()
                 } else {
                     false
                 };

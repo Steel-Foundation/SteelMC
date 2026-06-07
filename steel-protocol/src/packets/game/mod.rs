@@ -26,6 +26,7 @@ mod c_level_chunk_with_light;
 mod c_level_event;
 mod c_login;
 mod c_move_entity;
+mod c_move_vehicle;
 mod c_open_screen;
 mod c_open_sign_editor;
 mod c_player_abilities;
@@ -46,6 +47,7 @@ mod c_set_entity_motion;
 mod c_set_experience;
 mod c_set_health;
 mod c_set_held_slot;
+mod c_set_passengers;
 mod c_set_time;
 mod c_sound;
 mod c_system_chat;
@@ -73,6 +75,7 @@ mod s_container_click;
 mod s_container_close;
 mod s_container_slot_state_changed;
 mod s_move_player;
+mod s_move_vehicle;
 mod s_pick_item_from_block;
 mod s_player_abilities;
 mod s_player_action;
@@ -122,6 +125,7 @@ pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
     CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };
+pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;
 pub use c_player_abilities::{CPlayerAbilities, ability_flags};
@@ -144,6 +148,7 @@ pub use c_set_entity_motion::CSetEntityMotion;
 pub use c_set_experience::CSetExperience;
 pub use c_set_health::CSetHealth;
 pub use c_set_held_slot::CSetHeldSlot;
+pub use c_set_passengers::CSetPassengers;
 pub use c_set_time::CSetTime;
 pub use c_sound::{CSound, SoundSource};
 pub use c_system_chat::CSystemChat;
@@ -175,6 +180,7 @@ pub use s_container_slot_state_changed::SContainerSlotStateChanged;
 pub use s_move_player::{
     SMovePlayer, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly,
 };
+pub use s_move_vehicle::SMoveVehicle;
 pub use s_pick_item_from_block::SPickItemFromBlock;
 pub use s_player_abilities::SPlayerAbilities;
 pub use s_player_action::{PlayerAction, SPlayerAction};

@@ -9,6 +9,7 @@ use steel_utils::{BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event_context::GameEventContext;
 
@@ -76,7 +77,7 @@ impl BlockItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,

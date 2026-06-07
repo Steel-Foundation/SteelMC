@@ -30,14 +30,21 @@ impl RotatedPillarBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    /// Returns the vanilla placement state for a rotated pillar class.
+    #[must_use]
+    pub(super) fn placement_state(
+        block: BlockRef,
+        context: &BlockPlaceContext<'_>,
+    ) -> BlockStateId {
+        block
+            .default_state()
+            .set_value(&Self::AXIS, context.clicked_face.get_axis())
+    }
 }
 
 impl BlockBehavior for RotatedPillarBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(
-            self.block
-                .default_state()
-                .set_value(&Self::AXIS, context.clicked_face.get_axis()),
-        )
+        Some(Self::placement_state(self.block, context))
     }
 }

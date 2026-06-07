@@ -1,34 +1,34 @@
 //! Entity tracking system for managing which players can see which entities.
 //!
-//! Uses a chunk-based spatial index similar to `PlayerAreaMap` for efficient
-//! tracking. When a player's view changes, we only check entities in the
-//! added/removed chunks rather than iterating all entities.
-//!
-//! The key difference from player tracking is that entities have varying
-//! tracking ranges (from their `EntityType`), so we register entities in
-//! all chunks within their tracking range.
+//! Keeps the vanilla visibility predicate in block space. Vanilla stores an
+//! entity tracking range as client chunks, multiplies it by 16, caps it by the
+//! player's view distance, and then checks horizontal squared distance.
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use rustc_hash::FxHashSet;
-use steel_protocol::packets::game::{CAddEntity, CRemoveEntities, CSetEntityData, to_angle_byte};
+use steel_protocol::packets::game::{
+    AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetPassengers,
+    CUpdateAttributes, to_angle_byte,
+};
 use steel_registry::RegistryEntry;
+use steel_registry::entity_data::DataValue;
 use steel_utils::ChunkPos;
-use steel_utils::locks::SyncRwLock;
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::entity::{SharedEntity, WeakEntity};
+use crate::entity::{
+    Entity, EntityMovementSyncPacket, ServerEntityMovementSyncState,
+    ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
+};
 use crate::player::Player;
 
-/// World-level entity tracker using chunk-based spatial indexing.
-///
-/// Similar to `PlayerAreaMap` but for entities. Maps chunks to entity IDs,
-/// allowing O(1) lookup of entities in a chunk when player view changes.
-pub struct EntityTracker {
-    /// Maps chunk coords to set of entity IDs whose tracking range includes that chunk.
-    chunks: scc::HashMap<ChunkPos, FxHashSet<i32>>,
+const BLOCKS_PER_CHUNK: f64 = 16.0;
 
-    /// Maps entity ID to its tracking data (weak ref, range, registered chunks, tracking players).
+/// World-level entity tracker.
+pub struct EntityTracker {
+    /// Maps entity ID to its tracking data.
     entities: scc::HashMap<i32, TrackedEntity>,
 }
 
@@ -36,12 +36,38 @@ pub struct EntityTracker {
 struct TrackedEntity {
     /// Weak reference to the entity. When this fails to upgrade, entity is dead.
     entity: WeakEntity,
-    /// Tracking range in chunks.
-    range_chunks: i32,
-    /// Chunks this entity is registered in (for efficient removal).
-    registered_chunks: FxHashSet<ChunkPos>,
+    /// Vanilla `ServerEntity` movement sync state owned by the tracker.
+    server_entity: SyncMutex<ServerEntityMovementSyncState>,
+    /// Last direct passenger ids sent to tracking clients.
+    last_passenger_ids: SyncMutex<Vec<i32>>,
+    /// Vanilla client tracking range converted to blocks.
+    tracking_range: EntityTrackingRange,
+    /// Current chunk used by the player-view predicate.
+    registered_chunk: ChunkPos,
     /// Players currently tracking this entity (interior mutable for concurrent access).
     seen_by: SyncRwLock<FxHashSet<i32>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EntityTrackingRange {
+    block_radius: f64,
+}
+
+impl EntityTrackingRange {
+    fn from_client_chunk_range(client_chunk_range: i32) -> Self {
+        Self {
+            block_radius: f64::from(client_chunk_range) * BLOCKS_PER_CHUNK,
+        }
+    }
+
+    fn is_disabled(self) -> bool {
+        self.block_radius <= 0.0
+    }
+
+    fn visible_radius(self, player_view_distance: u8) -> f64 {
+        self.block_radius
+            .min(f64::from(player_view_distance) * BLOCKS_PER_CHUNK)
+    }
 }
 
 impl Default for EntityTracker {
@@ -55,64 +81,80 @@ impl EntityTracker {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            chunks: scc::HashMap::new(),
             entities: scc::HashMap::new(),
         }
     }
 
     /// Starts tracking an entity.
     ///
-    /// Registers the entity in all chunks within its tracking range and sends
-    /// spawn packets to any players already watching those chunks.
+    /// Sends spawn packets to players already watching the entity chunk and
+    /// inside the vanilla tracking range.
     ///
     /// The `get_players_in_chunk` callback should return player IDs in a given chunk
     /// (typically from `PlayerAreaMap::get_tracking_players`).
     /// The `get_player` callback should resolve a player ID to a `Player` reference.
+    ///
+    /// # Panics
+    /// Panics if the entity is removed or is already tracked.
     pub fn add(
         &self,
         entity: &SharedEntity,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
+        assert!(
+            !entity.is_removed(),
+            "cannot add removed entity {} to tracker",
+            entity.id()
+        );
+
         let entity_id = entity.id();
-        let range_chunks = entity.entity_type().client_tracking_range;
+        let tracking_range = EntityTrackingRange::from_client_chunk_range(
+            entity.entity_type().client_tracking_range,
+        );
+        if tracking_range.is_disabled() {
+            return;
+        }
+
         let pos = entity.position();
-        let center_chunk = ChunkPos::from_entity_pos(pos);
+        let registered_chunk = ChunkPos::from_entity_pos(pos);
 
-        // Calculate all chunks within tracking range
-        let mut registered_chunks = FxHashSet::default();
-        for dx in -range_chunks..=range_chunks {
-            for dz in -range_chunks..=range_chunks {
-                let chunk = ChunkPos::new(center_chunk.0.x + dx, center_chunk.0.y + dz);
-                registered_chunks.insert(chunk);
-                self.add_entity_to_chunk(chunk, entity_id);
-            }
-        }
+        let players_to_notify = Self::visible_players_for_entity(
+            entity_id,
+            entity.as_ref(),
+            registered_chunk,
+            tracking_range,
+            &get_players_in_chunk,
+            &get_player,
+        );
+        let player_ids_to_notify: Vec<i32> = players_to_notify.iter().copied().collect();
 
-        // Collect players to notify (deduplicated since player might be in multiple chunks)
-        let mut players_to_notify = FxHashSet::default();
-        for &chunk in &registered_chunks {
-            for player_id in get_players_in_chunk(chunk) {
-                // Don't notify if the entity is the player itself
-                if player_id != entity_id {
-                    players_to_notify.insert(player_id);
-                }
-            }
-        }
-
-        let tracked = TrackedEntity {
+        let tracked_entity = TrackedEntity {
             entity: Arc::downgrade(entity),
-            range_chunks,
-            registered_chunks,
-            seen_by: SyncRwLock::new(players_to_notify.clone()),
+            server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
+                pos,
+                entity.velocity(),
+                entity.on_ground(),
+                entity.rotation(),
+                entity.rotation().0,
+                entity.entity_type().update_interval,
+                entity.entity_type().track_deltas,
+            )),
+            last_passenger_ids: SyncMutex::new(self.direct_tracked_passenger_ids(entity.as_ref())),
+            tracking_range,
+            registered_chunk,
+            seen_by: SyncRwLock::new(players_to_notify),
         };
 
-        let _ = self.entities.insert_sync(entity_id, tracked);
+        assert!(
+            self.entities.insert_sync(entity_id, tracked_entity).is_ok(),
+            "entity {entity_id} is already tracked"
+        );
 
         // Send spawn packets to all nearby players
-        for player_id in players_to_notify {
+        for player_id in player_ids_to_notify {
             if let Some(player) = get_player(player_id) {
-                send_spawn_packets(entity, &player);
+                self.send_spawn_packets(entity, &player);
             }
         }
     }
@@ -120,111 +162,208 @@ impl EntityTracker {
     /// Stops tracking an entity and sends despawn to all tracking players.
     pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<Arc<Player>>) {
         if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-            // Remove from all chunk indices
-            for chunk in &tracked.registered_chunks {
-                self.remove_entity_from_chunk(*chunk, entity_id);
-            }
-
+            let entity = tracked.entity.upgrade();
             // Send despawn to all tracking players
             for player_id in tracked.seen_by.read().iter() {
                 if let Some(player) = get_player(*player_id) {
+                    if let Some(entity) = &entity
+                        && let Some(packet) =
+                            self.vehicle_passenger_packet_for_player(entity.as_ref(), *player_id)
+                    {
+                        player.send_packet(packet);
+                    }
                     player.send_packet(CRemoveEntities::single(entity_id));
                 }
             }
         }
     }
 
-    /// Called when a player's view changes. Handles entity spawning/despawning.
+    /// Refreshes the tracked-entity set for one player.
     ///
-    /// Only checks entities in the added/removed chunks, not all entities.
-    pub fn on_player_view_change(
-        &self,
-        player: &Player,
-        added_chunks: &[ChunkPos],
-        removed_chunks: &[ChunkPos],
-    ) {
-        let player_id = player.id;
+    /// Mirrors vanilla `TrackedEntity.updatePlayer`: each tracked entity checks
+    /// whether the player tracks the entity chunk, passes the entity-specific
+    /// broadcast predicate, and is inside the effective horizontal range.
+    pub fn update_player(&self, player: &Player, view: &PlayerChunkView) {
+        let player_id = player.id();
+        let player_pos = player.position();
+        let player_view_distance = view.view_distance;
 
-        // For removed chunks: check if any entities there should stop being tracked
-        for &chunk in removed_chunks {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
+        let mut entities_to_despawn = Vec::new();
+        let mut entities_to_spawn = Vec::new();
+        let mut dead_entities = Vec::new();
 
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        // Check if player was tracking and if entity is no longer in ANY of player's chunks
-                        // For simplicity, we remove tracking - if the entity is in another visible chunk,
-                        // the added_chunks pass will re-add it
-                        if tracked.seen_by.write().remove(&player_id) {
-                            player.send_packet(CRemoveEntities::single(entity_id));
-                        }
-                    });
+        self.entities.iter_sync(|entity_id, tracked| {
+            let entity_id = *entity_id;
+            let Some(entity) = tracked.entity.upgrade() else {
+                dead_entities.push(entity_id);
+                return true;
+            };
+
+            let visible = !entity.is_removed()
+                && entity_id != player_id
+                && view.contains(tracked.registered_chunk)
+                && entity.broadcast_to_player(player)
+                && is_within_tracking_distance(
+                    entity.position(),
+                    player_pos,
+                    effective_tracking_range(entity.as_ref(), tracked.tracking_range),
+                    player_view_distance,
+                );
+
+            let mut despawn = false;
+            {
+                let mut seen_by = tracked.seen_by.write();
+                if visible {
+                    if seen_by.insert(player_id) {
+                        entities_to_spawn.push(entity.clone());
+                    }
+                } else if seen_by.remove(&player_id) {
+                    despawn = true;
                 }
             }
+
+            if despawn {
+                let vehicle_packet =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id);
+                entities_to_despawn.push((entity_id, vehicle_packet));
+            }
+
+            true
+        });
+
+        for (entity_id, vehicle_packet) in entities_to_despawn {
+            if let Some(packet) = vehicle_packet {
+                player.send_packet(packet);
+            }
+            player.send_packet(CRemoveEntities::single(entity_id));
         }
 
-        // For added chunks: check if any entities there should start being tracked
-        for &chunk in added_chunks {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
-
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    // Skip self
-                    if entity_id == player_id {
-                        continue;
-                    }
-
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        // Check if not already tracking
-                        let mut seen_by = tracked.seen_by.write();
-                        if !seen_by.contains(&player_id) {
-                            // Try to get entity to send spawn packet
-                            if let Some(entity) = tracked.entity.upgrade() {
-                                seen_by.insert(player_id);
-                                send_spawn_packets(&entity, player);
-                            }
-                        }
-                    });
-                }
-            }
+        for entity in entities_to_spawn {
+            self.send_spawn_packets(&entity, player);
         }
 
         // Clean up dead entities we encountered
-        self.cleanup_dead_entities();
+        for entity_id in dead_entities {
+            self.remove_dead_entity(entity_id);
+        }
     }
 
-    /// Called when a player joins - initializes tracking for all visible entities.
-    pub fn on_player_join(&self, player: &Player, view: &PlayerChunkView) {
-        let player_id = player.id;
+    /// Sends tracker-owned movement changes for all tracked entities.
+    ///
+    /// Mirrors vanilla `ChunkMap.tick` driving `ServerEntity.sendChanges`.
+    pub fn send_changes(
+        &self,
+        get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+        mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
+        mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
+        mut broadcast_attributes: impl FnMut(i32, Vec<AttributeSnapshot>),
+        mut send_passengers: impl FnMut(i32, CSetPassengers),
+    ) {
+        let mut dead_entities = Vec::new();
+        let mut entities_to_refresh = Vec::new();
+        let mut passenger_packets_to_send = Vec::new();
+        let mut packets_to_broadcast = Vec::new();
+        let mut entity_data_to_broadcast = Vec::new();
+        let mut attributes_to_broadcast = Vec::new();
 
-        view.for_each(|chunk| {
-            let entity_ids: Option<Vec<i32>> = self
-                .chunks
-                .read_sync(&chunk, |_, set| set.iter().copied().collect());
+        self.entities.iter_sync(|entity_id, tracked| {
+            let entity_id = *entity_id;
+            let Some(entity) = tracked.entity.upgrade() else {
+                dead_entities.push(entity_id);
+                return true;
+            };
 
-            if let Some(ids) = entity_ids {
-                for entity_id in ids {
-                    // Skip self
-                    if entity_id == player_id {
-                        continue;
-                    }
+            if entity.is_removed() {
+                return true;
+            }
 
-                    self.entities.update_sync(&entity_id, |_, tracked| {
-                        let mut seen_by = tracked.seen_by.write();
-                        if !seen_by.contains(&player_id)
-                            && let Some(entity) = tracked.entity.upgrade()
-                        {
-                            seen_by.insert(player_id);
-                            send_spawn_packets(&entity, player);
+            let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
+            {
+                let mut last_passenger_ids = tracked.last_passenger_ids.lock();
+                if *last_passenger_ids != passenger_ids {
+                    let changed_player_passenger_ids = direct_player_passenger_delta(
+                        &last_passenger_ids,
+                        &passenger_ids,
+                        &get_player,
+                    );
+                    let seen_by = tracked.seen_by.read();
+                    for player_id in seen_by.iter() {
+                        if changed_player_passenger_ids.contains(player_id) {
+                            continue;
                         }
-                    });
+                        passenger_packets_to_send.push((
+                            *player_id,
+                            CSetPassengers::new(
+                                entity_id,
+                                self.direct_passenger_ids_seen_by_player(
+                                    entity.as_ref(),
+                                    *player_id,
+                                ),
+                            ),
+                        ));
+                    }
+                    *last_passenger_ids = passenger_ids;
+                    entities_to_refresh.push(entity_id);
                 }
             }
+
+            let dirty_entity_data = entity.pack_dirty_entity_data();
+            let has_dirty_entity_data = dirty_entity_data.is_some();
+            let result =
+                tracked
+                    .server_entity
+                    .lock()
+                    .record_send_changes(ServerEntityMovementSyncUpdate {
+                        entity_id,
+                        is_passenger: entity.is_passenger(),
+                        position: entity.position(),
+                        velocity: entity.velocity(),
+                        body_rotation: entity.rotation(),
+                        head_yaw: entity.rotation().0,
+                        on_ground: entity.on_ground(),
+                        needs_velocity_sync: entity.needs_velocity_sync(),
+                        has_dirty_entity_data,
+                        force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
+                    });
+            if result.should_clear_velocity_sync() {
+                entity.clear_velocity_sync();
+            }
+            result.for_each_packet(|packet| packets_to_broadcast.push((entity_id, packet)));
+            if let Some(dirty_entity_data) = dirty_entity_data {
+                entity_data_to_broadcast.push((entity_id, dirty_entity_data));
+            }
+            let dirty_attributes = entity.drain_dirty_syncable_attributes();
+            if !dirty_attributes.is_empty() {
+                attributes_to_broadcast.push((entity_id, dirty_attributes));
+            }
+
+            true
         });
+
+        for entity_id in dead_entities {
+            self.remove_dead_entity(entity_id);
+        }
+
+        for (player_id, packet) in passenger_packets_to_send {
+            send_passengers(player_id, packet);
+        }
+
+        for entity_id in entities_to_refresh {
+            self.refresh_entity_players(entity_id, &get_players_in_chunk, &get_player);
+        }
+
+        for (entity_id, packet) in packets_to_broadcast {
+            broadcast_movement(entity_id, packet);
+        }
+
+        for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
+            broadcast_entity_data(entity_id, dirty_entity_data);
+        }
+
+        for (entity_id, dirty_attributes) in attributes_to_broadcast {
+            broadcast_attributes(entity_id, dirty_attributes);
+        }
     }
 
     /// Called when a player leaves - removes them from all entity tracking.
@@ -243,79 +382,122 @@ impl EntityTracker {
 
         // Clean up any dead entities we found
         for entity_id in dead_entities {
-            if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-                for chunk in &tracked.registered_chunks {
-                    self.remove_entity_from_chunk(*chunk, entity_id);
-                }
-            }
+            self.remove_dead_entity(entity_id);
         }
     }
 
-    /// Updates an entity's position in the chunk index.
+    /// Updates an entity's current chunk and visible players after a section move.
     ///
-    /// Call this when an entity moves to a new chunk.
-    pub fn on_entity_move(
+    /// Vanilla refreshes tracked players when an entity's section position changes.
+    /// The old and new chunks may be the same for purely vertical section moves.
+    pub fn on_entity_section_change(
         &self,
         entity_id: i32,
         old_chunk: ChunkPos,
         new_chunk: ChunkPos,
+        get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
-        if old_chunk == new_chunk {
-            return;
-        }
+        let mut players_to_remove = Vec::new();
+        let mut players_to_add = Vec::new();
+        let mut entity_to_spawn = None;
 
         self.entities.update_sync(&entity_id, |_, tracked| {
-            let range = tracked.range_chunks;
-
-            // Calculate old and new chunk sets
-            let mut old_chunks = FxHashSet::default();
-            let mut new_chunks = FxHashSet::default();
-
-            for dx in -range..=range {
-                for dz in -range..=range {
-                    old_chunks.insert(ChunkPos::new(old_chunk.0.x + dx, old_chunk.0.y + dz));
-                    new_chunks.insert(ChunkPos::new(new_chunk.0.x + dx, new_chunk.0.y + dz));
-                }
+            if old_chunk != new_chunk {
+                tracked.registered_chunk = new_chunk;
             }
 
-            // Chunks to remove (in old but not in new)
-            for chunk in old_chunks.difference(&new_chunks) {
-                self.remove_entity_from_chunk(*chunk, entity_id);
-                tracked.registered_chunks.remove(chunk);
-            }
+            let Some(entity) = tracked.entity.upgrade() else {
+                return;
+            };
 
-            // Chunks to add (in new but not in old)
-            for chunk in new_chunks.difference(&old_chunks) {
-                self.add_entity_to_chunk(*chunk, entity_id);
-                tracked.registered_chunks.insert(*chunk);
-            }
+            let new_seen_by = Self::visible_players_for_entity(
+                entity_id,
+                entity.as_ref(),
+                new_chunk,
+                tracked.tracking_range,
+                &get_players_in_chunk,
+                &get_player,
+            );
 
-            // Update tracking for players - those who can no longer see need despawn
-            // For now, we rely on the player view change to handle this
-            // TODO: Could optimize by checking which players lost/gained visibility
-            let _ = get_player; // Suppress unused warning for now
+            let mut seen_by = tracked.seen_by.write();
+            players_to_remove.extend(seen_by.difference(&new_seen_by).copied());
+            players_to_add.extend(new_seen_by.difference(&seen_by).copied());
+            *seen_by = new_seen_by;
+            entity_to_spawn = Some(entity);
         });
+
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+
+        for player_id in players_to_remove {
+            if let Some(player) = get_player(player_id) {
+                if let Some(packet) =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id)
+                {
+                    player.send_packet(packet);
+                }
+                player.send_packet(CRemoveEntities::single(entity_id));
+            }
+        }
+
+        for player_id in players_to_add {
+            if let Some(player) = get_player(player_id) {
+                self.send_spawn_packets(&entity, &player);
+            }
+        }
     }
 
-    /// Cleans up dead entities (from unloaded chunks).
-    fn cleanup_dead_entities(&self) {
-        let mut dead_entities = Vec::new();
+    fn refresh_entity_players(
+        &self,
+        entity_id: i32,
+        get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    ) {
+        let mut players_to_remove = Vec::new();
+        let mut players_to_add = Vec::new();
+        let mut entity_to_spawn = None;
 
-        self.entities.iter_sync(|entity_id, tracked| {
-            if tracked.entity.strong_count() == 0 {
-                dead_entities.push(*entity_id);
-            }
-            true // continue iteration
+        self.entities.update_sync(&entity_id, |_, tracked| {
+            let Some(entity) = tracked.entity.upgrade() else {
+                return;
+            };
+
+            let new_seen_by = Self::visible_players_for_entity(
+                entity_id,
+                entity.as_ref(),
+                tracked.registered_chunk,
+                tracked.tracking_range,
+                get_players_in_chunk,
+                get_player,
+            );
+
+            let mut seen_by = tracked.seen_by.write();
+            players_to_remove.extend(seen_by.difference(&new_seen_by).copied());
+            players_to_add.extend(new_seen_by.difference(&seen_by).copied());
+            *seen_by = new_seen_by;
+            entity_to_spawn = Some(entity);
         });
 
-        for entity_id in dead_entities {
-            if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
-                for chunk in &tracked.registered_chunks {
-                    self.remove_entity_from_chunk(*chunk, entity_id);
+        let Some(entity) = entity_to_spawn else {
+            return;
+        };
+
+        for player_id in players_to_remove {
+            if let Some(player) = get_player(player_id) {
+                if let Some(packet) =
+                    self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id)
+                {
+                    player.send_packet(packet);
                 }
-                // Note: We don't send despawn packets here because the players
-                // will get updated via on_player_view_change when chunks unload
+                player.send_packet(CRemoveEntities::single(entity_id));
+            }
+        }
+
+        for player_id in players_to_add {
+            if let Some(player) = get_player(player_id) {
+                self.send_spawn_packets(&entity, &player);
             }
         }
     }
@@ -326,77 +508,721 @@ impl EntityTracker {
         self.entities.len()
     }
 
-    fn add_entity_to_chunk(&self, chunk: ChunkPos, entity_id: i32) {
-        if self
-            .chunks
-            .update_sync(&chunk, |_, set| {
-                set.insert(entity_id);
+    /// Returns players currently tracking an entity.
+    #[must_use]
+    pub fn tracking_player_ids(&self, entity_id: i32) -> Vec<i32> {
+        self.entities
+            .read_sync(&entity_id, |_, tracked| {
+                tracked.seen_by.read().iter().copied().collect()
             })
-            .is_none()
-        {
-            let mut set = FxHashSet::default();
-            set.insert(entity_id);
-            let _ = self.chunks.insert_sync(chunk, set);
-        }
+            .unwrap_or_default()
     }
 
-    fn remove_entity_from_chunk(&self, chunk: ChunkPos, entity_id: i32) {
-        let should_remove = self
-            .chunks
-            .update_sync(&chunk, |_, set| {
-                set.remove(&entity_id);
-                set.is_empty()
-            })
-            .unwrap_or(false);
+    fn remove_dead_entity(&self, entity_id: i32) {
+        // Note: We don't send despawn packets here because the players
+        // will get updated via player view changes or explicit removals.
+        let _ = self.entities.remove_sync(&entity_id);
+    }
 
-        if should_remove {
-            let _ = self.chunks.remove_if_sync(&chunk, |set| set.is_empty());
+    fn visible_players_for_entity(
+        entity_id: i32,
+        entity: &dyn Entity,
+        entity_chunk: ChunkPos,
+        tracking_range: EntityTrackingRange,
+        get_players_in_chunk: &impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    ) -> FxHashSet<i32> {
+        let entity_pos = entity.position();
+        let tracking_range = effective_tracking_range(entity, tracking_range);
+        let mut players = FxHashSet::default();
+        if entity.is_removed() {
+            return players;
         }
+
+        for player_id in get_players_in_chunk(entity_chunk) {
+            if player_id == entity_id {
+                continue;
+            }
+
+            let Some(player) = get_player(player_id) else {
+                continue;
+            };
+
+            if entity.broadcast_to_player(&player)
+                && is_within_tracking_distance(
+                    entity_pos,
+                    player.position(),
+                    tracking_range,
+                    player.view_distance(),
+                )
+            {
+                players.insert(player_id);
+            }
+        }
+
+        players
+    }
+
+    fn send_spawn_packets(&self, entity: &SharedEntity, player: &Player) {
+        let entity_id = entity.id();
+        self.spawn_pairing(entity, player.id())
+            .send_to(entity_id, player);
+    }
+
+    fn spawn_pairing(&self, entity: &SharedEntity, player_id: i32) -> EntitySpawnPairing {
+        EntitySpawnPairing::from_entity(
+            entity,
+            self.passenger_pairing_packets_for_player(entity.as_ref(), player_id),
+        )
+    }
+
+    fn passenger_pairing_packets_for_player(
+        &self,
+        entity: &dyn Entity,
+        player_id: i32,
+    ) -> Vec<CSetPassengers> {
+        let mut packets = Vec::new();
+        let passenger_ids = self.direct_passenger_ids_seen_by_player(entity, player_id);
+        if !passenger_ids.is_empty() {
+            packets.push(CSetPassengers::new(entity.id(), passenger_ids));
+        }
+
+        if let Some(vehicle) = entity.vehicle()
+            && self.entity_seen_by_player(vehicle.id(), player_id)
+        {
+            packets.push(CSetPassengers::new(
+                vehicle.id(),
+                self.direct_passenger_ids_seen_by_player(vehicle.as_ref(), player_id),
+            ));
+        }
+
+        packets
+    }
+
+    fn vehicle_passenger_packet_for_player(
+        &self,
+        entity: &dyn Entity,
+        player_id: i32,
+    ) -> Option<CSetPassengers> {
+        let vehicle = entity.vehicle()?;
+        if !self.entity_seen_by_player(vehicle.id(), player_id) {
+            return None;
+        }
+        Some(CSetPassengers::new(
+            vehicle.id(),
+            self.direct_passenger_ids_seen_by_player(vehicle.as_ref(), player_id),
+        ))
+    }
+
+    fn direct_tracked_passenger_ids(&self, entity: &dyn Entity) -> Vec<i32> {
+        entity
+            .passengers()
+            .into_iter()
+            .filter(|passenger| self.is_entity_tracked(passenger.id()))
+            .map(|passenger| passenger.id())
+            .collect()
+    }
+
+    fn direct_passenger_ids_seen_by_player(&self, entity: &dyn Entity, player_id: i32) -> Vec<i32> {
+        entity
+            .passengers()
+            .into_iter()
+            .filter(|passenger| {
+                passenger.id() == player_id || self.entity_seen_by_player(passenger.id(), player_id)
+            })
+            .map(|passenger| passenger.id())
+            .collect()
+    }
+
+    fn is_entity_tracked(&self, entity_id: i32) -> bool {
+        self.entities.read_sync(&entity_id, |_, _| ()).is_some()
+    }
+
+    fn entity_seen_by_player(&self, entity_id: i32, player_id: i32) -> bool {
+        self.entities
+            .read_sync(&entity_id, |_, tracked| {
+                tracked.seen_by.read().contains(&player_id)
+            })
+            .unwrap_or(false)
     }
 }
 
-/// Sends spawn packets for an entity to a player.
-///
-/// Uses packet bundling to ensure all spawn-related packets (add entity, metadata, etc.)
-/// are processed atomically by the client in a single tick.
-fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
-    let pos = entity.position();
-    let vel = entity.velocity();
-    let (yaw, pitch) = entity.rotation();
-    let entity_type_id = entity.entity_type().id() as i32;
+fn is_within_tracking_distance(
+    entity_pos: DVec3,
+    player_pos: DVec3,
+    tracking_range: EntityTrackingRange,
+    player_view_distance: u8,
+) -> bool {
+    let visible_radius = tracking_range.visible_radius(player_view_distance);
+    let x = player_pos.x - entity_pos.x;
+    let z = player_pos.z - entity_pos.z;
+    x * x + z * z <= visible_radius * visible_radius
+}
 
-    // Convert rotation from degrees to protocol byte format (256th of a full rotation)
-    // Uses to_angle_byte which matches vanilla's Mth.packDegrees
-    let x_rot = to_angle_byte(pitch);
-    let y_rot = to_angle_byte(yaw);
+fn effective_tracking_range(
+    entity: &dyn Entity,
+    base_range: EntityTrackingRange,
+) -> EntityTrackingRange {
+    let mut range = base_range;
+    let mut visited = FxHashSet::default();
+    visited.insert(entity.id());
+    add_passenger_tracking_ranges(entity, &mut range, &mut visited);
+    range
+}
 
-    let spawn_packet = CAddEntity {
-        id: entity.id(),
-        uuid: entity.uuid(),
-        entity_type: entity_type_id,
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        velocity_x: vel.x,
-        velocity_y: vel.y,
-        velocity_z: vel.z,
-        x_rot,
-        y_rot,
-        head_y_rot: y_rot,
-        data: entity.spawn_data(),
+fn add_passenger_tracking_ranges(
+    entity: &dyn Entity,
+    range: &mut EntityTrackingRange,
+    visited: &mut FxHashSet<i32>,
+) {
+    for passenger in entity.passengers() {
+        if !visited.insert(passenger.id()) {
+            continue;
+        }
+        let passenger_range = EntityTrackingRange::from_client_chunk_range(
+            passenger.entity_type().client_tracking_range,
+        );
+        range.block_radius = range.block_radius.max(passenger_range.block_radius);
+        add_passenger_tracking_ranges(passenger.as_ref(), range, visited);
+    }
+}
+
+struct EntitySpawnPairing {
+    spawn_packet: CAddEntity,
+    entity_data: Vec<DataValue>,
+    attributes: Vec<AttributeSnapshot>,
+    passenger_packets: Vec<CSetPassengers>,
+}
+
+impl EntitySpawnPairing {
+    fn from_entity(entity: &SharedEntity, passenger_packets: Vec<CSetPassengers>) -> Self {
+        let pos = entity.position();
+        let vel = entity.velocity();
+        let (yaw, pitch) = entity.rotation();
+        let entity_type_id = entity.entity_type().id() as i32;
+
+        // Convert rotation from degrees to protocol byte format (256th of a full rotation)
+        // Uses to_angle_byte which matches vanilla's Mth.packDegrees
+        let x_rot = to_angle_byte(pitch);
+        let y_rot = to_angle_byte(yaw);
+
+        Self {
+            spawn_packet: CAddEntity {
+                id: entity.id(),
+                uuid: entity.uuid(),
+                entity_type: entity_type_id,
+                x: pos.x,
+                y: pos.y,
+                z: pos.z,
+                velocity_x: vel.x,
+                velocity_y: vel.y,
+                velocity_z: vel.z,
+                x_rot,
+                y_rot,
+                head_y_rot: y_rot,
+                data: entity.spawn_data(),
+            },
+            entity_data: entity.pack_all_entity_data(),
+            attributes: entity.pack_syncable_attributes(),
+            passenger_packets,
+        }
+    }
+
+    fn send_to(self, entity_id: i32, player: &Player) {
+        player.send_bundle(|bundle| {
+            bundle.add(self.spawn_packet);
+
+            if !self.entity_data.is_empty() {
+                bundle.add(CSetEntityData::new(entity_id, self.entity_data));
+            }
+
+            if !self.attributes.is_empty() {
+                bundle.add(CUpdateAttributes::new(entity_id, self.attributes));
+            }
+
+            for packet in self.passenger_packets {
+                bundle.add(packet);
+            }
+
+            // TODO: Add SetEquipment and leash/link packets when those runtime
+            // systems exist with a complete serialization contract.
+        });
+    }
+}
+
+fn direct_player_passenger_delta(
+    old_passenger_ids: &[i32],
+    new_passenger_ids: &[i32],
+    get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+) -> Vec<i32> {
+    let old_passenger_ids = old_passenger_ids.iter().copied().collect::<FxHashSet<_>>();
+    let new_passenger_ids = new_passenger_ids.iter().copied().collect::<FxHashSet<_>>();
+    old_passenger_ids
+        .symmetric_difference(&new_passenger_ids)
+        .copied()
+        .filter(|entity_id| get_player(*entity_id).is_some())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        mem,
+        sync::{Arc, Weak},
     };
 
-    // Collect entity data before entering the bundle closure
-    let entity_data = entity.pack_all_entity_data();
-    let entity_id = entity.id();
+    use steel_protocol::packets::game::AttributeSnapshot;
+    use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities};
 
-    // Send all spawn packets in a bundle so client processes them atomically
-    player.send_bundle(|bundle| {
-        bundle.add(spawn_packet);
+    use super::*;
+    use crate::entity::EntityBase;
 
-        // Send entity data if any
-        if !entity_data.is_empty() {
-            bundle.add(CSetEntityData::new(entity_id, entity_data));
+    struct PairingTestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        attributes: Vec<AttributeSnapshot>,
+        dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
+        passengers: SyncMutex<Vec<WeakEntity>>,
+        vehicle: SyncMutex<Option<WeakEntity>>,
+    }
+
+    impl PairingTestEntity {
+        fn new(id: i32, attributes: Vec<AttributeSnapshot>) -> Arc<Self> {
+            Self::new_with_type(id, &vanilla_entities::ITEM, attributes)
         }
-    });
+
+        fn new_with_type(
+            id: i32,
+            entity_type: EntityTypeRef,
+            attributes: Vec<AttributeSnapshot>,
+        ) -> Arc<Self> {
+            Arc::new(Self {
+                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+                attributes,
+                dirty_attributes: SyncMutex::new(Vec::new()),
+                passengers: SyncMutex::new(Vec::new()),
+                vehicle: SyncMutex::new(None),
+            })
+        }
+
+        fn shared(attributes: Vec<AttributeSnapshot>) -> SharedEntity {
+            Self::new(1, attributes)
+        }
+
+        fn add_passenger(&self, passenger: &SharedEntity) {
+            self.passengers.lock().push(Arc::downgrade(passenger));
+        }
+
+        fn clear_passengers(&self) {
+            self.passengers.lock().clear();
+        }
+
+        fn set_vehicle(&self, vehicle: &SharedEntity) {
+            *self.vehicle.lock() = Some(Arc::downgrade(vehicle));
+        }
+
+        fn set_dirty_attributes(&self, attributes: Vec<AttributeSnapshot>) {
+            *self.dirty_attributes.lock() = attributes;
+        }
+    }
+
+    impl Entity for PairingTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+            self.attributes.clone()
+        }
+
+        fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+            mem::take(&mut *self.dirty_attributes.lock())
+        }
+
+        fn vehicle(&self) -> Option<SharedEntity> {
+            self.vehicle.lock().as_ref().and_then(Weak::upgrade)
+        }
+
+        fn passengers(&self) -> Vec<SharedEntity> {
+            let mut live_passengers = Vec::new();
+            self.passengers.lock().retain(|passenger| {
+                let Some(entity) = passenger.upgrade() else {
+                    return false;
+                };
+                live_passengers.push(entity);
+                true
+            });
+            live_passengers
+        }
+    }
+
+    fn track_entity_for_player(tracker: &EntityTracker, entity: &SharedEntity, player_id: i32) {
+        let pos = entity.position();
+        let mut seen_by = FxHashSet::default();
+        seen_by.insert(player_id);
+        let tracked_entity = TrackedEntity {
+            entity: Arc::downgrade(entity),
+            server_entity: SyncMutex::new(ServerEntityMovementSyncState::new(
+                pos,
+                entity.velocity(),
+                entity.on_ground(),
+                entity.rotation(),
+                entity.rotation().0,
+                entity.entity_type().update_interval,
+                entity.entity_type().track_deltas,
+            )),
+            last_passenger_ids: SyncMutex::new(
+                tracker.direct_tracked_passenger_ids(entity.as_ref()),
+            ),
+            tracking_range: EntityTrackingRange::from_client_chunk_range(
+                entity.entity_type().client_tracking_range,
+            ),
+            registered_chunk: ChunkPos::from_entity_pos(pos),
+            seen_by: SyncRwLock::new(seen_by),
+        };
+        assert!(
+            tracker
+                .entities
+                .insert_sync(entity.id(), tracked_entity)
+                .is_ok()
+        );
+    }
+
+    fn mark_seen_by_player(tracker: &EntityTracker, entity_id: i32, player_id: i32) {
+        tracker.entities.update_sync(&entity_id, |_, tracked| {
+            tracked.seen_by.write().insert(player_id);
+        });
+    }
+
+    #[test]
+    fn client_tracking_range_is_converted_to_blocks() {
+        let range = EntityTrackingRange::from_client_chunk_range(4);
+
+        assert!((range.visible_radius(10) - 64.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn zero_client_tracking_range_disables_tracking() {
+        let range = EntityTrackingRange::from_client_chunk_range(0);
+
+        assert!(range.is_disabled());
+    }
+
+    #[test]
+    fn tracking_distance_uses_horizontal_circle() {
+        let range = EntityTrackingRange::from_client_chunk_range(4);
+        let entity_pos = DVec3::ZERO;
+
+        assert!(is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.0, 300.0, 0.0),
+            range,
+            8,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.0, 0.0, 64.0),
+            range,
+            8,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(64.1, 0.0, 0.0),
+            range,
+            8,
+        ));
+    }
+
+    #[test]
+    fn tracking_distance_is_capped_by_player_view_distance() {
+        let range = EntityTrackingRange::from_client_chunk_range(10);
+        let entity_pos = DVec3::ZERO;
+
+        assert!(is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(32.0, 0.0, 0.0),
+            range,
+            2,
+        ));
+        assert!(!is_within_tracking_distance(
+            entity_pos,
+            DVec3::new(32.1, 0.0, 0.0),
+            range,
+            2,
+        ));
+    }
+
+    #[test]
+    fn vehicle_effective_tracking_range_uses_widest_passenger_range() {
+        test_support::init_test_registry();
+
+        let vehicle_typed =
+            PairingTestEntity::new_with_type(1, &vanilla_entities::ITEM, Vec::new());
+        let passenger_typed =
+            PairingTestEntity::new_with_type(2, &vanilla_entities::PLAYER, Vec::new());
+        assert!(
+            passenger_typed.entity_type().client_tracking_range
+                > vehicle_typed.entity_type().client_tracking_range
+        );
+
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        let base_range = EntityTrackingRange::from_client_chunk_range(
+            vehicle.entity_type().client_tracking_range,
+        );
+
+        let effective = effective_tracking_range(vehicle.as_ref(), base_range);
+
+        assert_eq!(
+            effective.block_radius.to_bits(),
+            (f64::from(passenger.entity_type().client_tracking_range) * BLOCKS_PER_CHUNK).to_bits()
+        );
+    }
+
+    #[test]
+    fn spawn_pairing_includes_syncable_attributes() {
+        test_support::init_test_registry();
+
+        let entity = PairingTestEntity::shared(vec![AttributeSnapshot {
+            attribute_id: 7,
+            base_value: 1.25,
+            modifiers: Vec::new(),
+        }]);
+        let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
+
+        assert_eq!(pairing.spawn_packet.id, entity.id());
+        assert_eq!(pairing.attributes.len(), 1);
+        assert_eq!(pairing.attributes[0].attribute_id, 7);
+        assert_eq!(
+            pairing.attributes[0].base_value.to_bits(),
+            1.25_f64.to_bits()
+        );
+    }
+
+    #[test]
+    fn send_changes_broadcasts_dirty_attributes_once() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let entity_typed = PairingTestEntity::new(1, Vec::new());
+        let entity: SharedEntity = entity_typed.clone();
+        tracker.add(&entity, |_| Vec::new(), |_| None);
+
+        entity_typed.set_dirty_attributes(vec![AttributeSnapshot {
+            attribute_id: 7,
+            base_value: 2.5,
+            modifiers: Vec::new(),
+        }]);
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |entity_id, attributes| updates.push((entity_id, attributes)),
+            |_, _| {},
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 1);
+        assert_eq!(updates[0].1.len(), 1);
+        assert_eq!(updates[0].1[0].attribute_id, 7);
+        assert_eq!(updates[0].1[0].base_value.to_bits(), 2.5_f64.to_bits());
+
+        updates.clear();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |entity_id, attributes| updates.push((entity_id, attributes)),
+            |_, _| {},
+        );
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn spawn_pairing_omits_untracked_passenger_for_vehicle() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+
+        let pairing = tracker.spawn_pairing(&vehicle, 99);
+
+        assert!(pairing.passenger_packets.is_empty());
+    }
+
+    #[test]
+    fn spawn_pairing_includes_tracked_passenger_packet_for_vehicle() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        track_entity_for_player(&tracker, &passenger, 99);
+        let vehicle: SharedEntity = vehicle_typed;
+
+        let pairing = tracker.spawn_pairing(&vehicle, 99);
+
+        assert_eq!(pairing.passenger_packets.len(), 1);
+        assert_eq!(pairing.passenger_packets[0].vehicle_id, 1);
+        assert_eq!(pairing.passenger_packets[0].passenger_ids, vec![2]);
+    }
+
+    #[test]
+    fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed.clone();
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        passenger_typed.set_vehicle(&vehicle);
+
+        let pairing = tracker.spawn_pairing(&passenger, 99);
+
+        assert!(pairing.passenger_packets.is_empty());
+    }
+
+    #[test]
+    fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed.clone();
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        passenger_typed.set_vehicle(&vehicle);
+        track_entity_for_player(&tracker, &vehicle, 99);
+        track_entity_for_player(&tracker, &passenger, 99);
+
+        let pairing = tracker.spawn_pairing(&passenger, 99);
+
+        assert_eq!(pairing.passenger_packets.len(), 1);
+        assert_eq!(pairing.passenger_packets[0].vehicle_id, 1);
+        assert_eq!(pairing.passenger_packets[0].passenger_ids, vec![2]);
+    }
+
+    #[test]
+    fn send_changes_broadcasts_passenger_changes_once() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let vehicle: SharedEntity = vehicle_typed.clone();
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        track_entity_for_player(&tracker, &vehicle, 99);
+        track_entity_for_player(&tracker, &passenger, 99);
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+        assert!(updates.is_empty());
+
+        vehicle_typed.add_passenger(&passenger);
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 99);
+        assert_eq!(updates[0].1.vehicle_id, 1);
+        assert_eq!(updates[0].1.passenger_ids, vec![2]);
+
+        updates.clear();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+        assert!(updates.is_empty());
+
+        vehicle_typed.clear_passengers();
+        mark_seen_by_player(&tracker, 1, 99);
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 99);
+        assert_eq!(updates[0].1.vehicle_id, 1);
+        assert!(updates[0].1.passenger_ids.is_empty());
+    }
+
+    #[test]
+    fn send_changes_removes_untracked_passenger_from_vehicle_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let vehicle_typed = PairingTestEntity::new(1, Vec::new());
+        let passenger_typed = PairingTestEntity::new(2, Vec::new());
+        let passenger: SharedEntity = passenger_typed;
+        vehicle_typed.add_passenger(&passenger);
+        let vehicle: SharedEntity = vehicle_typed;
+        track_entity_for_player(&tracker, &passenger, 99);
+        track_entity_for_player(&tracker, &vehicle, 99);
+
+        let _ = tracker.entities.remove_sync(&passenger.id());
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            |_, _| {},
+            |_, _| {},
+            |_, _| {},
+            |player_id, packet| {
+                updates.push((player_id, packet));
+            },
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 99);
+        assert_eq!(updates[0].1.vehicle_id, 1);
+        assert!(updates[0].1.passenger_ids.is_empty());
+    }
 }
