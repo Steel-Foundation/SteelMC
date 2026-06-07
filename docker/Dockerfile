@@ -3,6 +3,10 @@ LABEL authors="junkydeveloper"
 
 WORKDIR /steel
 
+RUN apk add --no-cache lld
+
+ENV RUSTFLAGS="-Zthreads=0 -Clink-arg=-fuse-ld=lld"
+
 COPY . .
 RUN cargo build --release --locked
 
