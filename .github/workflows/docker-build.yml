@@ -45,7 +45,6 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          bake-target: normal
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=nightly,enable=${{ github.event_name == 'push' }}
@@ -57,7 +56,6 @@ jobs:
         id: meta-pelican
         uses: docker/metadata-action@v6
         with:
-          bake-target: pelican
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=nightly-pelican,enable=${{ github.event_name == 'push' }}
@@ -73,33 +71,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker images
-        id: build
-        uses: docker/bake-action@v6
+      - name: Build normal Docker image
+        id: build-normal
+        uses: docker/build-push-action@v6
         with:
-          source: .
-          files: |
-            ./docker-bake.hcl
-            cwd://${{ steps.meta.outputs.bake-file-tags }}
-            cwd://${{ steps.meta.outputs.bake-file-labels }}
-            cwd://${{ steps.meta.outputs.bake-file-annotations }}
-            cwd://${{ steps.meta-pelican.outputs.bake-file-tags }}
-            cwd://${{ steps.meta-pelican.outputs.bake-file-labels }}
-            cwd://${{ steps.meta-pelican.outputs.bake-file-annotations }}
-          targets: normal,pelican
-          set: |
-            *.platform=${{ matrix.platform }}
-            *.output=type=image,push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          context: .
+          file: ./docker/Dockerfile
+          target: normal
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+
+      - name: Build Pelican Docker image
+        id: build-pelican
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          target: pelican
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta-pelican.outputs.labels }}
+          annotations: ${{ steps.meta-pelican.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
 
       - name: Export digests
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           mkdir -p "${RUNNER_TEMP}/digests/normal" "${RUNNER_TEMP}/digests/pelican"
-          printf '%s' '${{ steps.build.outputs.metadata }}' > "${RUNNER_TEMP}/metadata.json"
 
-          normal_digest="$(jq -r '.normal["containerimage.digest"]' "${RUNNER_TEMP}/metadata.json")"
-          pelican_digest="$(jq -r '.pelican["containerimage.digest"]' "${RUNNER_TEMP}/metadata.json")"
+          normal_digest="${{ steps.build-normal.outputs.digest }}"
+          pelican_digest="${{ steps.build-pelican.outputs.digest }}"
 
           touch "${RUNNER_TEMP}/digests/normal/${normal_digest#sha256:}"
           touch "${RUNNER_TEMP}/digests/pelican/${pelican_digest#sha256:}"
