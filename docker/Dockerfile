@@ -5,7 +5,8 @@ WORKDIR /steel
 
 COPY .. .
 RUN cargo build --release --locked
-FROM alpine:3.23
+#FROM alpine:3.23
+FROM scratch
 
 COPY --chmod=777 --from=builder /steel/target/release/steel /
 
