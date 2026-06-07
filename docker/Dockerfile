@@ -19,7 +19,7 @@ EXPOSE 25565
 
 ENTRYPOINT ["/home/container/steel"]
 
-FROM scratch AS normal
+FROM alpine:3.23 AS normal
 
 COPY --chmod=777 --from=builder /steel/target/release/steel /
 
