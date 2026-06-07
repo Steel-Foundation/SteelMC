@@ -1,7 +1,10 @@
 services:
   steel:
     image: steel
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: normal
     ports:
       - 25565:25565
     volumes:

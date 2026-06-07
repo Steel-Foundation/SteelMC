@@ -34,21 +34,27 @@ jobs:
 
       - name: Create Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
+          bake-target: normal
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=nightly,enable=${{ github.event_name == 'push' }}
             type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
+          annotations: |
+            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
 
       - name: Create Pelican Docker metadata
         id: meta-pelican
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
+          bake-target: pelican
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=nightly-pelican,enable=${{ github.event_name == 'push' }}
             type=raw,value=${{ github.event.release.tag_name }}-pelican,enable=${{ github.event_name == 'release' }}
+          annotations: |
+            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -58,26 +64,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
+      - name: Build Docker images
+        uses: docker/bake-action@v6
         with:
-          context: .
-          file: ./docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          source: .
+          files: |
+            ./docker-bake.hcl
+            cwd://${{ steps.meta.outputs.bake-file-tags }}
+            cwd://${{ steps.meta.outputs.bake-file-labels }}
+            cwd://${{ steps.meta.outputs.bake-file-annotations }}
+            cwd://${{ steps.meta-pelican.outputs.bake-file-tags }}
+            cwd://${{ steps.meta-pelican.outputs.bake-file-labels }}
+            cwd://${{ steps.meta-pelican.outputs.bake-file-annotations }}
+          targets: normal,pelican
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: |
-            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
-
-      - name: Build Pelican Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./pelican/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-pelican.outputs.tags }}
-          labels: ${{ steps.meta-pelican.outputs.labels }}
-          annotations: |
-            org.opencontainers.image.description=Steel is a lightweight Rust implementation of the Minecraft server. It focuses on clean code, performance, extensibility, and ease of use.
