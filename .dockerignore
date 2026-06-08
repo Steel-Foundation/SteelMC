@@ -9,7 +9,8 @@ README.md
 prek.toml
 update-minecraft-src.sh
 clippy.toml
-docker
+docker/docker-compose.yml
+docker/Dockerfile
 pelican
 config
 saves
