@@ -13,7 +13,7 @@ icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAHp0l
 tags: {  }
 features: {  }
 docker_images:
-  Steel: 'ghcr.io/junkydeveloper/steelmc:pelican'
+  Steel: 'ghcr.io/junkydeveloper/steelmc:nightly-pelican'
 file_denylist: {  }
 startup_commands:
   'Start Steel': /home/container/steel
