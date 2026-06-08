@@ -164,6 +164,7 @@ jobs:
           tags: |
             type=raw,value=nightly${{ matrix.tag_suffix }},enable=${{ github.event_name == 'push' }}
             type=raw,value=${{ github.event.release.tag_name }}${{ matrix.tag_suffix }},enable=${{ github.event_name == 'release' }}
+            type=raw,value=pelican,enable=${{ github.event_name == 'release' && matrix.variant == 'pelican' }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
