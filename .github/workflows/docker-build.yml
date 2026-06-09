@@ -55,18 +55,6 @@ jobs:
           annotations: |
             org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
 
-      - name: Create Pelican Docker metadata
-        if: github.event_name != 'pull_request'
-        id: meta-pelican
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
-          tags: |
-            type=raw,value=nightly-pelican,enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ github.event.release.tag_name }}-pelican,enable=${{ github.event_name == 'release' }}
-          annotations: |
-            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
-
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -75,70 +63,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build normal Docker image
-        id: build-normal
+      - name: Build Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./docker/Dockerfile
-          target: normal
+          file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: false
           outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
 
-      - name: Build Pelican Docker image
-        if: github.event_name != 'pull_request'
-        id: build-pelican
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          target: pelican
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta-pelican.outputs.labels }}
-          annotations: ${{ steps.meta-pelican.outputs.annotations }}
-          provenance: false
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
-
-      - name: Export digests
+      - name: Export digest
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          mkdir -p "${RUNNER_TEMP}/digests/normal" "${RUNNER_TEMP}/digests/pelican"
+          mkdir -p "${RUNNER_TEMP}/digests"
 
-          normal_digest="${{ steps.build-normal.outputs.digest }}"
-          pelican_digest="${{ steps.build-pelican.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
 
-          touch "${RUNNER_TEMP}/digests/normal/${normal_digest#sha256:}"
-          touch "${RUNNER_TEMP}/digests/pelican/${pelican_digest#sha256:}"
-
-      - name: Upload digests
+      - name: Upload digest
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: digests-${{ matrix.platform_pair }}
-          path: |
-            ${{ runner.temp }}/digests/normal/*
-            ${{ runner.temp }}/digests/pelican/*
+          path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
-    name: Merge ${{ matrix.variant }} manifest
+    name: Merge manifest
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs:
       - docker
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: normal
-            tag_suffix: ""
-          - variant: pelican
-            tag_suffix: "-pelican"
 
     steps:
       - name: Download digests
@@ -162,9 +122,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=nightly${{ matrix.tag_suffix }},enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ github.event.release.tag_name }}${{ matrix.tag_suffix }},enable=${{ github.event_name == 'release' }}
-            type=raw,value=pelican,enable=${{ github.event_name == 'release' && matrix.variant == 'pelican' }}
+            type=raw,value=nightly,enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -174,7 +133,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create multi-platform manifest
-        working-directory: ${{ runner.temp }}/digests/${{ matrix.variant }}
+        working-directory: ${{ runner.temp }}/digests
         shell: bash
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
