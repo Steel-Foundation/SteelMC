@@ -389,14 +389,28 @@ impl LevelChunk {
         let Some(world) = level.upgrade() else {
             return;
         };
-        let mut poi_storage = world.poi_storage.lock();
+
+        // Palette pre-check WITHOUT the global POI lock: collect only the
+        // sections that actually contain POI blocks. The vast majority of
+        // worldgen chunks have none, so they never touch the (heavily
+        // contended) `poi_storage` mutex and never do a per-block scan.
+        // `Vec::new()` doesn't allocate until the first push, so the common
+        // empty case is allocation-free.
+        let mut poi_sections: Vec<(usize, SectionPos)> = Vec::new();
         for (i, section) in sections.sections.iter().enumerate() {
-            let section_y = min_y / 16 + i as i32;
-            let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
-            let guard = section.read();
-            if !guard.is_empty() {
-                poi_storage.scan_and_populate(&guard, section_pos);
+            if section.read().contains_poi() {
+                let section_y = min_y / 16 + i as i32;
+                poi_sections.push((i, SectionPos::new(pos.0.x, section_y, pos.0.y)));
             }
+        }
+        if poi_sections.is_empty() {
+            return;
+        }
+
+        let mut poi_storage = world.poi_storage.lock();
+        for (i, section_pos) in poi_sections {
+            let guard = sections.sections[i].read();
+            poi_storage.scan_and_populate(&guard, section_pos);
         }
     }
 

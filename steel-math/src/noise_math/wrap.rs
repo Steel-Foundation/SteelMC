@@ -1,4 +1,4 @@
-use core::simd::f64x4;
+use core::simd::{Simd, f64x4};
 use std::simd::StdFloat;
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
@@ -10,8 +10,15 @@ const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
 #[inline]
 #[must_use]
 pub fn wrap_4x(x: f64x4) -> f64x4 {
-    let round_off = f64x4::splat(ROUND_OFF);
-    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
+    wrap_simd::<4>(x)
+}
+
+/// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
+#[inline]
+#[must_use]
+pub fn wrap_simd<const N: usize>(x: Simd<f64, N>) -> Simd<f64, N> {
+    let round_off = Simd::splat(ROUND_OFF);
+    x - (x / round_off + Simd::splat(0.5)).floor() * round_off
 }
 
 /// Wrap a coordinate to prevent precision loss at large values.

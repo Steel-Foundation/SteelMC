@@ -9,6 +9,8 @@
 
 use std::simd::i32x4;
 
+use rustc_hash::FxHashMap;
+
 use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_math::{clamp, map, map_clamped};
 use steel_registry::{REGISTRY, vanilla_blocks};
@@ -210,6 +212,13 @@ pub struct Aquifer<N: DimensionNoises> {
     /// Placed at the end so dimensions with disabled aquifers (nether/end)
     /// keep the hot fluid-id fields earlier in the struct's cache lines.
     col_cache: AquiferColumnCache,
+    /// Per-quart-column cache of `preliminary_surface_level` results, matching
+    /// vanilla's `NoiseBasedAquifer.preliminarySurfaceLevel` `Long2IntMap`.
+    /// `compute_fluid` samples surface level 13× per aquifer cell, and each miss
+    /// recomputes the entire flat NormalNoise router for that column via
+    /// `cache.ensure`. Memoizing the `i32` result per column collapses that to
+    /// one evaluation per unique column for the chunk.
+    prelim_cache: FxHashMap<(i32, i32), i32>,
 }
 
 // Grid coordinate conversions
@@ -391,6 +400,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 lava_id,
                 default_fluid_id,
                 should_schedule_fluid_update: false,
+                prelim_cache: FxHashMap::default(),
             };
         }
 
@@ -413,10 +423,13 @@ impl<N: DimensionNoises> Aquifer<N> {
         let location_cache = vec![i64::MAX; total];
         let status_cache = vec![None; total];
 
-        // Compute skip_sampling_above_y from max preliminary surface level
+        // Compute skip_sampling_above_y from max preliminary surface level.
+        // The scan primes `prelim_cache` for the columns `compute_fluid` reuses.
+        let mut prelim_cache = FxHashMap::default();
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
+            &mut prelim_cache,
             from_grid_x(min_grid_x, 0),
             from_grid_z(min_grid_z, 0),
             from_grid_x(max_grid_x, X_RANGE - 1),
@@ -444,12 +457,14 @@ impl<N: DimensionNoises> Aquifer<N> {
             lava_id,
             default_fluid_id,
             should_schedule_fluid_update: false,
+            prelim_cache,
         }
     }
 
     fn max_preliminary_surface_level(
         noises: &N,
         cache: &mut N::ColumnCache,
+        prelim_cache: &mut FxHashMap<(i32, i32), i32>,
         min_x: i32,
         min_z: i32,
         max_x: i32,
@@ -461,7 +476,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         while z <= max_z {
             let mut x = min_x;
             while x <= max_x {
-                let level = preliminary_surface_level(noises, cache, x, z);
+                let level = cached_preliminary_surface_level(noises, cache, prelim_cache, x, z);
                 if level > max_level {
                     max_level = level;
                 }
@@ -802,7 +817,13 @@ impl<N: DimensionNoises> Aquifer<N> {
             let sx = x + offset[0] * 16; // sectionToBlockCoord
             let sz = z + offset[1] * 16;
 
-            let preliminary = preliminary_surface_level(noises, &mut self.cache, sx, sz);
+            let preliminary = cached_preliminary_surface_level(
+                noises,
+                &mut self.cache,
+                &mut self.prelim_cache,
+                sx,
+                sz,
+            );
             let adjusted = preliminary + 8;
 
             let is_center = offset[0] == 0 && offset[1] == 0;
@@ -1034,4 +1055,24 @@ pub fn preliminary_surface_level<N: DimensionNoises>(
     noises
         .router_preliminary_surface_level(cache, qx, 0, qz)
         .floor() as i32
+}
+
+/// [`preliminary_surface_level`] with a per-quart-column result cache (vanilla's
+/// `Long2IntMap`). On a hit it returns the memoized `i32` and skips the
+/// expensive flat-router recompute in `cache.ensure`. Bit-identical: the cached
+/// value is the same deterministic function of the quart column.
+fn cached_preliminary_surface_level<N: DimensionNoises>(
+    noises: &N,
+    cache: &mut N::ColumnCache,
+    prelim_cache: &mut FxHashMap<(i32, i32), i32>,
+    x: i32,
+    z: i32,
+) -> i32 {
+    let key = ((x >> 2) << 2, (z >> 2) << 2);
+    if let Some(&level) = prelim_cache.get(&key) {
+        return level;
+    }
+    let level = preliminary_surface_level(noises, cache, x, z);
+    prelim_cache.insert(key, level);
+    level
 }

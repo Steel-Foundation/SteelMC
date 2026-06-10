@@ -3,11 +3,11 @@
 //! This combines multiple `ImprovedNoise` instances at different frequencies (octaves)
 //! to create more natural-looking noise with detail at multiple scales.
 
-use std::simd::f64x4;
+use std::simd::{Simd, f64x4};
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use steel_math::{wrap, wrap_4x};
+use steel_math::{wrap, wrap_4x, wrap_simd};
 
 /// Octave-based Perlin noise generator.
 ///
@@ -298,6 +298,39 @@ impl PerlinNoise {
                 y_fudges,
             );
             value += f64x4::splat(octave.output_factor) * noise_val;
+        }
+
+        value
+    }
+
+    /// Generic N-lane form of [`Self::get_value_with_y_params_4x`]. Per-lane
+    /// math is identical to the scalar path at any supported width.
+    #[must_use]
+    pub fn get_value_with_y_params_simd<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+        y_scale: f64,
+        y_fudge: f64,
+        y_flat_hack: bool,
+    ) -> Simd<f64, N> {
+        let mut value = Simd::splat(0.0);
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise = &octave.noise;
+            let x_w = wrap(x * input_factor);
+            let z_w = wrap(z * input_factor);
+            let ys_for_call = if y_flat_hack {
+                Simd::splat(-noise.yo)
+            } else {
+                wrap_simd::<N>(ys * Simd::splat(input_factor))
+            };
+            let y_fudges = Simd::splat(y_fudge * input_factor);
+            let noise_val =
+                noise.noise_with_y_scale_simd::<N>(x_w, ys_for_call, z_w, y_scale * input_factor, y_fudges);
+            value += Simd::splat(octave.output_factor) * noise_val;
         }
 
         value

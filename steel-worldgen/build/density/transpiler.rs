@@ -144,6 +144,12 @@ struct TranspileContext {
     /// name instead of recomputing. Covers `Reference`, `Noise`,
     /// `ShiftedNoise`, and other expensive nodes.
     cse_bindings: FxHashMap<u64, Ident>,
+    /// CSE bindings for the SIMD (`_4x`) codegen path. Kept separate from
+    /// `cse_bindings` because SIMD bindings hold `f64x4` values: if the scalar
+    /// 4×-lane fallback (`gen_simd_scalar_fallback`) looked one up it would emit
+    /// an `f64x4` where an `f64` is expected. Same fingerprint keys, disjoint
+    /// codegen scopes.
+    cse_bindings_simd: FxHashMap<u64, Ident>,
     /// Counter for generating unique CSE variable names.
     cse_counter: usize,
     /// Inline `Noise` nodes with `y_scale == 0.0` found inside non-flat
@@ -174,6 +180,7 @@ impl TranspileContext {
             interpolated_refs: BTreeSet::new(),
             blended_noise_refs: BTreeSet::new(),
             cse_bindings: FxHashMap::default(),
+            cse_bindings_simd: FxHashMap::default(),
             cse_counter: 0,
             inline_flat_noises: BTreeMap::new(),
         }
@@ -1851,6 +1858,15 @@ impl TranspileContext {
         input: &TranspilerInput,
         is_flat: bool,
     ) -> TokenStream {
+        // Unified CSE (SIMD): if this node was hoisted by an enclosing scope,
+        // emit the `f64x4` variable instead of recomputing the subtree.
+        if is_cse_candidate(df) {
+            let fp = fingerprint(df);
+            if let Some(var) = self.cse_bindings_simd.get(&fp) {
+                return quote! { #var };
+            }
+        }
+
         // Flat (xz-only) expressions don't depend on Y, so all 4 lanes are
         // bit-identical. Splatting the scalar avoids duplicating the per-lane
         // bindings and lets LLVM see the simpler form.
@@ -2006,7 +2022,7 @@ impl TranspileContext {
                 // (x, y, z). When all three shifts are Y-independent (typical
                 // vanilla case — they're flat-cached `shift_x`/`shift_z` and
                 // a constant `shift_y`), evaluate them as scalar splats and
-                // call `get_value_4x`. Otherwise fall back to scalar 4×.
+                // call `get_value_4x(`. Otherwise fall back to scalar 4×.
                 if !uses_y(&sn.shift_x) && !uses_y(&sn.shift_y) && !uses_y(&sn.shift_z) {
                     let dx = self.gen_expr(&sn.shift_x, input, is_flat);
                     let dy = self.gen_expr(&sn.shift_y, input, is_flat);
@@ -2135,12 +2151,18 @@ impl TranspileContext {
             }
 
             DensityFunction::TwoArgumentSimple(t) => {
+                // CSE: hoist subexpressions common to both operands (mirrors the
+                // scalar path). Without this the SIMD fill recomputes shared cave
+                // subtrees (`entrances`, `pillars`, …) once per operand.
+                let (hoisted, hoisted_fps) =
+                    self.hoist_common_subexprs_simd(&[&t.argument1, &t.argument2], input, is_flat);
+
                 // Add/Mul are uncontroversial — they just become SIMD ops.
                 // Min/Max keep their static-bound short-circuit (the SIMD form
                 // checks `simd_le`/`simd_ge` across all 4 lanes), which
                 // preserves the scalar's "skip the right operand on the lucky
                 // path" optimization.
-                match t.op {
+                let body = match t.op {
                     TwoArgType::Add => {
                         let a = self.gen_expr_simd(&t.argument1, input, is_flat);
                         let b = self.gen_expr_simd(&t.argument2, input, is_flat);
@@ -2189,6 +2211,19 @@ impl TranspileContext {
                             quote! { (#a).simd_max(#b) }
                         }
                     }
+                };
+
+                for fp in &hoisted_fps {
+                    self.cse_bindings_simd.remove(fp);
+                }
+
+                if hoisted.is_empty() {
+                    body
+                } else {
+                    quote! {{
+                        #(#hoisted)*
+                        #body
+                    }}
                 }
             }
 
@@ -2205,13 +2240,48 @@ impl TranspileContext {
                 // when all 4 lanes agree (the typical case for Y-stratified
                 // RangeChoice trees), only the matching branch is evaluated.
                 // Only when lanes diverge do we eat the both-branches cost.
+
+                // Generate the input BEFORE registering its CSE binding so a
+                // self-referencing input doesn't produce `let __v = __v;`.
                 let input_simd = self.gen_expr_simd(&rc.input, input, is_flat);
+
+                // CSE: register the input as `__v` so branches referencing it
+                // reuse the bound value, then hoist subexprs common to both
+                // branches. Mirrors the scalar `RangeChoice` arm — without it the
+                // input (e.g. `pillars`) is re-evaluated inside the branches.
+                let input_fp = if is_cse_candidate(&rc.input) {
+                    let fp = fingerprint(&rc.input);
+                    self.cse_bindings_simd.insert(fp, format_ident!("__v"));
+                    Some(fp)
+                } else {
+                    None
+                };
+                let (hoisted, hoisted_fps) = self.hoist_common_subexprs_simd(
+                    &[&rc.when_in_range, &rc.when_out_of_range],
+                    input,
+                    is_flat,
+                );
+
                 let in_range = self.gen_expr_simd(&rc.when_in_range, input, is_flat);
                 let out_range = self.gen_expr_simd(&rc.when_out_of_range, input, is_flat);
+
+                if let Some(fp) = input_fp {
+                    self.cse_bindings_simd.remove(&fp);
+                }
+                for fp in &hoisted_fps {
+                    self.cse_bindings_simd.remove(fp);
+                }
+
                 let min = Literal::f64_unsuffixed(rc.min_inclusive);
                 let max = Literal::f64_unsuffixed(rc.max_exclusive);
+                // `__v` is bound first so the hoisted bindings (which may
+                // reference the input) and the branches can use it. The hoisted
+                // subexprs are common to both branches, so whichever branch the
+                // dispatch runs needs them — computing them before the `if` is
+                // never wasted work.
                 quote! {{
                     let __v = #input_simd;
+                    #(#hoisted)*
                     let __in_mask = __v.simd_ge(f64x4::splat(#min))
                         & __v.simd_lt(f64x4::splat(#max));
                     if __in_mask.all() {
@@ -2402,6 +2472,59 @@ impl TranspileContext {
             let expr = self.gen_expr(df, input, is_flat);
             bindings.push(quote! { let #var = #expr; });
             self.cse_bindings.insert(fp, var);
+            hoisted_fps.push(fp);
+        }
+
+        (bindings, hoisted_fps)
+    }
+
+    /// SIMD counterpart of [`Self::hoist_common_subexprs`]. Identical
+    /// fingerprint/commonality logic, but emits `f64x4` bindings (values via
+    /// `gen_expr_simd`) into the disjoint `cse_bindings_simd` map. The scalar
+    /// CSE pass was historically never ported here, so the `_4x` fill path
+    /// recomputed shared cave subtrees per operand/branch.
+    fn hoist_common_subexprs_simd(
+        &mut self,
+        branches: &[&Arc<DensityFunction>],
+        input: &TranspilerInput,
+        is_flat: bool,
+    ) -> (Vec<TokenStream>, Vec<u64>) {
+        if branches.len() < 2 {
+            return (Vec::new(), Vec::new());
+        }
+        if self.interpolated_param_mode {
+            return (Vec::new(), Vec::new());
+        }
+
+        let branch_exprs: Vec<FxHashMap<u64, DensityFunction>> = branches
+            .iter()
+            .map(|b| collect_expensive_subexprs(b))
+            .collect();
+
+        let common_fps: BTreeSet<u64> = branch_exprs[0]
+            .keys()
+            .filter(|fp| branch_exprs[1..].iter().all(|m| m.contains_key(*fp)))
+            .copied()
+            .collect();
+
+        let mut bindings = Vec::new();
+        let mut hoisted_fps = Vec::new();
+        for fp in common_fps {
+            if self.cse_bindings_simd.contains_key(&fp) {
+                continue;
+            }
+            let df = &branch_exprs[0][&fp];
+            // Flat-cached references are already cheap cache reads — don't hoist.
+            if let DensityFunction::Reference(r) = df
+                && self.flat_cached.contains(&r.id)
+            {
+                continue;
+            }
+            let var = format_ident!("__cse_{}", self.cse_counter);
+            self.cse_counter += 1;
+            let expr = self.gen_expr_simd(df, input, is_flat);
+            bindings.push(quote! { let #var = #expr; });
+            self.cse_bindings_simd.insert(fp, var);
             hoisted_fps.push(fp);
         }
 

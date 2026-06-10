@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -1157,7 +1158,6 @@ fn run_full_pipeline_stage(fixture: &ConcurrentFullPipelineFixture, stage: &Full
                     &fixture.chunk_map,
                     &fixture.cache,
                     fixture.generation_pool.clone(),
-                    fixture.chunk_map.cancel_token.child_token(),
                 )
             })
             .collect::<Vec<_>>();
@@ -1343,6 +1343,7 @@ fn build_references_fixture(
         Weak::new(),
         dim.min_y,
         dim.height,
+        63, // overworld sea level (bench is overworld)
     ));
 
     let gen_for_factory = generator_arc.clone();
@@ -1498,6 +1499,68 @@ fn bench_end_full(c: &mut Criterion) {
     });
 }
 
+/// Isolated `ImprovedNoise::sample_and_lerp` kernel throughput at 4-wide vs
+/// 8-wide SIMD. Measures whether widening to AVX-512 (`f64x8`) pays off given
+/// the kernel's heavy scalar permutation-gather floor. Each variant computes
+/// the same 8 Y samples per column across a fixed set of columns.
+fn bench_noise_kernel(c: &mut Criterion) {
+    use std::simd::{f64x4, f64x8};
+    use steel_utils::random::xoroshiro::Xoroshiro;
+    use steel_worldgen::noise::ImprovedNoise;
+
+    let mut rng = Xoroshiro::from_seed(0x5713_2026);
+    let noise = ImprovedNoise::new(&mut rng);
+
+    // Realistic working set: many distinct (x, z) columns, 8 stacked Ys each.
+    let columns: Vec<(f64, f64)> = (0..256)
+        .map(|i| (f64::from(i) * 1.3, f64::from(255 - i) * 0.7))
+        .collect();
+    let ys8 = f64x8::from_array([0.0, 4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0]);
+    let ys_lo = f64x4::from_array([0.0, 4.0, 8.0, 12.0]);
+    let ys_hi = f64x4::from_array([16.0, 20.0, 24.0, 28.0]);
+    let y_scale = 8.0;
+
+    let mut group = c.benchmark_group("noise_kernel");
+    group.throughput(Throughput::Elements((columns.len() * 8) as u64));
+
+    // Current production path: hand-written 4-wide, two calls per 8 Ys.
+    group.bench_function("y_scale_4x_orig", |b| {
+        b.iter(|| {
+            let mut acc = f64x4::splat(0.0);
+            for &(x, z) in &columns {
+                acc += noise.noise_with_y_scale_4x(black_box(x), ys_lo, black_box(z), y_scale, ys_lo);
+                acc += noise.noise_with_y_scale_4x(black_box(x), ys_hi, black_box(z), y_scale, ys_hi);
+            }
+            black_box(acc)
+        });
+    });
+
+    // Generic monomorphised to 4 lanes — sanity that generic == hand-written.
+    group.bench_function("y_scale_4x_generic", |b| {
+        b.iter(|| {
+            let mut acc = f64x4::splat(0.0);
+            for &(x, z) in &columns {
+                acc += noise.noise_with_y_scale_simd::<4>(black_box(x), ys_lo, black_box(z), y_scale, ys_lo);
+                acc += noise.noise_with_y_scale_simd::<4>(black_box(x), ys_hi, black_box(z), y_scale, ys_hi);
+            }
+            black_box(acc)
+        });
+    });
+
+    // 8-wide (AVX-512 on Zen 5), one call per 8 Ys.
+    group.bench_function("y_scale_8x_generic", |b| {
+        b.iter(|| {
+            let mut acc = f64x8::splat(0.0);
+            for &(x, z) in &columns {
+                acc += noise.noise_with_y_scale_simd::<8>(black_box(x), ys8, black_box(z), y_scale, ys8);
+            }
+            black_box(acc)
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -1559,9 +1622,18 @@ criterion_group! {
         .measurement_time(Duration::from_secs(10));
     targets = bench_overworld_full_chunk, bench_overworld_full_chunk_concurrent
 }
+criterion_group! {
+    name = noise_kernel_benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_noise_kernel
+}
 criterion_main!(
     benches,
     feature_distribution_benches,
     full_pipeline_benches,
     full_chunk_benches,
+    noise_kernel_benches,
 );

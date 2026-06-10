@@ -388,6 +388,26 @@ impl ChunkSection {
         self.ticking_block_count = ticking;
     }
 
+    /// Whether this section's palette contains any POI-type block state.
+    ///
+    /// Lets the Full-stage POI populate skip the full 4096-block
+    /// `scan_and_populate` for the overwhelming majority of sections
+    /// (stone/dirt/air) that hold no POI blocks — a palette scan of `O(≤16)`
+    /// instead of `O(4096)`. Mirrors vanilla's `LevelChunkSection.maybeHas`.
+    #[must_use]
+    pub fn contains_poi(&self) -> bool {
+        let poi = &REGISTRY.poi_types;
+        match &self.states {
+            BlockPalette::Homogeneous(state) => poi.is_poi_state(*state),
+            BlockPalette::Heterogeneous(data) => {
+                data.palette.iter().any(|(state, _)| poi.is_poi_state(*state))
+            }
+            // Not yet finalized (only happens mid-worldgen, not at promotion);
+            // fall back to scanning rather than risk missing a POI.
+            BlockPalette::Building(_) => true,
+        }
+    }
+
     /// Sets a block state and updates the cached counters.
     ///
     /// Returns the old block state.

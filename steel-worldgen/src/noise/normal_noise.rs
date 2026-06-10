@@ -3,7 +3,7 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
-use std::simd::f64x4;
+use std::simd::{Simd, f64x4};
 
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
@@ -170,6 +170,22 @@ impl NormalNoise {
                 .second
                 .get_value_with_y_params_4x(x2, ys2, z2, 0.0, 0.0, false))
             * f64x4::splat(self.value_factor)
+    }
+
+    /// Generic N-lane form of [`Self::get_value_4x`].
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<const N: usize>(&self, x: f64, ys: Simd<f64, N>, z: f64) -> Simd<f64, N> {
+        let x2 = x * INPUT_FACTOR;
+        let ys2 = ys * Simd::splat(INPUT_FACTOR);
+        let z2 = z * INPUT_FACTOR;
+        (self
+            .first
+            .get_value_with_y_params_simd::<N>(x, ys, z, 0.0, 0.0, false)
+            + self
+                .second
+                .get_value_with_y_params_simd::<N>(x2, ys2, z2, 0.0, 0.0, false))
+            * Simd::splat(self.value_factor)
     }
 
     /// Get the maximum possible output value.

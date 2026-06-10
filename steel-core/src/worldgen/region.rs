@@ -187,7 +187,7 @@ impl<'a> WorldGenRegion<'a> {
     /// Returns this dimension's sea level.
     #[must_use]
     pub fn sea_level(&self) -> i32 {
-        self.context.world().sea_level
+        self.context.sea_level()
     }
 
     /// Returns the world seed.

@@ -50,6 +50,11 @@ pub struct WorldGenContext {
     min_y: i32,
     /// Cached dimension build height. See [`Self::min_y`].
     height: i32,
+    /// Cached dimension sea level. Immutable for the world's lifetime. Read
+    /// per-column by the `freeze_top_layer` feature (snow/ice placement);
+    /// cached here so it avoids a `Weak<World>::upgrade` (cross-thread atomic
+    /// on the shared `Arc<World>`) on every column. See [`Self::min_y`].
+    sea_level: i32,
 }
 
 impl WorldGenContext {
@@ -63,13 +68,21 @@ impl WorldGenContext {
         world: Weak<World>,
         min_y: i32,
         height: i32,
+        sea_level: i32,
     ) -> Self {
         Self {
             generator,
             world,
             min_y,
             height,
+            sea_level,
         }
+    }
+
+    /// Returns the dimension's sea level (cached; see [`Self::min_y`]).
+    #[must_use]
+    pub const fn sea_level(&self) -> i32 {
+        self.sea_level
     }
 
     /// Gets a strong reference to the world.
