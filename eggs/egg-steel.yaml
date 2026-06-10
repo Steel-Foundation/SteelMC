@@ -2,7 +2,7 @@ _comment: 'DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL'
 meta:
   version: PLCN_v3
   update_url: null
-exported_at: '2026-06-09T23:56:59+00:00'
+exported_at: '2026-06-10T18:33:55+00:00'
 name: SteelMC
 author: Junkydeveloper@gmail.com
 uuid: e394d967-ddda-4c74-80bc-cf798150d4bc
@@ -14,8 +14,9 @@ tags:
   - minecraft
 features: {  }
 docker_images:
-  Steel: 'ghcr.io/pelican-eggs/yolks:debian'
-file_denylist: {  }
+  Debian: 'ghcr.io/pelican-eggs/yolks:debian'
+file_denylist:
+  - steel
 startup_commands:
   'Start Steel': ./steel
 config:
@@ -25,24 +26,35 @@ config:
   stop: stop
 scripts:
   installation:
-    script: |2
-       #!/usr/bin/env bash
+    script: |-
+      #!/usr/bin/env bash
       set -euo pipefail
-      echo "Download steel"
+      echo "Downloading Steel"
+
       cd /mnt/server
-      ls -l
-      curl -L --fail \
-        "https://github.com/Steel-Foundation/SteelMC/releases/download/v0.9.0%2Bmc26.1/steel-linux" \
-        -o steel
-      chmod +x steel
-      # Check if download was successful
-      if [ ! -f "steel" ]; then
-          echo "Failed to download steel"
-          exit 1
+
+      STEEL_VERSION="${STEEL_VERSION}"
+
+      if [ "$STEEL_VERSION" = "latest" ]; then
+        URL="https://github.com/Steel-Foundation/SteelMC/releases/latest/download/steel-linux"
+      else
+        URL="https://github.com/Steel-Foundation/SteelMC/releases/download/${STEEL_VERSION}/steel-linux"
       fi
+
+      curl -L --fail "$URL" -o steel
+      chmod +x steel
 
       echo "Installation successful"
       exit 0
     container: 'ghcr.io/pelican-eggs/installers:debian'
     entrypoint: bash
-variables: {  }
+variables:
+  -
+    name: 'Steel Version'
+    description: 'The version from the release page in github: https://github.com/Steel-Foundation/SteelMC/releases'
+    env_variable: STEEL_VERSION
+    default_value: latest
+    user_viewable: false
+    user_editable: true
+    rules: {  }
+    sort: 1

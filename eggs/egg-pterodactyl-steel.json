@@ -4,7 +4,7 @@
         "version": "PLCN_v3",
         "update_url": null
     },
-    "exported_at": "2026-06-09T23:57:02+00:00",
+    "exported_at": "2026-06-10T18:33:52+00:00",
     "name": "SteelMC",
     "author": "Junkydeveloper@gmail.com",
     "uuid": "e394d967-ddda-4c74-80bc-cf798150d4bc",
@@ -15,9 +15,11 @@
     ],
     "features": [],
     "docker_images": {
-        "Steel": "ghcr.io/pelican-eggs/yolks:debian"
+        "Debian": "ghcr.io/pelican-eggs/yolks:debian"
     },
-    "file_denylist": [],
+    "file_denylist": [
+        "steel"
+    ],
     "startup_commands": {
         "Start Steel": "./steel"
     },
@@ -29,10 +31,21 @@
     },
     "scripts": {
         "installation": {
-            "script": " #!/usr/bin/env bash\nset -euo pipefail\necho \"Download steel\"\ncd /mnt/server\nls -l\ncurl -L --fail \\\n  \"https://github.com/Steel-Foundation/SteelMC/releases/download/v0.9.0%2Bmc26.1/steel-linux\" \\\n  -o steel\nchmod +x steel\n# Check if download was successful\nif [ ! -f \"steel\" ]; then\n    echo \"Failed to download steel\"\n    exit 1\nfi\n\necho \"Installation successful\"\nexit 0\n",
+            "script": "#!/usr/bin/env bash\nset -euo pipefail\necho \"Downloading Steel\"\n\ncd /mnt/server\n\nSTEEL_VERSION=\"${STEEL_VERSION}\"\n\nif [ \"$STEEL_VERSION\" = \"latest\" ]; then\n  URL=\"https://github.com/Steel-Foundation/SteelMC/releases/latest/download/steel-linux\"\nelse\n  URL=\"https://github.com/Steel-Foundation/SteelMC/releases/download/${STEEL_VERSION}/steel-linux\"\nfi\n\ncurl -L --fail \"$URL\" -o steel\nchmod +x steel\n\necho \"Installation successful\"\nexit 0",
             "container": "ghcr.io/pelican-eggs/installers:debian",
             "entrypoint": "bash"
         }
     },
-    "variables": []
+    "variables": [
+        {
+            "name": "Steel Version",
+            "description": "The version from the release page in github: https://github.com/Steel-Foundation/SteelMC/releases",
+            "env_variable": "STEEL_VERSION",
+            "default_value": "latest",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": [],
+            "sort": 1
+        }
+    ]
 }
