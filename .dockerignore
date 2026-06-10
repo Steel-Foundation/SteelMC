@@ -11,6 +11,6 @@ update-minecraft-src.sh
 clippy.toml
 docker-compose.yml
 Dockerfile
-pelican
+eggs
 config
 saves
