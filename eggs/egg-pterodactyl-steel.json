@@ -2,9 +2,9 @@
     "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL",
     "meta": {
         "version": "PLCN_v3",
-        "update_url": null
+        "update_url": "https://raw.githubusercontent.com/pelican-eggs/minecraft/refs/heads/main/java/steel/egg-steel.yaml"
     },
-    "exported_at": "2026-06-10T18:33:52+00:00",
+    "exported_at": "2026-06-10T19:02:17+00:00",
     "name": "SteelMC",
     "author": "Junkydeveloper@gmail.com",
     "uuid": "e394d967-ddda-4c74-80bc-cf798150d4bc",
