@@ -6,6 +6,7 @@ audit.toml
 _typos.toml
 .gitignore
 README.md
+AGENTS.md
 prek.toml
 update-minecraft-src.sh
 clippy.toml
