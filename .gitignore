@@ -4,6 +4,8 @@
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
 /steel-worldgen/src/generated
+/steel-registry/build_assets/builtin_datapacks
+/steel-registry/build_assets/.cache
 
 # Config
 /config
