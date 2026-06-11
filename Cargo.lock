@@ -2950,7 +2950,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rand 0.10.0",
- "reqwest 0.13.2",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
@@ -2959,7 +2958,6 @@ dependencies = [
  "text_components",
  "tracing",
  "uuid",
- "zip",
 ]
 
 [[package]]
@@ -2979,6 +2977,7 @@ dependencies = [
  "phf_codegen",
  "proc-macro2",
  "quote",
+ "reqwest 0.13.2",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
@@ -2989,6 +2988,7 @@ dependencies = [
  "tracing",
  "uuid",
  "wincode",
+ "zip",
 ]
 
 [[package]]

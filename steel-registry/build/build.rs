@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use std::{env, fs, path::Path, process::Command};
 
 mod attributes;
@@ -153,8 +152,27 @@ pub fn main() {
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
 
-    // Download and extract datapack if it is not present for the target version
-    download_and_extract_datapack(&manifest_dir);
+    // Symlink the builtin_datapacks directory from steel-utils
+    let build_assets = Path::new(&manifest_dir).join("build_assets");
+    let target_dir = build_assets.join("builtin_datapacks");
+    if target_dir.symlink_metadata().is_err() {
+        if let Some(parent) = target_dir.parent() {
+            fs::create_dir_all(parent).expect("Failed to create build_assets directory");
+        }
+        let workspace_root = Path::new(&manifest_dir).parent().unwrap();
+        let src_dir = workspace_root.join("steel-utils/build_assets/builtin_datapacks");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(&src_dir, &target_dir).expect("Failed to create symlink for datapack");
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::symlink_dir;
+            symlink_dir(&src_dir, &target_dir).expect("Failed to create symlink for datapack");
+        }
+    }
 
     let out_dir = Path::new(&manifest_dir).join("src/generated");
 
@@ -267,204 +285,4 @@ pub fn main() {
             let _ = Command::new("rustfmt").arg(path).output();
         }
     }
-}
-
-#[derive(Deserialize)]
-struct VersionManifest {
-    versions: Vec<VersionEntry>,
-}
-
-#[derive(Deserialize)]
-struct VersionEntry {
-    id: String,
-    url: String,
-}
-
-#[derive(Deserialize)]
-struct VersionDetails {
-    downloads: Downloads,
-}
-
-#[derive(Deserialize)]
-struct Downloads {
-    server: DownloadEntry,
-}
-
-#[derive(Deserialize)]
-struct DownloadEntry {
-    url: String,
-}
-
-fn get_target_mc_version() -> String {
-    let pkg_version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.9.0+mc26.1".to_string());
-    if let Some(pos) = pkg_version.find("+mc") {
-        pkg_version[pos + 3..].to_string()
-    } else {
-        panic!(
-            "CARGO_PKG_VERSION does not contain +mc suffix: {}",
-            pkg_version
-        );
-    }
-}
-
-fn fetch_version_manifest() -> VersionManifest {
-    let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-    reqwest::blocking::get(manifest_url)
-        .unwrap_or_else(|e| {
-            panic!(
-                "Failed to fetch version manifest from {}: {}",
-                manifest_url, e
-            )
-        })
-        .json::<VersionManifest>()
-        .expect("Failed to parse version manifest JSON")
-}
-
-fn fetch_version_details(version_url: &str, target_ver: &str) -> VersionDetails {
-    reqwest::blocking::get(version_url)
-        .unwrap_or_else(|e| panic!("Failed to fetch version details for {}: {}", target_ver, e))
-        .json::<VersionDetails>()
-        .expect("Failed to parse version details JSON")
-}
-
-fn download_server_jar(server_jar_url: &str, cached_jar: &Path, target_ver: &str) {
-    if cached_jar.exists() {
-        return;
-    }
-    println!("cargo:warning=Downloading server jar for {}...", target_ver);
-    let mut jar_resp = reqwest::blocking::get(server_jar_url).unwrap_or_else(|e| {
-        panic!(
-            "Failed to download server jar from {}: {}",
-            server_jar_url, e
-        )
-    });
-    let mut jar_file = fs::File::create(cached_jar).unwrap_or_else(|e| {
-        panic!(
-            "Failed to create cached jar file at {:?}: {}",
-            cached_jar, e
-        )
-    });
-    std::io::copy(&mut jar_resp, &mut jar_file)
-        .expect("Failed to write server jar contents to file");
-}
-
-fn extract_datapack_from_jar(cached_jar: &Path, datapack_base: &Path, datapack_dir: &Path) {
-    if datapack_dir.exists() {
-        fs::remove_dir_all(datapack_dir).expect("Failed to clear old datapack directory");
-    }
-    fs::create_dir_all(datapack_dir).expect("Failed to create datapack directory");
-
-    let mut jar_data = Vec::new();
-    {
-        let mut jar_file = fs::File::open(cached_jar).expect("Failed to open server jar");
-        use std::io::Read;
-        jar_file
-            .read_to_end(&mut jar_data)
-            .expect("Failed to read server jar file");
-    }
-    let outer_cursor = std::io::Cursor::new(jar_data);
-    let mut outer_archive =
-        zip::ZipArchive::new(outer_cursor).expect("Failed to read server jar ZIP");
-
-    let mut nested_entry_name = None;
-    for i in 0..outer_archive.len() {
-        if let Ok(file) = outer_archive.by_index(i) {
-            let name = file.name();
-            if name.starts_with("META-INF/versions/") && name.ends_with(".jar") {
-                nested_entry_name = Some(name.to_string());
-                break;
-            }
-        }
-    }
-
-    let mut archive = if let Some(entry_name) = nested_entry_name {
-        println!(
-            "cargo:warning=Detected bootstrap jar. Extracting nested jar {}...",
-            entry_name
-        );
-        let mut nested_file = outer_archive.by_name(&entry_name).unwrap();
-        let mut nested_data = Vec::new();
-        use std::io::Read;
-        nested_file
-            .read_to_end(&mut nested_data)
-            .expect("Failed to read nested jar");
-        let cursor = std::io::Cursor::new(nested_data);
-        zip::ZipArchive::new(cursor).expect("Failed to read nested server jar ZIP")
-    } else {
-        outer_archive
-    };
-
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .expect("Failed to read file in server jar");
-        let name = file.name();
-
-        if name.starts_with("data/minecraft/") {
-            let rel_path = name.strip_prefix("data/").unwrap();
-            let dest_path = datapack_base.join(rel_path);
-
-            if file.is_dir() {
-                fs::create_dir_all(&dest_path).expect("Failed to create directory");
-            } else {
-                if let Some(parent) = dest_path.parent() {
-                    fs::create_dir_all(parent).expect("Failed to create parent directory");
-                }
-                let mut out_file = fs::File::create(&dest_path)
-                    .unwrap_or_else(|e| panic!("Failed to create file {:?}: {}", dest_path, e));
-                std::io::copy(&mut file, &mut out_file).expect("Failed to extract file");
-            }
-        }
-    }
-}
-
-fn download_and_extract_datapack(manifest_dir: &str) {
-    let target_ver = get_target_mc_version();
-    let build_assets = Path::new(manifest_dir).join("build_assets");
-    let datapack_base = build_assets.join("builtin_datapacks");
-    let datapack_dir = datapack_base.join("minecraft");
-    let version_file = datapack_dir.join(".version");
-
-    if version_file.exists()
-        && let Ok(current_ver) = fs::read_to_string(&version_file)
-        && current_ver.trim() == target_ver
-    {
-        return;
-    }
-
-    println!(
-        "cargo:warning=Datapack not found or version mismatch for Minecraft {}. Fetching...",
-        target_ver
-    );
-
-    let manifest = fetch_version_manifest();
-
-    let version_entry = manifest
-        .versions
-        .iter()
-        .find(|v| v.id == target_ver)
-        .unwrap_or_else(|| {
-            panic!(
-                "Minecraft version {} not found in version manifest",
-                target_ver
-            )
-        });
-
-    let details = fetch_version_details(&version_entry.url, &target_ver);
-
-    let cache_dir = build_assets.join(".cache");
-    if !cache_dir.exists() {
-        fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
-    }
-    let cached_jar = cache_dir.join(format!("server-{}.jar", target_ver));
-
-    download_server_jar(&details.downloads.server.url, &cached_jar, &target_ver);
-
-    extract_datapack_from_jar(&cached_jar, &datapack_base, &datapack_dir);
-
-    fs::write(&version_file, &target_ver).expect("Failed to write version file");
-    println!(
-        "cargo:warning=Successfully extracted datapack for Minecraft {}.",
-        target_ver
-    );
 }
