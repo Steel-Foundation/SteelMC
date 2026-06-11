@@ -358,10 +358,13 @@ fn extract_datapack_from_jar(cached_jar: &Path, datapack_base: &Path, datapack_d
     {
         let mut jar_file = fs::File::open(cached_jar).expect("Failed to open server jar");
         use std::io::Read;
-        jar_file.read_to_end(&mut jar_data).expect("Failed to read server jar file");
+        jar_file
+            .read_to_end(&mut jar_data)
+            .expect("Failed to read server jar file");
     }
     let outer_cursor = std::io::Cursor::new(jar_data);
-    let mut outer_archive = zip::ZipArchive::new(outer_cursor).expect("Failed to read server jar ZIP");
+    let mut outer_archive =
+        zip::ZipArchive::new(outer_cursor).expect("Failed to read server jar ZIP");
 
     let mut nested_entry_name = None;
     for i in 0..outer_archive.len() {
@@ -375,11 +378,16 @@ fn extract_datapack_from_jar(cached_jar: &Path, datapack_base: &Path, datapack_d
     }
 
     let mut archive = if let Some(entry_name) = nested_entry_name {
-        println!("cargo:warning=Detected bootstrap jar. Extracting nested jar {}...", entry_name);
+        println!(
+            "cargo:warning=Detected bootstrap jar. Extracting nested jar {}...",
+            entry_name
+        );
         let mut nested_file = outer_archive.by_name(&entry_name).unwrap();
         let mut nested_data = Vec::new();
         use std::io::Read;
-        nested_file.read_to_end(&mut nested_data).expect("Failed to read nested jar");
+        nested_file
+            .read_to_end(&mut nested_data)
+            .expect("Failed to read nested jar");
         let cursor = std::io::Cursor::new(nested_data);
         zip::ZipArchive::new(cursor).expect("Failed to read nested server jar ZIP")
     } else {
