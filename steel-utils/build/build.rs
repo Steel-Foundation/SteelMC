@@ -48,7 +48,8 @@ struct DownloadEntry {
 }
 
 fn get_target_mc_version() -> String {
-    let pkg_version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.9.0+mc26.1".to_string());
+    let pkg_version = env::var("CARGO_PKG_VERSION")
+        .expect("Something is wrong with your env, can't find the var CARGO_PKG_VERSION");
     if let Some(pos) = pkg_version.find("+mc") {
         pkg_version[pos + 3..].to_string()
     } else {
