@@ -194,7 +194,6 @@ impl BlockBehavior for WeatheringCopperStairBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::fluid::FluidRef;
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::BlockPos;
