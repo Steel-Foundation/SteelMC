@@ -176,7 +176,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn lake_is_boundary(grid: &[bool], x: i32, y: i32, z: i32) -> bool {
+    const fn lake_is_boundary(grid: &[bool], x: i32, y: i32, z: i32) -> bool {
         !grid[Self::lake_index(x, y, z)]
             && ((x < 15 && grid[Self::lake_index(x + 1, y, z)])
                 || (x > 0 && grid[Self::lake_index(x - 1, y, z)])
