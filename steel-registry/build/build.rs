@@ -152,28 +152,6 @@ pub fn main() {
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
 
-    // Symlink the builtin_datapacks directory from steel-utils
-    let build_assets = Path::new(&manifest_dir).join("build_assets");
-    let target_dir = build_assets.join("builtin_datapacks");
-    if target_dir.symlink_metadata().is_err() {
-        if let Some(parent) = target_dir.parent() {
-            fs::create_dir_all(parent).expect("Failed to create build_assets directory");
-        }
-        let workspace_root = Path::new(&manifest_dir).parent().unwrap();
-        let src_dir = workspace_root.join("steel-utils/build_assets/builtin_datapacks");
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-            symlink(&src_dir, &target_dir).expect("Failed to create symlink for datapack");
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::symlink_dir;
-            symlink_dir(&src_dir, &target_dir).expect("Failed to create symlink for datapack");
-        }
-    }
-
     let out_dir = Path::new(&manifest_dir).join("src/generated");
 
     // Create the generated directory if it doesn't exist
