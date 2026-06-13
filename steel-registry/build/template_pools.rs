@@ -387,8 +387,9 @@ pub(crate) fn build() -> TokenStream {
         let sx = tmpl.size[0];
         let sy = tmpl.size[1];
         let sz = tmpl.size[2];
-        let include_path =
-            format!("../../../steel-utils/build_assets/builtin_datapacks/minecraft/structure/{name}.nbt");
+        let include_path = format!(
+            "../../../steel-utils/build_assets/builtin_datapacks/minecraft/structure/{name}.nbt"
+        );
 
         let jigsaw_tokens: Vec<TokenStream> = tmpl
             .jigsaws
