@@ -119,23 +119,23 @@ impl VoxelShape {
     #[must_use]
     pub fn bounds(self) -> Option<BlockLocalAabb> {
         let first = self.boxes.iter().find(|aabb| !aabb.is_empty())?;
-        let mut min_x = first.min_x();
-        let mut min_y = first.min_y();
-        let mut min_z = first.min_z();
-        let mut max_x = first.max_x();
-        let mut max_y = first.max_y();
-        let mut max_z = first.max_z();
+        let mut min_x = first.min.x;
+        let mut min_y = first.min.y;
+        let mut min_z = first.min.z;
+        let mut max_x = first.max.x;
+        let mut max_y = first.max.y;
+        let mut max_z = first.max.z;
 
         for aabb in self.boxes {
             if aabb.is_empty() {
                 continue;
             }
-            min_x = min_x.min(aabb.min_x());
-            min_y = min_y.min(aabb.min_y());
-            min_z = min_z.min(aabb.min_z());
-            max_x = max_x.max(aabb.max_x());
-            max_y = max_y.max(aabb.max_y());
-            max_z = max_z.max(aabb.max_z());
+            min_x = min_x.min(aabb.min.x);
+            min_y = min_y.min(aabb.min.y);
+            min_z = min_z.min(aabb.min.z);
+            max_x = max_x.max(aabb.max.x);
+            max_y = max_y.max(aabb.max.y);
+            max_z = max_z.max(aabb.max.z);
         }
 
         Some(BlockLocalAabb::new(
@@ -492,12 +492,12 @@ fn shape_fills_cell(
 ) -> bool {
     shape.into_iter().any(|aabb| {
         !aabb.is_empty()
-            && aabb.min_x() <= min_x + VOXEL_EPSILON
-            && aabb.max_x() >= max_x - VOXEL_EPSILON
-            && aabb.min_y() <= min_y + VOXEL_EPSILON
-            && aabb.max_y() >= max_y - VOXEL_EPSILON
-            && aabb.min_z() <= min_z + VOXEL_EPSILON
-            && aabb.max_z() >= max_z - VOXEL_EPSILON
+            && aabb.min.x <= min_x + VOXEL_EPSILON
+            && aabb.max.x >= max_x - VOXEL_EPSILON
+            && aabb.min.y <= min_y + VOXEL_EPSILON
+            && aabb.max.y >= max_y - VOXEL_EPSILON
+            && aabb.min.z <= min_z + VOXEL_EPSILON
+            && aabb.max.z >= max_z - VOXEL_EPSILON
     })
 }
 
@@ -696,41 +696,41 @@ fn face_rectangles_cover(
 
 fn face_rect_for_aabb(aabb: BlockLocalAabb, direction: Direction) -> Option<FaceRect> {
     let rect = match direction {
-        Direction::Down if aabb.min_y() <= FACE_EPSILON => FaceRect {
-            min_a: aabb.min_x(),
-            max_a: aabb.max_x(),
-            min_b: aabb.min_z(),
-            max_b: aabb.max_z(),
+        Direction::Down if aabb.min.y <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min.x,
+            max_a: aabb.max.x,
+            min_b: aabb.min.z,
+            max_b: aabb.max.z,
         },
-        Direction::Up if aabb.max_y() >= 1.0 - FACE_EPSILON => FaceRect {
-            min_a: aabb.min_x(),
-            max_a: aabb.max_x(),
-            min_b: aabb.min_z(),
-            max_b: aabb.max_z(),
+        Direction::Up if aabb.max.y >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min.x,
+            max_a: aabb.max.x,
+            min_b: aabb.min.z,
+            max_b: aabb.max.z,
         },
-        Direction::North if aabb.min_z() <= FACE_EPSILON => FaceRect {
-            min_a: aabb.min_x(),
-            max_a: aabb.max_x(),
-            min_b: aabb.min_y(),
-            max_b: aabb.max_y(),
+        Direction::North if aabb.min.z <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min.x,
+            max_a: aabb.max.x,
+            min_b: aabb.min.y,
+            max_b: aabb.max.y,
         },
-        Direction::South if aabb.max_z() >= 1.0 - FACE_EPSILON => FaceRect {
-            min_a: aabb.min_x(),
-            max_a: aabb.max_x(),
-            min_b: aabb.min_y(),
-            max_b: aabb.max_y(),
+        Direction::South if aabb.max.z >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min.x,
+            max_a: aabb.max.x,
+            min_b: aabb.min.y,
+            max_b: aabb.max.y,
         },
-        Direction::West if aabb.min_x() <= FACE_EPSILON => FaceRect {
-            min_a: aabb.min_y(),
-            max_a: aabb.max_y(),
-            min_b: aabb.min_z(),
-            max_b: aabb.max_z(),
+        Direction::West if aabb.min.x <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min.y,
+            max_a: aabb.max.y,
+            min_b: aabb.min.z,
+            max_b: aabb.max.z,
         },
-        Direction::East if aabb.max_x() >= 1.0 - FACE_EPSILON => FaceRect {
-            min_a: aabb.min_y(),
-            max_a: aabb.max_y(),
-            min_b: aabb.min_z(),
-            max_b: aabb.max_z(),
+        Direction::East if aabb.max.x >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min.y,
+            max_a: aabb.max.y,
+            min_b: aabb.min.z,
+            max_b: aabb.max.z,
         },
         _ => return None,
     };

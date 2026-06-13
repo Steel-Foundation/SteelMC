@@ -1,3 +1,4 @@
+use glam::IVec3;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction};
@@ -16,7 +17,7 @@ pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
 
 /// Vanilla's `StructurePiece.makeBoundingBox`: north/south keep width/depth,
 /// east/west swap them.
-pub(crate) const fn make_oriented_piece_bounding_box(
+pub(crate) fn make_oriented_piece_bounding_box(
     chunk_min_x: i32,
     y: i32,
     chunk_min_z: i32,
@@ -32,11 +33,11 @@ pub(crate) const fn make_oriented_piece_bounding_box(
         (depth, width)
     };
     BoundingBox::new(
-        chunk_min_x,
-        y,
-        chunk_min_z,
-        chunk_min_x + box_width - 1,
-        y + height - 1,
-        chunk_min_z + box_depth - 1,
+        IVec3::new(chunk_min_x, y, chunk_min_z),
+        IVec3::new(
+            chunk_min_x + box_width - 1,
+            y + height - 1,
+            chunk_min_z + box_depth - 1,
+        ),
     )
 }

@@ -111,12 +111,8 @@ impl ItemFrameEntity {
     }
 
     fn frame_center(block_pos: BlockPos, direction: Direction) -> DVec3 {
-        let (dx, dy, dz) = direction.offset();
-        DVec3::new(
-            f64::from(block_pos.x()) + 0.5 - f64::from(dx) * 0.46875,
-            f64::from(block_pos.y()) + 0.5 - f64::from(dy) * 0.46875,
-            f64::from(block_pos.z()) + 0.5 - f64::from(dz) * 0.46875,
-        )
+        let off = direction.offset_vec().as_dvec3() * 0.46875;
+        block_pos.0.as_dvec3() + DVec3::splat(0.5) - off
     }
 
     fn rotation_for_direction(direction: Direction) -> (f32, f32) {

@@ -959,6 +959,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
 
 [[package]]
+name = "glam-traits"
+version = "0.3.1"
+source = "git+https://github.com/suprohub/glam-traits#fc0e2a7bf61745e63fdf6e32d1bd538419853b1b"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2916,6 +2924,7 @@ dependencies = [
  "criterion",
  "enum_dispatch",
  "glam",
+ "glam-traits",
  "heck",
  "md5",
  "num-traits",
@@ -2940,6 +2949,7 @@ dependencies = [
 name = "steel-worldgen"
 version = "0.9.0+mc26.1"
 dependencies = [
+ "glam",
  "proc-macro2",
  "quote",
  "rustc-hash 2.1.2",

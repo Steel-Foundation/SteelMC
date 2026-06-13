@@ -92,12 +92,12 @@ struct MineshaftPlacer<'a, 'world> {
 impl MineshaftPlacer<'_, '_> {
     fn place_room(&mut self, child_entrance_boxes: &[BoundingBox]) {
         self.generate_box(
-            self.bounding_box.min_x,
-            self.bounding_box.min_y + 1,
-            self.bounding_box.min_z,
-            self.bounding_box.max_x,
-            (self.bounding_box.min_y + 3).min(self.bounding_box.max_y),
-            self.bounding_box.max_z,
+            self.bounding_box.min.x,
+            self.bounding_box.min.y + 1,
+            self.bounding_box.min.z,
+            self.bounding_box.max.x,
+            (self.bounding_box.min.y + 3).min(self.bounding_box.max.y),
+            self.bounding_box.max.z,
             Self::cave_air(),
             Self::cave_air(),
             false,
@@ -105,12 +105,12 @@ impl MineshaftPlacer<'_, '_> {
 
         for entrance_box in child_entrance_boxes {
             self.generate_box(
-                entrance_box.min_x,
-                entrance_box.max_y - 2,
-                entrance_box.min_z,
-                entrance_box.max_x,
-                entrance_box.max_y,
-                entrance_box.max_z,
+                entrance_box.min.x,
+                entrance_box.max.y - 2,
+                entrance_box.min.z,
+                entrance_box.max.x,
+                entrance_box.max.y,
+                entrance_box.max.z,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
@@ -118,12 +118,12 @@ impl MineshaftPlacer<'_, '_> {
         }
 
         self.generate_upper_half_sphere(
-            self.bounding_box.min_x,
-            self.bounding_box.min_y + 4,
-            self.bounding_box.min_z,
-            self.bounding_box.max_x,
-            self.bounding_box.max_y,
-            self.bounding_box.max_z,
+            self.bounding_box.min.x,
+            self.bounding_box.min.y + 4,
+            self.bounding_box.min.z,
+            self.bounding_box.max.x,
+            self.bounding_box.max.y,
+            self.bounding_box.max.z,
             Self::cave_air(),
             false,
         );
@@ -247,79 +247,79 @@ impl MineshaftPlacer<'_, '_> {
         let planks = Self::planks_state(mineshaft_type);
         if is_two_floored {
             self.generate_box(
-                self.bounding_box.min_x + 1,
-                self.bounding_box.min_y,
-                self.bounding_box.min_z,
-                self.bounding_box.max_x - 1,
-                self.bounding_box.min_y + 2,
-                self.bounding_box.max_z,
+                self.bounding_box.min.x + 1,
+                self.bounding_box.min.y,
+                self.bounding_box.min.z,
+                self.bounding_box.max.x - 1,
+                self.bounding_box.min.y + 2,
+                self.bounding_box.max.z,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
             self.generate_box(
-                self.bounding_box.min_x,
-                self.bounding_box.min_y,
-                self.bounding_box.min_z + 1,
-                self.bounding_box.max_x,
-                self.bounding_box.min_y + 2,
-                self.bounding_box.max_z - 1,
+                self.bounding_box.min.x,
+                self.bounding_box.min.y,
+                self.bounding_box.min.z + 1,
+                self.bounding_box.max.x,
+                self.bounding_box.min.y + 2,
+                self.bounding_box.max.z - 1,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
             self.generate_box(
-                self.bounding_box.min_x + 1,
-                self.bounding_box.max_y - 2,
-                self.bounding_box.min_z,
-                self.bounding_box.max_x - 1,
-                self.bounding_box.max_y,
-                self.bounding_box.max_z,
+                self.bounding_box.min.x + 1,
+                self.bounding_box.max.y - 2,
+                self.bounding_box.min.z,
+                self.bounding_box.max.x - 1,
+                self.bounding_box.max.y,
+                self.bounding_box.max.z,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
             self.generate_box(
-                self.bounding_box.min_x,
-                self.bounding_box.max_y - 2,
-                self.bounding_box.min_z + 1,
-                self.bounding_box.max_x,
-                self.bounding_box.max_y,
-                self.bounding_box.max_z - 1,
+                self.bounding_box.min.x,
+                self.bounding_box.max.y - 2,
+                self.bounding_box.min.z + 1,
+                self.bounding_box.max.x,
+                self.bounding_box.max.y,
+                self.bounding_box.max.z - 1,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
             self.generate_box(
-                self.bounding_box.min_x + 1,
-                self.bounding_box.min_y + 3,
-                self.bounding_box.min_z + 1,
-                self.bounding_box.max_x - 1,
-                self.bounding_box.min_y + 3,
-                self.bounding_box.max_z - 1,
+                self.bounding_box.min.x + 1,
+                self.bounding_box.min.y + 3,
+                self.bounding_box.min.z + 1,
+                self.bounding_box.max.x - 1,
+                self.bounding_box.min.y + 3,
+                self.bounding_box.max.z - 1,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
         } else {
             self.generate_box(
-                self.bounding_box.min_x + 1,
-                self.bounding_box.min_y,
-                self.bounding_box.min_z,
-                self.bounding_box.max_x - 1,
-                self.bounding_box.max_y,
-                self.bounding_box.max_z,
+                self.bounding_box.min.x + 1,
+                self.bounding_box.min.y,
+                self.bounding_box.min.z,
+                self.bounding_box.max.x - 1,
+                self.bounding_box.max.y,
+                self.bounding_box.max.z,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
             );
             self.generate_box(
-                self.bounding_box.min_x,
-                self.bounding_box.min_y,
-                self.bounding_box.min_z + 1,
-                self.bounding_box.max_x,
-                self.bounding_box.max_y,
-                self.bounding_box.max_z - 1,
+                self.bounding_box.min.x,
+                self.bounding_box.min.y,
+                self.bounding_box.min.z + 1,
+                self.bounding_box.max.x,
+                self.bounding_box.max.y,
+                self.bounding_box.max.z - 1,
                 Self::cave_air(),
                 Self::cave_air(),
                 false,
@@ -328,36 +328,36 @@ impl MineshaftPlacer<'_, '_> {
 
         self.place_support_pillar(
             mineshaft_type,
-            self.bounding_box.min_x + 1,
-            self.bounding_box.min_y,
-            self.bounding_box.min_z + 1,
-            self.bounding_box.max_y,
+            self.bounding_box.min.x + 1,
+            self.bounding_box.min.y,
+            self.bounding_box.min.z + 1,
+            self.bounding_box.max.y,
         );
         self.place_support_pillar(
             mineshaft_type,
-            self.bounding_box.min_x + 1,
-            self.bounding_box.min_y,
-            self.bounding_box.max_z - 1,
-            self.bounding_box.max_y,
+            self.bounding_box.min.x + 1,
+            self.bounding_box.min.y,
+            self.bounding_box.max.z - 1,
+            self.bounding_box.max.y,
         );
         self.place_support_pillar(
             mineshaft_type,
-            self.bounding_box.max_x - 1,
-            self.bounding_box.min_y,
-            self.bounding_box.min_z + 1,
-            self.bounding_box.max_y,
+            self.bounding_box.max.x - 1,
+            self.bounding_box.min.y,
+            self.bounding_box.min.z + 1,
+            self.bounding_box.max.y,
         );
         self.place_support_pillar(
             mineshaft_type,
-            self.bounding_box.max_x - 1,
-            self.bounding_box.min_y,
-            self.bounding_box.max_z - 1,
-            self.bounding_box.max_y,
+            self.bounding_box.max.x - 1,
+            self.bounding_box.min.y,
+            self.bounding_box.max.z - 1,
+            self.bounding_box.max.y,
         );
 
-        let y = self.bounding_box.min_y - 1;
-        for x in self.bounding_box.min_x..=self.bounding_box.max_x {
-            for z in self.bounding_box.min_z..=self.bounding_box.max_z {
+        let y = self.bounding_box.min.y - 1;
+        for x in self.bounding_box.min.x..=self.bounding_box.max.x {
+            for z in self.bounding_box.min.z..=self.bounding_box.max.z {
                 self.set_planks_block(planks, x, y, z);
             }
         }
@@ -383,12 +383,12 @@ impl MineshaftPlacer<'_, '_> {
     }
 
     fn is_in_invalid_location(&self) -> bool {
-        let x0 = (self.bounding_box.min_x - 1).max(self.clip.min_x);
-        let y0 = (self.bounding_box.min_y - 1).max(self.clip.min_y);
-        let z0 = (self.bounding_box.min_z - 1).max(self.clip.min_z);
-        let x1 = (self.bounding_box.max_x + 1).min(self.clip.max_x);
-        let y1 = (self.bounding_box.max_y + 1).min(self.clip.max_y);
-        let z1 = (self.bounding_box.max_z + 1).min(self.clip.max_z);
+        let x0 = (self.bounding_box.min.x - 1).max(self.clip.min.x);
+        let y0 = (self.bounding_box.min.y - 1).max(self.clip.min.y);
+        let z0 = (self.bounding_box.min.z - 1).max(self.clip.min.z);
+        let x1 = (self.bounding_box.max.x + 1).min(self.clip.max.x);
+        let y1 = (self.bounding_box.max.y + 1).min(self.clip.max.y);
+        let z1 = (self.bounding_box.max.z + 1).min(self.clip.max.z);
 
         let biome_pos = BlockPos::new(
             i32::midpoint(x0, x1),
@@ -933,15 +933,15 @@ impl MineshaftPlacer<'_, '_> {
 
     const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min_y
+            y + self.bounding_box.min.y
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
-            Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
-            Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
-            Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
-            Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
+            Some(Direction::North) => (self.bounding_box.min.x + x, self.bounding_box.max.z - z),
+            Some(Direction::South) => (self.bounding_box.min.x + x, self.bounding_box.min.z + z),
+            Some(Direction::West) => (self.bounding_box.max.x - z, self.bounding_box.min.z + x),
+            Some(Direction::East) => (self.bounding_box.min.x + z, self.bounding_box.min.z + x),
             None | Some(Direction::Up | Direction::Down) => (x, z),
         };
         BlockPos::new(world_x, world_y, world_z)

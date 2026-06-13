@@ -131,12 +131,12 @@ struct BlockCollisionSearchBounds {
 impl BlockCollisionSearchBounds {
     fn from_aabb(aabb: &WorldAabb) -> Self {
         Self {
-            min_x: (aabb.min_x() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
-            min_y: (aabb.min_y() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
-            min_z: (aabb.min_z() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
-            max_x: (aabb.max_x() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
-            max_y: (aabb.max_y() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
-            max_z: (aabb.max_z() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+            min_x: (aabb.min.x - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            min_y: (aabb.min.y - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            min_z: (aabb.min.z - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            max_x: (aabb.max.x + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+            max_y: (aabb.max.y + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+            max_z: (aabb.max.z + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
         }
     }
 
@@ -330,9 +330,9 @@ const fn vanilla_block_pos_less(left: BlockPos, right: BlockPos) -> bool {
 #[must_use]
 const fn bottom_center(aabb: WorldAabb) -> DVec3 {
     DVec3::new(
-        f64::midpoint(aabb.min_x(), aabb.max_x()),
-        aabb.min_y(),
-        f64::midpoint(aabb.min_z(), aabb.max_z()),
+        f64::midpoint(aabb.min.x, aabb.max.x),
+        aabb.min.y,
+        f64::midpoint(aabb.min.z, aabb.max.z),
     )
 }
 

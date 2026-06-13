@@ -28,7 +28,7 @@
 //! Block data uses power-of-2 bit packing (1, 2, 4, 8, 16 bits) to avoid entries
 //! spanning u64 boundaries.
 
-use steel_utils::{BoundingBox, Identifier, PackedChunkPos};
+use steel_utils::{Identifier, PackedChunkPos, geometry::WincodeBoundingBox};
 use wincode::{SchemaRead, SchemaWrite};
 
 use crate::chunk::chunk_access::ChunkStatus;
@@ -482,7 +482,7 @@ pub struct PersistentStructurePiece {
     /// Piece type identifier (e.g., "minecraft:jigsaw").
     pub piece_type: Identifier,
     /// Bounding box of this piece in world coordinates.
-    pub bounding_box: BoundingBox,
+    pub bounding_box: WincodeBoundingBox,
     /// Generation depth in the piece tree.
     pub gen_depth: i32,
     /// 2D direction orientation (-1 = none, 0-3 = south/west/north/east).
@@ -814,7 +814,7 @@ pub enum PersistentMineshaftPieceKind {
     /// Start room.
     Room {
         /// Child entrance boxes.
-        child_entrance_boxes: Vec<BoundingBox>,
+        child_entrance_boxes: Vec<WincodeBoundingBox>,
     },
     /// Horizontal corridor.
     Corridor {
@@ -860,7 +860,7 @@ pub struct PersistentOceanMonumentPieceData {
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentOceanMonumentChildPiece {
     /// World-space child bounding box after building-relative offset.
-    pub bounding_box: BoundingBox,
+    pub bounding_box: WincodeBoundingBox,
     /// Child piece variant and variant-specific placement state.
     pub kind: PersistentOceanMonumentChildPieceKind,
 }

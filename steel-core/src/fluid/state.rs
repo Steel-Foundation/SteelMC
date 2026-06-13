@@ -219,7 +219,7 @@ where
         }
 
         if distance != 0.0 {
-            let (dx, _, dz) = direction.offset();
+            let (dx, dz) = direction.offset_xz();
             flow.x += f64::from(dx) * f64::from(distance);
             flow.z += f64::from(dz) * f64::from(distance);
         }

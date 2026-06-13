@@ -754,14 +754,14 @@ impl WorldEntityManager {
     /// Gets live entities whose bounding boxes intersect `aabb`.
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
         let min_section = SectionPos::from_entity_pos(DVec3::new(
-            aabb.min_x() - 2.0,
-            aabb.min_y() - 2.0,
-            aabb.min_z() - 2.0,
+            aabb.min.x - 2.0,
+            aabb.min.y - 2.0,
+            aabb.min.z - 2.0,
         ));
         let max_section = SectionPos::from_entity_pos(DVec3::new(
-            aabb.max_x() + 2.0,
-            aabb.max_y() + 2.0,
-            aabb.max_z() + 2.0,
+            aabb.max.x + 2.0,
+            aabb.max.y + 2.0,
+            aabb.max.z + 2.0,
         ));
 
         let state = self.state.read();

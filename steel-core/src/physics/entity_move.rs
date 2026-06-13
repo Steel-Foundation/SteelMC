@@ -228,12 +228,12 @@ fn can_fall_at_least(
     }
 
     let fall_aabb = WorldAabb::new(
-        aabb.min_x() + EDGE_COLLISION_EPSILON + delta_x,
-        aabb.min_y() - min_height - EDGE_COLLISION_EPSILON,
-        aabb.min_z() + EDGE_COLLISION_EPSILON + delta_z,
-        aabb.max_x() - EDGE_COLLISION_EPSILON + delta_x,
-        aabb.min_y(),
-        aabb.max_z() - EDGE_COLLISION_EPSILON + delta_z,
+        aabb.min.x + EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min.y - min_height - EDGE_COLLISION_EPSILON,
+        aabb.min.z + EDGE_COLLISION_EPSILON + delta_z,
+        aabb.max.x - EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min.y,
+        aabb.max.z - EDGE_COLLISION_EPSILON + delta_z,
     );
 
     !world.has_collision_with_context(&fall_aabb, state.block_collision_context())
@@ -356,9 +356,9 @@ fn collect_collisions_with_context(
 /// Moves an AABB along a single axis by the given amount.
 fn move_aabb(aabb: &WorldAabb, axis: Axis, amount: f64) -> WorldAabb {
     match axis {
-        Axis::X => aabb.move_by(amount, 0.0, 0.0),
-        Axis::Y => aabb.move_by(0.0, amount, 0.0),
-        Axis::Z => aabb.move_by(0.0, 0.0, amount),
+        Axis::X => aabb.translate(DVec3::ZERO.with_x(amount)),
+        Axis::Y => aabb.translate(DVec3::ZERO.with_y(amount)),
+        Axis::Z => aabb.translate(DVec3::ZERO.with_z(amount)),
     }
 }
 
@@ -419,7 +419,7 @@ fn try_step_up(
     let max_step = f64::from(state.max_up_step());
     let on_ground_after_collision = ground_result.vertical_collision && movement.y < 0.0;
     let grounded_aabb = if on_ground_after_collision {
-        aabb.move_by(0.0, ground_result.actual_movement.y, 0.0)
+        aabb.translate(DVec3::ZERO.with_y(ground_result.actual_movement.y))
     } else {
         *aabb
     };
@@ -456,9 +456,9 @@ fn try_step_up(
             continue;
         }
 
-        let distance_to_ground = aabb.min_y() - grounded_aabb.min_y();
+        let distance_to_ground = aabb.min.y - grounded_aabb.min.y;
         let actual_movement = step_from_ground - DVec3::new(0.0, distance_to_ground, 0.0);
-        let final_aabb = stepped_aabb.move_by(0.0, -distance_to_ground, 0.0);
+        let final_aabb = stepped_aabb.translate(DVec3::ZERO.with_y(-distance_to_ground));
         let x_collision = horizontal_axis_collided(movement.x, actual_movement.x);
         let z_collision = horizontal_axis_collided(movement.z, actual_movement.z);
         let vertical_collision = actual_movement.y != movement.y;
@@ -502,13 +502,13 @@ fn collect_candidate_step_up_heights(
     for collider in collisions {
         push_step_height_candidate(
             &mut candidates,
-            collider.min_y() - grounded_aabb.min_y(),
+            collider.min.y - grounded_aabb.min.y,
             max_step_height,
             step_height_to_skip,
         );
         push_step_height_candidate(
             &mut candidates,
-            collider.max_y() - grounded_aabb.min_y(),
+            collider.max.y - grounded_aabb.min.y,
             max_step_height,
             step_height_to_skip,
         );
@@ -571,7 +571,7 @@ mod tests {
         fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
             let mut collisions = Vec::new();
 
-            if self.has_floor && aabb.min_y() <= 1.0 {
+            if self.has_floor && aabb.min.y <= 1.0 {
                 // Full block at Y=0
                 collisions.push(WorldAabb::new(-10.0, 0.0, -10.0, 10.0, 1.0, 10.0));
             }

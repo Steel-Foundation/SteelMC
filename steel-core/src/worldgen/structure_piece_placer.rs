@@ -71,7 +71,7 @@ impl StructurePiecePlacer {
                 region,
                 registry,
                 &data.pool_element,
-                BlockPos::new(data.position.0, data.position.1, data.position.2),
+                BlockPos::new(data.position.x, data.position.x, data.position.x),
                 reference_pos,
                 data.rotation,
                 clip,

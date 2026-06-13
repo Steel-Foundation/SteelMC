@@ -1,3 +1,4 @@
+use glam::IVec3;
 use smallvec::SmallVec;
 use steel_registry::biome::BiomeRef;
 use steel_registry::structure::StructureRef;
@@ -230,7 +231,7 @@ impl FeatureDecorationRunner {
         Self::chunk_writable_box(region.center(), region.min_y(), region.max_y_exclusive())
     }
 
-    pub(super) const fn chunk_writable_box(
+    pub(super) fn chunk_writable_box(
         center: ChunkPos,
         min_y: i32,
         max_y_exclusive: i32,
@@ -238,12 +239,8 @@ impl FeatureDecorationRunner {
         let min_x = center.0.x * 16;
         let min_z = center.0.y * 16;
         BoundingBox::new(
-            min_x,
-            min_y + 1,
-            min_z,
-            min_x + 15,
-            max_y_exclusive - 1,
-            min_z + 15,
+            IVec3::new(min_x, min_y + 1, min_z),
+            IVec3::new(min_x + 15, max_y_exclusive - 1, min_z + 15),
         )
     }
 
@@ -320,7 +317,7 @@ impl FeatureDecorationRunner {
                     continue;
                 };
                 for piece in &mut start.pieces {
-                    if piece.bounding_box.intersects(&writable_box) {
+                    if piece.bounding_box.intersects(writable_box) {
                         StructurePiecePlacer::place_piece(
                             region,
                             registry,

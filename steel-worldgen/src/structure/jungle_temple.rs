@@ -45,7 +45,7 @@ impl JungleTemplePieceData {
 /// Vanilla's `JungleTempleStructure` / `SinglePieceStructure`.
 pub struct JungleTempleStructure;
 
-const fn jungle_temple_piece(west: i32, north: i32, orientation: Direction) -> StructurePiece {
+fn jungle_temple_piece(west: i32, north: i32, orientation: Direction) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "tejp"),
         bounding_box: make_oriented_piece_bounding_box(

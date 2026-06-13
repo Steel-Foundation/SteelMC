@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
-use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb, axis::Axis};
 
 use crate::fluid::{get_flow, get_fluid_state, get_height};
 use crate::world::World;
@@ -230,19 +230,19 @@ impl EntityFluidContact {
             return None;
         }
 
-        let x0 = interaction_box.min_x().floor() as i32;
-        let y0 = interaction_box.min_y().floor() as i32;
-        let z0 = interaction_box.min_z().floor() as i32;
-        let x1 = interaction_box.max_x().ceil() as i32 - 1;
-        let y1 = interaction_box.max_y().ceil() as i32 - 1;
-        let z1 = interaction_box.max_z().ceil() as i32 - 1;
+        let x0 = interaction_box.min(Axis::X).floor() as i32;
+        let y0 = interaction_box.min(Axis::Y).floor() as i32;
+        let z0 = interaction_box.min(Axis::Z).floor() as i32;
+        let x1 = interaction_box.max(Axis::X).ceil() as i32 - 1;
+        let y1 = interaction_box.max(Axis::Y).ceil() as i32 - 1;
+        let z1 = interaction_box.max(Axis::Z).ceil() as i32 - 1;
         if x0 > x1 || y0 > y1 || z0 > z1 {
             return None;
         }
 
         Some(FluidScanBounds {
             interaction_box,
-            entity_y: bounding_box.min_y(),
+            entity_y: bounding_box.min(Axis::Y),
             x0,
             y0,
             z0,
@@ -276,7 +276,7 @@ impl EntityFluidContact {
 
                     let fluid_bottom = f64::from(y);
                     let fluid_top = fluid_bottom + f64::from(height_at(pos, fluid_state));
-                    if fluid_top < bounds.interaction_box.min_y() {
+                    if fluid_top < bounds.interaction_box.min(Axis::Y) {
                         continue;
                     }
 

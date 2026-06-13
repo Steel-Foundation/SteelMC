@@ -101,24 +101,12 @@ const fn equipment_slot_matches_equippable(
 }
 
 fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    let min_x = aabb.min_x().floor() as i32;
-    let max_x = aabb.max_x().ceil() as i32;
-    let min_y = aabb.min_y().floor() as i32;
-    let max_y = aabb.max_y().ceil() as i32;
-    let min_z = aabb.min_z().floor() as i32;
-    let max_z = aabb.max_z().ceil() as i32;
-
-    for x in min_x..max_x {
-        for y in min_y..max_y {
-            for z in min_z..max_z {
-                if !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty() {
-                    return true;
-                }
-            }
-        }
-    }
-
-    false
+    (aabb.min.x.floor() as i32..aabb.max.x.ceil() as i32).any(|x| {
+        (aabb.min.y.floor() as i32..aabb.max.y.ceil() as i32).any(|y| {
+            (aabb.min.z.floor() as i32..aabb.max.z.ceil() as i32)
+                .any(|z| !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty())
+        })
+    })
 }
 
 enum BlockEffectSegmentResult {
@@ -182,7 +170,7 @@ fn is_in_rain(entity: &dyn Entity) -> bool {
     world.is_raining_at(pos)
         || world.is_raining_at(BlockPos::new(
             pos.x(),
-            entity.bounding_box().max_y().floor() as i32,
+            entity.bounding_box().max.y.floor() as i32,
             pos.z(),
         ))
 }
@@ -745,7 +733,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return false;
         };
 
-        let target_box = self.bounding_box().move_vec(delta);
+        let target_box = self.bounding_box().translate(delta);
         let collision_world =
             WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
         if collision_world.has_collision_with_context(
@@ -1832,7 +1820,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             let bounding_box = self.bounding_box();
             self.move_towards_closest_space(
                 self.position().x,
-                f64::midpoint(bounding_box.min_y(), bounding_box.max_y()),
+                f64::midpoint(bounding_box.min.y, bounding_box.max.y),
                 self.position().z,
             );
         }
@@ -2772,12 +2760,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
         let bounding_box = self.bounding_box();
         let test_area = WorldAabb::new(
-            bounding_box.min_x(),
-            bounding_box.min_y() - 1.0e-6,
-            bounding_box.min_z(),
-            bounding_box.max_x(),
-            bounding_box.min_y(),
-            bounding_box.max_z(),
+            bounding_box.min.x,
+            bounding_box.min.y - 1.0e-6,
+            bounding_box.min.z,
+            bounding_box.max.x,
+            bounding_box.min.y,
+            bounding_box.max.z,
         );
         let collision_world =
             WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
@@ -2789,7 +2777,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             && !self.base().on_ground_no_blocks()
             && let Some(movement) = movement
         {
-            let previous_test_area = test_area.move_by(-movement.x, 0.0, -movement.z);
+            let previous_test_area = test_area.translate(DVec3::new(-movement.x, 0.0, -movement.z));
             supporting_block = collision_world.find_supporting_block(
                 self.position(),
                 &previous_test_area,

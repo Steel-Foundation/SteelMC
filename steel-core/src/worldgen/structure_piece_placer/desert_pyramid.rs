@@ -155,8 +155,8 @@ impl DesertPyramidPlacer<'_, '_> {
 
         let mut lowest_ground_height = self.region.max_y_exclusive() + 1;
         let mut found_position_within_bounding_box = false;
-        for z in self.bounding_box.min_z..=self.bounding_box.max_z {
-            for x in self.bounding_box.min_x..=self.bounding_box.max_x {
+        for z in self.bounding_box.min.z..=self.bounding_box.max.z {
+            for x in self.bounding_box.min.x..=self.bounding_box.max.x {
                 lowest_ground_height = lowest_ground_height.min(self.region.height_at(
                     HeightmapType::MotionBlockingNoLeaves,
                     x,
@@ -171,9 +171,9 @@ impl DesertPyramidPlacer<'_, '_> {
         }
 
         self.data.height_position = Some(lowest_ground_height);
-        let dy = lowest_ground_height - self.bounding_box.min_y + offset;
-        self.bounding_box.min_y += dy;
-        self.bounding_box.max_y += dy;
+        let dy = lowest_ground_height - self.bounding_box.min.y + offset;
+        self.bounding_box.min.y += dy;
+        self.bounding_box.max.y += dy;
         true
     }
 
@@ -417,7 +417,7 @@ impl DesertPyramidPlacer<'_, '_> {
         for direction in HORIZONTAL_PLANE {
             let chest_index = direction_2d_data_value(direction);
             if !self.data.has_placed_chest[chest_index] {
-                let (dx, _, dz) = direction.offset();
+                let (dx, dz) = direction.offset_xz();
                 let chest_pos = self.world_pos(10 + dx * 2, -11, 10 + dz * 2);
                 self.data.has_placed_chest[chest_index] = StructurePiecePlacer::create_loot_chest(
                     self.region,
@@ -688,16 +688,16 @@ impl DesertPyramidPlacer<'_, '_> {
 
     const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min_y
+            y + self.bounding_box.min.y
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
             None | Some(Direction::Up | Direction::Down) => (x, z),
-            Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
-            Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
-            Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
-            Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
+            Some(Direction::North) => (self.bounding_box.min.x + x, self.bounding_box.max.z - z),
+            Some(Direction::South) => (self.bounding_box.min.x + x, self.bounding_box.min.z + z),
+            Some(Direction::West) => (self.bounding_box.max.x - z, self.bounding_box.min.z + x),
+            Some(Direction::East) => (self.bounding_box.min.x + z, self.bounding_box.min.z + x),
         };
         BlockPos::new(world_x, world_y, world_z)
     }

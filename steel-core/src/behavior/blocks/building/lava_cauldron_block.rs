@@ -90,12 +90,12 @@ mod tests {
             panic!("lava cauldron entity-inside shape is non-empty");
         };
 
-        assert_f64_close(bounds.min_x(), 0.0);
-        assert_f64_close(bounds.min_y(), 0.0);
-        assert_f64_close(bounds.min_z(), 0.0);
-        assert_f64_close(bounds.max_x(), 1.0);
-        assert_f64_close(bounds.max_y(), 0.9375);
-        assert_f64_close(bounds.max_z(), 1.0);
+        assert_f64_close(bounds.min.x, 0.0);
+        assert_f64_close(bounds.min.y, 0.0);
+        assert_f64_close(bounds.min.z, 0.0);
+        assert_f64_close(bounds.max.x, 1.0);
+        assert_f64_close(bounds.max.y, 0.9375);
+        assert_f64_close(bounds.max.z, 1.0);
         assert_eq!(CAULDRON_FILLED_ENTITY_INSIDE_SHAPE.len(), 9);
     }
 }

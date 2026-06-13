@@ -35,7 +35,7 @@ impl StructurePiecePlacer {
         }
 
         for child in &data.child_pieces {
-            if !child.bounding_box.intersects(&clip) {
+            if !child.bounding_box.intersects(clip) {
                 continue;
             }
 

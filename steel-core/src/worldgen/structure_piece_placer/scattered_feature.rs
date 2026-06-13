@@ -52,8 +52,8 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let mut total = 0;
         let mut count = 0;
-        for z in self.bounding_box.min_z..=self.bounding_box.max_z {
-            for x in self.bounding_box.min_x..=self.bounding_box.max_x {
+        for z in self.bounding_box.min.z..=self.bounding_box.max.z {
+            for x in self.bounding_box.min.x..=self.bounding_box.max.x {
                 if self.clip.is_inside(BlockPos::new(x, 64, z)) {
                     total += self
                         .region
@@ -69,9 +69,9 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let adjusted = total / count;
         *height_position = Some(adjusted);
-        let dy = adjusted - self.bounding_box.min_y + offset;
-        self.bounding_box.min_y += dy;
-        self.bounding_box.max_y += dy;
+        let dy = adjusted - self.bounding_box.min.y + offset;
+        self.bounding_box.min.y += dy;
+        self.bounding_box.max.y += dy;
         true
     }
 
@@ -271,16 +271,16 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min_y
+            y + self.bounding_box.min.y
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
             None | Some(Direction::Up | Direction::Down) => (x, z),
-            Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
-            Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
-            Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
-            Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
+            Some(Direction::North) => (self.bounding_box.min.x + x, self.bounding_box.max.z - z),
+            Some(Direction::South) => (self.bounding_box.min.x + x, self.bounding_box.min.z + z),
+            Some(Direction::West) => (self.bounding_box.max.x - z, self.bounding_box.min.z + x),
+            Some(Direction::East) => (self.bounding_box.min.x + z, self.bounding_box.min.z + x),
         };
         BlockPos::new(world_x, world_y, world_z)
     }

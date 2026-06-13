@@ -2,6 +2,7 @@
 //! then weighted BFS over bridge/castle pools honoring place-count, prev-piece, and
 //! collision constraints. Structure is vertically offset into `Y ∈ [48, 70]`.
 
+use glam::IVec3;
 use steel_registry::structure::StructureData;
 use steel_utils::BoundingBox;
 use steel_utils::Direction;
@@ -273,36 +274,20 @@ fn orient_box(
     let (w, h, d) = size;
     match dir {
         Direction::South => BoundingBox::new(
-            fx + ox,
-            fy + oy,
-            fz + oz,
-            fx + w - 1 + ox,
-            fy + h - 1 + oy,
-            fz + d - 1 + oz,
+            IVec3::new(fx + ox, fy + oy, fz + oz),
+            IVec3::new(fx + w - 1 + ox, fy + h - 1 + oy, fz + d - 1 + oz),
         ),
         Direction::North => BoundingBox::new(
-            fx + ox,
-            fy + oy,
-            fz - d + 1 + oz,
-            fx + w - 1 + ox,
-            fy + h - 1 + oy,
-            fz + oz,
+            IVec3::new(fx + ox, fy + oy, fz - d + 1 + oz),
+            IVec3::new(fx + w - 1 + ox, fy + h - 1 + oy, fz + oz),
         ),
         Direction::West => BoundingBox::new(
-            fx - d + 1 + oz,
-            fy + oy,
-            fz + ox,
-            fx + oz,
-            fy + h - 1 + oy,
-            fz + w - 1 + ox,
+            IVec3::new(fx - d + 1 + oz, fy + oy, fz + ox),
+            IVec3::new(fx + oz, fy + h - 1 + oy, fz + w - 1 + ox),
         ),
         Direction::East => BoundingBox::new(
-            fx + oz,
-            fy + oy,
-            fz + ox,
-            fx + d - 1 + oz,
-            fy + h - 1 + oy,
-            fz + w - 1 + ox,
+            IVec3::new(fx + oz, fy + oy, fz + ox),
+            IVec3::new(fx + d - 1 + oz, fy + h - 1 + oy, fz + w - 1 + ox),
         ),
         _ => unreachable!("orient_box non-horizontal direction"),
     }
@@ -310,31 +295,31 @@ fn orient_box(
 
 /// Matches `StructurePiece.makeBoundingBox`: width rotates with the direction axis.
 fn make_bounding_box(
-    x: i32,
-    y: i32,
-    z: i32,
+    pos: IVec3,
     dir: Direction,
     width: i32,
     height: i32,
     depth: i32,
 ) -> BoundingBox {
     match dir {
-        Direction::North | Direction::South => {
-            BoundingBox::new(x, y, z, x + width - 1, y + height - 1, z + depth - 1)
-        }
-        Direction::East | Direction::West => {
-            BoundingBox::new(x, y, z, x + depth - 1, y + height - 1, z + width - 1)
-        }
+        Direction::North | Direction::South => BoundingBox::new(
+            pos,
+            IVec3::new(pos.x + width - 1, pos.y + height - 1, pos.z + depth - 1),
+        ),
+        Direction::East | Direction::West => BoundingBox::new(
+            pos,
+            IVec3::new(pos.x + depth - 1, pos.y + height - 1, pos.z + width - 1),
+        ),
         _ => unreachable!(),
     }
 }
 
 const fn is_ok_box(bb: &BoundingBox) -> bool {
-    bb.min_y > LOWEST_Y
+    bb.min.y > LOWEST_Y
 }
 
 fn find_collision<'a>(pieces: &'a [FortressPiece], bb: &BoundingBox) -> Option<&'a FortressPiece> {
-    pieces.iter().find(|p| p.bounding_box.intersects(bb))
+    pieces.iter().find(|p| p.bounding_box.intersects(*bb))
 }
 
 struct Builder {
@@ -498,17 +483,17 @@ fn generate_child_forward(
 ) {
     let bb = parent.bb;
     let (fx, fz) = match parent.orientation {
-        Direction::North => (bb.min_x + x_off, bb.min_z - 1),
-        Direction::South => (bb.min_x + x_off, bb.max_z + 1),
-        Direction::West => (bb.min_x - 1, bb.min_z + x_off),
-        Direction::East => (bb.max_x + 1, bb.min_z + x_off),
+        Direction::North => (bb.min.x + x_off, bb.min.z - 1),
+        Direction::South => (bb.min.x + x_off, bb.max.z + 1),
+        Direction::West => (bb.min.x - 1, bb.min.z + x_off),
+        Direction::East => (bb.max.x + 1, bb.min.z + x_off),
         _ => return,
     };
     generate_and_add_piece(
         is_castle,
         builder,
         rng,
-        (fx, bb.min_y + y_off, fz),
+        (fx, bb.min.y + y_off, fz),
         parent.orientation,
         parent.gen_depth,
     );
@@ -524,15 +509,15 @@ fn generate_child_left(
 ) {
     let bb = parent.bb;
     let (fx, fz, dir) = match parent.orientation {
-        Direction::North | Direction::South => (bb.min_x - 1, bb.min_z + z_off, Direction::West),
-        Direction::West | Direction::East => (bb.min_x + z_off, bb.min_z - 1, Direction::North),
+        Direction::North | Direction::South => (bb.min.x - 1, bb.min.z + z_off, Direction::West),
+        Direction::West | Direction::East => (bb.min.x + z_off, bb.min.z - 1, Direction::North),
         _ => return,
     };
     generate_and_add_piece(
         is_castle,
         builder,
         rng,
-        (fx, bb.min_y + y_off, fz),
+        (fx, bb.min.y + y_off, fz),
         dir,
         parent.gen_depth,
     );
@@ -548,15 +533,15 @@ fn generate_child_right(
 ) {
     let bb = parent.bb;
     let (fx, fz, dir) = match parent.orientation {
-        Direction::North | Direction::South => (bb.max_x + 1, bb.min_z + z_off, Direction::East),
-        Direction::West | Direction::East => (bb.min_x + z_off, bb.max_z + 1, Direction::South),
+        Direction::North | Direction::South => (bb.max.x + 1, bb.min.z + z_off, Direction::East),
+        Direction::West | Direction::East => (bb.min.x + z_off, bb.max.z + 1, Direction::South),
         _ => return,
     };
     generate_and_add_piece(
         is_castle,
         builder,
         rng,
-        (fx, bb.min_y + y_off, fz),
+        (fx, bb.min.y + y_off, fz),
         dir,
         parent.gen_depth,
     );
@@ -628,12 +613,8 @@ fn overall_bb(pieces: &[FortressPiece]) -> BoundingBox {
     let mut bb = pieces[0].bounding_box;
     for p in &pieces[1..] {
         bb = BoundingBox::new(
-            bb.min_x.min(p.bounding_box.min_x),
-            bb.min_y.min(p.bounding_box.min_y),
-            bb.min_z.min(p.bounding_box.min_z),
-            bb.max_x.max(p.bounding_box.max_x),
-            bb.max_y.max(p.bounding_box.max_y),
-            bb.max_z.max(p.bounding_box.max_z),
+            bb.min.min(p.bounding_box.min),
+            bb.max.max(p.bounding_box.max),
         );
     }
     bb
@@ -649,24 +630,20 @@ fn move_inside_heights(
         return;
     }
     let bb = overall_bb(pieces);
-    let height_span = highest_allowed - lowest_allowed + 1 - (bb.max_y - bb.min_y + 1);
+    let height_span = highest_allowed - lowest_allowed + 1 - (bb.max.y - bb.min.y + 1);
     let y0 = if height_span > 1 {
         lowest_allowed + rng.next_i32_bounded(height_span)
     } else {
         lowest_allowed
     };
-    let dy = y0 - bb.min_y;
+    let dy = y0 - bb.min.y;
     if dy == 0 {
         return;
     }
     for p in pieces {
         p.bounding_box = BoundingBox::new(
-            p.bounding_box.min_x,
-            p.bounding_box.min_y + dy,
-            p.bounding_box.min_z,
-            p.bounding_box.max_x,
-            p.bounding_box.max_y + dy,
-            p.bounding_box.max_z,
+            p.bounding_box.min.with_y(p.bounding_box.min.y + dy),
+            p.bounding_box.max.with_y(p.bounding_box.max.y + dy),
         );
     }
 }
@@ -680,7 +657,13 @@ pub fn generate_fortress_pieces(
     let start_dir = HORIZONTAL_ORDER[rng.next_i32_bounded(4) as usize];
     let west = (chunk_x << 4) + START_X_OFFSET;
     let north = (chunk_z << 4) + START_Z_OFFSET;
-    let start_bb = make_bounding_box(west, MAGIC_START_Y, north, start_dir, 19, 10, 19);
+    let start_bb = make_bounding_box(
+        IVec3::new(west, MAGIC_START_Y, north),
+        start_dir,
+        19,
+        10,
+        19,
+    );
     let start_piece = FortressPiece {
         data: FortressPieceData::BridgeCrossing,
         bounding_box: start_bb,
@@ -691,8 +674,8 @@ pub fn generate_fortress_pieces(
     let mut builder = Builder {
         pieces: vec![start_piece],
         pending: Vec::new(),
-        start_bb_min_x: start_bb.min_x,
-        start_bb_min_z: start_bb.min_z,
+        start_bb_min_x: start_bb.min.x,
+        start_bb_min_z: start_bb.min.z,
         bridge_weights: bridge_weights(),
         castle_weights: castle_weights(),
         previous_kind: None,

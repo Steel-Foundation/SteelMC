@@ -182,12 +182,12 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
 
     for aabb in shape {
         let touches_face = match face {
-            Direction::Down => aabb.min_y() <= 1.0e-5,
-            Direction::Up => aabb.max_y() >= 1.0 - 1.0e-5,
-            Direction::North => aabb.min_z() <= 1.0e-5,
-            Direction::South => aabb.max_z() >= 1.0 - 1.0e-5,
-            Direction::West => aabb.min_x() <= 1.0e-5,
-            Direction::East => aabb.max_x() >= 1.0 - 1.0e-5,
+            Direction::Down => aabb.min.y <= 1.0e-5,
+            Direction::Up => aabb.max.y >= 1.0 - 1.0e-5,
+            Direction::North => aabb.min.z <= 1.0e-5,
+            Direction::South => aabb.max.z >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min.x <= 1.0e-5,
+            Direction::East => aabb.max.x >= 1.0 - 1.0e-5,
         };
 
         if !touches_face {
@@ -195,15 +195,9 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
         }
 
         let (min_u, max_u, min_v, max_v) = match face {
-            Direction::Down | Direction::Up => {
-                (aabb.min_x(), aabb.max_x(), aabb.min_z(), aabb.max_z())
-            }
-            Direction::North | Direction::South => {
-                (aabb.min_x(), aabb.max_x(), aabb.min_y(), aabb.max_y())
-            }
-            Direction::West | Direction::East => {
-                (aabb.min_z(), aabb.max_z(), aabb.min_y(), aabb.max_y())
-            }
+            Direction::Down | Direction::Up => (aabb.min.x, aabb.max.x, aabb.min.z, aabb.max.z),
+            Direction::North | Direction::South => (aabb.min.x, aabb.max.x, aabb.min.y, aabb.max.y),
+            Direction::West | Direction::East => (aabb.min.z, aabb.max.z, aabb.min.y, aabb.max.y),
         };
 
         let u_start = ((min_u * 16.0).round() as i32).clamp(0, 16) as usize;
@@ -310,11 +304,11 @@ mod tests {
 
         let result = translate_shape(&shape, block_pos);
 
-        assert_eq!(result.min_x(), 10.0);
-        assert_eq!(result.min_y(), 64.0);
-        assert_eq!(result.min_z(), -5.0);
-        assert_eq!(result.max_x(), 11.0);
-        assert_eq!(result.max_y(), 64.5);
-        assert_eq!(result.max_z(), -4.0);
+        assert_eq!(result.min.x, 10.0);
+        assert_eq!(result.min.y, 64.0);
+        assert_eq!(result.min.z, -5.0);
+        assert_eq!(result.max.x, 11.0);
+        assert_eq!(result.max.y, 64.5);
+        assert_eq!(result.max.z, -4.0);
     }
 }

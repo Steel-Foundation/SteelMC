@@ -1,6 +1,7 @@
 //! Shipwreck: picks a random template from the beached (11) or underwater (20) pool,
 //! places at `(chunkMinX, 90, chunkMinZ)` with random rotation and pivot `(4, 15)`.
 
+use glam::IVec3;
 use steel_registry::structure::{LiquidSettingsData, StructureConfigData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -49,21 +50,16 @@ static OCEAN: &[&str] = &[
     "shipwreck/rightsideup_backhalf_degraded",
 ];
 
-const fn make_shipwreck_piece(
+fn make_shipwreck_piece(
     template_id: Identifier,
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
-    size: [i32; 3],
+    size: IVec3,
     is_beached: bool,
 ) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "shipwreck"),
-        bounding_box: rotation.get_bounding_box_with_pivot(
-            position,
-            (size[0], size[1], size[2]),
-            4,
-            15,
-        ),
+        bounding_box: rotation.get_bounding_box_with_pivot(position, size, IVec3::new(4, 0, 15)),
         gen_depth: 0,
         orientation: Some(Direction::North),
         payload: StructurePiecePayload::Template(TemplatePieceData {
@@ -71,7 +67,7 @@ const fn make_shipwreck_piece(
             template_position: position,
             rotation,
             mirror: StructureMirror::None,
-            rotation_pivot: (4, 0, 15),
+            rotation_pivot: IVec3::new(4, 0, 15),
             block_ignore: StructureBlockIgnore::StructureAndAir,
             late_block_ignore: StructureBlockIgnore::None,
             processors: TemplateProcessorList::Empty,
@@ -116,7 +112,7 @@ impl Structure for ShipwreckStructure {
         let idx = rng.next_i32_bounded(templates_arr.len() as i32) as usize;
         let template_id = Identifier::vanilla_static(templates_arr[idx]);
         let tmpl = ctx.templates().get(&template_id)?;
-        let position = (ctx.chunk_min_x(), 90, ctx.chunk_min_z());
+        let position = IVec3::new(ctx.chunk_min_x(), 90, ctx.chunk_min_z());
 
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
@@ -124,7 +120,7 @@ impl Structure for ShipwreckStructure {
                 template_id,
                 position,
                 rotation,
-                tmpl.size,
+                IVec3::from(tmpl.size),
                 *is_beached,
             )],
         })
@@ -137,8 +133,8 @@ mod tests {
 
     #[test]
     fn shipwreck_piece_uses_template_payload_with_height_adjustment() {
-        let position = (32, 90, -48);
-        let size = [15, 12, 28];
+        let position = IVec3::new(32, 90, -48);
+        let size = IVec3::new(15, 12, 28);
         let piece = make_shipwreck_piece(
             Identifier::vanilla_static("shipwreck/with_mast"),
             position,
@@ -157,9 +153,8 @@ mod tests {
             piece.bounding_box,
             Rotation::Clockwise180.get_bounding_box_with_pivot(
                 position,
-                (size[0], size[1], size[2]),
-                4,
-                15,
+                size,
+                IVec3::new(4, 0, 15),
             ),
         );
 
@@ -173,7 +168,7 @@ mod tests {
         assert_eq!(data.template_position, position);
         assert_eq!(data.rotation, Rotation::Clockwise180);
         assert_eq!(data.mirror, StructureMirror::None);
-        assert_eq!(data.rotation_pivot, (4, 0, 15));
+        assert_eq!(data.rotation_pivot, IVec3::new(4, 0, 15));
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(data.processors, TemplateProcessorList::Empty);

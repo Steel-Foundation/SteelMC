@@ -62,15 +62,11 @@ impl StructureStart {
         let mut bb = first.bounding_box;
         for piece in rest {
             bb = BoundingBox::new(
-                bb.min_x.min(piece.bounding_box.min_x),
-                bb.min_y.min(piece.bounding_box.min_y),
-                bb.min_z.min(piece.bounding_box.min_z),
-                bb.max_x.max(piece.bounding_box.max_x),
-                bb.max_y.max(piece.bounding_box.max_y),
-                bb.max_z.max(piece.bounding_box.max_z),
+                bb.min.min(piece.bounding_box.min),
+                bb.max.max(piece.bounding_box.max),
             );
         }
-        Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
+        Some(bb.inflate_xyz(bb_inflate, bb_inflate, bb_inflate))
     }
 
     /// Vanilla `StructureStart.placeInChunk` reference position: the first
@@ -81,7 +77,7 @@ impl StructureStart {
         let center = first_piece.bounding_box.get_center();
         Some(BlockPos::new(
             center.x(),
-            first_piece.bounding_box.min_y,
+            first_piece.bounding_box.min.y,
             center.z(),
         ))
     }

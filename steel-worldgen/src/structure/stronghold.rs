@@ -1,6 +1,7 @@
 //! Stronghold piece generation. Vanilla's `StrongholdPieces` recursive BFS;
 //! produces bounding boxes only (no blocks).
 
+use glam::IVec3;
 use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -27,54 +28,36 @@ fn random_horizontal(rng: &mut LegacyRandom) -> Direction {
 }
 
 /// Vanilla's `BoundingBox.orientBox`.
-const fn orient_box(
-    foot: (i32, i32, i32),
-    off: (i32, i32, i32),
-    size: (i32, i32, i32),
-    dir: Direction,
-) -> BoundingBox {
-    let (fx, fy, fz) = foot;
-    let (ox, oy, oz) = off;
-    let (w, h, d) = size;
+fn orient_box(foot: IVec3, off: IVec3, size: IVec3, dir: Direction) -> BoundingBox {
+    let fx = foot.x + off.x;
+    let fy = foot.y + off.y;
+    let fz = foot.z + off.z;
+    let w = size.x;
+    let h = size.y;
+    let d = size.z;
     match dir {
         Direction::North => BoundingBox::new(
-            fx + ox,
-            fy + oy,
-            fz - d + 1 + oz,
-            fx + w - 1 + ox,
-            fy + h - 1 + oy,
-            fz + oz,
+            IVec3::new(fx, fy, fz - d + 1),
+            IVec3::new(fx + w - 1, fy + h - 1, fz),
         ),
         Direction::West => BoundingBox::new(
-            fx - d + 1 + oz,
-            fy + oy,
-            fz + ox,
-            fx + oz,
-            fy + h - 1 + oy,
-            fz + w - 1 + ox,
+            IVec3::new(fx - d + 1, fy, fz),
+            IVec3::new(fx, fy + h - 1, fz + w - 1),
         ),
         Direction::East => BoundingBox::new(
-            fx + oz,
-            fy + oy,
-            fz + ox,
-            fx + d - 1 + oz,
-            fy + h - 1 + oy,
-            fz + w - 1 + ox,
+            IVec3::new(fx, fy, fz),
+            IVec3::new(fx + d - 1, fy + h - 1, fz + w - 1),
         ),
         // South + default
         _ => BoundingBox::new(
-            fx + ox,
-            fy + oy,
-            fz + oz,
-            fx + w - 1 + ox,
-            fy + h - 1 + oy,
-            fz + d - 1 + oz,
+            IVec3::new(fx, fy, fz),
+            IVec3::new(fx + w - 1, fy + h - 1, fz + d - 1),
         ),
     }
 }
 
 const fn is_ok(bb: &BoundingBox) -> bool {
-    bb.min_y > LOWEST_Y
+    bb.min.y > LOWEST_Y
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,14 +298,14 @@ struct State {
     pending: Vec<usize>,
     wts: Vec<PieceWeight>,
     start_bb: BoundingBox,
-    prev_pt: Option<PT>, // last placed piece type (for repeat prevention)
+    prev_pt: Option<PT>,
     has_portal: bool,
     imposed: Option<PT>,
     total_weight: i32,
 }
 
 impl State {
-    fn collides(&self, bb: &BoundingBox) -> bool {
+    fn collides(&self, bb: BoundingBox) -> bool {
         self.pieces.iter().any(|p| p.bb.intersects(bb))
     }
 
@@ -341,48 +324,54 @@ impl State {
     }
 }
 
-fn find_box(pt: PT, s: &State, foot: (i32, i32, i32), dir: Direction) -> Option<BoundingBox> {
+fn find_box(pt: PT, s: &State, foot: IVec3, dir: Direction) -> Option<BoundingBox> {
     let bb = match pt {
-        PT::Straight | PT::ChestCorridor => orient_box(foot, (-1, -1, 0), (5, 5, 7), dir),
-        PT::StairsDown => orient_box(foot, (-1, -7, 0), (5, 11, 5), dir),
-        PT::StraightStairs => orient_box(foot, (-1, -7, 0), (5, 11, 8), dir),
-        PT::LeftTurn | PT::RightTurn => orient_box(foot, (-1, -1, 0), (5, 5, 5), dir),
-        PT::RoomCrossing => orient_box(foot, (-4, -1, 0), (11, 7, 11), dir),
-        PT::Prison => orient_box(foot, (-1, -1, 0), (9, 5, 11), dir),
-        PT::FiveCrossing => orient_box(foot, (-4, -3, 0), (10, 9, 11), dir),
-        PT::Portal => orient_box(foot, (-4, -1, 0), (11, 8, 16), dir),
+        PT::Straight | PT::ChestCorridor => {
+            orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(5, 5, 7), dir)
+        }
+        PT::StairsDown => orient_box(foot, IVec3::new(-1, -7, 0), IVec3::new(5, 11, 5), dir),
+        PT::StraightStairs => orient_box(foot, IVec3::new(-1, -7, 0), IVec3::new(5, 11, 8), dir),
+        PT::LeftTurn | PT::RightTurn => {
+            orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(5, 5, 5), dir)
+        }
+        PT::RoomCrossing => orient_box(foot, IVec3::new(-4, -1, 0), IVec3::new(11, 7, 11), dir),
+        PT::Prison => orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(9, 5, 11), dir),
+        PT::FiveCrossing => orient_box(foot, IVec3::new(-4, -3, 0), IVec3::new(10, 9, 11), dir),
+        PT::Portal => orient_box(foot, IVec3::new(-4, -1, 0), IVec3::new(11, 8, 16), dir),
         PT::Library => {
-            let tall = orient_box(foot, (-4, -1, 0), (14, 11, 15), dir);
-            if is_ok(&tall) && !s.collides(&tall) {
+            let tall = orient_box(foot, IVec3::new(-4, -1, 0), IVec3::new(14, 11, 15), dir);
+            if is_ok(&tall) && !s.collides(tall) {
                 return Some(tall);
             }
-            orient_box(foot, (-4, -1, 0), (14, 6, 15), dir)
+            orient_box(foot, IVec3::new(-4, -1, 0), IVec3::new(14, 6, 15), dir)
         }
         PT::Filler => {
-            // Vanilla's FillerCorridor.findPieceBox: 5×5×4 is skipped if no collision;
-            // if a same-Y collision exists, try depths (2, 1) and return longest fitting.
-            let full_box = orient_box(foot, (-1, -1, 0), (5, 5, 4), dir);
-            let collision = s.pieces.iter().find(|p| p.bb.intersects(&full_box))?;
-            if collision.bb.min_y != full_box.min_y {
+            let full_box = orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(5, 5, 4), dir);
+            let collision = s.pieces.iter().find(|p| p.bb.intersects(full_box))?;
+            if collision.bb.min.y != full_box.min.y {
                 return None;
             }
             for d in (1..=2).rev() {
-                let b = orient_box(foot, (-1, -1, 0), (5, 5, d), dir);
-                if !collision.bb.intersects(&b) {
-                    return Some(orient_box(foot, (-1, -1, 0), (5, 5, d + 1), dir));
+                let b = orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(5, 5, d), dir);
+                if !collision.bb.intersects(b) {
+                    return Some(orient_box(
+                        foot,
+                        IVec3::new(-1, -1, 0),
+                        IVec3::new(5, 5, d + 1),
+                        dir,
+                    ));
                 }
             }
             return None;
         }
     };
-    if is_ok(&bb) && !s.collides(&bb) {
+    if is_ok(&bb) && !s.collides(bb) {
         Some(bb)
     } else {
         None
     }
 }
 
-/// Consume constructor RNG and create piece with stored state.
 fn create_piece(
     pt: PT,
     bb: BoundingBox,
@@ -395,7 +384,6 @@ fn create_piece(
             let entry_door = StrongholdSmallDoorType::random(rng);
             StrongholdPieceData::Straight {
                 entry_door,
-                // Vanilla uses nextInt(2) == 0, not nextBoolean().
                 left_child: rng.next_i32_bounded(2) == 0,
                 right_child: rng.next_i32_bounded(2) == 0,
             }
@@ -458,9 +446,6 @@ fn create_piece(
     Piece::new(bb, dir, depth, data)
 }
 
-/// Vanilla's `generatePieceFromSmallDoor`. Vanilla uses `totalWeight` (sum of all
-/// weights), selects, THEN checks eligibility — falls through to subsequent
-/// weights in the list on an ineligible pick.
 fn generate_piece(
     s: &mut State,
     rng: &mut LegacyRandom,
@@ -474,8 +459,10 @@ fn generate_piece(
         return None;
     }
 
+    let foot = IVec3::new(fx, fy, fz);
+
     if let Some(imp) = s.imposed.take()
-        && let Some(bb) = find_box(imp, s, (fx, fy, fz), dir)
+        && let Some(bb) = find_box(imp, s, foot, dir)
     {
         return Some(create_piece(imp, bb, dir, depth, rng));
     }
@@ -491,7 +478,7 @@ fn generate_piece(
                 if !s.wts[wi].can(depth) || Some(s.wts[wi].pt) == s.prev_pt {
                     break;
                 }
-                if let Some(bb) = find_box(s.wts[wi].pt, s, (fx, fy, fz), dir) {
+                if let Some(bb) = find_box(s.wts[wi].pt, s, foot, dir) {
                     let pt = s.wts[wi].pt;
                     let piece = create_piece(pt, bb, dir, depth, rng);
                     s.wts[wi].count += 1;
@@ -505,9 +492,8 @@ fn generate_piece(
         }
     }
 
-    // Fallback: FillerCorridor.
-    if let Some(bb) = find_box(PT::Filler, s, (fx, fy, fz), dir)
-        && bb.min_y > 1
+    if let Some(bb) = find_box(PT::Filler, s, foot, dir)
+        && bb.min.y > 1
     {
         return Some(create_piece(PT::Filler, bb, dir, depth, rng));
     }
@@ -524,8 +510,8 @@ fn gen_and_add(
     depth: i32,
 ) {
     if depth > MAX_DEPTH
-        || (fx - s.start_bb.min_x).abs() > MAX_DISTANCE
-        || (fz - s.start_bb.min_z).abs() > MAX_DISTANCE
+        || (fx - s.start_bb.min.x).abs() > MAX_DISTANCE
+        || (fz - s.start_bb.min.z).abs() > MAX_DISTANCE
     {
         return;
     }
@@ -630,7 +616,6 @@ fn add_children(s: &mut State, rng: &mut LegacyRandom, idx: usize) {
     }
 }
 
-/// Vanilla's `generateSmallDoorChildForward(startPiece, accessor, random, xOff, yOff)`.
 fn fwd(
     s: &mut State,
     rng: &mut LegacyRandom,
@@ -641,17 +626,15 @@ fn fwd(
     y_off: i32,
 ) {
     let (fx, fz) = match dir {
-        Direction::North => (bb.min_x + x_off, bb.min_z - 1),
-        Direction::South => (bb.min_x + x_off, bb.max_z + 1),
-        Direction::West => (bb.min_x - 1, bb.min_z + x_off),
-        Direction::East => (bb.max_x + 1, bb.min_z + x_off),
+        Direction::North => (bb.min.x + x_off, bb.min.z - 1),
+        Direction::South => (bb.min.x + x_off, bb.max.z + 1),
+        Direction::West => (bb.min.x - 1, bb.min.z + x_off),
+        Direction::East => (bb.max.x + 1, bb.min.z + x_off),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min_y + y_off, fz, dir, depth + 1);
+    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, dir, depth + 1);
 }
 
-/// Vanilla's `generateSmallDoorChildLeft`. Vanilla uses identical coords for N/S
-/// and for W/E — "left" always means towards minX (or minZ), not relative to facing.
 fn left(
     s: &mut State,
     rng: &mut LegacyRandom,
@@ -662,14 +645,13 @@ fn left(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => (bb.min_x - 1, bb.min_z + z_off, Direction::West),
-        Direction::West | Direction::East => (bb.min_x + z_off, bb.min_z - 1, Direction::North),
+        Direction::North | Direction::South => (bb.min.x - 1, bb.min.z + z_off, Direction::West),
+        Direction::West | Direction::East => (bb.min.x + z_off, bb.min.z - 1, Direction::North),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);
+    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, d, depth + 1);
 }
 
-/// Vanilla's `generateSmallDoorChildRight`. Mirror of [`left`].
 fn right(
     s: &mut State,
     rng: &mut LegacyRandom,
@@ -680,11 +662,11 @@ fn right(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => (bb.max_x + 1, bb.min_z + z_off, Direction::East),
-        Direction::West | Direction::East => (bb.min_x + z_off, bb.max_z + 1, Direction::South),
+        Direction::North | Direction::South => (bb.max.x + 1, bb.min.z + z_off, Direction::East),
+        Direction::West | Direction::East => (bb.min.x + z_off, bb.max.z + 1, Direction::South),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);
+    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, d, depth + 1);
 }
 
 /// One generated stronghold piece.
@@ -715,9 +697,10 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<StrongholdG
         tries += 1;
 
         let start_dir = random_horizontal(&mut rng);
-        // StartPiece uses makeBoundingBox (not orientBox). 5×11×5 is square-footprint,
-        // so N/S vs E/W produce identical boxes.
-        let start_bb = BoundingBox::new(west, 64, north, west + 4, 74, north + 4);
+        let start_bb = BoundingBox::new(
+            IVec3::new(west, 64, north),
+            IVec3::new(west + 4, 74, north + 4),
+        );
 
         let mut s = State {
             pieces: vec![Piece::new(
@@ -735,7 +718,6 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<StrongholdG
             total_weight: 0,
         };
 
-        // StartPiece.addChildren — no RNG in its constructor (entryDoor = OPENING).
         add_children(&mut s, &mut rng, 0);
         while !s.pending.is_empty() {
             let idx = rng.next_i32_bounded(s.pending.len() as i32) as usize;
@@ -747,35 +729,34 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<StrongholdG
             continue;
         }
 
-        // moveBelowSeaLevel(seaLevel=63, minY=-64, offset=10).
         let (min_y, max_y) = (-64, 63 - 10);
         let mut overall = s.pieces[0].bb;
         for p in &s.pieces[1..] {
             overall = BoundingBox::new(
-                overall.min_x.min(p.bb.min_x),
-                overall.min_y.min(p.bb.min_y),
-                overall.min_z.min(p.bb.min_z),
-                overall.max_x.max(p.bb.max_x),
-                overall.max_y.max(p.bb.max_y),
-                overall.max_z.max(p.bb.max_z),
+                IVec3::new(
+                    overall.min.x.min(p.bb.min.x),
+                    overall.min.y.min(p.bb.min.y),
+                    overall.min.z.min(p.bb.min.z),
+                ),
+                IVec3::new(
+                    overall.max.x.max(p.bb.max.x),
+                    overall.max.y.max(p.bb.max.y),
+                    overall.max.z.max(p.bb.max.z),
+                ),
             );
         }
-        let mut y1_pos = (overall.max_y - overall.min_y + 1) + min_y + 1;
+        let mut y1_pos = (overall.max.y - overall.min.y + 1) + min_y + 1;
         if y1_pos < max_y {
             y1_pos += rng.next_i32_bounded(max_y - y1_pos);
         }
-        let dy = y1_pos - overall.max_y;
+        let dy = y1_pos - overall.max.y;
         return s
             .pieces
             .into_iter()
             .map(|p| StrongholdGeneratedPiece {
                 bounding_box: BoundingBox::new(
-                    p.bb.min_x,
-                    p.bb.min_y + dy,
-                    p.bb.min_z,
-                    p.bb.max_x,
-                    p.bb.max_y + dy,
-                    p.bb.max_z,
+                    IVec3::new(p.bb.min.x, p.bb.min.y + dy, p.bb.min.z),
+                    IVec3::new(p.bb.max.x, p.bb.max.y + dy, p.bb.max.z),
                 ),
                 orientation: p.dir,
                 gen_depth: p.depth,
@@ -831,7 +812,7 @@ mod tests {
 
     #[test]
     fn constructor_rng_state_is_captured_in_piece_payloads() {
-        let bb = BoundingBox::new(0, 20, 0, 13, 30, 14);
+        let bb = BoundingBox::new(IVec3::new(0, 20, 0), IVec3::new(13, 30, 14));
         let mut actual = LegacyRandom::from_seed(12_345);
         let mut expected = LegacyRandom::from_seed(12_345);
 
@@ -877,7 +858,7 @@ mod tests {
     fn library_and_filler_payloads_capture_non_random_state() {
         let tall_library = create_piece(
             PT::Library,
-            BoundingBox::new(0, 20, 0, 13, 30, 14),
+            BoundingBox::new(IVec3::new(0, 20, 0), IVec3::new(13, 30, 14)),
             Direction::South,
             7,
             &mut LegacyRandom::from_seed(1),
@@ -889,7 +870,7 @@ mod tests {
 
         let short_library = create_piece(
             PT::Library,
-            BoundingBox::new(0, 20, 0, 13, 25, 14),
+            BoundingBox::new(IVec3::new(0, 20, 0), IVec3::new(13, 25, 14)),
             Direction::South,
             7,
             &mut LegacyRandom::from_seed(1),
@@ -901,7 +882,7 @@ mod tests {
 
         let filler = create_piece(
             PT::Filler,
-            BoundingBox::new(0, 20, 0, 4, 24, 2),
+            BoundingBox::new(IVec3::new(0, 20, 0), IVec3::new(4, 24, 2)),
             Direction::North,
             4,
             &mut LegacyRandom::from_seed(1),

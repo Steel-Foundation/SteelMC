@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::DVec3;
+use glam::{DVec3, IVec3};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -58,9 +58,9 @@ impl StructurePiecePlacer {
             mirror: data.mirror,
             rotation: data.rotation,
             rotation_pivot: BlockPos::new(
-                data.rotation_pivot.0,
-                data.rotation_pivot.1,
-                data.rotation_pivot.2,
+                data.rotation_pivot.x,
+                data.rotation_pivot.y,
+                data.rotation_pivot.z,
             ),
             bounding_box: clip,
             processors: processor_list,
@@ -87,7 +87,7 @@ impl StructurePiecePlacer {
             bounding_box: placement_clip,
             ..settings
         };
-        if !template_box.intersects(&placement_clip) {
+        if !template_box.intersects(placement_clip) {
             return false;
         }
 
@@ -136,9 +136,9 @@ impl StructurePiecePlacer {
     ) -> BlockPos {
         match &mut data.placement_adjustment {
             TemplatePlacementAdjustment::None => BlockPos::new(
-                data.template_position.0,
-                data.template_position.1,
-                data.template_position.2,
+                data.template_position.x,
+                data.template_position.y,
+                data.template_position.z,
             ),
             TemplatePlacementAdjustment::Shipwreck {
                 is_beached,
@@ -148,29 +148,37 @@ impl StructurePiecePlacer {
                     let new_y = Self::adjusted_shipwreck_y(
                         region,
                         template,
-                        data.template_position,
+                        (
+                            data.template_position.x,
+                            data.template_position.y,
+                            data.template_position.z,
+                        ),
                         *is_beached,
                         random,
                     );
-                    data.template_position.1 = new_y;
+                    data.template_position.y = new_y;
                     *height_adjusted = true;
                 }
                 BlockPos::new(
-                    data.template_position.0,
-                    data.template_position.1,
-                    data.template_position.2,
+                    data.template_position.x,
+                    data.template_position.y,
+                    data.template_position.z,
                 )
             }
             TemplatePlacementAdjustment::Igloo { template_offset } => {
                 Self::adjusted_igloo_position(
                     region,
-                    data.template_position,
+                    (
+                        data.template_position.x,
+                        data.template_position.y,
+                        data.template_position.z,
+                    ),
                     data.mirror,
                     data.rotation,
                     BlockPos::new(
-                        data.rotation_pivot.0,
-                        data.rotation_pivot.1,
-                        data.rotation_pivot.2,
+                        data.rotation_pivot.x,
+                        data.rotation_pivot.y,
+                        data.rotation_pivot.z,
                     ),
                     *template_offset,
                 )
@@ -183,7 +191,7 @@ impl StructurePiecePlacer {
 
     const fn shipwreck_is_too_big_to_fit(template: &StructureTemplate) -> bool {
         let size = template.size(Rotation::None);
-        size[0] > 32 || size[1] > 32
+        size.x > 32 || size.y > 32
     }
 
     fn adjusted_shipwreck_y(
@@ -254,28 +262,27 @@ impl StructurePiecePlacer {
 
     fn adjusted_ocean_ruin_position(
         region: &WorldGenRegion<'_>,
-
         template: &StructureTemplate,
         data: &mut TemplatePieceData,
     ) -> BlockPos {
         let ocean_floor_y = region.height_at(
             HeightmapType::OceanFloorWg,
-            data.template_position.0,
-            data.template_position.2,
+            data.template_position.x,
+            data.template_position.z,
         );
         let base = BlockPos::new(
-            data.template_position.0,
+            data.template_position.x,
             ocean_floor_y,
-            data.template_position.2,
+            data.template_position.z,
         );
         let size = template.size(Rotation::None);
-        let (corner_x, _, corner_z) =
-            data.rotation
-                .transform_pos(size[0] - 1, 0, size[2] - 1, 0, 0);
-        let corner = base.offset(corner_x, 0, corner_z);
+        let corner_iv = data
+            .rotation
+            .transform_pos(IVec3::new(size[0] - 1, 0, size[2] - 1), IVec3::new(0, 0, 0));
+        let corner = base.offset(corner_iv.x, 0, corner_iv.z);
         let y = Self::adjusted_ocean_ruin_height(region, base, corner);
-        data.template_position.1 = y;
-        BlockPos::new(data.template_position.0, y, data.template_position.2)
+        data.template_position.y = y;
+        BlockPos::new(data.template_position.x, y, data.template_position.z)
     }
 
     fn adjusted_ocean_ruin_height(
@@ -658,7 +665,7 @@ impl StructurePiecePlacer {
             && pos.z() < 30_000_000
     }
 
-    const fn template_placement_clip(
+    fn template_placement_clip(
         placement_clip: TemplatePlacementClip,
         center_clip: BoundingBox,
         template_box: BoundingBox,
@@ -768,9 +775,9 @@ impl StructurePiecePlacer {
         }
 
         let pos = BlockPos::new(
-            fossil_box.min_x + positional_random.next_i32_bounded(fossil_box.get_x_span()),
-            fossil_box.min_y,
-            fossil_box.min_z + positional_random.next_i32_bounded(fossil_box.get_z_span()),
+            fossil_box.min.x + positional_random.next_i32_bounded(fossil_box.get_x_span()),
+            fossil_box.min.y,
+            fossil_box.min.z + positional_random.next_i32_bounded(fossil_box.get_z_span()),
         );
         if !placement_clip.is_inside(pos) {
             return;
@@ -802,9 +809,9 @@ mod tests {
 
     #[test]
     fn center_gated_expanded_clip_requires_template_center_inside_center_chunk() {
-        let center_clip = BoundingBox::new(0, -64, 0, 15, 319, 15);
-        let centered_template = BoundingBox::new(0, 70, 0, 15, 80, 15);
-        let outside_template = BoundingBox::new(16, 70, 8, 31, 80, 23);
+        let center_clip = BoundingBox::new(IVec3::new(0, -64, 0), IVec3::new(15, 319, 15));
+        let centered_template = BoundingBox::new(IVec3::new(0, 70, 0), IVec3::new(15, 80, 15));
+        let outside_template = BoundingBox::new(IVec3::new(16, 70, 8), IVec3::new(31, 80, 23));
 
         assert_eq!(
             StructurePiecePlacer::template_placement_clip(
