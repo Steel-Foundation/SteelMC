@@ -52,7 +52,6 @@ pub enum ComponentDataDiscriminant {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ComponentData {
-
     /// Component with no data (e.g., Unbreakable, Glider, CreativeSlotLock)
     Empty,
 

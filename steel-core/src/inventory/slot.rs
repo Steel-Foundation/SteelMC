@@ -792,7 +792,6 @@ impl SlotType {
     }
 }
 
-//
 // These functions mirror vanilla Java's AbstractContainerMenu methods for
 // adding standard inventory slots. They create SlotType vectors that can
 // be appended to a menu's slot list.

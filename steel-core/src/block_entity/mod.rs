@@ -46,7 +46,6 @@ use crate::world::World;
 /// Block entities are attached to specific blocks in the world and provide
 /// additional data storage beyond what block states can hold.
 pub trait BlockEntity: Send + Sync {
-
     /// Returns a reference to the block entity as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
 
