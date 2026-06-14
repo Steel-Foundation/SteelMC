@@ -17,10 +17,6 @@ use std::cmp::Ordering;
 use super::PARAMETER_COUNT;
 use super::types::{Parameter, ParameterPoint, TargetPoint};
 
-// =============================================================================
-// R-Tree construction (vanilla's Climate.RTree algorithm)
-// =============================================================================
-
 /// Maximum children per tree node. Matches vanilla's `CHILDREN_PER_NODE` = 6.
 const CHILDREN_PER_NODE: usize = 6;
 
@@ -245,10 +241,6 @@ fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
     (total_cost, buckets)
 }
 
-// =============================================================================
-// Flat R-Tree: cache-friendly contiguous layout
-// =============================================================================
-
 /// Compact node for the flattened R-Tree.
 ///
 /// Children of the same parent are stored at contiguous indices in a single
@@ -383,10 +375,6 @@ fn search_nearest(
         }
     }
 }
-
-// =============================================================================
-// Public API
-// =============================================================================
 
 /// A list of biome parameter points with their associated values.
 ///

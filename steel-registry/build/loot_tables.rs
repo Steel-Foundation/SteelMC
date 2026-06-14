@@ -8,10 +8,6 @@ use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 
-// ============================================================================
-// Untagged enums for flexible JSON parsing
-// ============================================================================
-
 /// A number provider can be a constant number or an object with type.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -112,10 +108,6 @@ struct StewEffectJson {
     #[serde(default)]
     duration: NumberProviderJson,
 }
-
-// ============================================================================
-// Main JSON structures
-// ============================================================================
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -434,10 +426,6 @@ struct BonusParametersJson {
     #[serde(default)]
     probability: Option<f32>,
 }
-
-// ============================================================================
-// Code generation functions
-// ============================================================================
 
 fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
     match value {
