@@ -4,12 +4,17 @@ use std::{
 };
 
 use glam::DVec3;
+use simdnbt::{borrow::BaseNbtCompound, owned::NbtCompound};
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::TaggedRegistryExt;
+use steel_registry::{
+    TaggedRegistryExt, block_entity_type::BlockEntityTypeRef, sound_events,
+    vanilla_block_entity_types, vanilla_entity_type_tags::EntityTypeTag,
+};
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
 
 use crate::{block_entity::BlockEntity, entity::Entity, world::World};
 
+/// Bell block entity
 pub struct BellBlockEntity {
     level: Weak<World>,
     position: BlockPos,
@@ -25,6 +30,7 @@ pub struct BellBlockEntity {
 }
 
 impl BellBlockEntity {
+    /// Creates new bell block entity
     #[must_use]
     pub const fn new(level: Weak<World>, position: BlockPos, state: BlockStateId) -> Self {
         Self {
@@ -110,10 +116,9 @@ impl BellBlockEntity {
         for entity in world.get_entities_in_aabb(&aabb) {
             if entity.is_alive()
                 && !entity.is_removed()
-                && steel_registry::REGISTRY.entity_types.is_in_tag(
-                    entity.entity_type(),
-                    &steel_registry::vanilla_entity_type_tags::EntityTypeTag::RAIDERS,
-                )
+                && steel_registry::REGISTRY
+                    .entity_types
+                    .is_in_tag(entity.entity_type(), &EntityTypeTag::RAIDERS)
             {
                 return true;
             }
@@ -134,10 +139,9 @@ impl BellBlockEntity {
         for entity in world.get_entities_in_aabb(&aabb) {
             if entity.is_alive()
                 && !entity.is_removed()
-                && steel_registry::REGISTRY.entity_types.is_in_tag(
-                    entity.entity_type(),
-                    &steel_registry::vanilla_entity_type_tags::EntityTypeTag::RAIDERS,
-                )
+                && steel_registry::REGISTRY
+                    .entity_types
+                    .is_in_tag(entity.entity_type(), &EntityTypeTag::RAIDERS)
             {
                 // TODO: add effect via entity.add_effect(MobEffects::GLOWING, 60) when available.
             }
@@ -154,8 +158,8 @@ impl BlockEntity for BellBlockEntity {
         self
     }
 
-    fn get_type(&self) -> steel_registry::block_entity_type::BlockEntityTypeRef {
-        &steel_registry::vanilla_block_entity_types::BELL
+    fn get_type(&self) -> BlockEntityTypeRef {
+        &vanilla_block_entity_types::BELL
     }
 
     fn get_block_pos(&self) -> BlockPos {
@@ -186,11 +190,11 @@ impl BlockEntity for BellBlockEntity {
         self.level.upgrade()
     }
 
-    fn load_additional(&mut self, _nbt: &simdnbt::borrow::BaseNbtCompound<'_>) {
+    fn load_additional(&mut self, _nbt: &BaseNbtCompound<'_>) {
         // Nothing to load beyond position/state.
     }
 
-    fn save_additional(&self, _nbt: &mut simdnbt::owned::NbtCompound) {
+    fn save_additional(&self, _nbt: &mut NbtCompound) {
         // Nothing to save beyond position/state.
     }
 
@@ -215,7 +219,7 @@ impl BlockEntity for BellBlockEntity {
         {
             self.resonating = true;
             world.play_sound(
-                &steel_registry::sound_events::BLOCK_BELL_RESONATE,
+                &sound_events::BLOCK_BELL_RESONATE,
                 SoundSource::Blocks,
                 self.position,
                 2.0_f32,
