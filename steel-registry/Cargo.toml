@@ -59,4 +59,3 @@ flate2.workspace = true
 fmt = []
 minecraft-src = []
 test-utils = []
-

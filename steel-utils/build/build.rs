@@ -1,9 +1,12 @@
 //! Build script for steel-utils that generates translation constants.
 
-use reqwest::blocking;
+use reqwest::blocking::{self, Response};
 use serde::Deserialize;
+use sha1::{Digest, Sha1};
 use std::{
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     io::{Cursor, Read, copy},
     path::{Path, PathBuf},
     process::Command,
@@ -44,6 +47,8 @@ struct Downloads {
 
 #[derive(Deserialize)]
 struct DownloadEntry {
+    sha1: String,
+    size: u64,
     url: String,
 }
 
@@ -72,20 +77,94 @@ fn fetch_version_details(version_url: &str, target_ver: &str) -> VersionDetails 
         .expect("Failed to parse version details JSON")
 }
 
-fn download_server_jar(server_jar_url: &str, cached_jar: &Path, target_ver: &str) {
-    if cached_jar.exists() {
-        return;
+fn sha1_hex(path: &Path) -> Result<String, String> {
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+    let mut hasher = Sha1::new();
+    let mut buffer = [0; 8192];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
     }
+
+    let mut out = String::with_capacity(40);
+    for byte in hasher.finalize() {
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    Ok(out)
+}
+
+fn validate_downloaded_server_jar(
+    path: &Path,
+    download: &DownloadEntry,
+    target_ver: &str,
+) -> Result<(), String> {
+    let actual_size = fs::metadata(path)
+        .map_err(|e| format!("Failed to read metadata for {}: {e}", path.display()))?
+        .len();
+    if actual_size != download.size {
+        return Err(format!(
+            "Downloaded server jar for {target_ver} has size {actual_size}, expected {}",
+            download.size
+        ));
+    }
+
+    let actual_sha1 = sha1_hex(path)?;
+    if !actual_sha1.eq_ignore_ascii_case(&download.sha1) {
+        return Err(format!(
+            "Downloaded server jar for {target_ver} has SHA-1 {actual_sha1}, expected {}",
+            download.sha1
+        ));
+    }
+
+    try_get_server_archive(path)?;
+    Ok(())
+}
+
+fn download_server_jar(download: &DownloadEntry, cached_jar: &Path, target_ver: &str) {
     println!("cargo:warning=Downloading server jar for {target_ver}...");
-    let mut jar_resp = blocking::get(server_jar_url)
-        .unwrap_or_else(|e| panic!("Failed to download server jar from {server_jar_url}: {e}"));
-    let mut jar_file = fs::File::create(cached_jar).unwrap_or_else(|e| {
+    let mut jar_resp = blocking::get(&download.url)
+        .and_then(Response::error_for_status)
+        .unwrap_or_else(|e| panic!("Failed to download server jar from {}: {e}", download.url));
+
+    let tmp_jar = cached_jar.with_extension("jar.tmp");
+    if tmp_jar.exists() {
+        fs::remove_file(&tmp_jar).unwrap_or_else(|e| {
+            panic!(
+                "Failed to remove temporary jar file at {}: {e}",
+                tmp_jar.display()
+            )
+        });
+    }
+
+    let mut jar_file = fs::File::create(&tmp_jar).unwrap_or_else(|e| {
         panic!(
-            "Failed to create cached jar file at {}: {e}",
-            cached_jar.display()
+            "Failed to create temporary jar file at {}: {e}",
+            tmp_jar.display()
         )
     });
     copy(&mut jar_resp, &mut jar_file).expect("Failed to write server jar contents to file");
+    jar_file
+        .sync_all()
+        .expect("Failed to flush server jar contents to disk");
+
+    if let Err(err) = validate_downloaded_server_jar(&tmp_jar, download, target_ver) {
+        let _ = fs::remove_file(&tmp_jar);
+        panic!("{err}");
+    }
+
+    fs::rename(&tmp_jar, cached_jar).unwrap_or_else(|e| {
+        panic!(
+            "Failed to move downloaded server jar from {} to {}: {e}",
+            tmp_jar.display(),
+            cached_jar.display()
+        )
+    });
 }
 
 fn download_server_jar_for_version(manifest_dir: &str, target_ver: &str) -> PathBuf {
@@ -96,7 +175,20 @@ fn download_server_jar_for_version(manifest_dir: &str, target_ver: &str) -> Path
     }
     let cached_jar = cache_dir.join(format!("server-{target_ver}.jar"));
     if cached_jar.exists() {
-        return cached_jar;
+        match try_get_server_archive(&cached_jar) {
+            Ok(_) => return cached_jar,
+            Err(err) => {
+                println!(
+                    "cargo:warning=Cached server jar for {target_ver} is invalid ({err}). Re-downloading..."
+                );
+                fs::remove_file(&cached_jar).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to remove invalid cached jar file at {}: {e}",
+                        cached_jar.display()
+                    )
+                });
+            }
+        }
     }
 
     let manifest = fetch_version_manifest();
@@ -107,21 +199,25 @@ fn download_server_jar_for_version(manifest_dir: &str, target_ver: &str) -> Path
         .unwrap_or_else(|| panic!("Minecraft version {target_ver} not found in version manifest"));
 
     let details = fetch_version_details(&version_entry.url, target_ver);
-    download_server_jar(&details.downloads.server.url, &cached_jar, target_ver);
+    download_server_jar(&details.downloads.server, &cached_jar, target_ver);
     cached_jar
 }
 
-fn get_server_archive(cached_jar: &Path) -> zip::ZipArchive<Cursor<Vec<u8>>> {
+fn try_get_server_archive(cached_jar: &Path) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>, String> {
     let mut jar_data = Vec::new();
     {
-        let mut jar_file = fs::File::open(cached_jar).expect("Failed to open server jar");
-        jar_file
-            .read_to_end(&mut jar_data)
-            .expect("Failed to read server jar file");
+        let mut jar_file = fs::File::open(cached_jar)
+            .map_err(|e| format!("Failed to open server jar {}: {e}", cached_jar.display()))?;
+        jar_file.read_to_end(&mut jar_data).map_err(|e| {
+            format!(
+                "Failed to read server jar file {}: {e}",
+                cached_jar.display()
+            )
+        })?;
     }
     let outer_cursor = Cursor::new(jar_data);
-    let mut outer_archive =
-        zip::ZipArchive::new(outer_cursor).expect("Failed to read server jar ZIP");
+    let mut outer_archive = zip::ZipArchive::new(outer_cursor)
+        .map_err(|e| format!("Failed to read server jar ZIP: {e}"))?;
 
     let mut nested_entry_name = None;
     for i in 0..outer_archive.len() {
@@ -142,16 +238,21 @@ fn get_server_archive(cached_jar: &Path) -> zip::ZipArchive<Cursor<Vec<u8>>> {
         println!("cargo:warning=Detected bootstrap jar. Extracting nested jar {entry_name}...");
         let mut nested_file = outer_archive
             .by_name(&entry_name)
-            .expect("Failed to locate nested jar");
+            .map_err(|e| format!("Failed to locate nested jar {entry_name}: {e}"))?;
         let mut nested_data = Vec::new();
         nested_file
             .read_to_end(&mut nested_data)
-            .expect("Failed to read nested jar");
+            .map_err(|e| format!("Failed to read nested jar {entry_name}: {e}"))?;
         let cursor = Cursor::new(nested_data);
-        zip::ZipArchive::new(cursor).expect("Failed to read nested server jar ZIP")
+        zip::ZipArchive::new(cursor)
+            .map_err(|e| format!("Failed to read nested server jar ZIP {entry_name}: {e}"))
     } else {
-        outer_archive
+        Ok(outer_archive)
     }
+}
+
+fn get_server_archive(cached_jar: &Path) -> zip::ZipArchive<Cursor<Vec<u8>>> {
+    try_get_server_archive(cached_jar).unwrap_or_else(|e| panic!("{e}"))
 }
 
 fn download_and_extract_assets(manifest_dir: &str) {
@@ -233,6 +334,8 @@ fn download_and_extract_assets(manifest_dir: &str) {
 /// Main build script entry point that generates translation constants.
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=../Cargo.toml");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
 

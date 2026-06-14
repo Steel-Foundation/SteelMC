@@ -1026,9 +1026,11 @@ fn generate_structure_config(config: &StructureConfigData, context: &str) -> Tok
 }
 
 pub(crate) fn build_structures() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure/");
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure/"
+    );
+    println!(
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
     );
 
     let biome_tags = load_biome_tags();
