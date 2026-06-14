@@ -235,9 +235,9 @@ impl BlockBehavior for BellBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        direction_to_neighbour: Direction,
-        _neighbour_pos: BlockPos,
-        neighbour_state: BlockStateId,
+        direction_to_neighbor: Direction,
+        _neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let attachment = state
             .try_get_value(&BlockStateProperties::BELL_ATTACHMENT)
@@ -245,7 +245,7 @@ impl BlockBehavior for BellBlock {
         let connected_dir = Self::get_connected_direction(state).opposite();
 
         // If the support block disappears, break unless double wall.
-        if connected_dir == direction_to_neighbour
+        if connected_dir == direction_to_neighbor
             && !self.can_survive(state, world, pos)
             && attachment != BellAttachType::DoubleWall
         {
@@ -256,9 +256,9 @@ impl BlockBehavior for BellBlock {
             .try_get_value(&BlockStateProperties::FACING)
             .unwrap_or(Direction::North);
 
-        if direction_to_neighbour.axis() == facing.axis() {
+        if direction_to_neighbor.axis() == facing.axis() {
             if attachment == BellAttachType::DoubleWall
-                && !neighbour_state.is_face_sturdy(direction_to_neighbour)
+                && !neighbor_state.is_face_sturdy(direction_to_neighbor)
             {
                 // One side lost support -> become single wall.
                 return state
@@ -268,13 +268,13 @@ impl BlockBehavior for BellBlock {
                     )
                     .set_value(
                         &BlockStateProperties::FACING,
-                        direction_to_neighbour.opposite(),
+                        direction_to_neighbor.opposite(),
                     );
             }
 
             if attachment == BellAttachType::SingleWall
-                && connected_dir.opposite() == direction_to_neighbour
-                && neighbour_state.is_face_sturdy(facing)
+                && connected_dir.opposite() == direction_to_neighbor
+                && neighbor_state.is_face_sturdy(facing)
             {
                 // Gained support on the other side -> become double wall.
                 return state.set_value(
