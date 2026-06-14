@@ -221,8 +221,8 @@ impl EntityMovementSyncPackets {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityPositionSyncSnapshot {
     entity_id: i32,
-    pos: DVec3,
-    vel: DVec3,
+    position: DVec3,
+    velocity: DVec3,
     rotation: (f32, f32),
     on_ground: bool,
 }
@@ -232,15 +232,15 @@ impl EntityPositionSyncSnapshot {
     #[must_use]
     pub const fn new(
         entity_id: i32,
-        pos: DVec3,
-        vel: DVec3,
+        position: DVec3,
+        velocity: DVec3,
         rotation: (f32, f32),
         on_ground: bool,
     ) -> Self {
         Self {
             entity_id,
-            pos,
-            vel,
+            position,
+            velocity,
             rotation,
             on_ground,
         }
@@ -249,8 +249,8 @@ impl EntityPositionSyncSnapshot {
     const fn full_sync_packet(self) -> CEntityPositionSync {
         CEntityPositionSync {
             entity_id: self.entity_id,
-            pos: self.pos,
-            vel: self.vel,
+            pos: self.position,
+            vel: self.velocity,
             yaw: self.rotation.0,
             pitch: self.rotation.1,
             on_ground: self.on_ground,
