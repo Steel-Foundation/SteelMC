@@ -6,7 +6,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, Direction, IntProperty},
+        properties::{BlockStateProperties, Direction, EnumProperty, IntProperty},
     },
     item_stack::ItemStack,
     vanilla_block_tags::BlockTag,
@@ -24,6 +24,7 @@ use crate::{
 
 const MAX_AGE: u8 = 2;
 const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_2;
+const FACING_PROPERTY: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
 /// Cocoa Block behavior
 // TODO: Implement vanilla isPathfindable()
@@ -50,7 +51,7 @@ impl CocoaBlock {
 
 impl BlockBehavior for CocoaBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing: Direction = state.get_value(&FACING_PROPERTY);
         let support = world.get_block_state(pos.relative(facing));
         support.get_block().has_tag(&BlockTag::JUNGLE_LOGS)
     }
@@ -64,7 +65,7 @@ impl BlockBehavior for CocoaBlock {
             let state = self
                 .block
                 .default_state()
-                .set_value(&BlockStateProperties::HORIZONTAL_FACING, direction);
+                .set_value(&FACING_PROPERTY, direction);
             if self.can_survive(state, context.world, context.relative_pos) {
                 return Some(state);
             }
@@ -82,7 +83,7 @@ impl BlockBehavior for CocoaBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing: Direction = state.get_value(&FACING_PROPERTY);
         if direction == facing && !self.can_survive(state, world, pos) {
             return vanilla_blocks::AIR.default_state();
         }

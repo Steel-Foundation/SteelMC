@@ -569,7 +569,7 @@ fn connected_room(rooms: &[RoomDefinition], room: usize, direction: Direction) -
     connection
 }
 
-fn set_connection(
+const fn set_connection(
     rooms: &mut [RoomDefinition],
     room: usize,
     direction: Direction,
