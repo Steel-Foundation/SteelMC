@@ -19,7 +19,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityTickAction};
 use crate::entity::Entity;
 use crate::world::World;
 
@@ -320,7 +320,7 @@ impl BlockEntity for SignBlockEntity {
         self.player_who_may_edit.is_some()
     }
 
-    fn tick(&mut self, world: &Arc<World>) {
+    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
         // Clear the edit lock if the editing player is too far away or gone
         if let Some(editor_uuid) = self.player_who_may_edit {
             let should_clear = world
@@ -340,6 +340,7 @@ impl BlockEntity for SignBlockEntity {
                 self.player_who_may_edit = None;
             }
         }
+        None
     }
 }
 
