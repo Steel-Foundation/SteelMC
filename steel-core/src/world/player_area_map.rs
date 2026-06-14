@@ -8,8 +8,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashSet;
 use steel_utils::ChunkPos;
 
-use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::player::Player;
+use crate::{chunk::player_chunk_view::PlayerChunkView, entity::Entity, player::Player};
 
 /// Spatial index for player proximity queries.
 ///
@@ -52,7 +51,7 @@ impl PlayerAreaMap {
 
     /// Registers a player at their current position using their chunk view.
     pub fn on_player_join(&self, player: &Player, view: &PlayerChunkView) {
-        let entity_id = player.id;
+        let entity_id = player.id();
         let mut player_set = FxHashSet::default();
 
         view.for_each(|chunk| {
@@ -65,7 +64,7 @@ impl PlayerAreaMap {
 
     /// Removes a player from all tracked chunks.
     pub fn on_player_leave(&self, player: &Arc<Player>) {
-        self.remove_by_entity_id(player.id);
+        self.remove_by_entity_id(player.id());
     }
 
     /// Removes a player from all tracked chunks by entity ID.

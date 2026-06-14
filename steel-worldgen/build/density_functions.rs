@@ -267,7 +267,7 @@ struct NoiseSettingsJson {
 
 // ── Datapack file reading ───────────────────────────────────────────────────
 
-const DATAPACK_BASE: &str = "../steel-registry/build_assets/builtin_datapacks/minecraft/worldgen";
+const DATAPACK_BASE: &str = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen";
 
 /// Recursively collect all .json files under a directory.
 fn collect_json_files(dir: &Path) -> Vec<PathBuf> {

@@ -17,11 +17,11 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_access::ChunkStatus;
 use crate::world::World;
 
 use super::{
-    ChunkStorage, PersistentChunk,
+    ChunkStorage, LoadedChunk, PersistentChunk,
     format::{
         CHUNK_TABLE_SIZE, FILE_HEADER_SIZE, FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE,
         REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
@@ -46,6 +46,8 @@ pub struct PreparedChunkSave {
     pub pos: ChunkPos,
     /// The serialized chunk data.
     pub persistent: PersistentChunk,
+    /// Runtime manager entity IDs that were either serialized or explicitly skipped.
+    pub handled_runtime_entity_ids: Vec<i32>,
 }
 
 /// An open region file with its header.
@@ -329,7 +331,7 @@ impl RegionManager {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> io::Result<Option<(ChunkAccess, ChunkStatus)>> {
+    ) -> io::Result<Option<LoadedChunk>> {
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
@@ -364,10 +366,14 @@ impl RegionManager {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         // Convert to runtime format (persistent is dropped after this - no duplication!)
-        let chunk =
-            ChunkStorage::persistent_to_chunk(&persistent, pos, status, min_y, height, level);
-
-        Ok(Some((chunk, status)))
+        Ok(Some(ChunkStorage::persistent_to_chunk(
+            &persistent,
+            pos,
+            status,
+            min_y,
+            height,
+            level,
+        )))
     }
 
     /// Acquires a chunk, incrementing the region's reference count.

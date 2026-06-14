@@ -26,9 +26,8 @@ fn read_all_fabric_tags(tag_file: &str) -> FxHashMap<String, Vec<String>> {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/item/");
-
-    let tag_dir = "build_assets/builtin_datapacks/minecraft/tags/item";
+    let tag_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/item";
+    println!("cargo:rerun-if-changed={tag_dir}");
     let mut all_tags = tag_utils::read_all_tags(tag_dir);
     all_tags.extend(read_all_fabric_tags("build_assets/tags.json"));
 

@@ -11,8 +11,8 @@ use crate::command::commands::{
 };
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use steel_registry::vanilla_damage_types;
 use steel_utils::translations;
@@ -71,17 +71,24 @@ impl CommandExecutor<((), Vec<Arc<dyn LivingEntity + Send + Sync>>)> for KillTar
             )));
         }
 
-        let victim_count = targets.len();
         let players = context.server.get_players();
 
         let mut last_name = String::new();
+        let mut victim_count = 0;
         for target in &targets {
-            let target_id = target.id();
-            if let Some(player) = players.iter().find(|p| p.id == target_id) {
+            let target_uuid = target.uuid();
+            if let Some(player) = players.iter().find(|p| p.uuid() == target_uuid) {
                 kill_player(player);
+                victim_count += 1;
                 last_name.clone_from(&player.gameprofile.name);
             }
             // TODO: non-player entities via Entity::kill() (remove with RemovalReason::KILLED)
+        }
+
+        if victim_count == 0 {
+            return Err(CommandError::CommandFailed(Box::new(
+                TextComponent::const_plain("No entity was found"),
+            )));
         }
 
         // TODO: use getDisplayName() (team formatting, hover event, UUID insertion)

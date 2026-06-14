@@ -1,4 +1,4 @@
-use crate::generator_functions::{generate_identifier, read_variants_from_dir};
+use crate::generator_functions::{generate_sound_event_ref, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -29,7 +29,6 @@ pub(crate) fn build() -> TokenStream {
             ChickenSoundVariant, ChickenSoundVariantRegistry, ChickenAge,
         };
         use steel_utils::Identifier;
-        use std::borrow::Cow;
     });
 
     // Generate static chicken sound variant definitions
@@ -43,16 +42,21 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#chicken_sound_variant_name_str) };
         let adult_ambient_sound =
-            generate_identifier(&chicken_sound_variant.adult_sounds.ambient_sound);
+            generate_sound_event_ref(&chicken_sound_variant.adult_sounds.ambient_sound);
         let adult_death_sound =
-            generate_identifier(&chicken_sound_variant.adult_sounds.death_sound);
-        let adult_hurt_sound = generate_identifier(&chicken_sound_variant.adult_sounds.hurt_sound);
-        let adult_step_sound = generate_identifier(&chicken_sound_variant.adult_sounds.step_sound);
+            generate_sound_event_ref(&chicken_sound_variant.adult_sounds.death_sound);
+        let adult_hurt_sound =
+            generate_sound_event_ref(&chicken_sound_variant.adult_sounds.hurt_sound);
+        let adult_step_sound =
+            generate_sound_event_ref(&chicken_sound_variant.adult_sounds.step_sound);
         let baby_ambient_sound =
-            generate_identifier(&chicken_sound_variant.baby_sounds.ambient_sound);
-        let baby_death_sound = generate_identifier(&chicken_sound_variant.baby_sounds.death_sound);
-        let baby_hurt_sound = generate_identifier(&chicken_sound_variant.baby_sounds.hurt_sound);
-        let baby_step_sound = generate_identifier(&chicken_sound_variant.baby_sounds.step_sound);
+            generate_sound_event_ref(&chicken_sound_variant.baby_sounds.ambient_sound);
+        let baby_death_sound =
+            generate_sound_event_ref(&chicken_sound_variant.baby_sounds.death_sound);
+        let baby_hurt_sound =
+            generate_sound_event_ref(&chicken_sound_variant.baby_sounds.hurt_sound);
+        let baby_step_sound =
+            generate_sound_event_ref(&chicken_sound_variant.baby_sounds.step_sound);
 
         stream.extend(quote! {
             pub static #chicken_sound_variant_ident: ChickenSoundVariant = ChickenSoundVariant {

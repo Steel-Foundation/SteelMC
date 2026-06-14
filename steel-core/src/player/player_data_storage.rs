@@ -12,7 +12,11 @@ use tokio::{fs, io};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
-use super::player_data::{PersistentAbilities, PersistentPlayerData, PersistentSlot};
+use super::player_data::{
+    PLAYER_DATA_VERSION, PersistentAbilities, PersistentPlayerData, PersistentRootVehicle,
+    PersistentSlot,
+};
+use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
@@ -21,7 +25,9 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 1;
+const PLAYER_STORAGE_VERSION: u16 = 3;
+const GLOBAL_STORAGE_VERSION: u16 = 1;
+const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
 /// Server-wide player data.
 #[derive(Debug, Clone)]
@@ -52,6 +58,11 @@ struct PlayerDataFile {
     rotation: [f32; 2],
     on_ground: bool,
     fall_flying: bool,
+    remaining_fire_ticks: i32,
+    ticks_frozen: i32,
+    is_in_powder_snow: bool,
+    was_in_powder_snow: bool,
+    has_visual_fire: bool,
     health: f32,
     game_mode: i32,
     prev_game_mode: i32,
@@ -67,6 +78,13 @@ struct PlayerDataFile {
     experience_progress: f32,
     experience_total: i32,
     score: i32,
+    root_vehicle: Option<RootVehicleFile>,
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RootVehicleFile {
+    attach: [u8; 16],
+    entity: PersistentEntity,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -242,7 +260,7 @@ impl FilePlayerDataStorage {
 
     async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         let file = GlobalPlayerDataFile {
-            data_version: 1,
+            data_version: GLOBAL_PLAYER_DATA_VERSION,
             last_active_domain: data.last_active_domain.clone(),
         };
         let bytes = encode_global_file(&file)?;
@@ -314,6 +332,11 @@ impl PlayerDataFile {
             rotation: data.rotation,
             on_ground: data.on_ground,
             fall_flying: data.fall_flying,
+            remaining_fire_ticks: data.remaining_fire_ticks,
+            ticks_frozen: data.ticks_frozen,
+            is_in_powder_snow: data.is_in_powder_snow,
+            was_in_powder_snow: data.was_in_powder_snow,
+            has_visual_fire: data.has_visual_fire,
             health: data.health,
             game_mode: data.game_mode,
             prev_game_mode: data.prev_game_mode,
@@ -337,10 +360,27 @@ impl PlayerDataFile {
             experience_progress: data.experience_progress,
             experience_total: data.experience_total,
             score: data.score,
+            root_vehicle: data
+                .root_vehicle
+                .clone()
+                .map(|root_vehicle| RootVehicleFile {
+                    attach: root_vehicle.attach,
+                    entity: root_vehicle.entity,
+                }),
         })
     }
 
     fn into_persistent(self) -> io::Result<PersistentPlayerData> {
+        if self.data_version != PLAYER_DATA_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported player data payload version {}",
+                    self.data_version
+                ),
+            ));
+        }
+
         let mut inventory = Vec::with_capacity(self.inventory.len());
         for slot in self.inventory {
             inventory.push(PersistentSlot {
@@ -355,6 +395,11 @@ impl PlayerDataFile {
             rotation: self.rotation,
             on_ground: self.on_ground,
             fall_flying: self.fall_flying,
+            remaining_fire_ticks: self.remaining_fire_ticks,
+            ticks_frozen: self.ticks_frozen,
+            is_in_powder_snow: self.is_in_powder_snow,
+            was_in_powder_snow: self.was_in_powder_snow,
+            has_visual_fire: self.has_visual_fire,
             health: self.health,
             game_mode: self.game_mode,
             prev_game_mode: self.prev_game_mode,
@@ -379,6 +424,10 @@ impl PlayerDataFile {
             experience_progress: self.experience_progress,
             experience_total: self.experience_total,
             score: self.score,
+            root_vehicle: self.root_vehicle.map(|root_vehicle| PersistentRootVehicle {
+                attach: root_vehicle.attach,
+                entity: root_vehicle.entity,
+            }),
         })
     }
 }
@@ -408,37 +457,53 @@ fn item_from_nbt_bytes(bytes: &[u8]) -> io::Result<ItemStack> {
 }
 
 fn encode_player_file(file: &PlayerDataFile) -> io::Result<Vec<u8>> {
-    encode_file(PLAYER_MAGIC, wincode::serialize(file))
+    encode_file(
+        PLAYER_MAGIC,
+        PLAYER_STORAGE_VERSION,
+        wincode::serialize(file),
+    )
 }
 
 fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
-    let payload = decode_file(PLAYER_MAGIC, bytes)?;
+    let payload = decode_file(PLAYER_MAGIC, PLAYER_STORAGE_VERSION, bytes)?;
     wincode::deserialize(&payload)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
 fn encode_global_file(file: &GlobalPlayerDataFile) -> io::Result<Vec<u8>> {
-    encode_file(GLOBAL_MAGIC, wincode::serialize(file))
+    encode_file(
+        GLOBAL_MAGIC,
+        GLOBAL_STORAGE_VERSION,
+        wincode::serialize(file),
+    )
 }
 
 fn decode_global_file(bytes: &[u8]) -> io::Result<GlobalPlayerDataFile> {
-    let payload = decode_file(GLOBAL_MAGIC, bytes)?;
+    let payload = decode_file(GLOBAL_MAGIC, GLOBAL_STORAGE_VERSION, bytes)?;
     wincode::deserialize(&payload)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
-fn encode_file(magic: [u8; 4], serialized: wincode::WriteResult<Vec<u8>>) -> io::Result<Vec<u8>> {
+fn encode_file(
+    magic: [u8; 4],
+    version: u16,
+    serialized: wincode::WriteResult<Vec<u8>>,
+) -> io::Result<Vec<u8>> {
     let payload =
         serialized.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let compressed = zstd::encode_all(&payload[..], 3)?;
     let mut bytes = Vec::with_capacity(6 + compressed.len());
     bytes.extend_from_slice(&magic);
-    bytes.extend_from_slice(&PLAYER_STORAGE_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&version.to_le_bytes());
     bytes.extend_from_slice(&compressed);
     Ok(bytes)
 }
 
-fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
+fn decode_file(
+    expected_magic: [u8; 4],
+    expected_version: u16,
+    bytes: &[u8],
+) -> io::Result<Vec<u8>> {
     if bytes.len() < 6 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -452,10 +517,10 @@ fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
         ));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != PLAYER_STORAGE_VERSION {
+    if version != expected_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("unsupported player data version {version}"),
+            format!("unsupported player data storage version {version}"),
         ));
     }
     zstd::decode_all(&bytes[6..])
@@ -465,15 +530,19 @@ fn decode_file(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn player_file_roundtrip_preserves_domain_world_data() {
-        let file = PlayerDataFile {
-            data_version: 1,
+    fn sample_player_file(data_version: i32) -> PlayerDataFile {
+        PlayerDataFile {
+            data_version,
             pos: [1.0, 2.0, 3.0],
             motion: [0.0, 0.0, 0.0],
             rotation: [90.0, 10.0],
             on_ground: true,
             fall_flying: false,
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
             health: 20.0,
             game_mode: 2,
             prev_game_mode: 0,
@@ -497,11 +566,41 @@ mod tests {
             experience_progress: 0.5,
             experience_total: 32,
             score: 9,
-        };
+            root_vehicle: None,
+        }
+    }
+
+    fn sample_persistent_entity() -> PersistentEntity {
+        PersistentEntity {
+            entity_type: Identifier::vanilla_static("minecart"),
+            uuid: [7; 16],
+            pos: [4.0, 65.0, 6.0],
+            motion: [0.0, 0.0, 0.0],
+            rotation: [45.0, 0.0],
+            fall_distance: 0.0,
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
+            on_ground: true,
+            no_gravity: false,
+            nbt_data: Vec::new(),
+            passengers: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_domain_world_data() {
+        let file = sample_player_file(PLAYER_DATA_VERSION);
 
         let encoded = encode_player_file(&file).expect("player file should encode");
         let decoded = decode_player_file(&encoded).expect("player file should decode");
 
+        assert_eq!(
+            u16::from_le_bytes([encoded[4], encoded[5]]),
+            PLAYER_STORAGE_VERSION
+        );
         assert_eq!(decoded.world, "lobby:void");
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
@@ -511,13 +610,57 @@ mod tests {
     #[test]
     fn global_file_roundtrip_preserves_last_active_domain() {
         let file = GlobalPlayerDataFile {
-            data_version: 1,
+            data_version: GLOBAL_PLAYER_DATA_VERSION,
             last_active_domain: "minecraft".to_owned(),
         };
 
         let encoded = encode_global_file(&file).expect("global file should encode");
         let decoded = decode_global_file(&encoded).expect("global file should decode");
 
+        assert_eq!(
+            u16::from_le_bytes([encoded[4], encoded[5]]),
+            GLOBAL_STORAGE_VERSION
+        );
         assert_eq!(decoded.last_active_domain, "minecraft");
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_root_vehicle() {
+        let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.root_vehicle = Some(RootVehicleFile {
+            attach: [3; 16],
+            entity: sample_persistent_entity(),
+        });
+
+        let encoded = encode_player_file(&file).expect("player file should encode");
+        let decoded = decode_player_file(&encoded).expect("player file should decode");
+        let persistent = decoded
+            .into_persistent()
+            .expect("player file should convert");
+
+        let Some(root_vehicle) = persistent.root_vehicle else {
+            panic!("root vehicle should survive roundtrip");
+        };
+        assert_eq!(root_vehicle.attach, [3; 16]);
+        assert_eq!(root_vehicle.entity.uuid, [7; 16]);
+        assert_eq!(
+            root_vehicle.entity.entity_type,
+            Identifier::vanilla_static("minecart")
+        );
+        assert_eq!(
+            root_vehicle.entity.pos.map(f64::to_bits),
+            [4.0_f64.to_bits(), 65.0_f64.to_bits(), 6.0_f64.to_bits()]
+        );
+    }
+
+    #[test]
+    fn stale_player_payload_version_is_rejected() {
+        let file = sample_player_file(PLAYER_DATA_VERSION - 1);
+
+        let error = file
+            .into_persistent()
+            .expect_err("stale payload should fail");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 }

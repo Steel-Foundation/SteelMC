@@ -9,6 +9,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_dimension_types;
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
@@ -16,6 +17,8 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
 use crate::world::{LevelReader, World};
 
@@ -104,6 +107,25 @@ impl FireBlock {
         PortalShape::find_empty_portal_shape_with_axis(world, pos, preferred_axis, &config)
             .is_some()
     }
+
+    fn queue_entity_contact_effects(
+        effect_collector: &mut InsideBlockEffectCollector,
+        fire_damage: f32,
+    ) {
+        effect_collector.apply(InsideBlockEffectType::ClearFreeze);
+        effect_collector.apply(InsideBlockEffectType::FireIgnite);
+        effect_collector.run_after(
+            InsideBlockEffectType::FireIgnite,
+            Box::new(move |entity| {
+                if !entity.fire_immune() {
+                    entity.hurt(
+                        &DamageSource::environment(&vanilla_damage_types::IN_FIRE),
+                        fire_damage,
+                    );
+                }
+            }),
+        );
+    }
 }
 
 impl BlockBehavior for FireBlock {
@@ -117,6 +139,18 @@ impl BlockBehavior for FireBlock {
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_survive_at(world, pos)
+    }
+
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
+    ) {
+        Self::queue_entity_contact_effects(effect_collector, 1.0);
     }
 
     fn on_place(
@@ -182,6 +216,18 @@ impl BlockBehavior for SoulFireBlock {
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_survive_at(world, pos)
+    }
+
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
+    ) {
+        FireBlock::queue_entity_contact_effects(effect_collector, 2.0);
     }
 }
 

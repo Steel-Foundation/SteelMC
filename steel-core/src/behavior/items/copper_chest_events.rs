@@ -5,8 +5,11 @@ use steel_registry::blocks::properties::{BlockStateProperties, ChestType};
 use steel_registry::vanilla_game_events;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::player::Player;
-use crate::world::{World, game_event_context::GameEventContext};
+use crate::{
+    entity::Entity,
+    player::Player,
+    world::{World, game_event_context::GameEventContext},
+};
 
 /// Emits the extra vanilla block-change notification for the other half of a double copper chest.
 pub(super) fn emit_connected_chest_block_change(
@@ -28,7 +31,7 @@ pub(super) fn emit_connected_chest_block_change(
     );
 
     if let Some(event) = level_event {
-        world.level_event(event, neighbor_pos, 0, Some(player.id));
+        world.level_event(event, neighbor_pos, 0, Some(player.id()));
     }
 }
 

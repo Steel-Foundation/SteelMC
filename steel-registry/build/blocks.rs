@@ -94,8 +94,8 @@ pub struct Block {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Shape {
-    pub min: [f32; 3],
-    pub max: [f32; 3],
+    pub min: [f64; 3],
+    pub max: [f64; 3],
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -305,9 +305,9 @@ fn generate_default_state(block: &Block) -> TokenStream {
 }
 
 /// VoxelShape pool that deduplicates shape combinations.
-/// Maps AABB index combinations to a ShapeId.
+/// Maps block-local box index combinations to a ShapeId.
 struct VoxelShapePool {
-    // Maps sorted AABB indices to ShapeId
+    // Maps sorted block-local box indices to ShapeId.
     shapes: FxHashMap<Vec<u16>, u16>,
     // Ordered list of shapes for generation
     shape_list: Vec<Vec<u16>>,
@@ -491,13 +491,13 @@ pub(crate) fn build() -> TokenStream {
         });
     }
 
-    // Generate AABB constants
+    // Generate block-local box constants.
     let aabb_consts: Vec<TokenStream> = block_assets
         .shapes
         .iter()
         .enumerate()
         .map(|(i, shape)| {
-            let name = Ident::new(&format!("AABB_{}", i), Span::call_site());
+            let name = Ident::new(&format!("BOX_{}", i), Span::call_site());
             let min_x = shape.min[0];
             let min_y = shape.min[1];
             let min_z = shape.min[2];
@@ -505,7 +505,8 @@ pub(crate) fn build() -> TokenStream {
             let max_y = shape.max[1];
             let max_z = shape.max[2];
             quote! {
-                static #name: AABB = AABB::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
+                const #name: BlockLocalAabb =
+                    BlockLocalAabb::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
             }
         })
         .collect();
@@ -519,22 +520,22 @@ pub(crate) fn build() -> TokenStream {
             let name = Ident::new(&format!("VSHAPE_{}", id), Span::call_site());
             if aabb_indices.is_empty() {
                 quote! {
-                    static #name: &[AABB] = &[];
+                    const #name: VoxelShape = VoxelShape::EMPTY;
                 }
             } else if aabb_indices.len() == 1 && aabb_indices[0] == u16::MAX {
                 quote! {
-                    static #name: &[AABB] = &[AABB::FULL_BLOCK];
+                    const #name: VoxelShape = VoxelShape::FULL_BLOCK;
                 }
             } else {
                 let aabb_refs: Vec<TokenStream> = aabb_indices
                     .iter()
                     .map(|&idx| {
-                        let aabb_name = Ident::new(&format!("AABB_{}", idx), Span::call_site());
+                        let aabb_name = Ident::new(&format!("BOX_{}", idx), Span::call_site());
                         quote! { #aabb_name }
                     })
                     .collect();
                 quote! {
-                    static #name: &[AABB] = &[#(#aabb_refs),*];
+                    const #name: VoxelShape = VoxelShape::from_boxes(&[#(#aabb_refs),*]);
                 }
             }
         })
@@ -550,7 +551,7 @@ pub(crate) fn build() -> TokenStream {
         if sig.arms.is_empty() {
             shape_fns.extend(quote! {
                 #[inline]
-                const fn #fn_name(_offset: u16) -> &'static [AABB] {
+                const fn #fn_name(_offset: u16) -> VoxelShape {
                     #default_shape
                 }
             });
@@ -574,7 +575,7 @@ pub(crate) fn build() -> TokenStream {
 
             shape_fns.extend(quote! {
                 #[inline]
-                fn #fn_name(offset: u16) -> &'static [AABB] {
+                fn #fn_name(offset: u16) -> VoxelShape {
                     match offset {
                         #(#arms)*
                         _ => #default_shape,
@@ -665,11 +666,11 @@ pub(crate) fn build() -> TokenStream {
         use crate::{
             blocks::{behavior::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
-            blocks::shapes::AABB,
+            blocks::shapes::VoxelShape,
         };
-        use steel_utils::Identifier;
+        use steel_utils::{BlockLocalAabb, Identifier};
 
-        // AABB primitives
+        // Block-local collision primitives.
         #(#aabb_consts)*
 
         // Deduplicated VoxelShapes

@@ -17,13 +17,10 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: steel
-            rustflags: -Zthreads=0 -Clink-arg=-fuse-ld=lld
           - os: windows-latest
             artifact: steel.exe
-            rustflags: -Zthreads=0
           - os: macos-latest
             artifact: steel
-            rustflags: -Zthreads=0
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2

@@ -54,8 +54,11 @@ impl CommandExecutor<()> for SummonAtSelfExecutor {
 
         entity.set_block_state_id(REGISTRY.blocks.get_base_state_id(&vanilla_blocks::STONE));
 
-        // Add it to the world
-        world.add_entity(entity);
+        if let Err(error) = world.try_add_entity(entity) {
+            return Err(CommandError::CommandFailed(Box::new(TextComponent::plain(
+                format!("Failed to summon entity: {error}"),
+            ))));
+        }
 
         context.sender.send_message(&TextComponent::plain(format!(
             "Summoned block_display at {:.2}, {:.2}, {:.2}",
@@ -87,8 +90,11 @@ impl CommandExecutor<((), DVec3)> for SummonAtPosExecutor {
             Arc::downgrade(&world),
         ));
 
-        // Add it to the world
-        world.add_entity(entity);
+        if let Err(error) = world.try_add_entity(entity) {
+            return Err(CommandError::CommandFailed(Box::new(TextComponent::plain(
+                format!("Failed to summon entity: {error}"),
+            ))));
+        }
 
         context.sender.send_message(&TextComponent::plain(format!(
             "Summoned block_display at {:.2}, {:.2}, {:.2}",

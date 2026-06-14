@@ -7,6 +7,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_entities, vanilla_game_rules, vanilla_items};
@@ -19,7 +20,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     vegetation_can_survive, vegetation_update_shape,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::entity::Entity;
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
@@ -156,6 +157,26 @@ pub trait CropLike {
     }
 }
 
+pub(super) fn ravager_breaks_crop(entity_type: EntityTypeRef, mob_griefing: bool) -> bool {
+    entity_type == &vanilla_entities::RAVAGER && mob_griefing
+}
+
+pub(super) fn destroy_crop_on_ravager_contact(
+    world: &Arc<World>,
+    pos: BlockPos,
+    entity: &dyn Entity,
+) {
+    if ravager_breaks_crop(
+        entity.entity_type(),
+        world
+            .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+            .as_bool()
+            == Some(true),
+    ) {
+        world.destroy_block_by_entity(pos, true, entity);
+    }
+}
+
 impl CropBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
@@ -254,19 +275,15 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
 
     fn entity_inside(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
     ) {
-        if entity.entity_type() == &vanilla_entities::RAVAGER
-            && world
-                .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-                .as_bool()
-                == Some(true)
-        {
-            world.destroy_block(pos, true);
-        }
+        destroy_crop_on_ravager_contact(world, pos, entity);
+        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -343,5 +360,12 @@ mod tests {
 
         assert!(!crop.can_survive(state, &CropSurvivalLevel::new(farmland, 7), BlockPos::ZERO));
         assert!(crop.can_survive(state, &CropSurvivalLevel::new(farmland, 8), BlockPos::ZERO));
+    }
+
+    #[test]
+    fn ravager_crop_breaking_requires_mob_griefing() {
+        assert!(ravager_breaks_crop(&vanilla_entities::RAVAGER, true));
+        assert!(!ravager_breaks_crop(&vanilla_entities::RAVAGER, false));
+        assert!(!ravager_breaks_crop(&vanilla_entities::ZOMBIE, true));
     }
 }

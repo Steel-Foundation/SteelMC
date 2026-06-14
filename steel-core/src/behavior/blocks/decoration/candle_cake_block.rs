@@ -16,6 +16,7 @@ use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, blocks::CakeBlock,
     },
+    entity::Entity,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -81,11 +82,11 @@ impl BlockBehavior for CandleCakeBlock {
             );
             // TODO: particles!
             world.play_block_sound(
-                sound_events::BLOCK_CANDLE_EXTINGUISH,
+                &sound_events::BLOCK_CANDLE_EXTINGUISH,
                 pos,
                 1.0,
                 1.0,
-                Some(player.id),
+                Some(player.id()),
             );
             return InteractionResult::Success;
         }

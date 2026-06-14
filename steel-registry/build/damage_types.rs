@@ -77,9 +77,8 @@ fn generate_death_message_type(death_message_type: DeathMessageTypeJson) -> Toke
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/damage_type/");
-
-    let damage_type_dir = "build_assets/builtin_datapacks/minecraft/damage_type";
+    let damage_type_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/damage_type";
+    println!("cargo:rerun-if-changed={damage_type_dir}");
     let mut damage_types = Vec::new();
 
     // Read all damage type JSON files

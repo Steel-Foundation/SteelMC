@@ -11,6 +11,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction};
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, vanilla_blocks, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
@@ -19,6 +20,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
 
@@ -32,9 +34,9 @@ pub struct ButtonBlock {
     #[json_arg(value)]
     ticks_to_stay_pressed: i32,
     #[json_arg(sound_events, json = "type_button_click_on")]
-    sound_click_on: i32,
+    sound_click_on: SoundEventRef,
     #[json_arg(sound_events, json = "type_button_click_off")]
-    sound_click_off: i32,
+    sound_click_off: SoundEventRef,
 }
 
 impl ButtonBlock {
@@ -45,8 +47,8 @@ impl ButtonBlock {
     pub const fn new(
         block: BlockRef,
         ticks_to_stay_pressed: i32,
-        sound_click_on: i32,
-        sound_click_off: i32,
+        sound_click_on: SoundEventRef,
+        sound_click_off: SoundEventRef,
     ) -> Self {
         Self {
             block,
@@ -85,7 +87,7 @@ impl ButtonBlock {
         world.set_block(pos, powered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(powered_state, world, pos);
         world.schedule_block_tick_default(pos, self.block, self.ticks_to_stay_pressed);
-        world.play_block_sound(self.sound_click_on, pos, 1.0, 1.0, Some(player.id));
+        world.play_block_sound(self.sound_click_on, pos, 1.0, 1.0, Some(player.id()));
         world.game_event(
             &vanilla_game_events::BLOCK_ACTIVATE,
             pos,

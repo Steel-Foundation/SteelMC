@@ -204,9 +204,9 @@ impl BlockBehavior for LiquidBlock {
         };
 
         let sound = if is_water_fluid(self.fluid) {
-            sound_events::ITEM_BUCKET_FILL
+            &sound_events::ITEM_BUCKET_FILL
         } else {
-            sound_events::ITEM_BUCKET_FILL_LAVA
+            &sound_events::ITEM_BUCKET_FILL_LAVA
         };
 
         Some(PickupResult {

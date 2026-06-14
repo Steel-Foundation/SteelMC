@@ -513,7 +513,17 @@ impl ChunkAccess {
     /// Adds an entity to either a full or proto chunk.
     pub fn add_entity(&self, entity: SharedEntity) -> bool {
         match self {
-            Self::Full(chunk) => chunk.add_and_register_entity(entity),
+            Self::Full(chunk) => {
+                let Some(world) = chunk.get_level() else {
+                    return false;
+                };
+                if let Err(error) = world.register_loaded_entity(entity) {
+                    log::warn!("Failed to register entity in full chunk: {error}");
+                    return false;
+                }
+                chunk.dirty.store(true, Ordering::Release);
+                true
+            }
             Self::Proto(proto_chunk) => {
                 proto_chunk.add_entity(entity);
                 true
@@ -526,7 +536,7 @@ impl ChunkAccess {
     #[must_use]
     pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
         match self {
-            Self::Full(chunk) => chunk.entities.get_saveable_entities(),
+            Self::Full(_) => Vec::new(),
             Self::Proto(proto_chunk) => proto_chunk.get_saveable_entities(),
             Self::Unloaded => unreachable!(),
         }
