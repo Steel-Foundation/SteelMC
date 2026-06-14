@@ -76,7 +76,7 @@ pub fn write_lp_vec3(writer: &mut impl std::io::Write, mut pos: DVec3) -> std::i
 
     // Chebyshev distance (max of absolute values)
     // Vanilla: Mth.absMax(x, Mth.absMax(y, z))
-    let chessboard_length = pos.max_element();
+    let chessboard_length = pos.abs().max_element();
 
     if chessboard_length < ABS_MIN_VALUE {
         // Zero velocity - single byte
@@ -196,6 +196,13 @@ mod tests {
         let mut buf = Vec::new();
         write_lp_vec3(&mut buf, DVec3::ZERO.with_x(1.0)).unwrap();
         // Non-zero velocity should be 6 bytes (no continuation needed for scale=1)
+        assert_eq!(buf.len(), 6);
+    }
+
+    #[test]
+    fn test_negative_velocity_uses_absolute_scale() {
+        let mut buf = Vec::new();
+        write_lp_vec3(&mut buf, DVec3::ZERO.with_x(-1.0)).unwrap();
         assert_eq!(buf.len(), 6);
     }
 
