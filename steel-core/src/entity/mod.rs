@@ -2438,7 +2438,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    // === Physics Helper Methods ===
     // These mirror vanilla's Entity class methods.
 
     /// Gets the default gravity for this entity type.
@@ -2816,7 +2815,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
 
-    // === Persistence Methods ===
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
 
     /// Saves type-specific entity data to NBT.

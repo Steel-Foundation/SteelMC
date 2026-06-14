@@ -21,9 +21,8 @@ pub struct TextComponent {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/trim_pattern/");
-
-    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/trim_pattern";
+    let trim_pattern_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern";
+    println!("cargo:rerun-if-changed={trim_pattern_dir}");
     let mut trim_patterns = Vec::new();
 
     // Read all trim pattern JSON files

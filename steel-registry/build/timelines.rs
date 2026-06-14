@@ -128,9 +128,8 @@ fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/timeline/");
-
-    let timeline_dir = "build_assets/builtin_datapacks/minecraft/timeline";
+    let timeline_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/timeline";
+    println!("cargo:rerun-if-changed={timeline_dir}");
     let mut timelines: Vec<(String, TimelineJson)> = Vec::new();
 
     // Read all timeline JSON files

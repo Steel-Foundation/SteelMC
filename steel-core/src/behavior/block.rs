@@ -904,8 +904,6 @@ pub trait BlockBehavior: Send + Sync {
         self.default_step_on(state, world, pos, entity);
     }
 
-    // === Block Entity Methods ===
-
     /// Returns whether this block has an associated block entity.
     ///
     /// Override to return `true` for blocks like chests, furnaces, signs, etc.
@@ -950,8 +948,6 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
-    // === Redstone / Comparator Methods ===
-
     /// Returns whether this block can provide an analog output signal to comparators.
     ///
     /// Override to return `true` for containers (chests, barrels, hoppers, etc.)
@@ -985,8 +981,6 @@ pub trait BlockBehavior: Send + Sync {
     ) -> i32 {
         0
     }
-
-    // === Fluid Methods ===
 
     /// Returns the fluid state for this block state.
     ///

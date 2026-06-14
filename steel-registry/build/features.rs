@@ -1957,7 +1957,7 @@ fn generate_vegetation_patch_kind(
 }
 
 pub(crate) fn build_configured() -> TokenStream {
-    let dir = "build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
@@ -2009,7 +2009,7 @@ pub(crate) fn build_configured() -> TokenStream {
 }
 
 pub(crate) fn build_placed() -> TokenStream {
-    let dir = "build_assets/builtin_datapacks/minecraft/worldgen/placed_feature";
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/placed_feature";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
