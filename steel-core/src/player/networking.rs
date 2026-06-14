@@ -15,9 +15,9 @@ use steel_protocol::packets::game::{
     SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
-    SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
-    SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
-    SSwing, SUseItem, SUseItemOn,
+    SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPickItemFromEntity, SPlayerAbilities,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -431,6 +431,10 @@ impl JavaConnection {
             play::S_PICK_ITEM_FROM_BLOCK => {
                 let packet = SPickItemFromBlock::read_packet(data)?;
                 player.handle_pick_item_from_block(packet);
+            }
+            play::S_PICK_ITEM_FROM_ENTITY => {
+                let packet = SPickItemFromEntity::read_packet(data)?;
+                player.handle_pick_item_from_entity(packet);
             }
             play::S_SIGN_UPDATE => {
                 let packet = SSignUpdate::read_packet(data)?;

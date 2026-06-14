@@ -774,6 +774,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns the item stack that creative middle-click picks from this entity.
+    ///
+    /// Override in entity types that support picking (e.g., boats, minecarts,
+    /// item frames, paintings). Default returns `None`.
+    fn pick_item(&self) -> Option<ItemStack> {
+        None
+    }
+
     /// Returns whether this entity participates in vanilla push separation.
     ///
     /// Mirrors vanilla `Entity.isPushable`. Base entities are not pushable unless

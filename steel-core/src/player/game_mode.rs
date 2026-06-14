@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     AnimateAction, CAnimate, CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent,
     COpenSignEditor, CPlayerInfoUpdate, CSetHeldSlot, GameEventType, PlayerAction,
-    SPickItemFromBlock, SPlayerAction, SSignUpdate, SUseItem, SUseItemOn,
+    SPickItemFromBlock, SPickItemFromEntity, SPlayerAction, SSignUpdate, SUseItem, SUseItemOn,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -590,6 +590,49 @@ impl Player {
             inventory.add_and_pick_item(item_stack);
         } else {
             return;
+        }
+
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(inventory.get_selected_slot()),
+        });
+
+        drop(inventory);
+        self.inventory_menu
+            .lock()
+            .behavior_mut()
+            .broadcast_changes(&self.connection);
+    }
+
+    /// Handles the creative pick item from entity packet (middle click on an entity).
+    pub fn handle_pick_item_from_entity(&self, packet: SPickItemFromEntity) {
+        if !self.has_infinite_materials() {
+            return;
+        }
+
+        let world = self.get_world();
+        let Some(entity) = world.get_entity_by_id(packet.entity_id) else {
+            return;
+        };
+
+        let Some(item_stack) = entity.pick_item() else {
+            return;
+        };
+
+        if item_stack.is_empty() {
+            return;
+        }
+
+        // TODO: If include_data, add entity NBT data to the item stack
+
+        let mut inventory = self.inventory.lock();
+        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
+
+        if slot_with_item == -1 {
+            inventory.add_and_pick_item(item_stack);
+        } else if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
+            inventory.set_selected_slot(slot_with_item as u8);
+        } else {
+            inventory.pick_slot(slot_with_item);
         }
 
         self.send_packet(CSetHeldSlot {
