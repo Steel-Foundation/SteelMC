@@ -60,7 +60,7 @@ hooks = [
         entry = "cargo clippy -r --workspace",
         types = ["rust"],
         pass_filenames = false,
-        priority = 50
+        priority = 40
     },
     {
         id = "cargo-test",
