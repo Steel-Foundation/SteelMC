@@ -2,7 +2,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{HashSet, VecDeque},
+    collections::VecDeque,
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -13,6 +13,7 @@ use std::{
 
 use bitflags::bitflags;
 use glam::{DVec3, IVec2, IVec3};
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize, de::Error as _};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
@@ -342,7 +343,7 @@ impl BlockPos {
         P: FnMut(Self) -> TraversalNodeStatus,
     {
         let mut nodes = VecDeque::from([(start_pos, 0)]);
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         let mut count = 0;
 
         while let Some((current_pos, depth)) = nodes.pop_front() {
