@@ -94,7 +94,12 @@ impl BlockStateExt for BlockStateId {
     }
 
     fn get_support_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_support_shape(*self)
+        let shape = REGISTRY.blocks.get_support_shape(*self);
+        if shape.is_empty() {
+            self.get_collision_shape()
+        } else {
+            shape
+        }
     }
 
     fn get_outline_shape(&self) -> blocks::shapes::VoxelShape {

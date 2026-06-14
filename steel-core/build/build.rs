@@ -25,6 +25,7 @@ struct Classes {
 }
 
 pub fn main() {
+    //
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let out_dir = format!("{manifest_dir}/src/behavior/generated");
 
