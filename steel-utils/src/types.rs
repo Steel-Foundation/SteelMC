@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Cow,
+    collections::{HashSet, VecDeque},
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -191,6 +192,17 @@ impl ReadFrom for ChunkPos {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPos(pub IVec3);
 
+/// Result of processing a node during bfs
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TraversalNodeStatus {
+    /// Count the node and visit its neighbors if depth allows
+    Accept,
+    /// Do not count the node or visit its neighbors
+    Skip,
+    /// Stop traversal immediately
+    Stop,
+}
+
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -314,6 +326,51 @@ impl BlockPos {
     pub const fn relative(self, direction: Direction) -> Self {
         let (dx, dy, dz) = direction.offset();
         self.offset(dx, dy, dz)
+    }
+
+    /// Does a breadth-first traversal of all block pos from `start_pos`
+    #[must_use]
+    pub fn breadth_first_traversal<NP, P>(
+        start_pos: Self,
+        max_depth: i32,
+        max_count: i32,
+        mut neighbor_provider: NP,
+        mut node_processor: P,
+    ) -> i32
+    where
+        NP: FnMut(Self, &mut dyn FnMut(Self)),
+        P: FnMut(Self) -> TraversalNodeStatus,
+    {
+        let mut nodes = VecDeque::from([(start_pos, 0)]);
+        let mut visited = HashSet::new();
+        let mut count = 0;
+
+        while let Some((current_pos, depth)) = nodes.pop_front() {
+            if !visited.insert(current_pos) {
+                continue;
+            }
+
+            let next = node_processor(current_pos);
+            if next == TraversalNodeStatus::Skip {
+                continue;
+            }
+
+            if next == TraversalNodeStatus::Stop {
+                break;
+            }
+
+            count += 1;
+            if count >= max_count {
+                return count;
+            }
+
+            if depth < max_depth {
+                let next_depth = depth + 1;
+                neighbor_provider(current_pos, &mut |pos| nodes.push_back((pos, next_depth)));
+            }
+        }
+
+        count
     }
 
     /// Returns the position offset by `n` blocks in the given direction.
