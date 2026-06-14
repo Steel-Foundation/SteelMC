@@ -38,7 +38,7 @@ impl SpongeBlock {
         Self { block }
     }
 
-    fn try_absorb_water(&self, world: &Arc<World>, pos: BlockPos) {
+    fn try_absorb_water(world: &Arc<World>, pos: BlockPos) {
         if !Self::remove_water_breadth_first_search(world, pos) {
             return;
         }
@@ -136,7 +136,7 @@ impl BlockBehavior for SpongeBlock {
         _moved_by_piston: bool,
     ) {
         if old_state.get_block() != state.get_block() {
-            self.try_absorb_water(world, pos);
+            Self::try_absorb_water(world, pos);
         }
     }
 
@@ -148,6 +148,6 @@ impl BlockBehavior for SpongeBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        self.try_absorb_water(world, pos);
+        Self::try_absorb_water(world, pos);
     }
 }
