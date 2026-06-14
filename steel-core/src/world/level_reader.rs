@@ -8,10 +8,21 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::block_entity::SharedBlockEntity;
+
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
     /// Gets the block state at a position.
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId;
+
+    /// Gets the block entity at a position when this level surface supports it
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores position"
+    )]
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        None
+    }
 
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;

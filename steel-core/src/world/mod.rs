@@ -733,6 +733,11 @@ impl World {
         self.level_data.read().data().seed
     }
 
+    /// Gets the current game time
+    pub fn game_time(&self) -> i64 {
+        self.level_data.read().game_time()
+    }
+
     /// Returns this world's vanilla runtime random source.
     #[must_use]
     pub const fn random(&self) -> &SyncMutex<LegacyRandom> {
@@ -3379,6 +3384,10 @@ impl LevelReader for World {
         Self::get_block_state(self, pos)
     }
 
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        Self::get_block_entity(self, pos)
+    }
+
     fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
             15_u8.saturating_sub(sky_darkening)
@@ -3402,6 +3411,10 @@ impl LevelReader for World {
 impl LevelReader for Arc<World> {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         self.as_ref().get_block_state(pos)
+    }
+
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.as_ref().get_block_entity(pos)
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {

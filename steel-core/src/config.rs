@@ -46,6 +46,10 @@ pub struct RuntimeConfig {
     pub favicon: String,
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
+    /// Vanilla chat spam threshold window in seconds
+    pub chat_spam_threshold_seconds: i32,
+    /// Vanilla command spam threshold window in seconds
+    pub command_spam_threshold_seconds: i32,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.

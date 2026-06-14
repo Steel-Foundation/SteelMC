@@ -370,11 +370,13 @@ impl JavaConnection {
                 }
             }
             play::S_CHAT_COMMAND => {
+                let command = SChatCommand::read_packet(data)?.command;
                 server.command_dispatcher.read().handle_command(
-                    CommandSender::Player(player),
-                    SChatCommand::read_packet(data)?.command,
+                    CommandSender::Player(Arc::clone(&player)),
+                    command,
                     &server,
                 );
+                player.detect_command_rate_spam();
             }
             play::S_COMMAND_SUGGESTION => {
                 let packet = SCommandSuggestion::read_packet(data)?;
