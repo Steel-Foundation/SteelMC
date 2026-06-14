@@ -81,7 +81,7 @@ unsafe impl<C: ConfigCore> SchemaWrite<C> for WincodeBoundingBox {
 }
 
 // SAFETY: The implementation reads exactly six i32 values and constructs a valid
-// WincodeBoundingBox, fully initialising the destination.
+// WincodeBoundingBox, fully initializing the destination.
 unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
     type Dst = Self;
 
@@ -106,7 +106,7 @@ unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
         <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut max_z)?;
 
         // SAFETY: Each `read` call above returned `Ok(())`, which guarantees the
-        // corresponding `MaybeUninit` is fully initialised.
+        // corresponding `MaybeUninit` is fully initialized.
         let (min_x, min_y, min_z, max_x, max_y, max_z) = unsafe {
             (
                 min_x.assume_init(),
@@ -286,7 +286,7 @@ impl<I> Aabb<DVec3, I> {
 
     /// Returns `true` if the point lies inside this box.
     ///
-    /// Maximum edges are exclusive, matching vanilla Minecraft behaviour.
+    /// Maximum edges are exclusive, matching vanilla Minecraft behavior.
     #[must_use]
     pub fn contains(self, x: f64, y: f64, z: f64) -> bool {
         x >= self.min.x
