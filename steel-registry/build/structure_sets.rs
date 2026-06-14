@@ -145,7 +145,7 @@ struct TagJson {
 /// Loads all biome tags from the worldgen/biome tags directory,
 /// then recursively resolves tag references to flat biome lists.
 fn load_biome_tags() -> HashMap<String, Vec<String>> {
-    let tag_base = "build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
+    let tag_base = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
 
     // First pass: load raw tag definitions (may contain #tag references)
     let mut raw_tags: HashMap<String, Vec<String>> = HashMap::default();
@@ -490,7 +490,8 @@ fn parse_max_distance(value: &serde_json::Value, context: &str) -> i32 {
 fn load_structure_data(
     biome_tags: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, StructureData> {
-    let structure_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure";
+    let structure_dir =
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure";
     let mut result = HashMap::default();
 
     for entry in fs::read_dir(structure_dir)
@@ -1025,9 +1026,11 @@ fn generate_structure_config(config: &StructureConfigData, context: &str) -> Tok
 }
 
 pub(crate) fn build_structures() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure/");
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure/"
+    );
+    println!(
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
     );
 
     let biome_tags = load_biome_tags();
@@ -1092,16 +1095,16 @@ pub(crate) fn build_structures() -> TokenStream {
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure_set/"
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure_set/"
     );
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
+        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
     );
 
     // Load and resolve biome tags for concentric-ring preferred biome tags.
     let biome_tags = load_biome_tags();
 
-    let set_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure_set";
+    let set_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure_set";
     let mut sets = Vec::new();
 
     for entry in fs::read_dir(set_dir)

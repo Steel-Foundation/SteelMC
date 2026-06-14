@@ -10,9 +10,8 @@ use serde::Deserialize;
 pub struct WorldClockJson {}
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/world_clock/");
-
-    let world_clock_dir = "build_assets/builtin_datapacks/minecraft/world_clock";
+    let world_clock_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/world_clock";
+    println!("cargo:rerun-if-changed={world_clock_dir}");
     let mut world_clocks = Vec::new();
 
     // Read all world_clock JSON files

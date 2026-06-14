@@ -335,13 +335,10 @@ fn gen_joint(s: &str) -> TokenStream {
 // ── Main build function ──
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/template_pool/"
-    );
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/structure/");
-
-    let pool_dir = "build_assets/builtin_datapacks/minecraft/worldgen/template_pool";
-    let structure_dir = "build_assets/builtin_datapacks/minecraft/structure";
+    let pool_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/template_pool";
+    let structure_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/structure";
+    println!("cargo:rerun-if-changed={pool_dir}");
+    println!("cargo:rerun-if-changed={structure_dir}");
 
     // ── Parse template pools ──
 
@@ -390,8 +387,9 @@ pub(crate) fn build() -> TokenStream {
         let sx = tmpl.size[0];
         let sy = tmpl.size[1];
         let sz = tmpl.size[2];
-        let include_path =
-            format!("../../build_assets/builtin_datapacks/minecraft/structure/{name}.nbt");
+        let include_path = format!(
+            "../../../steel-utils/build_assets/builtin_datapacks/minecraft/structure/{name}.nbt"
+        );
 
         let jigsaw_tokens: Vec<TokenStream> = tmpl
             .jigsaws
