@@ -29,7 +29,7 @@ hooks = [
         id = "forbid-multiple-hyphens-equals",
         name = "Forbid 3+ hyphens (---) or 3+ equals (===) in comments",
         language = "system",
-        entry = "bash -c '! grep -n -E \"^[[:space:]]*//.*(-{3,}|={3,})\" \"$@\"' --",
+        entry = "bash -c '! grep -n -E \"^[[:space:]]*//[[:space:]]*(-{3,}|={3,})\" \"$@\"' --",
         types = ["text"],
         pass_filenames = true,
         require_serial = true,
