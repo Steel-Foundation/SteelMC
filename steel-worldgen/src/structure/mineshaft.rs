@@ -677,8 +677,6 @@ fn stairs_add_children(
     let _ = generate_and_add(pieces, rng, x, bb.min.y, z, dir, depth);
 }
 
-// --- Helpers ---
-
 fn move_bb(bb: BoundingBox, dx: i32, dy: i32, dz: i32) -> BoundingBox {
     let offset = IVec3::new(dx, dy, dz);
     BoundingBox::new(bb.min + offset, bb.max + offset)

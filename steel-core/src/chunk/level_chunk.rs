@@ -434,8 +434,6 @@ impl LevelChunk {
         self.dirty.store(true, Ordering::Release);
     }
 
-    // === Block Entity Methods ===
-
     /// Gets a block entity at the given position.
     ///
     /// Returns `None` if no block entity exists at the position.

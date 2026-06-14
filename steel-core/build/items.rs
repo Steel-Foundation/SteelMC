@@ -17,8 +17,6 @@ pub struct ItemClass {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-// --- Code generation ---
-
 pub fn build(items: &[ItemClass]) -> String {
     let discovered = scan_object_behaviors("items", "item_behavior");
 

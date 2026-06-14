@@ -270,7 +270,7 @@ fn structure_starts_inner() {
         };
 
         eprintln!(
-            "=== {dim_short} ({} start chunks, {} reference chunks, {} starts, {} pieces, {} references) ===",
+            "{dim_short} ({} start chunks, {} reference chunks, {} starts, {} pieces, {} references)",
             dim_data.chunks_with_starts,
             dim_data.chunks_with_references,
             dim_data.total_starts,

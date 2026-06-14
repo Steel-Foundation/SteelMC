@@ -280,8 +280,6 @@ fn ser_humanoid_arm(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     }
 }
 
-// ==================== Registration ====================
-
 /// Register all vanilla entity data serializers.
 ///
 /// **IMPORTANT**: The registration order MUST match vanilla's `EntityDataSerializers.java` exactly,
