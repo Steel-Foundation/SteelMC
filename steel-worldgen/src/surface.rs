@@ -96,7 +96,7 @@ impl<'a> SurfaceRuleContext<'a> {
 
     /// Returns a pre-resolved block state emitted by the generated surface rule.
     #[must_use]
-    pub fn block_state(&self, block_state_index: usize) -> BlockStateId {
+    pub const fn block_state(&self, block_state_index: usize) -> BlockStateId {
         self.block_states[block_state_index]
     }
 
