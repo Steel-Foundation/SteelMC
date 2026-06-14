@@ -149,10 +149,7 @@ impl BlockBehavior for WeatheringCopperSlabBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{
-        blocks::block_state_ext::BlockStateExt as _, test_support::init_test_registry,
-        vanilla_blocks,
-    };
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
 

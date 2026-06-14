@@ -26,30 +26,49 @@ hooks = [{ id = "check-useless-excludes", priority = 0 }]
 repo = "local"
 hooks = [
     {
-    id = "cargo-fmt",
-    name = "cargo fmt",
-    language = "system",
-    entry = "cargo fmt",
-    types = ["rust"],
-    pass_filenames = false,
-    priority = 10
+        id = "forbid-multiple-hyphens-equals",
+        name = "Forbid 3+ hyphens (---) or 3+ equals (===) in comments",
+        language = "system",
+        entry = "bash -c '! grep -n -E \"^[[:space:]]*//[[:space:]]*(-{3,}|={3,})\" \"$@\"' --",
+        types = ["text"],
+        pass_filenames = true,
+        require_serial = true,
+        priority = 10
     },
     {
-    id = "cargo-test",
-    name = "cargo test",
-    language = "system",
-    entry = "cargo test --workspace",
-    types = ["rust"],
-    pass_filenames = false,
-    priority = 30
+        id = "typos",
+        name = "Spell Check (typos)",
+        language = "system",
+        entry = "typos",
+        types = ["text"],
+        pass_filenames = false,
+        priority = 20
     },
     {
-    id = "typos",
-    name = "Spell Check (typos)",
-    language = "system",
-    entry = "typos",
-    types = ["text"],
-    pass_filenames = false,
-    priority = 20
+        id = "cargo-fmt",
+        name = "cargo fmt",
+        language = "system",
+        entry = "cargo fmt",
+        types = ["rust"],
+        pass_filenames = false,
+        priority = 30
+    },
+    {
+        id = "cargo-clippy",
+        name = "cargo clippy",
+        language = "system",
+        entry = "cargo clippy -r --workspace",
+        types = ["rust"],
+        pass_filenames = false,
+        priority = 40
+    },
+    {
+        id = "cargo-test",
+        name = "cargo test",
+        language = "system",
+        entry = "cargo test --workspace",
+        types = ["rust"],
+        pass_filenames = false,
+        priority = 50
     },
 ]

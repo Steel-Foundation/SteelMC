@@ -38,8 +38,6 @@ pub struct CAddEntity {
     pub data: i32,
 }
 
-// === LpVec3 encoding constants (from vanilla LpVec3.java) ===
-
 /// Maximum absolute velocity value. Vanilla: `1.7179869183E10`
 const ABS_MAX_VALUE: f64 = 1.717_986_918_3E10;
 

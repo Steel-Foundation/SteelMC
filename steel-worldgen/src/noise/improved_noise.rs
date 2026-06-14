@@ -198,10 +198,6 @@ impl ImprovedNoise {
         )
     }
 
-    // -----------------------------------------------------------------------
-    // SIMD: process 4 Y values sharing the same (x, z)
-    // -----------------------------------------------------------------------
-
     /// Sample noise for 4 points that share the same x/z but differ in y.
     ///
     /// This is the SIMD counterpart of [`noise_with_y_scale`]. The x and z
@@ -434,10 +430,6 @@ impl ImprovedNoise {
         )
     }
 }
-
-// ---------------------------------------------------------------------------
-// SIMD helpers (4-wide f64)
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
