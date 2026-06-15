@@ -25,8 +25,8 @@ use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
-    ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
-    WorldGenContext, WorldGeneratorRegistry,
+    ChunkGenerator, ChunkGeneratorType, EndGenerator, GeneratorOutput, NetherGenerator,
+    OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
@@ -64,6 +64,20 @@ fn ensure_registry() {
         init_block_entities();
         init_entities();
     });
+}
+
+fn create_benchmark_generator(
+    generator_key: &Identifier,
+    seed: i64,
+    context: &str,
+) -> GeneratorOutput {
+    let generator_config = toml::Value::Table(Map::new());
+    let registry = WorldGeneratorRegistry::new_with_builtins()
+        .expect("built-in world generators should register");
+    let generator_config = registry
+        .validate_config(generator_key, &generator_config)
+        .expect(context);
+    registry.create(&generator_config, seed).expect(context)
 }
 
 fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAccess {
@@ -482,11 +496,11 @@ fn build_feature_fixture_at(
     seed: i64,
     center: ChunkPos,
 ) -> FeatureFixture {
-    let generator_config = toml::Value::Table(Map::new());
-    let output = WorldGeneratorRegistry::new_with_builtins()
-        .expect("built-in world generators should register")
-        .create(&generator_key, &generator_config, seed)
-        .expect("feature benchmark should use a built-in generator");
+    let output = create_benchmark_generator(
+        &generator_key,
+        seed,
+        "feature benchmark should use a built-in generator",
+    );
     let dim = output.dimension_type;
     let generator = Arc::new(output.generator);
     let generation_settings = WorldGenerationSettings::from_generator_config(
@@ -717,11 +731,11 @@ fn build_concurrent_feature_fixture(
     generator_key: Identifier,
     seed: i64,
 ) -> ConcurrentFeatureFixture {
-    let generator_config = toml::Value::Table(Map::new());
-    let output = WorldGeneratorRegistry::new_with_builtins()
-        .expect("built-in world generators should register")
-        .create(&generator_key, &generator_config, seed)
-        .expect("feature benchmark should use a built-in generator");
+    let output = create_benchmark_generator(
+        &generator_key,
+        seed,
+        "feature benchmark should use a built-in generator",
+    );
     let dim = output.dimension_type;
     let generator = Arc::new(output.generator);
     let generation_settings = WorldGenerationSettings::from_generator_config(
@@ -804,11 +818,11 @@ fn build_concurrent_full_pipeline_fixture(
     generator_key: Identifier,
     seed: i64,
 ) -> ConcurrentFullPipelineFixture {
-    let generator_config = toml::Value::Table(Map::new());
-    let output = WorldGeneratorRegistry::new_with_builtins()
-        .expect("built-in world generators should register")
-        .create(&generator_key, &generator_config, seed)
-        .expect("full-pipeline benchmark should use a built-in generator");
+    let output = create_benchmark_generator(
+        &generator_key,
+        seed,
+        "full-pipeline benchmark should use a built-in generator",
+    );
     let dim = output.dimension_type;
     let generator = Arc::new(output.generator);
     let generation_settings = WorldGenerationSettings::from_generator_config(
