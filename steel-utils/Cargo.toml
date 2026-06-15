@@ -33,6 +33,7 @@ uuid.workspace = true
 # Logging
 tracing.workspace = true
 
+
 # Cryptography
 crc32c = "0.6"
 
@@ -60,6 +61,9 @@ phf_codegen.workspace = true
 # Utilities
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
+reqwest = { workspace = true, features = ["blocking"] }
+sha1.workspace = true
+zip = { version = "1.1.4", default-features = false, features = ["deflate"] }
 
 [[bench]]
 name = "xoroshiro"

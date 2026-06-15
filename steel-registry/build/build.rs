@@ -151,6 +151,7 @@ pub fn main() {
 
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
     let out_dir = Path::new(&manifest_dir).join("src/generated");
 
     // Create the generated directory if it doesn't exist

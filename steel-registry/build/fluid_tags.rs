@@ -5,9 +5,8 @@ use quote::quote;
 use super::tag_utils;
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/fluid/");
-
-    let tag_dir = "build_assets/builtin_datapacks/minecraft/tags/fluid";
+    let tag_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/fluid";
+    println!("cargo:rerun-if-changed={tag_dir}");
     let all_tags = tag_utils::read_all_tags(tag_dir);
     let sorted_tags = tag_utils::resolve_all_tags(&all_tags);
 

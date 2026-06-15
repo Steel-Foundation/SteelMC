@@ -96,7 +96,7 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> Vec<(String, T)> {
-    let dir = format!("build_assets/builtin_datapacks/minecraft/{subdir}");
+    let dir = format!("../steel-utils/build_assets/builtin_datapacks/minecraft/{subdir}");
     println!("cargo:rerun-if-changed={dir}/");
     let mut out = Vec::new();
     for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("Failed to read {dir}: {e}")) {
