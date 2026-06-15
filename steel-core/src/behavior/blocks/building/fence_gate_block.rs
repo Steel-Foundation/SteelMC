@@ -14,15 +14,16 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
-use steel_registry::vanilla_block_tags::WALLS_TAG;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
-use steel_utils::math::Axis;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{ScheduledTickAccess, World};
 
@@ -31,9 +32,9 @@ use crate::world::{ScheduledTickAccess, World};
 pub struct FenceGateBlock {
     block: BlockRef,
     #[json_arg(sound_events, json = "type_fence_gate_open")]
-    sound_open: i32,
+    sound_open: SoundEventRef,
     #[json_arg(sound_events, json = "type_fence_gate_close")]
-    sound_close: i32,
+    sound_close: SoundEventRef,
 }
 
 /// Horizontal facing of the gate.
@@ -48,9 +49,13 @@ const IN_WALL: BoolProperty = BlockStateProperties::IN_WALL;
 impl FenceGateBlock {
     /// Creates a new fence gate behavior.
     ///
-    /// Sound ids are provided by the build system from `classes.json`.
+    /// Sound events are provided by the build system from `classes.json`.
     #[must_use]
-    pub const fn new(block: BlockRef, sound_open: i32, sound_close: i32) -> Self {
+    pub const fn new(
+        block: BlockRef,
+        sound_open: SoundEventRef,
+        sound_close: SoundEventRef,
+    ) -> Self {
         Self {
             block,
             sound_open,
@@ -69,7 +74,7 @@ impl FenceGateBlock {
 
     /// Vanilla `FenceGateBlock.isWall`.
     fn is_wall(state: BlockStateId) -> bool {
-        REGISTRY.blocks.is_in_tag(state.get_block(), &WALLS_TAG)
+        state.get_block().has_tag(&BlockTag::WALLS)
     }
 }
 
@@ -138,7 +143,7 @@ impl BlockBehavior for FenceGateBlock {
         if new_state.get_value(&OPEN) {
             new_state = new_state.set_value(&OPEN, false);
         } else {
-            let (yaw, _) = player.rotation.load();
+            let (yaw, _) = player.rotation();
             let player_direction = Direction::from_yaw(yaw);
             // Re-face the gate toward the player if they opened it from behind.
             if new_state.get_value(&FACING) == player_direction.opposite() {
@@ -162,7 +167,7 @@ impl BlockBehavior for FenceGateBlock {
         };
         // TODO: vanilla randomizes pitch as random*0.1 + 0.9; world RNG not
         // wired into block behaviors yet (same compromise as ButtonBlock).
-        world.play_block_sound(sound, pos, 1.0, 1.0, Some(player.id));
+        world.play_block_sound(sound, pos, 1.0, 1.0, Some(player.id()));
         // TODO: GameEvent.BLOCK_OPEN / BLOCK_CLOSE when game event system exists.
         InteractionResult::Success
     }

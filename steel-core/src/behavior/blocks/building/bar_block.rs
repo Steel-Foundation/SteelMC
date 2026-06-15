@@ -7,8 +7,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::vanilla_block_tags::{BARS_TAG, C_GLASS_PANES_TAG, WALLS_TAG};
-use steel_registry::{REGISTRY, TaggedRegistryExt};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -133,11 +132,9 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
         return false;
     }
     if !excluded && neighbor_state.is_face_sturdy(direction)
-        || REGISTRY.blocks.is_in_tag(neighbor_block, &BARS_TAG)
-        || REGISTRY.blocks.is_in_tag(neighbor_block, &WALLS_TAG)
-        || REGISTRY
-            .blocks
-            .is_in_tag(neighbor_block, &C_GLASS_PANES_TAG)
+        || neighbor_block.has_tag(&BlockTag::BARS)
+        || neighbor_block.has_tag(&BlockTag::WALLS)
+        || neighbor_block.has_tag(&BlockTag::C_GLASS_PANES)
     {
         return true;
     }

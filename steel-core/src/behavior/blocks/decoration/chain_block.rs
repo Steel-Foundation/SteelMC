@@ -11,7 +11,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, EnumProperty};
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for chain blocks (iron chain, waxed copper chains).

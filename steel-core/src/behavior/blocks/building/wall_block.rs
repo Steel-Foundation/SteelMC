@@ -13,12 +13,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
-use steel_registry::vanilla_block_tags::{
-    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALL_POST_OVERRIDE_TAG, WALLS_TAG,
-};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_fluids::WATER;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -157,13 +154,13 @@ fn is_connected(state: BlockStateId, side: &EnumProperty<WallSide>) -> bool {
 /// the wall; `direction` is that same (opposite-to-neighbor) direction.
 fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direction) -> bool {
     let block = neighbor_state.get_block();
-    let connected_fence_gate = REGISTRY.blocks.is_in_tag(block, &FENCE_GATES_TAG)
+    let connected_fence_gate = block.has_tag(&BlockTag::FENCE_GATES)
         && FenceGateBlock::connects_to_direction(neighbor_state, direction);
 
-    REGISTRY.blocks.is_in_tag(block, &WALLS_TAG)
+    block.has_tag(&BlockTag::WALLS)
         || (!is_excluded_for_connection(block) && face_solid)
-        || REGISTRY.blocks.is_in_tag(block, &BARS_TAG)
-        || REGISTRY.blocks.is_in_tag(block, &C_GLASS_PANES_TAG)
+        || block.has_tag(&BlockTag::BARS)
+        || block.has_tag(&BlockTag::C_GLASS_PANES)
         || connected_fence_gate
 }
 
@@ -268,9 +265,7 @@ fn make_wall_state(connects_to_side: bool) -> WallSide {
 
 /// Vanilla `WallBlock.shouldRaisePost`.
 fn should_raise_post(state: BlockStateId, top_neighbor: BlockStateId) -> bool {
-    let top_neighbor_has_post = REGISTRY
-        .blocks
-        .is_in_tag(top_neighbor.get_block(), &WALLS_TAG)
+    let top_neighbor_has_post = top_neighbor.get_block().has_tag(&BlockTag::WALLS)
         && top_neighbor.try_get_value(&UP).unwrap_or(false);
     if top_neighbor_has_post {
         return true;
@@ -300,8 +295,8 @@ fn should_raise_post(state: BlockStateId, top_neighbor: BlockStateId) -> bool {
     }
 
     let is_covered = false; // is_covered
-    REGISTRY
-        .blocks
-        .is_in_tag(top_neighbor.get_block(), &WALL_POST_OVERRIDE_TAG)
+    top_neighbor
+        .get_block()
+        .has_tag(&BlockTag::WALL_POST_OVERRIDE)
         || is_covered
 }
