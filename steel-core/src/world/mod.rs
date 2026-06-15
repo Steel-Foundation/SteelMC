@@ -2932,8 +2932,6 @@ impl World {
         self.play_sound(sound, SoundSource::Blocks, pos, volume, pitch, exclude);
     }
 
-    // === Entity Methods ===
-
     /// Returns the runtime entity manager.
     #[must_use]
     pub const fn entity_manager(&self) -> &WorldEntityManager {

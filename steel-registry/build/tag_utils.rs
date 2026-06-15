@@ -119,7 +119,8 @@ pub fn build_simple_tags(
     registry_module: &str,
     registry_type: &str,
 ) -> TokenStream {
-    let tag_dir = format!("build_assets/builtin_datapacks/minecraft/tags/{tag_subdir}");
+    let tag_dir =
+        format!("../steel-utils/build_assets/builtin_datapacks/minecraft/tags/{tag_subdir}");
     println!("cargo:rerun-if-changed={tag_dir}");
 
     let all_tags = read_all_tags(&tag_dir);

@@ -831,8 +831,6 @@ impl ItemStack {
     }
 }
 
-// ==================== NBT Serialization ====================
-
 use simdnbt::{
     FromNbtTag, ToNbtTag,
     borrow::{NbtCompound as NbtCompoundView, NbtTag as BorrowedNbtTag},

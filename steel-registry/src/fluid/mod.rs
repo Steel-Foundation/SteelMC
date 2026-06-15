@@ -207,8 +207,6 @@ impl FluidRegistry {
 crate::impl_registry!(FluidRegistry, Fluid, fluids_by_id, fluids_by_key, fluids);
 crate::impl_tagged_registry!(FluidRegistry, fluids_by_key, "fluid");
 
-// --- Fluid type checking helpers ---
-
 use crate::REGISTRY;
 
 /// Returns true if the given `FluidRef` is water (including flowing water).

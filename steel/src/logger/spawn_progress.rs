@@ -16,10 +16,6 @@ use steel_core::chunk::chunk_access::ChunkStatus;
 /// Grid type alias for convenience.
 pub type Grid = [[Option<ChunkStatus>; DISPLAY_DIAMETER]; DISPLAY_DIAMETER];
 
-// ---------------------------------------------------------------------------
-// SpawnProgressDisplay
-// ---------------------------------------------------------------------------
-
 /// Returns the vanilla RGB color for a chunk status.
 /// Colors are taken from `LevelLoadingScreen.COLORS` in the vanilla client.
 const fn status_color(status: Option<ChunkStatus>) -> Color {

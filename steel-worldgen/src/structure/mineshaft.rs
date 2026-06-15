@@ -704,8 +704,6 @@ fn stairs_add_children(
     let _ = generate_and_add(pieces, rng, x, bb.min_y, z, dir, depth);
 }
 
-// --- Helpers ---
-
 const fn move_bb(bb: BoundingBox, dx: i32, dy: i32, dz: i32) -> BoundingBox {
     BoundingBox::new(
         bb.min_x + dx,
