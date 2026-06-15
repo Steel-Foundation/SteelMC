@@ -1,13 +1,36 @@
+# Build/Generated
 /target
 /steel-registry/src/generated
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
+/steel-worldgen/src/generated
+/steel-utils/build_assets/builtin_datapacks
+/steel-utils/build_assets/.asset-extract.lock
+/steel-utils/build_assets/en_us.json
+
+# Config
 /config
 /.tmp
-/minecraft-src
-profile.json.gz
 /world
-AGENTS.md
-CLAUDE.md
-.idea/
+/saves
 /players
+
+# Misc
+CLAUDE.md
+.env
+/minecraft-src
+
+# Package
+profile.json.gz
+profile.json.syms.json
+*.gz
+*.class
+
+# ICE crash reports
+rustc-ice-*
+
+# IDE
+.vscode/settings.json
+.idea
+
+.DS_STORE

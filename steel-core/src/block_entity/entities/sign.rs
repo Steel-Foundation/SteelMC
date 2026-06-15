@@ -20,6 +20,7 @@ use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
 use crate::block_entity::BlockEntity;
+use crate::entity::Entity;
 use crate::world::World;
 
 /// Maximum distance (in blocks) a player can be from a sign while editing.
@@ -154,13 +155,13 @@ impl SignBlockEntity {
     /// Creates a new sign block entity.
     #[must_use]
     pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
-        Self::with_type(level, vanilla_block_entity_types::SIGN, pos, state)
+        Self::with_type(level, &vanilla_block_entity_types::SIGN, pos, state)
     }
 
     /// Creates a new hanging sign block entity.
     #[must_use]
     pub fn new_hanging(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
-        Self::with_type(level, vanilla_block_entity_types::HANGING_SIGN, pos, state)
+        Self::with_type(level, &vanilla_block_entity_types::HANGING_SIGN, pos, state)
     }
 
     /// Creates a sign block entity with a specific type.
@@ -319,7 +320,7 @@ impl BlockEntity for SignBlockEntity {
         self.player_who_may_edit.is_some()
     }
 
-    fn tick(&mut self, world: &World) {
+    fn tick(&mut self, world: &Arc<World>) {
         // Clear the edit lock if the editing player is too far away or gone
         if let Some(editor_uuid) = self.player_who_may_edit {
             let should_clear = world
@@ -327,7 +328,7 @@ impl BlockEntity for SignBlockEntity {
                 .get_by_uuid(&editor_uuid)
                 .is_none_or(|player| {
                     let pos = self.pos;
-                    let player_pos = *player.position.lock();
+                    let player_pos = player.position();
                     let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
                     let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
                     let dz = player_pos.z - f64::from(pos.0.z) - 0.5;

@@ -1,26 +1,26 @@
-use std::{collections::BTreeMap, fs};
+use std::collections::BTreeMap;
 
+use crate::generator_functions::{generate_sound_event_ref, read_json_asset};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
+use steel_utils::Identifier;
 
 #[derive(Deserialize)]
 struct SoundTypeData {
     volume: f32,
     pitch: f32,
-    break_sound: i32,
-    step_sound: i32,
-    place_sound: i32,
-    hit_sound: i32,
-    fall_sound: i32,
+    break_sound: Identifier,
+    step_sound: Identifier,
+    place_sound: Identifier,
+    hit_sound: Identifier,
+    fall_sound: Identifier,
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/sound_types.json");
+    const ASSET: &str = "build_assets/sound_types.json";
 
-    let sound_types: BTreeMap<String, SoundTypeData> =
-        serde_json::from_str(&fs::read_to_string("build_assets/sound_types.json").unwrap())
-            .expect("Failed to parse sound_types.json");
+    let sound_types: BTreeMap<String, SoundTypeData> = read_json_asset(ASSET);
 
     let consts: TokenStream = sound_types
         .iter()
@@ -28,11 +28,11 @@ pub(crate) fn build() -> TokenStream {
             let name = format_ident!("{}", name);
             let volume = data.volume;
             let pitch = data.pitch;
-            let break_sound = data.break_sound;
-            let step_sound = data.step_sound;
-            let place_sound = data.place_sound;
-            let hit_sound = data.hit_sound;
-            let fall_sound = data.fall_sound;
+            let break_sound = generate_sound_event_ref(&data.break_sound);
+            let step_sound = generate_sound_event_ref(&data.step_sound);
+            let place_sound = generate_sound_event_ref(&data.place_sound);
+            let hit_sound = generate_sound_event_ref(&data.hit_sound);
+            let fall_sound = generate_sound_event_ref(&data.fall_sound);
             quote! {
                 pub const #name: SoundType = SoundType {
                     volume: #volume,
@@ -48,16 +48,9 @@ pub(crate) fn build() -> TokenStream {
         .collect();
 
     quote!(
-        //! Sound type definitions matching vanilla Minecraft's SoundType.java.
-        //!
-        //! Each block has a sound type that defines the sounds played when:
-        //! - Breaking the block
-        //! - Stepping on the block
-        //! - Placing the block
-        //! - Hitting the block
-        //! - Falling on the block
-        //!
-        //! The sound IDs reference entries in `sound_events`.
+        //! Sound type definitions matching vanilla Minecraft's `SoundType`.
+
+        use crate::sound_event::SoundEventRef;
 
         /// Defines the sounds for a block type.
         #[derive(Debug, Clone, Copy)]
@@ -66,16 +59,16 @@ pub(crate) fn build() -> TokenStream {
             pub volume: f32,
             /// Pitch multiplier for sounds (1.0 = normal).
             pub pitch: f32,
-            /// Sound event ID for breaking the block.
-            pub break_sound: i32,
-            /// Sound event ID for stepping on the block.
-            pub step_sound: i32,
-            /// Sound event ID for placing the block.
-            pub place_sound: i32,
-            /// Sound event ID for hitting the block.
-            pub hit_sound: i32,
-            /// Sound event ID for falling on the block.
-            pub fall_sound: i32,
+            /// Sound event for breaking the block.
+            pub break_sound: SoundEventRef,
+            /// Sound event for stepping on the block.
+            pub step_sound: SoundEventRef,
+            /// Sound event for placing the block.
+            pub place_sound: SoundEventRef,
+            /// Sound event for hitting the block.
+            pub hit_sound: SoundEventRef,
+            /// Sound event for falling on the block.
+            pub fall_sound: SoundEventRef,
         }
 
         #consts

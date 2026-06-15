@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_status_tasks::ChunkStatusTasks, world_gen_context::WorldGenContext,
+    chunk_status_tasks::ChunkStatusTasks,
 };
+use crate::worldgen::context::WorldGenContext;
 
 /// Number of `ChunkStatus` variants.
 const STATUS_COUNT: usize = 12;
@@ -181,10 +182,6 @@ impl ChunkDependencies {
     }
 }
 
-// ============================================================================
-// Const helper functions
-// ============================================================================
-
 const fn const_max(a: usize, b: usize) -> usize {
     if a > b { a } else { b }
 }
@@ -207,17 +204,9 @@ const fn const_max_status(a: Option<ChunkStatus>, b: Option<ChunkStatus>) -> Opt
     }
 }
 
-// ============================================================================
-// ChunkStep
-// ============================================================================
-
 /// A task that generates a chunk.
-pub type ChunkStatusTask = fn(
-    Arc<WorldGenContext>,
-    &ChunkStep,
-    &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-    Arc<ChunkHolder>,
-) -> Result<(), anyhow::Error>;
+pub type ChunkStatusTask =
+    fn(Arc<WorldGenContext>, &ChunkStep, &Arc<StaticCache2D<Arc<ChunkHolder>>>, Arc<ChunkHolder>);
 
 /// A chunk step (const-compatible).
 #[derive(Clone, Copy)]
@@ -255,19 +244,13 @@ impl ChunkStep {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn noop_task(
     _context: Arc<WorldGenContext>,
     _step: &ChunkStep,
     _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
     _holder: Arc<ChunkHolder>,
-) -> Result<(), anyhow::Error> {
-    Ok(())
+) {
 }
-
-// ============================================================================
-// ChunkPyramid and const builder
-// ============================================================================
 
 /// Represents the hierarchy and dependencies for chunk generation or loading.
 pub struct ChunkPyramid {
@@ -339,10 +322,6 @@ impl ConstPyramidBuilder {
     }
 }
 
-// ============================================================================
-// Macro for ergonomic pyramid definition
-// ============================================================================
-
 /// Macro for defining chunk pyramids with nice syntax.
 ///
 /// # Example
@@ -367,7 +346,7 @@ macro_rules! define_pyramid {
             }),* $(,)?
         };
     ) => {
-        #[allow(missing_docs)]
+        #[expect(missing_docs, reason = "generated pyramid constant; name is self-documenting")]
         $vis const $name: &'static ChunkPyramid = &{
             ConstPyramidBuilder::new()
             $(
@@ -386,10 +365,6 @@ macro_rules! define_pyramid {
     (@bswr) => { -1 };
     (@bswr $bswr:expr) => { $bswr };
 }
-
-// ============================================================================
-// Pyramid definitions
-// ============================================================================
 
 define_pyramid! {
     pub const GENERATION_PYRAMID = {

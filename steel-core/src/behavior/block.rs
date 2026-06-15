@@ -1,18 +1,398 @@
 //! Block behavior trait and registry.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
-use steel_registry::REGISTRY;
+use glam::DVec3;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::items::ItemRef;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_damage_types;
+use steel_registry::vanilla_entities;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
+use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
+use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::InventoryAccess;
+use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
+use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
+use crate::fluid::is_water_fluid;
+use crate::physics::collide;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
+use steel_registry::vanilla_fluids;
+
+pub struct PickupResult {
+    pub filled_bucket: ItemRef,
+    pub sound: Option<SoundEventRef>,
+}
+
+const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
+
+/// Entity facts used by vanilla `CollisionContext` for block collision shapes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockCollisionContext {
+    entity_bottom: Option<f64>,
+    fall_distance: f64,
+    can_walk_on_powder_snow: bool,
+    is_falling_block: bool,
+    descending: bool,
+    placement: bool,
+}
+
+impl BlockCollisionContext {
+    /// Collision context for source-less collision queries.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            entity_bottom: None,
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending: false,
+            placement: false,
+        }
+    }
+
+    /// Collision context for normal entity movement.
+    #[must_use]
+    pub const fn entity(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending,
+            placement: false,
+        }
+    }
+
+    /// Collision context for vanilla pre-move collision validation.
+    #[must_use]
+    pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
+        Self {
+            entity_bottom: Some(entity_bottom),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending,
+            placement: true,
+        }
+    }
+
+    /// Returns a copy with vanilla accumulated fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns a copy with vanilla powder-snow walkability.
+    #[must_use]
+    pub const fn with_can_walk_on_powder_snow(mut self, can_walk_on_powder_snow: bool) -> Self {
+        self.can_walk_on_powder_snow = can_walk_on_powder_snow;
+        self
+    }
+
+    /// Returns a copy with vanilla falling-block collision context.
+    #[must_use]
+    pub const fn with_falling_block(mut self, is_falling_block: bool) -> Self {
+        self.is_falling_block = is_falling_block;
+        self
+    }
+
+    /// Returns accumulated vanilla fall distance for context-sensitive block collision.
+    #[must_use]
+    pub const fn fall_distance(self) -> f64 {
+        self.fall_distance
+    }
+
+    /// Returns whether the source entity can walk on powder snow.
+    #[must_use]
+    pub const fn can_walk_on_powder_snow(self) -> bool {
+        self.can_walk_on_powder_snow
+    }
+
+    /// Returns whether the source entity is a vanilla falling block.
+    #[must_use]
+    pub const fn is_falling_block(self) -> bool {
+        self.is_falling_block
+    }
+
+    /// Returns whether the source entity is descending through context-sensitive blocks.
+    #[must_use]
+    pub const fn is_descending(self) -> bool {
+        self.descending
+    }
+
+    /// Returns whether this context is used for placement-style collision checks.
+    #[must_use]
+    pub const fn is_placement(self) -> bool {
+        self.placement
+    }
+
+    /// Vanilla `EntityCollisionContext.isAbove`.
+    #[must_use]
+    pub fn is_above(self, shape: VoxelShape, pos: BlockPos, default_value: bool) -> bool {
+        let Some(entity_bottom) = self.entity_bottom else {
+            return default_value;
+        };
+
+        entity_bottom > f64::from(pos.y()) + shape.max(Axis::Y) - COLLISION_CONTEXT_ABOVE_EPSILON
+    }
+}
+
+/// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityLandingContext {
+    /// Entity velocity before the block landing hook adjusts it.
+    pub velocity: DVec3,
+    /// Whether the entity uses vanilla living-entity bounce behavior.
+    pub is_living_entity: bool,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityFallOnFacts {
+    /// Vanilla entity type of the landing entity.
+    pub entity_type: EntityTypeRef,
+    /// Whether the landing entity implements vanilla living-entity behavior.
+    pub is_living_entity: bool,
+    /// Current entity bounding-box X/Z width.
+    pub bounding_box_width: f64,
+    /// Current entity bounding-box height.
+    pub bounding_box_height: f64,
+    /// Vanilla small and big living-entity fall sounds.
+    pub fall_sounds: (SoundEventRef, SoundEventRef),
+}
+
+impl EntityFallOnFacts {
+    /// Creates fall-on facts from explicit entity values.
+    #[must_use]
+    pub const fn new(
+        entity_type: EntityTypeRef,
+        is_living_entity: bool,
+        bounding_box_width: f64,
+        bounding_box_height: f64,
+        fall_sounds: (SoundEventRef, SoundEventRef),
+    ) -> Self {
+        Self {
+            entity_type,
+            is_living_entity,
+            bounding_box_width,
+            bounding_box_height,
+            fall_sounds,
+        }
+    }
+
+    /// Creates fall-on facts from an entity.
+    #[must_use]
+    pub fn from_entity(entity: &dyn Entity) -> Self {
+        let bounding_box = entity.bounding_box();
+        Self::new(
+            entity.entity_type(),
+            entity.is_living_entity(),
+            bounding_box.width(),
+            bounding_box.height(),
+            entity.fall_sounds(),
+        )
+    }
+
+    /// Returns true for vanilla players.
+    #[must_use]
+    pub fn is_player(self) -> bool {
+        self.entity_type == &vanilla_entities::PLAYER
+    }
+
+    /// Vanilla farmland trampling size check:
+    /// `getBbWidth() * getBbWidth() * getBbHeight()`.
+    #[must_use]
+    pub fn bounding_box_width_squared_height(self) -> f64 {
+        self.bounding_box_width * self.bounding_box_width * self.bounding_box_height
+    }
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Clone, Copy)]
+pub struct EntityFallOnContext<'a> {
+    /// Accumulated vanilla fall distance at landing time.
+    pub fall_distance: f64,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+    /// Entity facts available to vanilla fall-on hooks.
+    pub entity: EntityFallOnFacts,
+    /// Source entity for vanilla side effects such as game events.
+    pub source_entity: Option<&'a dyn Entity>,
+}
+
+impl<'a> EntityFallOnContext<'a> {
+    /// Creates a fall-on context for a ground collision.
+    #[must_use]
+    pub const fn new(
+        fall_distance: f64,
+        suppresses_bounce: bool,
+        entity: EntityFallOnFacts,
+        source_entity: Option<&'a dyn Entity>,
+    ) -> Self {
+        Self {
+            fall_distance,
+            suppresses_bounce,
+            entity,
+            source_entity,
+        }
+    }
+
+    /// Creates a fall-on context from a landing entity.
+    #[must_use]
+    pub fn from_entity(fall_distance: f64, entity: &'a dyn Entity) -> Self {
+        Self::new(
+            fall_distance,
+            entity.is_suppressing_bounce(),
+            EntityFallOnFacts::from_entity(entity),
+            Some(entity),
+        )
+    }
+
+    /// Returns this context with a transformed fall distance.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
+    /// Returns the source entity for vanilla side effects.
+    #[must_use]
+    pub const fn source_entity(self) -> Option<&'a dyn Entity> {
+        self.source_entity
+    }
+}
+
+/// Fall damage requested by a block landing hook.
+#[derive(Debug, Clone)]
+pub struct EntityFallDamage {
+    /// Fall distance to pass to `Entity.causeFallDamage`.
+    pub fall_distance: f64,
+    /// Block-specific damage multiplier.
+    pub damage_modifier: f32,
+    /// Damage source for this landing.
+    pub source: DamageSource,
+}
+
+impl EntityFallDamage {
+    /// Creates a fall-damage action.
+    #[must_use]
+    pub const fn new(fall_distance: f64, damage_modifier: f32, source: DamageSource) -> Self {
+        Self {
+            fall_distance,
+            damage_modifier,
+            source,
+        }
+    }
+}
+
+impl EntityLandingContext {
+    /// Creates a landing context for a vertical movement collision.
+    #[must_use]
+    pub const fn new(velocity: DVec3, is_living_entity: bool, suppresses_bounce: bool) -> Self {
+        Self {
+            velocity,
+            is_living_entity,
+            suppresses_bounce,
+        }
+    }
+
+    /// Vanilla default `Block.updateEntityMovementAfterFallOn` result.
+    #[must_use]
+    pub const fn default_velocity_after_fall_on(self) -> DVec3 {
+        DVec3::new(self.velocity.x, 0.0, self.velocity.z)
+    }
+}
+
+/// Vanilla `Block.pushEntitiesUp` for block-state replacements that add collision.
+///
+/// Returns `new_state` so callers can mirror vanilla call sites that transform
+/// the replacement state before setting it in the world.
+pub(crate) fn push_entities_up(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> BlockStateId {
+    let added_collision = added_collision_boxes(old_state, new_state, world, pos);
+    let Some(query_box) = world_aabb_bounds(&added_collision) else {
+        return new_state;
+    };
+
+    for entity in world.get_entities_in_aabb(&query_box) {
+        let offset = collide(
+            Axis::Y,
+            &entity.bounding_box().move_by(0.0, 1.0, 0.0),
+            &added_collision,
+            -1.0,
+        );
+        if let Err(error) =
+            entity.try_set_position(entity.position() + DVec3::new(0.0, 1.0 + offset, 0.0))
+        {
+            log::debug!(
+                "Failed to push entity {} up after block collision change at {pos:?}: {error}",
+                entity.id()
+            );
+        }
+    }
+
+    new_state
+}
+
+fn added_collision_boxes(
+    old_state: BlockStateId,
+    new_state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+) -> Vec<WorldAabb> {
+    let context = BlockCollisionContext::empty();
+    let old_shape = BLOCK_BEHAVIORS
+        .get_behavior(old_state.get_block())
+        .get_collision_shape(old_state, world.as_ref(), pos, context);
+    let new_shape = BLOCK_BEHAVIORS
+        .get_behavior(new_state.get_block())
+        .get_collision_shape(new_state, world.as_ref(), pos, context);
+
+    join_unoptimized_boxes(old_shape, new_shape, BooleanOp::OnlySecond)
+        .into_iter()
+        .map(|aabb| aabb.at_block(pos))
+        .collect()
+}
+
+fn world_aabb_bounds(boxes: &[WorldAabb]) -> Option<WorldAabb> {
+    let first = boxes.first()?;
+    let mut min_x = first.min_x();
+    let mut min_y = first.min_y();
+    let mut min_z = first.min_z();
+    let mut max_x = first.max_x();
+    let mut max_y = first.max_y();
+    let mut max_z = first.max_z();
+
+    for aabb in boxes {
+        min_x = min_x.min(aabb.min_x());
+        min_y = min_y.min(aabb.min_y());
+        min_z = min_z.min(aabb.min_z());
+        max_x = max_x.max(aabb.max_x());
+        max_y = max_y.max(aabb.max_y());
+        max_z = max_z.max(aabb.max_z());
+    }
+
+    Some(WorldAabb::new(min_x, min_y, min_z, max_x, max_y, max_z))
+}
 
 /// Trait defining the behavior of a block.
 ///
@@ -21,19 +401,63 @@ use crate::world::World;
 /// - Neighbor updates
 /// - Player interactions
 /// - State changes
-pub trait BlockBehaviour: Send + Sync {
+pub trait BlockBehavior: Send + Sync {
+    /// Returns the Rust type name of the concrete behavior implementation.
+    #[cfg(feature = "flint")]
+    #[must_use]
+    #[expect(clippy::absolute_paths, reason = "easier for features")]
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    /// Called when a player uses an empty bucket on this block.
+    ///
+    /// Should:
+    /// - Remove or modify the block
+    /// - Return the filled bucket item to give
+    ///
+    /// Return None if pickup failed.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn pickup_block(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: Option<&Player>,
+    ) -> Option<PickupResult> {
+        None
+    }
     /// Called when a neighboring block changes shape.
     /// Returns the new state for this block after considering the neighbor change.
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         state
+    }
+
+    /// Returns whether this block can survive at the given position.
+    ///
+    /// Vanilla parity: `BlockBehavior.canSurvive(BlockState, LevelReader, BlockPos)`.
+    ///
+    /// Used during placement validation, shape updates (to break unsupported
+    /// blocks), and when removing water from waterlogged blocks. The default
+    /// returns `true`; override for blocks that require physical support
+    /// (torches, buttons, candles, cactus, etc.).
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        true
     }
 
     /// Returns the block state to use when placing this block.
@@ -47,16 +471,60 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `pos` - The position where the block was placed
     /// * `old_state` - The previous block state at this position
     /// * `moved_by_piston` - Whether the block was moved by a piston
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn on_place(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         old_state: BlockStateId,
         moved_by_piston: bool,
     ) {
         // Default: no-op
+    }
+
+    /// Called by block items after this block has been placed by an entity.
+    ///
+    /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
+    /// Steel passes lazy inventory access instead of a borrowed stack so the
+    /// caller does not hold the inventory lock while dispatching block behavior.
+    /// This is intentionally separate from [`on_place`], which fires for any
+    /// world block mutation.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: Option<&Player>,
+        inv: &InventoryAccess,
+    ) {
+        // Default: no-op
+    }
+
+    /// Called before a player removes this block.
+    ///
+    /// Vanilla parity: `Block.playerWillDestroy(Level, BlockPos, BlockState, Player)`.
+    /// The returned state is the state used for tool damage and loot after the
+    /// block is removed.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        state
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
@@ -68,11 +536,14 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world the block was removed from
     /// * `pos` - The position where the block was removed
     /// * `moved_by_piston` - Whether the block was moved by a piston
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         moved_by_piston: bool,
     ) {
@@ -84,16 +555,20 @@ pub trait BlockBehaviour: Send + Sync {
     /// Returns `TryEmptyHandInteraction` by default to fall through to item use.
     /// Override this to handle block-specific interactions (e.g., opening chests,
     /// using buttons, etc.).
-    #[allow(unused_variables, clippy::too_many_arguments)]
+    #[expect(
+        unused_variables,
+        clippy::too_many_arguments,
+        reason = "default trait implementation ignores all params; argument count matches vanilla signature"
+    )]
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hand: InteractionHand,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::TryEmptyHandInteraction
     }
@@ -103,14 +578,18 @@ pub trait BlockBehaviour: Send + Sync {
     ///
     /// Returns `Pass` by default. Override this for blocks that have interactions
     /// without needing an item (e.g., buttons, levers, repeaters).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::Pass
     }
@@ -126,11 +605,14 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `pos` - Position of this block
     /// * `source_block` - The block type that changed
     /// * `moved_by_piston` - Whether the change was caused by a piston
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn handle_neighbor_changed(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         source_block: BlockRef,
         moved_by_piston: bool,
@@ -149,7 +631,10 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default implementation only uses `block`; state/include_data are for overrides"
+    )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
@@ -165,9 +650,72 @@ pub trait BlockBehaviour: Send + Sync {
     /// Override to return true for blocks like crops, grass, ice, fire, etc.
     /// This is used to optimize chunk ticking by skipping sections with no
     /// randomly-ticking blocks.
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
         false
+    }
+
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Vanilla baseline for `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation uses static registry shape"
+    )]
+    fn default_get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        state.get_collision_shape()
+    }
+
+    /// Returns this block state's collision shape for the supplied collision context.
+    ///
+    /// Overrides that mirror vanilla `super.getCollisionShape(...)` should call
+    /// [`Self::default_get_collision_shape`].
+    fn get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        self.default_get_collision_shape(state, world, pos, context)
+    }
+
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    ///
+    /// Vanilla baseline for
+    /// `BlockState.getEntityInsideCollisionShape(BlockGetter, BlockPos, Entity)`.
+    #[expect(
+        unused_variables,
+        reason = "vanilla default is a full block independent of state, world, position, and entity"
+    )]
+    fn default_get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        VoxelShape::FULL_BLOCK
+    }
+
+    /// Returns this block state's shape used by vanilla entity-inside effects.
+    fn get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        self.default_get_entity_inside_collision_shape(state, world, pos, entity)
     }
 
     /// Called on random tick for blocks that support random ticking.
@@ -179,12 +727,182 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `state` - The current block state
     /// * `world` - The world the block is in
     /// * `pos` - The position of the block
-    #[allow(unused_variables)]
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
 
-    // === Block Entity Methods ===
+    /// Called when a scheduled tick fires for this block.
+    ///
+    /// Unlike `random_tick`, scheduled ticks are deterministic — they fire after
+    /// a precise delay set by `World::schedule_block_tick`. Used for buttons
+    /// unpressing, repeaters firing, fluids flowing, etc.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world the block is in
+    /// * `pos` - The position of the block
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        // Default: no-op
+    }
+
+    /// Default entity-inside hook.
+    ///
+    /// Overrides that mirror vanilla `super.entityInside(...)` should call
+    /// [`Self::default_entity_inside`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn default_entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+    }
+
+    /// Called when an entity is inside this block's collision area.
+    ///
+    /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world
+    /// * `pos` - The position of the block
+    /// * `entity` - The entity inside the block
+    fn entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
+    }
+
+    /// Default fall-on hook.
+    ///
+    /// Overrides that mirror vanilla `super.fallOn(...)` should call
+    /// [`Self::default_fall_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn default_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        Some(EntityFallDamage::new(
+            context.fall_distance,
+            1.0,
+            DamageSource::environment(&vanilla_damage_types::FALL),
+        ))
+    }
+
+    /// Called when an entity lands on this block.
+    ///
+    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        self.default_fall_on(state, world, pos, context)
+    }
+
+    /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
+    ///
+    /// Vanilla parity hook for block-specific fall side effects that depend on
+    /// whether `Entity.causeFallDamage` returned true.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn after_fall_on_damage(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_damage: &EntityFallDamage,
+        damage_applied: bool,
+    ) {
+    }
+
+    /// Default post-fall movement hook.
+    ///
+    /// Overrides that mirror vanilla `super.updateEntityMovementAfterFallOn(...)`
+    /// should call [`Self::default_update_entity_movement_after_fall_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn default_update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        context.default_velocity_after_fall_on()
+    }
+
+    /// Updates entity velocity after a vertical movement collision with this block.
+    ///
+    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
+    /// Steel returns the velocity to apply so movement resolution keeps entity
+    /// state changes centralized in [`Entity::move_entity`].
+    fn update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    }
+
+    /// Default step-on hook.
+    ///
+    /// Overrides that mirror vanilla `super.stepOn(...)` should call
+    /// [`Self::default_step_on`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn default_step_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+    }
+
+    /// Called when an entity steps on this block while on ground.
+    ///
+    /// Vanilla parity: `Block.stepOn(Level, BlockPos, BlockState, Entity)`.
+    fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        self.default_step_on(state, world, pos, entity);
+    }
 
     /// Returns whether this block has an associated block entity.
     ///
@@ -201,7 +919,10 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `level` - Weak reference to the world
     /// * `pos` - The position where the block entity will be placed
     /// * `state` - The block state for this block entity
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn new_block_entity(
         &self,
         level: Weak<World>,
@@ -219,18 +940,22 @@ pub trait BlockBehaviour: Send + Sync {
     /// # Arguments
     /// * `old_state` - The previous block state
     /// * `new_state` - The new block state
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn should_keep_block_entity(&self, old_state: BlockStateId, new_state: BlockStateId) -> bool {
         false
     }
-
-    // === Redstone / Comparator Methods ===
 
     /// Returns whether this block can provide an analog output signal to comparators.
     ///
     /// Override to return `true` for containers (chests, barrels, hoppers, etc.)
     /// and other blocks that comparators can read (composters, beehives, etc.).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn has_analog_output_signal(&self, state: BlockStateId) -> bool {
         false
     }
@@ -244,18 +969,92 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `state` - The current block state
     /// * `world` - The world
     /// * `pos` - The position of the block
-    #[allow(unused_variables)]
-    fn get_analog_output_signal(&self, state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn get_analog_output_signal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
         0
+    }
+
+    /// Returns the fluid state for this block state.
+    ///
+    /// Default (`SimpleWaterloggedBlock`): returns water source when `WATERLOGGED = true`,
+    /// otherwise `FluidState::EMPTY`.
+    ///
+    /// Override for liquid blocks (water/lava) to return the appropriate fluid based on LEVEL.
+    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
+        if let Some(true) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            FluidState::source(&vanilla_fluids::WATER)
+        } else {
+            FluidState::EMPTY
+        }
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
+    ///
+    /// Returns `true` if the given fluid type may be placed into this block at the
+    /// given state.  Called by the fluid-spread logic; there is no player context
+    /// here (fluid spreading has no associated player).
+    ///
+    /// Default (`SimpleWaterloggedBlock`): accepts water when the block has a
+    /// `WATERLOGGED` property that is currently `false`.  Override for blocks
+    /// that need different restrictions (e.g. double-slabs, barriers).
+    ///
+    /// Vanilla signature: `canPlaceLiquid(@Nullable LivingEntity, BlockGetter, BlockPos, BlockState, Fluid)`
+    /// — the Fluid parameter is a type, not a state.
+    fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
+        match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            Some(false) => is_water_fluid(fluid),
+            _ => false,
+        }
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.placeLiquid()`.
+    ///
+    /// Attempts to place `fluid_state` into this block.  Returns `true` on success,
+    /// `false` if placement was rejected.
+    ///
+    /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
+    /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
+    ///
+    /// [`can_place_liquid`]: BlockBehavior::can_place_liquid
+    fn place_liquid(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        if !self.can_place_liquid(state, fluid_state.fluid_id) {
+            return false;
+        }
+        let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
+        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+        let delay = super::fluid::FLUID_BEHAVIORS
+            .get_behavior(fluid_state.fluid_id)
+            .tick_delay(world);
+        world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        true
+    }
+
+    /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        None
     }
 }
 
 /// Default block behavior that returns the block's default state for placement.
-pub struct DefaultBlockBehaviour {
+pub struct DefaultBlockBehavior {
     block: BlockRef,
 }
 
-impl DefaultBlockBehaviour {
+impl DefaultBlockBehavior {
     /// Creates a new default block behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -263,7 +1062,7 @@ impl DefaultBlockBehaviour {
     }
 }
 
-impl BlockBehaviour for DefaultBlockBehaviour {
+impl BlockBehavior for DefaultBlockBehavior {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -274,46 +1073,53 @@ impl BlockBehaviour for DefaultBlockBehaviour {
 /// Created after the main registry is frozen. All blocks are initialized with
 /// default behaviors, then custom behaviors are registered for specific blocks.
 pub struct BlockBehaviorRegistry {
-    behaviors: Vec<Box<dyn BlockBehaviour>>,
+    behaviors: Vec<Box<dyn BlockBehavior>>,
 }
 
 impl BlockBehaviorRegistry {
+    /// Get all behaviors.
+    #[cfg(feature = "flint")]
+    #[must_use]
+    pub fn get_behaviors(&self) -> &[Box<dyn BlockBehavior>] {
+        &self.behaviors
+    }
+
     /// Creates a new behavior registry with default behaviors for all blocks.
     #[must_use]
     pub fn new() -> Self {
         let block_count = REGISTRY.blocks.len();
-        let mut behaviors: Vec<Box<dyn BlockBehaviour>> = Vec::with_capacity(block_count);
+        let mut behaviors: Vec<Box<dyn BlockBehavior>> = Vec::with_capacity(block_count);
 
         // Initialize all blocks with default behavior
         for (_, block) in REGISTRY.blocks.iter() {
-            behaviors.push(Box::new(DefaultBlockBehaviour::new(block)));
+            behaviors.push(Box::new(DefaultBlockBehavior::new(block)));
         }
 
         Self { behaviors }
     }
 
     /// Sets a custom behavior for a block.
-    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehaviour>) {
-        let id = *REGISTRY.blocks.get_id(block);
+    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehavior>) {
+        let id = block.id();
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a block.
     #[must_use]
-    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehaviour {
-        let id = *REGISTRY.blocks.get_id(block);
+    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehavior {
+        let id = block.id();
         self.behaviors[id].as_ref()
     }
 
     /// Gets the behavior for a block by its ID.
     #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehavior> {
         self.behaviors.get(id).map(AsRef::as_ref)
     }
 
     /// Gets the behavior for a block state.
     #[must_use]
-    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehavior> {
         let block = REGISTRY.blocks.by_state_id(state)?;
         Some(self.get_behavior(block))
     }
@@ -322,5 +1128,41 @@ impl BlockBehaviorRegistry {
 impl Default for BlockBehaviorRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use steel_registry::sound_events;
+
+    #[test]
+    fn fall_on_facts_use_vanilla_width_squared_height_formula() {
+        let facts = EntityFallOnFacts::new(
+            &vanilla_entities::PLAYER,
+            true,
+            0.6,
+            1.8,
+            (
+                &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                &sound_events::ENTITY_PLAYER_BIG_FALL,
+            ),
+        );
+
+        assert!(facts.is_player());
+        assert!(facts.is_living_entity);
+        assert!((facts.bounding_box_width_squared_height() - 0.648).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn world_aabb_bounds_contains_all_boxes() {
+        let bounds = world_aabb_bounds(&[
+            WorldAabb::new(1.0, 2.0, 3.0, 2.0, 3.0, 4.0),
+            WorldAabb::new(-1.0, 4.0, 2.0, 0.0, 5.0, 6.0),
+        ])
+        .expect("non-empty boxes should have bounds");
+
+        assert_eq!(bounds, WorldAabb::new(-1.0, 2.0, 2.0, 2.0, 5.0, 6.0));
     }
 }

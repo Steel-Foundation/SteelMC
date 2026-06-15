@@ -4,7 +4,7 @@
 
 use std::io::{self, Cursor};
 
-use crate::{codec::VarInt, math::Axis, serial::ReadFrom, types::BlockPos};
+use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
 #[derive(Clone, Copy, Debug)]
@@ -42,7 +42,7 @@ impl ReadFrom for Direction {
 impl Direction {
     /// Returns the block position offset for this direction.
     #[must_use]
-    pub const fn offset(&self) -> (i32, i32, i32) {
+    pub const fn offset(self) -> (i32, i32, i32) {
         match self {
             Direction::Down => (0, -1, 0),
             Direction::Up => (0, 1, 0),
@@ -55,14 +55,14 @@ impl Direction {
 
     /// Returns the block position relative to the given position in this direction.
     #[must_use]
-    pub const fn relative(&self, pos: &BlockPos) -> BlockPos {
+    pub const fn relative(self, pos: BlockPos) -> BlockPos {
         let (dx, dy, dz) = self.offset();
         pos.offset(dx, dy, dz)
     }
 
     /// Returns the axis this direction is on.
     #[must_use]
-    pub const fn get_axis(&self) -> Axis {
+    pub const fn get_axis(self) -> Axis {
         match self {
             Direction::Down | Direction::Up => Axis::Y,
             Direction::North | Direction::South => Axis::Z,
@@ -72,7 +72,7 @@ impl Direction {
 
     /// Returns the opposite direction.
     #[must_use]
-    pub const fn opposite(&self) -> Direction {
+    pub const fn opposite(self) -> Direction {
         match self {
             Direction::Down => Direction::Up,
             Direction::Up => Direction::Down,
@@ -106,7 +106,7 @@ impl Direction {
     /// Only meaningful for horizontal directions.
     /// Vertical directions return 0.
     #[must_use]
-    pub const fn to_yaw(&self) -> f32 {
+    pub const fn to_yaw(self) -> f32 {
         match self {
             Direction::North => 180.0,
             Direction::South | Direction::Up | Direction::Down => 0.0,
@@ -117,13 +117,13 @@ impl Direction {
 
     /// Returns the axis this direction is on.
     #[must_use]
-    pub const fn axis(&self) -> Axis {
+    pub const fn axis(self) -> Axis {
         self.get_axis()
     }
 
     /// Returns whether this direction is horizontal (not up or down).
     #[must_use]
-    pub const fn is_horizontal(&self) -> bool {
+    pub const fn is_horizontal(self) -> bool {
         matches!(
             self,
             Direction::North | Direction::South | Direction::East | Direction::West
@@ -134,13 +134,13 @@ impl Direction {
     ///
     /// Vertical directions are unchanged.
     #[must_use]
-    pub const fn rotate_y_clockwise(&self) -> Direction {
+    pub const fn rotate_y_clockwise(self) -> Direction {
         match self {
             Direction::North => Direction::East,
             Direction::East => Direction::South,
             Direction::South => Direction::West,
             Direction::West => Direction::North,
-            other => *other,
+            other => other,
         }
     }
 
@@ -148,23 +148,51 @@ impl Direction {
     ///
     /// Vertical directions are unchanged.
     #[must_use]
-    pub const fn rotate_y_counter_clockwise(&self) -> Direction {
+    pub const fn rotate_y_counter_clockwise(self) -> Direction {
         match self {
             Direction::North => Direction::West,
             Direction::West => Direction::South,
             Direction::South => Direction::East,
             Direction::East => Direction::North,
-            other => *other,
+            other => other,
         }
     }
 
     /// The order in which neighbor shape updates are processed.
-    /// This matches vanilla's `BlockBehaviour.UPDATE_SHAPE_ORDER`.
+    /// This matches vanilla's `BlockBehavior.UPDATE_SHAPE_ORDER`.
     pub const UPDATE_SHAPE_ORDER: [Direction; 6] = [
         Direction::West,
         Direction::East,
         Direction::North,
         Direction::South,
+        Direction::Down,
+        Direction::Up,
+    ];
+
+    /// Vanilla: `LiquidBlock.POSSIBLE_FLOW_DIRECTIONS` mapped through `getOpposite()`.
+    /// Used by `LiquidBlock.shouldSpreadLiquid()` to check neighbors for lava-water interactions.
+    pub const FLOW_NEIGHBOR_CHECK: [Direction; 5] = [
+        Direction::Up,
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    /// The 4 horizontal directions.
+    pub const HORIZONTAL: [Direction; 4] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    /// The 6 directions.
+    pub const ALL: [Direction; 6] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
         Direction::Down,
         Direction::Up,
     ];

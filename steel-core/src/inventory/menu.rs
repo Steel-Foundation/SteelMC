@@ -18,12 +18,15 @@
 
 use std::mem;
 
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CContainerSetContent, CContainerSetData, CContainerSetSlot, CSetCursorItem, ClickType,
     HashedPatchMap, HashedStack,
 };
+use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::{
-    REGISTRY, data_components::DataComponentPatch, item_stack::ItemStack, menu_type::MenuTypeRef,
+    REGISTRY, RegistryEntry, RegistryExt, data_components::DataComponentPatch,
+    item_stack::ItemStack, menu_type::MenuTypeRef,
 };
 
 use crate::{
@@ -31,7 +34,7 @@ use crate::{
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         slot::{Slot, SlotType},
     },
-    player::{Player, networking::JavaConnection},
+    player::{Player, PlayerConnection, connection::NetworkConnection},
 };
 use std::sync::Arc;
 
@@ -105,7 +108,7 @@ fn hashed_stack_matches(hash: &HashedStack, item: &ItemStack) -> bool {
             }
 
             // Check item type and count match
-            let local_id = *REGISTRY.items.get_id(item.item) as i32;
+            let local_id = item.item.id() as i32;
             if local_id != *item_id {
                 log::info!(
                     "HashedStack mismatch: item_id client={item_id} server={local_id} ({})",
@@ -136,12 +139,7 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
     // Check removed components match
     let local_removed: FxHashSet<i32> = patch
         .iter_removed()
-        .filter_map(|k| {
-            REGISTRY
-                .data_components
-                .get_id_by_key(k)
-                .map(|id| id as i32)
-        })
+        .filter_map(|k| REGISTRY.data_components.id_from_key(k).map(|id| id as i32))
         .collect();
     let hashed_removed: FxHashSet<i32> = hashed.removed_components.iter().copied().collect();
 
@@ -156,7 +154,7 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
     // For each component in our patch, verify the client sent the correct hash
     for (key, entry) in patch.iter() {
         if let ComponentPatchEntry::Set(value) = entry {
-            let Some(id) = REGISTRY.data_components.get_id_by_key(key) else {
+            let Some(id) = REGISTRY.data_components.id_from_key(key) else {
                 continue; // Unknown component, skip
             };
             let id = id as i32;
@@ -405,6 +403,7 @@ impl MenuBehavior {
 
     /// Returns true if a slot can be dragged to during quickcraft.
     /// Menus can override this via the Menu trait.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
     pub const fn can_drag_to(&self, _slot_index: usize) -> bool {
         true
@@ -487,10 +486,7 @@ impl MenuBehavior {
                 if target.is_empty() && slot.may_place(item_stack) {
                     let max_stack_size = slot.get_max_stack_size_for_item(guard, item_stack);
                     let to_place = item_stack.count.min(max_stack_size);
-                    let mut placed = item_stack.clone();
-                    placed.set_count(to_place);
-                    item_stack.shrink(to_place);
-                    slot.set_by_player(guard, placed, &ItemStack::empty());
+                    slot.set_by_player(guard, item_stack.split(to_place), &ItemStack::empty());
                     slot.set_changed(guard);
                     anything_changed = true;
                     break;
@@ -636,26 +632,35 @@ impl MenuBehavior {
         self.remote_carried.force(&self.carried);
     }
 
+    /// Encodes and sends a packet through the connection.
+    fn send_packet<P: ClientPacket>(connection: &Arc<PlayerConnection>, packet: P) {
+        let encoded =
+            EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
+                .expect("Failed to encode packet");
+        connection.send_encoded(encoded);
+    }
+
     /// Sends all slots and carried item to the client (full sync).
     /// This is called when:
     /// - A menu is first opened
     /// - The client requests a full refresh
     /// - After certain operations that may have desynced the client
-    pub fn send_all_data_to_remote(&mut self, connection: &Arc<JavaConnection>) {
+    pub fn send_all_data_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // First, update last_slots from actual slot contents
         self.update_last_slots(&guard);
+        let state_id = self.increment_state_id();
 
         // Send full container content
         let packet = CContainerSetContent {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             items: self.last_slots.clone(),
             carried_item: self.carried.clone(),
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
 
         // Mark all slots and carried as synced
         for i in 0..self.last_slots.len() {
@@ -671,7 +676,7 @@ impl MenuBehavior {
                 id: i as i16,
                 value: self.data_slots[i],
             };
-            connection.send_packet(packet);
+            Self::send_packet(connection, packet);
         }
     }
 
@@ -679,9 +684,9 @@ impl MenuBehavior {
     /// This is called every tick to sync only changed slots.
     ///
     /// Based on Java's `AbstractContainerMenu::broadcastChanges`.
-    /// Note: This does NOT increment `state_id` - that only happens when
-    /// processing client clicks (via `increment_state_id`).
-    pub fn broadcast_changes(&mut self, connection: &Arc<JavaConnection>) {
+    /// Slot content packets increment `state_id`, matching vanilla's
+    /// `ContainerSynchronizer::sendSlotChange`.
+    pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // Update last_slots from actual slot contents
@@ -707,7 +712,11 @@ impl MenuBehavior {
 
     /// Sends a data slot update to the client if it has changed.
     /// Based on Java's `AbstractContainerMenu::synchronizeDataSlotToRemote`.
-    fn synchronize_data_slot_to_remote(&mut self, index: usize, connection: &Arc<JavaConnection>) {
+    fn synchronize_data_slot_to_remote(
+        &mut self,
+        index: usize,
+        connection: &Arc<PlayerConnection>,
+    ) {
         if self.suppress_remote_updates || index >= self.data_slots.len() {
             return;
         }
@@ -722,33 +731,34 @@ impl MenuBehavior {
                 id: index as i16,
                 value: current,
             };
-            connection.send_packet(packet);
+            Self::send_packet(connection, packet);
         }
     }
 
     /// Sends a single slot update to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeSlotToRemote`.
-    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<JavaConnection>) {
+    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates || slot >= self.last_slots.len() {
             return;
         }
 
-        let item = &self.last_slots[slot];
+        let item = self.last_slots[slot].clone();
+        let state_id = self.increment_state_id();
 
         let packet = CContainerSetSlot {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             slot: slot as i16,
-            item_stack: item.clone(),
+            item_stack: item,
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
         self.mark_slot_synced(slot);
     }
 
     /// Sends the carried item (cursor) to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeCarriedToRemote`.
-    fn synchronize_carried_to_remote(&mut self, connection: &Arc<JavaConnection>) {
+    fn synchronize_carried_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates {
             return;
         }
@@ -757,7 +767,7 @@ impl MenuBehavior {
             item_stack: self.carried.clone(),
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
         self.mark_carried_synced();
     }
 
@@ -796,7 +806,7 @@ impl MenuBehavior {
     /// Based on Java's `AbstractContainerMenu::broadcastFullState`.
     ///
     /// Note: This does NOT increment `state_id` - it just forces a full resync.
-    pub fn broadcast_full_state(&mut self, connection: &Arc<JavaConnection>) {
+    pub fn broadcast_full_state(&mut self, connection: &Arc<PlayerConnection>) {
         self.send_all_data_to_remote(connection);
     }
 
@@ -903,7 +913,7 @@ impl MenuBehavior {
 
                         let mut new_item = source.clone();
                         new_item.set_count(new_count);
-                        slot.set_item(&mut guard, new_item);
+                        slot.set_by_player(&mut guard, new_item, &slot_item);
                     }
                 }
 
@@ -920,7 +930,10 @@ impl MenuBehavior {
 
     /// Handles pickup click (left/right click to pick up or place items).
     /// Based on Java's `AbstractContainerMenu::doClick` for ClickType.PICKUP.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting would hurt readability of the click-handling state machine"
+    )]
     pub fn do_pickup(&mut self, slot_num: i16, button: i8, player: &Player) {
         // Slot -999 means clicked outside the inventory (drop items)
         if slot_num == -999 {
@@ -931,10 +944,7 @@ impl MenuBehavior {
                     player.drop_item(to_drop, false, true);
                 } else {
                     // Right click outside - drop one carried item
-                    let mut to_drop = self.carried.clone();
-                    to_drop.set_count(1);
-                    self.carried.shrink(1);
-                    player.drop_item(to_drop, false, true);
+                    player.drop_item(self.carried.split(1), false, true);
                 }
             }
             return;
@@ -951,7 +961,7 @@ impl MenuBehavior {
 
         // Get the current item in the slot
         let slot_item = slot.get_item(&guard).clone();
-        let carried = mem::take(&mut self.carried);
+        let mut carried = mem::take(&mut self.carried);
 
         if slot_item.is_empty() {
             // Slot is empty - place carried items (if allowed)
@@ -960,14 +970,9 @@ impl MenuBehavior {
                 let requested = if button == 0 { carried.count } else { 1 };
                 let amount = requested.min(max_for_slot);
 
-                let mut to_place = carried.clone();
-                to_place.set_count(amount);
-
-                let remaining = carried.count - amount;
-                if remaining > 0 {
-                    let mut new_carried = carried;
-                    new_carried.set_count(remaining);
-                    self.carried = new_carried;
+                let to_place = carried.split(amount);
+                if !carried.is_empty() {
+                    self.carried = carried;
                 }
 
                 slot.set_by_player(&mut guard, to_place, &ItemStack::empty());
@@ -987,7 +992,7 @@ impl MenuBehavior {
 
             // max_amount is i32::MAX for primary action (take all requested)
             // For result slots, try_remove will reject partial takes
-            if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX) {
+            if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX, player) {
                 if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
                     // There's a remainder from crafting - add to player inventory or drop
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
@@ -1033,19 +1038,22 @@ impl MenuBehavior {
             } else {
                 // Can't place this item type in this slot
                 // In Java, if items are same type but may_place fails, try to take from slot
-                if slot.may_pickup() {
+                if slot.may_pickup(&guard, player) {
                     // Try to add slot items to carried stack
                     let space = carried.max_stack_size() - carried.count;
                     if space > 0 {
-                        let take_amount = slot_item.count.min(space);
-                        let taken = slot.remove(&mut guard, take_amount);
-                        // Handle any remainder (regular slots don't produce remainders, but be safe)
-                        if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
-                            player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        if let Some(taken) =
+                            slot.try_remove(&mut guard, slot_item.count, space, player)
+                        {
+                            if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
+                                player.add_item_or_drop_with_guard(&mut guard, remainder);
+                            }
+                            let mut new_carried = carried;
+                            new_carried.grow(taken.count);
+                            self.carried = new_carried;
+                        } else {
+                            self.carried = carried;
                         }
-                        let mut new_carried = carried;
-                        new_carried.grow(taken.count);
-                        self.carried = new_carried;
                     } else {
                         self.carried = carried;
                     }
@@ -1055,7 +1063,7 @@ impl MenuBehavior {
             }
         } else {
             // Different items - swap (if both operations are allowed)
-            if slot.may_pickup() && slot.may_place(&carried) {
+            if slot.may_pickup(&guard, player) && slot.may_place(&carried) {
                 if carried.count <= slot.get_max_stack_size_for_item(&guard, &carried) {
                     slot.set_by_player(&mut guard, carried, &slot_item);
                     self.carried = slot_item;
@@ -1083,12 +1091,10 @@ impl MenuBehavior {
 
         let guard = self.lock_all_containers();
         let slot = &self.slots[slot_index];
-        let slot_item = slot.get_item(&guard).clone();
+        let slot_item = slot.get_item(&guard);
 
         if !slot_item.is_empty() {
-            let mut cloned = slot_item.clone();
-            cloned.set_count(cloned.max_stack_size());
-            self.carried = cloned;
+            self.carried = slot_item.copy_with_count(slot_item.max_stack_size());
         }
     }
 
@@ -1097,6 +1103,10 @@ impl MenuBehavior {
     ///
     /// Based on Java's `AbstractContainerMenu::doClick` for ClickType.THROW.
     pub fn do_throw(&mut self, slot_num: i16, button: i8, player: &Player) {
+        if !self.carried.is_empty() {
+            return;
+        }
+
         if slot_num < 0 {
             return;
         }
@@ -1110,7 +1120,7 @@ impl MenuBehavior {
         let slot = &self.slots[slot_index];
 
         // Check if pickup is allowed (Java's safeTake checks this internally)
-        if !slot.may_pickup() {
+        if !slot.may_pickup(&guard, player) {
             return;
         }
 
@@ -1125,17 +1135,16 @@ impl MenuBehavior {
             slot.get_item(&guard).count
         };
 
-        let dropped = slot.remove(&mut guard, amount);
+        let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
             player.drop_item(dropped.clone(), false, true);
         }
-        slot.set_changed(&mut guard);
 
         // Ctrl+Q: Keep dropping while the slot has the same item type
         if button == 1 {
             loop {
                 // Check may_pickup again for each iteration (Java does this via safeTake)
-                if !slot.may_pickup() {
+                if !slot.may_pickup(&guard, player) {
                     break;
                 }
                 // Java checks player.canDropItems() before each drop
@@ -1146,12 +1155,11 @@ impl MenuBehavior {
                 if current_item.is_empty() || !ItemStack::is_same_item(&current_item, &dropped) {
                     break;
                 }
-                let more_dropped = slot.remove(&mut guard, current_item.count);
+                let more_dropped = slot.safe_take(&mut guard, current_item.count, i32::MAX, player);
                 if more_dropped.is_empty() {
                     break;
                 }
                 player.drop_item(more_dropped, false, true);
-                slot.set_changed(&mut guard);
             }
         }
     }
@@ -1179,7 +1187,7 @@ pub trait Menu {
     ) -> ItemStack;
 
     /// Returns true if this menu is still valid for the player.
-    fn still_valid(&self) -> bool {
+    fn still_valid(&self, _player: &Player) -> bool {
         true
     }
 
@@ -1191,12 +1199,12 @@ pub trait Menu {
 
     /// Called when the menu is closed/removed.
     /// Override to handle cleanup like returning crafting grid items to the player.
-    /// The default implementation clears the carried item by dropping it.
+    /// The default implementation returns the carried item to the player's inventory.
     fn removed(&mut self, player: &Player) {
-        // Default: drop the carried item
+        // Default: return the carried item to the player's inventory, dropping overflow.
         let carried = mem::take(&mut self.behavior_mut().carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false, true);
+            player.add_item_or_drop(carried);
         }
     }
 
@@ -1205,7 +1213,7 @@ pub trait Menu {
     ///
     /// `has_infinite_materials` should be true if the player is in creative mode.
     ///
-    /// TODO: Add `tryItemClickBehaviourOverride` for bundle item support.
+    /// TODO: Add `tryItemClickBehaviorOverride` for bundle item support.
     fn clicked(
         &mut self,
         slot_num: i16,
@@ -1260,13 +1268,12 @@ pub trait Menu {
             return;
         }
 
+        let mut guard = self.behavior().lock_all_containers();
+
         // Check if slot allows pickup
-        let may_pickup = self.behavior().slots[slot_index].may_pickup();
-        if !may_pickup {
+        if !self.behavior().slots[slot_index].may_pickup(&guard, player) {
             return;
         }
-
-        let mut guard = self.behavior().lock_all_containers();
 
         // Get the initial item for comparison
         let initial_item = self.behavior().slots[slot_index].get_item(&guard).clone();
@@ -1326,11 +1333,13 @@ pub trait Menu {
 
         if source_item.is_empty() {
             // Move from target to inventory
-            if target_slot.may_pickup() {
+            if target_slot.may_pickup(&guard, player)
+                && let Some(taken) =
+                    target_slot.try_remove(&mut guard, target_item.count, i32::MAX, player)
+            {
                 if let Some(inv) = guard.get_mut(player_inv_id) {
-                    inv.set_item(inventory_slot, target_item.clone());
+                    inv.set_item(inventory_slot, taken);
                 }
-                target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
@@ -1341,9 +1350,11 @@ pub trait Menu {
                 let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Split the stack
-                    let mut to_place = source_item.clone();
-                    to_place.set_count(max_size);
-                    target_slot.set_by_player(&mut guard, to_place, &ItemStack::empty());
+                    target_slot.set_by_player(
+                        &mut guard,
+                        source_item.copy_with_count(max_size),
+                        &ItemStack::empty(),
+                    );
                     if let Some(inv) = guard.get_mut(player_inv_id) {
                         inv.get_item_mut(inventory_slot).shrink(max_size);
                     }
@@ -1357,13 +1368,15 @@ pub trait Menu {
             }
         } else {
             // Swap items between target and inventory
-            if target_slot.may_pickup() && target_slot.may_place(&source_item) {
+            if target_slot.may_pickup(&guard, player) && target_slot.may_place(&source_item) {
                 let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Source is too big - place partial and add target to inventory
-                    let mut to_place = source_item.clone();
-                    to_place.set_count(max_size);
-                    target_slot.set_by_player(&mut guard, to_place, &target_item);
+                    target_slot.set_by_player(
+                        &mut guard,
+                        source_item.copy_with_count(max_size),
+                        &target_item,
+                    );
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                         player.add_item_or_drop_with_guard(&mut guard, remainder);
                     }
@@ -1404,7 +1417,7 @@ pub trait Menu {
         let behavior = self.behavior();
         let slot = &behavior.slots[slot_index];
         let slot_has_item = !slot.get_item(&guard).is_empty();
-        let slot_may_pickup = slot.may_pickup();
+        let slot_may_pickup = slot.may_pickup(&guard, player);
 
         // Can only pickup all if carried is not empty and (slot is empty or can't be picked up)
         // Java: if (!carried.isEmpty() && (!slotxx.hasItem() || !slotxx.mayPickup(player)))
@@ -1435,14 +1448,14 @@ pub trait Menu {
                 //              && target.mayPickup(player) && this.canTakeItemForPickAll(carried, target)
                 if !target_item.is_empty()
                     && can_item_quick_replace(&target_item, &carried_item, true)
-                    && target_slot.may_pickup()
+                    && target_slot.may_pickup(&guard, player)
                     && self.can_take_item_for_pick_all(&carried_item, i as usize)
                 {
                     // First pass: skip full stacks; Second pass: include full stacks
                     if pass != 0 || target_item.count != target_item.max_stack_size() {
                         let can_take = max_stack - self.behavior().carried.count;
                         let to_take = target_item.count.min(can_take);
-                        let removed = target_slot.safe_take(&mut guard, to_take, i32::MAX, player);
+                        let removed = target_slot.safe_take(&mut guard, to_take, can_take, player);
                         self.behavior_mut().carried.grow(removed.count);
                     }
                 }

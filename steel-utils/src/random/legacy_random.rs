@@ -1,17 +1,18 @@
 use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
-    get_seed,
+    get_seed, name_hash::NameHash,
 };
 
 /// Legacy Minecraft random number generator based on a Linear Congruential Generator (LCG).
 /// This implementation mirrors Java's `java.util.Random` which Minecraft originally used.
 pub struct LegacyRandom {
     seed: i64,
-    next_gauissian: Option<f64>,
+    next_gaussian: Option<f64>,
 }
 
 /// A positional random number generator factory for the legacy Minecraft LCG algorithm.
 /// This can create random sources based on position, hash, or seed.
+#[derive(Clone)]
 pub struct LegacyRandomSplitter {
     seed: i64,
 }
@@ -23,8 +24,41 @@ impl LegacyRandom {
     pub const fn from_seed(seed: u64) -> Self {
         Self {
             seed: (seed as i64 ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF,
-            next_gauissian: None,
+            next_gaussian: None,
         }
+    }
+
+    /// Returns the internal seed (for debugging/checkpointing).
+    #[must_use]
+    pub const fn get_seed(&self) -> i64 {
+        self.seed
+    }
+
+    /// Re-seeds this generator, matching Java's `Random.setSeed`.
+    pub const fn set_seed(&mut self, seed: i64) {
+        self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;
+        self.next_gaussian = None;
+    }
+
+    /// Matches vanilla's `WorldgenRandom.setLargeFeatureSeed`.
+    pub fn set_large_feature_seed(&mut self, seed: i64, chunk_x: i32, chunk_z: i32) {
+        self.set_seed(seed);
+        let x_mul = self.next_i64();
+        let z_mul = self.next_i64();
+        self.set_seed(
+            i64::from(chunk_x).wrapping_mul(x_mul) ^ i64::from(chunk_z).wrapping_mul(z_mul) ^ seed,
+        );
+    }
+
+    /// Matches vanilla's `WorldgenRandom.setLargeFeatureWithSalt`.
+    pub fn set_large_feature_with_salt(&mut self, seed: i64, x: i32, z: i32, salt: i32) {
+        self.set_seed(
+            i64::from(x)
+                .wrapping_mul(341_873_128_712)
+                .wrapping_add(i64::from(z).wrapping_mul(132_897_987_541))
+                .wrapping_add(seed)
+                .wrapping_add(i64::from(salt)),
+        );
     }
 
     const fn next(&mut self, bits: u64) -> i32 {
@@ -41,11 +75,11 @@ impl LegacyRandom {
 
 impl MarsagliaPolarGaussian for LegacyRandom {
     fn stored_next_gaussian(&self) -> Option<f64> {
-        self.next_gauissian
+        self.next_gaussian
     }
 
     fn set_stored_next_gaussian(&mut self, value: Option<f64>) {
-        self.next_gauissian = value;
+        self.next_gaussian = value;
     }
 }
 
@@ -83,8 +117,14 @@ impl Random for LegacyRandom {
     }
 
     fn next_f64(&mut self) -> f64 {
-        (((self.next(26) as u64) << 27) | (self.next(27) as u64)) as f64
-            * f64::from(1.110_223e-16_f32)
+        // Matches vanilla's BitRandomSource.nextDouble():
+        //   double DOUBLE_MULTIPLIER = 1.110223E-16F;  // stored as double = 2^-53
+        //   return combined * DOUBLE_MULTIPLIER;
+        // The field is declared double; the float literal `1.110223E-16F` is widened to
+        // double at compile time (= exactly 2^-53). javac inlines static final interface
+        // fields, so the bytecode uses `ldc2_w (double)` → double multiplication.
+        let combined = (i64::from(self.next(26)) << 27) + i64::from(self.next(27));
+        combined as f64 * (1.0 / (1_i64 << 53) as f64)
     }
 
     fn next_bool(&mut self) -> bool {
@@ -115,12 +155,10 @@ impl PositionalRandom for LegacyRandomSplitter {
         RandomSource::Legacy(LegacyRandom::from_seed((seed as u64) ^ (self.seed as u64)))
     }
 
-    fn with_hash_of(&self, name: &str) -> RandomSource {
-        let mut hash = 0_i32;
-        for b in name.encode_utf16() {
-            hash = hash.wrapping_mul(31).wrapping_add(i32::from(b));
-        }
-        RandomSource::Legacy(LegacyRandom::from_seed((hash as u64) ^ (self.seed as u64)))
+    fn with_hash_of(&self, hash: &NameHash) -> RandomSource {
+        RandomSource::Legacy(LegacyRandom::from_seed(
+            (hash.java_hash as u64) ^ (self.seed as u64),
+        ))
     }
 
     fn with_seed(&self, seed: u64) -> RandomSource {
@@ -130,7 +168,7 @@ impl PositionalRandom for LegacyRandomSplitter {
 
 #[cfg(test)]
 mod test {
-    use crate::random::{PositionalRandom, Random, RandomSplitter};
+    use crate::random::{PositionalRandom, Random, RandomSplitter, name_hash::NameHash};
 
     use super::LegacyRandom;
 
@@ -201,10 +239,13 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_f64() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble():
+        //   double DOUBLE_MULTIPLIER = 1.110223E-16F;  // stored as double = 2^-53
+        //   return combined * DOUBLE_MULTIPLIER;        // double multiplication
         let values = [
             0.730_967_787_376_657,
             0.240_536_415_671_485_87,
@@ -224,7 +265,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_f32() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -282,7 +323,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_gaussian() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -305,7 +346,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_triangle() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -339,7 +380,7 @@ mod test {
             };
             assert_eq!(splitter.seed, -4_962_768_465_676_381_896_i64);
 
-            let mut rand = splitter.with_hash_of("minecraft:offset");
+            let mut rand = splitter.with_hash_of(&NameHash::new("minecraft:offset"));
             assert_eq!(rand.next_i32(), 103_436_829);
         }
 
@@ -348,7 +389,7 @@ mod test {
         {
             let splitter = new_rand.next_positional();
 
-            let mut rand1 = splitter.with_hash_of("TEST STRING");
+            let mut rand1 = splitter.with_hash_of(&NameHash::new("TEST STRING"));
             assert_eq!(rand1.next_i32(), -1_170_413_697);
 
             let mut rand2 = splitter.with_seed(10);
@@ -360,5 +401,54 @@ mod test {
 
         assert_eq!(original_rand.next_i32(), 1_033_096_058);
         assert_eq!(new_rand.next_i32(), -888_301_832);
+    }
+
+    #[test]
+    fn test_set_seed_matches_from_seed() {
+        let mut fresh = LegacyRandom::from_seed(12345);
+        let mut reseeded = LegacyRandom::from_seed(0);
+        reseeded.set_seed(12345);
+        for _ in 0..10 {
+            assert_eq!(fresh.next_i64(), reseeded.next_i64());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_with_salt_trivial() {
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_with_salt(0, 0, 0, 10_387_312);
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(10_387_312);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_with_salt() {
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_with_salt(123_456_789, 5, -3, 10_387_312);
+        let expected_seed: i64 =
+            5_i64 * 341_873_128_712 + (-3_i64) * 132_897_987_541 + 123_456_789 + 10_387_312;
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(expected_seed);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_seed() {
+        let x_mul = -4_962_768_465_676_381_896_i64;
+        let z_mul = 4_437_113_781_045_784_766_i64;
+        let expected_seed = 3_i64.wrapping_mul(x_mul) ^ 5_i64.wrapping_mul(z_mul);
+
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_seed(0, 3, 5);
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(expected_seed);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
     }
 }

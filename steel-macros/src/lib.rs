@@ -2,6 +2,8 @@
 //!
 //! Macros for the Steel Minecraft server.
 
+mod build_block_items;
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -129,6 +131,30 @@ impl Parse for Strategy {
             inner,
         })
     }
+}
+
+/// Marks a struct as a block behavior for auto-registration.
+///
+/// The build script scans source files for this attribute and generates
+/// `register_block_behaviors()` from `classes.json`.
+///
+/// Use `#[json_arg(...)]` on fields to describe extra constructor arguments.
+/// These attributes are stripped before compilation.
+#[proc_macro_attribute]
+pub fn block_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
+    build_block_items::block_behavior(attr.into(), item.into()).into()
+}
+
+/// Marks a struct as an item behavior for auto-registration.
+///
+/// The build script scans source files for this attribute and generates
+/// `register_item_behaviors()` from `classes.json`.
+///
+/// Use `#[json_arg(...)]` on fields to describe extra constructor arguments.
+/// These attributes are stripped before compilation.
+#[proc_macro_attribute]
+pub fn item_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
+    build_block_items::item_behavior(attr.into(), item.into()).into()
 }
 
 /// Derives the `ReadFrom` trait for a struct.
@@ -380,7 +406,7 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
         let Some((_, value)) = &v.discriminant else {
             panic!(
                 "Read only supports enum variants with explicit discriminant\n(Ej. {} = 0)",
-                &v.ident
+                v.ident
             )
         };
         let v_name = &v.ident;
@@ -519,7 +545,10 @@ fn parse_write_attributes(f: &syn::Field) -> FieldWriteAttributes {
 /// - `strategy`: The write strategy to apply
 /// - `value`: Token stream representing the value to write (e.g., `self.field` or `item`)
 /// - `bound`: Optional bound for prefixed writes
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "2 lines over; splitting would hurt readability"
+)]
 fn generate_write_code(
     strategy: &Strategy,
     value: proc_macro2::TokenStream,
@@ -667,7 +696,6 @@ fn parse_struct_write_attributes(attrs: &[syn::Attribute]) -> FieldWriteAttribut
     FieldWriteAttributes { strategy, bound }
 }
 
-#[allow(clippy::too_many_lines)]
 fn write_to_struct(
     s: syn::DataStruct,
     name: Ident,

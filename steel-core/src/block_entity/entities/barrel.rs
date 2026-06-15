@@ -10,12 +10,15 @@ use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::BlockEntity;
 use crate::inventory::container::Container;
+use crate::player::Player;
 use crate::world::World;
 
 /// Number of slots in a barrel (3 rows of 9).
@@ -61,7 +64,7 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn get_type(&self) -> BlockEntityTypeRef {
-        vanilla_block_entity_types::BARREL
+        &vanilla_block_entity_types::BARREL
     }
 
     fn get_block_pos(&self) -> BlockPos {
@@ -176,6 +179,19 @@ impl Container for BarrelBlockEntity {
 
     fn get_max_stack_size(&self) -> i32 {
         64
+    }
+
+    fn still_valid(&self, player: &Player) -> bool {
+        if self.removed {
+            return false;
+        }
+
+        let Some(level) = self.level.upgrade() else {
+            return false;
+        };
+
+        level.get_block_state(self.pos).get_block() == &vanilla_blocks::BARREL
+            && player.is_within_block_interaction_range_with_buffer(self.pos, 4.0)
     }
 
     fn set_changed(&mut self) {

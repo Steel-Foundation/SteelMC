@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_option;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -34,19 +35,6 @@ pub struct ChatStyle {
     strikethrough: Option<bool>,
     #[serde(default)]
     obfuscated: Option<bool>,
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
 }
 
 fn generate_chat_style(style: &ChatStyle) -> TokenStream {
@@ -91,11 +79,8 @@ fn generate_chat_type_decoration(decoration: &ChatTypeDecoration) -> TokenStream
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type/"
-    );
-
-    let chat_type_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type";
+    let chat_type_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/chat_type";
+    println!("cargo:rerun-if-changed={chat_type_dir}");
     let mut chat_types = Vec::new();
 
     // Read all chat type JSON files
@@ -123,6 +108,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static chat type definitions
+    let mut register_stream = TokenStream::new();
     for (chat_type_name, chat_type) in &chat_types {
         let chat_type_ident = Ident::new(&chat_type_name.to_shouty_snake_case(), Span::call_site());
         let chat_type_name_str = chat_type_name.clone();
@@ -132,20 +118,14 @@ pub(crate) fn build() -> TokenStream {
         let narration = generate_chat_type_decoration(&chat_type.narration);
 
         stream.extend(quote! {
-            pub static #chat_type_ident: &ChatType = &ChatType {
+            pub static #chat_type_ident: ChatType = ChatType {
                 key: #key,
                 chat: #chat,
                 narration: #narration,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (chat_type_name, _) in &chat_types {
-        let chat_type_ident = Ident::new(&chat_type_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#chat_type_ident);
+            registry.register(&#chat_type_ident);
         });
     }
 

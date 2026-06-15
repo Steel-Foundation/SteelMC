@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -19,18 +20,9 @@ pub struct TextComponent {
     translate: String,
 }
 
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern/"
-    );
-
-    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern";
+    let trim_pattern_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern";
+    println!("cargo:rerun-if-changed={trim_pattern_dir}");
     let mut trim_patterns = Vec::new();
 
     // Read all trim pattern JSON files
@@ -60,6 +52,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static trim pattern definitions
+    let mut register_stream = TokenStream::new();
     for (trim_pattern_name, trim_pattern) in &trim_patterns {
         let trim_pattern_ident =
             Ident::new(&trim_pattern_name.to_shouty_snake_case(), Span::call_site());
@@ -71,22 +64,16 @@ pub(crate) fn build() -> TokenStream {
         let decal = trim_pattern.decal;
 
         stream.extend(quote! {
-            pub static #trim_pattern_ident: &TrimPattern = &TrimPattern {
+            pub static #trim_pattern_ident: TrimPattern = TrimPattern {
                 key: #key,
                 asset_id: #asset_id,
                 description: TextComponent::translated(TranslatedMessage::new(#translate, None)),
                 decal: #decal,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (trim_pattern_name, _) in &trim_patterns {
-        let trim_pattern_ident =
-            Ident::new(&trim_pattern_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#trim_pattern_ident);
+            registry.register(&#trim_pattern_ident);
         });
     }
 

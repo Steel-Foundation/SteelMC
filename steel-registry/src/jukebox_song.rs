@@ -1,17 +1,32 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::RegistryExt;
+use crate::sound_event::SoundEventRef;
 
 /// Represents a jukebox song definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct JukeboxSong {
     pub key: Identifier,
-    pub sound_event: Identifier,
+    pub sound_event: SoundEventRef,
     pub description: TextComponent,
     pub length_in_seconds: f32,
     pub comparator_output: i32,
+}
+
+impl ToNbtTag for &JukeboxSong {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        let sound_event = self.sound_event.key.to_string();
+        compound.insert("sound_event", sound_event.as_str());
+        compound.insert("description", (&self.description).to_nbt_tag());
+        compound.insert("length_in_seconds", self.length_in_seconds);
+        compound.insert("comparator_output", self.comparator_output);
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type JukeboxSongRef = &'static JukeboxSong;
@@ -31,65 +46,20 @@ impl JukeboxSongRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, jukebox_song: JukeboxSongRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register jukebox songs after the registry has been frozen"
-        );
-
-        let id = self.jukebox_songs_by_id.len();
-        self.jukebox_songs_by_key
-            .insert(jukebox_song.key.clone(), id);
-        self.jukebox_songs_by_id.push(jukebox_song);
-        id
-    }
-
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, jukebox_song: JukeboxSongRef) -> &usize {
-        self.jukebox_songs_by_key
-            .get(&jukebox_song.key)
-            .expect("Jukebox song not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, JukeboxSongRef)> + '_ {
-        self.jukebox_songs_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &song)| (id, song))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.jukebox_songs_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.jukebox_songs_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for JukeboxSongRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_standard_methods!(
+    JukeboxSongRegistry,
+    JukeboxSongRef,
+    jukebox_songs_by_id,
+    jukebox_songs_by_key,
+    allows_registering
+);
 
-impl Default for JukeboxSongRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_registry!(
+    JukeboxSongRegistry,
+    JukeboxSong,
+    jukebox_songs_by_id,
+    jukebox_songs_by_key,
+    jukebox_songs
+);

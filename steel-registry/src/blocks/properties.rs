@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-pub use steel_utils::{Direction, codec::VarInt, math::Axis, serial::ReadFrom};
+pub use steel_utils::{Direction, axis::Axis, codec::VarInt, serial::ReadFrom};
 
 pub trait Property<T>: Sync + Send {
     fn get_value(&self, value: &str) -> Option<T>;
@@ -521,6 +521,10 @@ pub enum NoteBlockInstrument {
     Bit,
     Banjo,
     Pling,
+    Trumpet,
+    TrumpetExposed,
+    TrumpetOxidized,
+    TrumpetWeathered,
     Zombie,
     Skeleton,
     Creeper,
@@ -549,6 +553,10 @@ impl PropertyEnum for NoteBlockInstrument {
             NoteBlockInstrument::Bit => "bit",
             NoteBlockInstrument::Banjo => "banjo",
             NoteBlockInstrument::Pling => "pling",
+            NoteBlockInstrument::Trumpet => "trumpet",
+            NoteBlockInstrument::TrumpetExposed => "trumpet_exposed",
+            NoteBlockInstrument::TrumpetWeathered => "trumpet_weathered",
+            NoteBlockInstrument::TrumpetOxidized => "trumpet_oxidized",
             NoteBlockInstrument::Zombie => "zombie",
             NoteBlockInstrument::Skeleton => "skeleton",
             NoteBlockInstrument::Creeper => "creeper",
@@ -1060,6 +1068,10 @@ impl BlockStateProperties {
             NoteBlockInstrument::Bit,
             NoteBlockInstrument::Banjo,
             NoteBlockInstrument::Pling,
+            NoteBlockInstrument::Trumpet,
+            NoteBlockInstrument::TrumpetExposed,
+            NoteBlockInstrument::TrumpetOxidized,
+            NoteBlockInstrument::TrumpetWeathered,
             NoteBlockInstrument::Zombie,
             NoteBlockInstrument::Skeleton,
             NoteBlockInstrument::Creeper,

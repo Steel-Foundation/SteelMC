@@ -1,8 +1,0 @@
-{
-  "asset_id": "minecraft:entity/cat/ragdoll",
-  "spawn_conditions": [
-    {
-      "priority": 0
-    }
-  ]
-}

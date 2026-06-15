@@ -22,7 +22,7 @@ pub struct EntityArgument {
 impl EntityArgument {
     /// Creates a selector for multiple entities
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn multiple() -> Self {
         EntityArgument { one: false }
     }
     /// Creates a selector for one entity
@@ -54,7 +54,7 @@ impl CommandArgument for EntityArgument {
                 let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
-                    let dist = player.get_position().squared_distance_to_vec(position);
+                    let dist = player.position().distance_squared(position);
                     if dist < near_dist.0 {
                         near_dist = (dist, player);
                     }

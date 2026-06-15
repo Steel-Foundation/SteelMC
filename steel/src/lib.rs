@@ -3,6 +3,8 @@
 //! The main library for the Steel Minecraft server.
 
 use std::{
+    error::Error,
+    fmt, io,
     net::{Ipv4Addr, SocketAddrV4},
     sync::{Arc, OnceLock},
 };
@@ -19,8 +21,6 @@ pub mod logger;
 /// Spawn chunk generation with optional terminal progress display.
 pub mod spawn_progress;
 
-pub use config::{MC_VERSION, STEEL_CONFIG};
-
 /// Static access to the server
 pub static SERVER: OnceLock<Arc<Server>> = OnceLock::new();
 
@@ -36,30 +36,69 @@ pub struct SteelServer {
     pub server: Arc<Server>,
 }
 
+/// Startup error for expected operational failures.
+#[derive(Debug)]
+pub enum SteelServerError {
+    /// Core server startup failed.
+    Core(String),
+    /// TCP listener could not bind.
+    Bind {
+        /// Server port that failed to bind.
+        port: u16,
+        /// Underlying IO error.
+        source: io::Error,
+    },
+}
+
+impl fmt::Display for SteelServerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Core(error) => f.write_str(error),
+            Self::Bind { port, source } => {
+                write!(f, "failed to bind to server port {port}: {source}")
+            }
+        }
+    }
+}
+
+impl Error for SteelServerError {}
+
 impl SteelServer {
     /// Creates a new Steel server.
     ///
-    /// # Panics
-    /// This function will panic if the TCP listener fails to bind to the server address.
-    pub async fn new(chunk_runtime: Arc<Runtime>, cancel_token: CancellationToken) -> Self {
+    pub async fn new(
+        chunk_runtime: Arc<Runtime>,
+        cancel_token: CancellationToken,
+        steel_config: config::SteelConfig,
+    ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server");
 
-        // Initialize steel-core's config reference before any steel-core code runs
-        config::init_steel_core_config();
+        let server_port = steel_config.server.server_port;
+        let worlds_config = steel_config.worlds;
+        let runtime_config = steel_config.server.into_runtime_config();
 
-        let server = Server::new(chunk_runtime, cancel_token.clone()).await;
+        let server = Server::new(
+            chunk_runtime,
+            cancel_token.clone(),
+            runtime_config,
+            worlds_config,
+        )
+        .await
+        .map_err(SteelServerError::Core)?;
 
-        Self {
-            tcp_listener: TcpListener::bind(SocketAddrV4::new(
-                Ipv4Addr::UNSPECIFIED,
-                STEEL_CONFIG.server_config.server_port,
-            ))
+        let tcp_listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, server_port))
             .await
-            .expect("Failed to bind to server address"),
+            .map_err(|source| SteelServerError::Bind {
+                port: server_port,
+                source,
+            })?;
+
+        Ok(Self {
+            tcp_listener,
             cancel_token,
             client_id: 0,
             server: Arc::new(server),
-        }
+        })
     }
 
     /// Starts the server and begins accepting connections.

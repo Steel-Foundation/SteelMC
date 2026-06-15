@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use steel_utils::ChunkPos;
 
 /// A view of chunks around a center chunk.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlayerChunkView {
     /// The center of the view.
     pub center: ChunkPos,

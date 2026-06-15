@@ -1,7 +1,11 @@
 //! Main entry point for the Steel Minecraft server.
 
+use std::num::NonZero;
+use std::path::Path;
 use std::sync::Arc;
+use std::thread;
 
+use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::spawn_progress::generate_spawn_chunks;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
@@ -57,8 +61,11 @@ where
         .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off"))
 }
 
-async fn init_tracing(cancel_token: CancellationToken) -> Arc<CommandLogger> {
-    let layer = LoggerLayer::new("./.tmp", cancel_token)
+async fn init_tracing(
+    cancel_token: CancellationToken,
+    log_config: Option<LogConfig>,
+) -> Arc<CommandLogger> {
+    let layer = LoggerLayer::new("./.tmp", cancel_token, log_config)
         .await
         .expect("Couldn't initialize the logger");
     let logger = layer.0.clone();
@@ -97,14 +104,31 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// If we only used one runtime this would lead to the tick task being blocked by the chunk tasks.
 ///
 /// We have to create the runtimes at this level cause tokio panics if you drop a runtime in a context where blocking is not allowed.
-#[allow(clippy::unwrap_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "runtime build failures are fatal and unrecoverable at startup"
+)]
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    let chunk_runtime = Arc::new(Builder::new_multi_thread().enable_all().build().unwrap());
+    let half_cpus = (thread::available_parallelism().map_or(4, NonZero::get) / 2).max(2);
 
-    let main_runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let chunk_runtime = Arc::new(
+        Builder::new_multi_thread()
+            .worker_threads(half_cpus)
+            .thread_name("chunk-worker")
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
+
+    let main_runtime = Builder::new_multi_thread()
+        .worker_threads(half_cpus)
+        .thread_name("main-worker")
+        .enable_all()
+        .build()
+        .unwrap();
 
     main_runtime.block_on(main_async(chunk_runtime.clone()));
 
@@ -114,9 +138,20 @@ fn main() {
 
 async fn main_async(chunk_runtime: Arc<Runtime>) {
     let cancel_token = CancellationToken::new();
-    let logger = init_tracing(cancel_token.clone()).await;
 
-    run_server(chunk_runtime, cancel_token, &logger).await;
+    // Load config once at startup
+    let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("Failed to load configuration: {error}");
+            return;
+        }
+    };
+    let logger = init_tracing(cancel_token.clone(), steel_config.log.clone()).await;
+
+    if let Err(error) = run_server(chunk_runtime, cancel_token, &logger, steel_config).await {
+        log::error!("Server startup failed: {error}");
+    }
 
     logger.stop().await;
 }
@@ -125,7 +160,8 @@ async fn run_server(
     chunk_runtime: Arc<Runtime>,
     cancel_token: CancellationToken,
     logger: &Arc<CommandLogger>,
-) {
+    steel_config: config::SteelConfig,
+) -> Result<(), String> {
     #[cfg(feature = "deadlock_detection")]
     {
         // only for #[cfg]
@@ -154,7 +190,9 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone()).await;
+    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config)
+        .await
+        .map_err(|e| e.to_string())?;
 
     generate_spawn_chunks(&steel.server, logger).await;
 
@@ -170,7 +208,8 @@ async fn run_server(
     task_tracker.close();
     task_tracker.wait().await;
 
-    for world in &server.worlds {
+    for world in server.worlds.values() {
+        world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
     }
@@ -178,7 +217,7 @@ async fn run_server(
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
     let mut total_saved = 0;
-    for world in &server.worlds {
+    for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;
     }
     log::info!("Saved {total_saved} chunks");
@@ -186,7 +225,7 @@ async fn run_server(
     // Save all player data before shutdown
     log::info!("Saving player data...");
     let mut players_to_save = Vec::new();
-    for world in &server.worlds {
+    for world in server.worlds.values() {
         world.players.iter_players(|_, player| {
             players_to_save.push(player.clone());
             true
@@ -198,4 +237,5 @@ async fn run_server(
     }
 
     log::info!("Server stopped");
+    Ok(())
 }

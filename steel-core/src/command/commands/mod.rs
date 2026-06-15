@@ -1,14 +1,26 @@
 //! This module contains the command building structs.
+pub mod clear;
+pub mod difficulty;
+pub mod domain;
+pub mod enchant;
 pub mod execute;
-pub mod flyspeed;
+pub mod fly;
 pub mod gamemode;
 pub mod gamerule;
+pub mod give;
+pub mod kill;
+pub mod list;
+pub mod locate;
 pub mod seed;
+pub mod steel;
 pub mod stop;
 pub mod summon;
 pub mod tellraw;
 pub mod tick;
+pub mod time;
+pub mod tp;
 pub mod weather;
+pub mod xp;
 
 use std::marker::PhantomData;
 use std::ops::Not;
@@ -39,6 +51,15 @@ pub struct SuggestionResult {
 pub trait CommandExecutor<S> {
     /// Executes the command with the given type safe arguments.
     fn execute(&self, parsed: S, context: &mut CommandContext) -> Result<(), CommandError>;
+}
+
+impl<S, F> CommandExecutor<S> for F
+where
+    F: for<'a> Fn(S, &'a mut CommandContext) -> Result<(), CommandError> + Send + Sync + 'static,
+{
+    fn execute(&self, args: S, context: &mut CommandContext) -> Result<(), CommandError> {
+        (self)(args, context)
+    }
 }
 
 /// The builder struct that holds command handler data and executor.
@@ -236,7 +257,8 @@ where
         args_start_pos: usize,
         context: &mut CommandContext,
     ) -> Option<SuggestionResult> {
-        let mut suggestion_ctx = SuggestionContext::new(context.server.clone());
+        let mut suggestion_ctx =
+            SuggestionContext::new(context.server.clone(), context.world.clone());
         self.executor
             .suggest(args, args_start_pos, context, &mut suggestion_ctx)
     }
@@ -743,10 +765,7 @@ where
 
                 // Otherwise, respond with the current text as confirmation
                 return Some(SuggestionResult {
-                    suggestions: vec![SuggestionEntry {
-                        text: args.join(" "),
-                        tooltip: None,
-                    }],
+                    suggestions: vec![SuggestionEntry::new(args.join(" "))],
                     start: 0,
                     length: 0,
                 });
@@ -828,10 +847,6 @@ impl<S, A, E1> CommandParserArgumentExecutor<S, A, E1> {
 
 type SplitLeafExecutor<S, E1, E2> =
     CommandParserSplitExecutor<S, E1, CommandParserLeafExecutor<S, E2>>;
-
-// ============================================================================
-// Dynamic command building support
-// ============================================================================
 
 /// A boxed command parser executor that allows dynamic command tree construction.
 /// This enables building command trees in loops where the concrete type changes each iteration.
@@ -956,7 +971,7 @@ impl CommandHandlerDyn for DynCommandHandler {
         context: &mut CommandContext,
     ) -> Option<SuggestionResult> {
         let mut combined: Option<SuggestionResult> = None;
-        let suggestion_ctx = SuggestionContext::new(context.server.clone());
+        let suggestion_ctx = SuggestionContext::new(context.server.clone(), context.world.clone());
 
         for executor in &self.executors {
             if let Some(result) =

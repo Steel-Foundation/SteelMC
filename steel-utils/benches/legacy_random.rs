@@ -1,7 +1,9 @@
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "benchmarks")]
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use steel_utils::random::{PositionalRandom, Random, legacy_random::LegacyRandom};
+use steel_utils::random::{
+    PositionalRandom, Random, legacy_random::LegacyRandom, name_hash::NameHash,
+};
 
 fn bench_from_seed(c: &mut Criterion) {
     c.bench_function("legacy_random from_seed", |b| {
@@ -115,9 +117,10 @@ fn bench_split_u64(c: &mut Criterion) {
 fn bench_split_string(c: &mut Criterion) {
     let mut rng = LegacyRandom::from_seed(0);
     let splitter = rng.next_positional();
+    let hash = NameHash::new("minecraft:overworld");
     c.bench_function("legacy_random splitter split_string", |b| {
         b.iter(|| {
-            black_box(splitter.with_hash_of(black_box("minecraft:overworld")));
+            black_box(splitter.with_hash_of(black_box(&hash)));
         });
     });
 }

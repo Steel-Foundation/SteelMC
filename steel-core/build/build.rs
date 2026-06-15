@@ -1,13 +1,22 @@
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "internal build script")]
+#![expect(
+    clippy::disallowed_types,
+    reason = "build script lacks project type aliases"
+)]
 
-use std::fs;
-
+use heck::ToShoutySnakeCase;
+use proc_macro2::Span;
 use serde::Deserialize;
+use std::{env, fs, path::Path};
+use syn::Ident;
 
 mod blocks;
+mod candle_cakes;
+mod common;
 mod items;
-
-const OUT_DIR: &str = "src/behavior/generated";
+mod strippables;
+mod waxables;
+mod weathering;
 
 #[derive(Debug, Deserialize)]
 struct Classes {
@@ -16,20 +25,52 @@ struct Classes {
 }
 
 pub fn main() {
-    let classes_json =
-        fs::read_to_string("build/classes.json").expect("Failed to read classes.json");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let out_dir = format!("{manifest_dir}/src/behavior/generated");
+
+    let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
+        .expect("Failed to read classes.json");
     let classes: Classes =
         serde_json::from_str(&classes_json).expect("Failed to parse classes.json");
 
-    fs::create_dir_all(OUT_DIR).expect("Failed to create output directory");
+    fs::create_dir_all(&out_dir).expect("Failed to create output directory");
 
-    fs::write(
-        format!("{OUT_DIR}/blocks.rs"),
+    write_if_changed(
+        format!("{out_dir}/blocks.rs"),
         blocks::build(&classes.blocks),
-    )
-    .expect("Failed to write blocks.rs");
-    fs::write(format!("{OUT_DIR}/items.rs"), items::build(&classes.items))
-        .expect("Failed to write items.rs");
+    );
+    write_if_changed(format!("{out_dir}/candle_cakes.rs"), candle_cakes::build());
+    write_if_changed(format!("{out_dir}/items.rs"), items::build(&classes.items));
+    write_if_changed(format!("{out_dir}/waxables.rs"), waxables::build());
+    write_if_changed(format!("{out_dir}/weathering.rs"), weathering::build());
+    write_if_changed(format!("{out_dir}/strippables.rs"), strippables::build());
 
-    println!("cargo:rerun-if-changed=build/classes.json");
+    println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
+    println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
+    println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
+}
+
+/// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
+#[must_use]
+fn to_item_ident(name: &str) -> Ident {
+    Ident::new(name, Span::call_site())
+}
+
+/// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
+#[must_use]
+pub fn to_block_ident(name: &str) -> Ident {
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
+}
+
+fn write_if_changed(path: impl AsRef<Path>, content: String) {
+    let path = path.as_ref();
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == content
+    {
+        return;
+    }
+
+    if let Err(error) = fs::write(path, content) {
+        panic!("Failed to write {}: {error}", path.display());
+    }
 }

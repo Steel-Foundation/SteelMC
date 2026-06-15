@@ -1,7 +1,8 @@
+use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a full zombie nautilus variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -12,18 +13,19 @@ pub struct ZombieNautilusVariant {
     pub spawn_conditions: &'static [SpawnConditionEntry],
 }
 
-/// A single entry in the list of spawn conditions.
-#[derive(Debug)]
-pub struct SpawnConditionEntry {
-    pub priority: i32,
-    pub condition: Option<BiomeCondition>,
-}
-
-/// Defines a condition based on a biome or list of biomes.
-#[derive(Debug)]
-pub struct BiomeCondition {
-    pub condition_type: &'static str,
-    pub biomes: &'static str,
+impl ToNbtTag for &ZombieNautilusVariant {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        let asset_id = self.asset_id.to_string();
+        compound.insert("asset_id", asset_id.as_str());
+        compound.insert("baby_asset_id", asset_id.as_str());
+        if let Some(model) = self.model {
+            compound.insert("model", model);
+        }
+        insert_spawn_conditions(&mut compound, self.spawn_conditions);
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type ZombieNautilusVariantRef = &'static ZombieNautilusVariant;
@@ -43,66 +45,20 @@ impl ZombieNautilusVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, zombie_nautilus_variant: ZombieNautilusVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register zombie nautilus variants after the registry has been frozen"
-        );
-
-        let id = self.zombie_nautilus_variants_by_id.len();
-        self.zombie_nautilus_variants_by_key
-            .insert(zombie_nautilus_variant.key.clone(), id);
-        self.zombie_nautilus_variants_by_id
-            .push(zombie_nautilus_variant);
-        id
-    }
-
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ZombieNautilusVariantRef> {
-        self.zombie_nautilus_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, zombie_nautilus_variant: ZombieNautilusVariantRef) -> &usize {
-        self.zombie_nautilus_variants_by_key
-            .get(&zombie_nautilus_variant.key)
-            .expect("Zombie nautilus variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ZombieNautilusVariantRef> {
-        self.zombie_nautilus_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, ZombieNautilusVariantRef)> + '_ {
-        self.zombie_nautilus_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.zombie_nautilus_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.zombie_nautilus_variants_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for ZombieNautilusVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_standard_methods!(
+    ZombieNautilusVariantRegistry,
+    ZombieNautilusVariantRef,
+    zombie_nautilus_variants_by_id,
+    zombie_nautilus_variants_by_key,
+    allows_registering
+);
 
-impl Default for ZombieNautilusVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_registry!(
+    ZombieNautilusVariantRegistry,
+    ZombieNautilusVariant,
+    zombie_nautilus_variants_by_id,
+    zombie_nautilus_variants_by_key,
+    zombie_nautilus_variants
+);

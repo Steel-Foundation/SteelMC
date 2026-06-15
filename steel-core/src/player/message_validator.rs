@@ -36,6 +36,7 @@ impl Default for LastSeenMessagesValidator {
 
 impl LastSeenMessagesValidator {
     /// Creates a new validator
+    #[must_use]
     pub fn new() -> Self {
         let mut tracked_messages = VecDeque::with_capacity(MAX_TRACKED_MESSAGES);
         for _ in 0..MAX_TRACKED_MESSAGES {
@@ -63,6 +64,7 @@ impl LastSeenMessagesValidator {
     }
 
     /// Gets the number of tracked messages
+    #[must_use]
     pub fn tracked_count(&self) -> usize {
         self.tracked_messages.len()
     }

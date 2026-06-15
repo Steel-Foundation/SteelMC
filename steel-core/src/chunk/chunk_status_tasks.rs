@@ -1,17 +1,14 @@
-#![allow(missing_docs)]
+#![expect(
+    missing_docs,
+    reason = "task functions are named after their vanilla counterparts"
+)]
 
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
-    chunk_generation_task::StaticCache2D,
-    chunk_generator::ChunkGenerator,
-    chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
-    proto_chunk::ProtoChunk,
-    section::{ChunkSection, Sections},
-    world_gen_context::WorldGenContext,
+    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
 };
+use crate::worldgen::{context::WorldGenContext, stages};
 
 pub struct ChunkStatusTasks;
 
@@ -19,147 +16,118 @@ pub struct ChunkStatusTasks;
 impl ChunkStatusTasks {
     pub fn empty(
         context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let sections = (0..context.section_count())
-            .map(|_| ChunkSection::new_empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-
-        let proto_chunk = ProtoChunk::new(
-            Sections::from_owned(sections),
-            holder.get_pos(),
-            context.min_y(),
-            context.height(),
-        );
-
-        //log::info!("Inserted proto chunk for {:?}", holder.get_pos());
-
-        // Use no_notify variant - the caller (apply_step) will notify via the completion channel
-        // to avoid rayon threads contending on tokio's scheduler mutex
-        holder.insert_chunk_no_notify(ChunkAccess::Proto(proto_chunk));
-        Ok(())
+    ) {
+        stages::empty::generate(context, step, cache, holder);
     }
 
-    /// Generates structure starts.
-    ///
-    /// # Panics
-    /// Panics if the chunk is not at `ChunkStatus::Empty` or higher.
     pub fn generate_structure_starts(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::structures::generate_starts(context, step, cache, holder);
     }
 
     pub fn generate_structure_references(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::structures::generate_references(context, step, cache, holder);
     }
 
     pub fn load_structure_starts(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::structures::load_starts(context, step, cache, holder);
     }
 
     pub fn generate_biomes(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::biomes::generate(context, step, cache, holder);
     }
 
-    #[allow(clippy::missing_panics_doc)]
     pub fn generate_noise(
         context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let chunk = holder
-            .try_chunk(ChunkStatus::Biomes)
-            .expect("Chunk not found at status Biomes");
-        context.generator.fill_from_noise(&chunk);
-        Ok(())
+    ) {
+        stages::noise::generate(context, step, cache, holder);
     }
 
     pub fn generate_surface(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::surface::generate(context, step, cache, holder);
     }
 
     pub fn generate_carvers(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::carvers::generate(context, step, cache, holder);
     }
 
     pub fn generate_features(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::features::generate(context, step, cache, holder);
     }
 
     pub fn initialize_light(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::light::initialize(context, step, cache, holder);
     }
 
     pub fn light(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::light::generate(context, step, cache, holder);
     }
 
     pub fn generate_spawn(
-        _context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::spawn::generate(context, step, cache, holder);
     }
 
     pub fn full(
         context: Arc<WorldGenContext>,
-        _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        //panic!("Full task");
-        //log::info!("Chunk {:?} upgraded to full", holder.get_pos());
-        holder.upgrade_to_full(context.weak_world());
-        Ok(())
+    ) {
+        stages::full::generate(context, step, cache, holder);
     }
 }

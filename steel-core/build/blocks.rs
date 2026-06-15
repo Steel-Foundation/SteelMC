@@ -1,151 +1,125 @@
 //! Code generation for block behaviors.
+//!
+//! Scans `src/behavior/blocks/**/*.rs` for structs annotated with `#[block_behavior]`,
+//! cross-references with `classes.json`, and generates `register_block_behaviors()`.
 
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::{
+    common::{self, JsonArgKind, scan_object_behaviors},
+    to_block_ident,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
     pub name: String,
     pub class: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-fn to_const_ident(name: &str) -> Ident {
-    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
-}
-
-fn generate_registrations<'a>(
-    blocks: impl Iterator<Item = &'a Ident>,
-    behavior_type: &Ident,
-) -> TokenStream {
-    let registrations = blocks.map(|ident| {
-        quote! {
-            registry.set_behavior(
-                vanilla_blocks::#ident,
-                Box::new(#behavior_type::new(vanilla_blocks::#ident)),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-
-// Tjos is okay cause it's a long function. and because it is needed for like all of those blocks there.
-#[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
-    let mut barrel_blocks = Vec::new();
-    let mut candle_blocks = Vec::new();
-    let mut crafting_table_blocks = Vec::new();
-    let mut crop_blocks = Vec::new();
-    let mut end_portal_frame_blocks = Vec::new();
-    let mut farm_blocks = Vec::new();
-    let mut fence_blocks = Vec::new();
-    let mut rotated_pillar_blocks = Vec::new();
-    let mut standing_sign_blocks = Vec::new();
-    let mut wall_sign_blocks = Vec::new();
-    let mut ceiling_hanging_sign_blocks = Vec::new();
-    let mut wall_hanging_sign_blocks = Vec::new();
-    let mut torch_blocks = Vec::new();
-    let mut wall_torch_blocks = Vec::new();
-    let mut redstone_torch_blocks = Vec::new();
-    let mut redstone_wall_torch_blocks = Vec::new();
+    let discovered = scan_object_behaviors("blocks", "block_behavior");
+
+    let mut block_type_imports = BTreeSet::new();
+    let mut explicit_enum_imports: BTreeMap<String, String> = BTreeMap::new();
+    let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
+    let mut registrations = Vec::new();
+    let mut matched_classes = BTreeSet::new();
 
     for block in blocks {
-        let const_ident = to_const_ident(&block.name);
-        match block.class.as_str() {
-            "BarrelBlock" => barrel_blocks.push(const_ident),
-            "CandleBlock" => candle_blocks.push(const_ident),
-            "CraftingTableBlock" => crafting_table_blocks.push(const_ident),
-            "CropBlock" => crop_blocks.push(const_ident),
-            "EndPortalFrameBlock" => end_portal_frame_blocks.push(const_ident),
-            "FarmBlock" => farm_blocks.push(const_ident),
-            "FenceBlock" => fence_blocks.push(const_ident),
-            "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
-            "StandingSignBlock" => standing_sign_blocks.push(const_ident),
-            "WallSignBlock" => wall_sign_blocks.push(const_ident),
-            "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
-            "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
-            "TorchBlock" => torch_blocks.push(const_ident),
-            "WallTorchBlock" => wall_torch_blocks.push(const_ident),
-            "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
-            "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
-            _ => {}
+        let Some(info) = discovered.get(&block.class) else {
+            continue;
+        };
+        matched_classes.insert(&block.class);
+
+        let struct_ident = Ident::new(&info.struct_name, Span::call_site());
+        let const_ident = to_block_ident(&block.name);
+
+        block_type_imports.insert(info.struct_name.clone());
+
+        for field in &info.fields {
+            match &field.kind {
+                JsonArgKind::Enum {
+                    type_name,
+                    module_path,
+                } => {
+                    if let Some(path) = module_path {
+                        explicit_enum_imports.insert(type_name.clone(), path.clone());
+                    } else {
+                        block_type_imports.insert(type_name.clone());
+                    }
+                }
+                JsonArgKind::Registry(module) => {
+                    registry_modules_used.insert(module.clone());
+                }
+                JsonArgKind::Value => {}
+            }
         }
+
+        let mut args = Vec::new();
+        for field in &info.fields {
+            args.push(common::generate_arg(field, &block.extra, &block.name));
+        }
+
+        let registration = quote! {
+            registry.set_behavior(
+                &vanilla_blocks::#const_ident,
+                Box::new(#struct_ident::new(&vanilla_blocks::#const_ident #(, #args)*)),
+            );
+        };
+
+        registrations.push(registration);
     }
 
-    let barrel_type = Ident::new("BarrelBlock", Span::call_site());
-    let candle_type = Ident::new("CandleBlock", Span::call_site());
-    let crafting_table_type = Ident::new("CraftingTableBlock", Span::call_site());
-    let crop_type = Ident::new("CropBlock", Span::call_site());
-    let end_portal_frame_type = Ident::new("EndPortalFrameBlock", Span::call_site());
-    let farmland_type = Ident::new("FarmlandBlock", Span::call_site());
-    let fence_type = Ident::new("FenceBlock", Span::call_site());
-    let pillar_type = Ident::new("RotatedPillarBlock", Span::call_site());
-    let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
-    let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
-    let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
-    let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
-    let torch_type = Ident::new("TorchBlock", Span::call_site());
-    let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
-    let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
-    let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
+    // Verify all discovered structs matched a class in classes.json
+    for (class_name, info) in &discovered {
+        assert!(
+            matched_classes.contains(class_name),
+            "Block behavior struct `{}` maps to class '{}' which doesn't exist in classes.json",
+            info.struct_name,
+            class_name
+        );
+    }
 
-    let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
-    let candle_registrations = generate_registrations(candle_blocks.iter(), &candle_type);
-    let crafting_table_registrations =
-        generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
-    let crop_registrations = generate_registrations(crop_blocks.iter(), &crop_type);
-    let end_portal_frame_registrations =
-        generate_registrations(end_portal_frame_blocks.iter(), &end_portal_frame_type);
-    let farm_registrations = generate_registrations(farm_blocks.iter(), &farmland_type);
-    let fence_registrations = generate_registrations(fence_blocks.iter(), &fence_type);
-    let pillar_registrations = generate_registrations(rotated_pillar_blocks.iter(), &pillar_type);
-    let standing_sign_registrations =
-        generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
-    let wall_sign_registrations = generate_registrations(wall_sign_blocks.iter(), &wall_sign_type);
-    let ceiling_hanging_sign_registrations = generate_registrations(
-        ceiling_hanging_sign_blocks.iter(),
-        &ceiling_hanging_sign_type,
-    );
-    let wall_hanging_sign_registrations =
-        generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
-    let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
-    let wall_torch_registrations =
-        generate_registrations(wall_torch_blocks.iter(), &wall_torch_type);
-    let redstone_torch_registrations =
-        generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
-    let redstone_wall_torch_registrations =
-        generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
+    // Build imports
+    let block_imports: Vec<_> = block_type_imports
+        .iter()
+        .map(|name| Ident::new(name, Span::call_site()))
+        .collect();
+
+    let enum_import_tokens: Vec<_> = explicit_enum_imports
+        .iter()
+        .map(|(type_name, path)| {
+            let type_ident = Ident::new(type_name, Span::call_site());
+            let path: syn::Path = syn::parse_str(path)
+                .unwrap_or_else(|_| panic!("Invalid module path '{path}' for enum '{type_name}'"));
+            quote! { use #path::#type_ident; }
+        })
+        .collect();
+
+    let registry_import_tokens: Vec<_> = registry_modules_used
+        .iter()
+        .filter(|module| module.as_str() != "vanilla_blocks")
+        .map(|module| {
+            let module_ident = Ident::new(module, Span::call_site());
+            quote! { , #module_ident }
+        })
+        .collect();
 
     let output = quote! {
         //! Generated block behavior assignments.
 
-        use steel_registry::vanilla_blocks;
+        use steel_registry::{vanilla_blocks #(#registry_import_tokens)*};
         use crate::behavior::BlockBehaviorRegistry;
-        use crate::behavior::blocks::{
-            BarrelBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock, FarmlandBlock,
-            FenceBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
-            CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock,
-        };
+        use crate::behavior::blocks::{#(#block_imports),*};
+        #(#enum_import_tokens)*
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
-            #barrel_registrations
-            #candle_registrations
-            #crafting_table_registrations
-            #crop_registrations
-            #end_portal_frame_registrations
-            #farm_registrations
-            #fence_registrations
-            #pillar_registrations
-            #standing_sign_registrations
-            #wall_sign_registrations
-            #ceiling_hanging_sign_registrations
-            #wall_hanging_sign_registrations
-            #torch_registrations
-            #wall_torch_registrations
-            #redstone_torch_registrations
-            #redstone_wall_torch_registrations
+            #(#registrations)*
         }
     };
 

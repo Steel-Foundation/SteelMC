@@ -70,7 +70,7 @@ impl ToolRule {
             // Check if it's a tag reference (starts with #)
             if let Some(tag_str) = id_str.strip_prefix('#') {
                 if let Ok(tag_id) = Identifier::from_str(tag_str)
-                    && REGISTRY.blocks.is_in_tag(block, &tag_id)
+                    && block.has_tag(&tag_id)
                 {
                     return true;
                 }

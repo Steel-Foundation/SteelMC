@@ -1,5 +1,7 @@
-use std::fs;
-
+use crate::generator_functions::{
+    generate_identifier, generate_spawn_condition_entry, read_variants_from_dir,
+};
+use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -9,42 +11,10 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct CowVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SpawnConditionEntry {
-    priority: i32,
-    #[serde(default)]
-    condition: Option<BiomeCondition>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BiomeCondition {
-    #[serde(rename = "type")]
-    condition_type: String,
-    biomes: String,
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
 }
 
 fn generate_cow_model_type(model: &str) -> TokenStream {
@@ -55,64 +25,22 @@ fn generate_cow_model_type(model: &str) -> TokenStream {
     }
 }
 
-fn generate_biome_condition(condition: &BiomeCondition) -> TokenStream {
-    let condition_type = condition.condition_type.as_str();
-    let biomes = condition.biomes.as_str();
-
-    quote! {
-        BiomeCondition {
-            condition_type: #condition_type,
-            biomes: #biomes,
-        }
-    }
-}
-
-fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
-    let priority = entry.priority;
-    let condition = generate_option(&entry.condition, generate_biome_condition);
-
-    quote! {
-        SpawnConditionEntry {
-            priority: #priority,
-            condition: #condition,
-        }
-    }
-}
-
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant/"
-    );
-
-    let cow_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant";
-    let mut cow_variants = Vec::new();
-
-    // Read all cow variant JSON files
-    for entry in fs::read_dir(cow_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let cow_variant_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let cow_variant: CowVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", cow_variant_name, e));
-
-            cow_variants.push((cow_variant_name, cow_variant));
-        }
-    }
+    let cow_variants: Vec<(String, CowVariantJson)> = read_variants_from_dir("cow_variant");
 
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
         use crate::cow_variant::{
-            CowVariant, CowVariantRegistry, CowModelType, SpawnConditionEntry, BiomeCondition,
+            CowVariant, CowVariantRegistry, CowModelType,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static cow variant definitions
+    let mut register_stream = TokenStream::new();
     for (cow_variant_name, cow_variant) in &cow_variants {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
@@ -120,6 +48,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#cow_variant_name_str) };
         let asset_id = generate_identifier(&cow_variant.asset_id);
+        let baby_asset_id = generate_identifier(&cow_variant.baby_asset_id);
         let model = generate_cow_model_type(&cow_variant.model);
 
         let spawn_conditions: Vec<_> = cow_variant
@@ -129,22 +58,18 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #cow_variant_ident: &CowVariant = &CowVariant {
+            pub static #cow_variant_ident: CowVariant = CowVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 model: #model,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (cow_variant_name, _) in &cow_variants {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#cow_variant_ident);
+            registry.register(&#cow_variant_ident);
         });
     }
 

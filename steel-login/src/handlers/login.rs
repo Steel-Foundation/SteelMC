@@ -3,7 +3,7 @@
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
-use steel_core::{config::STEEL_CONFIG, player::GameProfile};
+use steel_core::player::GameProfile;
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
     utils::ConnectionProtocol,
@@ -13,7 +13,7 @@ use text_components::TextComponent;
 
 use crate::{
     AuthError, is_valid_player_name, mojang_authenticate, offline_uuid, signed_bytes_be_to_hex,
-    tcp_client::{ConnectionUpdate, JavaTcpClient},
+    tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient},
 };
 
 impl JavaTcpClient {
@@ -21,13 +21,13 @@ impl JavaTcpClient {
     ///
     /// # Panics
     /// This function will panic if the player name converted to a UUID fails.
-    pub async fn handle_hello(&self, packet: SHello) {
+    pub(crate) async fn handle_hello(&self, packet: SHello) -> ConnectionAction {
         if !is_valid_player_name(&packet.name) {
             self.kick("Invalid player name".into()).await;
-            return;
+            return ConnectionAction::none();
         }
 
-        let id = if STEEL_CONFIG.online_mode {
+        let id = if self.server.config.online_mode {
             packet.profile_id
         } else {
             offline_uuid(&packet.name).expect("Failed to generate offline UUID")
@@ -43,7 +43,7 @@ impl JavaTcpClient {
             });
         }
 
-        if STEEL_CONFIG.encryption {
+        if self.server.config.encryption {
             let challenge: [u8; 4] = rand::random();
             self.challenge.store(challenge);
 
@@ -55,18 +55,21 @@ impl JavaTcpClient {
             ))
             .await;
         } else {
-            self.finish_login(&GameProfile {
-                id,
-                name: packet.name,
-                properties: vec![],
-                profile_actions: None,
-            })
-            .await;
+            return self
+                .finish_login(&GameProfile {
+                    id,
+                    name: packet.name,
+                    properties: vec![],
+                    profile_actions: None,
+                })
+                .await;
         }
+
+        ConnectionAction::none()
     }
 
     /// Handles the key packet during the login state, used for encryption.
-    pub async fn handle_key(&self, packet: SKey) {
+    pub(crate) async fn handle_key(&self, packet: SKey) -> ConnectionAction {
         let challenge = self.challenge.load();
 
         let Ok(challenge_response) = self
@@ -76,12 +79,12 @@ impl JavaTcpClient {
             .decrypt(Pkcs1v15Encrypt, &packet.challenge)
         else {
             self.kick("Invalid key".into()).await;
-            return;
+            return ConnectionAction::none();
         };
 
         if challenge_response != challenge {
             self.kick("Invalid challenge response".into()).await;
-            return;
+            return ConnectionAction::none();
         }
 
         let Ok(secret_key) = self
@@ -91,14 +94,14 @@ impl JavaTcpClient {
             .decrypt(Pkcs1v15Encrypt, &packet.key)
         else {
             self.kick("Invalid key".into()).await;
-            return;
+            return ConnectionAction::none();
         };
 
         let secret_key: [u8; 16] = if let Ok(secret_key) = secret_key.try_into() {
             secret_key
         } else {
             self.kick("Invalid key".into()).await;
-            return;
+            return ConnectionAction::none();
         };
 
         let Ok(_) = self
@@ -106,19 +109,22 @@ impl JavaTcpClient {
             .send(ConnectionUpdate::EnableEncryption(secret_key))
         else {
             self.kick("Failed to send connection update".into()).await;
-            return;
+            return ConnectionAction::none();
         };
 
-        self.connection_updated.notified().await;
+        tokio::select! {
+            () = self.connection_updated.notified() => {}
+            () = self.cancel_token.cancelled() => return ConnectionAction::none(),
+        }
 
         let mut gameprofile = self.gameprofile.lock().await;
 
         let Some(profile) = gameprofile.as_mut() else {
             self.kick("No GameProfile".into()).await;
-            return;
+            return ConnectionAction::none();
         };
 
-        if STEEL_CONFIG.online_mode {
+        if self.server.config.online_mode {
             let server_hash = &Sha1::new()
                 .chain_update(secret_key)
                 .chain_update(&self.server.key_store.public_key_der)
@@ -139,22 +145,25 @@ impl JavaTcpClient {
                         e => e.to_string().into(),
                     })
                     .await;
-                    return;
+                    return ConnectionAction::none();
                 }
             }
         }
 
         //TODO: Check for duplicate player UUID or name
 
-        self.finish_login(profile).await;
+        self.finish_login(profile)
+            .await
+            .with_reader_encryption(secret_key)
     }
 
     /// Finishes the login process and transitions to the configuration state.
     ///
     /// # Panics
     /// This function will panic if the compression threshold cannot be converted to an i32.
-    pub async fn finish_login(&self, profile: &GameProfile) {
-        if let Some(compression) = STEEL_CONFIG.compression {
+    pub(crate) async fn finish_login(&self, profile: &GameProfile) -> ConnectionAction {
+        let mut action = ConnectionAction::none();
+        if let Some(compression) = self.server.config.compression {
             self.send_bare_packet_now(CLoginCompression::new(
                 compression
                     .threshold
@@ -164,9 +173,7 @@ impl JavaTcpClient {
             ))
             .await;
             self.compression.store(Some(compression));
-            self.connection_updates
-                .send(ConnectionUpdate::EnableCompression(compression))
-                .expect("Failed to send connection update");
+            action = ConnectionAction::reader_compression(compression);
         }
 
         self.send_bare_packet_now(CLoginFinished::new(
@@ -175,6 +182,8 @@ impl JavaTcpClient {
             &profile.properties,
         ))
         .await;
+
+        action
     }
 
     /// Handles the login acknowledged packet and transitions to the configuration state.

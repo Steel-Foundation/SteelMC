@@ -27,28 +27,64 @@
 mod block;
 pub mod blocks;
 mod context;
+pub mod fluid;
 mod item;
 pub mod items;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/blocks.rs"]
-pub mod block_behaviours;
+pub mod block_behaviors;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/candle_cakes.rs"]
+pub mod candle_cakes;
 
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/items.rs"]
-pub mod item_behaviours;
+pub mod item_behaviors;
 
-pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
-use block_behaviours::register_block_behaviors;
-pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, UseOnContext};
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/strippables.rs"]
+pub mod strippables;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/waxables.rs"]
+pub mod waxables;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/weathering.rs"]
+pub mod weathering;
+
+pub use block::{
+    BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
+    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
+};
+use block_behaviors::register_block_behaviors;
+pub use context::{
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, UseItemContext,
+    UseOnContext,
+};
+pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
-use item_behaviours::register_item_behaviors;
-pub use items::{BlockItemBehavior, DefaultItemBehavior, EnderEyeBehavior, FilledBucketBehavior};
+use item_behaviors::register_item_behaviors;
+pub use items::{
+    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
+    ShovelItem, SignItem, StandingAndWallBlockItem,
+};
 use std::ops::Deref;
 use std::sync::OnceLock;
-use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_fluids;
+use steel_utils::BlockStateId;
+
+use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
@@ -72,6 +108,25 @@ impl Deref for ItemBehaviorLock {
     }
 }
 
+/// Extension trait for `BlockStateId` that provides access to behavior-dependent methods.
+///
+/// This is separate from `BlockStateExt` (in steel-registry) because these methods
+/// require access to the behavior registry which lives in steel-core.
+pub trait BlockStateBehaviorExt {
+    /// Returns the fluid state for this block state.
+    ///
+    /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
+    fn get_fluid_state(&self) -> FluidState;
+}
+
+impl BlockStateBehaviorExt for BlockStateId {
+    fn get_fluid_state(&self) -> FluidState {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.get_fluid_state(*self)
+    }
+}
+
 /// Global block behavior registry.
 ///
 /// Access behaviors directly via deref: `BLOCK_BEHAVIORS.get_behavior(block)`
@@ -84,41 +139,34 @@ pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 
 /// Initializes the global behavior registries.
 ///
-/// This should be called once after the main registry is frozen.
-///
-/// # Panics
-///
-/// Panics if called more than once.
+/// This should be called after the main registry is frozen. Repeated calls are a no-op.
 pub fn init_behaviors() {
-    let mut block_behaviors = BlockBehaviorRegistry::new();
-    register_block_behaviors(&mut block_behaviors);
+    BLOCK_BEHAVIORS.0.get_or_init(|| {
+        let mut block_behaviors = BlockBehaviorRegistry::new();
+        register_block_behaviors(&mut block_behaviors);
+        block_behaviors
+    });
 
-    assert!(
-        BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),
-        "Block behavior registry already initialized"
-    );
+    FLUID_BEHAVIORS.0.get_or_init(|| {
+        let mut fluid_behaviors = FluidBehaviorRegistry::new();
 
-    let mut item_behaviors = ItemBehaviorRegistry::new();
-    register_item_behaviors(&mut item_behaviors);
+        // Water: WaterFluid implements FluidBehavior directly
+        let water_behavior: Box<dyn FluidBehavior> = Box::new(WaterFluid);
+        // Both WATER and FLOWING_WATER share the same behavior
+        fluid_behaviors.set_behavior(&vanilla_fluids::WATER, water_behavior);
+        fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_WATER, Box::new(WaterFluid));
 
-    // Register bucket behaviors (not auto-generated since they're not block items)
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.water_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::WATER,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.lava_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::LAVA,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
+        // Lava: LavaFluid implements FluidBehavior directly
+        let lava_behavior: Box<dyn FluidBehavior> = Box::new(LavaFluid);
+        fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
+        fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_LAVA, Box::new(LavaFluid));
 
-    assert!(
-        ITEM_BEHAVIORS.0.set(item_behaviors).is_ok(),
-        "Item behavior registry already initialized"
-    );
+        fluid_behaviors
+    });
+
+    ITEM_BEHAVIORS.0.get_or_init(|| {
+        let mut item_behaviors = ItemBehaviorRegistry::new();
+        register_item_behaviors(&mut item_behaviors);
+        item_behaviors
+    });
 }

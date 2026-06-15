@@ -38,8 +38,6 @@ pub struct CAddEntity {
     pub data: i32,
 }
 
-// === LpVec3 encoding constants (from vanilla LpVec3.java) ===
-
 /// Maximum absolute velocity value. Vanilla: `1.7179869183E10`
 const ABS_MAX_VALUE: f64 = 1.717_986_918_3E10;
 
@@ -167,7 +165,7 @@ fn pack_component(value: f64) -> i64 {
 impl CAddEntity {
     /// Creates a new CAddEntity packet for spawning a player.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn player(
         id: i32,
         uuid: Uuid,

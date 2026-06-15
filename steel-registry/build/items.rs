@@ -8,7 +8,7 @@ use serde_json::Value;
 
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct Item {
     pub id: u16,
     pub name: String,
@@ -202,6 +202,10 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 builder_calls
                     .push(quote! { .builder_set(vanilla_components::#component_ident, Some(())) });
             }
+            "minecraft:glider" => {
+                builder_calls
+                    .push(quote! { .builder_set(vanilla_components::#component_ident, Some(())) });
+            }
             "minecraft:enchantment_glint_override" => {
                 let val = value.as_bool().unwrap();
                 builder_calls.push(
@@ -249,6 +253,7 @@ pub(crate) fn build() -> TokenStream {
     let mut item_definitions = TokenStream::new();
     let mut item_construction = TokenStream::new();
 
+    let mut register_stream = TokenStream::new();
     for item in &item_assets.items {
         let item_ident = Ident::new(&item.name, Span::call_site());
         let item_name_str = item.name.clone();
@@ -264,23 +269,23 @@ pub(crate) fn build() -> TokenStream {
             if builder_calls.is_empty() {
                 if block_name != &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str),
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(vanilla_blocks::#block_ident),
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
                     });
                 }
             } else {
                 // Block item with custom components
                 if block_name != &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str)
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
                             #(#builder_calls)*,
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(vanilla_blocks::#block_ident)
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
                             #(#builder_calls)*,
                     });
                 }
@@ -300,16 +305,13 @@ pub(crate) fn build() -> TokenStream {
                     components: DataComponentMap::common_item_components()
                         #(#builder_calls)*,
                     craft_remainder: #craft_remainder_value,
+                    id: OnceLock::new(),
                 },
             });
         }
-    }
 
-    let mut register_stream = TokenStream::new();
-    for item in &item_assets.items {
-        let item_name = Ident::new(&item.name, Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&ITEMS.#item_name);
+            registry.register(&ITEMS.#item_ident);
         });
     }
 
@@ -320,7 +322,7 @@ pub(crate) fn build() -> TokenStream {
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;
-        use std::sync::LazyLock;
+        use std::sync::{LazyLock, OnceLock};
 
         pub static ITEMS: LazyLock<Items> = LazyLock::new(Items::init);
 

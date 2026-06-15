@@ -8,10 +8,6 @@ use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 
-// ============================================================================
-// Untagged enums for flexible JSON parsing
-// ============================================================================
-
 /// A number provider can be a constant number or an object with type.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -112,10 +108,6 @@ struct StewEffectJson {
     #[serde(default)]
     duration: NumberProviderJson,
 }
-
-// ============================================================================
-// Main JSON structures
-// ============================================================================
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -219,7 +211,7 @@ struct LootConditionJson {
 /// entity predicate (entity_properties), or damage source predicate. We parse these specifically.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 enum PredicateJson {
     Tool(ToolPredicateJson),
     Location(LocationPredicateJson),
@@ -435,10 +427,6 @@ struct BonusParametersJson {
     probability: Option<f32>,
 }
 
-// ============================================================================
-// Code generation functions
-// ============================================================================
-
 fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
     match value {
         NumberProviderJson::Constant(v) => {
@@ -483,7 +471,7 @@ fn generate_loot_context_entity(entity: &str) -> TokenStream {
 }
 
 /// Generate the EquipmentSlotGroup enum variant at build time.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     match slot {
         "any" => quote! { EquipmentSlotGroup::Any },
@@ -501,7 +489,7 @@ fn generate_equipment_slot_group(slot: &str) -> TokenStream {
 }
 
 /// Generate the DyeColor enum variant at build time.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn generate_dye_color(color: &str) -> TokenStream {
     match color {
         "white" => quote! { DyeColor::White },
@@ -1584,11 +1572,8 @@ struct LootTableData {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/loot_table/"
-    );
-
-    let loot_table_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/loot_table";
+    let loot_table_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table";
+    println!("cargo:rerun-if-changed={loot_table_dir}");
     let mut tables: Vec<LootTableData> = Vec::new();
 
     // Recursively read all loot table JSON files
@@ -1687,7 +1672,7 @@ pub(crate) fn build() -> TokenStream {
         };
 
         stream.extend(quote! {
-            pub static #const_ident: &LootTable = &LootTable {
+            pub static #const_ident: LootTable = LootTable {
                 key: Identifier::vanilla_static(#key),
                 loot_type: #loot_type,
                 pools: &[#(#pools),*],
@@ -1702,7 +1687,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|t| {
             let const_ident = &t.const_ident;
-            quote! { registry.register(#const_ident); }
+            quote! { registry.register(&#const_ident); }
         })
         .collect();
 
@@ -1770,7 +1755,7 @@ pub(crate) fn build() -> TokenStream {
             .iter()
             .map(|(table, field_ident)| {
                 let const_ident = &table.const_ident;
-                quote! { #field_ident: #const_ident, }
+                quote! { #field_ident: &#const_ident, }
             })
             .collect();
 

@@ -2,7 +2,7 @@
 use std::{
     cmp::max,
     future::Future,
-    mem::{self, MaybeUninit},
+    mem,
     pin::Pin,
     sync::{
         Arc,
@@ -13,6 +13,7 @@ use std::{
 use futures::future::join_all;
 use rayon::ThreadPool;
 use steel_utils::{ChunkPos, locks::SyncMutex};
+use tokio_util::sync::CancellationToken;
 
 use crate::chunk::{
     chunk_access::ChunkStatus,
@@ -32,7 +33,6 @@ pub struct StaticCache2D<T> {
 
 impl<T> StaticCache2D<T> {
     /// Creates a `StaticCache2D` by populating it via a factory.
-    #[allow(clippy::missing_panics_doc)]
     pub fn create<F>(center_x: i32, center_z: i32, radius: i32, factory: F) -> Self
     where
         F: Fn(i32, i32) -> T + Send + Sync + 'static,
@@ -42,24 +42,21 @@ impl<T> StaticCache2D<T> {
         let min_x = center_x - radius;
         let min_z = center_z - radius;
         let cap = (size * size) as usize;
-        let mut cache = Vec::with_capacity(cap);
-        cache.resize_with(cap, MaybeUninit::uninit);
-
         let size_usize = size as usize;
-        let factory_ref = &factory;
 
-        cache.iter_mut().enumerate().for_each(|(index, slot)| {
-            let x_offset = (index % size_usize) as i32;
-            let z_offset = (index / size_usize) as i32;
-            slot.write(factory_ref(min_x + x_offset, min_z + z_offset));
-        });
+        let cache: Vec<T> = (0..cap)
+            .map(|index| {
+                let x_offset = (index % size_usize) as i32;
+                let z_offset = (index / size_usize) as i32;
+                factory(min_x + x_offset, min_z + z_offset)
+            })
+            .collect();
 
         Self {
             min_x,
             min_z,
             size,
-            // SAFETY: We know that T is Send + Sync, and that the whole cache is initialized, so we can transmute it to a Vec<T>.
-            cache: unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(cache) },
+            cache,
         }
     }
 
@@ -107,12 +104,16 @@ pub struct ChunkGenerationTask {
     pub target_status: ChunkStatus,
     /// The status scheduled for generation. Protected by a mutex for safe concurrent access.
     pub scheduled_status: SyncMutex<Option<ChunkStatus>>,
-    /// Flag indicating if the task is cancelled.
-    pub marked_for_cancel: AtomicBool,
+    /// Cancellation token — cancelled when this task should stop.
+    pub cancel_token: CancellationToken,
+    /// Cheap cancellation flag for scheduler-side filtering.
+    cancelled: AtomicBool,
     /// Futures for neighbors. Protected by a mutex.
     pub neighbor_ready: SyncMutex<Vec<NeighborReady>>,
     /// Cache of required chunks.
     pub cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    /// Holder for the chunk this task is targeting.
+    pub center_holder: Arc<ChunkHolder>,
     /// Whether generation is required for this task.
     pub needs_generation: AtomicBool,
     /// The thread pool to use for generation.
@@ -122,13 +123,17 @@ pub struct ChunkGenerationTask {
 impl ChunkGenerationTask {
     /// Creates a new generation task.
     #[must_use]
-    #[allow(clippy::unwrap_used, clippy::missing_panics_doc)]
     #[inline]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: ThreadPoolBuilder::build only fails on OS thread errors"
+    )]
     pub fn new(
         pos: ChunkPos,
         target_status: ChunkStatus,
         chunk_map: Arc<ChunkMap>,
         thread_pool: Arc<ThreadPool>,
+        cancel_token: CancellationToken,
     ) -> Self {
         let worst_case_radius = GENERATION_PYRAMID
             .get_step_to(target_status)
@@ -142,23 +147,39 @@ impl ChunkGenerationTask {
                 .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
                 .expect("The chunkholder should be created by distance manager before the generation task is scheduled. This occurring means there is a bug in the distance manager or you called this yourself.")
         });
+        let center_holder = Arc::clone(cache.get(pos.0.x, pos.0.y));
 
         Self {
             chunk_map,
             pos,
             target_status,
             scheduled_status: SyncMutex::new(None),
-            marked_for_cancel: AtomicBool::new(false),
+            cancel_token,
+            cancelled: AtomicBool::new(false),
             neighbor_ready: SyncMutex::new(Vec::new()),
             cache: Arc::new(cache),
+            center_holder,
             needs_generation: AtomicBool::new(true),
             thread_pool,
         }
     }
 
-    /// Marks the task for cancellation.
-    pub fn mark_for_cancel(&self) {
-        self.marked_for_cancel.store(true, Ordering::Relaxed);
+    /// Cancels this task by triggering the cancellation token.
+    pub fn cancel(&self) {
+        if !self.cancelled.swap(true, Ordering::AcqRel) {
+            self.cancel_token.cancel();
+        }
+    }
+
+    /// Returns whether this task has been explicitly cancelled.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Returns the holder for the chunk this task is targeting.
+    pub(crate) const fn center_holder(&self) -> &Arc<ChunkHolder> {
+        &self.center_holder
     }
 
     /// Schedules a chunk for a specific layer.
@@ -196,10 +217,11 @@ impl ChunkGenerationTask {
             &self.chunk_map,
             &self.cache,
             self.thread_pool.clone(),
+            self.cancel_token.clone(),
         ) {
             self.neighbor_ready.lock().push(future);
         } else {
-            self.mark_for_cancel();
+            self.cancel();
         }
 
         true
@@ -212,7 +234,7 @@ impl ChunkGenerationTask {
         for x in (self.pos.0.x - radius)..=(self.pos.0.x + radius) {
             for y in (self.pos.0.y - radius)..=(self.pos.0.y + radius) {
                 let chunk_holder = self.cache.get(x, y);
-                if self.marked_for_cancel.load(Ordering::Relaxed)
+                if self.is_cancelled()
                     || !self.schedule_chunk_in_layer(status, needs_generation, chunk_holder)
                 {
                     return;
@@ -260,7 +282,6 @@ impl ChunkGenerationTask {
             status_to_schedule,
             self.needs_generation.load(Ordering::Relaxed),
         );
-        //log::info!("Scheduled layer: {:?}", status_to_schedule);
         self.scheduled_status.lock().replace(status_to_schedule);
     }
 
@@ -301,24 +322,20 @@ impl ChunkGenerationTask {
 
     /// Runs the generation task loop.
     pub async fn run(self: Arc<Self>) {
-        //log::info!(
-        //    "Running generation task for {:?}, target status: {:?}",
-        //    self.pos,
-        //    self.target_status
-        //);
         loop {
-            self.wait_for_scheduled_layers().await;
+            tokio::select! {
+                () = self.cancel_token.cancelled() => break,
+                () = self.wait_for_scheduled_layers() => {}
+            }
 
-            if self.marked_for_cancel.load(Ordering::Relaxed)
-                || *self.scheduled_status.lock() == Some(self.target_status)
-            {
-                let center_chunk = self.cache.get(self.pos.0.x, self.pos.0.y);
-                center_chunk.cancel_generation_task();
-                return;
+            if *self.scheduled_status.lock() == Some(self.target_status) {
+                break;
             }
 
             self.schedule_next_layer();
         }
+        let center_chunk = self.cache.get(self.pos.0.x, self.pos.0.y);
+        center_chunk.clear_generation_task_if_current(&self);
     }
 
     /// Waits for all scheduled neighbor tasks to complete.
@@ -337,8 +354,7 @@ impl ChunkGenerationTask {
 
         for result in results {
             if result.is_none() {
-                //log::error!("Neighbor ready is none for chunk {:?}", self.pos);
-                self.mark_for_cancel();
+                self.cancel();
                 break;
             }
         }

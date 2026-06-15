@@ -1,0 +1,161 @@
+//! Chest minecart state needed by structure generation and persistence.
+
+use std::str::FromStr;
+use std::sync::Weak;
+
+use glam::DVec3;
+use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_entities;
+use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
+
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::world::World;
+
+/// Chest minecart entity state used by mineshaft generation.
+///
+/// Steel does not yet implement minecart movement or container interaction, so this
+/// entity currently preserves the vanilla placement and loot-table state that
+/// structure generation creates.
+pub struct ChestMinecartEntity {
+    base: EntityBase,
+    state: SyncMutex<ChestMinecartState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChestMinecartState {
+    first_tick: bool,
+    loot_table: Option<Identifier>,
+    loot_table_seed: i64,
+}
+
+impl ChestMinecartState {
+    const fn new(first_tick: bool) -> Self {
+        Self {
+            first_tick,
+            loot_table: None,
+            loot_table_seed: 0,
+        }
+    }
+}
+
+impl ChestMinecartEntity {
+    /// Creates a new chest minecart entity.
+    #[must_use]
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
+        Self {
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::CHEST_MINECART.dimensions,
+                world,
+            ),
+            state: SyncMutex::new(ChestMinecartState::new(true)),
+        }
+    }
+
+    /// Creates a chest minecart entity from saved data.
+    #[must_use]
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
+        Self {
+            base: EntityBase::from_load(load, vanilla_entities::CHEST_MINECART.dimensions),
+            state: SyncMutex::new(ChestMinecartState::new(false)),
+        }
+    }
+
+    /// Sets the deferred loot table used when the container is first opened.
+    pub fn set_loot_table(&self, loot_table: Identifier, seed: i64) {
+        let mut state = self.state.lock();
+        state.loot_table = Some(loot_table);
+        state.loot_table_seed = seed;
+    }
+
+    const fn nbt_bool(value: bool) -> i8 {
+        if value { 1 } else { 0 }
+    }
+}
+
+impl Entity for ChestMinecartEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::CHEST_MINECART
+    }
+
+    fn is_pickable(&self) -> bool {
+        !self.is_removed()
+    }
+
+    fn is_pushable(&self) -> bool {
+        true
+    }
+
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
+    fn save_additional(&self, nbt: &mut NbtCompound) {
+        nbt.insert("FlippedRotation", Self::nbt_bool(false));
+        let state = self.state.lock();
+        nbt.insert("HasTicked", Self::nbt_bool(state.first_tick));
+
+        if let Some(loot_table) = state.loot_table.as_ref() {
+            nbt.insert("LootTable", loot_table.to_string());
+            if state.loot_table_seed != 0 {
+                nbt.insert("LootTableSeed", NbtTag::Long(state.loot_table_seed));
+            }
+        }
+    }
+
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
+        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+
+        let loot_table = nbt
+            .string("LootTable")
+            .and_then(|value| Identifier::from_str(&value.to_string()).ok());
+        let mut state = self.state.lock();
+        if let Some(first_tick) = nbt.byte("HasTicked") {
+            state.first_tick = first_tick != 0;
+        }
+        state.loot_table = loot_table;
+        state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chest_minecart_saves_structure_loot_table_state() {
+        let minecart = ChestMinecartEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+        minecart.set_loot_table(
+            Identifier::new_static("minecraft", "chests/abandoned_mineshaft"),
+            42,
+        );
+
+        let mut nbt = NbtCompound::new();
+        minecart.save_additional(&mut nbt);
+
+        assert_eq!(
+            nbt.string("LootTable").map(ToString::to_string),
+            Some("minecraft:chests/abandoned_mineshaft".to_owned())
+        );
+        assert_eq!(nbt.long("LootTableSeed"), Some(42));
+        assert_eq!(nbt.byte("HasTicked"), Some(1));
+        assert_eq!(nbt.byte("FlippedRotation"), Some(0));
+    }
+
+    #[test]
+    fn chest_minecart_is_pickable_and_pushable_like_vanilla() {
+        let minecart = ChestMinecartEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+
+        assert!(minecart.is_pickable());
+        assert!(minecart.is_pushable());
+        assert!(minecart.blocks_building());
+    }
+}

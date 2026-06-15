@@ -1,4 +1,4 @@
-#![allow(unused)]
+#![expect(unused)]
 // Todo! Remove this^
 
 use core::panic;
@@ -77,7 +77,7 @@ pub struct ShapeData {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Block {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub id: u16,
     pub name: String,
     pub properties: Vec<String>,
@@ -85,13 +85,17 @@ pub struct Block {
     pub default_properties: Vec<String>,
     pub behavior_properties: BlockConfig,
     pub collision_shapes: ShapeData,
+    pub support_shapes: ShapeData,
     pub outline_shapes: ShapeData,
+    pub occlusion_shapes: ShapeData,
+    pub interaction_shapes: ShapeData,
+    pub visual_shapes: ShapeData,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Shape {
-    pub min: [f32; 3],
-    pub max: [f32; 3],
+    pub min: [f64; 3],
+    pub max: [f64; 3],
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -133,6 +137,10 @@ fn instrument_to_tokens(instrument: &str) -> TokenStream {
         "BIT" => quote! { NoteBlockInstrument::Bit },
         "BANJO" => quote! { NoteBlockInstrument::Banjo },
         "PLING" => quote! { NoteBlockInstrument::Pling },
+        "TRUMPET" => quote! { NoteBlockInstrument::Trumpet },
+        "TRUMPET_EXPOSED" => quote! { NoteBlockInstrument::TrumpetExposed },
+        "TRUMPET_OXIDIZED" => quote! { NoteBlockInstrument::TrumpetOxidized },
+        "TRUMPET_WEATHERED" => quote! { NoteBlockInstrument::TrumpetWeathered },
         "ZOMBIE" => quote! { NoteBlockInstrument::Zombie },
         "SKELETON" => quote! { NoteBlockInstrument::Skeleton },
         "CREEPER" => quote! { NoteBlockInstrument::Creeper },
@@ -164,7 +172,7 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
     if bp.is_randomly_ticking != default_props.is_randomly_ticking {
         let val = bp.is_randomly_ticking;
-        builder_calls.push(quote! { .is_randomly_ticking(#val) });
+        builder_calls.push(quote! { .set_is_randomly_ticking(#val) });
     }
     if bp.force_solid_off != default_props.force_solid_off {
         let val = bp.force_solid_off;
@@ -208,7 +216,7 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
     if bp.is_air != default_props.is_air {
         let val = bp.is_air;
-        builder_calls.push(quote! { .is_air(#val) });
+        builder_calls.push(quote! { .set_is_air(#val) });
     }
     if bp.requires_correct_tool_for_drops != default_props.requires_correct_tool_for_drops {
         let val = bp.requires_correct_tool_for_drops;
@@ -297,9 +305,9 @@ fn generate_default_state(block: &Block) -> TokenStream {
 }
 
 /// VoxelShape pool that deduplicates shape combinations.
-/// Maps AABB index combinations to a ShapeId.
+/// Maps block-local box index combinations to a ShapeId.
 struct VoxelShapePool {
-    // Maps sorted AABB indices to ShapeId
+    // Maps sorted block-local box indices to ShapeId.
     shapes: FxHashMap<Vec<u16>, u16>,
     // Ordered list of shapes for generation
     shape_list: Vec<Vec<u16>>,
@@ -416,7 +424,11 @@ pub(crate) fn build() -> TokenStream {
     struct BlockShapeInfo {
         name: String,
         collision_fn_id: u16,
+        support_fn_id: u16,
         outline_fn_id: u16,
+        occlusion_fn_id: u16,
+        interaction_fn_id: u16,
+        visual_fn_id: u16,
     }
     let mut block_shape_infos: Vec<BlockShapeInfo> = Vec::new();
 
@@ -424,36 +436,68 @@ pub(crate) fn build() -> TokenStream {
     for block in &block_assets.blocks {
         let (collision_default, collision_arms) =
             generate_shape_match(&block.collision_shapes, &mut voxel_pool);
+        let (support_default, support_arms) =
+            generate_shape_match(&block.support_shapes, &mut voxel_pool);
         let (outline_default, outline_arms) =
             generate_shape_match(&block.outline_shapes, &mut voxel_pool);
+        let (occlusion_default, occlusion_arms) =
+            generate_shape_match(&block.occlusion_shapes, &mut voxel_pool);
+        let (interaction_default, interaction_arms) =
+            generate_shape_match(&block.interaction_shapes, &mut voxel_pool);
+        let (visual_default, visual_arms) =
+            generate_shape_match(&block.visual_shapes, &mut voxel_pool);
 
         // Create signatures and get/insert into pool
         let collision_sig = ShapeFunctionSignature {
             default_id: collision_default,
             arms: collision_arms,
         };
+        let support_sig = ShapeFunctionSignature {
+            default_id: support_default,
+            arms: support_arms,
+        };
         let outline_sig = ShapeFunctionSignature {
             default_id: outline_default,
             arms: outline_arms,
         };
+        let occlusion_sig = ShapeFunctionSignature {
+            default_id: occlusion_default,
+            arms: occlusion_arms,
+        };
+        let interaction_sig = ShapeFunctionSignature {
+            default_id: interaction_default,
+            arms: interaction_arms,
+        };
+        let visual_sig = ShapeFunctionSignature {
+            default_id: visual_default,
+            arms: visual_arms,
+        };
 
         let collision_fn_id = shape_fn_pool.get_or_insert(collision_sig);
+        let support_fn_id = shape_fn_pool.get_or_insert(support_sig);
         let outline_fn_id = shape_fn_pool.get_or_insert(outline_sig);
+        let occlusion_fn_id = shape_fn_pool.get_or_insert(occlusion_sig);
+        let interaction_fn_id = shape_fn_pool.get_or_insert(interaction_sig);
+        let visual_fn_id = shape_fn_pool.get_or_insert(visual_sig);
 
         block_shape_infos.push(BlockShapeInfo {
             name: block.name.clone(),
             collision_fn_id,
+            support_fn_id,
             outline_fn_id,
+            occlusion_fn_id,
+            interaction_fn_id,
+            visual_fn_id,
         });
     }
 
-    // Generate AABB constants
+    // Generate block-local box constants.
     let aabb_consts: Vec<TokenStream> = block_assets
         .shapes
         .iter()
         .enumerate()
         .map(|(i, shape)| {
-            let name = Ident::new(&format!("AABB_{}", i), Span::call_site());
+            let name = Ident::new(&format!("BOX_{}", i), Span::call_site());
             let min_x = shape.min[0];
             let min_y = shape.min[1];
             let min_z = shape.min[2];
@@ -461,7 +505,8 @@ pub(crate) fn build() -> TokenStream {
             let max_y = shape.max[1];
             let max_z = shape.max[2];
             quote! {
-                static #name: AABB = AABB::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
+                const #name: BlockLocalAabb =
+                    BlockLocalAabb::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
             }
         })
         .collect();
@@ -475,22 +520,22 @@ pub(crate) fn build() -> TokenStream {
             let name = Ident::new(&format!("VSHAPE_{}", id), Span::call_site());
             if aabb_indices.is_empty() {
                 quote! {
-                    static #name: &[AABB] = &[];
+                    const #name: VoxelShape = VoxelShape::EMPTY;
                 }
             } else if aabb_indices.len() == 1 && aabb_indices[0] == u16::MAX {
                 quote! {
-                    static #name: &[AABB] = &[AABB::FULL_BLOCK];
+                    const #name: VoxelShape = VoxelShape::FULL_BLOCK;
                 }
             } else {
                 let aabb_refs: Vec<TokenStream> = aabb_indices
                     .iter()
                     .map(|&idx| {
-                        let aabb_name = Ident::new(&format!("AABB_{}", idx), Span::call_site());
+                        let aabb_name = Ident::new(&format!("BOX_{}", idx), Span::call_site());
                         quote! { #aabb_name }
                     })
                     .collect();
                 quote! {
-                    static #name: &[AABB] = &[#(#aabb_refs),*];
+                    const #name: VoxelShape = VoxelShape::from_boxes(&[#(#aabb_refs),*]);
                 }
             }
         })
@@ -506,7 +551,7 @@ pub(crate) fn build() -> TokenStream {
         if sig.arms.is_empty() {
             shape_fns.extend(quote! {
                 #[inline]
-                const fn #fn_name(_offset: u16) -> &'static [AABB] {
+                const fn #fn_name(_offset: u16) -> VoxelShape {
                     #default_shape
                 }
             });
@@ -530,7 +575,7 @@ pub(crate) fn build() -> TokenStream {
 
             shape_fns.extend(quote! {
                 #[inline]
-                fn #fn_name(offset: u16) -> &'static [AABB] {
+                fn #fn_name(offset: u16) -> VoxelShape {
                     match offset {
                         #(#arms)*
                         _ => #default_shape,
@@ -568,19 +613,42 @@ pub(crate) fn build() -> TokenStream {
             &format!("shape_fn_{}", info.collision_fn_id),
             Span::call_site(),
         );
+        let support_fn = Ident::new(
+            &format!("shape_fn_{}", info.support_fn_id),
+            Span::call_site(),
+        );
         let outline_fn = Ident::new(
             &format!("shape_fn_{}", info.outline_fn_id),
             Span::call_site(),
         );
+        let occlusion_fn = Ident::new(
+            &format!("shape_fn_{}", info.occlusion_fn_id),
+            Span::call_site(),
+        );
+        let interaction_fn = Ident::new(
+            &format!("shape_fn_{}", info.interaction_fn_id),
+            Span::call_site(),
+        );
+        let visual_fn = Ident::new(
+            &format!("shape_fn_{}", info.visual_fn_id),
+            Span::call_site(),
+        );
 
         stream.extend(quote! {
-            pub static #block_name: &Block = &Block::new(
+            pub static #block_name: Block = Block::new(
                 Identifier::vanilla_static(#block_name_str),
                 BlockConfig::new()#(#builder_calls)*,
                 &[
                     #(#properties),*
                 ],
-            ).with_shapes(#collision_fn, #outline_fn)#default_state;
+            ).with_shapes(
+                #collision_fn,
+                #support_fn,
+                #outline_fn,
+                #occlusion_fn,
+                #interaction_fn,
+                #visual_fn,
+            )#default_state;
         });
     }
 
@@ -590,19 +658,19 @@ pub(crate) fn build() -> TokenStream {
         let block_name = Ident::new(&block.name.to_shouty_snake_case(), Span::call_site());
 
         register_stream.extend(quote! {
-            registry.register(#block_name);
+            registry.register(&#block_name);
         });
     }
 
     quote! {
         use crate::{
-            blocks::{behaviour::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
+            blocks::{behavior::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
-            blocks::shapes::AABB,
+            blocks::shapes::VoxelShape,
         };
-        use steel_utils::Identifier;
+        use steel_utils::{BlockLocalAabb, Identifier};
 
-        // AABB primitives
+        // Block-local collision primitives.
         #(#aabb_consts)*
 
         // Deduplicated VoxelShapes

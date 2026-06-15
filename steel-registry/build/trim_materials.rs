@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use std::fs;
 
+use crate::generator_functions::{generate_identifier, generate_option};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -22,28 +23,9 @@ pub struct StyledTextComponent {
     color: Option<String>,
 }
 
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
-}
-
 fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> TokenStream {
     if map.is_empty() {
-        return quote! { rustc_hash::FxHashMap::default() };
+        return quote! { FxHashMap::default() };
     }
     let entries: Vec<_> = map
         .iter()
@@ -52,15 +34,12 @@ fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> Toke
             quote! { (#key, #v.to_string()) }
         })
         .collect();
-    quote! { rustc_hash::FxHashMap::from_iter([#(#entries),*]) }
+    quote! { FxHashMap::from_iter([#(#entries),*]) }
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/trim_material/"
-    );
-
-    let trim_material_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/trim_material";
+    let trim_material_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material";
+    println!("cargo:rerun-if-changed={trim_material_dir}");
     let mut trim_materials = Vec::new();
 
     // Read all trim material JSON files
@@ -91,6 +70,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static trim material definitions
+    let mut register_stream = TokenStream::new();
     for (trim_material_name, trim_material) in &trim_materials {
         let trim_material_ident = Ident::new(
             &trim_material_name.to_shouty_snake_case(),
@@ -119,17 +99,9 @@ pub(crate) fn build() -> TokenStream {
                 override_armor_assets: #override_armor_assets,
             });
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (trim_material_name, _) in &trim_materials {
-        let trim_material_ident = Ident::new(
-            &trim_material_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
-            registry.register(&#trim_material_ident, #trim_material_ident.key.clone());
+            registry.register(&#trim_material_ident);
         });
     }
 

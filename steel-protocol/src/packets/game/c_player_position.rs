@@ -46,19 +46,19 @@ impl RelativeMovement {
 
     /// Returns true if the X position is relative.
     #[must_use]
-    pub const fn is_x_relative(&self) -> bool {
+    pub const fn is_x_relative(self) -> bool {
         self.0 & Self::X != 0
     }
 
     /// Returns true if the Y position is relative.
     #[must_use]
-    pub const fn is_y_relative(&self) -> bool {
+    pub const fn is_y_relative(self) -> bool {
         self.0 & Self::Y != 0
     }
 
     /// Returns true if the Z position is relative.
     #[must_use]
-    pub const fn is_z_relative(&self) -> bool {
+    pub const fn is_z_relative(self) -> bool {
         self.0 & Self::Z != 0
     }
 }

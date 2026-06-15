@@ -1,278 +1,168 @@
-/// Axis-Aligned Bounding Box used for block collision and outline shapes.
+use steel_utils::{BlockLocalAabb, axis::Axis};
+
+/// Vanilla shape boolean operation.
 ///
-/// Coordinates are in block-local space (0.0 to 1.0 for a standard block).
-/// Values can extend beyond 0.0-1.0 for blocks like fences (collision height 1.5).
+/// Mirrors `net.minecraft.world.phys.shapes.BooleanOp`. Operations where
+/// `apply(false, false)` is true are not valid for `join_is_not_empty`, matching
+/// vanilla's guard for unbounded outside-space results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BooleanOp {
+    False,
+    NotOr,
+    OnlySecond,
+    NotFirst,
+    OnlyFirst,
+    NotSecond,
+    NotSame,
+    NotAnd,
+    And,
+    Same,
+    Second,
+    Causes,
+    First,
+    CausedBy,
+    Or,
+    True,
+}
+
+impl BooleanOp {
+    #[must_use]
+    pub const fn apply(self, first: bool, second: bool) -> bool {
+        match self {
+            Self::False => false,
+            Self::NotOr => !first && !second,
+            Self::OnlySecond => second && !first,
+            Self::NotFirst => !first,
+            Self::OnlyFirst => first && !second,
+            Self::NotSecond => !second,
+            Self::NotSame => first != second,
+            Self::NotAnd => !first || !second,
+            Self::And => first && second,
+            Self::Same => first == second,
+            Self::Second => second,
+            Self::Causes => !first || second,
+            Self::First => first,
+            Self::CausedBy => first || !second,
+            Self::Or => first || second,
+            Self::True => true,
+        }
+    }
+}
+
+/// A block-local voxel shape.
+///
+/// This currently stores the optimized AABB list extracted from vanilla data.
+/// It is intentionally a domain type rather than a raw slice so the full
+/// vanilla shape implementation can grow behind the same API.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AABB {
-    pub min_x: f32,
-    pub min_y: f32,
-    pub min_z: f32,
-    pub max_x: f32,
-    pub max_y: f32,
-    pub max_z: f32,
+pub struct VoxelShape {
+    boxes: &'static [BlockLocalAabb],
 }
 
-impl AABB {
-    /// Creates a new AABB from min and max coordinates.
+impl VoxelShape {
+    /// Empty shape.
+    pub const EMPTY: Self = Self::from_boxes(&[]);
+
+    /// Full block shape.
+    pub const FULL_BLOCK: Self = Self::from_boxes(FULL_BLOCK_BOXES);
+
+    /// Creates a shape from static block-local boxes.
     #[must_use]
-    pub const fn new(
-        min_x: f32,
-        min_y: f32,
-        min_z: f32,
-        max_x: f32,
-        max_y: f32,
-        max_z: f32,
-    ) -> Self {
-        Self {
-            min_x,
-            min_y,
-            min_z,
-            max_x,
-            max_y,
-            max_z,
+    pub const fn from_boxes(boxes: &'static [BlockLocalAabb]) -> Self {
+        Self { boxes }
+    }
+
+    /// Returns the block-local boxes backing this shape.
+    #[must_use]
+    pub const fn boxes(self) -> &'static [BlockLocalAabb] {
+        self.boxes
+    }
+
+    /// Returns an iterator over the block-local boxes.
+    pub fn iter(self) -> core::slice::Iter<'static, BlockLocalAabb> {
+        self.boxes.iter()
+    }
+
+    /// Returns the number of block-local boxes in this shape.
+    #[must_use]
+    pub const fn len(self) -> usize {
+        self.boxes.len()
+    }
+
+    /// Returns true if this shape has no non-empty boxes.
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.boxes.iter().all(|aabb| aabb.is_empty())
+    }
+
+    /// Returns the minimum coordinate on `axis`, or positive infinity for an empty shape.
+    #[must_use]
+    pub fn min(self, axis: Axis) -> f64 {
+        self.boxes
+            .iter()
+            .filter(|aabb| !aabb.is_empty())
+            .map(|aabb| aabb.min(axis))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Returns the maximum coordinate on `axis`, or negative infinity for an empty shape.
+    #[must_use]
+    pub fn max(self, axis: Axis) -> f64 {
+        self.boxes
+            .iter()
+            .filter(|aabb| !aabb.is_empty())
+            .map(|aabb| aabb.max(axis))
+            .fold(f64::NEG_INFINITY, f64::max)
+    }
+
+    /// Returns the union bounds of this shape, or `None` for empty shapes.
+    #[must_use]
+    pub fn bounds(self) -> Option<BlockLocalAabb> {
+        let first = self.boxes.iter().find(|aabb| !aabb.is_empty())?;
+        let mut min_x = first.min_x();
+        let mut min_y = first.min_y();
+        let mut min_z = first.min_z();
+        let mut max_x = first.max_x();
+        let mut max_y = first.max_y();
+        let mut max_z = first.max_z();
+
+        for aabb in self.boxes {
+            if aabb.is_empty() {
+                continue;
+            }
+            min_x = min_x.min(aabb.min_x());
+            min_y = min_y.min(aabb.min_y());
+            min_z = min_z.min(aabb.min_z());
+            max_x = max_x.max(aabb.max_x());
+            max_y = max_y.max(aabb.max_y());
+            max_z = max_z.max(aabb.max_z());
         }
+
+        Some(BlockLocalAabb::new(
+            min_x, min_y, min_z, max_x, max_y, max_z,
+        ))
     }
 
-    /// A full block (0,0,0) to (1,1,1).
-    pub const FULL_BLOCK: AABB = AABB::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
-
-    /// An empty shape (no collision).
-    pub const EMPTY: AABB = AABB::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-
-    /// Returns true if this AABB has no volume.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.min_x >= self.max_x || self.min_y >= self.max_y || self.min_z >= self.max_z
-    }
-
-    /// Returns the width (X dimension) of this AABB.
-    #[must_use]
-    pub fn width(&self) -> f32 {
-        self.max_x - self.min_x
-    }
-
-    /// Returns the height (Y dimension) of this AABB.
-    #[must_use]
-    pub fn height(&self) -> f32 {
-        self.max_y - self.min_y
-    }
-
-    /// Returns the depth (Z dimension) of this AABB.
-    #[must_use]
-    pub fn depth(&self) -> f32 {
-        self.max_z - self.min_z
-    }
-
-    /// Returns a new AABB deflated (shrunk inward) by the given amount on all sides.
+    /// Returns true when this shape extends outside its owning block.
     ///
-    /// This is used for collision detection to avoid floating-point edge cases.
-    /// Matches vanilla `AABB.deflate()`.
+    /// Mirrors vanilla `BlockState.hasLargeCollisionShape()` for collision
+    /// iterator filtering.
     #[must_use]
-    pub fn deflate(&self, amount: f32) -> Self {
-        Self {
-            min_x: self.min_x + amount,
-            min_y: self.min_y + amount,
-            min_z: self.min_z + amount,
-            max_x: self.max_x - amount,
-            max_y: self.max_y - amount,
-            max_z: self.max_z - amount,
-        }
-    }
-
-    /// Returns a new AABB inflated (expanded outward) by the given amount on all sides.
-    ///
-    /// Matches vanilla `AABB.inflate()`.
-    #[must_use]
-    pub fn inflate(&self, amount: f32) -> Self {
-        Self {
-            min_x: self.min_x - amount,
-            min_y: self.min_y - amount,
-            min_z: self.min_z - amount,
-            max_x: self.max_x + amount,
-            max_y: self.max_y + amount,
-            max_z: self.max_z + amount,
-        }
-    }
-
-    /// Returns a new AABB moved by the given delta.
-    ///
-    /// Matches vanilla `AABB.move()`.
-    #[must_use]
-    pub fn translate(&self, dx: f32, dy: f32, dz: f32) -> Self {
-        Self {
-            min_x: self.min_x + dx,
-            min_y: self.min_y + dy,
-            min_z: self.min_z + dz,
-            max_x: self.max_x + dx,
-            max_y: self.max_y + dy,
-            max_z: self.max_z + dz,
-        }
-    }
-
-    /// Returns a new AABB positioned at the given block coordinates.
-    ///
-    /// Converts a block-local AABB (0-1 space) to world coordinates.
-    #[must_use]
-    pub fn at_block(&self, block_x: i32, block_y: i32, block_z: i32) -> Self {
-        let bx = block_x as f32;
-        let by = block_y as f32;
-        let bz = block_z as f32;
-        Self {
-            min_x: bx + self.min_x,
-            min_y: by + self.min_y,
-            min_z: bz + self.min_z,
-            max_x: bx + self.max_x,
-            max_y: by + self.max_y,
-            max_z: bz + self.max_z,
-        }
-    }
-
-    /// Checks if this AABB intersects with another AABB.
-    ///
-    /// Returns true if the two AABBs overlap in all three dimensions.
-    /// Matches vanilla `AABB.intersects()`.
-    #[must_use]
-    pub fn intersects(&self, other: &Self) -> bool {
-        self.max_x > other.min_x
-            && self.min_x < other.max_x
-            && self.max_y > other.min_y
-            && self.min_y < other.max_y
-            && self.max_z > other.min_z
-            && self.min_z < other.max_z
-    }
-
-    /// Checks if this AABB contains the given point.
-    #[must_use]
-    pub fn contains(&self, x: f32, y: f32, z: f32) -> bool {
-        x >= self.min_x
-            && x <= self.max_x
-            && y >= self.min_y
-            && y <= self.max_y
-            && z >= self.min_z
-            && z <= self.max_z
+    pub fn has_large_collision_shape(self) -> bool {
+        [Axis::X, Axis::Y, Axis::Z]
+            .into_iter()
+            .any(|axis| self.min(axis) < 0.0 || self.max(axis) > 1.0)
     }
 }
 
-/// Double-precision Axis-Aligned Bounding Box used for entity collision.
-///
-/// Coordinates are in world space. Used for player and entity bounding boxes.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AABBd {
-    pub min_x: f64,
-    pub min_y: f64,
-    pub min_z: f64,
-    pub max_x: f64,
-    pub max_y: f64,
-    pub max_z: f64,
-}
+impl IntoIterator for VoxelShape {
+    type IntoIter = core::slice::Iter<'static, BlockLocalAabb>;
+    type Item = &'static BlockLocalAabb;
 
-impl AABBd {
-    /// Creates a new double-precision AABB from min and max coordinates.
-    #[must_use]
-    pub const fn new(
-        min_x: f64,
-        min_y: f64,
-        min_z: f64,
-        max_x: f64,
-        max_y: f64,
-        max_z: f64,
-    ) -> Self {
-        Self {
-            min_x,
-            min_y,
-            min_z,
-            max_x,
-            max_y,
-            max_z,
-        }
-    }
-
-    /// Creates an entity bounding box centered at the given position.
-    ///
-    /// The box extends `half_width` in X and Z directions,
-    /// and from `y` to `y + height` in the Y direction.
-    #[must_use]
-    pub fn entity_box(x: f64, y: f64, z: f64, half_width: f64, height: f64) -> Self {
-        Self {
-            min_x: x - half_width,
-            min_y: y,
-            min_z: z - half_width,
-            max_x: x + half_width,
-            max_y: y + height,
-            max_z: z + half_width,
-        }
-    }
-
-    /// Returns a new AABB deflated (shrunk inward) by the given amount on all sides.
-    ///
-    /// This is used for collision detection to avoid floating-point edge cases.
-    /// Matches vanilla's collision epsilon of 1.0E-5.
-    #[must_use]
-    pub fn deflate(&self, amount: f64) -> Self {
-        Self {
-            min_x: self.min_x + amount,
-            min_y: self.min_y + amount,
-            min_z: self.min_z + amount,
-            max_x: self.max_x - amount,
-            max_y: self.max_y - amount,
-            max_z: self.max_z - amount,
-        }
-    }
-
-    /// Returns a new AABB inflated (expanded outward) by the given amount on all sides.
-    #[must_use]
-    pub fn inflate(&self, amount: f64) -> Self {
-        Self {
-            min_x: self.min_x - amount,
-            min_y: self.min_y - amount,
-            min_z: self.min_z - amount,
-            max_x: self.max_x + amount,
-            max_y: self.max_y + amount,
-            max_z: self.max_z + amount,
-        }
-    }
-
-    /// Returns a new AABB inflated by different amounts on each axis.
-    #[must_use]
-    pub fn inflate_xyz(&self, x: f64, y: f64, z: f64) -> Self {
-        Self {
-            min_x: self.min_x - x,
-            min_y: self.min_y - y,
-            min_z: self.min_z - z,
-            max_x: self.max_x + x,
-            max_y: self.max_y + y,
-            max_z: self.max_z + z,
-        }
-    }
-
-    /// Checks if this AABB intersects with another AABB.
-    #[must_use]
-    pub fn intersects(&self, other: &Self) -> bool {
-        self.max_x > other.min_x
-            && self.min_x < other.max_x
-            && self.max_y > other.min_y
-            && self.min_y < other.max_y
-            && self.max_z > other.min_z
-            && self.min_z < other.max_z
-    }
-
-    /// Checks if this AABB intersects with a single-precision block AABB.
-    #[must_use]
-    pub fn intersects_block_aabb(&self, other: &AABB) -> bool {
-        self.max_x > f64::from(other.min_x)
-            && self.min_x < f64::from(other.max_x)
-            && self.max_y > f64::from(other.min_y)
-            && self.min_y < f64::from(other.max_y)
-            && self.max_z > f64::from(other.min_z)
-            && self.min_z < f64::from(other.max_z)
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
-
-/// A VoxelShape is a collection of AABBs that define the shape of a block.
-///
-/// For simple blocks, this is typically a single AABB (full block or empty).
-/// For complex blocks like stairs or fences, this is multiple AABBs combined.
-pub type VoxelShape = &'static [AABB];
 
 /// An ID referencing a registered VoxelShape in the ShapeRegistry.
 ///
@@ -297,7 +187,7 @@ impl ShapeId {
 /// Vanilla shapes are registered at startup. Plugins can register
 /// additional shapes for custom blocks.
 pub struct ShapeRegistry {
-    shapes: Vec<&'static [AABB]>,
+    shapes: Vec<VoxelShape>,
     allows_registering: bool,
 }
 
@@ -317,10 +207,10 @@ impl ShapeRegistry {
         };
 
         // Register the two standard shapes - IDs must match ShapeId::EMPTY and ShapeId::FULL_BLOCK
-        let empty_id = registry.register(&[]);
+        let empty_id = registry.register(VoxelShape::EMPTY);
         debug_assert_eq!(empty_id, ShapeId::EMPTY);
 
-        let full_id = registry.register(FULL_BLOCK_SHAPE);
+        let full_id = registry.register(VoxelShape::FULL_BLOCK);
         debug_assert_eq!(full_id, ShapeId::FULL_BLOCK);
 
         registry
@@ -330,7 +220,7 @@ impl ShapeRegistry {
     ///
     /// # Panics
     /// Panics if the registry has been frozen.
-    pub fn register(&mut self, shape: &'static [AABB]) -> ShapeId {
+    pub fn register(&mut self, shape: VoxelShape) -> ShapeId {
         assert!(
             self.allows_registering,
             "Cannot register shapes after the registry has been frozen"
@@ -343,10 +233,13 @@ impl ShapeRegistry {
 
     /// Gets the shape for a given ID.
     ///
-    /// Returns an empty slice if the ID is invalid.
+    /// Returns an empty shape if the ID is invalid.
     #[must_use]
-    pub fn get(&self, id: ShapeId) -> &'static [AABB] {
-        self.shapes.get(id.0 as usize).copied().unwrap_or(&[])
+    pub fn get(&self, id: ShapeId) -> VoxelShape {
+        self.shapes
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or(VoxelShape::EMPTY)
     }
 
     /// Returns the number of registered shapes.
@@ -367,49 +260,245 @@ impl ShapeRegistry {
     }
 }
 
-// Static shape for full block - used during registry initialization
-static FULL_BLOCK_SHAPE: &[AABB] = &[AABB::FULL_BLOCK];
+const FULL_BLOCK_BOXES: &[BlockLocalAabb] = &[BlockLocalAabb::FULL_BLOCK];
 
-/// Shape data for a block state, containing both collision and outline shapes.
+const VOXEL_EPSILON: f64 = 1.0e-7;
+
+/// Shape data for a block state.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockShapes {
     pub collision: VoxelShape,
+    pub support: VoxelShape,
     pub outline: VoxelShape,
+    pub occlusion: VoxelShape,
+    pub interaction: VoxelShape,
+    pub visual: VoxelShape,
 }
 
 impl BlockShapes {
     /// Creates new block shapes.
     #[must_use]
-    pub const fn new(collision: VoxelShape, outline: VoxelShape) -> Self {
-        Self { collision, outline }
+    pub const fn new(
+        collision: VoxelShape,
+        support: VoxelShape,
+        outline: VoxelShape,
+        occlusion: VoxelShape,
+        interaction: VoxelShape,
+        visual: VoxelShape,
+    ) -> Self {
+        Self {
+            collision,
+            support,
+            outline,
+            occlusion,
+            interaction,
+            visual,
+        }
     }
 
-    /// Full block collision and outline.
-    pub const FULL_BLOCK: BlockShapes = BlockShapes::new(&[AABB::FULL_BLOCK], &[AABB::FULL_BLOCK]);
+    /// Full block for every shape channel except interaction.
+    pub const FULL_BLOCK: BlockShapes = BlockShapes::new(
+        VoxelShape::FULL_BLOCK,
+        VoxelShape::FULL_BLOCK,
+        VoxelShape::FULL_BLOCK,
+        VoxelShape::FULL_BLOCK,
+        VoxelShape::EMPTY,
+        VoxelShape::FULL_BLOCK,
+    );
 
-    /// Empty shapes (no collision, no outline).
-    pub const EMPTY: BlockShapes = BlockShapes::new(&[], &[]);
+    /// Empty shapes for all shape channels.
+    pub const EMPTY: BlockShapes = BlockShapes::new(
+        VoxelShape::EMPTY,
+        VoxelShape::EMPTY,
+        VoxelShape::EMPTY,
+        VoxelShape::EMPTY,
+        VoxelShape::EMPTY,
+        VoxelShape::EMPTY,
+    );
 }
 
 use super::properties::Direction;
 
+/// Returns the overall bounding box of a voxel shape (union of all AABBs).
+///
+/// The shape must be non-empty; panics otherwise.
+#[must_use]
+pub fn bounding_box(shape: VoxelShape) -> BlockLocalAabb {
+    match shape.bounds() {
+        Some(bounds) => bounds,
+        None => panic!("bounding_box called on empty shape"),
+    }
+}
+
 /// Checks if a shape is a full block (covers the entire 0-1 cube).
 ///
-/// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolid()`.
+/// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolidRender()`.
+///
 #[must_use]
 pub fn is_shape_full_block(shape: VoxelShape) -> bool {
-    // A full block shape must have exactly one AABB that covers 0-1 on all axes
-    if shape.len() != 1 {
-        return false;
+    !join_is_not_empty(VoxelShape::FULL_BLOCK, shape, BooleanOp::NotSame)
+}
+
+/// Returns true if applying `op` to two voxel shapes produces any filled space.
+///
+/// This is the box-backed equivalent of vanilla `Shapes.joinIsNotEmpty`. It
+/// decomposes both shapes into a shared coordinate grid and tests occupancy in
+/// each cell. The current representation does not materialize a joined shape;
+/// it answers the boolean query needed for full-block and occlusion checks.
+///
+/// # Panics
+/// Panics if `op.apply(false, false)` is true, matching vanilla's invalid
+/// operation guard for unbounded outside-space results.
+#[must_use]
+pub fn join_is_not_empty(first: VoxelShape, second: VoxelShape, op: BooleanOp) -> bool {
+    if op.apply(false, false) {
+        panic!("join_is_not_empty cannot use an operation that includes empty outside space");
     }
 
-    let aabb = &shape[0];
-    aabb.min_x <= 0.0
-        && aabb.max_x >= 1.0
-        && aabb.min_y <= 0.0
-        && aabb.max_y >= 1.0
-        && aabb.min_z <= 0.0
-        && aabb.max_z >= 1.0
+    let first_empty = first.is_empty();
+    let second_empty = second.is_empty();
+    if first_empty || second_empty {
+        return op.apply(!first_empty, !second_empty);
+    }
+
+    if first == second {
+        return op.apply(true, true);
+    }
+
+    let first_only_matters = op.apply(true, false);
+    let second_only_matters = op.apply(false, true);
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        if first.max(axis) < second.min(axis) - VOXEL_EPSILON {
+            return first_only_matters || second_only_matters;
+        }
+        if second.max(axis) < first.min(axis) - VOXEL_EPSILON {
+            return first_only_matters || second_only_matters;
+        }
+    }
+
+    let mut x_edges = shape_edges(first, second, Axis::X);
+    let mut y_edges = shape_edges(first, second, Axis::Y);
+    let mut z_edges = shape_edges(first, second, Axis::Z);
+    sort_and_dedup_voxel_edges(&mut x_edges);
+    sort_and_dedup_voxel_edges(&mut y_edges);
+    sort_and_dedup_voxel_edges(&mut z_edges);
+
+    for x in x_edges.windows(2) {
+        if x[1] - x[0] <= VOXEL_EPSILON {
+            continue;
+        }
+        for y in y_edges.windows(2) {
+            if y[1] - y[0] <= VOXEL_EPSILON {
+                continue;
+            }
+            for z in z_edges.windows(2) {
+                if z[1] - z[0] <= VOXEL_EPSILON {
+                    continue;
+                }
+                let first_full = shape_fills_cell(first, x[0], x[1], y[0], y[1], z[0], z[1]);
+                let second_full = shape_fills_cell(second, x[0], x[1], y[0], y[1], z[0], z[1]);
+                if op.apply(first_full, second_full) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Materializes the unoptimized cell boxes produced by a shape boolean operation.
+///
+/// Vanilla parity: `Shapes.joinUnoptimized(first, second, op)`, expressed as
+/// block-local boxes instead of a lazily merged voxel shape.
+///
+/// # Panics
+/// Panics if `op.apply(false, false)` is true, matching vanilla's invalid
+/// operation guard for unbounded outside-space results.
+#[must_use]
+pub fn join_unoptimized_boxes(
+    first: VoxelShape,
+    second: VoxelShape,
+    op: BooleanOp,
+) -> Vec<BlockLocalAabb> {
+    if op.apply(false, false) {
+        panic!("join_unoptimized_boxes cannot use an operation that includes empty outside space");
+    }
+
+    if first.is_empty() && second.is_empty() {
+        return Vec::new();
+    }
+
+    let mut x_edges = shape_edges(first, second, Axis::X);
+    let mut y_edges = shape_edges(first, second, Axis::Y);
+    let mut z_edges = shape_edges(first, second, Axis::Z);
+    sort_and_dedup_voxel_edges(&mut x_edges);
+    sort_and_dedup_voxel_edges(&mut y_edges);
+    sort_and_dedup_voxel_edges(&mut z_edges);
+
+    let mut boxes = Vec::new();
+    for x in x_edges.windows(2) {
+        if x[1] - x[0] <= VOXEL_EPSILON {
+            continue;
+        }
+        for y in y_edges.windows(2) {
+            if y[1] - y[0] <= VOXEL_EPSILON {
+                continue;
+            }
+            for z in z_edges.windows(2) {
+                if z[1] - z[0] <= VOXEL_EPSILON {
+                    continue;
+                }
+
+                let first_full = shape_fills_cell(first, x[0], x[1], y[0], y[1], z[0], z[1]);
+                let second_full = shape_fills_cell(second, x[0], x[1], y[0], y[1], z[0], z[1]);
+                if op.apply(first_full, second_full) {
+                    boxes.push(BlockLocalAabb::new(x[0], y[0], z[0], x[1], y[1], z[1]));
+                }
+            }
+        }
+    }
+
+    boxes
+}
+
+fn shape_edges(first: VoxelShape, second: VoxelShape, axis: Axis) -> Vec<f64> {
+    let mut edges = Vec::with_capacity((first.len() + second.len()) * 2);
+    for shape in [first, second] {
+        for aabb in shape {
+            if aabb.is_empty() {
+                continue;
+            }
+            edges.push(aabb.min(axis));
+            edges.push(aabb.max(axis));
+        }
+    }
+    edges
+}
+
+fn sort_and_dedup_voxel_edges(edges: &mut Vec<f64>) {
+    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.dedup_by(|a, b| (*a - *b).abs() <= VOXEL_EPSILON);
+}
+
+fn shape_fills_cell(
+    shape: VoxelShape,
+    min_x: f64,
+    max_x: f64,
+    min_y: f64,
+    max_y: f64,
+    min_z: f64,
+    max_z: f64,
+) -> bool {
+    shape.into_iter().any(|aabb| {
+        !aabb.is_empty()
+            && aabb.min_x() <= min_x + VOXEL_EPSILON
+            && aabb.max_x() >= max_x - VOXEL_EPSILON
+            && aabb.min_y() <= min_y + VOXEL_EPSILON
+            && aabb.max_y() >= max_y - VOXEL_EPSILON
+            && aabb.min_z() <= min_z + VOXEL_EPSILON
+            && aabb.max_z() >= max_z - VOXEL_EPSILON
+    })
 }
 
 /// Support type for `is_face_sturdy` checks.
@@ -429,12 +518,13 @@ pub enum SupportType {
     Rigid,
 }
 
-/// Center support shape: a 4x4 pixel column in the center (2-14 in pixel coords = 0.125-0.875).
-const CENTER_SUPPORT_MIN: f32 = 0.125; // 2/16
-const CENTER_SUPPORT_MAX: f32 = 0.875; // 14/16
+/// Vanilla `SupportType.CENTER`: `Block.column(2.0, 0.0, 10.0)`.
+const CENTER_SUPPORT_MIN: f64 = 7.0 / 16.0;
+const CENTER_SUPPORT_MAX: f64 = 9.0 / 16.0;
+const CENTER_SUPPORT_Y_MAX: f64 = 10.0 / 16.0;
 
-/// Rigid support requires coverage except for a 2-pixel border.
-const RIGID_BORDER: f32 = 0.125; // 2/16
+/// Vanilla `SupportType.RIGID`: `Shapes.block() ONLY_FIRST Block.column(12.0, 0.0, 16.0)`.
+const RIGID_BORDER: f64 = 0.125; // 2/16
 
 /// Checks if a shape fully covers a face (for `SupportType::Full`).
 ///
@@ -442,20 +532,7 @@ const RIGID_BORDER: f32 = 0.125; // 2/16
 /// completely covers the 1x1 face area.
 #[must_use]
 pub fn is_face_full(shape: VoxelShape, direction: Direction) -> bool {
-    if shape.is_empty() {
-        return false;
-    }
-
-    // For a face to be "full", the shape's projection onto that face must cover 0.0-1.0
-    // on both axes perpendicular to the direction.
-    match direction {
-        Direction::Down => covers_face_xy(shape, |aabb| aabb.min_y <= 0.0),
-        Direction::Up => covers_face_xy(shape, |aabb| aabb.max_y >= 1.0),
-        Direction::North => covers_face_xy_for_z(shape, |aabb| aabb.min_z <= 0.0),
-        Direction::South => covers_face_xy_for_z(shape, |aabb| aabb.max_z >= 1.0),
-        Direction::West => covers_face_yz(shape, |aabb| aabb.min_x <= 0.0),
-        Direction::East => covers_face_yz(shape, |aabb| aabb.max_x >= 1.0),
-    }
+    face_rectangles_cover(shape, direction, 0.0, 1.0, 0.0, 1.0)
 }
 
 /// Checks if a shape provides center support on a face.
@@ -467,109 +544,67 @@ pub fn is_face_center_supported(shape: VoxelShape, direction: Direction) -> bool
         return false;
     }
 
-    // Check if any AABB in the shape covers the center region on the given face
     match direction {
-        Direction::Down => shape.iter().any(|aabb| {
-            aabb.min_y <= 0.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::Up => shape.iter().any(|aabb| {
-            aabb.max_y >= 1.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::North => shape.iter().any(|aabb| {
-            aabb.min_z <= 0.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-        }),
-        Direction::South => shape.iter().any(|aabb| {
-            aabb.max_z >= 1.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-        }),
-        Direction::West => shape.iter().any(|aabb| {
-            aabb.min_x <= 0.0
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::East => shape.iter().any(|aabb| {
-            aabb.max_x >= 1.0
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
+        Direction::Down | Direction::Up => face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
+        Direction::North | Direction::South => face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+        ),
+        Direction::West | Direction::East => face_rectangles_cover(
+            shape,
+            direction,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
     }
 }
 
 /// Checks if a shape provides rigid support on a face.
 ///
-/// Rigid support requires coverage of most of the face except a small border.
+/// Rigid support requires coverage of vanilla's fixed 3D support mask.
 #[must_use]
 pub fn is_face_rigid_supported(shape: VoxelShape, direction: Direction) -> bool {
     if shape.is_empty() {
         return false;
     }
 
-    // For rigid support, we need the shape to cover from RIGID_BORDER to 1-RIGID_BORDER
-    let min_bound = RIGID_BORDER;
-    let max_bound = 1.0 - RIGID_BORDER;
-
     match direction {
-        Direction::Down => shape.iter().any(|aabb| {
-            aabb.min_y <= 0.0
-                && aabb.min_x <= min_bound
-                && aabb.max_x >= max_bound
-                && aabb.min_z <= min_bound
-                && aabb.max_z >= max_bound
-        }),
-        Direction::Up => shape.iter().any(|aabb| {
-            aabb.max_y >= 1.0
-                && aabb.min_x <= min_bound
-                && aabb.max_x >= max_bound
-                && aabb.min_z <= min_bound
-                && aabb.max_z >= max_bound
-        }),
-        Direction::North => shape.iter().any(|aabb| {
-            aabb.min_z <= 0.0
-                && aabb.min_x <= min_bound
-                && aabb.max_x >= max_bound
-                && aabb.min_y <= min_bound
-                && aabb.max_y >= max_bound
-        }),
-        Direction::South => shape.iter().any(|aabb| {
-            aabb.max_z >= 1.0
-                && aabb.min_x <= min_bound
-                && aabb.max_x >= max_bound
-                && aabb.min_y <= min_bound
-                && aabb.max_y >= max_bound
-        }),
-        Direction::West => shape.iter().any(|aabb| {
-            aabb.min_x <= 0.0
-                && aabb.min_y <= min_bound
-                && aabb.max_y >= max_bound
-                && aabb.min_z <= min_bound
-                && aabb.max_z >= max_bound
-        }),
-        Direction::East => shape.iter().any(|aabb| {
-            aabb.max_x >= 1.0
-                && aabb.min_y <= min_bound
-                && aabb.max_y >= max_bound
-                && aabb.min_z <= min_bound
-                && aabb.max_z >= max_bound
-        }),
+        Direction::Down | Direction::Up => {
+            face_rectangles_cover(shape, direction, 0.0, RIGID_BORDER, 0.0, 1.0)
+                && face_rectangles_cover(shape, direction, 1.0 - RIGID_BORDER, 1.0, 0.0, 1.0)
+                && face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    0.0,
+                    RIGID_BORDER,
+                )
+                && face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0,
+                )
+        }
+        Direction::North | Direction::South | Direction::West | Direction::East => {
+            is_face_full(shape, direction)
+        }
     }
 }
 
@@ -583,36 +618,357 @@ pub fn is_face_sturdy(shape: VoxelShape, direction: Direction, support_type: Sup
     }
 }
 
-// Helper: checks if shape covers full X-Y face (for Up/Down directions)
-fn covers_face_xy(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    // Simple check: if there's a single AABB that covers 0-1 on X and Z and touches the face
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_x <= 0.0
-            && aabb.max_x >= 1.0
-            && aabb.min_z <= 0.0
-            && aabb.max_z >= 1.0
-    })
+#[derive(Clone, Copy)]
+struct FaceRect {
+    min_a: f64,
+    max_a: f64,
+    min_b: f64,
+    max_b: f64,
 }
 
-// Helper: checks if shape covers full X-Y face (for North/South directions)
-fn covers_face_xy_for_z(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_x <= 0.0
-            && aabb.max_x >= 1.0
-            && aabb.min_y <= 0.0
-            && aabb.max_y >= 1.0
-    })
+const FACE_EPSILON: f64 = 1.0e-6;
+
+fn face_rectangles_cover(
+    shape: VoxelShape,
+    direction: Direction,
+    target_min_a: f64,
+    target_max_a: f64,
+    target_min_b: f64,
+    target_max_b: f64,
+) -> bool {
+    let mut rects = Vec::new();
+    for aabb in shape {
+        let Some(rect) = face_rect_for_aabb(*aabb, direction) else {
+            continue;
+        };
+        if rect.max_a <= target_min_a
+            || rect.min_a >= target_max_a
+            || rect.max_b <= target_min_b
+            || rect.min_b >= target_max_b
+        {
+            continue;
+        }
+        rects.push(FaceRect {
+            min_a: rect.min_a.max(target_min_a),
+            max_a: rect.max_a.min(target_max_a),
+            min_b: rect.min_b.max(target_min_b),
+            max_b: rect.max_b.min(target_max_b),
+        });
+    }
+
+    if rects.is_empty() {
+        return false;
+    }
+
+    let mut a_edges = vec![target_min_a, target_max_a];
+    let mut b_edges = vec![target_min_b, target_max_b];
+    for rect in &rects {
+        a_edges.push(rect.min_a);
+        a_edges.push(rect.max_a);
+        b_edges.push(rect.min_b);
+        b_edges.push(rect.max_b);
+    }
+    sort_and_dedup_edges(&mut a_edges);
+    sort_and_dedup_edges(&mut b_edges);
+
+    for a_pair in a_edges.windows(2) {
+        if a_pair[1] - a_pair[0] <= FACE_EPSILON {
+            continue;
+        }
+        for b_pair in b_edges.windows(2) {
+            if b_pair[1] - b_pair[0] <= FACE_EPSILON {
+                continue;
+            }
+            let covered = rects.iter().any(|rect| {
+                rect.min_a <= a_pair[0] + FACE_EPSILON
+                    && rect.max_a >= a_pair[1] - FACE_EPSILON
+                    && rect.min_b <= b_pair[0] + FACE_EPSILON
+                    && rect.max_b >= b_pair[1] - FACE_EPSILON
+            });
+            if !covered {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
-// Helper: checks if shape covers full Y-Z face (for East/West directions)
-fn covers_face_yz(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_y <= 0.0
-            && aabb.max_y >= 1.0
-            && aabb.min_z <= 0.0
-            && aabb.max_z >= 1.0
-    })
+fn face_rect_for_aabb(aabb: BlockLocalAabb, direction: Direction) -> Option<FaceRect> {
+    let rect = match direction {
+        Direction::Down if aabb.min_y() <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x(),
+            max_a: aabb.max_x(),
+            min_b: aabb.min_z(),
+            max_b: aabb.max_z(),
+        },
+        Direction::Up if aabb.max_y() >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x(),
+            max_a: aabb.max_x(),
+            min_b: aabb.min_z(),
+            max_b: aabb.max_z(),
+        },
+        Direction::North if aabb.min_z() <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x(),
+            max_a: aabb.max_x(),
+            min_b: aabb.min_y(),
+            max_b: aabb.max_y(),
+        },
+        Direction::South if aabb.max_z() >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x(),
+            max_a: aabb.max_x(),
+            min_b: aabb.min_y(),
+            max_b: aabb.max_y(),
+        },
+        Direction::West if aabb.min_x() <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_y(),
+            max_a: aabb.max_y(),
+            min_b: aabb.min_z(),
+            max_b: aabb.max_z(),
+        },
+        Direction::East if aabb.max_x() >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_y(),
+            max_a: aabb.max_y(),
+            min_b: aabb.min_z(),
+            max_b: aabb.max_z(),
+        },
+        _ => return None,
+    };
+
+    if rect.min_a >= rect.max_a || rect.min_b >= rect.max_b {
+        return None;
+    }
+    Some(rect)
+}
+
+fn sort_and_dedup_edges(edges: &mut Vec<f64>) {
+    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.dedup_by(|a, b| (*a - *b).abs() <= FACE_EPSILON);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const QUADRANT_TOP_FACE: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.5, 0.0, 0.5, 1.0, 0.5),
+        BlockLocalAabb::new(0.5, 0.5, 0.0, 1.0, 1.0, 0.5),
+        BlockLocalAabb::new(0.0, 0.5, 0.5, 0.5, 1.0, 1.0),
+        BlockLocalAabb::new(0.5, 0.5, 0.5, 1.0, 1.0, 1.0),
+    ];
+
+    const GAPPED_TOP_FACE: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.5, 0.0, 0.45, 1.0, 1.0),
+        BlockLocalAabb::new(0.55, 0.5, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const VANILLA_AZALEA_SHAPE: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.375, 0.0, 0.375, 0.625, 1.0, 0.625),
+        BlockLocalAabb::new(0.0, 0.5, 0.0, 0.375, 1.0, 1.0),
+        BlockLocalAabb::new(0.375, 0.5, 0.0, 1.0, 1.0, 0.375),
+        BlockLocalAabb::new(0.375, 0.5, 0.625, 1.0, 1.0, 1.0),
+        BlockLocalAabb::new(0.625, 0.5, 0.375, 1.0, 1.0, 0.625),
+    ];
+
+    const SPLIT_FULL_BLOCK: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0),
+        BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const LOWER_HALF_BLOCK: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0)];
+
+    const UPPER_HALF_BLOCK: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(0.0, 0.5, 0.0, 1.0, 1.0, 1.0)];
+
+    const OVERLAPPING_HALF_BLOCKS: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 0.75, 1.0, 1.0),
+        BlockLocalAabb::new(0.25, 0.0, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const ZERO_VOLUME_BOX: &[BlockLocalAabb] = &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)];
+
+    const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
+
+    const RIGID_TOP_RING: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, RIGID_BORDER, 1.0, 1.0),
+        BlockLocalAabb::new(1.0 - RIGID_BORDER, 0.0, 0.0, 1.0, 1.0, 1.0),
+        BlockLocalAabb::new(
+            RIGID_BORDER,
+            0.0,
+            0.0,
+            1.0 - RIGID_BORDER,
+            1.0,
+            RIGID_BORDER,
+        ),
+        BlockLocalAabb::new(
+            RIGID_BORDER,
+            0.0,
+            1.0 - RIGID_BORDER,
+            1.0 - RIGID_BORDER,
+            1.0,
+            1.0,
+        ),
+    ];
+
+    const RIGID_CENTER_PANEL: &[BlockLocalAabb] = &[BlockLocalAabb::new(
+        RIGID_BORDER,
+        0.0,
+        RIGID_BORDER,
+        1.0 - RIGID_BORDER,
+        1.0,
+        1.0 - RIGID_BORDER,
+    )];
+
+    const RIGID_WEST_FACE_RING: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, RIGID_BORDER, 1.0),
+        BlockLocalAabb::new(0.0, 1.0 - RIGID_BORDER, 0.0, 1.0, 1.0, 1.0),
+        BlockLocalAabb::new(
+            0.0,
+            RIGID_BORDER,
+            0.0,
+            1.0,
+            1.0 - RIGID_BORDER,
+            RIGID_BORDER,
+        ),
+        BlockLocalAabb::new(
+            0.0,
+            RIGID_BORDER,
+            1.0 - RIGID_BORDER,
+            1.0,
+            1.0 - RIGID_BORDER,
+            1.0,
+        ),
+    ];
+
+    #[test]
+    fn boolean_op_matches_vanilla_truth_table() {
+        assert!(BooleanOp::OnlyFirst.apply(true, false));
+        assert!(!BooleanOp::OnlyFirst.apply(false, true));
+        assert!(BooleanOp::NotSame.apply(true, false));
+        assert!(!BooleanOp::NotSame.apply(true, true));
+        assert!(BooleanOp::Or.apply(false, true));
+        assert!(!BooleanOp::And.apply(true, false));
+    }
+
+    #[test]
+    fn join_is_not_empty_detects_intersection() {
+        assert!(join_is_not_empty(
+            VoxelShape::from_boxes(OVERLAPPING_HALF_BLOCKS),
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            BooleanOp::And
+        ));
+    }
+
+    #[test]
+    fn join_is_not_empty_rejects_disjoint_and() {
+        assert!(!join_is_not_empty(
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            VoxelShape::from_boxes(UPPER_HALF_BLOCK),
+            BooleanOp::And
+        ));
+    }
+
+    #[test]
+    fn join_is_not_empty_detects_only_first_remainder() {
+        assert!(join_is_not_empty(
+            VoxelShape::FULL_BLOCK,
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            BooleanOp::OnlyFirst
+        ));
+    }
+
+    #[test]
+    fn join_unoptimized_boxes_materializes_only_second_remainder() {
+        let remainder = join_unoptimized_boxes(
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            VoxelShape::FULL_BLOCK,
+            BooleanOp::OnlySecond,
+        );
+
+        assert_eq!(
+            remainder,
+            vec![BlockLocalAabb::new(0.0, 0.5, 0.0, 1.0, 1.0, 1.0)]
+        );
+    }
+
+    #[test]
+    fn shape_full_block_accepts_tiled_boxes() {
+        assert!(is_shape_full_block(VoxelShape::from_boxes(
+            SPLIT_FULL_BLOCK
+        )));
+    }
+
+    #[test]
+    fn shape_full_block_rejects_partial_boxes() {
+        assert!(!is_shape_full_block(VoxelShape::from_boxes(
+            LOWER_HALF_BLOCK
+        )));
+    }
+
+    #[test]
+    fn zero_volume_boxes_are_empty() {
+        assert!(VoxelShape::from_boxes(ZERO_VOLUME_BOX).is_empty());
+        assert!(!join_is_not_empty(
+            VoxelShape::from_boxes(ZERO_VOLUME_BOX),
+            VoxelShape::FULL_BLOCK,
+            BooleanOp::And
+        ));
+    }
+
+    #[test]
+    fn large_collision_shape_matches_vanilla_bounds_rule() {
+        assert!(!VoxelShape::EMPTY.has_large_collision_shape());
+        assert!(!VoxelShape::FULL_BLOCK.has_large_collision_shape());
+        assert!(VoxelShape::from_boxes(LARGE_COLLISION_SHAPE).has_large_collision_shape());
+    }
+
+    #[test]
+    fn face_full_accepts_union_covering_face() {
+        assert!(is_face_full(
+            VoxelShape::from_boxes(QUADRANT_TOP_FACE),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn face_full_rejects_union_with_gap() {
+        assert!(!is_face_full(
+            VoxelShape::from_boxes(GAPPED_TOP_FACE),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn face_full_accepts_vanilla_azalea_top_shape() {
+        assert!(is_face_full(
+            VoxelShape::from_boxes(VANILLA_AZALEA_SHAPE),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_accepts_border_ring_covered_by_multiple_boxes() {
+        assert!(is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_TOP_RING),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_rejects_center_panel_without_border_ring() {
+        assert!(!is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_CENTER_PANEL),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn rigid_support_rejects_side_border_ring_without_full_face() {
+        assert!(!is_face_rigid_supported(
+            VoxelShape::from_boxes(RIGID_WEST_FACE_RING),
+            Direction::West
+        ));
+    }
 }

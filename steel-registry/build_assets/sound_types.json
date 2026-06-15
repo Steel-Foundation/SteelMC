@@ -2,1108 +2,1108 @@
   "EMPTY": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1072,
-    "step_sound": 1072,
-    "place_sound": 1072,
-    "hit_sound": 1072,
-    "fall_sound": 1072
+    "break_sound": "minecraft:intentionally_empty",
+    "step_sound": "minecraft:intentionally_empty",
+    "place_sound": "minecraft:intentionally_empty",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:intentionally_empty"
   },
   "WOOD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1779,
-    "step_sound": 1783,
-    "place_sound": 1782,
-    "hit_sound": 1781,
-    "fall_sound": 1780
+    "break_sound": "minecraft:block.wood.break",
+    "step_sound": "minecraft:block.wood.step",
+    "place_sound": "minecraft:block.wood.place",
+    "hit_sound": "minecraft:block.wood.hit",
+    "fall_sound": "minecraft:block.wood.fall"
   },
   "GRAVEL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 727,
-    "step_sound": 731,
-    "place_sound": 730,
-    "hit_sound": 729,
-    "fall_sound": 728
+    "break_sound": "minecraft:block.gravel.break",
+    "step_sound": "minecraft:block.gravel.step",
+    "place_sound": "minecraft:block.gravel.place",
+    "hit_sound": "minecraft:block.gravel.hit",
+    "fall_sound": "minecraft:block.gravel.fall"
   },
   "GRASS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 722,
-    "step_sound": 726,
-    "place_sound": 725,
-    "hit_sound": 724,
-    "fall_sound": 723
+    "break_sound": "minecraft:block.grass.break",
+    "step_sound": "minecraft:block.grass.step",
+    "place_sound": "minecraft:block.grass.place",
+    "hit_sound": "minecraft:block.grass.hit",
+    "fall_sound": "minecraft:block.grass.fall"
   },
   "LILY_PAD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 169,
-    "step_sound": 173,
-    "place_sound": 1657,
-    "hit_sound": 171,
-    "fall_sound": 170
+    "break_sound": "minecraft:block.big_dripleaf.break",
+    "step_sound": "minecraft:block.big_dripleaf.step",
+    "place_sound": "minecraft:block.lily_pad.place",
+    "hit_sound": "minecraft:block.big_dripleaf.hit",
+    "fall_sound": "minecraft:block.big_dripleaf.fall"
   },
   "STONE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1535,
-    "step_sound": 1543,
-    "place_sound": 1540,
-    "hit_sound": 1539,
-    "fall_sound": 1538
+    "break_sound": "minecraft:block.stone.break",
+    "step_sound": "minecraft:block.stone.step",
+    "place_sound": "minecraft:block.stone.place",
+    "hit_sound": "minecraft:block.stone.hit",
+    "fall_sound": "minecraft:block.stone.fall"
   },
   "METAL": {
     "volume": 1.0,
     "pitch": 1.5,
-    "break_sound": 934,
-    "step_sound": 940,
-    "place_sound": 937,
-    "hit_sound": 936,
-    "fall_sound": 935
+    "break_sound": "minecraft:block.metal.break",
+    "step_sound": "minecraft:block.metal.step",
+    "place_sound": "minecraft:block.metal.place",
+    "hit_sound": "minecraft:block.metal.hit",
+    "fall_sound": "minecraft:block.metal.fall"
   },
   "GLASS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 689,
-    "step_sound": 693,
-    "place_sound": 692,
-    "hit_sound": 691,
-    "fall_sound": 690
+    "break_sound": "minecraft:block.glass.break",
+    "step_sound": "minecraft:block.glass.step",
+    "place_sound": "minecraft:block.glass.place",
+    "hit_sound": "minecraft:block.glass.hit",
+    "fall_sound": "minecraft:block.glass.fall"
   },
   "WOOL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1784,
-    "step_sound": 1788,
-    "place_sound": 1787,
-    "hit_sound": 1786,
-    "fall_sound": 1785
+    "break_sound": "minecraft:block.wool.break",
+    "step_sound": "minecraft:block.wool.step",
+    "place_sound": "minecraft:block.wool.place",
+    "hit_sound": "minecraft:block.wool.hit",
+    "fall_sound": "minecraft:block.wool.fall"
   },
   "SAND": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1335,
-    "step_sound": 1339,
-    "place_sound": 1338,
-    "hit_sound": 1337,
-    "fall_sound": 1336
+    "break_sound": "minecraft:block.sand.break",
+    "step_sound": "minecraft:block.sand.step",
+    "place_sound": "minecraft:block.sand.place",
+    "hit_sound": "minecraft:block.sand.hit",
+    "fall_sound": "minecraft:block.sand.fall"
   },
   "SNOW": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1507,
-    "step_sound": 1516,
-    "place_sound": 1515,
-    "hit_sound": 1514,
-    "fall_sound": 1508
+    "break_sound": "minecraft:block.snow.break",
+    "step_sound": "minecraft:block.snow.step",
+    "place_sound": "minecraft:block.snow.place",
+    "hit_sound": "minecraft:block.snow.hit",
+    "fall_sound": "minecraft:block.snow.fall"
   },
   "POWDER_SNOW": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1276,
-    "step_sound": 1280,
-    "place_sound": 1279,
-    "hit_sound": 1278,
-    "fall_sound": 1277
+    "break_sound": "minecraft:block.powder_snow.break",
+    "step_sound": "minecraft:block.powder_snow.step",
+    "place_sound": "minecraft:block.powder_snow.place",
+    "hit_sound": "minecraft:block.powder_snow.hit",
+    "fall_sound": "minecraft:block.powder_snow.fall"
   },
   "LADDER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 871,
-    "step_sound": 875,
-    "place_sound": 874,
-    "hit_sound": 873,
-    "fall_sound": 872
+    "break_sound": "minecraft:block.ladder.break",
+    "step_sound": "minecraft:block.ladder.step",
+    "place_sound": "minecraft:block.ladder.place",
+    "hit_sound": "minecraft:block.ladder.hit",
+    "fall_sound": "minecraft:block.ladder.fall"
   },
   "ANVIL": {
     "volume": 0.3,
     "pitch": 1.0,
-    "break_sound": 46,
-    "step_sound": 52,
-    "place_sound": 51,
-    "hit_sound": 49,
-    "fall_sound": 48
+    "break_sound": "minecraft:block.anvil.break",
+    "step_sound": "minecraft:block.anvil.step",
+    "place_sound": "minecraft:block.anvil.place",
+    "hit_sound": "minecraft:block.anvil.hit",
+    "fall_sound": "minecraft:block.anvil.fall"
   },
   "SLIME_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1437,
-    "step_sound": 1441,
-    "place_sound": 1440,
-    "hit_sound": 1439,
-    "fall_sound": 1438
+    "break_sound": "minecraft:block.slime_block.break",
+    "step_sound": "minecraft:block.slime_block.step",
+    "place_sound": "minecraft:block.slime_block.place",
+    "hit_sound": "minecraft:block.slime_block.hit",
+    "fall_sound": "minecraft:block.slime_block.fall"
   },
   "HONEY_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 800,
-    "step_sound": 805,
-    "place_sound": 803,
-    "hit_sound": 802,
-    "fall_sound": 801
+    "break_sound": "minecraft:block.honey_block.break",
+    "step_sound": "minecraft:block.honey_block.step",
+    "place_sound": "minecraft:block.honey_block.place",
+    "hit_sound": "minecraft:block.honey_block.hit",
+    "fall_sound": "minecraft:block.honey_block.fall"
   },
   "WET_GRASS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1694,
-    "step_sound": 1698,
-    "place_sound": 1697,
-    "hit_sound": 1696,
-    "fall_sound": 1695
+    "break_sound": "minecraft:block.wet_grass.break",
+    "step_sound": "minecraft:block.wet_grass.step",
+    "place_sound": "minecraft:block.wet_grass.place",
+    "hit_sound": "minecraft:block.wet_grass.hit",
+    "fall_sound": "minecraft:block.wet_grass.fall"
   },
   "CORAL_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 417,
-    "step_sound": 421,
-    "place_sound": 420,
-    "hit_sound": 419,
-    "fall_sound": 418
+    "break_sound": "minecraft:block.coral_block.break",
+    "step_sound": "minecraft:block.coral_block.step",
+    "place_sound": "minecraft:block.coral_block.place",
+    "hit_sound": "minecraft:block.coral_block.hit",
+    "fall_sound": "minecraft:block.coral_block.fall"
   },
   "BAMBOO": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 117,
-    "step_sound": 121,
-    "place_sound": 120,
-    "hit_sound": 119,
-    "fall_sound": 118
+    "break_sound": "minecraft:block.bamboo.break",
+    "step_sound": "minecraft:block.bamboo.step",
+    "place_sound": "minecraft:block.bamboo.place",
+    "hit_sound": "minecraft:block.bamboo.hit",
+    "fall_sound": "minecraft:block.bamboo.fall"
   },
   "BAMBOO_SAPLING": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 122,
-    "step_sound": 121,
-    "place_sound": 124,
-    "hit_sound": 123,
-    "fall_sound": 118
+    "break_sound": "minecraft:block.bamboo_sapling.break",
+    "step_sound": "minecraft:block.bamboo.step",
+    "place_sound": "minecraft:block.bamboo_sapling.place",
+    "hit_sound": "minecraft:block.bamboo_sapling.hit",
+    "fall_sound": "minecraft:block.bamboo.fall"
   },
   "SCAFFOLDING": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1341,
-    "step_sound": 1345,
-    "place_sound": 1344,
-    "hit_sound": 1343,
-    "fall_sound": 1342
+    "break_sound": "minecraft:block.scaffolding.break",
+    "step_sound": "minecraft:block.scaffolding.step",
+    "place_sound": "minecraft:block.scaffolding.place",
+    "hit_sound": "minecraft:block.scaffolding.hit",
+    "fall_sound": "minecraft:block.scaffolding.fall"
   },
   "SWEET_BERRY_BUSH": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1548,
-    "step_sound": 726,
-    "place_sound": 1549,
-    "hit_sound": 724,
-    "fall_sound": 723
+    "break_sound": "minecraft:block.sweet_berry_bush.break",
+    "step_sound": "minecraft:block.grass.step",
+    "place_sound": "minecraft:block.sweet_berry_bush.place",
+    "hit_sound": "minecraft:block.grass.hit",
+    "fall_sound": "minecraft:block.grass.fall"
   },
   "CROP": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 451,
-    "step_sound": 726,
-    "place_sound": 452,
-    "hit_sound": 724,
-    "fall_sound": 723
+    "break_sound": "minecraft:block.crop.break",
+    "step_sound": "minecraft:block.grass.step",
+    "place_sound": "minecraft:item.crop.plant",
+    "hit_sound": "minecraft:block.grass.hit",
+    "fall_sound": "minecraft:block.grass.fall"
   },
   "HARD_CROP": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1779,
-    "step_sound": 1783,
-    "place_sound": 452,
-    "hit_sound": 1781,
-    "fall_sound": 1780
+    "break_sound": "minecraft:block.wood.break",
+    "step_sound": "minecraft:block.wood.step",
+    "place_sound": "minecraft:item.crop.plant",
+    "hit_sound": "minecraft:block.wood.hit",
+    "fall_sound": "minecraft:block.wood.fall"
   },
   "VINE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1652,
-    "step_sound": 1656,
-    "place_sound": 1655,
-    "hit_sound": 1654,
-    "fall_sound": 1653
+    "break_sound": "minecraft:block.vine.break",
+    "step_sound": "minecraft:block.vine.step",
+    "place_sound": "minecraft:block.vine.place",
+    "hit_sound": "minecraft:block.vine.hit",
+    "fall_sound": "minecraft:block.vine.fall"
   },
   "NETHER_WART": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1055,
-    "step_sound": 1543,
-    "place_sound": 1056,
-    "hit_sound": 1539,
-    "fall_sound": 1538
+    "break_sound": "minecraft:block.nether_wart.break",
+    "step_sound": "minecraft:block.stone.step",
+    "place_sound": "minecraft:item.nether_wart.plant",
+    "hit_sound": "minecraft:block.stone.hit",
+    "fall_sound": "minecraft:block.stone.fall"
   },
   "LANTERN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 876,
-    "step_sound": 880,
-    "place_sound": 879,
-    "hit_sound": 878,
-    "fall_sound": 877
+    "break_sound": "minecraft:block.lantern.break",
+    "step_sound": "minecraft:block.lantern.step",
+    "place_sound": "minecraft:block.lantern.place",
+    "hit_sound": "minecraft:block.lantern.hit",
+    "fall_sound": "minecraft:block.lantern.fall"
   },
   "STEM": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1078,
-    "step_sound": 1079,
-    "place_sound": 1080,
-    "hit_sound": 1081,
-    "fall_sound": 1082
+    "break_sound": "minecraft:block.stem.break",
+    "step_sound": "minecraft:block.stem.step",
+    "place_sound": "minecraft:block.stem.place",
+    "hit_sound": "minecraft:block.stem.hit",
+    "fall_sound": "minecraft:block.stem.fall"
   },
   "NYLIUM": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1083,
-    "step_sound": 1084,
-    "place_sound": 1085,
-    "hit_sound": 1086,
-    "fall_sound": 1087
+    "break_sound": "minecraft:block.nylium.break",
+    "step_sound": "minecraft:block.nylium.step",
+    "place_sound": "minecraft:block.nylium.place",
+    "hit_sound": "minecraft:block.nylium.hit",
+    "fall_sound": "minecraft:block.nylium.fall"
   },
   "FUNGUS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1093,
-    "step_sound": 1094,
-    "place_sound": 1095,
-    "hit_sound": 1096,
-    "fall_sound": 1097
+    "break_sound": "minecraft:block.fungus.break",
+    "step_sound": "minecraft:block.fungus.step",
+    "place_sound": "minecraft:block.fungus.place",
+    "hit_sound": "minecraft:block.fungus.hit",
+    "fall_sound": "minecraft:block.fungus.fall"
   },
   "ROOTS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 657,
-    "step_sound": 658,
-    "place_sound": 659,
-    "hit_sound": 660,
-    "fall_sound": 661
+    "break_sound": "minecraft:block.roots.break",
+    "step_sound": "minecraft:block.roots.step",
+    "place_sound": "minecraft:block.roots.place",
+    "hit_sound": "minecraft:block.roots.hit",
+    "fall_sound": "minecraft:block.roots.fall"
   },
   "SHROOMLIGHT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1396,
-    "step_sound": 1397,
-    "place_sound": 1398,
-    "hit_sound": 1399,
-    "fall_sound": 1400
+    "break_sound": "minecraft:block.shroomlight.break",
+    "step_sound": "minecraft:block.shroomlight.step",
+    "place_sound": "minecraft:block.shroomlight.place",
+    "hit_sound": "minecraft:block.shroomlight.hit",
+    "fall_sound": "minecraft:block.shroomlight.fall"
   },
   "WEEPING_VINES": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1098,
-    "step_sound": 1099,
-    "place_sound": 1100,
-    "hit_sound": 1101,
-    "fall_sound": 1102
+    "break_sound": "minecraft:block.weeping_vines.break",
+    "step_sound": "minecraft:block.weeping_vines.step",
+    "place_sound": "minecraft:block.weeping_vines.place",
+    "hit_sound": "minecraft:block.weeping_vines.hit",
+    "fall_sound": "minecraft:block.weeping_vines.fall"
   },
   "TWISTING_VINES": {
     "volume": 1.0,
     "pitch": 0.5,
-    "break_sound": 1098,
-    "step_sound": 1099,
-    "place_sound": 1100,
-    "hit_sound": 1101,
-    "fall_sound": 1102
+    "break_sound": "minecraft:block.weeping_vines.break",
+    "step_sound": "minecraft:block.weeping_vines.step",
+    "place_sound": "minecraft:block.weeping_vines.place",
+    "hit_sound": "minecraft:block.weeping_vines.hit",
+    "fall_sound": "minecraft:block.weeping_vines.fall"
   },
   "SOUL_SAND": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1449,
-    "step_sound": 1450,
-    "place_sound": 1451,
-    "hit_sound": 1452,
-    "fall_sound": 1453
+    "break_sound": "minecraft:block.soul_sand.break",
+    "step_sound": "minecraft:block.soul_sand.step",
+    "place_sound": "minecraft:block.soul_sand.place",
+    "hit_sound": "minecraft:block.soul_sand.hit",
+    "fall_sound": "minecraft:block.soul_sand.fall"
   },
   "SOUL_SOIL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1454,
-    "step_sound": 1455,
-    "place_sound": 1456,
-    "hit_sound": 1457,
-    "fall_sound": 1458
+    "break_sound": "minecraft:block.soul_soil.break",
+    "step_sound": "minecraft:block.soul_soil.step",
+    "place_sound": "minecraft:block.soul_soil.place",
+    "hit_sound": "minecraft:block.soul_soil.hit",
+    "fall_sound": "minecraft:block.soul_soil.fall"
   },
   "BASALT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 142,
-    "step_sound": 143,
-    "place_sound": 144,
-    "hit_sound": 145,
-    "fall_sound": 146
+    "break_sound": "minecraft:block.basalt.break",
+    "step_sound": "minecraft:block.basalt.step",
+    "place_sound": "minecraft:block.basalt.place",
+    "hit_sound": "minecraft:block.basalt.hit",
+    "fall_sound": "minecraft:block.basalt.fall"
   },
   "WART_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1103,
-    "step_sound": 1104,
-    "place_sound": 1105,
-    "hit_sound": 1106,
-    "fall_sound": 1107
+    "break_sound": "minecraft:block.wart_block.break",
+    "step_sound": "minecraft:block.wart_block.step",
+    "place_sound": "minecraft:block.wart_block.place",
+    "hit_sound": "minecraft:block.wart_block.hit",
+    "fall_sound": "minecraft:block.wart_block.fall"
   },
   "NETHERRACK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1113,
-    "step_sound": 1114,
-    "place_sound": 1115,
-    "hit_sound": 1116,
-    "fall_sound": 1117
+    "break_sound": "minecraft:block.netherrack.break",
+    "step_sound": "minecraft:block.netherrack.step",
+    "place_sound": "minecraft:block.netherrack.place",
+    "hit_sound": "minecraft:block.netherrack.hit",
+    "fall_sound": "minecraft:block.netherrack.fall"
   },
   "NETHER_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1050,
-    "step_sound": 1051,
-    "place_sound": 1052,
-    "hit_sound": 1053,
-    "fall_sound": 1054
+    "break_sound": "minecraft:block.nether_bricks.break",
+    "step_sound": "minecraft:block.nether_bricks.step",
+    "place_sound": "minecraft:block.nether_bricks.place",
+    "hit_sound": "minecraft:block.nether_bricks.hit",
+    "fall_sound": "minecraft:block.nether_bricks.fall"
   },
   "NETHER_SPROUTS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1088,
-    "step_sound": 1089,
-    "place_sound": 1090,
-    "hit_sound": 1091,
-    "fall_sound": 1092
+    "break_sound": "minecraft:block.nether_sprouts.break",
+    "step_sound": "minecraft:block.nether_sprouts.step",
+    "place_sound": "minecraft:block.nether_sprouts.place",
+    "hit_sound": "minecraft:block.nether_sprouts.hit",
+    "fall_sound": "minecraft:block.nether_sprouts.fall"
   },
   "NETHER_ORE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1307,
-    "step_sound": 1311,
-    "place_sound": 1310,
-    "hit_sound": 1309,
-    "fall_sound": 1308
+    "break_sound": "minecraft:block.nether_ore.break",
+    "step_sound": "minecraft:block.nether_ore.step",
+    "place_sound": "minecraft:block.nether_ore.place",
+    "hit_sound": "minecraft:block.nether_ore.hit",
+    "fall_sound": "minecraft:block.nether_ore.fall"
   },
   "BONE_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 186,
-    "step_sound": 190,
-    "place_sound": 189,
-    "hit_sound": 188,
-    "fall_sound": 187
+    "break_sound": "minecraft:block.bone_block.break",
+    "step_sound": "minecraft:block.bone_block.step",
+    "place_sound": "minecraft:block.bone_block.place",
+    "hit_sound": "minecraft:block.bone_block.hit",
+    "fall_sound": "minecraft:block.bone_block.fall"
   },
   "NETHERITE_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1108,
-    "step_sound": 1109,
-    "place_sound": 1110,
-    "hit_sound": 1111,
-    "fall_sound": 1112
+    "break_sound": "minecraft:block.netherite_block.break",
+    "step_sound": "minecraft:block.netherite_block.step",
+    "place_sound": "minecraft:block.netherite_block.place",
+    "hit_sound": "minecraft:block.netherite_block.hit",
+    "fall_sound": "minecraft:block.netherite_block.fall"
   },
   "ANCIENT_DEBRIS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 41,
-    "step_sound": 42,
-    "place_sound": 43,
-    "hit_sound": 44,
-    "fall_sound": 45
+    "break_sound": "minecraft:block.ancient_debris.break",
+    "step_sound": "minecraft:block.ancient_debris.step",
+    "place_sound": "minecraft:block.ancient_debris.place",
+    "hit_sound": "minecraft:block.ancient_debris.hit",
+    "fall_sound": "minecraft:block.ancient_debris.fall"
   },
   "LODESTONE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 909,
-    "step_sound": 910,
-    "place_sound": 911,
-    "hit_sound": 912,
-    "fall_sound": 913
+    "break_sound": "minecraft:block.lodestone.break",
+    "step_sound": "minecraft:block.lodestone.step",
+    "place_sound": "minecraft:block.lodestone.place",
+    "hit_sound": "minecraft:block.lodestone.hit",
+    "fall_sound": "minecraft:block.lodestone.fall"
   },
   "CHAIN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 292,
-    "step_sound": 296,
-    "place_sound": 295,
-    "hit_sound": 294,
-    "fall_sound": 293
+    "break_sound": "minecraft:block.chain.break",
+    "step_sound": "minecraft:block.chain.step",
+    "place_sound": "minecraft:block.chain.place",
+    "hit_sound": "minecraft:block.chain.hit",
+    "fall_sound": "minecraft:block.chain.fall"
   },
   "NETHER_GOLD_ORE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1302,
-    "step_sound": 1306,
-    "place_sound": 1305,
-    "hit_sound": 1304,
-    "fall_sound": 1303
+    "break_sound": "minecraft:block.nether_gold_ore.break",
+    "step_sound": "minecraft:block.nether_gold_ore.step",
+    "place_sound": "minecraft:block.nether_gold_ore.place",
+    "hit_sound": "minecraft:block.nether_gold_ore.hit",
+    "fall_sound": "minecraft:block.nether_gold_ore.fall"
   },
   "GILDED_BLACKSTONE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 684,
-    "step_sound": 688,
-    "place_sound": 687,
-    "hit_sound": 686,
-    "fall_sound": 685
+    "break_sound": "minecraft:block.gilded_blackstone.break",
+    "step_sound": "minecraft:block.gilded_blackstone.step",
+    "place_sound": "minecraft:block.gilded_blackstone.place",
+    "hit_sound": "minecraft:block.gilded_blackstone.hit",
+    "fall_sound": "minecraft:block.gilded_blackstone.fall"
   },
   "CANDLE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 271,
-    "step_sound": 276,
-    "place_sound": 275,
-    "hit_sound": 274,
-    "fall_sound": 273
+    "break_sound": "minecraft:block.candle.break",
+    "step_sound": "minecraft:block.candle.step",
+    "place_sound": "minecraft:block.candle.place",
+    "hit_sound": "minecraft:block.candle.hit",
+    "fall_sound": "minecraft:block.candle.fall"
   },
   "AMETHYST": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 29,
-    "step_sound": 35,
-    "place_sound": 33,
-    "hit_sound": 32,
-    "fall_sound": 31
+    "break_sound": "minecraft:block.amethyst_block.break",
+    "step_sound": "minecraft:block.amethyst_block.step",
+    "place_sound": "minecraft:block.amethyst_block.place",
+    "hit_sound": "minecraft:block.amethyst_block.hit",
+    "fall_sound": "minecraft:block.amethyst_block.fall"
   },
   "AMETHYST_CLUSTER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 36,
-    "step_sound": 40,
-    "place_sound": 39,
-    "hit_sound": 38,
-    "fall_sound": 37
+    "break_sound": "minecraft:block.amethyst_cluster.break",
+    "step_sound": "minecraft:block.amethyst_cluster.step",
+    "place_sound": "minecraft:block.amethyst_cluster.place",
+    "hit_sound": "minecraft:block.amethyst_cluster.hit",
+    "fall_sound": "minecraft:block.amethyst_cluster.fall"
   },
   "SMALL_AMETHYST_BUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1442,
-    "step_sound": 40,
-    "place_sound": 1443,
-    "hit_sound": 38,
-    "fall_sound": 37
+    "break_sound": "minecraft:block.small_amethyst_bud.break",
+    "step_sound": "minecraft:block.amethyst_cluster.step",
+    "place_sound": "minecraft:block.small_amethyst_bud.place",
+    "hit_sound": "minecraft:block.amethyst_cluster.hit",
+    "fall_sound": "minecraft:block.amethyst_cluster.fall"
   },
   "MEDIUM_AMETHYST_BUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 932,
-    "step_sound": 40,
-    "place_sound": 933,
-    "hit_sound": 38,
-    "fall_sound": 37
+    "break_sound": "minecraft:block.medium_amethyst_bud.break",
+    "step_sound": "minecraft:block.amethyst_cluster.step",
+    "place_sound": "minecraft:block.medium_amethyst_bud.place",
+    "hit_sound": "minecraft:block.amethyst_cluster.hit",
+    "fall_sound": "minecraft:block.amethyst_cluster.fall"
   },
   "LARGE_AMETHYST_BUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 881,
-    "step_sound": 40,
-    "place_sound": 882,
-    "hit_sound": 38,
-    "fall_sound": 37
+    "break_sound": "minecraft:block.large_amethyst_bud.break",
+    "step_sound": "minecraft:block.amethyst_cluster.step",
+    "place_sound": "minecraft:block.large_amethyst_bud.place",
+    "hit_sound": "minecraft:block.amethyst_cluster.hit",
+    "fall_sound": "minecraft:block.amethyst_cluster.fall"
   },
   "TUFF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1574,
-    "step_sound": 1575,
-    "place_sound": 1576,
-    "hit_sound": 1577,
-    "fall_sound": 1578
+    "break_sound": "minecraft:block.tuff.break",
+    "step_sound": "minecraft:block.tuff.step",
+    "place_sound": "minecraft:block.tuff.place",
+    "hit_sound": "minecraft:block.tuff.hit",
+    "fall_sound": "minecraft:block.tuff.fall"
   },
   "TUFF_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1579,
-    "step_sound": 1583,
-    "place_sound": 1582,
-    "hit_sound": 1581,
-    "fall_sound": 1580
+    "break_sound": "minecraft:block.tuff_bricks.break",
+    "step_sound": "minecraft:block.tuff_bricks.step",
+    "place_sound": "minecraft:block.tuff_bricks.place",
+    "hit_sound": "minecraft:block.tuff_bricks.hit",
+    "fall_sound": "minecraft:block.tuff_bricks.fall"
   },
   "POLISHED_TUFF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1584,
-    "step_sound": 1588,
-    "place_sound": 1587,
-    "hit_sound": 1586,
-    "fall_sound": 1585
+    "break_sound": "minecraft:block.polished_tuff.break",
+    "step_sound": "minecraft:block.polished_tuff.step",
+    "place_sound": "minecraft:block.polished_tuff.place",
+    "hit_sound": "minecraft:block.polished_tuff.hit",
+    "fall_sound": "minecraft:block.polished_tuff.fall"
   },
   "CALCITE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 242,
-    "step_sound": 243,
-    "place_sound": 244,
-    "hit_sound": 245,
-    "fall_sound": 246
+    "break_sound": "minecraft:block.calcite.break",
+    "step_sound": "minecraft:block.calcite.step",
+    "place_sound": "minecraft:block.calcite.place",
+    "hit_sound": "minecraft:block.calcite.hit",
+    "fall_sound": "minecraft:block.calcite.fall"
   },
   "DRIPSTONE_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 513,
-    "step_sound": 514,
-    "place_sound": 515,
-    "hit_sound": 516,
-    "fall_sound": 517
+    "break_sound": "minecraft:block.dripstone_block.break",
+    "step_sound": "minecraft:block.dripstone_block.step",
+    "place_sound": "minecraft:block.dripstone_block.place",
+    "hit_sound": "minecraft:block.dripstone_block.hit",
+    "fall_sound": "minecraft:block.dripstone_block.fall"
   },
   "POINTED_DRIPSTONE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 519,
-    "step_sound": 520,
-    "place_sound": 521,
-    "hit_sound": 522,
-    "fall_sound": 523
+    "break_sound": "minecraft:block.pointed_dripstone.break",
+    "step_sound": "minecraft:block.pointed_dripstone.step",
+    "place_sound": "minecraft:block.pointed_dripstone.place",
+    "hit_sound": "minecraft:block.pointed_dripstone.hit",
+    "fall_sound": "minecraft:block.pointed_dripstone.fall"
   },
   "COPPER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 373,
-    "step_sound": 374,
-    "place_sound": 375,
-    "hit_sound": 376,
-    "fall_sound": 377
+    "break_sound": "minecraft:block.copper.break",
+    "step_sound": "minecraft:block.copper.step",
+    "place_sound": "minecraft:block.copper.place",
+    "hit_sound": "minecraft:block.copper.hit",
+    "fall_sound": "minecraft:block.copper.fall"
   },
   "COPPER_BULB": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 366,
-    "step_sound": 367,
-    "place_sound": 368,
-    "hit_sound": 369,
-    "fall_sound": 370
+    "break_sound": "minecraft:block.copper_bulb.break",
+    "step_sound": "minecraft:block.copper_bulb.step",
+    "place_sound": "minecraft:block.copper_bulb.place",
+    "hit_sound": "minecraft:block.copper_bulb.hit",
+    "fall_sound": "minecraft:block.copper_bulb.fall"
   },
   "COPPER_GRATE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 410,
-    "step_sound": 411,
-    "place_sound": 412,
-    "hit_sound": 413,
-    "fall_sound": 414
+    "break_sound": "minecraft:block.copper_grate.break",
+    "step_sound": "minecraft:block.copper_grate.step",
+    "place_sound": "minecraft:block.copper_grate.place",
+    "hit_sound": "minecraft:block.copper_grate.hit",
+    "fall_sound": "minecraft:block.copper_grate.fall"
   },
   "COPPER_GOLEM_STATUE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 403,
-    "step_sound": 406,
-    "place_sound": 404,
-    "hit_sound": 405,
-    "fall_sound": 407
+    "break_sound": "minecraft:block.copper_golem_statue.break",
+    "step_sound": "minecraft:block.copper_golem_statue.step",
+    "place_sound": "minecraft:block.copper_golem_statue.place",
+    "hit_sound": "minecraft:block.copper_golem_statue.hit",
+    "fall_sound": "minecraft:block.copper_golem_statue.fall"
   },
   "CAVE_VINES": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 286,
-    "step_sound": 290,
-    "place_sound": 289,
-    "hit_sound": 288,
-    "fall_sound": 287
+    "break_sound": "minecraft:block.cave_vines.break",
+    "step_sound": "minecraft:block.cave_vines.step",
+    "place_sound": "minecraft:block.cave_vines.place",
+    "hit_sound": "minecraft:block.cave_vines.hit",
+    "fall_sound": "minecraft:block.cave_vines.fall"
   },
   "SPORE_BLOSSOM": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1471,
-    "step_sound": 1475,
-    "place_sound": 1474,
-    "hit_sound": 1473,
-    "fall_sound": 1472
+    "break_sound": "minecraft:block.spore_blossom.break",
+    "step_sound": "minecraft:block.spore_blossom.step",
+    "place_sound": "minecraft:block.spore_blossom.place",
+    "hit_sound": "minecraft:block.spore_blossom.hit",
+    "fall_sound": "minecraft:block.spore_blossom.fall"
   },
   "CACTUS_FLOWER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 239,
-    "step_sound": 1072,
-    "place_sound": 240,
-    "hit_sound": 1072,
-    "fall_sound": 1072
+    "break_sound": "minecraft:block.cactus_flower.break",
+    "step_sound": "minecraft:intentionally_empty",
+    "place_sound": "minecraft:block.cactus_flower.place",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:intentionally_empty"
   },
   "AZALEA": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 98,
-    "step_sound": 102,
-    "place_sound": 101,
-    "hit_sound": 100,
-    "fall_sound": 99
+    "break_sound": "minecraft:block.azalea.break",
+    "step_sound": "minecraft:block.azalea.step",
+    "place_sound": "minecraft:block.azalea.place",
+    "hit_sound": "minecraft:block.azalea.hit",
+    "fall_sound": "minecraft:block.azalea.fall"
   },
   "FLOWERING_AZALEA": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 612,
-    "step_sound": 616,
-    "place_sound": 615,
-    "hit_sound": 614,
-    "fall_sound": 613
+    "break_sound": "minecraft:block.flowering_azalea.break",
+    "step_sound": "minecraft:block.flowering_azalea.step",
+    "place_sound": "minecraft:block.flowering_azalea.place",
+    "hit_sound": "minecraft:block.flowering_azalea.hit",
+    "fall_sound": "minecraft:block.flowering_azalea.fall"
   },
   "MOSS_CARPET": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 949,
-    "step_sound": 953,
-    "place_sound": 952,
-    "hit_sound": 951,
-    "fall_sound": 950
+    "break_sound": "minecraft:block.moss_carpet.break",
+    "step_sound": "minecraft:block.moss_carpet.step",
+    "place_sound": "minecraft:block.moss_carpet.place",
+    "hit_sound": "minecraft:block.moss_carpet.hit",
+    "fall_sound": "minecraft:block.moss_carpet.fall"
   },
   "PINK_PETALS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 954,
-    "step_sound": 958,
-    "place_sound": 957,
-    "hit_sound": 956,
-    "fall_sound": 955
+    "break_sound": "minecraft:block.pink_petals.break",
+    "step_sound": "minecraft:block.pink_petals.step",
+    "place_sound": "minecraft:block.pink_petals.place",
+    "hit_sound": "minecraft:block.pink_petals.hit",
+    "fall_sound": "minecraft:block.pink_petals.fall"
   },
   "LEAF_LITTER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 886,
-    "step_sound": 887,
-    "place_sound": 888,
-    "hit_sound": 889,
-    "fall_sound": 890
+    "break_sound": "minecraft:block.leaf_litter.break",
+    "step_sound": "minecraft:block.leaf_litter.step",
+    "place_sound": "minecraft:block.leaf_litter.place",
+    "hit_sound": "minecraft:block.leaf_litter.hit",
+    "fall_sound": "minecraft:block.leaf_litter.fall"
   },
   "MOSS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 959,
-    "step_sound": 963,
-    "place_sound": 962,
-    "hit_sound": 961,
-    "fall_sound": 960
+    "break_sound": "minecraft:block.moss.break",
+    "step_sound": "minecraft:block.moss.step",
+    "place_sound": "minecraft:block.moss.place",
+    "hit_sound": "minecraft:block.moss.hit",
+    "fall_sound": "minecraft:block.moss.fall"
   },
   "BIG_DRIPLEAF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 169,
-    "step_sound": 173,
-    "place_sound": 172,
-    "hit_sound": 171,
-    "fall_sound": 170
+    "break_sound": "minecraft:block.big_dripleaf.break",
+    "step_sound": "minecraft:block.big_dripleaf.step",
+    "place_sound": "minecraft:block.big_dripleaf.place",
+    "hit_sound": "minecraft:block.big_dripleaf.hit",
+    "fall_sound": "minecraft:block.big_dripleaf.fall"
   },
   "SMALL_DRIPLEAF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1444,
-    "step_sound": 1448,
-    "place_sound": 1447,
-    "hit_sound": 1446,
-    "fall_sound": 1445
+    "break_sound": "minecraft:block.small_dripleaf.break",
+    "step_sound": "minecraft:block.small_dripleaf.step",
+    "place_sound": "minecraft:block.small_dripleaf.place",
+    "hit_sound": "minecraft:block.small_dripleaf.hit",
+    "fall_sound": "minecraft:block.small_dripleaf.fall"
   },
   "ROOTED_DIRT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1326,
-    "step_sound": 1330,
-    "place_sound": 1329,
-    "hit_sound": 1328,
-    "fall_sound": 1327
+    "break_sound": "minecraft:block.rooted_dirt.break",
+    "step_sound": "minecraft:block.rooted_dirt.step",
+    "place_sound": "minecraft:block.rooted_dirt.place",
+    "hit_sound": "minecraft:block.rooted_dirt.hit",
+    "fall_sound": "minecraft:block.rooted_dirt.fall"
   },
   "HANGING_ROOTS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 742,
-    "step_sound": 746,
-    "place_sound": 745,
-    "hit_sound": 744,
-    "fall_sound": 743
+    "break_sound": "minecraft:block.hanging_roots.break",
+    "step_sound": "minecraft:block.hanging_roots.step",
+    "place_sound": "minecraft:block.hanging_roots.place",
+    "hit_sound": "minecraft:block.hanging_roots.hit",
+    "fall_sound": "minecraft:block.hanging_roots.fall"
   },
   "AZALEA_LEAVES": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 103,
-    "step_sound": 107,
-    "place_sound": 106,
-    "hit_sound": 105,
-    "fall_sound": 104
+    "break_sound": "minecraft:block.azalea_leaves.break",
+    "step_sound": "minecraft:block.azalea_leaves.step",
+    "place_sound": "minecraft:block.azalea_leaves.place",
+    "hit_sound": "minecraft:block.azalea_leaves.hit",
+    "fall_sound": "minecraft:block.azalea_leaves.fall"
   },
   "SCULK_SENSOR": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1361,
-    "step_sound": 1365,
-    "place_sound": 1364,
-    "hit_sound": 1363,
-    "fall_sound": 1362
+    "break_sound": "minecraft:block.sculk_sensor.break",
+    "step_sound": "minecraft:block.sculk_sensor.step",
+    "place_sound": "minecraft:block.sculk_sensor.place",
+    "hit_sound": "minecraft:block.sculk_sensor.hit",
+    "fall_sound": "minecraft:block.sculk_sensor.fall"
   },
   "SCULK_CATALYST": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1354,
-    "step_sound": 1358,
-    "place_sound": 1357,
-    "hit_sound": 1356,
-    "fall_sound": 1355
+    "break_sound": "minecraft:block.sculk_catalyst.break",
+    "step_sound": "minecraft:block.sculk_catalyst.step",
+    "place_sound": "minecraft:block.sculk_catalyst.place",
+    "hit_sound": "minecraft:block.sculk_catalyst.hit",
+    "fall_sound": "minecraft:block.sculk_catalyst.fall"
   },
   "SCULK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1348,
-    "step_sound": 1352,
-    "place_sound": 1351,
-    "hit_sound": 1350,
-    "fall_sound": 1349
+    "break_sound": "minecraft:block.sculk.break",
+    "step_sound": "minecraft:block.sculk.step",
+    "place_sound": "minecraft:block.sculk.place",
+    "hit_sound": "minecraft:block.sculk.hit",
+    "fall_sound": "minecraft:block.sculk.fall"
   },
   "SCULK_VEIN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1372,
-    "step_sound": 1376,
-    "place_sound": 1375,
-    "hit_sound": 1374,
-    "fall_sound": 1373
+    "break_sound": "minecraft:block.sculk_vein.break",
+    "step_sound": "minecraft:block.sculk_vein.step",
+    "place_sound": "minecraft:block.sculk_vein.place",
+    "hit_sound": "minecraft:block.sculk_vein.hit",
+    "fall_sound": "minecraft:block.sculk_vein.fall"
   },
   "SCULK_SHRIEKER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1366,
-    "step_sound": 1371,
-    "place_sound": 1369,
-    "hit_sound": 1368,
-    "fall_sound": 1367
+    "break_sound": "minecraft:block.sculk_shrieker.break",
+    "step_sound": "minecraft:block.sculk_shrieker.step",
+    "place_sound": "minecraft:block.sculk_shrieker.place",
+    "hit_sound": "minecraft:block.sculk_shrieker.hit",
+    "fall_sound": "minecraft:block.sculk_shrieker.fall"
   },
   "GLOW_LICHEN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 722,
-    "step_sound": 1656,
-    "place_sound": 725,
-    "hit_sound": 724,
-    "fall_sound": 723
+    "break_sound": "minecraft:block.grass.break",
+    "step_sound": "minecraft:block.vine.step",
+    "place_sound": "minecraft:block.grass.place",
+    "hit_sound": "minecraft:block.grass.hit",
+    "fall_sound": "minecraft:block.grass.fall"
   },
   "DEEPSLATE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 475,
-    "step_sound": 479,
-    "place_sound": 478,
-    "hit_sound": 477,
-    "fall_sound": 476
+    "break_sound": "minecraft:block.deepslate.break",
+    "step_sound": "minecraft:block.deepslate.step",
+    "place_sound": "minecraft:block.deepslate.place",
+    "hit_sound": "minecraft:block.deepslate.hit",
+    "fall_sound": "minecraft:block.deepslate.fall"
   },
   "DEEPSLATE_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 470,
-    "step_sound": 474,
-    "place_sound": 473,
-    "hit_sound": 472,
-    "fall_sound": 471
+    "break_sound": "minecraft:block.deepslate_bricks.break",
+    "step_sound": "minecraft:block.deepslate_bricks.step",
+    "place_sound": "minecraft:block.deepslate_bricks.place",
+    "hit_sound": "minecraft:block.deepslate_bricks.hit",
+    "fall_sound": "minecraft:block.deepslate_bricks.fall"
   },
   "DEEPSLATE_TILES": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 480,
-    "step_sound": 484,
-    "place_sound": 483,
-    "hit_sound": 482,
-    "fall_sound": 481
+    "break_sound": "minecraft:block.deepslate_tiles.break",
+    "step_sound": "minecraft:block.deepslate_tiles.step",
+    "place_sound": "minecraft:block.deepslate_tiles.place",
+    "hit_sound": "minecraft:block.deepslate_tiles.hit",
+    "fall_sound": "minecraft:block.deepslate_tiles.fall"
   },
   "POLISHED_DEEPSLATE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1268,
-    "step_sound": 1272,
-    "place_sound": 1271,
-    "hit_sound": 1270,
-    "fall_sound": 1269
+    "break_sound": "minecraft:block.polished_deepslate.break",
+    "step_sound": "minecraft:block.polished_deepslate.step",
+    "place_sound": "minecraft:block.polished_deepslate.place",
+    "hit_sound": "minecraft:block.polished_deepslate.hit",
+    "fall_sound": "minecraft:block.polished_deepslate.fall"
   },
   "FROGLIGHT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 638,
-    "step_sound": 642,
-    "place_sound": 641,
-    "hit_sound": 640,
-    "fall_sound": 639
+    "break_sound": "minecraft:block.froglight.break",
+    "step_sound": "minecraft:block.froglight.step",
+    "place_sound": "minecraft:block.froglight.place",
+    "hit_sound": "minecraft:block.froglight.hit",
+    "fall_sound": "minecraft:block.froglight.fall"
   },
   "FROGSPAWN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 644,
-    "step_sound": 643,
-    "place_sound": 648,
-    "hit_sound": 647,
-    "fall_sound": 645
+    "break_sound": "minecraft:block.frogspawn.break",
+    "step_sound": "minecraft:block.frogspawn.step",
+    "place_sound": "minecraft:block.frogspawn.place",
+    "hit_sound": "minecraft:block.frogspawn.hit",
+    "fall_sound": "minecraft:block.frogspawn.fall"
   },
   "MANGROVE_ROOTS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 927,
-    "step_sound": 931,
-    "place_sound": 930,
-    "hit_sound": 929,
-    "fall_sound": 928
+    "break_sound": "minecraft:block.mangrove_roots.break",
+    "step_sound": "minecraft:block.mangrove_roots.step",
+    "place_sound": "minecraft:block.mangrove_roots.place",
+    "hit_sound": "minecraft:block.mangrove_roots.hit",
+    "fall_sound": "minecraft:block.mangrove_roots.fall"
   },
   "MUDDY_MANGROVE_ROOTS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 974,
-    "step_sound": 978,
-    "place_sound": 977,
-    "hit_sound": 976,
-    "fall_sound": 975
+    "break_sound": "minecraft:block.muddy_mangrove_roots.break",
+    "step_sound": "minecraft:block.muddy_mangrove_roots.step",
+    "place_sound": "minecraft:block.muddy_mangrove_roots.place",
+    "hit_sound": "minecraft:block.muddy_mangrove_roots.hit",
+    "fall_sound": "minecraft:block.muddy_mangrove_roots.fall"
   },
   "MUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 964,
-    "step_sound": 968,
-    "place_sound": 967,
-    "hit_sound": 966,
-    "fall_sound": 965
+    "break_sound": "minecraft:block.mud.break",
+    "step_sound": "minecraft:block.mud.step",
+    "place_sound": "minecraft:block.mud.place",
+    "hit_sound": "minecraft:block.mud.hit",
+    "fall_sound": "minecraft:block.mud.fall"
   },
   "MUD_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 969,
-    "step_sound": 973,
-    "place_sound": 972,
-    "hit_sound": 971,
-    "fall_sound": 970
+    "break_sound": "minecraft:block.mud_bricks.break",
+    "step_sound": "minecraft:block.mud_bricks.step",
+    "place_sound": "minecraft:block.mud_bricks.place",
+    "hit_sound": "minecraft:block.mud_bricks.hit",
+    "fall_sound": "minecraft:block.mud_bricks.fall"
   },
   "PACKED_MUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1073,
-    "step_sound": 1077,
-    "place_sound": 1076,
-    "hit_sound": 1075,
-    "fall_sound": 1074
+    "break_sound": "minecraft:block.packed_mud.break",
+    "step_sound": "minecraft:block.packed_mud.step",
+    "place_sound": "minecraft:block.packed_mud.place",
+    "hit_sound": "minecraft:block.packed_mud.hit",
+    "fall_sound": "minecraft:block.packed_mud.fall"
   },
   "HANGING_SIGN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 748,
-    "step_sound": 747,
-    "place_sound": 751,
-    "hit_sound": 750,
-    "fall_sound": 749
+    "break_sound": "minecraft:block.hanging_sign.break",
+    "step_sound": "minecraft:block.hanging_sign.step",
+    "place_sound": "minecraft:block.hanging_sign.place",
+    "hit_sound": "minecraft:block.hanging_sign.hit",
+    "fall_sound": "minecraft:block.hanging_sign.fall"
   },
   "NETHER_WOOD_HANGING_SIGN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 762,
-    "step_sound": 761,
-    "place_sound": 765,
-    "hit_sound": 764,
-    "fall_sound": 763
+    "break_sound": "minecraft:block.nether_wood_hanging_sign.break",
+    "step_sound": "minecraft:block.nether_wood_hanging_sign.step",
+    "place_sound": "minecraft:block.nether_wood_hanging_sign.place",
+    "hit_sound": "minecraft:block.nether_wood_hanging_sign.hit",
+    "fall_sound": "minecraft:block.nether_wood_hanging_sign.fall"
   },
   "BAMBOO_WOOD_HANGING_SIGN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 767,
-    "step_sound": 766,
-    "place_sound": 770,
-    "hit_sound": 769,
-    "fall_sound": 768
+    "break_sound": "minecraft:block.bamboo_wood_hanging_sign.break",
+    "step_sound": "minecraft:block.bamboo_wood_hanging_sign.step",
+    "place_sound": "minecraft:block.bamboo_wood_hanging_sign.place",
+    "hit_sound": "minecraft:block.bamboo_wood_hanging_sign.hit",
+    "fall_sound": "minecraft:block.bamboo_wood_hanging_sign.fall"
   },
   "BAMBOO_WOOD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 125,
-    "step_sound": 129,
-    "place_sound": 128,
-    "hit_sound": 127,
-    "fall_sound": 126
+    "break_sound": "minecraft:block.bamboo_wood.break",
+    "step_sound": "minecraft:block.bamboo_wood.step",
+    "place_sound": "minecraft:block.bamboo_wood.place",
+    "hit_sound": "minecraft:block.bamboo_wood.hit",
+    "fall_sound": "minecraft:block.bamboo_wood.fall"
   },
   "NETHER_WOOD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1057,
-    "step_sound": 1061,
-    "place_sound": 1060,
-    "hit_sound": 1059,
-    "fall_sound": 1058
+    "break_sound": "minecraft:block.nether_wood.break",
+    "step_sound": "minecraft:block.nether_wood.step",
+    "place_sound": "minecraft:block.nether_wood.place",
+    "hit_sound": "minecraft:block.nether_wood.hit",
+    "fall_sound": "minecraft:block.nether_wood.fall"
   },
   "CHERRY_WOOD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 297,
-    "step_sound": 301,
-    "place_sound": 300,
-    "hit_sound": 299,
-    "fall_sound": 298
+    "break_sound": "minecraft:block.cherry_wood.break",
+    "step_sound": "minecraft:block.cherry_wood.step",
+    "place_sound": "minecraft:block.cherry_wood.place",
+    "hit_sound": "minecraft:block.cherry_wood.hit",
+    "fall_sound": "minecraft:block.cherry_wood.fall"
   },
   "CHERRY_SAPLING": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 302,
-    "step_sound": 306,
-    "place_sound": 305,
-    "hit_sound": 304,
-    "fall_sound": 303
+    "break_sound": "minecraft:block.cherry_sapling.break",
+    "step_sound": "minecraft:block.cherry_sapling.step",
+    "place_sound": "minecraft:block.cherry_sapling.place",
+    "hit_sound": "minecraft:block.cherry_sapling.hit",
+    "fall_sound": "minecraft:block.cherry_sapling.fall"
   },
   "CHERRY_LEAVES": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 307,
-    "step_sound": 311,
-    "place_sound": 310,
-    "hit_sound": 309,
-    "fall_sound": 308
+    "break_sound": "minecraft:block.cherry_leaves.break",
+    "step_sound": "minecraft:block.cherry_leaves.step",
+    "place_sound": "minecraft:block.cherry_leaves.place",
+    "hit_sound": "minecraft:block.cherry_leaves.hit",
+    "fall_sound": "minecraft:block.cherry_leaves.fall"
   },
   "CHERRY_WOOD_HANGING_SIGN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 313,
-    "step_sound": 312,
-    "place_sound": 316,
-    "hit_sound": 315,
-    "fall_sound": 314
+    "break_sound": "minecraft:block.cherry_wood_hanging_sign.break",
+    "step_sound": "minecraft:block.cherry_wood_hanging_sign.step",
+    "place_sound": "minecraft:block.cherry_wood_hanging_sign.place",
+    "hit_sound": "minecraft:block.cherry_wood_hanging_sign.hit",
+    "fall_sound": "minecraft:block.cherry_wood_hanging_sign.fall"
   },
   "CHISELED_BOOKSHELF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 335,
-    "step_sound": 340,
-    "place_sound": 343,
-    "hit_sound": 337,
-    "fall_sound": 336
+    "break_sound": "minecraft:block.chiseled_bookshelf.break",
+    "step_sound": "minecraft:block.chiseled_bookshelf.step",
+    "place_sound": "minecraft:block.chiseled_bookshelf.place",
+    "hit_sound": "minecraft:block.chiseled_bookshelf.hit",
+    "fall_sound": "minecraft:block.chiseled_bookshelf.fall"
   },
   "SHELF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1384,
-    "step_sound": 1392,
-    "place_sound": 1389,
-    "hit_sound": 1387,
-    "fall_sound": 1386
+    "break_sound": "minecraft:block.shelf.break",
+    "step_sound": "minecraft:block.shelf.step",
+    "place_sound": "minecraft:block.shelf.place",
+    "hit_sound": "minecraft:block.shelf.hit",
+    "fall_sound": "minecraft:block.shelf.fall"
   },
   "SUSPICIOUS_SAND": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 628,
-    "step_sound": 629,
-    "place_sound": 630,
-    "hit_sound": 631,
-    "fall_sound": 632
+    "break_sound": "minecraft:block.suspicious_sand.break",
+    "step_sound": "minecraft:block.suspicious_sand.step",
+    "place_sound": "minecraft:block.suspicious_sand.place",
+    "hit_sound": "minecraft:block.suspicious_sand.hit",
+    "fall_sound": "minecraft:block.suspicious_sand.fall"
   },
   "SUSPICIOUS_GRAVEL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 633,
-    "step_sound": 634,
-    "place_sound": 635,
-    "hit_sound": 636,
-    "fall_sound": 637
+    "break_sound": "minecraft:block.suspicious_gravel.break",
+    "step_sound": "minecraft:block.suspicious_gravel.step",
+    "place_sound": "minecraft:block.suspicious_gravel.place",
+    "hit_sound": "minecraft:block.suspicious_gravel.hit",
+    "fall_sound": "minecraft:block.suspicious_gravel.fall"
   },
   "DECORATED_POT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 462,
-    "step_sound": 467,
-    "place_sound": 468,
-    "hit_sound": 464,
-    "fall_sound": 463
+    "break_sound": "minecraft:block.decorated_pot.break",
+    "step_sound": "minecraft:block.decorated_pot.step",
+    "place_sound": "minecraft:block.decorated_pot.place",
+    "hit_sound": "minecraft:block.decorated_pot.hit",
+    "fall_sound": "minecraft:block.decorated_pot.fall"
   },
   "DECORATED_POT_CRACKED": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 469,
-    "step_sound": 467,
-    "place_sound": 468,
-    "hit_sound": 464,
-    "fall_sound": 463
+    "break_sound": "minecraft:block.decorated_pot.shatter",
+    "step_sound": "minecraft:block.decorated_pot.step",
+    "place_sound": "minecraft:block.decorated_pot.place",
+    "hit_sound": "minecraft:block.decorated_pot.hit",
+    "fall_sound": "minecraft:block.decorated_pot.fall"
   },
   "TRIAL_SPAWNER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 771,
-    "step_sound": 772,
-    "place_sound": 773,
-    "hit_sound": 774,
-    "fall_sound": 775
+    "break_sound": "minecraft:block.trial_spawner.break",
+    "step_sound": "minecraft:block.trial_spawner.step",
+    "place_sound": "minecraft:block.trial_spawner.place",
+    "hit_sound": "minecraft:block.trial_spawner.hit",
+    "fall_sound": "minecraft:block.trial_spawner.fall"
   },
   "SPONGE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1523,
-    "step_sound": 1527,
-    "place_sound": 1526,
-    "hit_sound": 1525,
-    "fall_sound": 1524
+    "break_sound": "minecraft:block.sponge.break",
+    "step_sound": "minecraft:block.sponge.step",
+    "place_sound": "minecraft:block.sponge.place",
+    "hit_sound": "minecraft:block.sponge.hit",
+    "fall_sound": "minecraft:block.sponge.fall"
   },
   "WET_SPONGE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1699,
-    "step_sound": 1704,
-    "place_sound": 1703,
-    "hit_sound": 1702,
-    "fall_sound": 1701
+    "break_sound": "minecraft:block.wet_sponge.break",
+    "step_sound": "minecraft:block.wet_sponge.step",
+    "place_sound": "minecraft:block.wet_sponge.place",
+    "hit_sound": "minecraft:block.wet_sponge.hit",
+    "fall_sound": "minecraft:block.wet_sponge.fall"
   },
   "VAULT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1612,
-    "step_sound": 1623,
-    "place_sound": 1622,
-    "hit_sound": 1618,
-    "fall_sound": 1617
+    "break_sound": "minecraft:block.vault.break",
+    "step_sound": "minecraft:block.vault.step",
+    "place_sound": "minecraft:block.vault.place",
+    "hit_sound": "minecraft:block.vault.hit",
+    "fall_sound": "minecraft:block.vault.fall"
   },
   "CREAKING_HEART": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 440,
-    "step_sound": 445,
-    "place_sound": 444,
-    "hit_sound": 442,
-    "fall_sound": 441
+    "break_sound": "minecraft:block.creaking_heart.break",
+    "step_sound": "minecraft:block.creaking_heart.step",
+    "place_sound": "minecraft:block.creaking_heart.place",
+    "hit_sound": "minecraft:block.creaking_heart.hit",
+    "fall_sound": "minecraft:block.creaking_heart.fall"
   },
   "HEAVY_CORE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 756,
-    "step_sound": 760,
-    "place_sound": 759,
-    "hit_sound": 758,
-    "fall_sound": 757
+    "break_sound": "minecraft:block.heavy_core.break",
+    "step_sound": "minecraft:block.heavy_core.step",
+    "place_sound": "minecraft:block.heavy_core.place",
+    "hit_sound": "minecraft:block.heavy_core.hit",
+    "fall_sound": "minecraft:block.heavy_core.fall"
   },
   "COBWEB": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 347,
-    "step_sound": 348,
-    "place_sound": 349,
-    "hit_sound": 350,
-    "fall_sound": 351
+    "break_sound": "minecraft:block.cobweb.break",
+    "step_sound": "minecraft:block.cobweb.step",
+    "place_sound": "minecraft:block.cobweb.place",
+    "hit_sound": "minecraft:block.cobweb.hit",
+    "fall_sound": "minecraft:block.cobweb.fall"
   },
   "SPAWNER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1460,
-    "step_sound": 1464,
-    "place_sound": 1463,
-    "hit_sound": 1462,
-    "fall_sound": 1461
+    "break_sound": "minecraft:block.spawner.break",
+    "step_sound": "minecraft:block.spawner.step",
+    "place_sound": "minecraft:block.spawner.place",
+    "hit_sound": "minecraft:block.spawner.hit",
+    "fall_sound": "minecraft:block.spawner.fall"
   },
   "RESIN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1313,
-    "step_sound": 1316,
-    "place_sound": 1315,
-    "hit_sound": 1072,
-    "fall_sound": 1314
+    "break_sound": "minecraft:block.resin.break",
+    "step_sound": "minecraft:block.resin.step",
+    "place_sound": "minecraft:block.resin.place",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:block.resin.fall"
   },
   "RESIN_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1317,
-    "step_sound": 1321,
-    "place_sound": 1320,
-    "hit_sound": 1319,
-    "fall_sound": 1318
+    "break_sound": "minecraft:block.resin_bricks.break",
+    "step_sound": "minecraft:block.resin_bricks.step",
+    "place_sound": "minecraft:block.resin_bricks.place",
+    "hit_sound": "minecraft:block.resin_bricks.hit",
+    "fall_sound": "minecraft:block.resin_bricks.fall"
   },
   "IRON": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 849,
-    "step_sound": 850,
-    "place_sound": 851,
-    "hit_sound": 852,
-    "fall_sound": 853
+    "break_sound": "minecraft:block.iron.break",
+    "step_sound": "minecraft:block.iron.step",
+    "place_sound": "minecraft:block.iron.place",
+    "hit_sound": "minecraft:block.iron.hit",
+    "fall_sound": "minecraft:block.iron.fall"
   },
   "DRIED_GHAST": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 505,
-    "step_sound": 506,
-    "place_sound": 1072,
-    "hit_sound": 1072,
-    "fall_sound": 507
+    "break_sound": "minecraft:block.dried_ghast.break",
+    "step_sound": "minecraft:block.dried_ghast.step",
+    "place_sound": "minecraft:intentionally_empty",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:block.dried_ghast.fall"
   }
 }

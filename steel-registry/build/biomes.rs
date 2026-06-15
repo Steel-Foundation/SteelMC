@@ -1,6 +1,9 @@
 use rustc_hash::FxHashMap;
 use std::fs;
 
+use crate::generator_functions::{
+    generate_identifier, generate_option, generate_sound_event_ref, generate_vec,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -225,7 +228,7 @@ struct BackgroundMusicEntry {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 struct BackgroundMusic {
     #[serde(default)]
     default: Option<BackgroundMusicEntry>,
@@ -325,33 +328,6 @@ fn generate_grass_color_modifier(modifier: &GrassColorModifier) -> TokenStream {
     }
 }
 
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
-}
-
-fn generate_vec<T, F>(vec: &[T], f: F) -> TokenStream
-where
-    F: Fn(&T) -> TokenStream,
-{
-    let items: Vec<_> = vec.iter().map(f).collect();
-    quote! { vec![#(#items),*] }
-}
-
 fn generate_hashmap_string<T, F>(map: &FxHashMap<String, T>, f: F) -> TokenStream
 where
     F: Fn(&T) -> TokenStream,
@@ -430,7 +406,7 @@ fn generate_particle(particle: &Particle) -> TokenStream {
 }
 
 fn generate_mood_sound(mood: &MoodSound) -> TokenStream {
-    let sound = generate_identifier(&mood.sound);
+    let sound = generate_sound_event_ref(&mood.sound);
     let tick_delay = mood.tick_delay;
     let block_search_extent = mood.block_search_extent;
     let offset = mood.offset;
@@ -446,7 +422,7 @@ fn generate_mood_sound(mood: &MoodSound) -> TokenStream {
 }
 
 fn generate_additions_sound(additions: &AdditionsSound) -> TokenStream {
-    let sound = generate_identifier(&additions.sound);
+    let sound = generate_sound_event_ref(&additions.sound);
     let tick_chance = additions.tick_chance;
 
     quote! {
@@ -461,7 +437,7 @@ fn generate_music(music: &Music) -> TokenStream {
     let replace_current_music = music.replace_current_music;
     let max_delay = music.max_delay;
     let min_delay = music.min_delay;
-    let sound = generate_identifier(&music.sound);
+    let sound = generate_sound_event_ref(&music.sound);
 
     quote! {
         Music {
@@ -495,7 +471,7 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
     let dry_foliage_color = generate_option(&effects.dry_foliage_color, |&v| quote! { #v });
     let grass_color_modifier = generate_grass_color_modifier(&effects.grass_color_modifier);
     let music = generate_option(&effects.music, |m| generate_vec(m, generate_weighted_music));
-    let ambient_sound = generate_option(&effects.ambient_sound, generate_identifier);
+    let ambient_sound = generate_option(&effects.ambient_sound, generate_sound_event_ref);
     let additions_sound = generate_option(&effects.additions_sound, generate_additions_sound);
     let mood_sound = generate_option(&effects.mood_sound, generate_mood_sound);
     let particle = generate_option(&effects.particle, generate_particle);
@@ -520,11 +496,8 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome/"
-    );
-
-    let biome_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome";
+    let biome_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/biome";
+    println!("cargo:rerun-if-changed={biome_dir}");
     let mut biomes = Vec::new();
 
     // Read all biome JSON files
@@ -555,11 +528,12 @@ pub(crate) fn build() -> TokenStream {
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
-        use std::sync::LazyLock;
+        use std::sync::{LazyLock, OnceLock};
         use rustc_hash::FxHashMap;
     });
 
     // Generate static biome definitions
+    let mut register_stream = TokenStream::new();
     for (biome_name, biome) in &biomes {
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         let biome_name_str = biome_name.clone();
@@ -592,16 +566,12 @@ pub(crate) fn build() -> TokenStream {
                 spawn_costs: #spawn_costs,
                 carvers: #carvers,
                 features: #features,
+                id: OnceLock::new(),
             });
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (biome_name, _) in &biomes {
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&#biome_ident, #biome_ident.key.clone());
+            registry.register(&#biome_ident);
         });
     }
 

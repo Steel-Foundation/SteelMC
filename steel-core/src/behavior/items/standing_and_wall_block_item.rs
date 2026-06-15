@@ -9,14 +9,17 @@
 //! direction (skipping the opposite of `attachmentDirection`), using the standing block
 //! when direction matches `attachmentDirection` and wall block otherwise.
 
-use steel_registry::REGISTRY;
+use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::{REGISTRY, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for items that place either a standing or wall variant of a block.
 ///
@@ -27,13 +30,21 @@ use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 /// The `attachmentDirection` is typically `Direction::Down` for torches, meaning:
 /// - Looking down → place standing torch on top of block below
 /// - Looking horizontally → place wall torch on side of block
+#[item_behavior]
 pub struct StandingAndWallBlockItem {
     /// The block to place when looking toward `attachmentDirection` (e.g., `torch`).
+    #[json_arg(vanilla_blocks, json = "block")]
     pub standing_block: BlockRef,
     /// The block to place otherwise (e.g., `wall_torch`).
+    #[json_arg(vanilla_blocks, json = "wall_block")]
     pub wall_block: BlockRef,
     /// The direction that triggers the standing block placement.
     /// For torches this is `Direction::Down` - when looking down, place standing torch.
+    #[json_arg(
+        r#enum = "Direction",
+        module = "steel_registry::blocks::properties",
+        json = "attachment_direction"
+    )]
     pub attachment_direction: Direction,
 }
 
@@ -103,7 +114,7 @@ impl StandingAndWallBlockItem {
             let collision_shape = state.get_collision_shape();
             if place_context
                 .world
-                .is_unobstructed(collision_shape, &place_context.relative_pos)
+                .is_unobstructed(collision_shape, place_context.relative_pos)
             {
                 return Some(state);
             }
@@ -130,65 +141,23 @@ impl StandingAndWallBlockItem {
 
 impl ItemBehavior for StandingAndWallBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
-
-        // Get the clicked block to check if it's replaceable
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
-
-        // Determine placement position: replace clicked block if replaceable,
-        // otherwise place adjacent to the clicked face
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
-        } else {
-            (context.hit_result.direction.relative(&clicked_pos), false)
-        };
-
-        // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(&place_pos) {
+        let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
-        }
-
-        // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(&place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
-
-        if !existing_replaceable {
-            return InteractionResult::Fail;
-        }
-
-        // Get player rotation for placement context
-        let (yaw, pitch) = context.player.rotation.load();
-
-        let place_context = BlockPlaceContext {
-            clicked_pos,
-            clicked_face: context.hit_result.direction,
-            click_location: context.hit_result.location,
-            inside: context.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
-            horizontal_direction: Direction::from_yaw(yaw),
-            rotation: yaw,
-            pitch,
-            world: context.world,
         };
+        let place_pos = place_context.relative_pos;
 
-        // Get the placement state (includes canSurvive and isUnobstructed checks)
         let Some(new_state) = self.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
         };
 
-        // Place the block
         if !context
             .world
             .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
         {
             return InteractionResult::Fail;
         }
+        let placed_state = context.world.get_block_state(place_pos);
 
-        // Play place sound (exclude the placing player, they hear it client-side)
         let block = self.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;
         context.world.play_block_sound(
@@ -196,11 +165,15 @@ impl ItemBehavior for StandingAndWallBlockItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
+        );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        // Consume one item from the stack
-        context.item_stack.shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

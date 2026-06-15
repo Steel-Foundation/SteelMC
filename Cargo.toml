@@ -7,13 +7,15 @@ members = [
     "steel-macros",
     "steel-protocol",
     "steel-registry",
+    "steel-worldgen",
     "steel-utils",
     "steel-core",
     "steel-crypto",
+    "steel-math",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.9.0+mc26.1"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -27,9 +29,11 @@ steel-macros = { path = "steel-macros" }
 steel-protocol = { path = "steel-protocol" }
 steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
+steel-worldgen = { path = "steel-worldgen" }
+steel-math = { path = "steel-math" }
 
 # Async runtime
-tokio = { version = "1.49", features = [
+tokio = { version = "1.51", features = [
     "macros",
     "net",
     "rt-multi-thread",
@@ -40,40 +44,42 @@ tokio = { version = "1.49", features = [
     "time",
     "signal",
 ] }
-tokio-util = { version = "0.7.18", features = ["rt"] }
-futures = "0.3.31"
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
 
 # Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-serde_json5 = "0.2.1"
-simdnbt = "0.9.0"
-wincode = { version = "0.3.1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+simdnbt = "0.10"
+wincode = { version = "0.5", features = ["derive"] }
 
 # Error handling
 thiserror = "2.0"
-anyhow = "1.0.100"
+anyhow = "1.0"
 
 # Proc macros
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = "2.0.114"
+syn = "2.0"
 
 # Concurrency
 crossbeam = "0.8.4"
 parking_lot = { version = "0.12.5", features = ["nightly", "arc_lock"] }
 rayon = "1.11.0"
-scc = "3.5"
-arc-swap = "1.8.1"
+scc = "3.7"
+arc-swap = "1.9"
 
 # Data structures
-rustc-hash = "2.1.1"
+glam = "0.32.1"
+rustc-hash = "2.1"
+small-map = "0.1.5"
 smallvec = "1.15.1"
-bitflags = "2.10.0"
+bitflags = "2.11"
 phf = { version = "0.13.1", features = ["macros"] }
 
 # UUID
-uuid = { version = "1.20", features = ["serde", "v4"] }
+uuid = { version = "1.23", features = ["serde", "v4"] }
 
 # Logging
 log = "0.4.29"
@@ -92,27 +98,31 @@ opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
 tracing-opentelemetry = "0.32"
 
 # Networking
-reqwest = { version = "0.13.1", features = [
+reqwest = { version = "0.13", features = [
     "json",
     "rustls",
 ], default-features = false }
 
 # Cryptography
 rsa = { version = "0.10.0-rc.15", features = ["sha2"] }
-rand = "0.10.0-rc.9"
+rand = "0.10.0"
 aes = "0.9.0-rc.4"
-cfb8 = "0.9.0-rc.3"
-sha1 = "0.10.6"
-sha2 = "0.10.9"
+cfb8 = { git = "https://github.com/RustCrypto/block-modes", branch = "master" }
+sha1 = "0.11"
+sha2 = "0.11"
 md5 = "0.8.0"
 base64 = "0.22.1"
 hex = "0.4.3"
 rsa-der = "0.3.0"
-text_components = { git = "https://github.com/Steel-Foundation/TextComponents.git", features = [
-    "custom",
-    "nbt",
-    "serde",
-] }
+text_components = { 
+    git = "https://github.com/Steel-Foundation/TextComponents.git", 
+    rev = "e058b936e66b496385ba162b2e20344d14572a6a",
+    features = [
+        "custom",
+        "nbt",
+        "serde",
+    ] 
+}
 
 # Compression
 flate2 = "1.1.9"
@@ -141,6 +151,9 @@ panic = "abort"
 inherits = "release"
 debug = true
 
+[profile.flint]
+inherits = "dev"
+debug = true
 
 [profile.bench]
 debug = true
@@ -148,6 +161,17 @@ debug = true
 [profile.dev]
 debug = 0
 #codegen-backend = "cranelift"
+
+
+[profile.dev.package.steel-worldgen]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.steel-math]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
 
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -164,10 +188,22 @@ cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
+"struct_field_names" = "allow"
 absolute_paths = "warn"
 missing_const_for_fn = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }
 #cargo = { level = "warn", priority = 2 }
 unwrap_used = { level = "warn", priority = -3 }
+
+[profile.samply]
+inherits = "release"
+debug = true
+
+[profile.samplydev]
+inherits = "dev"
+debug = true

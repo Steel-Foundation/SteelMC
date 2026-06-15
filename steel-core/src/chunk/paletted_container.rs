@@ -20,7 +20,7 @@ impl ToGlobalId for BlockStateId {
     }
 }
 
-impl ToGlobalId for u8 {
+impl ToGlobalId for u16 {
     fn to_global_id(&self) -> u32 {
         u32::from(*self)
     }
@@ -171,7 +171,11 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     ///
     /// # Errors
     /// - If the writer fails to write.
-    #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
+    #[expect(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "position() is guaranteed to exist: palette was built from the cube's own values"
+    )]
     pub fn write(&self, writer: &mut impl Write) -> Result<()>
     where
         V: ToGlobalId,
@@ -182,7 +186,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 0u8.write(writer)?;
                 // Single-value palette
                 VarInt(value.to_global_id() as i32).write(writer)?;
-                // No data array - vanilla's writeFixedSizeLongArray(new long[0]) writes nothing
+                // writeFixedSizeLongArray(new long[0]) writes nothing
             }
             Self::Heterogeneous(data) => {
                 let (bits, mode) = Self::calculate_strategy(data.palette.len());
@@ -218,7 +222,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
 
                 let packed = pack_bits(&indices, bits as usize);
 
-                // Write data
+                // writeFixedSizeLongArray: raw longs, no VarInt length prefix
                 for long in packed {
                     long.write(writer)?;
                 }
@@ -269,7 +273,7 @@ fn pack_bits(indices: &[u32], bits: usize) -> Vec<u64> {
 /// A palette container for blocks.
 pub type BlockPalette = PalettedContainer<BlockStateId, 16>;
 /// A palette container for biomes.
-pub type BiomePalette = PalettedContainer<u8, 4>;
+pub type BiomePalette = PalettedContainer<u16, 4>;
 
 impl BlockPalette {
     /// Gets the number of non-empty blocks in the container.
@@ -280,7 +284,10 @@ impl BlockPalette {
                 if v.0 == 0 {
                     0
                 } else {
-                    #[allow(clippy::cast_possible_truncation)]
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "VOLUME = 16^3 = 4096, fits in u16"
+                    )]
                     {
                         Self::VOLUME as u16
                     }

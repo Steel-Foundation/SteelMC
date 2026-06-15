@@ -1,12 +1,26 @@
 //! This module contains all things player-related.
 mod abilities;
 pub mod block_breaking;
+mod chat_state;
 pub mod chunk_sender;
-mod game_mode;
+/// This module contains the `PlayerConnection` trait that abstracts network connections.
+pub mod connection;
+mod container_counter;
+mod entity_state;
+/// Experience System
+pub mod experience;
+pub mod food_data;
+/// Game mode specific logic for player interactions.
+pub mod game_mode;
+mod game_mode_state;
 mod game_profile;
+mod health_sync;
+mod input_state;
+mod lifecycle_state;
 pub mod message_chain;
 mod message_validator;
 pub mod movement;
+mod movement_state;
 /// This module contains the networking implementation for the player.
 pub mod networking;
 pub mod player_data;
@@ -14,89 +28,83 @@ pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
+mod teleport_state;
+mod tick_state;
 
 pub use abilities::Abilities;
+use chat_state::ChatState;
+use container_counter::ContainerCounter;
+use food_data::FoodData;
+use glam::DVec3;
+use health_sync::HealthSyncState;
+pub use input_state::PlayerInput;
+use lifecycle_state::PlayerLifecycleState;
+pub use message_validator::LastSeenMessagesValidator;
+use movement_state::MovementState;
+pub use signature_cache::{LastSeen, MessageCache};
+use steel_protocol::{
+    packet_traits::{CompressionInfo, EncodedPacket},
+    packets::game::{CSetEntityData, CSetExperience},
+};
+use teleport_state::TeleportState;
+use tick_state::PlayerTickState;
 
 use block_breaking::BlockBreakingManager;
-use crossbeam::atomic::AtomicCell;
+use enum_dispatch::enum_dispatch;
+use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
-use message_chain::SignedMessageChain;
-use message_validator::LastSeenMessagesValidator;
-use profile_key::RemoteChatSession;
-pub use signature_cache::{LastSeen, MessageCache};
-use std::{
-    sync::{
-        Arc, Weak,
-        atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering},
-    },
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-use steel_protocol::packets::game::CSystemChatMessage;
+use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
-    AnimateAction, CAnimate, CEntityPositionSync, COpenSignEditor, CPlayerPosition, CSetEntityData,
-    CSetHeldSlot, PlayerAction, SAcceptTeleportation, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SSetCarriedItem, SUseItem, SUseItemOn,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRespawn,
+    CSetHealth, CSetHeldSlot, CSetTime, ClientCommandAction, SoundSource,
 };
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::shapes::AABBd;
+use steel_registry::RegistryEntry;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::EntityPose;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_entities;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
-use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
-use steel_registry::{REGISTRY, vanilla_chat_types};
-
-use steel_utils::locks::SyncMutex;
-use steel_utils::types::GameType;
-use text_components::resolving::TextResolutor;
-use text_components::{Modifier, TextComponent};
-use text_components::{
-    content::Resolvable,
-    custom::CustomData,
-    interactivity::{ClickEvent, HoverEvent},
+use steel_registry::vanilla_game_rules::{
+    ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use uuid::Uuid;
+use steel_registry::{sound_events, vanilla_attributes, vanilla_entities};
+use steel_utils::entity_events::EntityStatus;
 
-use crate::inventory::SyncPlayerInv;
+use arc_swap::ArcSwap;
+use steel_utils::locks::SyncMutex;
+use steel_utils::random::Random as _;
+use steel_utils::types::{Difficulty, GameType};
+use text_components::TextComponent;
+use text_components::resolving::TextResolutor;
+use text_components::translation::TranslatedMessage;
+use text_components::{content::Resolvable, custom::CustomData};
+
+use crate::config::RuntimeConfig;
+use crate::entity::damage::DamageSource;
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntity, LivingEntityBase,
+    RemovalReason, SharedEntity,
+};
+use crate::fluid::get_fluid_state;
+use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
+use crate::physics::MoveResult;
+use crate::player::experience::Experience;
+use crate::player::player_data::PersistentRootVehicle;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
-use crate::{
-    config::STEEL_CONFIG,
-    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
-};
+use steel_registry::vanilla_damage_types;
 
-use steel_crypto::{SignatureValidator, public_key_from_bytes, signature::NoValidation};
 use steel_protocol::packets::{
-    common::{SClientInformation, SCustomPayload},
-    game::{
-        CBlockChangedAck, CBlockUpdate, CContainerClose, CGameEvent, CMoveEntityPosRot,
-        CMoveEntityRot, COpenScreen, CPlayerChat, CPlayerInfoUpdate, CRotateHead,
-        CSetChunkCacheRadius, ChatTypeBound, FilterType, GameEventType, PreviousMessage, SChat,
-        SChatAck, SChatSessionUpdate, SContainerButtonClick, SContainerClick, SContainerClose,
-        SContainerSlotStateChanged, SMovePlayer, SPlayerInput, SSetCreativeModeSlot, SSignUpdate,
-        calc_delta, to_angle_byte,
-    },
+    common::SCustomPayload,
+    game::{CContainerClose, CGameEvent, CSystemChat, GameEventType, PreviousMessage},
 };
-use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
+use steel_registry::item_stack::ItemStack;
 
-use crate::behavior::{BLOCK_BEHAVIORS, InteractionResult};
-use crate::block_entity::BlockEntity;
-use crate::block_entity::entities::SignBlockEntity;
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 
-use steel_utils::types::InteractionHand;
-use steel_utils::{ChunkPos, math::Vector3, translations};
-
-use crate::entity::LivingEntity;
-use crate::inventory::{
-    MenuInstance, MenuProvider,
-    container::Container,
-    inventory_menu::InventoryMenu,
-    lock::{ContainerId, ContainerLockGuard},
-    menu::Menu,
-    slot::Slot,
-};
+use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
 /// Re-export `PreviousMessage` as `PreviousMessageEntry` for use in `signature_cache`
 pub type PreviousMessageEntry = PreviousMessage;
@@ -116,7 +124,7 @@ pub struct ClientInformation {
     /// Whether chat colors are enabled.
     pub chat_colors: bool,
     /// Bitmask for displayed skin parts.
-    pub model_customisation: i32,
+    pub model_customization: i32,
     /// The player's main hand (left or right).
     pub main_hand: HumanoidArm,
     /// Whether text filtering is enabled.
@@ -134,7 +142,7 @@ impl Default for ClientInformation {
             view_distance: 8, // Default client view distance
             chat_visibility: ChatVisibility::Full,
             chat_colors: true,
-            model_customisation: 0,
+            model_customization: 0,
             main_hand: HumanoidArm::Right,
             text_filtering_enabled: false,
             allows_listing: true,
@@ -143,46 +151,52 @@ impl Default for ClientInformation {
     }
 }
 
+use crate::player::connection::NetworkConnection;
+
+/// Concrete player connection type using `enum_dispatch` for zero-cost dispatch.
+///
+/// The `Java` variant handles real network connections (hot path),
+/// while `Other` uses dynamic dispatch for test connections.
+#[enum_dispatch(NetworkConnection)]
+pub enum PlayerConnection {
+    /// A real Java client connection (zero-cost dispatch).
+    Java(JavaConnection),
+    /// A dynamic connection for tests or other backends.
+    Other(Box<dyn NetworkConnection>),
+}
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::player::{chunk_sender::ChunkSender, networking::JavaConnection};
+use crate::player::chunk_sender::ChunkSender;
+use crate::player::networking::JavaConnection;
+use crate::portal::TeleportTransition;
 use crate::world::World;
 
 /// A struct representing a player.
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
-    /// The player's connection.
-    pub connection: Arc<JavaConnection>,
+    /// The player's connection (abstracted for testing).
+    pub connection: Arc<PlayerConnection>,
 
     /// The world the player is in.
-    pub world: Arc<World>,
+    pub world: ArcSwap<World>,
 
     /// Reference to the server (for entity ID generation, etc.).
-    #[allow(dead_code)]
     pub(crate) server: Weak<Server>,
+    /// Runtime configuration shared with the server.
+    pub(crate) config: Arc<RuntimeConfig>,
 
-    /// The entity ID assigned to this player.
-    pub id: i32,
+    /// Common entity fields (id, uuid, position, rotation, removal, callback).
+    base: EntityBase,
 
-    /// Whether the player has finished loading the client.
-    pub client_loaded: AtomicBool,
+    /// Client lifecycle flags.
+    lifecycle: SyncMutex<PlayerLifecycleState>,
 
-    /// The player's position.
-    pub position: SyncMutex<Vector3<f64>>,
-    /// The player's rotation (yaw, pitch).
-    pub rotation: AtomicCell<(f32, f32)>,
-    /// The previous position for delta movement calculations.
-    prev_position: SyncMutex<Vector3<f64>>,
-    /// The previous rotation for movement broadcasts.
-    prev_rotation: AtomicCell<(f32, f32)>,
+    /// Movement tracking state
+    pub(crate) movement: SyncMutex<MovementState>,
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     entity_data: SyncMutex<PlayerEntityData>,
-
-    /// The player's movement speed.
-    speed: AtomicCell<f32>,
-    /// Whether the player is sprinting.
-    sprinting: AtomicBool,
 
     /// The last chunk position of the player.
     pub last_chunk_pos: SyncMutex<ChunkPos>,
@@ -195,25 +209,11 @@ pub struct Player {
     /// Updated when the client sends `SClientInformation` during config or play phase.
     client_information: SyncMutex<ClientInformation>,
 
-    /// Counter for chat messages sent BY this player
-    messages_sent: AtomicI32,
-    /// Counter for chat messages received BY this player
-    messages_received: AtomicI32,
+    /// Chat state: message counters, signature cache, validator, session, chain.
+    pub chat: SyncMutex<ChatState>,
 
-    /// Message signature cache for tracking chat messages
-    pub signature_cache: SyncMutex<MessageCache>,
-
-    /// Validator for client acknowledgements of messages we've sent
-    pub message_validator: SyncMutex<LastSeenMessagesValidator>,
-
-    /// Remote chat session containing the player's public key (if signed chat is enabled)
-    pub chat_session: SyncMutex<Option<RemoteChatSession>>,
-
-    /// Message chain state for tracking signed message sequence
-    pub message_chain: SyncMutex<Option<SignedMessageChain>>,
-
-    /// The player's current game mode (Survival, Creative, Adventure, Spectator)
-    pub game_mode: AtomicCell<GameType>,
+    /// Current and previous game mode.
+    game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: SyncPlayerInv,
@@ -226,83 +226,93 @@ pub struct Player {
     open_menu: SyncMutex<Option<Box<dyn MenuInstance>>>,
 
     /// Counter for generating container IDs (1-100, wraps around).
-    container_counter: AtomicU8,
+    container_counter: SyncMutex<ContainerCounter>,
 
-    /// Tracks the last acknowledged block change sequence number.
-    ack_block_changes_up_to: AtomicI32,
+    /// Pending server-initiated teleport state (ID, position, timeout).
+    teleport_state: SyncMutex<TeleportState>,
 
-    /// Whether the player is sneaking (shift key down).
-    shift_key_down: AtomicBool,
-
-    /// Position we're waiting for the client to confirm via teleport ack.
-    /// If Some, we should reject interaction packets until confirmed.
-    awaiting_position_from_client: SyncMutex<Option<Vector3<f64>>>,
-
-    /// Incrementing teleport ID counter (wraps at `i32::MAX`).
-    awaiting_teleport_id: AtomicI32,
-
-    /// Tick count when last teleport was sent (for timeout/resend).
-    awaiting_teleport_time: AtomicI32,
-
-    /// Local tick counter (incremented each tick).
-    tick_count: AtomicI32,
-
-    /// Last known good position (for collision rollback).
-    last_good_position: SyncMutex<Vector3<f64>>,
-
-    /// Position at start of tick (for speed validation).
-    /// Matches vanilla `firstGoodX/Y/Z`.
-    first_good_position: SyncMutex<Vector3<f64>>,
-
-    /// Number of move packets received since connection started.
-    received_move_packet_count: AtomicI32,
-
-    /// Number of move packets at the last tick (for rate limiting).
-    known_move_packet_count: AtomicI32,
-
-    /// Player's current velocity (delta movement per tick).
-    /// Used for speed validation in movement checks.
-    delta_movement: SyncMutex<Vector3<f64>>,
-
-    /// Whether the player is currently sleeping in a bed.
-    sleeping: AtomicBool,
+    /// Local tick and once-per-tick packet state.
+    tick_state: SyncMutex<PlayerTickState>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
-    abilities: SyncMutex<Abilities>,
-
-    /// Whether the player is currently fall flying (elytra gliding).
-    fall_flying: AtomicBool,
-
-    /// Whether the player is on the ground.
-    on_ground: AtomicBool,
-
-    /// Tick when last impulse was applied (knockback, etc.).
-    /// Used for post-impulse grace period during movement validation.
-    last_impulse_tick: AtomicI32,
+    pub abilities: SyncMutex<Abilities>,
 
     /// Block breaking state machine.
     pub block_breaking: SyncMutex<BlockBreakingManager>,
 
-    /// Tick counter for forced position sync (resets to 0 after sync, like vanilla teleportDelay).
-    position_sync_delay: AtomicI32,
+    /// Shared living-entity runtime fields (attributes, speed, damage/death state).
+    /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
+    living_base: LivingEntityBase,
 
-    /// Last `on_ground` state sent to tracking players (for detecting changes).
-    last_sent_on_ground: AtomicBool,
+    /// Player food/hunger state (food level, saturation, exhaustion).
+    pub food_data: SyncMutex<FoodData>,
 
-    /// Whether the player has been removed from the world.
-    removed: AtomicBool,
+    /// Delta-tracking state for `CSetHealth` deduplication.
+    health_sync: SyncMutex<HealthSyncState>,
 
-    /// Callback for entity lifecycle events (movement between chunks, removal).
-    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
+    /// The Player's Experience
+    pub experience: SyncMutex<Experience>,
+
+    /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
+    /// snapshots this before encoding and compares after to detect stale batches.
+    pub chunk_send_epoch: SyncMutex<u32>,
+
+    /// Persisted `RootVehicle` payload awaiting live entity restoration.
+    pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
+}
+
+#[derive(Clone)]
+struct PendingRootVehicleRestore {
+    world: Identifier,
+    root_vehicle: PersistentRootVehicle,
 }
 
 impl Player {
+    /// Computes the start (eye position) and end positions for a raytrace.
+    pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
+        let pos = self.position();
+        let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
+        let block_interaction_range = self
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(4.5);
+        let direction = self.look_angle() * block_interaction_range;
+
+        let end_pos = start_pos + direction;
+        (start_pos, end_pos)
+    }
+
+    /// Returns the player's current game mode.
+    #[must_use]
+    pub fn game_mode(&self) -> GameType {
+        self.game_modes.lock().current()
+    }
+
+    /// Returns the player's previous game mode.
+    #[must_use]
+    pub fn previous_game_mode(&self) -> GameType {
+        self.game_modes.lock().previous()
+    }
+
+    /// Restores current and previous game mode from persistent player data.
+    pub(crate) fn restore_game_modes(&self, current: GameType, previous: GameType) {
+        self.game_modes.lock().set_pair(current, previous);
+    }
+
+    /// Changes the current game mode and records the old current mode as previous.
+    fn change_game_mode_state(&self, game_mode: GameType) -> bool {
+        self.game_modes.lock().change_current(game_mode)
+    }
+
     /// Creates a new player.
+    #[expect(clippy::too_many_arguments, reason = "Player::new is complex")]
     pub fn new(
         gameprofile: GameProfile,
-        connection: Arc<JavaConnection>,
+        connection: Arc<PlayerConnection>,
         world: Arc<World>,
         server: Weak<Server>,
+        config: Arc<RuntimeConfig>,
         entity_id: i32,
         player: &Weak<Player>,
         client_information: ClientInformation,
@@ -310,2142 +320,1386 @@ impl Player {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(player.clone())));
 
-        let pos = Vector3::new(0.0, 0.0, 0.0);
+        let pos = DVec3::new(0.0, 0.0, 0.0);
+
+        let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let player_uuid = gameprofile.id;
+        let world_ref = Arc::downgrade(&world);
 
         Self {
             gameprofile,
             connection,
 
-            world,
+            world: ArcSwap::new(world),
             server,
-            id: entity_id,
-            client_loaded: AtomicBool::new(false),
-            position: SyncMutex::new(pos),
-            rotation: AtomicCell::new((0.0, 0.0)),
-            prev_position: SyncMutex::new(pos),
-            prev_rotation: AtomicCell::new((0.0, 0.0)),
-            entity_data: SyncMutex::new(PlayerEntityData::new()),
-            speed: AtomicCell::new(0.1), // Default walking speed
-            sprinting: AtomicBool::new(false),
+            config,
+            base: EntityBase::with_uuid(
+                entity_id,
+                player_uuid,
+                pos,
+                Self::dimensions_for_pose(EntityPose::Standing),
+                world_ref,
+            ),
+            lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
+            movement: SyncMutex::new(MovementState::new()),
+            entity_data: SyncMutex::new({
+                let mut data = PlayerEntityData::new();
+                living_base.initialize_synced_data(&mut data);
+                data
+            }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
             chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
-            messages_sent: AtomicI32::new(0),
-            messages_received: AtomicI32::new(0),
-            signature_cache: SyncMutex::new(MessageCache::new()),
-            message_validator: SyncMutex::new(LastSeenMessagesValidator::new()),
-            chat_session: SyncMutex::new(None),
-            message_chain: SyncMutex::new(None),
-            game_mode: AtomicCell::new(GameType::Survival),
+            chat: SyncMutex::new(ChatState::new()),
+            game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
-            container_counter: AtomicU8::new(0),
-            ack_block_changes_up_to: AtomicI32::new(-1),
-            shift_key_down: AtomicBool::new(false),
-            awaiting_position_from_client: SyncMutex::new(None),
-            awaiting_teleport_id: AtomicI32::new(0),
-            awaiting_teleport_time: AtomicI32::new(0),
-            tick_count: AtomicI32::new(0),
-            last_good_position: SyncMutex::new(Vector3::default()),
-            first_good_position: SyncMutex::new(Vector3::default()),
-            received_move_packet_count: AtomicI32::new(0),
-            known_move_packet_count: AtomicI32::new(0),
-            delta_movement: SyncMutex::new(Vector3::default()),
-            sleeping: AtomicBool::new(false),
+            container_counter: SyncMutex::new(ContainerCounter::new()),
+            teleport_state: SyncMutex::new(TeleportState::new()),
+            tick_state: SyncMutex::new(PlayerTickState::new()),
             abilities: SyncMutex::new(Abilities::default()),
-            fall_flying: AtomicBool::new(false),
-            on_ground: AtomicBool::new(false),
-            last_impulse_tick: AtomicI32::new(0),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
-            position_sync_delay: AtomicI32::new(0),
-            last_sent_on_ground: AtomicBool::new(false),
-            removed: AtomicBool::new(false),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
+            living_base,
+            food_data: SyncMutex::new(FoodData::new()),
+            health_sync: SyncMutex::new(HealthSyncState::new()),
+            experience: SyncMutex::new(Experience::default()),
+            chunk_send_epoch: SyncMutex::new(0),
+            pending_root_vehicle: SyncMutex::new(None),
         }
     }
 
     /// Ticks the player.
-    #[allow(clippy::cast_possible_truncation)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
+    /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "world coordinates are always within i32 range in a valid Minecraft world"
+    )]
     pub fn tick(&self) {
-        // Increment local tick counter
-        self.tick_count.fetch_add(1, Ordering::Relaxed);
+        self.advance_tick();
+        self.tick_client_load_timeout();
+        if !self.is_passenger() {
+            self.advance_tick_count();
+        }
 
-        // Reset first_good_position to current position at start of tick (vanilla: resetPosition)
-        *self.first_good_position.lock() = *self.position.lock();
+        self.set_no_physics(self.is_spectator());
+        if self.is_spectator() || self.is_passenger() {
+            self.set_on_ground(false);
+        }
 
-        // Apply gravity to delta_movement (vanilla: applyGravity in Entity.tick/LivingEntity.travel)
-        // This must happen after resetPosition so the speed check has the correct expected velocity
-        self.apply_gravity();
+        let tick_position = self.position();
 
-        // Sync packet counts for rate limiting (vanilla: knownMovePacketCount = receivedMovePacketCount)
-        self.known_move_packet_count.store(
-            self.received_move_packet_count.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
+        // Vanilla: ServerGamePacketListenerImpl.resetPosition().
+        self.movement.lock().reset_for_tick(tick_position);
+        self.set_old_position_to_current();
+        self.reset_vehicle_movement_for_tick();
 
-        // Send pending block change acks (batched, once per tick like vanilla)
+        self.default_tick();
+        self.update_swimming();
+        self.ai_step();
+
+        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
+        if let Err(error) = self.try_set_position(tick_position) {
+            panic!(
+                "failed to restore player {} tick position after ai_step: {error}",
+                self.id()
+            );
+        }
+        self.refresh_fluid_contact();
+
         self.tick_ack_block_changes();
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
+        if !self.has_client_loaded() {
             //return;
         }
 
-        let current_pos = *self.position.lock();
-        let chunk_x = (current_pos.x as i32) >> 4;
-        let chunk_z = (current_pos.z as i32) >> 4;
-        let chunk_pos = ChunkPos::new(chunk_x, chunk_z);
+        let world = self.get_world();
+        world.chunk_map.update_player_status(self);
 
-        *self.last_chunk_pos.lock() = chunk_pos;
+        self.living_base.decrement_invulnerable_time();
 
-        self.world.chunk_map.update_player_status(self);
+        if self.get_health() <= 0.0 {
+            self.tick_death();
+        } else {
+            self.touch_nearby_items();
+            self.block_breaking.lock().tick(self, &world);
+            self.apply_effects_from_blocks();
+            self.push_entities(&world);
 
-        self.chunk_sender
-            .lock()
-            .send_next_chunks(self.connection.clone(), &self.world, chunk_pos);
+            // TODO: Implement remaining player ticking logic here
+            // - Managing game mode specific logic
+            // - Updating advancements
+            // - Handling falling
 
-        // Try to pick up nearby items (vanilla: Player.aiStep)
-        self.touch_nearby_items();
+            // aiStep in vanilla
+            self.living_base.refresh_speed_from_attributes();
 
-        // Broadcast inventory changes to client
+            self.update_player_attributes();
+            self.tick_regeneration();
+
+            if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
+                self.set_sprinting(false);
+            }
+        }
+
+        if self.disconnect_if_floating_too_long() {
+            return;
+        }
+        if self.disconnect_if_vehicle_floating_too_long() {
+            return;
+        }
+
+        self.refresh_dirty_attributes();
+        self.tick_living_state();
+
         self.broadcast_inventory_changes();
-
-        // Tick block breaking
-        self.block_breaking.lock().tick(self, &self.world);
-
-        // Update pose based on current state
         self.update_pose();
 
-        // Sync dirty entity data to nearby players
-        self.sync_entity_data();
+        {
+            let health = self.get_health();
+            let (food, saturation) = {
+                let food_data = self.food_data.lock();
+                (food_data.food_level, food_data.saturation_level)
+            };
+
+            let saturation_zero = saturation == 0.0;
+
+            let mut sync = self.health_sync.lock();
+            if sync.needs_update(health, food, saturation_zero) {
+                self.send_packet(CSetHealth {
+                    health,
+                    food,
+                    food_saturation: saturation,
+                });
+                sync.record_sent(health, food, saturation_zero);
+            }
+        }
+
+        {
+            let mut experience = self.experience.lock();
+
+            if experience.dirty {
+                self.send_packet(CSetExperience {
+                    progress: experience.progress() as f32,
+                    level: experience.level(),
+                    total_experience: experience.total_points(),
+                });
+                experience.dirty = false;
+            }
+        }
 
         self.connection.tick();
-
-        // TODO: Implement player ticking logic here
-        // This will include:
-        // - Checking if the player is alive
-        // - Handling movement
-        // - Updating inventory
-        // - Handling food/health regeneration
-        // - Managing game mode specific logic
-        // - Updating advancements
-        // - Handling falling
     }
 
-    /// Syncs dirty entity data to nearby players.
+    /// Ticks the death animation timer.
+    /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
+    fn tick_death(&self) {
+        let death_time = self.living_base.increment_death_time();
+
+        if death_time >= DEATH_DURATION && !self.is_removed() {
+            let world = self.get_world();
+            let chunk_pos = *self.last_chunk_pos.lock();
+            world.broadcast_to_nearby(
+                chunk_pos,
+                CEntityEvent {
+                    entity_id: self.id(),
+                    event: EntityStatus::Poof,
+                },
+                None,
+            );
+
+            world.unregister_player_entity(self);
+            world.entity_tracker().on_player_leave(self.id());
+            world.player_area_map.remove_by_entity_id(self.id());
+            world.chunk_map.remove_player(self);
+            self.set_removed(RemovalReason::Killed);
+        }
+    }
+
+    /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
-            let packet = CSetEntityData::new(self.id, dirty_values);
-            let chunk_pos = *self.last_chunk_pos.lock();
-            self.world.broadcast_to_nearby(chunk_pos, packet, None);
-        }
-    }
-
-    /// Attempts to pick up nearby item entities.
-    ///
-    /// Mirrors vanilla's `Player.aiStep()` item pickup logic:
-    /// - Calculates pickup area as bounding box inflated by (1.0, 0.5, 1.0)
-    /// - Calls `playerTouch()` on each entity in range
-    fn touch_nearby_items(&self) {
-        // Spectators can't pick up items
-        if self.game_mode.load() == GameType::Spectator {
-            return;
-        }
-
-        // Calculate pickup area (vanilla: Player.aiStep lines 454-458)
-        let pickup_area = self.bounding_box().inflate_xyz(1.0, 0.5, 1.0);
-
-        // Get all entities in the pickup area
-        let entities = self.world.get_entities_in_aabb(&pickup_area);
-
-        // Get player Arc for try_pickup (needed because try_pickup takes &Arc<Player>)
-        let Some(player_arc) = self.world.players.get_by_entity_id(self.id) else {
-            return;
-        };
-
-        for entity in entities {
-            // Skip self
-            if entity.id() == self.id {
-                continue;
-            }
-
-            // Skip removed entities
-            if entity.is_removed() {
-                continue;
-            }
-
-            // Try to pick up item entities
-            if let Some(item_entity) = entity.as_item_entity() {
-                item_entity.try_pickup(&player_arc);
-            }
-
-            // TODO: Handle other entity types (experience orbs, arrows)
+            let packet = CSetEntityData::new(self.id(), dirty_values);
+            self.get_world()
+                .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+            self.send_packet(packet);
         }
     }
 
     /// Handles a custom payload packet.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         log::info!("Hello from the other side! {packet:?}");
     }
 
     /// Handles the end of a client tick.
-    pub const fn handle_client_tick_end(&self) {
-        //log::info!("Hello from the other side!");
+    pub fn handle_client_tick_end(&self) {
+        self.movement.lock().finish_client_tick();
     }
 
-    /// Gets the next `messages_received` counter and increments it
-    pub fn get_and_increment_messages_received(&self) -> i32 {
-        self.messages_received.fetch_add(1, Ordering::Relaxed)
-    }
-
-    fn verify_chat_signature(
-        &self,
-        packet: &SChat,
-    ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
-        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
-
-        let session = self.chat_session.lock().clone().ok_or("No chat session")?;
-        let signature = packet.signature.as_ref().ok_or("No signature present")?;
-
-        if session
-            .profile_public_key
-            .data()
-            .has_expired_with_grace(profile_key::EXPIRY_GRACE_PERIOD)
-        {
-            return Err("Profile key has expired".to_string());
+    fn push_entities(&self, world: &Arc<World>) {
+        if !world.tick_runs_normally() {
+            return;
         }
 
-        let mut chain_guard = self.message_chain.lock();
-        let chain = chain_guard.as_mut().ok_or("No message chain")?;
-
-        if chain.is_broken() {
-            return Err("Message chain is broken".to_string());
+        let pusher = self as &dyn Entity;
+        let pushable_entities = world.get_pushable_entities(pusher, &self.bounding_box());
+        if pushable_entities.is_empty() {
+            return;
         }
 
-        let timestamp =
-            UNIX_EPOCH + Duration::from_millis(packet.timestamp.try_into().unwrap_or(0));
+        self.apply_entity_cramming_damage(world, &pushable_entities);
 
-        let now = SystemTime::now();
-        let message_age = now
-            .duration_since(timestamp)
-            .unwrap_or(Duration::from_secs(0));
-
-        if message_age > MESSAGE_EXPIRES_AFTER {
-            return Err(format!(
-                "Message expired (age: {}s, max: 300s)",
-                message_age.as_secs()
-            ));
-        }
-
-        let last_seen_signatures = self
-            .message_validator
-            .lock()
-            .apply_update(packet.acknowledged, packet.offset, packet.checksum)
-            .map_err(|e| {
-                log::error!("Message acknowledgment validation failed: {e}");
-                e
-            })?;
-
-        let last_seen = LastSeen::new(last_seen_signatures);
-
-        let body = message_chain::SignedMessageBody::new(
-            packet.message.clone(),
-            timestamp,
-            packet.salt,
-            last_seen,
-        );
-
-        let link = chain
-            .validate_and_advance(&body)
-            .map_err(|e| format!("Chain validation failed: {e}"))?;
-
-        let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
-        let validator = session.profile_public_key.create_signature_validator();
-
-        let is_valid = SignatureValidator::validate(&validator, &updater, signature)
-            .map_err(|e| format!("Signature validation error: {e}"))?;
-
-        if is_valid {
-            Ok((link, body.last_seen.clone()))
-        } else {
-            Err("Invalid signature".to_string())
+        for entity in pushable_entities {
+            entity.push_entity(pusher);
         }
     }
 
-    /// Handles a chat message from the player.
-    #[allow(clippy::too_many_lines)]
-    pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
-        let chat_message = packet.message.clone();
+    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
+        let max_cramming = world
+            .get_game_rule(&MAX_ENTITY_CRAMMING)
+            .as_int()
+            .unwrap_or(24);
 
-        let verification_result = if let Some(_signature) = &packet.signature {
-            match self.verify_chat_signature(&packet) {
-                Ok((link, last_seen)) => {
-                    // Don't add to cache here - will be added during broadcast
-                    // to avoid cache state mismatch with client
-                    Some(Ok((link, last_seen)))
-                }
-                Err(err) => {
-                    log::warn!(
-                        "Player {} sent message with invalid signature: {err}",
-                        self.gameprofile.name
-                    );
-                    Some(Err(err))
-                }
-            }
-        } else {
-            None
-        };
-
-        if STEEL_CONFIG.enforce_secure_chat {
-            match &verification_result {
-                Some(Ok(_)) => {}
-                Some(Err(err)) => {
-                    self.connection
-                        .disconnect(format!("Chat message validation failed: {err}"));
-                    return;
-                }
-                None => {
-                    self.connection.disconnect(
-                        "Secure chat is enforced on this server, but your message was not signed",
-                    );
-                    return;
-                }
-            }
+        if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
+            return;
         }
 
-        let signature = if matches!(verification_result, Some(Ok(_))) {
-            packet.signature.map(|sig| Box::new(sig) as Box<[u8]>)
-        } else {
-            None
-        };
+        let random_roll = self.base.random().lock().next_i32_bounded(4);
+        let non_passenger_count = pushable_entities
+            .iter()
+            .filter(|entity| !entity.is_passenger())
+            .count();
 
-        let sender_index = player.messages_sent.fetch_add(1, Ordering::SeqCst);
-
-        let registry_id = *REGISTRY.chat_types.get_id(vanilla_chat_types::CHAT) as i32;
-
-        let chat_packet = CPlayerChat::new(
-            0,
-            player.gameprofile.id,
-            sender_index,
-            signature.clone(),
-            chat_message.clone(),
-            packet.timestamp,
-            packet.salt,
-            Box::new([]),
-            Some(TextComponent::plain(chat_message.clone())),
-            FilterType::PassThrough,
-            ChatTypeBound {
-                registry_id,
-                sender_name: TextComponent::plain(player.gameprofile.name.clone())
-                    .insertion(player.gameprofile.name.clone())
-                    .click_event(ClickEvent::suggest_command(format!(
-                        "/tell {} ",
-                        player.gameprofile.name
-                    )))
-                    .hover_event(HoverEvent::show_entity(
-                        "minecraft:player",
-                        self.uuid(),
-                        Some(player.gameprofile.name.clone()),
-                    )),
-                target_name: None,
-            },
-        );
-
-        if let Some(sig_box) = &signature {
-            if sig_box.len() == 256 {
-                let mut sig_array = [0u8; 256];
-                sig_array.copy_from_slice(&sig_box[..]);
-
-                let last_seen = if let Some(Ok((_, ref last_seen))) = verification_result {
-                    last_seen.clone()
-                } else {
-                    LastSeen::default()
-                };
-
-                steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                self.world.broadcast_chat(
-                    chat_packet,
-                    Arc::clone(&player),
-                    last_seen,
-                    Some(sig_array),
-                );
-            } else {
-                self.world.broadcast_unsigned_chat(
-                    chat_packet,
-                    &player.gameprofile.name,
-                    &chat_message,
-                );
-            }
-        } else {
-            self.world.broadcast_unsigned_chat(
-                chat_packet,
-                &player.gameprofile.name,
-                &chat_message,
+        if Self::should_apply_entity_cramming_damage(
+            max_cramming,
+            pushable_entities.len(),
+            non_passenger_count,
+            random_roll,
+        ) {
+            self.hurt(
+                &DamageSource::environment(&vanilla_damage_types::CRAMMING),
+                6.0,
             );
         }
     }
 
-    /// Sends a system message to the player.
-    pub fn send_message(&self, text: &TextComponent) {
-        self.connection
-            .send_packet(CSystemChatMessage::new(text, self, false));
-    }
-
-    const fn is_invalid_position(x: f64, y: f64, z: f64, rot_x: f32, rot_y: f32) -> bool {
-        if x.is_nan() || y.is_nan() || z.is_nan() {
-            return true;
-        }
-
-        if !rot_x.is_finite() || !rot_y.is_finite() {
-            return true;
-        }
-
-        false
-    }
-
-    /// Checks if we're awaiting a teleport confirmation and handles timeout/resend.
-    ///
-    /// Returns `true` if awaiting teleport (movement should be rejected),
-    /// `false` if normal movement processing should continue.
-    fn update_awaiting_teleport(&self) -> bool {
-        let awaiting = self.awaiting_position_from_client.lock();
-        if let Some(pos) = *awaiting {
-            let current_tick = self.tick_count.load(Ordering::Relaxed);
-            let last_time = self.awaiting_teleport_time.load(Ordering::Relaxed);
-
-            // Resend teleport after 20 ticks (~1 second) timeout
-            if current_tick.wrapping_sub(last_time) > 20 {
-                self.awaiting_teleport_time
-                    .store(current_tick, Ordering::Relaxed);
-                drop(awaiting);
-
-                // Resend the teleport packet
-                let (yaw, pitch) = self.rotation.load();
-                let teleport_id = self.awaiting_teleport_id.load(Ordering::Relaxed);
-                self.connection.send_packet(CPlayerPosition::absolute(
-                    teleport_id,
-                    pos.x,
-                    pos.y,
-                    pos.z,
-                    yaw,
-                    pitch,
-                ));
-            }
-            return true; // Still awaiting, reject movement
-        }
-
-        self.awaiting_teleport_time
-            .store(self.tick_count.load(Ordering::Relaxed), Ordering::Relaxed);
-        false
-    }
-
-    /// Returns true if the player is in post-impulse grace period.
-    fn is_in_post_impulse_grace_time(&self) -> bool {
-        let current_tick = self.tick_count.load(Ordering::Relaxed);
-        let last_impulse = self.last_impulse_tick.load(Ordering::Relaxed);
-        current_tick.wrapping_sub(last_impulse) < movement::IMPULSE_GRACE_TICKS
-    }
-
-    /// Marks that an impulse (knockback, etc.) was applied to the player.
-    pub fn apply_impulse(&self) {
-        self.last_impulse_tick
-            .store(self.tick_count.load(Ordering::Relaxed), Ordering::Relaxed);
-    }
-
-    /// Returns the squared length of the player's current velocity.
-    fn get_delta_movement_length_sq(&self) -> f64 {
-        let dm = self.delta_movement.lock();
-        dm.x * dm.x + dm.y * dm.y + dm.z * dm.z
-    }
-
-    /// Checks if movement validation should be performed for this player.
-    ///
-    /// Matches vanilla's `ServerGamePacketListenerImpl.shouldValidateMovement()`.
-    /// Uses the `playerMovementCheck` and `elytraMovementCheck` gamerules.
-    ///
-    /// Returns `true` if movement should be validated, `false` to skip validation.
-    fn should_validate_movement(&self, is_fall_flying: bool) -> bool {
-        // Check playerMovementCheck gamerule
-        let player_check = self.world.get_game_rule(PLAYER_MOVEMENT_CHECK);
-        if player_check != GameRuleValue::Bool(true) {
+    const fn should_apply_entity_cramming_damage(
+        max_cramming: i32,
+        pushable_count: usize,
+        non_passenger_count: usize,
+        random_roll: i32,
+    ) -> bool {
+        if max_cramming <= 0 || random_roll != 0 {
             return false;
         }
 
-        // If fall flying, also check elytraMovementCheck gamerule
-        if is_fall_flying {
-            let elytra_check = self.world.get_game_rule(ELYTRA_MOVEMENT_CHECK);
-            return elytra_check == GameRuleValue::Bool(true);
+        let threshold = (max_cramming - 1) as usize;
+        pushable_count > threshold && non_passenger_count > threshold
+    }
+
+    /// Main entry point for dealing damage. Returns `true` if damage was applied.
+    ///
+    /// Vanilla: `LivingEntity.hurtServer()` (with `ServerPlayer` override adding
+    /// `PvP` checks before delegating to super). When other living entities are
+    /// added, the core logic here should move to a `LivingEntity` trait method.
+    pub fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        // TODO: Vanilla ServerPlayer.hurtServer checks isInvulnerableTo() first, which
+        // includes gamerule checks (drowningDamage, fallDamage, fireDamage, freezeDamage).
+        // Add when gamerule damage-type system is implemented.
+
+        {
+            let abilities = self.abilities.lock();
+            if abilities.invulnerable && !source.bypasses_invulnerability() {
+                return false;
+            }
+        }
+
+        if self.get_health() <= 0.0 {
+            return false;
+        }
+
+        // TODO: Vanilla LivingEntity.hurtServer checks fire resistance effect here:
+        //   if source.is(IS_FIRE) && hasEffect(FIRE_RESISTANCE) → return false
+        // Blocked on: potion/effect system
+
+        // TODO: Vanilla LivingEntity.hurtServer wakes sleeping entities:
+        //   if this.isSleeping() { this.stopSleeping(); }
+        // Blocked on: full sleep system (stopSleeping, bed block state, stand-up position)
+
+        // TODO: Vanilla LivingEntity.hurtServer sets this.noActionTime = 0 here.
+        // This is the LivingEntity mob-despawn counter (separate from ServerPlayer.lastActionTime).
+        // For players it's not critical, but add for completeness when mob AI is implemented.
+
+        // Difficulty scaling (vanilla: Player.hurtServer)
+        let mut amount = amount;
+        if source.scales_with_difficulty() {
+            let difficulty = self.get_world().level_data.read().data().difficulty;
+            match difficulty {
+                Difficulty::Peaceful => {
+                    amount = 0.0;
+                }
+                Difficulty::Easy => {
+                    amount = (amount / 2.0 + 1.0).min(amount);
+                }
+                Difficulty::Hard => {
+                    amount = amount * 3.0 / 2.0;
+                }
+                Difficulty::Normal => {}
+            }
+        }
+
+        if amount <= 0.0 {
+            return false;
+        }
+
+        let Some((took_full_damage, effective_amount)) = self
+            .living_base
+            .apply_damage_cooldown(amount, source.bypasses_cooldown())
+        else {
+            return false;
+        };
+
+        // TODO: Vanilla LivingEntity.hurtServer applies item blocking (shield) before
+        // actuallyHurt via applyItemBlocking(). Implements shield damage reduction,
+        // BlocksAttacks component, and shield disable cooldown.
+        // Blocked on: item use / blocking system, BlocksAttacks data component
+
+        self.actually_hurt(source, effective_amount);
+
+        // TODO: Vanilla LivingEntity.hurtServer applies knockback after damage:
+        //   - Calculates knockback direction from source position or projectile
+        //   - Calls this.knockback(0.4, dx, dz)
+        //   - Calls this.indicateDamage(dx, dz) if not blocked
+        // Blocked on: knockback / velocity system, projectile system
+
+        if took_full_damage {
+            let type_id = source.damage_type.id() as i32;
+            let chunk_pos = *self.last_chunk_pos.lock();
+            let world = self.get_world();
+
+            world.broadcast_to_nearby(
+                chunk_pos,
+                CDamageEvent {
+                    entity_id: self.id(),
+                    source_type_id: type_id,
+                    source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
+                    source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
+                    source_position: source.source_position,
+                },
+                None,
+            );
+
+            let (yaw, _) = self.rotation();
+            world.broadcast_to_nearby(
+                chunk_pos,
+                CHurtAnimation {
+                    entity_id: self.id(),
+                    yaw,
+                },
+                None,
+            );
+        }
+
+        if self.get_health() <= 0.0 {
+            self.die(source);
         }
 
         true
     }
 
-    /// Handles a move player packet.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.handleMovePlayer()`.
-    #[allow(clippy::cast_lossless, clippy::too_many_lines, clippy::similar_names)]
-    pub fn handle_move_player(&self, packet: SMovePlayer) {
-        if Self::is_invalid_position(
-            packet.get_x(0.0),
-            packet.get_y(0.0),
-            packet.get_z(0.0),
-            packet.get_x_rot(0.0),
-            packet.get_y_rot(0.0),
-        ) {
-            self.connection
-                .disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+    /// Applies damage after reductions.
+    /// TODO: armor, enchantment, absorption
+    fn actually_hurt(&self, source: &DamageSource, amount: f32) {
+        // TODO: apply armor/enchant/absorption reductions here (vanilla: getDamageAfterArmorAbsorb, getDamageAfterMagicAbsorb)
+        // TODO: absorption amount handling
+        // TODO: combat tracker (getCombatTracker().recordDamage)
+        if amount <= 0.0 {
             return;
         }
 
-        // Check awaiting teleport - if so, only update rotation (vanilla: absSnapRotationTo)
-        if self.update_awaiting_teleport() {
-            // While awaiting teleport, still allow rotation updates
-            if packet.has_rot {
-                self.rotation.store((packet.y_rot, packet.x_rot));
-            }
-            return;
-        }
+        // TODO: absorption handling
+        self.cause_food_exhaustion(source.damage_type.exhaustion);
 
-        if !self.client_loaded.load(Ordering::Relaxed) {
-            return;
-        }
-
-        let prev_pos = *self.prev_position.lock();
-        let prev_rot = self.prev_rotation.load();
-        let start_pos = *self.position.lock();
-        let game_mode = self.game_mode.load();
-        let is_spectator = game_mode == GameType::Spectator;
-        let is_creative = game_mode == GameType::Creative;
-        let is_sleeping = self.sleeping.load(Ordering::Relaxed);
-        let is_fall_flying = self.fall_flying.load(Ordering::Relaxed);
-        let was_on_ground = self.on_ground.load(Ordering::Relaxed);
-        // Skip movement checks when tick rate is frozen (vanilla: tickRateManager().runsNormally())
-        let tick_frozen = !self.world.tick_runs_normally();
-
-        // Handle position updates
-        if packet.has_pos {
-            // Clamp position to vanilla limits
-            let target_pos = Vector3::new(
-                movement::clamp_horizontal(packet.position.x),
-                movement::clamp_vertical(packet.position.y),
-                movement::clamp_horizontal(packet.position.z),
-            );
-            let first_good = *self.first_good_position.lock();
-            let last_good = *self.last_good_position.lock();
-
-            // Sleeping check - only allow small movements when sleeping
-            if is_sleeping {
-                let dx = target_pos.x - first_good.x;
-                let dy = target_pos.y - first_good.y;
-                let dz = target_pos.z - first_good.z;
-                let moved_dist_sq = dx * dx + dy * dy + dz * dz;
-
-                if moved_dist_sq > 1.0 {
-                    let (yaw, pitch) = self.rotation.load();
-                    self.teleport(start_pos.x, start_pos.y, start_pos.z, yaw, pitch);
-                    return;
-                }
-            } else {
-                // Increment received packet count
-                self.received_move_packet_count
-                    .fetch_add(1, Ordering::Relaxed);
-
-                // Calculate delta packets since last tick (for rate limiting)
-                let received = self.received_move_packet_count.load(Ordering::Relaxed);
-                let known = self.known_move_packet_count.load(Ordering::Relaxed);
-                let mut delta_packets = received - known;
-
-                // Cap delta packets to prevent abuse (vanilla caps at 5)
-                if delta_packets > 5 {
-                    delta_packets = 1;
-                }
-
-                // Skip checks for spectators, creative mode, tick frozen, or gamerules disabled
-                // Vanilla: shouldValidateMovement() checks playerMovementCheck and elytraMovementCheck
-                let gamerule_skip = !self.should_validate_movement(is_fall_flying);
-                let skip_checks = is_spectator || is_creative || tick_frozen || gamerule_skip;
-
-                // Validate movement using physics simulation
-                let mut validation = movement::validate_movement(
-                    &self.world,
-                    &movement::MovementInput {
-                        target_pos,
-                        first_good_pos: first_good,
-                        last_good_pos: last_good,
-                        expected_velocity_sq: self.get_delta_movement_length_sq(),
-                        delta_packets,
-                        is_fall_flying,
-                        skip_checks,
-                        in_impulse_grace: self.is_in_post_impulse_grace_time(),
-                        is_crouching: self.shift_key_down.load(Ordering::Relaxed),
-                        on_ground: was_on_ground,
-                    },
-                );
-
-                if !validation.is_valid {
-                    // Teleport back to start position
-                    let (yaw, pitch) = prev_rot;
-                    self.teleport(start_pos.x, start_pos.y, start_pos.z, yaw, pitch);
-                    return;
-                }
-
-                // Movement accepted - update last good position
-                *self.last_good_position.lock() = target_pos;
-
-                // Zero Y velocity when landing (vanilla: Block.updateEntityMovementAfterFallOn)
-                // This prevents gravity from accumulating while on the ground
-                if !was_on_ground && packet.on_ground {
-                    validation.move_delta.y = 0.0;
-                }
-                // Update velocity based on actual movement (vanilla: handlePlayerKnownMovement)
-                self.set_delta_movement(validation.move_delta);
-
-                // Jump detection (vanilla: jumpFromGround)
-                let moved_upwards = validation.move_delta.y > 0.0;
-                if was_on_ground && !packet.on_ground && moved_upwards {
-                    // Player jumped - could trigger jump-related mechanics here
-                    // For now, this is a placeholder for future jump handling
-                }
-            }
-        }
-
-        // Update on_ground state from packet
-        self.on_ground.store(packet.on_ground, Ordering::Relaxed);
-
-        // Update current state
-        if packet.has_pos {
-            let old_pos = *self.position.lock();
-            *self.position.lock() = packet.position;
-
-            // Notify callback of position change (updates entity cache section index)
-            self.level_callback.lock().on_move(old_pos, packet.position);
-        }
-        if packet.has_rot {
-            self.rotation.store((packet.y_rot, packet.x_rot));
-        }
-
-        // Broadcast movement to other players
-        let pos = if packet.has_pos {
-            packet.position
-        } else {
-            prev_pos
-        };
-        let (yaw, pitch) = if packet.has_rot {
-            (packet.y_rot, packet.x_rot)
-        } else {
-            prev_rot
-        };
-
-        if packet.has_pos || packet.has_rot {
-            let new_chunk = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
-
-            // Note: player_area_map is updated in chunk_map.update_player_status
-            // which is called every tick and computes view diffs efficiently
-
-            if packet.has_pos {
-                let dx = calc_delta(pos.x, prev_pos.x);
-                let dy = calc_delta(pos.y, prev_pos.y);
-                let dz = calc_delta(pos.z, prev_pos.z);
-
-                // Vanilla sync conditions (ServerEntity.java:148)
-                let sync_delay = self.position_sync_delay.fetch_add(1, Ordering::Relaxed);
-                let last_on_ground = self.last_sent_on_ground.load(Ordering::Relaxed);
-                let on_ground_changed = last_on_ground != packet.on_ground;
-                let force_sync = sync_delay > 400 || on_ground_changed;
-
-                if let (Some(dx), Some(dy), Some(dz)) = (dx, dy, dz) {
-                    if force_sync {
-                        // Send absolute position sync (forced by timer or on_ground change)
-                        self.position_sync_delay.store(0, Ordering::Relaxed);
-                        self.last_sent_on_ground
-                            .store(packet.on_ground, Ordering::Relaxed);
-
-                        let delta = self.get_delta_movement();
-                        let sync_packet = CEntityPositionSync {
-                            entity_id: self.id,
-                            x: pos.x,
-                            y: pos.y,
-                            z: pos.z,
-                            velocity_x: delta.x,
-                            velocity_y: delta.y,
-                            velocity_z: delta.z,
-                            yaw,
-                            pitch,
-                            on_ground: packet.on_ground,
-                        };
-                        self.world
-                            .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
-                    } else {
-                        let move_packet = CMoveEntityPosRot {
-                            entity_id: self.id,
-                            dx,
-                            dy,
-                            dz,
-                            y_rot: to_angle_byte(yaw),
-                            x_rot: to_angle_byte(pitch),
-                            on_ground: packet.on_ground,
-                        };
-                        self.world
-                            .broadcast_to_nearby(new_chunk, move_packet, Some(self.id));
-                    }
-                } else {
-                    // Send absolute position sync (delta too big)
-                    self.position_sync_delay.store(0, Ordering::Relaxed);
-                    self.last_sent_on_ground
-                        .store(packet.on_ground, Ordering::Relaxed);
-
-                    let delta = self.get_delta_movement();
-                    let sync_packet = CEntityPositionSync {
-                        entity_id: self.id,
-                        x: pos.x,
-                        y: pos.y,
-                        z: pos.z,
-                        velocity_x: delta.x,
-                        velocity_y: delta.y,
-                        velocity_z: delta.z,
-                        yaw,
-                        pitch,
-                        on_ground: packet.on_ground,
-                    };
-                    self.world
-                        .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
-                }
-            } else {
-                let rot_packet = CMoveEntityRot {
-                    entity_id: self.id,
-                    y_rot: to_angle_byte(yaw),
-                    x_rot: to_angle_byte(pitch),
-                    on_ground: packet.on_ground,
-                };
-                self.world
-                    .broadcast_to_nearby(new_chunk, rot_packet, Some(self.id));
-            }
-
-            if packet.has_rot {
-                let head_packet = CRotateHead {
-                    entity_id: self.id,
-                    head_y_rot: to_angle_byte(yaw),
-                };
-                self.world
-                    .broadcast_to_nearby(new_chunk, head_packet, Some(self.id));
-            }
-
-            *self.prev_position.lock() = pos;
-            self.prev_rotation.store((yaw, pitch));
-        }
+        self.set_health(self.get_health() - amount);
     }
 
-    /// Updates the player's chat session and initializes the message chain.
-    ///
-    /// This should be called when receiving a `ChatSessionUpdate` packet from the client.
-    pub fn set_chat_session(&self, session: RemoteChatSession) {
-        // Initialize the message chain for this session
-        let chain = SignedMessageChain::new(self.gameprofile.id, session.session_id);
+    /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
+    fn die(&self, source: &DamageSource) {
+        if self.is_removed() {
+            return;
+        }
+        if !self.living_base.mark_death_processed() {
+            return;
+        }
 
-        // Convert session to data for broadcasting
-        let session_data = session.as_data();
-        let protocol_data = match session_data.to_protocol_data() {
-            Ok(data) => data,
-            Err(err) => {
-                log::error!(
-                    "Failed to convert chat session to protocol data for {}: {:?}",
-                    self.gameprofile.name,
-                    err
-                );
-                *self.chat_session.lock() = Some(session);
-                *self.message_chain.lock() = Some(chain);
-                return;
-            }
-        };
+        {
+            let mut experience = self.experience.lock();
 
-        *self.chat_session.lock() = Some(session);
-        *self.message_chain.lock() = Some(chain);
+            experience.sync_score(&mut self.entity_data.lock());
+            experience.score = 0;
+        }
 
-        log::info!(
-            "Player {} initialized signed chat session",
-            self.gameprofile.name
+        self.sync_entity_data();
+
+        // NOTE: Vanilla `ServerPlayer.die()` does NOT set Pose::Dying — only
+        // `LivingEntity.die()` does (which ServerPlayer never calls via super).
+        // The death screen covers the player model, so the pose is irrelevant.
+
+        let world = self.get_world();
+
+        // Broadcast entity event 3 (death sound) to all nearby players.
+        let chunk_pos = *self.last_chunk_pos.lock();
+        world.broadcast_to_nearby(
+            chunk_pos,
+            CEntityEvent {
+                entity_id: self.id(),
+                event: EntityStatus::Death,
+            },
+            None,
         );
 
-        // Broadcast the chat session to all players so they can verify this player's signatures
-        let update_packet =
-            CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
-        self.world.broadcast_to_all(update_packet);
-    }
+        let show_death_messages =
+            world.get_game_rule(&SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
 
-    /// Gets a reference to the player's chat session if present
-    pub fn chat_session(&self) -> Option<RemoteChatSession> {
-        self.chat_session.lock().clone()
-    }
-
-    /// Checks if the player has a valid chat session
-    pub fn has_chat_session(&self) -> bool {
-        self.chat_session.lock().is_some()
-    }
-
-    /// Handles a chat session update packet from the client.
-    ///
-    /// This validates the player's profile key and initializes signed chat if valid.
-    pub fn handle_chat_session_update(&self, packet: SChatSessionUpdate) {
-        log::info!("Player {} sent chat session update", self.gameprofile.name);
-
-        // Convert the packet data to profile key data
-        let expires_at = UNIX_EPOCH + Duration::from_millis(packet.expires_at as u64);
-
-        // Decode the public key
-        let public_key = match public_key_from_bytes(&packet.public_key) {
-            Ok(key) => key,
-            Err(err) => {
-                log::warn!(
-                    "Player {} sent invalid public key: {err}",
-                    self.gameprofile.name
-                );
-                // Phase 4: Kick if enforcement is enabled
-                if STEEL_CONFIG.enforce_secure_chat {
-                    log::error!(
-                        "Player {} kicked for invalid public key",
-                        self.gameprofile.name
-                    );
-                    self.connection.disconnect("Invalid profile public key");
-                }
-                return;
-            }
-        };
-
-        let profile_key_data =
-            profile_key::ProfilePublicKeyData::new(expires_at, public_key, packet.key_signature);
-
-        let validator = Box::new(NoValidation) as Box<dyn SignatureValidator>;
-
-        let session_data = profile_key::RemoteChatSessionData {
-            session_id: packet.session_id,
-            profile_public_key: profile_key_data,
-        };
-
-        match session_data.validate(self.gameprofile.id, &*validator) {
-            Ok(session) => {
-                self.set_chat_session(session);
-            }
-            Err(err) => {
-                log::warn!(
-                    "Player {} sent invalid chat session: {err}",
-                    self.gameprofile.name
-                );
-                if STEEL_CONFIG.enforce_secure_chat {
-                    self.connection
-                        .disconnect(format!("Chat session validation failed: {err}"));
-                }
-            }
+        // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
+        let death_key = format!("death.attack.{}", source.damage_type.message_id);
+        let death_message = TranslatedMessage {
+            key: death_key.into(),
+            fallback: None,
+            args: Some(Box::new([TextComponent::plain(
+                self.gameprofile.name.clone(),
+            )])),
         }
-    }
+        .component();
 
-    /// Handles a chat acknowledgment packet from the client.
-    pub fn handle_chat_ack(&self, packet: SChatAck) {
-        if let Err(err) = self.message_validator.lock().apply_offset(packet.offset.0) {
-            log::warn!(
-                "Player {} sent invalid chat acknowledgment: {err}",
-                self.gameprofile.name
-            );
-        }
-    }
+        self.send_packet(CPlayerCombatKill {
+            player_id: self.id(),
+            message: if show_death_messages {
+                death_message.clone()
+            } else {
+                TextComponent::const_plain("")
+            },
+        });
 
-    /// Handles client information updates during play phase.
-    pub fn handle_client_information(&self, packet: SClientInformation) {
-        let old_view_distance = self.view_distance();
-
-        let info = ClientInformation {
-            language: packet.language,
-            view_distance: packet.view_distance.clamp(2, 32) as u8,
-            chat_visibility: packet.chat_visibility,
-            chat_colors: packet.chat_colors,
-            model_customisation: packet.model_customisation,
-            main_hand: packet.main_hand,
-            text_filtering_enabled: packet.text_filtering_enabled,
-            allows_listing: packet.allows_listing,
-            particle_status: packet.particle_status,
-        };
-        self.set_client_information(info);
-
-        let new_view_distance = self.view_distance();
-        if old_view_distance != new_view_distance {
-            self.connection.send_packet(CSetChunkCacheRadius {
-                radius: i32::from(new_view_distance),
+        // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
+        if show_death_messages {
+            world.broadcast_system_chat(CSystemChat {
+                content: death_message,
+                overlay: false,
             });
         }
-    }
 
-    /// Sets the player's game mode and notifies the client.
-    ///
-    /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
-    pub fn set_game_mode(&self, gamemode: GameType) -> bool {
-        let current_gamemode = self.game_mode.load();
-        if current_gamemode == gamemode {
-            return false;
-        }
-
-        self.game_mode.store(gamemode);
-
-        // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
-        self.abilities.lock().update_for_game_mode(gamemode);
-
-        // Send abilities first (vanilla sends this before game event)
-        self.send_abilities();
-
-        self.connection.send_packet(CGameEvent {
-            event: GameEventType::ChangeGameMode,
-            data: gamemode.into(),
-        });
-
-        // Broadcast game mode update to all players (including self)
-        // This updates PlayerInfo on clients, which is used for isSpectator() checks
-        let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.world.broadcast_to_all(update_packet);
-
-        true
-    }
-
-    /// Sends the player abilities packet to the client.
-    /// This tells the client about flight, invulnerability, speeds, etc.
-    pub fn send_abilities(&self) {
-        let packet = self.abilities.lock().to_packet();
-        self.connection.send_packet(packet);
-    }
-
-    /// Handles a container button click packet (e.g., enchanting table buttons).
-    pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
-        log::debug!(
-            "Player {} clicked button {} in container {}",
-            self.gameprofile.name,
-            packet.button_id,
-            packet.container_id
-        );
-        // TODO: Implement container button click handling
-        // This is used for things like:
-        // - Enchanting table level selection
-        // - Stonecutter recipe selection
-        // - Loom pattern selection
-        // - Lectern page turning
-    }
-
-    /// Handles a container click packet (slot interaction).
-    pub fn handle_container_click(&self, packet: SContainerClick) {
-        // First check if we have an open external menu
-        let mut open_menu_guard = self.open_menu.lock();
-
-        if let Some(ref mut menu) = *open_menu_guard {
-            // Check container ID matches the open menu
-            if i32::from(menu.container_id()) != packet.container_id {
-                return;
-            }
-
-            // Handle the click using the open menu
-            self.process_container_click(menu.as_mut(), packet);
-        } else {
-            // No external menu open, use the inventory menu
-            drop(open_menu_guard);
-            let mut menu = self.inventory_menu.lock();
-
-            // Check container ID matches
-            if i32::from(menu.behavior().container_id) != packet.container_id {
-                return;
-            }
-
-            self.process_container_click(&mut *menu, packet);
-        }
-    }
-
-    /// Processes a container click on any menu implementing the Menu trait.
-    ///
-    /// This is the common implementation shared between inventory menu and
-    /// external menus (crafting table, chest, etc.).
-    fn process_container_click(&self, menu: &mut dyn Menu, packet: SContainerClick) {
-        // Handle spectator mode - just resync
-        if self.game_mode.load() == GameType::Spectator {
-            menu.behavior_mut()
-                .send_all_data_to_remote(&self.connection);
-            return;
-        }
-
-        // Validate slot index
-        if !menu.behavior().is_valid_slot_index(packet.slot_num) {
-            log::debug!(
-                "Player {} clicked invalid slot index: {}, available: {}",
-                self.gameprofile.name,
-                packet.slot_num,
-                menu.behavior().slot_count()
-            );
-            return;
-        }
-
-        // Check if we need a full resync (state ID mismatch)
-        let full_resync_needed = packet.state_id as u32 != menu.behavior().get_state_id();
-
-        // Suppress remote updates during click handling
-        menu.behavior_mut().suppress_remote_updates();
-
-        // Handle the click using the Menu trait method
-        let has_infinite_materials = self.game_mode.load() == GameType::Creative;
-        menu.clicked(
-            packet.slot_num,
-            packet.button_num,
-            packet.click_type,
-            has_infinite_materials,
-            self,
-        );
-
-        // Update remote slots from the client's perception
-        for (slot, hash) in packet.changed_slots {
-            menu.behavior_mut().set_remote_slot(slot as usize, hash);
-        }
-
-        // Update remote carried from the client's perception
-        menu.behavior_mut().set_remote_carried(packet.carried_item);
-
-        // Resume remote updates
-        menu.behavior_mut().resume_remote_updates();
-
-        // Broadcast changes or full state depending on whether we had a state mismatch
-        if full_resync_needed {
-            menu.behavior_mut().broadcast_full_state(&self.connection);
-        } else {
-            menu.behavior_mut().broadcast_changes(&self.connection);
-        }
-    }
-
-    /// Handles a container close packet.
-    ///
-    /// Based on Java's `ServerGamePacketListenerImpl::handleContainerClose`.
-    pub fn handle_container_close(&self, packet: SContainerClose) {
-        log::debug!(
-            "Player {} closed container {}",
-            self.gameprofile.name,
-            packet.container_id
-        );
-
-        // Check if the closed container matches the currently open menu
-        let open_menu = self.open_menu.lock();
-        if let Some(ref menu) = *open_menu
-            && i32::from(menu.container_id()) == packet.container_id
-        {
-            drop(open_menu);
-            // Close the external menu (returns items to inventory)
-            self.do_close_container();
-            return;
-        }
-        drop(open_menu);
-
-        // For the player inventory menu (container_id 0), call removed() to:
-        // - Return crafting grid items to inventory
-        // - Clear the cursor item
-        if packet.container_id == i32::from(InventoryMenu::CONTAINER_ID) {
-            let mut menu = self.inventory_menu.lock();
-            menu.removed(self);
-        }
-    }
-
-    /// Handles a container slot state changed packet (e.g., crafter slot toggle).
-    pub fn handle_container_slot_state_changed(&self, packet: SContainerSlotStateChanged) {
-        log::debug!(
-            "Player {} changed slot {} state to {} in container {}",
-            self.gameprofile.name,
-            packet.slot_id,
-            packet.new_state,
-            packet.container_id
-        );
-        // TODO: Implement slot state change handling
-        // This is used for the crafter block to enable/disable slots
-    }
-
-    /// Handles a creative mode slot set packet.
-    pub fn handle_set_creative_mode_slot(&self, packet: SSetCreativeModeSlot) {
-        // Only allow in creative mode
-        if self.game_mode.load() != GameType::Creative {
-            return;
-        }
-
-        let drop = packet.slot_num < 0;
-        let item_stack = packet.item_stack;
-
-        // Validate slot range (1-45 for inventory menu)
-        let valid_slot = packet.slot_num >= 1 && packet.slot_num <= 45;
-        let valid_data = item_stack.is_empty() || item_stack.count <= item_stack.max_stack_size();
-
-        if valid_slot && valid_data {
-            let mut menu = self.inventory_menu.lock();
-            let slot_index = packet.slot_num as usize;
-
-            {
-                let mut guard = menu.behavior().lock_all_containers();
-                if let Some(slot) = menu.behavior().get_slot(slot_index) {
-                    slot.set_item(&mut guard, item_stack.clone());
-                }
-            }
-            menu.behavior_mut()
-                .set_remote_slot_known(slot_index, &item_stack);
-            menu.behavior_mut().broadcast_changes(&self.connection);
-        } else if drop && valid_data {
-            // TODO: Implement drop spam throttling
-            // For now, just drop the item
-            if !item_stack.is_empty() {
-                // TODO: Actually drop the item into the world
-                log::debug!(
-                    "Player {} would drop {:?} in creative mode",
-                    self.gameprofile.name,
-                    item_stack
-                );
+        if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true) {
+            let items: Vec<ItemStack> = {
+                let mut inventory = self.inventory.lock();
+                (0..inventory.get_container_size())
+                    .filter_map(|slot| {
+                        let item = inventory.get_item(slot).clone();
+                        if item.is_empty() {
+                            None
+                        } else {
+                            inventory.set_item(slot, ItemStack::empty());
+                            Some(item)
+                        }
+                    })
+                    .collect()
+            };
+            for item in items {
+                self.drop_item(item, true, false);
             }
         }
-    }
 
-    /// Acknowledges block changes up to the given sequence number.
-    ///
-    /// The ack is batched and sent once per tick (in `tick_ack_block_changes`),
-    /// matching vanilla behavior.
-    pub fn ack_block_changes_up_to(&self, sequence: i32) {
-        let current = self.ack_block_changes_up_to.load(Ordering::Relaxed);
-        if sequence > current {
-            self.ack_block_changes_up_to
-                .store(sequence, Ordering::Relaxed);
+        if world.get_game_rule(&IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
+            self.respawn();
         }
     }
 
-    /// Sends pending block change ack if any. Called once per tick.
-    fn tick_ack_block_changes(&self) {
-        let sequence = self.ack_block_changes_up_to.swap(-1, Ordering::Relaxed);
-        if sequence > -1 {
-            self.connection.send_packet(CBlockChangedAck { sequence });
-        }
-    }
-
-    /// Returns true if player is within block interaction range.
-    /// Base range is ~4.5 blocks, plus 1.0 tolerance.
-    #[must_use]
-    pub fn is_within_block_interaction_range(&self, pos: &BlockPos) -> bool {
-        let player_pos = *self.position.lock();
-        let block_center_x = f64::from(pos.x()) + 0.5;
-        let block_center_y = f64::from(pos.y()) + 0.5;
-        let block_center_z = f64::from(pos.z()) + 0.5;
-
-        // Base range is ~4.5 blocks, plus 1.0 tolerance
-        let max_range = 4.5 + 1.0;
-        let dx = player_pos.x - block_center_x;
-        let dy = player_pos.y - block_center_y;
-        let dz = player_pos.z - block_center_z;
-        (dx * dx + dy * dy + dz * dz).sqrt() <= max_range
-    }
-
-    /// Returns true if player is sneaking (secondary use active).
-    #[must_use]
-    pub fn is_secondary_use_active(&self) -> bool {
-        self.shift_key_down.load(Ordering::Relaxed)
-    }
-
-    /// Returns true if player has infinite materials (Creative mode).
-    #[must_use]
-    pub fn has_infinite_materials(&self) -> bool {
-        self.game_mode.load() == GameType::Creative
-    }
-
-    /// Returns true if the player is currently sleeping.
-    #[must_use]
-    pub fn is_sleeping(&self) -> bool {
-        self.sleeping.load(Ordering::Relaxed)
-    }
-
-    /// Sets the player's sleeping state.
-    pub fn set_sleeping(&self, sleeping: bool) {
-        self.sleeping.store(sleeping, Ordering::Relaxed);
-    }
-
-    /// Returns true if the player is currently fall flying (elytra).
-    #[must_use]
-    pub fn is_fall_flying(&self) -> bool {
-        self.fall_flying.load(Ordering::Relaxed)
-    }
-
-    /// Sets the player's fall flying state.
-    pub fn set_fall_flying(&self, fall_flying: bool) {
-        self.fall_flying.store(fall_flying, Ordering::Relaxed);
-    }
-
-    /// Returns true if the player is flying (creative/spectator flight).
-    #[must_use]
-    pub fn is_flying(&self) -> bool {
-        self.abilities.lock().flying
-    }
-
-    /// Sets the player's flying state.
-    pub fn set_flying(&self, flying: bool) {
-        self.abilities.lock().flying = flying;
-    }
-
-    /// Returns the player's flying speed.
-    #[must_use]
-    pub fn get_flying_speed(&self) -> f32 {
-        self.abilities.lock().flying_speed
-    }
-
-    /// Sets the player's flying speed.
-    pub fn set_flying_speed(&self, speed: f32) {
-        self.abilities.lock().flying_speed = speed;
-    }
-
-    /// Returns a copy of the player's abilities.
-    #[must_use]
-    pub fn get_abilities(&self) -> Abilities {
-        self.abilities.lock().clone()
-    }
-
-    /// Handles the player abilities packet from the client.
-    /// This is sent when the player starts or stops flying.
-    pub fn handle_player_abilities(&self, packet: SPlayerAbilities) {
-        let mut abilities = self.abilities.lock();
-
-        if abilities.may_fly {
-            abilities.flying = packet.is_flying();
-        } else if packet.is_flying() {
-            // Client tried to fly but isn't allowed - resync abilities
-            drop(abilities);
-            self.send_abilities();
-        }
-    }
-
-    /// Returns true if the player is on the ground.
-    #[must_use]
-    pub fn is_on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
-    }
-
-    /// Determines the desired pose based on current player state.
-    /// Priority: `Sleeping` > `FallFlying` > `Sneaking` > `Standing`
-    // TODO: Add Swimming pose (requires water detection)
-    // TODO: Add SpinAttack pose (requires riptide trident)
-    // TODO: Add pose collision checks (force crouch in low ceilings)
-    fn get_desired_pose(&self) -> EntityPose {
-        if self.sleeping.load(Ordering::Relaxed) {
-            EntityPose::Sleeping
-        } else if self.fall_flying.load(Ordering::Relaxed) {
-            EntityPose::FallFlying
-        } else if self.shift_key_down.load(Ordering::Relaxed) && !self.abilities.lock().flying {
-            EntityPose::Sneaking
-        } else {
-            EntityPose::Standing
-        }
-    }
-
-    /// Updates the player's pose in entity data based on current state.
-    fn update_pose(&self) {
-        let desired_pose = self.get_desired_pose();
-        self.entity_data.lock().pose.set(desired_pose);
-    }
-
-    /// Returns the player's client information settings.
-    #[must_use]
-    pub fn client_information(&self) -> ClientInformation {
-        self.client_information.lock().clone()
-    }
-
-    /// Updates the player's client information settings.
-    pub fn set_client_information(&self, info: ClientInformation) {
-        *self.client_information.lock() = info;
-    }
-
-    /// Returns the effective view distance for this player.
-    ///
-    /// This is the minimum of the client's requested view distance and
-    /// the server's configured maximum view distance.
-    #[must_use]
-    pub fn view_distance(&self) -> u8 {
-        let client_view_distance = self.client_information.lock().view_distance;
-        client_view_distance.min(STEEL_CONFIG.view_distance)
-    }
-
-    /// Returns the player's current velocity.
-    #[must_use]
-    pub fn get_delta_movement(&self) -> Vector3<f64> {
-        *self.delta_movement.lock()
-    }
-
-    /// Sets the player's velocity.
-    pub fn set_delta_movement(&self, velocity: Vector3<f64>) {
-        *self.delta_movement.lock() = velocity;
-    }
-
-    /// Returns the player's current gravity value.
-    ///
-    /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
-    /// Default is 0.08 blocks/tick².
-    const fn get_gravity(&self) -> f64 {
-        // TODO: Read from attribute system when implemented
-        let _ = self; // Silence unused warning until attributes are implemented
-        movement::DEFAULT_GRAVITY
-    }
-
-    /// Applies gravity to the player's velocity.
-    ///
-    /// Matches vanilla `Entity.applyGravity()` and `LivingEntity.travel()`.
-    /// Gravity is not applied when:
-    /// - Player is on the ground
-    /// - Player is in spectator mode (no physics)
-    /// - Player is in creative mode and flying
-    /// - Player is fall flying (elytra - uses different physics)
-    fn apply_gravity(&self) {
-        let on_ground = self.on_ground.load(Ordering::Relaxed);
-        let game_mode = self.game_mode.load();
-        let is_spectator = game_mode == GameType::Spectator;
-        let is_creative_flying = game_mode == GameType::Creative; // TODO: check actual flying state
-        let is_fall_flying = self.fall_flying.load(Ordering::Relaxed);
-
-        // Skip gravity when on ground, spectating, creative flying, or elytra flying
-        if on_ground || is_spectator || is_creative_flying || is_fall_flying {
-            return;
-        }
-
-        let gravity = self.get_gravity();
-        if gravity != 0.0 {
-            let mut dm = self.delta_movement.lock();
-            dm.y -= gravity;
-        }
-    }
-
-    /// Returns true if we're waiting for a teleport confirmation.
-    #[must_use]
-    pub fn is_awaiting_teleport(&self) -> bool {
-        self.awaiting_position_from_client.lock().is_some()
-    }
-
-    /// Teleports the player to a new position.
-    ///
-    /// Sends a `CPlayerPosition` packet and waits for client acknowledgment.
-    /// Until acknowledged, movement packets from the client will be rejected.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
-    pub fn teleport(&self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) {
-        let current_tick = self.tick_count.load(Ordering::Relaxed);
-        self.awaiting_teleport_time
-            .store(current_tick, Ordering::Relaxed);
-
-        // Pre-increment teleport ID, wrapping at i32::MAX (matches vanilla: ++awaitingTeleport)
-        let new_id = self
-            .awaiting_teleport_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
-                Some(if id == i32::MAX { 0 } else { id + 1 })
-            })
-            .map_or(1, |old| if old == i32::MAX { 0 } else { old + 1 });
-
-        // Update player position (vanilla: player.teleportSetPosition)
-        *self.position.lock() = Vector3::new(x, y, z);
-        self.rotation.store((yaw, pitch));
-
-        // Store the position we're waiting for confirmation of
-        // (vanilla stores player.position() after teleportSetPosition)
-        *self.awaiting_position_from_client.lock() = Some(Vector3::new(x, y, z));
-
-        // Send the teleport packet with the new ID
-        self.connection
-            .send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
-    }
-
-    /// Handles a teleport acknowledgment from the client.
-    ///
-    /// Matches vanilla `ServerGamePacketListenerImpl.handleAcceptTeleportPacket()`.
-    pub fn handle_accept_teleportation(&self, packet: SAcceptTeleportation) {
-        let expected_id = self.awaiting_teleport_id.load(Ordering::Relaxed);
-
-        if packet.teleport_id == expected_id {
-            let mut awaiting = self.awaiting_position_from_client.lock();
-            if awaiting.is_none() {
-                // Client sent confirmation without server sending teleport
-                self.connection
-                    .disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
-                return;
-            }
-
-            // Snap player to awaited position (vanilla: player.absSnapTo)
-            if let Some(pos) = *awaiting {
-                *self.position.lock() = pos;
-                *self.last_good_position.lock() = pos;
-            }
-
-            // Clear awaiting state
-            *awaiting = None;
-        }
-        // If ID doesn't match, silently ignore (could be old/delayed packet)
-    }
-
-    /// Sends block update packets for a position and its neighbor.
-    fn send_block_updates(&self, pos: &BlockPos, direction: Direction) {
-        let state = self.world.get_block_state(pos);
-        self.connection.send_packet(CBlockUpdate {
-            pos: *pos,
-            block_state: state,
-        });
-
-        let neighbor_pos = direction.relative(pos);
-        let neighbor_state = self.world.get_block_state(&neighbor_pos);
-        self.connection.send_packet(CBlockUpdate {
-            pos: neighbor_pos,
-            block_state: neighbor_state,
-        });
-    }
-
-    /// Triggers arm swing animation and broadcasts it to nearby players.
-    pub fn swing(&self, hand: InteractionHand, update_self: bool) {
-        let action = match hand {
-            InteractionHand::MainHand => AnimateAction::SwingMainHand,
-            InteractionHand::OffHand => AnimateAction::SwingOffHand,
-        };
-        let packet = CAnimate::new(self.id, action);
-
-        let chunk = *self.last_chunk_pos.lock();
-        let exclude = if update_self { None } else { Some(self.id) };
-        self.world.broadcast_to_nearby(chunk, packet, exclude);
-    }
-
-    /// Handles a player input packet (movement keys, sneaking, sprinting).
-    pub fn handle_player_input(&self, packet: SPlayerInput) {
-        self.shift_key_down.store(packet.shift(), Ordering::Relaxed);
-        // Note: sprinting is handled via SPlayerCommand packet
-    }
-
-    /// Handles the use of an item on a block.
-    ///
-    /// Implements the logic from Java's `ServerGamePacketListenerImpl.handleUseItemOn()`.
-    pub fn handle_use_item_on(&self, packet: SUseItemOn) {
-        // 1. Check client loaded
-        if !self.client_loaded.load(Ordering::Relaxed) {
-            return;
-        }
-
-        // 2. Ack block changes
-        self.ack_block_changes_up_to(packet.sequence);
-
-        let pos = &packet.block_hit.block_pos;
-        let direction = packet.block_hit.direction;
-
-        // 3. Validate interaction range
-        if !self.is_within_block_interaction_range(pos) {
-            self.send_block_updates(pos, direction);
-            return;
-        }
-
-        // 4. Validate hit location precision (must be within 1.0000001 of block center)
-        let center_x = f64::from(pos.x()) + 0.5;
-        let center_y = f64::from(pos.y()) + 0.5;
-        let center_z = f64::from(pos.z()) + 0.5;
-        let location = &packet.block_hit.location;
-        let limit = 1.000_000_1;
-
-        if (location.x - center_x).abs() >= limit
-            || (location.y - center_y).abs() >= limit
-            || (location.z - center_z).abs() >= limit
-        {
-            log::warn!(
-                "Rejecting UseItemOnPacket from {}: location {:?} too far from block {:?}",
-                self.gameprofile.name,
-                location,
-                pos
-            );
-            self.send_block_updates(pos, direction);
-            return;
-        }
-
-        // 5. Validate Y height
-        if pos.y() >= self.world.max_build_height() {
-            // TODO: Send "build.tooHigh" message to player
-            self.send_block_updates(pos, direction);
-            return;
-        }
-
-        // 6. Check awaiting teleport
-        if self.is_awaiting_teleport() {
-            self.send_block_updates(pos, direction);
-            return;
-        }
-
-        // 7. Check may_interact permission
-        if !self.world.may_interact(self, pos) {
-            self.send_block_updates(pos, direction);
-            return;
-        }
-
-        // 8. Call use_item_on
-        let result = game_mode::use_item_on(self, &self.world, packet.hand, &packet.block_hit);
-
-        // 9. Handle result
-        if let InteractionResult::Success = result {
-            // TODO: Trigger arm swing animation if needed
-            self.swing(packet.hand, true);
-        }
-
-        // 10. Always send block updates to resync client
-        self.send_block_updates(pos, direction);
-
-        // 11. Broadcast inventory changes
-        self.broadcast_inventory_changes();
-    }
-
-    /// Handles a player action packet (block breaking, item dropping, etc.).
-    pub fn handle_player_action(&self, packet: SPlayerAction) {
-        use block_breaking::BlockBreakAction;
-
-        match packet.action {
-            PlayerAction::StartDestroyBlock => {
-                self.block_breaking.lock().handle_block_break_action(
-                    self,
-                    &self.world,
-                    packet.pos,
-                    BlockBreakAction::Start,
-                    packet.direction,
-                );
-                // Ack after handler returns, matching vanilla
-                self.ack_block_changes_up_to(packet.sequence);
-            }
-            PlayerAction::StopDestroyBlock => {
-                self.block_breaking.lock().handle_block_break_action(
-                    self,
-                    &self.world,
-                    packet.pos,
-                    BlockBreakAction::Stop,
-                    packet.direction,
-                );
-                // Ack after handler returns, matching vanilla
-                self.ack_block_changes_up_to(packet.sequence);
-            }
-            PlayerAction::AbortDestroyBlock => {
-                self.block_breaking.lock().handle_block_break_action(
-                    self,
-                    &self.world,
-                    packet.pos,
-                    BlockBreakAction::Abort,
-                    packet.direction,
-                );
-                // Ack after handler returns, matching vanilla
-                self.ack_block_changes_up_to(packet.sequence);
-            }
-            PlayerAction::DropAllItems => {
-                self.drop_from_selected(true);
-            }
-            PlayerAction::DropItem => {
-                self.drop_from_selected(false);
-            }
-            PlayerAction::ReleaseUseItem => {
-                // TODO: Implement release use item (releasing bow, etc.)
-                log::debug!("Player {} released use item", self.gameprofile.name);
-            }
-            PlayerAction::SwapItemWithOffhand => {
-                // TODO: Implement swap item with offhand (F key)
-                log::debug!("Player {} wants to swap items", self.gameprofile.name);
-            }
-            PlayerAction::Stab => {
-                // Stab action for new combat system
-                log::debug!("Player {} performed stab action", self.gameprofile.name);
-            }
-        }
-    }
-
-    /// Handles the use of an item.
-    pub fn handle_use_item(&self, packet: SUseItem) {
-        log::info!(
-            "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
-            self.gameprofile.name,
-            packet.hand,
-            packet.sequence,
-            packet.y_rot,
-            packet.x_rot
-        );
-        // TODO: Implement use item handler
-    }
-
-    /// Handles the pick block action (middle click on a block).
+    /// TODO: bed/respawn anchor, cross-world, potion clearing, noRespawnBlockAvailable
     ///
     /// # Panics
-    ///
-    /// Panics if the behavior registry has not been initialized.
-    pub fn handle_pick_item_from_block(&self, packet: SPickItemFromBlock) {
-        // Check if player is within interaction range (with 1.0 buffer like vanilla)
-        if !self.is_within_block_interaction_range(&packet.pos) {
+    /// If the player dies in a world that doesn't exist.
+    pub fn respawn(&self) {
+        let health = self.get_health();
+        if !Self::should_process_respawn(health) {
             return;
         }
 
-        // Get block state at position
-        let state = self.world.get_block_state(&packet.pos);
-        if state.is_air() {
-            return;
-        }
+        self.living_base.reset_death_state();
 
-        // Get the block and its behavior
-        let block = state.get_block();
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-        let behavior = block_behaviors.get_behavior(block);
+        let was_removed = self.base.clear_removed();
+        let world = self.get_world();
 
-        // Only include data if player has infinite materials (creative mode)
-        let include_data = self.has_infinite_materials() && packet.include_data;
-
-        // Get clone item stack from behavior (handles blocks with different item keys)
-        let Some(item_stack) = behavior.get_clone_item_stack(block, state, include_data) else {
-            // No corresponding item for this block (e.g., fire, portal)
-            return;
-        };
-
-        if item_stack.is_empty() {
-            return;
-        }
-
-        // TODO: If include_data, add block entity NBT data to the item stack
-        // This requires block entity support which isn't implemented yet
-
-        let mut inventory = self.inventory.lock();
-
-        // Find existing slot with this item
-        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
-
-        if slot_with_item != -1 {
-            // Item found in inventory
-            if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
-                // Already in hotbar, just switch to that slot
-                inventory.set_selected_slot(slot_with_item as u8);
-            } else {
-                // In main inventory, swap with current hotbar slot
-                inventory.pick_slot(slot_with_item);
-            }
-        } else if self.has_infinite_materials() {
-            // Creative mode: add item to inventory
-            inventory.add_and_pick_item(item_stack);
-        } else {
-            // Survival mode and item not in inventory - do nothing
-            return;
-        }
-
-        // Send updated held slot to client
-        self.connection.send_packet(CSetHeldSlot {
-            slot: i32::from(inventory.get_selected_slot()),
-        });
-
-        // Broadcast inventory changes
-        drop(inventory);
-        self.inventory_menu
-            .lock()
-            .behavior_mut()
-            .broadcast_changes(&self.connection);
-    }
-
-    /// Sets selected slot
-    pub fn handle_set_carried_item(&self, packet: SSetCarriedItem) {
-        self.inventory.lock().set_selected_slot(packet.slot as u8);
-    }
-
-    /// Handles a sign update packet from the client.
-    pub fn handle_sign_update(&self, packet: SSignUpdate) {
-        // Check if player is within interaction range
-        if !self.is_within_block_interaction_range(&packet.pos) {
-            return;
-        }
-
-        // Get the block entity at the position
-        let Some(block_entity) = self.world.get_block_entity(&packet.pos) else {
-            return;
-        };
-
-        // Lock and downcast to SignBlockEntity
-        let mut guard = block_entity.lock();
-        let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
-            return;
-        };
-
-        // Check if sign is waxed (cannot be edited)
-        if sign.is_waxed {
-            return;
-        }
-
-        // Check if this player is allowed to edit the sign
-        // Vanilla: player.getUUID().equals(sign.getPlayerWhoMayEdit())
-        if sign.get_player_who_may_edit() != Some(self.gameprofile.id) {
-            log::warn!(
-                "Player {} tried to edit sign they're not allowed to edit",
-                self.gameprofile.name
-            );
-            return;
-        }
-
-        // Update the sign text
-        let text = sign.get_text_mut(packet.is_front_text);
-        for (i, line) in packet.lines.iter().enumerate() {
-            if i < 4 {
-                // Create a plain text component from the line
-                // Strip formatting codes (like vanilla does with ChatFormatting.stripFormatting)
-                let stripped = strip_formatting_codes(line);
-                text.set_message(i, TextComponent::plain(stripped));
-            }
-        }
-
-        // Clear the edit lock now that we're done editing
-        sign.set_player_who_may_edit(None);
-
-        // Mark as changed (for persistence)
-        sign.set_changed();
-
-        // Get the update tag for broadcasting
-        let update_tag = sign.get_update_tag();
-        let block_entity_type = sign.get_type();
-        let pos = packet.pos;
-
-        // Release the lock before broadcasting
-        drop(guard);
-
-        // Broadcast block entity update to nearby players
-        if let Some(nbt) = update_tag {
-            self.world
-                .broadcast_block_entity_update(pos, block_entity_type, nbt);
-        }
-    }
-
-    /// Opens the sign editor for the player.
-    ///
-    /// # Arguments
-    /// * `pos` - Position of the sign block
-    /// * `is_front_text` - Whether to edit front (true) or back (false) text
-    pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
-        // Set this player as the one who may edit the sign
-        if let Some(block_entity) = self.world.get_block_entity(&pos) {
-            let mut guard = block_entity.lock();
-            if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
-                sign.set_player_who_may_edit(Some(self.gameprofile.id));
-            }
-        }
-
-        // Send the block update first to ensure client has latest state
-        let state = self.world.get_block_state(&pos);
-        self.connection.send_packet(CBlockUpdate {
-            pos,
-            block_state: state,
-        });
-
-        // Then open the sign editor
-        self.connection
-            .send_packet(COpenSignEditor { pos, is_front_text });
-    }
-
-    /// Sends all inventory slots to the client (full sync).
-    /// This should be called when the player first joins.
-    pub fn send_inventory_to_remote(&self) {
-        self.inventory_menu
-            .lock()
-            .behavior_mut()
-            .send_all_data_to_remote(&self.connection);
-    }
-
-    // ==================== Menu Management ====================
-
-    /// Generates the next container ID (1-100, wrapping around).
-    ///
-    /// Based on Java's `ServerPlayer::nextContainerCounter`.
-    fn next_container_counter(&self) -> u8 {
-        let current = self.container_counter.load(Ordering::Relaxed);
-        let next = (current % 100) + 1;
-        self.container_counter.store(next, Ordering::Relaxed);
-        next
-    }
-
-    /// Opens a menu for this player.
-    ///
-    /// Based on Java's `ServerPlayer::openMenu`.
-    ///
-    /// # Arguments
-    /// * `provider` - The menu provider containing the title and factory
-    pub fn open_menu(&self, provider: &impl MenuProvider) {
-        // Close any currently open menu first
-        self.do_close_container();
-
-        // Generate a new container ID and create the menu
-        let container_id = self.next_container_counter();
-        let mut menu = provider.create(container_id);
-
-        // Send the open screen packet to the client
-        self.connection.send_packet(COpenScreen {
-            container_id: i32::from(menu.container_id()),
-            menu_type: menu.menu_type(),
-            title: provider.title(),
-        });
-
-        // Send all slot data to the client
-        menu.behavior_mut()
-            .send_all_data_to_remote(&self.connection);
-
-        // Store the menu
-        *self.open_menu.lock() = Some(menu);
-    }
-
-    /// Closes the currently open container and returns to the inventory menu.
-    ///
-    /// Based on Java's `ServerPlayer::closeContainer`.
-    /// This sends a close packet to the client.
-    pub fn close_container(&self) {
-        let open_menu = self.open_menu.lock();
-        if let Some(menu) = &*open_menu {
-            self.connection.send_packet(CContainerClose {
-                container_id: i32::from(menu.container_id()),
-            });
-        }
-        drop(open_menu);
-        self.do_close_container();
-    }
-
-    /// Internal close container logic without sending a packet.
-    ///
-    /// Based on Java's `ServerPlayer::doCloseContainer`.
-    /// Called when the client sends a close packet or when opening a new menu.
-    pub fn do_close_container(&self) {
-        let mut open_menu = self.open_menu.lock();
-        if let Some(ref mut menu) = *open_menu {
-            menu.removed(self);
-            // Transfer remote slot state from the container menu to the inventory menu.
-            // This ensures the inventory menu knows what the client thinks it has in
-            // the shared slots (player inventory), preventing unnecessary resyncs.
-            self.inventory_menu
-                .lock()
-                .behavior_mut()
-                .transfer_state(menu.behavior());
-        }
-        *open_menu = None;
-    }
-
-    /// Returns true if the player has an external menu open (not the inventory).
-    #[must_use]
-    pub fn has_container_open(&self) -> bool {
-        self.open_menu.lock().is_some()
-    }
-
-    /// Broadcasts inventory changes to the client (incremental sync).
-    /// This is called every tick to sync only changed slots.
-    pub fn broadcast_inventory_changes(&self) {
-        // First, broadcast changes for any open external menu
-        let mut open_menu = self.open_menu.lock();
-        if let Some(ref mut menu) = *open_menu {
-            menu.behavior_mut().broadcast_changes(&self.connection);
-        } else {
-            drop(open_menu);
-            // Only broadcast inventory menu changes if no external menu is open
-            self.inventory_menu
-                .lock()
-                .behavior_mut()
-                .broadcast_changes(&self.connection);
-        }
-    }
-
-    /// Drops an item from the player's selected hotbar slot.
-    ///
-    /// Based on Java's `ServerPlayer.drop(boolean all)`.
-    ///
-    /// - `all`: If true, drops the entire stack (Ctrl+Q). If false, drops one item (Q).
-    pub fn drop_from_selected(&self, all: bool) {
-        if !self.can_drop_items() {
-            return;
-        }
-
-        let removed = {
-            let mut inventory = self.inventory.lock();
-            let selected = inventory.get_selected_item_mut();
-            if selected.is_empty() {
-                return;
-            }
-            if all {
-                selected.split(selected.count())
-            } else {
-                selected.split(1)
-            }
-        };
-
-        self.drop_item(removed, false, true);
-    }
-
-    /// Drops an item into the world.
-    ///
-    /// Based on Java's `LivingEntity.drop(ItemStack, boolean randomly, boolean thrownFromHand)`.
-    ///
-    /// - `throw_randomly`: If true, the item is thrown in a random direction.
-    ///   If false, it's thrown in the direction the player is facing.
-    /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
-    pub fn drop_item(&self, item: ItemStack, throw_randomly: bool, thrown_from_hand: bool) {
-        use std::f32::consts::TAU;
-
-        if item.is_empty() {
-            return;
-        }
-
-        let pos = self.position();
-        let (yaw, pitch) = self.rotation.load();
-
-        // Spawn position: eye height - 0.3 (hand level)
-        // Vanilla: double yHandPos = this.getEyeY() - 0.3F
-        let spawn_y = self.get_eye_y() - 0.3;
-
-        // Calculate velocity based on throw type
-        let velocity = if throw_randomly {
-            // Random direction throw (like death drops)
-            let power = rand::random::<f32>() * 0.5;
-            let angle = rand::random::<f32>() * TAU;
-            Vector3::new(
-                f64::from(-angle.sin() * power),
-                0.2,
-                f64::from(angle.cos() * power),
-            )
-        } else {
-            // Directional throw (player facing direction)
-            let pitch_rad = pitch.to_radians();
-            let yaw_rad = yaw.to_radians();
-
-            let sin_pitch = pitch_rad.sin();
-            let cos_pitch = pitch_rad.cos();
-            let sin_yaw = yaw_rad.sin();
-            let cos_yaw = yaw_rad.cos();
-
-            // Random offset for slight variation
-            let angle_offset = rand::random::<f32>() * TAU;
-            let power_offset = 0.02 * rand::random::<f32>();
-
-            Vector3::new(
-                f64::from(-sin_yaw * cos_pitch * 0.3)
-                    + f64::from(angle_offset.cos() * power_offset),
-                f64::from(-sin_pitch * 0.3 + 0.1)
-                    + f64::from((rand::random::<f32>() - rand::random::<f32>()) * 0.1),
-                f64::from(cos_yaw * cos_pitch * 0.3) + f64::from(angle_offset.sin() * power_offset),
-            )
-        };
-
-        let spawn_pos = Vector3::new(pos.x, spawn_y, pos.z);
-
-        if let Some(entity) = self
-            .world
-            .spawn_item_with_velocity(spawn_pos, item, velocity)
+        // Respawn-specific state: reset health and pose
         {
-            // Set pickup delay: 40 ticks (2 seconds) when thrown from hand
-            if thrown_from_hand {
-                entity.set_pickup_delay(40);
-                entity.set_thrower(self.gameprofile.id);
+            let mut entity_data = self.entity_data.lock();
+            entity_data
+                .living_entity_mut()
+                .health
+                .set(self.get_max_health());
+            entity_data.base_mut().pose.set(EntityPose::Standing);
+        }
+
+        // Reset food data to defaults
+        *self.food_data.lock() = FoodData::new();
+
+        // Clear transient attribute modifiers (sprint, potion effects, etc.)
+        self.attributes().lock().remove_all_transient();
+
+        self.health_sync.lock().reset_for_respawn();
+
+        // TODO: bed/respawn anchor lookup, send NO_RESPAWN_BLOCK_AVAILABLE if missing
+
+        let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
+            return;
+        };
+        if !was_removed {
+            world.unregister_player_entity(self);
+        }
+
+        // Shared reset (clears transient state, sends CRespawn)
+        player_arc.reset(world.clone(), ResetReason::Respawn);
+
+        // Compute spawn position
+        let spawn_pos = world.level_data.read().data().spawn_pos();
+        let spawn = DVec3::new(
+            f64::from(spawn_pos.x()) + 0.5,
+            f64::from(spawn_pos.y()),
+            f64::from(spawn_pos.z()) + 0.5,
+        );
+
+        // TODO: send CSetDefaultSpawnPosition (dimension, pos, yaw, pitch)
+
+        self.send_difficulty();
+
+        // Handle XP loss on death
+        {
+            let mut experience = self.experience.lock();
+            if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
+                && self.game_mode() != GameType::Spectator
+            {
+                // TODO: drop XP orbs (min(level * 7, 100))
+                experience.set_total_points(0);
+            }
+            // Re-send XP to client after respawn regardless of keepInventory
+            experience.dirty = true;
+        }
+
+        // TODO: send mob effect packets once effects are implemented
+        // TODO: send CInitializeBorder once world border is implemented
+
+        // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
+        let _ = player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
+    }
+
+    /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
+    pub fn handle_client_command(&self, action: ClientCommandAction) {
+        match action {
+            ClientCommandAction::PerformRespawn => self.respawn(),
+            ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
+                // TODO: implement stats
             }
         }
     }
 
-    /// Returns true if the player can drop items.
-    ///
-    /// Based on Java's `Player.canDropItems()`.
-    /// Returns false if the player is dead, removed, or has a flag preventing item drops.
+    /// Vanilla accepts a client respawn request only when player health is dead-or-dying.
+    /// Steel's death-processed guard is not respawn authority.
     #[must_use]
-    pub fn can_drop_items(&self) -> bool {
-        // Check if player is removed
-        !self.removed.load(Ordering::Relaxed)
-        // TODO: Check if player is alive (health > 0)
+    const fn should_process_respawn(health: f32) -> bool {
+        health <= 0.0
     }
 
-    /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.
-    ///
-    /// Based on Java's `Inventory.placeItemBackInInventory`.
-    pub fn add_item_or_drop(&self, mut item: ItemStack) {
-        if item.is_empty() {
-            return;
-        }
-
-        // Try to add to inventory
-        let added = self.inventory.lock().add(&mut item);
-        if !added || !item.is_empty() {
-            // Couldn't fit everything, drop the rest
-            self.drop_item(item, false, false);
-        }
-    }
-
-    /// Tries to add an item to the player's inventory using an existing lock guard,
-    /// dropping it if it doesn't fit.
-    ///
-    /// Use this variant when you already hold a `ContainerLockGuard` that includes
-    /// the player's inventory to avoid deadlocks.
-    pub fn add_item_or_drop_with_guard(&self, guard: &mut ContainerLockGuard, mut item: ItemStack) {
-        if item.is_empty() {
-            return;
-        }
-
-        let inv_id = ContainerId::from_arc(&self.inventory);
-        if let Some(inv) = guard.get_mut(inv_id) {
-            let added = inv.add(&mut item);
-            if !added || !item.is_empty() {
-                self.drop_item(item, false, false);
-            }
-        } else {
-            // Inventory not in guard - this shouldn't happen but drop the item to be safe
-            self.drop_item(item, false, false);
-        }
+    /// Returns whether the Player can eat
+    pub fn can_eat(&self, can_always_eat: bool) -> bool {
+        let invulnerable = { self.abilities.lock().invulnerable };
+        let needs_foods = { self.food_data.lock().needs_food() };
+        invulnerable || can_always_eat || needs_foods
     }
 
     /// Cleans up player resources.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn cleanup(&self) {}
+
+    /// Returns the world the player is currently in.
+    pub fn get_world(&self) -> Arc<World> {
+        self.world.load_full()
+    }
+
+    /// Returns the server this player belongs to.
+    pub(crate) fn server(&self) -> Arc<Server> {
+        self.server
+            .upgrade()
+            .expect("player must not outlive server")
+    }
+
+    /// Sets the world the player is in.
+    ///
+    /// This is used when the correct world isn't known at construction time
+    /// (e.g., when loading saved player data determines the actual world).
+    pub fn set_world(&self, world: Arc<World>) {
+        self.base.set_world(Arc::downgrade(&world));
+        self.world.store(world);
+    }
+
+    /// Marks the player as switching domains if they are not already in a transition.
+    pub fn begin_domain_switch(&self) -> bool {
+        self.lifecycle.lock().begin_domain_switch()
+    }
+
+    /// Clears the domain-switch transition marker.
+    pub fn finish_domain_switch(&self) {
+        self.lifecycle.lock().finish_domain_switch();
+    }
+
+    /// Returns whether this player is currently switching domains.
+    pub fn is_domain_switching(&self) -> bool {
+        self.lifecycle.lock().domain_switching()
+    }
+
+    /// Returns whether the server has inserted this player into a world.
+    #[must_use]
+    pub fn has_joined_world(&self) -> bool {
+        self.lifecycle.lock().joined_world()
+    }
+
+    /// Marks this player as inserted into a world.
+    ///
+    /// Returns `true` when a client-loaded acknowledgement arrived before world
+    /// admission and was applied by this call.
+    pub(crate) fn mark_joined_world(&self) -> bool {
+        let mut lifecycle = self.lifecycle.lock();
+        lifecycle.set_joined_world(true);
+        lifecycle.apply_pending_client_loaded()
+    }
+
+    /// Returns whether the client has sent its play-loaded signal.
+    #[must_use]
+    pub fn has_client_loaded(&self) -> bool {
+        self.lifecycle.lock().client_loaded()
+    }
+
+    /// Marks whether the client has loaded into play.
+    pub fn set_client_loaded(&self, client_loaded: bool) {
+        self.lifecycle.lock().set_client_loaded(client_loaded);
+    }
+
+    /// Applies or buffers the client's play-loaded acknowledgement.
+    ///
+    /// Returns `true` when the acknowledgement can run gameplay side effects now.
+    pub fn mark_client_loaded_from_network(&self) -> bool {
+        self.lifecycle.lock().mark_client_loaded_from_network()
+    }
+
+    fn tick_client_load_timeout(&self) {
+        self.lifecycle.lock().tick_client_load_timeout();
+    }
+
+    pub(crate) fn set_pending_root_vehicle(
+        &self,
+        world: &World,
+        root_vehicle: PersistentRootVehicle,
+    ) {
+        *self.pending_root_vehicle.lock() = Some(PendingRootVehicleRestore {
+            world: world.key.clone(),
+            root_vehicle,
+        });
+    }
+
+    pub(crate) fn clear_pending_root_vehicle(&self) {
+        *self.pending_root_vehicle.lock() = None;
+    }
+
+    pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
+        let world_key = self.get_world().key.clone();
+        self.pending_root_vehicle
+            .lock()
+            .as_ref()
+            .filter(|pending| pending.world == world_key)
+            .map(|pending| pending.root_vehicle.clone())
+    }
+
+    pub(crate) fn take_matching_pending_root_vehicle(
+        &self,
+        world: &World,
+        attach: [u8; 16],
+        root_uuid: [u8; 16],
+    ) -> Option<PersistentRootVehicle> {
+        let mut pending = self.pending_root_vehicle.lock();
+        let matches = pending.as_ref().is_some_and(|pending| {
+            pending.world == world.key
+                && pending.root_vehicle.attach == attach
+                && pending.root_vehicle.entity.uuid == root_uuid
+        });
+        if matches {
+            pending.take().map(|pending| pending.root_vehicle)
+        } else {
+            None
+        }
+    }
+
+    /// Returns this player's local server tick count.
+    #[must_use]
+    pub fn tick_count(&self) -> i32 {
+        self.tick_state.lock().tick_count()
+    }
+
+    /// Advances this player's local server tick count.
+    fn advance_tick(&self) {
+        self.tick_state.lock().advance_tick();
+    }
+
+    fn primary_step_sound_block_pos(&self, affecting_pos: BlockPos) -> BlockPos {
+        let above_pos = affecting_pos.above();
+        let above_state = self.get_world().get_block_state(above_pos);
+        let above_block = above_state.get_block();
+
+        if above_block.has_tag(&BlockTag::INSIDE_STEP_SOUND_BLOCKS)
+            || above_block.has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+        {
+            above_pos
+        } else {
+            affecting_pos
+        }
+    }
+
+    /// Resets the player's transient state and prepares them for a new world.
+    ///
+    /// This is the shared "clean slate" path used by initial join, respawn, and
+    /// world change. If the player is currently in a different world, they are
+    /// removed from the old world first.
+    ///
+    /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
+    /// constructed during respawn / world change, since vanilla recreates the
+    /// player object. We reuse the same `Player`, so we reset manually.
+    pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+        self.reset_inner_after(new_world, reason, false, || {});
+    }
+
+    /// Resets for a domain switch and restores target-domain state after the
+    /// player has been detached from the old world's live entity indexes.
+    pub(crate) fn reset_after_domain_save_and_restore<F>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
+        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
+    }
+
+    fn reset_inner_after<F>(
+        self: &Arc<Self>,
+        new_world: Arc<World>,
+        reason: ResetReason,
+        store_root_vehicle: bool,
+        restore_state: F,
+    ) where
+        F: FnOnce(),
+    {
+        let old_world = self.get_world();
+        let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
+
+        if switching_worlds {
+            self.do_close_container();
+            self.send_packet(CContainerClose { container_id: 0 });
+            if store_root_vehicle {
+                old_world.remove_player_for_domain_switch(self);
+            } else {
+                old_world.remove_player_for_world_change(self);
+            }
+            self.set_world(new_world.clone());
+        }
+
+        self.set_client_loaded(false);
+        self.set_velocity(DVec3::ZERO);
+        self.movement.lock().reset_last_known_client_movement();
+        self.set_on_ground(false);
+        self.reset_entity_state();
+        *self.block_breaking.lock() = BlockBreakingManager::new();
+
+        // Reset chunk tracking — bump generation counter so the chunk sending tick
+        // discards any in-flight batch encoded against the old world.
+        {
+            let mut chunk_send_epoch = self.chunk_send_epoch.lock();
+            *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
+        }
+        *self.chunk_sender.lock() = ChunkSender::default();
+        *self.last_tracking_view.lock() = None;
+        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        restore_state();
+
+        if reason != ResetReason::InitialJoin {
+            // 0x01 = keep attributes, 0x02 = keep entity data
+            let data_kept: i8 = match reason {
+                ResetReason::WorldChange => 0x03,
+                _ => 0x00,
+            };
+
+            self.send_packet(CRespawn {
+                dimension_type: new_world.dimension_type.id() as i32,
+                dimension_name: new_world.key.clone(),
+                hashed_seed: new_world.obfuscated_seed(),
+                gamemode: self.game_mode() as u8,
+                previous_gamemode: self.previous_game_mode() as i8,
+                is_debug: false,
+                is_flat: new_world.is_flat,
+                has_death_location: false,
+                death_dimension_name: None,
+                death_location: None,
+                portal_cooldown_ticks: 0,
+                sea_level: new_world.sea_level,
+                data_kept,
+            });
+        }
+    }
+
+    /// Spawns the player into their current world at the given position.
+    ///
+    /// This is the shared "enter world" path used by initial join, respawn, and
+    /// world change. Sends position sync, abilities, inventory, time, weather,
+    /// and adds the player to the world as appropriate for the given reason.
+    ///
+    /// # Panics
+    /// Panics if the `advance_time` gamerule is not a bool.
+    #[must_use]
+    pub fn spawn(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+        reason: ResetReason,
+    ) -> bool {
+        let world = self.get_world();
+
+        // Set position and rotation
+        self.base.set_position_local(position);
+        self.set_rotation(rotation);
+        self.set_old_position_to_current();
+        self.movement.lock().reset_for_position_sync(position);
+
+        // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
+        if let Err(error) =
+            self.teleport(position.x, position.y, position.z, rotation.0, rotation.1)
+        {
+            panic!(
+                "failed to synchronize player {} spawn position: {error}",
+                self.id()
+            );
+        }
+        self.reset_flying_ticks();
+
+        // Abilities and held slot
+        self.send_abilities();
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(self.inventory.lock().get_selected_slot()),
+        });
+
+        // Time sync
+        {
+            let level_data = world.level_data.read();
+            let game_time = level_data.game_time();
+            let day_time = level_data.day_time();
+            drop(level_data);
+
+            let advance_time = world
+                .get_game_rule(&ADVANCE_TIME)
+                .as_bool()
+                .expect("gamerule advance_time should always be a bool.");
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
+        }
+
+        // Weather sync
+        if world.can_have_weather() && world.is_raining() {
+            let (rain_level, thunder_level) = {
+                let weather = world.weather.lock();
+                (weather.rain_level, weather.thunder_level)
+            };
+
+            self.send_packet(CGameEvent {
+                event: GameEventType::StartRaining,
+                data: 0.0,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::RainLevelChange,
+                data: rain_level,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::ThunderLevelChange,
+                data: thunder_level,
+            });
+        }
+
+        // Force health/xp resync on next tick
+        self.reset_sent_info();
+
+        // Resend client context that is not fully covered by CLogin/CRespawn.
+        self.server().resend_player_context(self);
+
+        // Add to world / re-enter chunk tracking
+        match reason {
+            ResetReason::InitialJoin | ResetReason::WorldChange => {
+                if reason == ResetReason::WorldChange {
+                    log::info!(
+                        "Player {} changed world to {}",
+                        self.gameprofile.name,
+                        world.key
+                    );
+                }
+                world.add_player(self.clone(), reason)
+            }
+            ResetReason::Respawn => {
+                // Same world — re-enter chunk tracking
+                world.player_area_map.remove_by_entity_id(self.id());
+                world.chunk_map.remove_player(self);
+                world.entity_tracker().on_player_leave(self.id());
+
+                self.send_packet(CGameEvent {
+                    event: GameEventType::LevelChunksLoadStart,
+                    data: 0.0,
+                });
+                world.register_respawned_player_entity(self);
+                true
+            }
+        }
+    }
+}
+
+/// Why the player is being reset and spawned into a world.
+///
+/// Controls which packets are sent and how world add/remove is handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetReason {
+    /// First time joining the server. `CLogin` was already sent, so `CRespawn` is skipped.
+    InitialJoin,
+    /// Respawning after death in the same world.
+    Respawn,
+    /// Teleporting to a different loaded world.
+    WorldChange,
 }
 
 impl Entity for Player {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
     fn entity_type(&self) -> EntityTypeRef {
-        vanilla_entities::PLAYER
+        &vanilla_entities::PLAYER
     }
 
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn uuid(&self) -> Uuid {
-        self.gameprofile.id
-    }
-
-    fn position(&self) -> Vector3<f64> {
-        *self.position.lock()
-    }
-
-    fn bounding_box(&self) -> AABBd {
-        let pos = self.position();
-        // Player hitbox: 0.6 wide, 1.8 tall (standing)
-        // TODO: Adjust for pose (crouching, swimming, etc.)
-        let half_width = 0.3;
-        let height = 1.8;
-        AABBd {
-            min_x: pos.x - half_width,
-            min_y: pos.y,
-            min_z: pos.z - half_width,
-            max_x: pos.x + half_width,
-            max_y: pos.y + height,
-            max_z: pos.z + half_width,
+    fn broadcast_to_player(&self, player: &Player) -> bool {
+        if player.is_spectator() {
+            true
+        } else {
+            !self.is_spectator()
         }
     }
 
     fn tick(&self) {
-        // Player tick is handled separately by World::tick_b()
+        // Player tick is handled separately by World::tick_game()
         // This is here for Entity trait compliance
     }
 
-    fn level(&self) -> Option<Arc<World>> {
-        Some(Arc::clone(&self.world))
+    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
+        (
+            &sound_events::ENTITY_PLAYER_SMALL_FALL,
+            &sound_events::ENTITY_PLAYER_BIG_FALL,
+        )
     }
 
-    fn is_removed(&self) -> bool {
-        self.removed.load(Ordering::Relaxed)
+    fn is_living_entity(&self) -> bool {
+        true
     }
 
-    fn set_removed(&self, reason: RemovalReason) {
-        if !self.removed.swap(true, Ordering::AcqRel) {
-            // First time being removed - notify callback
-            self.level_callback.lock().on_remove(reason);
+    fn is_alive(&self) -> bool {
+        !self.is_removed() && self.get_health() > 0.0
+    }
+
+    fn forces_fall_flying_velocity_sync(&self) -> bool {
+        self.is_fall_flying()
+    }
+
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
+    fn is_pickable(&self) -> bool {
+        !self.is_spectator() && !self.is_removed()
+    }
+
+    fn is_pushable(&self) -> bool {
+        self.get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
+    }
+
+    fn on_climbable(&self) -> bool {
+        Player::on_climbable(self)
+    }
+
+    fn is_spectator(&self) -> bool {
+        self.game_mode() == GameType::Spectator
+    }
+
+    fn fire_immune_ticks(&self) -> i32 {
+        20
+    }
+
+    fn remaining_fire_ticks_cap(&self) -> Option<i32> {
+        self.abilities.lock().invulnerable.then_some(1)
+    }
+
+    fn get_default_gravity(&self) -> f64 {
+        LivingEntity::get_attribute_gravity(self)
+    }
+
+    fn fire_ignite_extra_ticks(&self) -> i32 {
+        self.get_world().random().lock().next_i32_between(1, 2)
+    }
+
+    fn can_freeze(&self) -> bool {
+        if self.is_spectator() {
+            return false;
+        }
+
+        self.default_living_can_freeze()
+    }
+
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        if !self.is_flying() {
+            self.default_make_stuck_in_block(state, speed_multiplier);
+        }
+
+        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+    }
+
+    fn can_be_hit_by_projectile(&self) -> bool {
+        self.get_health() > 0.0 && self.is_pickable()
+    }
+
+    fn uses_client_movement_packets(&self) -> bool {
+        true
+    }
+
+    fn can_simulate_movement(&self) -> bool {
+        true
+    }
+
+    fn is_effective_ai(&self) -> bool {
+        true
+    }
+
+    fn known_movement(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_movement();
+        }
+
+        self.movement.lock().last_known_client_movement()
+    }
+
+    fn known_speed(&self) -> DVec3 {
+        if let Some(vehicle) = self.vehicle()
+            && vehicle
+                .controlling_passenger()
+                .is_none_or(|controller| controller.id() != self.id())
+        {
+            return vehicle.known_speed();
+        }
+
+        self.movement.lock().last_known_client_movement()
+    }
+
+    fn is_suppressing_bounce(&self) -> bool {
+        self.is_crouching()
+    }
+
+    fn cause_fall_damage(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        if self.abilities.lock().may_fly {
+            return false;
+        }
+
+        // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
+        if self.is_fall_damage_immune() {
+            return false;
+        }
+
+        let attributes = self.attributes().lock();
+        let safe_fall_distance = attributes
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(3.0);
+        let fall_damage_multiplier = attributes
+            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
+            .unwrap_or(1.0);
+        drop(attributes);
+
+        let damage = LivingEntityBase::calculate_fall_damage(
+            fall_distance,
+            damage_modifier,
+            safe_fall_distance,
+            fall_damage_multiplier,
+        );
+        if damage <= 0 {
+            return false;
+        }
+
+        self.hurt(source, damage as f32)
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
+    }
+
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
+    fn max_up_step(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::STEP_HEIGHT)
+            .unwrap_or(0.6) as f32
+    }
+
+    fn backs_off_from_edge(&self) -> bool {
+        self.is_crouching() && !self.is_flying()
+    }
+
+    fn is_pushed_by_fluid(&self) -> bool {
+        !self.is_flying()
+    }
+
+    fn is_crouching(&self) -> bool {
+        Player::is_crouching(self)
+    }
+
+    fn can_walk_on_powder_snow(&self) -> bool {
+        self.default_living_can_walk_on_powder_snow()
+    }
+
+    fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
+        world.may_interact(self, pos)
+    }
+
+    fn is_swimming(&self) -> bool {
+        Player::is_swimming(self)
+    }
+
+    fn sound_source(&self) -> SoundSource {
+        SoundSource::Players
+    }
+
+    fn swim_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SWIM
+    }
+
+    fn play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {
+        if self.is_in_water() {
+            self.water_swim_sound();
+            self.play_muffled_step_sound(on_state);
+            return;
+        }
+
+        let primary_step_sound_pos = self.primary_step_sound_block_pos(on_pos);
+        if primary_step_sound_pos == on_pos {
+            self.play_block_step_sound(on_state);
+        } else {
+            let primary_state = self.get_world().get_block_state(primary_step_sound_pos);
+            if primary_state
+                .get_block()
+                .has_tag(&BlockTag::COMBINATION_STEP_SOUND_BLOCKS)
+            {
+                self.play_combination_step_sounds(primary_state, on_state);
+            } else {
+                self.play_block_step_sound(primary_state);
+            }
         }
     }
 
-    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
-        *self.level_callback.lock() = callback;
+    fn on_below_world(&self) {
+        self.hurt(
+            &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
+            4.0,
+        );
     }
 
-    fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
-        Some(self)
+    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        // Delegates to Player's inherent hurt method which handles
+        // invulnerability, armor, death, and network packets.
+        Player::hurt(self, source, amount)
     }
 
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> Vector3<f64> {
-        *self.delta_movement.lock()
-    }
-
-    fn on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
-    }
-
-    /// Returns the eye height for the current pose.
-    ///
-    /// Vanilla eye heights from `Avatar.POSES`:
-    /// - Standing: 1.62
-    /// - Crouching: 1.27
-    /// - Swimming/FallFlying/SpinAttack: 0.4
-    /// - Sleeping/Dying: 0.2
-    fn get_eye_height(&self) -> f64 {
-        match self.get_desired_pose() {
-            EntityPose::Sneaking => 1.27,
-            EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => 0.4,
-            EntityPose::Sleeping | EntityPose::Dying => 0.2,
-            // Standing and all other poses use default player eye height
-            _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
+    fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
+        let new_world = teleport_transition.target_world.clone();
+        if Arc::ptr_eq(&self.get_world(), &new_world) {
+            let pos = teleport_transition.position;
+            let rotation = teleport_transition.rotation;
+            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1) {
+                panic!(
+                    "failed to commit same-world portal teleport for player {}: {error}",
+                    self.id()
+                );
+            }
+            self.reset_flying_ticks();
+        } else {
+            self.reset(new_world, ResetReason::WorldChange);
+            // TODO: set portal cooldown from teleport_transition.portal_cooldown
+            if !self.spawn(
+                teleport_transition.position,
+                teleport_transition.rotation,
+                ResetReason::WorldChange,
+            ) {
+                return;
+            }
+            // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
+            self.send_inventory_to_remote();
         }
     }
 }
 
 impl LivingEntity for Player {
     fn get_health(&self) -> f32 {
-        *self.entity_data.lock().health.get()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
-    fn set_health(&mut self, health: f32) {
+    fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.entity_data.lock().health.set(clamped);
-        // Dirty flag set automatically, will sync on next tick
+        self.entity_data
+            .lock()
+            .living_entity_mut()
+            .health
+            .set(clamped);
     }
 
-    fn get_max_health(&self) -> f32 {
-        // TODO: Get from attributes system when implemented
-        20.0
+    fn living_base(&self) -> &LivingEntityBase {
+        &self.living_base
     }
 
-    fn get_position(&self) -> Vector3<f64> {
-        *self.position.lock()
+    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+        let inventory = self.inventory.lock();
+        visitor(inventory.equipment().get_ref(slot));
+    }
+
+    fn with_equipment_slot_mut(
+        &self,
+        slot: EquipmentSlot,
+        visitor: &mut dyn FnMut(&mut ItemStack),
+    ) {
+        let mut inventory = self.inventory.lock();
+        visitor(inventory.equipment_mut().get_mut(slot));
+    }
+
+    fn has_infinite_materials(&self) -> bool {
+        Player::has_infinite_materials(self)
     }
 
     fn get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
 
-    fn set_absorption_amount(&mut self, amount: f32) {
+    fn set_absorption_amount(&self, amount: f32) {
         self.entity_data
             .lock()
             .player_absorption
             .set(amount.max(0.0));
-        // Dirty flag set automatically, will sync on next tick
     }
 
-    fn get_armor_value(&self) -> i32 {
-        // TODO: Calculate from equipped items when data components are implemented
-        // Will iterate over ARMOR_SLOTS and sum armor values from each piece
-        0
+    fn is_affected_by_fluids(&self) -> bool {
+        !self.is_flying()
     }
 
-    fn is_sprinting(&self) -> bool {
-        self.sprinting.load(Ordering::Relaxed)
+    fn can_glide(&self) -> bool {
+        !self.is_flying() && self.default_can_glide()
     }
 
-    fn set_sprinting(&mut self, sprinting: bool) {
-        self.sprinting.store(sprinting, Ordering::Relaxed);
-        // TODO: Apply speed modifiers when attribute system is implemented
+    fn is_immobile(&self) -> bool {
+        self.default_is_immobile() || self.is_sleeping()
     }
 
-    fn get_speed(&self) -> f32 {
-        self.speed.load()
-    }
-
-    fn set_speed(&mut self, speed: f32) {
-        self.speed.store(speed);
-    }
-}
-
-/// Strips Minecraft formatting codes (§ followed by a character) from a string.
-///
-/// This is equivalent to vanilla's `ChatFormatting.stripFormatting()`.
-fn strip_formatting_codes(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '§' {
-            // Skip the formatting code character if present
-            chars.next();
+    fn jump_from_ground(&self) {
+        self.default_jump_from_ground();
+        // TODO: Award Stats.JUMP once player statistics exist.
+        if self.is_sprinting() {
+            self.cause_food_exhaustion(0.2);
         } else {
-            result.push(c);
+            self.cause_food_exhaustion(0.05);
         }
     }
 
-    result
+    fn ai_step(&self) -> Option<MoveResult> {
+        if self.is_flying() && !self.is_passenger() {
+            self.reset_fall_distance();
+        }
+
+        self.default_ai_step()
+    }
+
+    fn travel(&self, input: DVec3) -> Option<MoveResult> {
+        if self.is_passenger() {
+            return self.default_travel(input);
+        }
+
+        if self.is_swimming() {
+            let look_angle_y = self.look_angle().y;
+            let multiplier = if look_angle_y < -0.2 { 0.085 } else { 0.06 };
+            let has_fluid_above = self.level().is_some_and(|world| {
+                let position = self.position();
+                let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
+                !get_fluid_state(&world, pos).is_empty()
+            });
+            if look_angle_y <= 0.0 || self.is_jumping() || has_fluid_above {
+                let velocity = self.velocity();
+                self.set_velocity(
+                    velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
+                );
+            }
+        }
+
+        if self.is_flying() {
+            let original_movement_y = self.velocity().y;
+            let result = self.default_travel(input);
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(
+                velocity.x,
+                original_movement_y * 0.6,
+                velocity.z,
+            ));
+            result
+        } else {
+            self.default_travel(input)
+        }
+    }
+
+    fn get_flying_speed(&self) -> f32 {
+        if self.is_flying() && !self.is_passenger() {
+            let flying_speed = self.abilities.lock().flying_speed;
+            if self.is_sprinting() {
+                flying_speed * 2.0
+            } else {
+                flying_speed
+            }
+        } else if self.is_sprinting() {
+            0.025_999_999
+        } else {
+            0.02
+        }
+    }
 }
 
 impl TextResolutor for Player {
@@ -2459,5 +1713,53 @@ impl TextResolutor for Player {
 
     fn translate(&self, _key: &str) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Player;
+
+    #[test]
+    fn respawn_request_is_allowed_after_dead_reconnect() {
+        assert!(Player::should_process_respawn(0.0));
+    }
+
+    #[test]
+    fn respawn_request_is_ignored_while_alive() {
+        assert!(!Player::should_process_respawn(20.0));
+    }
+
+    #[test]
+    fn respawn_request_uses_health_not_death_processed_guard() {
+        struct RespawnGateInput {
+            health: f32,
+            death_processed: bool,
+        }
+
+        let input = RespawnGateInput {
+            health: 20.0,
+            death_processed: true,
+        };
+
+        assert!(input.death_processed);
+        assert!(!Player::should_process_respawn(input.health));
+    }
+
+    #[test]
+    fn entity_cramming_requires_random_zero_and_threshold_overflow() {
+        assert!(Player::should_apply_entity_cramming_damage(24, 24, 24, 0));
+        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 24, 1));
+        assert!(!Player::should_apply_entity_cramming_damage(24, 23, 24, 0));
+    }
+
+    #[test]
+    fn entity_cramming_counts_only_non_passengers_for_damage() {
+        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 23, 0));
+    }
+
+    #[test]
+    fn entity_cramming_disabled_when_gamerule_is_zero() {
+        assert!(!Player::should_apply_entity_cramming_damage(0, 100, 100, 0));
     }
 }

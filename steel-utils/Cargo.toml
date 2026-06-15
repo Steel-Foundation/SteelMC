@@ -7,9 +7,10 @@ authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
+steel-macros.workspace = true
+
 # Async runtime
 tokio.workspace = true
-tokio-util.workspace = true
 
 # Serialization
 serde.workspace = true
@@ -21,20 +22,19 @@ wincode.workspace = true
 parking_lot.workspace = true
 
 # Data structures
-rustc-hash.workspace = true
 bitflags.workspace = true
 phf.workspace = true
+rustc-hash.workspace = true
+glam.workspace = true
 
 # UUID
 uuid.workspace = true
 
 # Logging
-log.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+
 
 # Cryptography
-md5.workspace = true
 crc32c = "0.6"
 
 # Utilities
@@ -44,23 +44,27 @@ text_components.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+md5.workspace = true
 
 [build-dependencies]
 # Serialization
+serde.workspace = true
 serde_json.workspace = true
+
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
 
 # Data structures
-
-rustc-hash.workspace = true
 phf_codegen.workspace = true
 
 # Utilities
-
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
+reqwest = { workspace = true, features = ["blocking"] }
+sha1.workspace = true
+zip = { version = "1.1.4", default-features = false, features = ["deflate"] }
+
 [[bench]]
 name = "xoroshiro"
 harness = false
@@ -71,3 +75,6 @@ harness = false
 
 [lints]
 workspace = true
+
+[features]
+fmt = []

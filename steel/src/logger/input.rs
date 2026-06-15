@@ -5,7 +5,7 @@ use crate::logger::{CommandLogger, LogState, Move};
 use crossterm::{
     clipboard::CopyToClipboard,
     cursor::SetCursorStyle::{BlinkingBar, BlinkingBlock, DefaultUserShape},
-    event::{Event, KeyCode, KeyEvent, KeyModifiers, poll, read},
+    event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, poll, read},
     execute,
     terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
@@ -47,7 +47,12 @@ impl CommandLogger {
 
                 if let Ok(true) = poll(Duration::from_millis(50)) {
                     let event = read().expect("Event bug; Cannot read event.");
+                    // On Windows, crossterm sends both Press and Release events.
+                    // Only handle Press events to avoid duplicate input.
                     if let Event::Key(key) = event {
+                        if key.kind != KeyEventKind::Press {
+                            continue;
+                        }
                         if let KeyCode::Char(char) = key.code {
                             if key.modifiers.contains(KeyModifiers::CONTROL) {
                                 tx.send(ExtendedKey::Ctrl(char)).ok();
@@ -67,7 +72,10 @@ impl CommandLogger {
         });
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting the key-dispatch match would hurt readability"
+    )]
     async fn input_key(self: Arc<Self>, mut rx: UnboundedReceiver<ExtendedKey>) -> Result<()> {
         loop {
             tokio::select! {

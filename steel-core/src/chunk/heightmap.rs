@@ -1,13 +1,22 @@
 //! Heightmap implementation for tracking the highest blocks in a chunk.
 //!
 //! Heightmaps are used for various purposes like spawning, pathfinding, and rendering.
+//!
+//! During worldgen, `ProtoHeightmaps` stores a dynamic set of heightmaps (worldgen types
+//! before CARVERS, final types after). When a proto chunk is promoted to a full `LevelChunk`,
+//! the final heightmaps are moved directly into `ChunkHeightmaps` via [`ChunkHeightmaps::from_proto`].
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
-use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
+use steel_registry::{
+    REGISTRY,
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    vanilla_block_tags::BlockTag,
+};
+use steel_utils::BlockStateId;
 
-use steel_registry::{REGISTRY, blocks::BlockRef, blocks::block_state_ext::BlockStateExt};
-use steel_utils::{BlockStateId, Identifier};
+use crate::behavior::BlockStateBehaviorExt as _;
 
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,6 +38,13 @@ pub enum HeightmapType {
 }
 
 impl HeightmapType {
+    const WORLD_SURFACE_MASK: u8 = 1 << 0;
+    const MOTION_BLOCKING_MASK: u8 = 1 << 1;
+    const MOTION_BLOCKING_NO_LEAVES_MASK: u8 = 1 << 2;
+    const OCEAN_FLOOR_MASK: u8 = 1 << 3;
+    const WORLD_SURFACE_WG_MASK: u8 = 1 << 4;
+    const OCEAN_FLOOR_WG_MASK: u8 = 1 << 5;
+
     /// Returns worldgen heightmap types (used before CARVERS status).
     #[must_use]
     pub const fn worldgen_types() -> &'static [HeightmapType] {
@@ -52,93 +68,95 @@ impl HeightmapType {
     /// # Panics
     /// Panics if the block state ID is invalid.
     #[must_use]
-    pub fn is_opaque(&self, state: BlockStateId) -> bool {
-        let block = REGISTRY
-            .blocks
-            .by_state_id(state)
-            .expect("Invalid state ID");
-        match self {
-            Self::WorldSurface | Self::WorldSurfaceWg => !block.config.is_air,
-            Self::MotionBlocking => block.config.has_collision || block.config.liquid,
-            Self::MotionBlockingNoLeaves => {
-                (block.config.has_collision || block.config.liquid) && !Self::is_leaves(block)
-            }
-            Self::OceanFloor | Self::OceanFloorWg => block.config.has_collision,
-        }
+    pub fn is_opaque(self, state: BlockStateId) -> bool {
+        heightmap_opacity_mask(state, self.mask()) != 0
     }
 
     /// Checks if a block is in the leaves tag.
     fn is_leaves(block: BlockRef) -> bool {
-        static LEAVES_TAG: OnceLock<Identifier> = OnceLock::new();
-        let tag = LEAVES_TAG.get_or_init(|| Identifier::vanilla_static("leaves"));
-        REGISTRY.blocks.is_in_tag(block, tag)
+        block.has_tag(&BlockTag::LEAVES)
+    }
+
+    const fn mask(self) -> u8 {
+        match self {
+            Self::WorldSurface => Self::WORLD_SURFACE_MASK,
+            Self::MotionBlocking => Self::MOTION_BLOCKING_MASK,
+            Self::MotionBlockingNoLeaves => Self::MOTION_BLOCKING_NO_LEAVES_MASK,
+            Self::OceanFloor => Self::OCEAN_FLOOR_MASK,
+            Self::WorldSurfaceWg => Self::WORLD_SURFACE_WG_MASK,
+            Self::OceanFloorWg => Self::OCEAN_FLOOR_WG_MASK,
+        }
     }
 }
 
-/// Primes heightmaps by scanning the chunk from top to bottom.
-///
-/// Used to lazily initialize heightmaps when they don't exist yet.
-/// This scans each column from top to bottom, finding the first opaque block
-/// for each heightmap type.
-#[allow(clippy::missing_panics_doc, clippy::implicit_hasher)]
-pub fn prime_heightmaps<F>(
-    heightmaps: &mut FxHashMap<HeightmapType, Heightmap>,
-    types: &[HeightmapType],
-    min_y: i32,
-    height: i32,
-    get_block: F,
-) where
-    F: Fn(usize, i32, usize) -> BlockStateId,
-{
-    // Collect types that need priming (don't exist yet)
-    let types_to_prime: Vec<HeightmapType> = types
-        .iter()
-        .filter(|&&hm_type| !heightmaps.contains_key(&hm_type))
-        .copied()
-        .collect();
+static WORLD_SURFACE_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> =
+    LazyLock::new(|| build_state_opacity_cache(|_state, block| !block.config.is_air));
 
-    if types_to_prime.is_empty() {
-        return;
+static OCEAN_FLOOR_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> =
+    LazyLock::new(|| build_state_opacity_cache(|state, _block| state.blocks_motion()));
+
+static MOTION_BLOCKING_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> = LazyLock::new(|| {
+    build_state_opacity_cache(|state, _block| {
+        state.blocks_motion() || !state.get_fluid_state().is_empty()
+    })
+});
+
+static MOTION_BLOCKING_NO_LEAVES_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> = LazyLock::new(|| {
+    build_state_opacity_cache(|state, block| {
+        (state.blocks_motion() || !state.get_fluid_state().is_empty())
+            && !HeightmapType::is_leaves(block)
+    })
+});
+
+fn build_state_opacity_cache(predicate: impl Fn(BlockStateId, BlockRef) -> bool) -> Box<[bool]> {
+    let mut cache = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
+    for (state_index, &block) in REGISTRY.blocks.state_to_block_lookup.iter().enumerate() {
+        let Ok(raw_state_id) = u16::try_from(state_index) else {
+            panic!("block state registry exceeded BlockStateId range");
+        };
+        cache.push(predicate(BlockStateId(raw_state_id), block));
+    }
+    cache.into_boxed_slice()
+}
+
+#[inline]
+fn cached_heightmap_opacity(cache: &LazyLock<Box<[bool]>>, state: BlockStateId) -> bool {
+    let Some(&opaque) = cache.get(state.0 as usize) else {
+        panic!("invalid block state id {}", state.0);
+    };
+    opaque
+}
+
+#[inline]
+fn heightmap_opacity_mask(state: BlockStateId, requested_mask: u8) -> u8 {
+    if !cached_heightmap_opacity(&WORLD_SURFACE_OPAQUE_BY_STATE, state) {
+        return 0;
     }
 
-    // Create missing heightmaps
-    for &hm_type in &types_to_prime {
-        heightmaps.insert(hm_type, Heightmap::new(hm_type, min_y, height));
+    let mut mask = 0;
+    if requested_mask & (HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK)
+        != 0
+    {
+        mask |= requested_mask
+            & (HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK);
     }
-
-    let max_y = min_y + height;
-
-    // For each column, scan from top to bottom
-    for x in 0..16 {
-        for z in 0..16 {
-            // Track which heightmaps still need to find their first opaque block
-            let mut pending: Vec<HeightmapType> = types_to_prime.clone();
-
-            for y in (min_y..max_y).rev() {
-                if pending.is_empty() {
-                    break;
-                }
-
-                let state = get_block(x, y, z);
-                if state.is_air() {
-                    continue;
-                }
-
-                // Check each pending heightmap type
-                pending.retain(|&hm_type| {
-                    if hm_type.is_opaque(state) {
-                        heightmaps
-                            .get_mut(&hm_type)
-                            .expect("heightmap was just inserted")
-                            .set_height(x, z, y + 1);
-                        false // Remove from pending
-                    } else {
-                        true // Keep in pending
-                    }
-                });
-            }
-        }
+    if requested_mask & (HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK) != 0
+        && cached_heightmap_opacity(&OCEAN_FLOOR_OPAQUE_BY_STATE, state)
+    {
+        mask |=
+            requested_mask & (HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK);
     }
+    if requested_mask & HeightmapType::MOTION_BLOCKING_MASK != 0
+        && cached_heightmap_opacity(&MOTION_BLOCKING_OPAQUE_BY_STATE, state)
+    {
+        mask |= HeightmapType::MOTION_BLOCKING_MASK;
+    }
+    if requested_mask & HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK != 0
+        && cached_heightmap_opacity(&MOTION_BLOCKING_NO_LEAVES_OPAQUE_BY_STATE, state)
+    {
+        mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;
+    }
+    mask
 }
 
 /// A heightmap that tracks the highest blocks of a specific type in a chunk.
@@ -164,6 +182,22 @@ impl Heightmap {
     pub fn new(map_type: HeightmapType, min_y: i32, height: i32) -> Self {
         Self {
             data: Box::new([0; 256]),
+            map_type,
+            min_y,
+            height,
+        }
+    }
+
+    /// Creates a heightmap from raw height data loaded from disk.
+    #[must_use]
+    pub const fn from_raw_data(
+        map_type: HeightmapType,
+        min_y: i32,
+        height: i32,
+        data: Box<[u16; 256]>,
+    ) -> Self {
+        Self {
+            data,
             map_type,
             min_y,
             height,
@@ -254,7 +288,36 @@ impl Heightmap {
         false
     }
 
-    /// Gets the raw data as a slice of i64 values for serialization.
+    /// Updates this heightmap for a direct write into a previously-air block.
+    ///
+    /// Vanilla's noise fill writes sections directly and updates the worldgen
+    /// heightmaps beside those writes. There is no downward scan in that path
+    /// because blocks are only being added to an empty terrain column.
+    pub fn update_for_initial_fill(
+        &mut self,
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) -> bool {
+        let first_available = self.get_first_available(local_x, local_z);
+        if self.map_type.is_opaque(state) && y >= first_available {
+            self.set_height(local_x, local_z, y + 1);
+            return true;
+        }
+
+        false
+    }
+
+    /// Returns a direct reference to the raw height data array.
+    ///
+    /// Values are stored relative to `min_y`. Used for persistence.
+    #[must_use]
+    pub fn raw_data(&self) -> &[u16; 256] {
+        &self.data
+    }
+
+    /// Gets the raw data as a slice of i64 values for network serialization.
     ///
     /// The data is packed using the minimum number of bits required to store
     /// the height range (0 to `world_height`).
@@ -276,10 +339,7 @@ impl Heightmap {
         result
     }
 
-    /// Sets the raw data from a slice of i64 values.
-    ///
-    /// # Panics
-    /// Panics if the data length doesn't match the expected size.
+    /// Sets the raw data from a slice of i64 values (network format).
     pub fn set_raw_data(&mut self, data: &[i64]) {
         let bits_per_value = Self::calculate_bits_per_value(self.height);
         let values_per_long = 64 / bits_per_value;
@@ -318,7 +378,247 @@ impl Heightmap {
     }
 }
 
-/// A collection of heightmaps for a chunk.
+// ─── ProtoHeightmaps ─────────────────────────────────────────────────────────
+
+/// Heightmap storage for proto chunks during worldgen.
+///
+/// Stores heightmaps as `Option` fields since they are lazily initialized
+/// based on the chunk's generation status. Worldgen types (`WorldSurfaceWg`,
+/// `OceanFloorWg`) are used before CARVERS; final types are used after.
+#[derive(Debug, Clone)]
+pub struct ProtoHeightmaps {
+    world_surface_wg: Option<Heightmap>,
+    ocean_floor_wg: Option<Heightmap>,
+    world_surface: Option<Heightmap>,
+    motion_blocking: Option<Heightmap>,
+    motion_blocking_no_leaves: Option<Heightmap>,
+    ocean_floor: Option<Heightmap>,
+}
+
+impl ProtoHeightmaps {
+    /// Creates empty proto heightmaps with no types initialized.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            world_surface_wg: None,
+            ocean_floor_wg: None,
+            world_surface: None,
+            motion_blocking: None,
+            motion_blocking_no_leaves: None,
+            ocean_floor: None,
+        }
+    }
+
+    /// Returns a reference to a heightmap by type, if it exists.
+    #[must_use]
+    pub const fn get(&self, heightmap_type: HeightmapType) -> Option<&Heightmap> {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg.as_ref(),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg.as_ref(),
+            HeightmapType::WorldSurface => self.world_surface.as_ref(),
+            HeightmapType::MotionBlocking => self.motion_blocking.as_ref(),
+            HeightmapType::MotionBlockingNoLeaves => self.motion_blocking_no_leaves.as_ref(),
+            HeightmapType::OceanFloor => self.ocean_floor.as_ref(),
+        }
+    }
+
+    /// Returns a mutable reference to a heightmap by type, if it exists.
+    #[must_use]
+    pub const fn get_mut(&mut self, heightmap_type: HeightmapType) -> Option<&mut Heightmap> {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg.as_mut(),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg.as_mut(),
+            HeightmapType::WorldSurface => self.world_surface.as_mut(),
+            HeightmapType::MotionBlocking => self.motion_blocking.as_mut(),
+            HeightmapType::MotionBlockingNoLeaves => self.motion_blocking_no_leaves.as_mut(),
+            HeightmapType::OceanFloor => self.ocean_floor.as_mut(),
+        }
+    }
+
+    /// Takes a heightmap by type, leaving `None` in its place.
+    /// Used during proto→full conversion to move heightmaps by value.
+    pub const fn take(&mut self, heightmap_type: HeightmapType) -> Option<Heightmap> {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg.take(),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg.take(),
+            HeightmapType::WorldSurface => self.world_surface.take(),
+            HeightmapType::MotionBlocking => self.motion_blocking.take(),
+            HeightmapType::MotionBlockingNoLeaves => self.motion_blocking_no_leaves.take(),
+            HeightmapType::OceanFloor => self.ocean_floor.take(),
+        }
+    }
+
+    /// Replaces one stored heightmap with a fully built instance.
+    pub fn replace(&mut self, heightmap: Heightmap) {
+        let heightmap_type = heightmap.heightmap_type();
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg = Some(heightmap),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg = Some(heightmap),
+            HeightmapType::WorldSurface => self.world_surface = Some(heightmap),
+            HeightmapType::MotionBlocking => self.motion_blocking = Some(heightmap),
+            HeightmapType::MotionBlockingNoLeaves => {
+                self.motion_blocking_no_leaves = Some(heightmap);
+            }
+            HeightmapType::OceanFloor => self.ocean_floor = Some(heightmap),
+        }
+    }
+
+    /// Returns a mutable reference to a heightmap, creating it if it doesn't exist.
+    fn get_or_insert(
+        &mut self,
+        heightmap_type: HeightmapType,
+        min_y: i32,
+        height: i32,
+    ) -> &mut Heightmap {
+        let slot = match heightmap_type {
+            HeightmapType::WorldSurfaceWg => &mut self.world_surface_wg,
+            HeightmapType::OceanFloorWg => &mut self.ocean_floor_wg,
+            HeightmapType::WorldSurface => &mut self.world_surface,
+            HeightmapType::MotionBlocking => &mut self.motion_blocking,
+            HeightmapType::MotionBlockingNoLeaves => &mut self.motion_blocking_no_leaves,
+            HeightmapType::OceanFloor => &mut self.ocean_floor,
+        };
+        slot.get_or_insert_with(|| Heightmap::new(heightmap_type, min_y, height))
+    }
+
+    fn set_primed_height(
+        &mut self,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+        height: i32,
+    ) {
+        let Some(heightmap) = self.get_mut(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+        heightmap.set_height(local_x, local_z, height);
+    }
+
+    /// Primes missing heightmaps by reading sections directly with batched locking.
+    ///
+    /// Instead of a per-block closure (which acquires a lock per call), this
+    /// holds each section's read lock for all 16 Y values before moving on.
+    pub fn prime_from_sections(
+        &mut self,
+        types: &[HeightmapType],
+        min_y: i32,
+        height: i32,
+        sections: &[super::section::SectionHolder],
+    ) {
+        let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
+        let mut pending_mask_base = 0;
+        for &hm_type in types {
+            if self.get(hm_type).is_none() {
+                let mask = hm_type.mask();
+                types_to_prime.push((hm_type, mask));
+                pending_mask_base |= mask;
+            }
+        }
+
+        if types_to_prime.is_empty() {
+            return;
+        }
+
+        for &(hm_type, _) in &types_to_prime {
+            self.get_or_insert(hm_type, min_y, height);
+        }
+
+        for x in 0..16 {
+            for z in 0..16 {
+                let mut pending_mask = pending_mask_base;
+
+                'sections: for section_idx in (0..sections.len()).rev() {
+                    let guard = sections[section_idx].read();
+                    for local_y in (0..16).rev() {
+                        if pending_mask == 0 {
+                            break 'sections;
+                        }
+                        let y = min_y + (section_idx * 16 + local_y) as i32;
+                        let state = guard.states.get(x, local_y, z);
+                        let matched_mask = heightmap_opacity_mask(state, pending_mask);
+                        if matched_mask == 0 {
+                            continue;
+                        }
+                        for &(hm_type, mask) in &types_to_prime {
+                            if matched_mask & mask != 0 {
+                                self.set_primed_height(hm_type, x, z, y + 1);
+                            }
+                        }
+                        pending_mask &= !matched_mask;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Primes missing heightmaps by scanning chunk columns from top to bottom.
+    ///
+    /// Only creates and primes heightmap types that don't already exist.
+    /// For each column, scans downward and records the first opaque block
+    /// for each heightmap type's predicate.
+    pub fn prime<F>(&mut self, types: &[HeightmapType], min_y: i32, height: i32, get_block: F)
+    where
+        F: Fn(usize, i32, usize) -> BlockStateId,
+    {
+        // Collect types that need priming (don't exist yet)
+        let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
+        let mut pending_mask_base = 0;
+        for &hm_type in types {
+            if self.get(hm_type).is_none() {
+                let mask = hm_type.mask();
+                types_to_prime.push((hm_type, mask));
+                pending_mask_base |= mask;
+            }
+        }
+
+        if types_to_prime.is_empty() {
+            return;
+        }
+
+        // Create missing heightmaps
+        for &(hm_type, _) in &types_to_prime {
+            self.get_or_insert(hm_type, min_y, height);
+        }
+
+        let max_y = min_y + height;
+
+        // For each column, scan from top to bottom
+        for x in 0..16 {
+            for z in 0..16 {
+                // Track which heightmaps still need to find their first opaque block
+                let mut pending_mask = pending_mask_base;
+
+                for y in (min_y..max_y).rev() {
+                    if pending_mask == 0 {
+                        break;
+                    }
+
+                    let state = get_block(x, y, z);
+                    let matched_mask = heightmap_opacity_mask(state, pending_mask);
+                    if matched_mask == 0 {
+                        continue;
+                    }
+                    for &(hm_type, mask) in &types_to_prime {
+                        if matched_mask & mask != 0 {
+                            self.set_primed_height(hm_type, x, z, y + 1);
+                        }
+                    }
+                    pending_mask &= !matched_mask;
+                }
+            }
+        }
+    }
+}
+
+impl Default for ProtoHeightmaps {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ─── ChunkHeightmaps ─────────────────────────────────────────────────────────
+
+/// A collection of final heightmaps for a fully generated chunk.
 #[derive(Debug, Clone)]
 pub struct ChunkHeightmaps {
     /// World surface heightmap.
@@ -332,7 +632,7 @@ pub struct ChunkHeightmaps {
 }
 
 impl ChunkHeightmaps {
-    /// Creates a new set of heightmaps for a chunk.
+    /// Creates a new set of heightmaps for a chunk (all heights at `min_y`).
     #[must_use]
     pub fn new(min_y: i32, height: i32) -> Self {
         Self {
@@ -344,6 +644,31 @@ impl ChunkHeightmaps {
                 height,
             ),
             ocean_floor: Heightmap::new(HeightmapType::OceanFloor, min_y, height),
+        }
+    }
+
+    /// Creates chunk heightmaps by taking final heightmaps from proto heightmaps.
+    ///
+    /// Moves each final heightmap directly from the proto storage. Callers should
+    /// prime missing final heightmaps before conversion; the fallback only handles
+    /// malformed loaded data defensively.
+    #[must_use]
+    pub fn from_proto(proto: &mut ProtoHeightmaps, min_y: i32, height: i32) -> Self {
+        Self {
+            world_surface: proto
+                .take(HeightmapType::WorldSurface)
+                .unwrap_or_else(|| Heightmap::new(HeightmapType::WorldSurface, min_y, height)),
+            motion_blocking: proto
+                .take(HeightmapType::MotionBlocking)
+                .unwrap_or_else(|| Heightmap::new(HeightmapType::MotionBlocking, min_y, height)),
+            motion_blocking_no_leaves: proto
+                .take(HeightmapType::MotionBlockingNoLeaves)
+                .unwrap_or_else(|| {
+                    Heightmap::new(HeightmapType::MotionBlockingNoLeaves, min_y, height)
+                }),
+            ocean_floor: proto
+                .take(HeightmapType::OceanFloor)
+                .unwrap_or_else(|| Heightmap::new(HeightmapType::OceanFloor, min_y, height)),
         }
     }
 
@@ -405,7 +730,24 @@ impl ChunkHeightmaps {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Once;
+
+    use steel_registry::{
+        blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        test_support::init_test_registry,
+        vanilla_blocks,
+    };
+
+    use crate::behavior::init_behaviors;
+
     use super::*;
+
+    static INIT_BEHAVIORS: Once = Once::new();
+
+    fn init_test_state() {
+        init_test_registry();
+        INIT_BEHAVIORS.call_once(init_behaviors);
+    }
 
     #[test]
     fn test_bits_per_value() {
@@ -423,5 +765,44 @@ mod tests {
         assert_eq!(Heightmap::get_index(15, 0), 15);
         assert_eq!(Heightmap::get_index(0, 1), 16);
         assert_eq!(Heightmap::get_index(15, 15), 255);
+    }
+
+    #[test]
+    fn heightmap_predicates_use_blocks_motion_and_fluid_state() {
+        init_test_state();
+
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        assert!(!HeightmapType::OceanFloorWg.is_opaque(water));
+        assert!(HeightmapType::MotionBlocking.is_opaque(water));
+
+        let slab = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::OAK_SLAB);
+        let waterlogged_slab = slab.set_value(&BlockStateProperties::WATERLOGGED, true);
+        assert!(waterlogged_slab.has_fluid());
+        assert!(HeightmapType::MotionBlocking.is_opaque(waterlogged_slab));
+
+        let cobweb = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::COBWEB);
+        assert!(!HeightmapType::OceanFloorWg.is_opaque(cobweb));
+    }
+
+    #[test]
+    fn initial_fill_update_tracks_only_matching_blocks() {
+        init_test_state();
+
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        let mut ocean_floor = Heightmap::new(HeightmapType::OceanFloorWg, 0, 16);
+        assert!(!ocean_floor.update_for_initial_fill(0, 12, 0, water));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 0);
+
+        assert!(ocean_floor.update_for_initial_fill(0, 5, 0, stone));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+
+        assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 6);
     }
 }

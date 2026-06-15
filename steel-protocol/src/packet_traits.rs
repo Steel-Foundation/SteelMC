@@ -131,11 +131,6 @@ impl EncodedPacket {
         })
     }
 
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        clippy::too_many_lines
-    )]
     fn from_packet_data(
         mut packet_data: FrontVec,
         compression: CompressionInfo,

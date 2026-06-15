@@ -2,6 +2,8 @@
 
 use std::io::{Cursor, Result, Write};
 
+use rand::RngExt;
+
 use steel_utils::{
     Identifier,
     codec::VarInt,
@@ -9,13 +11,13 @@ use steel_utils::{
 };
 
 use crate::{
-    REGISTRY,
+    REGISTRY, RegistryEntry, RegistryExt,
     data_components::{
         Component, ComponentData, ComponentPatchEntry, DataComponentMap, DataComponentPatch,
         DataComponentType,
         vanilla_components::{
-            DAMAGE, EQUIPPABLE, Equippable, EquippableSlot, MAX_DAMAGE, MAX_STACK_SIZE, TOOL, Tool,
-            UNBREAKABLE,
+            DAMAGE, ENCHANTMENTS, EQUIPPABLE, Equippable, EquippableSlot, ItemEnchantments,
+            MAX_DAMAGE, MAX_STACK_SIZE, TOOL, Tool, UNBREAKABLE,
         },
     },
     items::ItemRef,
@@ -79,7 +81,7 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        std::ptr::eq(self.item, &ITEMS.air) || self.count <= 0
+        self.item == &ITEMS.air || self.count <= 0
     }
 
     #[must_use]
@@ -187,34 +189,36 @@ impl ItemStack {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage()
     }
 
+    /// Returns vanilla `ItemStack.nextDamageWillBreak()`.
+    #[must_use]
+    pub fn next_damage_will_break(&self) -> bool {
+        self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage() - 1
+    }
+
     /// Damages the item and breaks it if durability reaches zero.
     ///
     /// Returns `true` if the item broke and should be removed/replaced.
-    ///
-    /// # Arguments
-    /// * `amount` - The amount of damage to apply
-    /// * `has_infinite_materials` - If true (creative mode), skip damage entirely
-    ///
-    /// This handles:
-    /// - Checking if the item is damageable
-    /// - Skipping damage for players with infinite materials (creative mode)
-    /// - Applying unbreaking enchantment (TODO: when enchantments are implemented)
-    /// - Breaking the item when durability reaches zero
     pub fn hurt_and_break(&mut self, amount: i32, has_infinite_materials: bool) -> bool {
         if !self.is_damageable_item() || amount <= 0 {
             return false;
         }
 
-        // Creative mode players don't consume durability
         if has_infinite_materials {
             return false;
         }
 
-        // TODO: Apply unbreaking enchantment
-        // let unbreaking_level = self.get_enchantment_level_by_name("unbreaking");
-        // Vanilla formula: chance to not consume durability = unbreaking_level / (unbreaking_level + 1)
-        // For tools: 100% / (level + 1) chance to consume durability
-        let effective_amount = amount;
+        let unbreaking_level =
+            self.get_enchantment_level(&crate::vanilla_enchantments::UNBREAKING.key);
+        let mut effective_amount = 0;
+        for _ in 0..amount {
+            if should_consume_durability(unbreaking_level) {
+                effective_amount += 1;
+            }
+        }
+
+        if effective_amount == 0 {
+            return false;
+        }
 
         let new_damage = self.get_damage_value() + effective_amount;
 
@@ -222,7 +226,6 @@ impl ItemStack {
 
         self.set_damage_value(new_damage);
 
-        // Check if item broke
         if self.is_broken() {
             // TODO: Call onEquippedItemBroken callback which:
             // - Broadcasts entity event (byte 47 for mainhand) for break sound/particles
@@ -387,22 +390,16 @@ impl ItemStack {
             .unwrap_or(true)
     }
 
-    /// Gets the level of an enchantment on this item by identifier.
-    /// Returns 0 if the enchantment is not present.
     #[must_use]
-    pub fn get_enchantment_level(&self, _enchantment: &Identifier) -> i32 {
-        // TODO: Implement proper enchantment lookup once ENCHANTMENTS component is implemented
-        // For now, return 0 (no enchantment)
-        0
+    pub fn get_enchantment_level(&self, enchantment: &Identifier) -> i32 {
+        self.get_enchantments()
+            .map(|e| e.get_level(enchantment) as i32)
+            .unwrap_or(0)
     }
 
-    /// Gets the level of an enchantment on this item by name (e.g., "silk_touch", "fortune").
-    /// Returns 0 if the enchantment is not present.
     #[must_use]
-    pub fn get_enchantment_level_by_name(&self, _name: &str) -> i32 {
-        // TODO: Implement proper enchantment lookup once ENCHANTMENTS component is implemented
-        // For now, return 0 (no enchantment)
-        0
+    pub fn get_enchantments(&self) -> Option<&ItemEnchantments> {
+        self.get(ENCHANTMENTS)
     }
 
     /// Sets the damage/durability as a fraction (0.0 = broken, 1.0 = full).
@@ -539,16 +536,32 @@ impl ItemStack {
         // Pick a random instrument from the tag and set INSTRUMENT component
     }
 
-    /// Sets enchantments on this item.
-    pub fn set_enchantments<R: rand::Rng>(
-        &mut self,
-        _enchantments: &[(Identifier, crate::loot_table::NumberProvider)],
-        _add: bool,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement enchantment setting
-        // For each enchantment, get the level from NumberProvider
-        // If add is true, add to existing levels; otherwise replace
+    pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
+        let mut current = self
+            .get(ENCHANTMENTS)
+            .cloned()
+            .unwrap_or_else(ItemEnchantments::empty);
+
+        for (key, level) in enchantments {
+            if add {
+                let existing = current.get_level(key);
+                current.set(key.clone(), existing + *level);
+            } else {
+                current.set(key.clone(), *level);
+            }
+        }
+
+        self.set(ENCHANTMENTS, current);
+    }
+
+    /// Vanilla `ItemStack.enchant` → `Mutable.upgrade`: keeps the higher of existing vs new level.
+    pub fn upgrade_enchantment(&mut self, enchantment: Identifier, level: u32) {
+        let mut current = self
+            .get(ENCHANTMENTS)
+            .cloned()
+            .unwrap_or_else(ItemEnchantments::empty);
+        current.upgrade(enchantment, level);
+        self.set(ENCHANTMENTS, current);
     }
 
     /// Changes the item type entirely.
@@ -748,6 +761,15 @@ impl ItemStack {
     }
 }
 
+/// Vanilla unbreaking formula: `1 / (unbreaking_level + 1)` chance to consume durability.
+fn should_consume_durability(unbreaking_level: i32) -> bool {
+    if unbreaking_level <= 0 {
+        return true;
+    }
+    // TODO: Armor uses a different formula: `3 / (unbreaking_level + 3)`
+    rand::rng().random_range(0..unbreaking_level + 1) == 0
+}
+
 impl std::fmt::Display for ItemStack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_empty() {
@@ -765,8 +787,7 @@ impl WriteTo for ItemStack {
         } else {
             VarInt(self.count).write(writer)?;
             // Write item ID as VarInt
-            let item_id = *REGISTRY.items.get_id(self.item);
-            VarInt(item_id as i32).write(writer)?;
+            VarInt(self.item.id() as i32).write(writer)?;
             // Write DataComponentPatch
             self.patch.write(writer)?;
         }
@@ -791,7 +812,24 @@ impl ReadFrom for ItemStack {
     }
 }
 
-// ==================== NBT Serialization ====================
+impl ItemStack {
+    /// Reads an item stack using the delimited (untrusted) component format.
+    ///
+    /// Vanilla uses this for serverbound packets where component data is
+    /// length-prefixed (e.g., `ServerboundSetCreativeModeSlotPacket`).
+    pub fn read_untrusted(data: &mut Cursor<&[u8]>) -> Result<Self> {
+        let count = VarInt::read(data)?.0;
+        if count <= 0 {
+            return Ok(Self::empty());
+        }
+
+        let item_id = VarInt::read(data)?.0 as usize;
+        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let patch = DataComponentPatch::read_delimited(data)?;
+
+        Ok(Self { item, count, patch })
+    }
+}
 
 use simdnbt::{
     FromNbtTag, ToNbtTag,
@@ -811,6 +849,14 @@ impl ToNbtTag for ItemStack {
     /// }
     /// ```
     fn to_nbt_tag(self) -> simdnbt::owned::NbtTag {
+        self.to_nbt_tag_ref()
+    }
+}
+
+impl ItemStack {
+    /// Converts this item stack to an NBT tag for persistent storage without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> simdnbt::owned::NbtTag {
         if self.is_empty() {
             // Empty stacks are represented as an empty compound
             return simdnbt::owned::NbtTag::Compound(NbtCompound::new());
@@ -826,7 +872,7 @@ impl ToNbtTag for ItemStack {
 
         // components: The component patch (only if non-empty)
         if !self.patch.is_empty() {
-            compound.insert("components", self.patch.to_nbt_tag());
+            compound.insert("components", self.patch.to_nbt_tag_ref());
         }
 
         simdnbt::owned::NbtTag::Compound(compound)

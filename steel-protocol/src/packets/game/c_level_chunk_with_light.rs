@@ -1,7 +1,7 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_LEVEL_CHUNK_WITH_LIGHT;
 use steel_utils::serial::OptionalNbt;
-use steel_utils::{ChunkPos, codec::BitSet};
+use steel_utils::{PackedChunkLocalXZ, codec::BitSet};
 
 #[derive(WriteTo, Copy, Clone, Debug)]
 #[write(as = VarInt)]
@@ -18,7 +18,7 @@ pub struct Heightmaps {
 
 #[derive(Debug, Clone, WriteTo)]
 pub struct BlockEntityInfo {
-    pub packed_xz: u8,
+    pub packed_xz: PackedChunkLocalXZ,
     pub y: i16,
     #[write(as = VarInt)]
     pub type_id: i32,
@@ -28,6 +28,7 @@ pub struct BlockEntityInfo {
 #[derive(Debug, Clone, WriteTo)]
 pub struct ChunkPacketData {
     pub heightmaps: Heightmaps,
+    #[write(as = Prefixed(VarInt), bound = 2097152)]
     pub data: Vec<u8>,
     pub block_entities: Vec<BlockEntityInfo>,
 }
@@ -45,7 +46,8 @@ pub struct LightUpdatePacketData {
 #[derive(ClientPacket, Debug, Clone, WriteTo)]
 #[packet_id(Play = C_LEVEL_CHUNK_WITH_LIGHT)]
 pub struct CLevelChunkWithLight {
-    pub pos: ChunkPos,
+    pub x: i32,
+    pub z: i32,
     pub chunk_data: ChunkPacketData,
     pub light_data: LightUpdatePacketData,
 }

@@ -1,5 +1,6 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents an armor trim material definition from the data packs.
@@ -16,6 +17,27 @@ pub struct TrimMaterial {
 pub struct StyledTextComponent {
     pub translate: String,
     pub color: Option<String>,
+}
+
+impl ToNbtTag for &TrimMaterial {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        compound.insert("asset_name", self.asset_name.as_str());
+        let mut desc = NbtCompound::new();
+        desc.insert("translate", self.description.translate.as_str());
+        if let Some(color) = &self.description.color {
+            desc.insert("color", color.as_str());
+        }
+        compound.insert("description", NbtTag::Compound(desc));
+        let mut overrides = NbtCompound::new();
+        for (key, value) in &self.override_armor_assets {
+            let key_str = key.to_string();
+            overrides.insert(key_str.as_str(), value.as_str());
+        }
+        compound.insert("override_armor_assets", NbtTag::Compound(overrides));
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type TrimMaterialRef = &'static TrimMaterial;
@@ -35,64 +57,20 @@ impl TrimMaterialRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, trim_material: TrimMaterialRef, key: Identifier) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register trim materials after the registry has been frozen"
-        );
-
-        let id = self.trim_materials_by_id.len();
-        self.trim_materials_by_key.insert(key, id);
-        self.trim_materials_by_id.push(trim_material);
-        id
-    }
-
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<TrimMaterialRef> {
-        self.trim_materials_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, trim_material: TrimMaterialRef) -> &usize {
-        self.trim_materials_by_key
-            .get(&trim_material.key)
-            .expect("Trim material not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<TrimMaterialRef> {
-        self.trim_materials_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, TrimMaterialRef)> + '_ {
-        self.trim_materials_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &material)| (id, material))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.trim_materials_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.trim_materials_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for TrimMaterialRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_standard_methods!(
+    TrimMaterialRegistry,
+    TrimMaterialRef,
+    trim_materials_by_id,
+    trim_materials_by_key,
+    allows_registering
+);
 
-impl Default for TrimMaterialRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_registry!(
+    TrimMaterialRegistry,
+    TrimMaterial,
+    trim_materials_by_id,
+    trim_materials_by_key,
+    trim_materials
+);

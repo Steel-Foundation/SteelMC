@@ -1,5 +1,4 @@
 use steel_macros::{ClientPacket, WriteTo};
-#[allow(unused_imports)]
 use steel_registry::packets::play::C_SYSTEM_CHAT;
 use text_components::{TextComponent, resolving::TextResolutor};
 

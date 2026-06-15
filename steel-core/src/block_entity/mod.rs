@@ -46,15 +46,11 @@ use crate::world::World;
 /// Block entities are attached to specific blocks in the world and provide
 /// additional data storage beyond what block states can hold.
 pub trait BlockEntity: Send + Sync {
-    // === Downcasting ===
-
     /// Returns a reference to the block entity as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
 
     /// Returns a mutable reference to the block entity as `Any` for downcasting.
     fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    // === Identity ===
 
     /// Returns the type of this block entity.
     fn get_type(&self) -> BlockEntityTypeRef;
@@ -69,8 +65,6 @@ pub trait BlockEntity: Send + Sync {
     ///
     /// Called when the block state changes but the block entity is kept.
     fn set_block_state(&mut self, state: BlockStateId);
-
-    // === Lifecycle ===
 
     /// Returns whether this block entity has been marked for removal.
     fn is_removed(&self) -> bool;
@@ -106,12 +100,13 @@ pub trait BlockEntity: Send + Sync {
     /// # Arguments
     /// * `pos` - The position of the block entity
     /// * `state` - The block state being removed
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by overrides"
+    )]
     fn pre_remove_side_effects(&mut self, pos: BlockPos, state: BlockStateId) {
         // Default: no side effects
     }
-
-    // === Persistence (disk) ===
 
     /// Loads additional data from NBT.
     ///
@@ -124,8 +119,6 @@ pub trait BlockEntity: Send + Sync {
     /// Called when saving the block entity to disk.
     fn save_additional(&self, nbt: &mut NbtCompound);
 
-    // === Client Sync ===
-
     /// Returns the NBT data to send to clients for initial sync.
     ///
     /// This is included in the chunk data packet when the chunk is first sent.
@@ -133,8 +126,6 @@ pub trait BlockEntity: Send + Sync {
     fn get_update_tag(&self) -> Option<NbtCompound> {
         None
     }
-
-    // === Ticking ===
 
     /// Returns whether this block entity should be ticked every game tick.
     ///
@@ -147,12 +138,13 @@ pub trait BlockEntity: Send + Sync {
     /// Called every game tick for ticking block entities.
     ///
     /// Only called if `is_ticking()` returns `true`.
-    #[allow(unused_variables)]
-    fn tick(&mut self, world: &World) {
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn tick(&mut self, world: &Arc<World>) {
         // Default: no-op
     }
-
-    // === Container Access ===
 
     /// Returns this block entity as a container, if it implements Container.
     ///

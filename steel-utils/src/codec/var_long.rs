@@ -11,7 +11,6 @@ impl VarLong {
     pub const MAX_SIZE: usize = 10;
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for VarLong {
     fn read(read: &mut Cursor<&[u8]>) -> Result<Self, Error> {
         let mut val = 0i64;
@@ -26,7 +25,6 @@ impl ReadFrom for VarLong {
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for VarLong {
     fn write(&self, writer: &mut impl Write) -> Result<(), Error> {
         let mut val = self.0 as u64;
@@ -43,14 +41,12 @@ impl WriteTo for VarLong {
     }
 }
 
-#[allow(missing_docs)]
 impl From<i64> for VarLong {
     fn from(value: i64) -> Self {
         Self(value)
     }
 }
 
-#[allow(missing_docs)]
 impl From<VarLong> for i64 {
     fn from(value: VarLong) -> i64 {
         value.0

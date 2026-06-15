@@ -6,100 +6,85 @@
 //! **Vanilla reference:** `SignItem` extends `StandingAndWallBlockItem` and only
 //! overrides `updateCustomBlockEntityTag` to open the sign editor after placement.
 
+use std::sync::Arc;
+use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::standing_and_wall_block_item::StandingAndWallBlockItem;
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
+use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
-/// In vanilla, `SignItem` extends `StandingAndWallBlockItem` with `attachmentDirection = DOWN`.
-/// We use composition here - wrapping `StandingAndWallBlockItem` and adding sign-specific
-/// behavior (opening the sign editor after placement).
-pub struct SignItemBehavior {
-    /// The underlying standing and wall block item behavior.
+/// In vanilla, `SignItem` extends `StandingAndWallBlockItem` and only overrides
+/// `updateCustomBlockEntityTag` to open the sign editor after placement.
+///
+/// The `_standing_block`, `_wall_block`, and `_attachment_direction` fields are read by the
+/// build script via `#[json_arg]` to generate constructor calls from `classes.json`.
+/// The actual values are forwarded into `inner` — the fields themselves are not used at runtime.
+#[item_behavior]
+pub struct SignItem {
+    #[json_arg(vanilla_blocks, json = "block")]
+    _standing_block: BlockRef,
+    #[json_arg(vanilla_blocks, json = "wall_block")]
+    _wall_block: BlockRef,
+    #[json_arg(
+        r#enum = "Direction",
+        module = "steel_registry::blocks::properties",
+        json = "attachment_direction"
+    )]
+    _attachment_direction: Direction,
+    /// Placement logic delegate (vanilla: `SignItem extends StandingAndWallBlockItem`).
     inner: StandingAndWallBlockItem,
 }
 
-impl SignItemBehavior {
+impl SignItem {
     /// Creates a new sign item behavior for the given sign blocks.
     #[must_use]
-    pub const fn new(standing_block: BlockRef, wall_block: BlockRef) -> Self {
+    pub const fn new(
+        standing_block: BlockRef,
+        wall_block: BlockRef,
+        attachment_direction: Direction,
+    ) -> Self {
         Self {
-            inner: StandingAndWallBlockItem::new(standing_block, wall_block, Direction::Down),
+            _standing_block: standing_block,
+            _wall_block: wall_block,
+            _attachment_direction: attachment_direction,
+            inner: StandingAndWallBlockItem::new(standing_block, wall_block, attachment_direction),
         }
     }
 }
 
-impl ItemBehavior for SignItemBehavior {
+impl ItemBehavior for SignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
-
-        // Get the clicked block to check if it's replaceable
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
-
-        // Determine placement position: replace clicked block if replaceable,
-        // otherwise place adjacent to the clicked face
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
-        } else {
-            (context.hit_result.direction.relative(&clicked_pos), false)
-        };
-
-        // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(&place_pos) {
+        let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
-        }
-
-        // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(&place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
-
-        if !existing_replaceable {
-            return InteractionResult::Fail;
-        }
-
-        // Get player rotation for placement context
-        let (yaw, pitch) = context.player.rotation.load();
-
-        let place_context = BlockPlaceContext {
-            clicked_pos,
-            clicked_face: context.hit_result.direction,
-            click_location: context.hit_result.location,
-            inside: context.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
-            horizontal_direction: Direction::from_yaw(yaw),
-            rotation: yaw,
-            pitch,
-            world: context.world,
         };
+        let place_pos = place_context.relative_pos;
 
-        // Use StandingAndWallBlockItem's placement logic
         let Some(new_state) = self.inner.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
         };
 
-        // Place the block
         if !context
             .world
             .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
         {
             return InteractionResult::Fail;
         }
+        let placed_state = context.world.get_block_state(place_pos);
 
-        // Play place sound
         let block = self.inner.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;
         context.world.play_block_sound(
@@ -107,11 +92,15 @@ impl ItemBehavior for SignItemBehavior {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
+        );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        // Consume one item from the stack
-        context.item_stack.shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
@@ -123,14 +112,17 @@ impl ItemBehavior for SignItemBehavior {
 /// Behavior for hanging sign items that place hanging sign blocks.
 ///
 /// Hanging signs can be placed as ceiling hanging signs or wall hanging signs.
-pub struct HangingSignItemBehavior {
+#[item_behavior]
+pub struct HangingSignItem {
     /// The ceiling hanging sign block.
+    #[json_arg(vanilla_blocks, json = "block")]
     pub ceiling_block: BlockRef,
     /// The wall hanging sign block.
+    #[json_arg(vanilla_blocks, json = "wall_block")]
     pub wall_block: BlockRef,
 }
 
-impl HangingSignItemBehavior {
+impl HangingSignItem {
     /// Creates a new hanging sign item behavior.
     #[must_use]
     pub const fn new(ceiling_block: BlockRef, wall_block: BlockRef) -> Self {
@@ -145,17 +137,16 @@ impl HangingSignItemBehavior {
 ///
 /// This matches vanilla's `WallHangingSignBlock.canAttachTo`.
 fn can_attach_to(
-    world: &World,
+    world: &Arc<World>,
     sign_facing: Direction,
-    attach_pos: &BlockPos,
+    attach_pos: BlockPos,
     attach_face: Direction,
 ) -> bool {
     let attach_state = world.get_block_state(attach_pos);
     let attach_block = REGISTRY.blocks.by_state_id(attach_state);
 
-    // Check if it's another wall hanging sign (vanilla uses BlockTags.WALL_HANGING_SIGNS)
     if let Some(block) = attach_block
-        && block.key.path.contains("wall_hanging_sign")
+        && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
     {
         // Wall hanging signs can chain if they're on the same axis
         if let Some(neighbor_facing) =
@@ -173,7 +164,7 @@ fn can_attach_to(
 ///
 /// This matches vanilla's `WallHangingSignBlock.canPlace` which is called
 /// from `HangingSignItem.canPlace` in addition to `canSurvive`.
-fn can_wall_hanging_sign_place(world: &World, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
     let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING) else {
         return false;
     };
@@ -183,12 +174,12 @@ fn can_wall_hanging_sign_place(world: &World, state: BlockStateId, pos: &BlockPo
 
     let can_attach_clockwise = {
         let attach_pos = clockwise.relative(pos);
-        can_attach_to(world, facing, &attach_pos, counter_clockwise)
+        can_attach_to(world, facing, attach_pos, counter_clockwise)
     };
 
     let can_attach_counter = {
         let attach_pos = counter_clockwise.relative(pos);
-        can_attach_to(world, facing, &attach_pos, clockwise)
+        can_attach_to(world, facing, attach_pos, clockwise)
     };
 
     can_attach_clockwise || can_attach_counter
@@ -198,12 +189,12 @@ fn can_wall_hanging_sign_place(world: &World, state: BlockStateId, pos: &BlockPo
 ///
 /// This matches vanilla's `HangingSignItem.canPlace` override which adds
 /// an additional check for `WallHangingSignBlock.canPlace`.
-fn can_place_hanging_sign(world: &World, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
     let block = REGISTRY.blocks.by_state_id(state);
 
     // If it's a wall hanging sign, we need the additional canPlace check
-    if let Some(b) = block
-        && b.key.path.contains("wall_hanging_sign")
+    if let Some(block) = block
+        && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
         && !can_wall_hanging_sign_place(world, state, pos)
     {
         return false;
@@ -213,51 +204,12 @@ fn can_place_hanging_sign(world: &World, state: BlockStateId, pos: &BlockPos) ->
     true
 }
 
-impl ItemBehavior for HangingSignItemBehavior {
+impl ItemBehavior for HangingSignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
-
-        // Get the clicked block to check if it's replaceable
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
-
-        // Determine placement position
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
-        } else {
-            (context.hit_result.direction.relative(&clicked_pos), false)
-        };
-
-        // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(&place_pos) {
+        let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
-        }
-
-        // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(&place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
-
-        if !existing_replaceable {
-            return InteractionResult::Fail;
-        }
-
-        // Get player rotation for placement context
-        let (yaw, pitch) = context.player.rotation.load();
-
-        let place_context = BlockPlaceContext {
-            clicked_pos,
-            clicked_face: context.hit_result.direction,
-            click_location: context.hit_result.location,
-            inside: context.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
-            horizontal_direction: Direction::from_yaw(yaw),
-            rotation: yaw,
-            pitch,
-            world: context.world,
         };
+        let place_pos = place_context.relative_pos;
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
 
@@ -272,18 +224,20 @@ impl ItemBehavior for HangingSignItemBehavior {
         let mut placed_block = None;
         for block in blocks_to_try {
             let behavior = block_behaviors.get_behavior(block);
-            if let Some(state) = behavior.get_state_for_placement(&place_context) {
-                // Vanilla's HangingSignItem.canPlace has additional check for wall hanging signs
-                if !can_place_hanging_sign(context.world, state, &place_pos) {
-                    continue;
-                }
+            let Some(state) = behavior.get_state_for_placement(&place_context) else {
+                continue;
+            };
 
-                let collision_shape = state.get_collision_shape();
-                if context.world.is_unobstructed(collision_shape, &place_pos) {
-                    new_state = Some(state);
-                    placed_block = Some(block);
-                    break;
-                }
+            // Vanilla's HangingSignItem.canPlace has additional check for wall hanging signs
+            if !can_place_hanging_sign(context.world, state, place_pos) {
+                continue;
+            }
+
+            let collision_shape = state.get_collision_shape();
+            if context.world.is_unobstructed(collision_shape, place_pos) {
+                new_state = Some(state);
+                placed_block = Some(block);
+                break;
             }
         }
 
@@ -291,15 +245,14 @@ impl ItemBehavior for HangingSignItemBehavior {
             return InteractionResult::Fail;
         };
 
-        // Place the block
         if !context
             .world
             .set_block(place_pos, state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
         {
             return InteractionResult::Fail;
         }
+        let placed_state = context.world.get_block_state(place_pos);
 
-        // Play place sound
         if let Some(block) = placed_block {
             let sound_type = &block.config.sound_type;
             context.world.play_block_sound(
@@ -307,14 +260,18 @@ impl ItemBehavior for HangingSignItemBehavior {
                 place_pos,
                 sound_type.volume,
                 sound_type.pitch,
-                Some(context.player.id),
+                Some(context.player.id()),
             );
         }
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
+        );
 
-        // Consume one item from the stack
-        context.item_stack.shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
-        // Open the sign editor for the player (front text by default)
+        // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
 
         InteractionResult::Success

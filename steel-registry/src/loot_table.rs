@@ -1,12 +1,10 @@
+use crate::{
+    REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
+    item_stack::ItemStack,
+};
 use rand::RngExt;
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
-
-use crate::{REGISTRY, RegistryExt, blocks::block_state_ext::BlockStateExt, item_stack::ItemStack};
-
-// =============================================================================
-// Strongly-typed enums for string values
-// =============================================================================
 
 /// Entity target for loot context lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,7 +21,10 @@ pub enum LootContextEntity {
     Interacting,
 }
 
-/// Equipment/attribute slot for items.
+/// Equipment/attribute slot group for enchantments and attributes.
+///
+/// Vanilla's `EquipmentSlotGroup` — a grouping/predicate over concrete `EquipmentSlot` values.
+/// `Hand` matches both main/offhand, `Armor` matches all armor slots, `Any` matches everything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EquipmentSlotGroup {
     Any,
@@ -36,6 +37,24 @@ pub enum EquipmentSlotGroup {
     Feet,
     Armor,
     Body,
+}
+
+impl EquipmentSlotGroup {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::MainHand => "mainhand",
+            Self::OffHand => "offhand",
+            Self::Hand => "hand",
+            Self::Head => "head",
+            Self::Chest => "chest",
+            Self::Legs => "legs",
+            Self::Feet => "feet",
+            Self::Armor => "armor",
+            Self::Body => "body",
+        }
+    }
 }
 
 /// Dye/banner color.
@@ -58,10 +77,6 @@ pub enum DyeColor {
     Red,
     Black,
 }
-
-// =============================================================================
-// Loot table types
-// =============================================================================
 
 /// The type of loot table, determining when/how it's used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,7 +286,6 @@ pub struct LootContext<'a, R: rand::Rng> {
     /// Whether the entity was killed by a player.
     pub killed_by_player: bool,
 
-    // === Extended context parameters for vanilla compatibility ===
     /// World position where the loot is generated (block position or entity death location).
     pub origin: Option<(f64, f64, f64)>,
     /// Current game time in ticks (for TimeCheck condition).
@@ -472,13 +486,6 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
         self
     }
 
-    /// Get the level of an enchantment on the tool by name.
-    pub fn get_enchantment_level(&self, enchantment_name: &str) -> i32 {
-        self.tool
-            .map(|t| t.get_enchantment_level_by_name(enchantment_name))
-            .unwrap_or(0)
-    }
-
     /// Get the level of an enchantment on the tool by identifier.
     pub fn get_enchantment_level_by_id(&self, enchantment: &Identifier) -> i32 {
         self.tool
@@ -507,7 +514,7 @@ pub struct PropertyCheck {
 
 /// A condition that must be met for a loot entry or pool to apply.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum LootCondition {
     /// The loot survives explosion damage (random chance based on explosion radius).
     /// Vanilla: 1/radius chance to pass. If no explosion, always passes.
@@ -912,7 +919,6 @@ pub enum LootFunction {
         enchantments: &'static [(Identifier, NumberProvider)],
         add: bool,
     },
-    // === New functions for vanilla compatibility ===
     /// Change the item type entirely.
     SetItem { item: Identifier },
     /// Copy name from source entity/block to item.
@@ -1024,6 +1030,7 @@ pub struct AttributeModifier {
 }
 
 /// Attribute modifier operation type.
+#[expect(clippy::enum_variant_names, reason = "matches Vanilla naming")]
 #[derive(Debug, Clone, Copy)]
 pub enum AttributeOperation {
     AddValue,
@@ -1699,9 +1706,12 @@ impl LootFunction {
                 item.set_instrument(options, ctx.rng);
             }
             LootFunction::SetEnchantments { enchantments, add } => {
-                item.set_enchantments(enchantments, *add, ctx.rng);
+                let resolved: Vec<_> = enchantments
+                    .iter()
+                    .map(|(key, provider)| (key.clone(), provider.get_int(ctx.rng).max(0) as u32))
+                    .collect();
+                item.set_enchantments(&resolved, *add);
             }
-            // === New function implementations ===
             LootFunction::SetItem { item: new_item } => {
                 item.set_item(new_item);
             }
@@ -1859,37 +1869,11 @@ impl LootTableRegistry {
         id
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<LootTableRef> {
-        self.tables_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<LootTableRef> {
-        self.tables_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {
         self.tables_by_id
             .iter()
             .enumerate()
             .map(|(id, &table)| (id, table))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.tables_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.tables_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for LootTableRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -1898,6 +1882,14 @@ impl Default for LootTableRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    LootTableRegistry,
+    LootTable,
+    tables_by_id,
+    tables_by_key,
+    loot_tables
+);
 
 #[cfg(test)]
 mod tests {
