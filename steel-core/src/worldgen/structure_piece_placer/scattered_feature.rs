@@ -54,7 +54,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         let mut count = 0;
         for z in self.bounding_box.min.z..=self.bounding_box.max.z {
             for x in self.bounding_box.min.x..=self.bounding_box.max.x {
-                if self.clip.is_inside(BlockPos::new(x, 64, z)) {
+                if self.clip.contains_blockpos(BlockPos::new(x, 64, z)) {
                     total += self
                         .region
                         .height_at(HeightmapType::MotionBlockingNoLeaves, x, z);
@@ -159,7 +159,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) fn fill_column_down(&mut self, state: BlockStateId, x: i32, start_y: i32, z: i32) {
         let mut pos = self.world_pos(x, start_y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -175,7 +175,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) fn place_block(&mut self, state: BlockStateId, x: i32, y: i32, z: i32) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -216,7 +216,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         loot_table: &'static str,
     ) -> bool {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos)
+        if !self.clip.contains_blockpos(pos)
             || self.region.block_state(pos).get_block() == &vanilla_blocks::DISPENSER
         {
             return false;
@@ -255,7 +255,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         entity_id: &'static str,
     ) -> bool {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return false;
         }
 
@@ -318,7 +318,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let pos = self.world_pos(x, y, z);
-        if self.clip.is_inside(pos) {
+        if self.clip.contains_blockpos(pos) {
             self.region.block_state(pos)
         } else {
             vanilla_blocks::AIR.default_state()

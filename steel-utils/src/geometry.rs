@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Neg, Sub};
+use std::ops::{Add, Div, Neg, Sub};
 
 use glam::{DVec3, IVec3};
 use glam_traits::GVec3;
@@ -16,17 +16,35 @@ const fn ordered_pair(a: f64, b: f64) -> (f64, f64) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
+/// Encodes the edge semantics of a coordinate space.
+pub trait Space {
+    /// Whether `min == max` on an axis means the box has zero extent.
+    const ZERO_SPAN_IS_EMPTY: bool;
+}
+
 /// Marker type for block-local AABBs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BlockLocal;
+
+impl Space for BlockLocal {
+    const ZERO_SPAN_IS_EMPTY: bool = true;
+}
 
 /// Marker type for world-space AABBs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct World;
 
+impl Space for World {
+    const ZERO_SPAN_IS_EMPTY: bool = true;
+}
+
 /// Marker type for integer bounding boxes (structure pieces).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Structure;
+
+impl Space for Structure {
+    const ZERO_SPAN_IS_EMPTY: bool = false;
+}
 
 /// Generic axis-aligned bounding box.
 ///
@@ -70,12 +88,11 @@ unsafe impl<C: ConfigCore> SchemaWrite<C> for WincodeBoundingBox {
 
     fn write(mut writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
         let bbox = &src.0;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.min.x)?;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.min.y)?;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.min.z)?;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.max.x)?;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.max.y)?;
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &bbox.max.z)?;
+        for &val in &[
+            bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
+        ] {
+            <i32 as SchemaWrite<C>>::write(writer.by_ref(), &val)?;
+        }
         Ok(())
     }
 }
@@ -91,35 +108,15 @@ unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
     };
 
     fn read(mut reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
-        let mut min_x = MaybeUninit::uninit();
-        let mut min_y = MaybeUninit::uninit();
-        let mut min_z = MaybeUninit::uninit();
-        let mut max_x = MaybeUninit::uninit();
-        let mut max_y = MaybeUninit::uninit();
-        let mut max_z = MaybeUninit::uninit();
+        let mut vals = [MaybeUninit::<i32>::uninit(); 6];
+        for slot in &mut vals {
+            <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), slot)?;
+        }
 
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut min_x)?;
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut min_y)?;
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut min_z)?;
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut max_x)?;
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut max_y)?;
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), &mut max_z)?;
+        // SAFETY: all six reads succeeded, every slot is initialized.
+        let [min_x, min_y, min_z, max_x, max_y, max_z] = vals.map(|v| unsafe { v.assume_init() });
 
-        // SAFETY: Each `read` call above returned `Ok(())`, which guarantees the
-        // corresponding `MaybeUninit` is fully initialized.
-        let (min_x, min_y, min_z, max_x, max_y, max_z) = unsafe {
-            (
-                min_x.assume_init(),
-                min_y.assume_init(),
-                min_z.assume_init(),
-                max_x.assume_init(),
-                max_y.assume_init(),
-                max_z.assume_init(),
-            )
-        };
-
-        // SAFETY: `dst` is uninitialised at this point, and we are writing a valid,
-        // fully constructed `WincodeBoundingBox` into it.
+        // SAFETY: dst is uninitialised; we write a fully-constructed value.
         unsafe {
             dst.as_mut_ptr().write(WincodeBoundingBox(BoundingBox {
                 min: IVec3::new(min_x, min_y, min_z),
@@ -134,6 +131,7 @@ unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
 
 impl<T: GVec3, I> Aabb<T, I> {
     /// Returns the minimum coordinate on `axis`.
+    #[must_use]
     pub fn min(&self, axis: Axis) -> T::Scalar {
         match axis {
             Axis::X => self.min.x(),
@@ -143,6 +141,7 @@ impl<T: GVec3, I> Aabb<T, I> {
     }
 
     /// Returns the maximum coordinate on `axis`.
+    #[must_use]
     pub fn max(&self, axis: Axis) -> T::Scalar {
         match axis {
             Axis::X => self.max.x(),
@@ -151,12 +150,8 @@ impl<T: GVec3, I> Aabb<T, I> {
         }
     }
 
-    /// Returns `true` when this box has no positive volume on at least one axis.
-    pub fn is_empty(&self) -> bool {
-        self.min.x() >= self.max.x() || self.min.y() >= self.max.y() || self.min.z() >= self.max.z()
-    }
-
     /// Creates an AABB ensuring min <= max on every axis.
+    #[must_use]
     pub fn from_min_max(min: T, max: T) -> Self {
         Self {
             min: min.min(max),
@@ -214,27 +209,139 @@ where
     }
 }
 
-impl<T: GVec3, I> Aabb<T, I>
+impl<T: GVec3, I: Space> Aabb<T, I>
 where
-    T::Scalar: Sub<Output = T::Scalar>,
+    T::Scalar: PartialOrd,
 {
-    /// Get the width of bounding box
-    pub fn width(&self) -> T::Scalar {
-        self.max.x() - self.min.x()
+    #[inline]
+    fn axis_overlaps(min1: T::Scalar, max1: T::Scalar, min2: T::Scalar, max2: T::Scalar) -> bool {
+        if I::ZERO_SPAN_IS_EMPTY {
+            min1 < max2 && max1 > min2
+        } else {
+            min1 <= max2 && max1 >= min2
+        }
     }
 
-    /// Get the height of bounding box
-    pub fn height(&self) -> T::Scalar {
-        self.max.y() - self.min.y()
+    #[inline]
+    fn axis_contains(min: T::Scalar, max: T::Scalar, v: T::Scalar) -> bool {
+        if I::ZERO_SPAN_IS_EMPTY {
+            v >= min && v < max
+        } else {
+            v >= min && v <= max
+        }
     }
 
-    /// Get the depth of bounding box
-    pub fn depth(&self) -> T::Scalar {
-        self.max.z() - self.min.z()
+    /// Returns `true` when this box has no positive volume on at least one axis.
+    pub fn is_empty(&self) -> bool {
+        if I::ZERO_SPAN_IS_EMPTY {
+            self.min.x() >= self.max.x()
+                || self.min.y() >= self.max.y()
+                || self.min.z() >= self.max.z()
+        } else {
+            self.min.x() > self.max.x()
+                || self.min.y() > self.max.y()
+                || self.min.z() > self.max.z()
+        }
+    }
+
+    /// Returns whether this bounding box intersects another.
+    #[must_use]
+    pub fn intersects(self, other: Self) -> bool {
+        self.intersects_bounds(other.min, other.max)
+    }
+
+    /// Returns `true` if this box intersects the given bounds.
+    #[must_use]
+    pub fn intersects_bounds(self, min: T, max: T) -> bool {
+        Self::axis_overlaps(self.min.x(), self.max.x(), min.x(), max.x())
+            && Self::axis_overlaps(self.min.y(), self.max.y(), min.y(), max.y())
+            && Self::axis_overlaps(self.min.z(), self.max.z(), min.z(), max.z())
+    }
+
+    /// Returns whether this bounding box intersects the given XZ range.
+    #[must_use]
+    pub fn intersects_xz(
+        self,
+        min_x: T::Scalar,
+        min_z: T::Scalar,
+        max_x: T::Scalar,
+        max_z: T::Scalar,
+    ) -> bool {
+        Self::axis_overlaps(self.min.x(), self.max.x(), min_x, max_x)
+            && Self::axis_overlaps(self.min.z(), self.max.z(), min_z, max_z)
+    }
+
+    /// Returns whether the given coordinates are inside this bounding box.
+    #[must_use]
+    pub fn contains(self, pos: T) -> bool {
+        self.contains_xyz(pos.x(), pos.y(), pos.z())
+    }
+
+    /// Returns whether the given coordinates are inside this bounding box.
+    #[must_use]
+    pub fn contains_xyz(self, x: T::Scalar, y: T::Scalar, z: T::Scalar) -> bool {
+        Self::axis_contains(self.min.x(), self.max.x(), x)
+            && Self::axis_contains(self.min.y(), self.max.y(), y)
+            && Self::axis_contains(self.min.z(), self.max.z(), z)
     }
 }
 
-impl<I> Aabb<DVec3, I> {
+impl<T: GVec3, I: Space> Aabb<T, I>
+where
+    T::Scalar: Sub<Output = T::Scalar>
+        + Add<Output = T::Scalar>
+        + From<u8>
+        + Div<Output = T::Scalar>
+        + Copy,
+{
+    #[inline]
+    fn span(raw: T::Scalar) -> T::Scalar {
+        if I::ZERO_SPAN_IS_EMPTY {
+            raw
+        } else {
+            raw + T::Scalar::from(1u8)
+        }
+    }
+
+    /// Get the width of bounding box (X Span)
+    #[must_use]
+    pub fn width(&self) -> T::Scalar {
+        Self::span(self.max.x() - self.min.x())
+    }
+
+    /// Get the height of bounding box (Y Span)
+    #[must_use]
+    pub fn height(&self) -> T::Scalar {
+        Self::span(self.max.y() - self.min.y())
+    }
+
+    /// Get the depth of bounding box (Z Span)
+    #[must_use]
+    pub fn depth(&self) -> T::Scalar {
+        Self::span(self.max.z() - self.min.z())
+    }
+
+    /// Returns the center point of the bounding box.
+    #[must_use]
+    pub fn center(&self) -> T {
+        let two = T::Scalar::from(2u8);
+        T::new(
+            self.min.x() + Self::span(self.max.x() - self.min.x()) / two,
+            self.min.y() + Self::span(self.max.y() - self.min.y()) / two,
+            self.min.z() + Self::span(self.max.z() - self.min.z()) / two,
+        )
+    }
+}
+
+impl<I: Space> Aabb<IVec3, I> {
+    /// Returns whether the given coordinates are inside this bounding box.
+    #[must_use]
+    pub fn contains_blockpos(self, pos: BlockPos) -> bool {
+        self.contains(pos.0)
+    }
+}
+
+impl<I: Space> Aabb<DVec3, I> {
     /// A full block from `(0, 0, 0)` to `(1, 1, 1)`.
     pub const FULL_BLOCK: Self = Self::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
 
@@ -265,36 +372,6 @@ impl<I> Aabb<DVec3, I> {
     #[must_use]
     pub fn size(self) -> f64 {
         (self.width() + self.height() + self.depth()) / 3.0
-    }
-
-    /// Returns `true` if this box intersects `other`.
-    #[must_use]
-    pub fn intersects(self, other: Self) -> bool {
-        self.intersects_coords(other.min, other.max)
-    }
-
-    /// Returns `true` if this box intersects the given bounds.
-    #[must_use]
-    pub fn intersects_coords(self, min: DVec3, max: DVec3) -> bool {
-        self.min.x < max.x
-            && self.max.x > min.x
-            && self.min.y < max.y
-            && self.max.y > min.y
-            && self.min.z < max.z
-            && self.max.z > min.z
-    }
-
-    /// Returns `true` if the point lies inside this box.
-    ///
-    /// Maximum edges are exclusive, matching vanilla Minecraft behavior.
-    #[must_use]
-    pub fn contains(self, x: f64, y: f64, z: f64) -> bool {
-        x >= self.min.x
-            && x < self.max.x
-            && y >= self.min.y
-            && y < self.max.y
-            && z >= self.min.z
-            && z < self.max.z
     }
 }
 
@@ -328,41 +405,9 @@ impl Aabb<DVec3, World> {
     /// Expands the box only in the direction of `delta`.
     #[must_use]
     pub fn expand_towards(self, delta: DVec3) -> Self {
-        Aabb {
-            min: DVec3::new(
-                if delta.x < 0.0 {
-                    self.min.x + delta.x
-                } else {
-                    self.min.x
-                },
-                if delta.y < 0.0 {
-                    self.min.y + delta.y
-                } else {
-                    self.min.y
-                },
-                if delta.z < 0.0 {
-                    self.min.z + delta.z
-                } else {
-                    self.min.z
-                },
-            ),
-            max: DVec3::new(
-                if delta.x > 0.0 {
-                    self.max.x + delta.x
-                } else {
-                    self.max.x
-                },
-                if delta.y > 0.0 {
-                    self.max.y + delta.y
-                } else {
-                    self.max.y
-                },
-                if delta.z > 0.0 {
-                    self.max.z + delta.z
-                } else {
-                    self.max.z
-                },
-            ),
+        Self {
+            min: self.min + delta.min(DVec3::ZERO),
+            max: self.max + delta.max(DVec3::ZERO),
             p: PhantomData,
         }
     }
@@ -372,7 +417,7 @@ impl Aabb<DVec3, World> {
     pub fn intersects_block(self, pos: BlockPos) -> bool {
         let min = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
         let max = min + DVec3::ONE;
-        self.intersects_coords(min, max)
+        self.intersects_bounds(min, max)
     }
 }
 
@@ -387,66 +432,6 @@ impl Aabb<IVec3, Structure> {
     #[must_use]
     pub fn from_corners(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0, b.0)
-    }
-
-    /// Returns whether this bounding box intersects another.
-    #[must_use]
-    pub const fn intersects(self, other: Self) -> bool {
-        self.max.x >= other.min.x
-            && self.min.x <= other.max.x
-            && self.max.y >= other.min.y
-            && self.min.y <= other.max.y
-            && self.max.z >= other.min.z
-            && self.min.z <= other.max.z
-    }
-
-    /// Returns whether this bounding box intersects the given XZ range.
-    #[must_use]
-    pub const fn intersects_xz(self, min_x: i32, min_z: i32, max_x: i32, max_z: i32) -> bool {
-        self.max.x >= min_x && self.min.x <= max_x && self.max.z >= min_z && self.min.z <= max_z
-    }
-
-    /// Returns whether the given block position is inside this bounding box.
-    #[must_use]
-    pub const fn is_inside(self, pos: BlockPos) -> bool {
-        self.contains_xyz(pos.x(), pos.y(), pos.z())
-    }
-
-    /// Returns whether the given coordinates are inside this bounding box.
-    #[must_use]
-    pub const fn contains_xyz(self, x: i32, y: i32, z: i32) -> bool {
-        x >= self.min.x
-            && x <= self.max.x
-            && y >= self.min.y
-            && y <= self.max.y
-            && z >= self.min.z
-            && z <= self.max.z
-    }
-
-    /// Returns the center block position of this bounding box.
-    #[must_use]
-    pub const fn get_center(self) -> BlockPos {
-        BlockPos(IVec3::new(
-            self.min.x + (self.max.x - self.min.x + 1) / 2,
-            self.min.y + (self.max.y - self.min.y + 1) / 2,
-            self.min.z + (self.max.z - self.min.z + 1) / 2,
-        ))
-    }
-
-    /// Returns the span (size) along the X axis (number of blocks).
-    #[must_use]
-    pub const fn get_x_span(self) -> i32 {
-        self.max.x - self.min.x + 1
-    }
-    /// Returns the span (size) along the Y axis.
-    #[must_use]
-    pub const fn get_y_span(self) -> i32 {
-        self.max.y - self.min.y + 1
-    }
-    /// Returns the span (size) along the Z axis.
-    #[must_use]
-    pub const fn get_z_span(self) -> i32 {
-        self.max.z - self.min.z + 1
     }
 }
 
@@ -486,9 +471,9 @@ mod tests {
     fn contains_uses_vanilla_exclusive_max_edge() {
         let aabb = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-        assert!(aabb.contains(0.0, 0.5, 0.5));
-        assert!(aabb.contains(0.999, 0.5, 0.5));
-        assert!(!aabb.contains(1.0, 0.5, 0.5));
+        assert!(aabb.contains_xyz(0.0, 0.5, 0.5));
+        assert!(aabb.contains_xyz(0.999, 0.5, 0.5));
+        assert!(!aabb.contains_xyz(1.0, 0.5, 0.5));
     }
 
     #[test]

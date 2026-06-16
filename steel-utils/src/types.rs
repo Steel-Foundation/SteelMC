@@ -7,6 +7,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{self, Cursor, Write},
     mem::MaybeUninit,
+    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
@@ -190,6 +191,20 @@ impl ReadFrom for ChunkPos {
 /// A block position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPos(pub IVec3);
+
+impl Deref for BlockPos {
+    type Target = IVec3;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for BlockPos {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {

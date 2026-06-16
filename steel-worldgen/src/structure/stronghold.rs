@@ -409,7 +409,7 @@ fn create_piece(
             let entry_door = StrongholdSmallDoorType::random(rng);
             StrongholdPieceData::Library {
                 entry_door,
-                is_tall: bb.get_y_span() > 6,
+                is_tall: bb.height() > 6,
             }
         }
         PT::Portal => StrongholdPieceData::PortalRoom {
@@ -417,9 +417,9 @@ fn create_piece(
         },
         PT::Filler => StrongholdPieceData::FillerCorridor {
             steps: if matches!(dir, Direction::North | Direction::South) {
-                bb.get_z_span()
+                bb.depth()
             } else {
-                bb.get_x_span()
+                bb.width()
             },
         },
         PT::StairsDown => StrongholdPieceData::StairsDown {

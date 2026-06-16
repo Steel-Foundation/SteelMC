@@ -660,7 +660,7 @@ impl StructureTemplate {
         let mut locked_fluids = Vec::new();
         let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
-            if !settings.bounding_box.is_inside(processed.world_pos) {
+            if !settings.bounding_box.contains_blockpos(processed.world_pos) {
                 continue;
             }
 
@@ -781,7 +781,7 @@ impl StructureTemplate {
                 settings.rotation_pivot,
             )
             .offset(position.x(), position.y(), position.z());
-            if !settings.bounding_box.is_inside(block_pos) {
+            if !settings.bounding_box.contains_blockpos(block_pos) {
                 continue;
             }
 
@@ -845,7 +845,7 @@ impl StructureTemplate {
                 continue;
             }
             let world_pos = Self::transformed_position(position, block.pos, settings);
-            if !settings.bounding_box.is_inside(world_pos) {
+            if !settings.bounding_box.contains_blockpos(world_pos) {
                 continue;
             }
             let Some(nbt) = block.nbt.as_ref() else {
@@ -877,7 +877,7 @@ impl StructureTemplate {
                 continue;
             }
             let world_pos = Self::transformed_position(position, block.pos, settings);
-            if !settings.bounding_box.is_inside(world_pos) {
+            if !settings.bounding_box.contains_blockpos(world_pos) {
                 continue;
             }
             let Some(nbt) = block.nbt.as_ref() else {

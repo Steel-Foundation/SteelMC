@@ -74,11 +74,11 @@ impl StructureStart {
     #[must_use]
     pub fn placement_reference_pos(&self) -> Option<BlockPos> {
         let first_piece = self.pieces.first()?;
-        let center = first_piece.bounding_box.get_center();
+        let center = first_piece.bounding_box.center();
         Some(BlockPos::new(
-            center.x(),
+            center.x,
             first_piece.bounding_box.min.y,
-            center.z(),
+            center.z,
         ))
     }
 }

@@ -246,7 +246,9 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         loot_table: &'static str,
     ) -> bool {
-        if !clip.is_inside(pos) || region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+        if !clip.contains_blockpos(pos)
+            || region.block_state(pos).get_block() == &vanilla_blocks::CHEST
+        {
             return false;
         }
 

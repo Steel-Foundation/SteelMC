@@ -156,15 +156,15 @@ impl StructurePiecePlacer {
             vertical_placement,
             RuinedPortalPlacementData::OnLandSurface | RuinedPortalPlacementData::OnOceanFloor
         );
-        let center = portal_box.get_center();
-        let average_width = i32::midpoint(portal_box.get_x_span(), portal_box.get_z_span());
+        let center = portal_box.center();
+        let average_width = i32::midpoint(portal_box.width(), portal_box.depth());
         let distance_adjustment = random.next_i32_bounded(1.max(8 - average_width / 2));
         let max_distance =
             i32::try_from(NETHERRACK_PROBABILITY_BY_DISTANCE.len()).unwrap_or(i32::MAX);
 
-        for x in center.x() - max_distance..=center.x() + max_distance {
-            for z in center.z() - max_distance..=center.z() + max_distance {
-                let distance = (x - center.x()).abs() + (z - center.z()).abs();
+        for x in center.x - max_distance..=center.x + max_distance {
+            for z in center.z - max_distance..=center.z + max_distance {
+                let distance = (x - center.x).abs() + (z - center.z).abs();
                 let adjusted_distance = 0.max(distance + distance_adjustment);
                 if adjusted_distance >= max_distance {
                     continue;

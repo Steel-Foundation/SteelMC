@@ -96,7 +96,9 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
         pos: BlockPos,
     ) -> bool {
-        if !clip.is_inside(pos) || region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+        if !clip.contains_blockpos(pos)
+            || region.block_state(pos).get_block() == &vanilla_blocks::CHEST
+        {
             return false;
         }
 

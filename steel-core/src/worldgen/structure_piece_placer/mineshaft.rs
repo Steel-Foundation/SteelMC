@@ -204,7 +204,7 @@ impl MineshaftPlacer<'_, '_> {
             if spider_corridor && !*has_placed_spider {
                 let new_z = z - 1 + random.next_i32_bounded(3);
                 let pos = self.world_pos(1, 0, new_z);
-                if self.clip.is_inside(pos) && self.is_interior(1, 0, new_z) {
+                if self.clip.contains_blockpos(pos) && self.is_interior(1, 0, new_z) {
                     *has_placed_spider = true;
                     let spawner = Self::spawner();
                     let _ = self
@@ -591,7 +591,7 @@ impl MineshaftPlacer<'_, '_> {
 
     fn create_chest(&mut self, random: &mut WorldgenRandom, x: i32, y: i32, z: i32) -> bool {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos)
+        if !self.clip.contains_blockpos(pos)
             || !self.block_state(pos).is_air()
             || self.block_state(pos.below()).is_air()
         {
@@ -711,7 +711,7 @@ impl MineshaftPlacer<'_, '_> {
             Direction::East,
         ] {
             let neighbor = pos.relative(direction);
-            if self.clip.is_inside(neighbor)
+            if self.clip.contains_blockpos(neighbor)
                 && self
                     .block_state(neighbor)
                     .is_face_sturdy(direction.opposite())
@@ -751,7 +751,7 @@ impl MineshaftPlacer<'_, '_> {
         z: i32,
     ) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -871,7 +871,7 @@ impl MineshaftPlacer<'_, '_> {
 
     fn is_interior(&self, x: i32, y: i32, z: i32) -> bool {
         let pos = self.world_pos(x, y + 1, z);
-        self.clip.is_inside(pos)
+        self.clip.contains_blockpos(pos)
             && pos.y()
                 < self
                     .region
@@ -880,7 +880,7 @@ impl MineshaftPlacer<'_, '_> {
 
     fn place_block(&mut self, state: BlockStateId, x: i32, y: i32, z: i32) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) || !self.can_be_replaced(x, y, z) {
+        if !self.clip.contains_blockpos(pos) || !self.can_be_replaced(x, y, z) {
             return;
         }
 
@@ -895,7 +895,7 @@ impl MineshaftPlacer<'_, '_> {
 
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let pos = self.world_pos(x, y, z);
-        if self.clip.is_inside(pos) {
+        if self.clip.contains_blockpos(pos) {
             self.block_state(pos)
         } else {
             Self::air()

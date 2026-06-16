@@ -676,7 +676,7 @@ impl StructurePiecePlacer {
                 Some(BoundingBox::encapsulating(&center_clip, &template_box))
             }
             TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate => {
-                if center_clip.is_inside(template_box.get_center()) {
+                if center_clip.contains(template_box.center()) {
                     Some(BoundingBox::encapsulating(&center_clip, &template_box))
                 } else {
                     None
@@ -766,20 +766,20 @@ impl StructurePiecePlacer {
         fossil_box: BoundingBox,
         placement_clip: BoundingBox,
     ) {
-        let center = fossil_box.get_center();
+        let center = fossil_box.center();
         let mut seed_random = LegacyRandom::from_seed(region.seed() as u64);
         let splitter = seed_random.next_positional();
-        let mut positional_random = splitter.at(center.x(), center.y(), center.z());
+        let mut positional_random = splitter.at(center.x, center.y, center.z);
         if positional_random.next_f32() >= 0.5 {
             return;
         }
 
         let pos = BlockPos::new(
-            fossil_box.min.x + positional_random.next_i32_bounded(fossil_box.get_x_span()),
+            fossil_box.min.x + positional_random.next_i32_bounded(fossil_box.width()),
             fossil_box.min.y,
-            fossil_box.min.z + positional_random.next_i32_bounded(fossil_box.get_z_span()),
+            fossil_box.min.z + positional_random.next_i32_bounded(fossil_box.depth()),
         );
-        if !placement_clip.is_inside(pos) {
+        if !placement_clip.contains_blockpos(pos) {
             return;
         }
         if !region.block_state(pos).is_air() {

@@ -83,10 +83,10 @@ impl StructurePiecePlacer {
         let Some(structure_box) = StructureStart::compute_bounding_box(pieces, 0) else {
             return;
         };
-        let center = structure_box.get_center();
+        let center = structure_box.center();
         let mut seed_random = LegacyRandom::from_seed(region.seed() as u64);
         let splitter = seed_random.next_positional();
-        let mut positional_random = splitter.at(center.x(), center.y(), center.z());
+        let mut positional_random = splitter.at(center.x, center.y, center.z);
         Self::shuffle_block_positions(&mut unique_sand_placements, &mut positional_random);
         let mut suspicious_sand_to_place = unique_sand_placements
             .len()
@@ -96,7 +96,7 @@ impl StructurePiecePlacer {
             if suspicious_sand_to_place > 0 {
                 suspicious_sand_to_place -= 1;
                 Self::place_desert_pyramid_suspicious_sand(region, clip, pos);
-            } else if clip.is_inside(pos) {
+            } else if clip.contains_blockpos(pos) {
                 let _ = region.set_block_state(
                     pos,
                     vanilla_blocks::SAND.default_state(),
@@ -111,7 +111,7 @@ impl StructurePiecePlacer {
         clip: BoundingBox,
         pos: BlockPos,
     ) {
-        if !clip.is_inside(pos) {
+        if !clip.contains_blockpos(pos) {
             return;
         }
         let state = vanilla_blocks::SUSPICIOUS_SAND.default_state();
@@ -601,7 +601,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn fill_column_down(&mut self, state: BlockStateId, x: i32, start_y: i32, z: i32) {
         let mut pos = self.world_pos(x, start_y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -617,7 +617,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn place_block(&mut self, state: BlockStateId, x: i32, y: i32, z: i32) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -632,7 +632,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let pos = self.world_pos(x, y, z);
-        if self.clip.is_inside(pos) {
+        if self.clip.contains_blockpos(pos) {
             self.region.block_state(pos)
         } else {
             vanilla_blocks::AIR.default_state()
