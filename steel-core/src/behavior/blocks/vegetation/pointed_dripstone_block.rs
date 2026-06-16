@@ -1,26 +1,20 @@
 use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, DripstoneThickness, SpeleothemThickness,
 };
 use steel_registry::{vanilla_block_tags::BlockTag, vanilla_damage_types, vanilla_fluids};
-use steel_utils::random::get_seed;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::block::{
-    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext,
-};
+use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::BlockRef;
-
-const SPELEOTHEM_MAX_HORIZONTAL_OFFSET: f64 = 0.125;
 
 /// Vanilla `PointedDripstoneBlock` survival and thickness updates.
 ///
@@ -91,16 +85,6 @@ impl BlockBehavior for PointedDripstoneBlock {
         self.speleothem().tick(state, world, pos);
     }
 
-    fn get_collision_shape_offset(
-        &self,
-        _state: BlockStateId,
-        _world: &dyn LevelReader,
-        pos: BlockPos,
-        _context: BlockCollisionContext,
-    ) -> DVec3 {
-        SpeleothemBlockBehavior::xz_shape_offset(pos)
-    }
-
     fn fall_on(
         &self,
         state: BlockStateId,
@@ -159,16 +143,6 @@ impl BlockBehavior for SulfurSpikeBlock {
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().tick(state, world, pos);
     }
-
-    fn get_collision_shape_offset(
-        &self,
-        _state: BlockStateId,
-        _world: &dyn LevelReader,
-        pos: BlockPos,
-        _context: BlockCollisionContext,
-    ) -> DVec3 {
-        SpeleothemBlockBehavior::xz_shape_offset(pos)
-    }
 }
 
 struct SpeleothemBlockBehavior {
@@ -192,15 +166,6 @@ enum SpeleothemThicknessValue {
 }
 
 impl SpeleothemBlockBehavior {
-    fn xz_shape_offset(pos: BlockPos) -> DVec3 {
-        let seed = get_seed(pos.x(), 0, pos.z());
-        DVec3::new(
-            speleothem_offset_component(seed & 15),
-            0.0,
-            speleothem_offset_component((seed >> 8) & 15),
-        )
-    }
-
     fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_tip_direction = context.get_nearest_looking_vertical_direction().opposite();
         let tip_direction = self.calculate_tip_direction(
@@ -405,14 +370,6 @@ impl SpeleothemBlockBehavior {
     }
 }
 
-fn speleothem_offset_component(seed_bits: i64) -> f64 {
-    let raw_offset = (f64::from(seed_bits as f32 / 15.0) - 0.5) * 0.5;
-    raw_offset.clamp(
-        -SPELEOTHEM_MAX_HORIZONTAL_OFFSET,
-        SPELEOTHEM_MAX_HORIZONTAL_OFFSET,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,33 +413,5 @@ mod tests {
         let state = pointed_dripstone_state(Direction::Down, DripstoneThickness::Tip);
 
         assert!(PointedDripstoneBlock::fall_damage_for_state(state, 4.0).is_none());
-    }
-
-    fn assert_speleothem_offset(pos: BlockPos, expected_x: f64, expected_z: f64) {
-        let offset = SpeleothemBlockBehavior::xz_shape_offset(pos);
-
-        assert!((offset.x - expected_x).abs() < 1.0e-7);
-        assert!(offset.y.abs() < 1.0e-7);
-        assert!((offset.z - expected_z).abs() < 1.0e-7);
-    }
-
-    #[test]
-    fn speleothem_xz_shape_offset_matches_vanilla_clamping() {
-        assert_speleothem_offset(BlockPos::ZERO, -0.125, -0.125);
-        assert_speleothem_offset(BlockPos::new(12, 64, 34), 0.125, 0.125);
-    }
-
-    #[test]
-    fn speleothem_xz_shape_offset_uses_block_position_seed() {
-        assert_speleothem_offset(
-            BlockPos::new(1, 64, 0),
-            0.116_666_666_666_666_64,
-            -0.016_666_666_666_666_663,
-        );
-        assert_speleothem_offset(
-            BlockPos::new(-5, 12, 7),
-            -0.049_999_999_999_999_99,
-            0.116_666_666_666_666_64,
-        );
     }
 }

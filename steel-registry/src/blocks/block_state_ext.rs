@@ -7,6 +7,8 @@ use crate::{
         shapes::SupportType,
     },
 };
+use glam::DVec3;
+use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 pub trait BlockStateExt {
@@ -25,6 +27,8 @@ pub trait BlockStateExt {
     fn get_occlusion_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_interaction_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_visual_shape(&self) -> blocks::shapes::VoxelShape;
+    /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
+    fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
     fn is_face_sturdy(&self, direction: Direction) -> bool;
@@ -116,6 +120,10 @@ impl BlockStateExt for BlockStateId {
         REGISTRY.blocks.get_visual_shape(*self)
     }
 
+    fn get_offset(&self, pos: BlockPos) -> DVec3 {
+        self.get_block().offset_at(pos)
+    }
+
     fn is_face_sturdy(&self, direction: Direction) -> bool {
         self.is_face_sturdy_for(direction, SupportType::Full)
     }
@@ -197,8 +205,9 @@ impl FluidReplaceableExt for BlockStateId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blocks::behavior::OffsetType;
     use crate::blocks::properties::BlockStateProperties;
-    use crate::blocks::shapes::SupportType;
+    use crate::blocks::shapes::{ShapeChannel, SupportType};
     use crate::test_support::init_test_registry;
     use steel_utils::Direction;
 
@@ -251,5 +260,33 @@ mod tests {
             .set_value(&BlockStateProperties::EAST, true);
 
         assert!(fence.is_face_sturdy_for(Direction::Down, SupportType::Center));
+    }
+
+    #[test]
+    fn generated_shape_offset_flags_distinguish_visual_offset_from_server_shapes() {
+        init_test_registry();
+
+        let sulfur_spike = vanilla_blocks::SULFUR_SPIKE.default_state().get_block();
+        assert_eq!(sulfur_spike.config.offset_type, OffsetType::Xz);
+        assert_eq!(sulfur_spike.config.max_horizontal_offset, 0.125);
+        assert!(
+            sulfur_spike
+                .shape_offsets
+                .uses_offset(ShapeChannel::Collision)
+        );
+        assert!(
+            sulfur_spike
+                .shape_offsets
+                .uses_offset(ShapeChannel::Outline)
+        );
+
+        let tall_grass = vanilla_blocks::TALL_GRASS.default_state().get_block();
+        assert_eq!(tall_grass.config.offset_type, OffsetType::Xz);
+        assert!(
+            !tall_grass
+                .shape_offsets
+                .uses_offset(ShapeChannel::Collision)
+        );
+        assert!(!tall_grass.shape_offsets.uses_offset(ShapeChannel::Outline));
     }
 }

@@ -317,6 +317,63 @@ impl BlockShapes {
     );
 }
 
+/// Shape channel names used by vanilla block-state shape queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeChannel {
+    Collision,
+    Support,
+    Outline,
+    Occlusion,
+    Interaction,
+    Visual,
+}
+
+/// Records which extracted shape channels already include `BlockState.getOffset(pos)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShapeOffsetFlags {
+    collision: bool,
+    support: bool,
+    outline: bool,
+    occlusion: bool,
+    interaction: bool,
+    visual: bool,
+}
+
+impl ShapeOffsetFlags {
+    pub const NONE: Self = Self::new(false, false, false, false, false, false);
+
+    #[must_use]
+    pub const fn new(
+        collision: bool,
+        support: bool,
+        outline: bool,
+        occlusion: bool,
+        interaction: bool,
+        visual: bool,
+    ) -> Self {
+        Self {
+            collision,
+            support,
+            outline,
+            occlusion,
+            interaction,
+            visual,
+        }
+    }
+
+    #[must_use]
+    pub const fn uses_offset(self, channel: ShapeChannel) -> bool {
+        match channel {
+            ShapeChannel::Collision => self.collision,
+            ShapeChannel::Support => self.support,
+            ShapeChannel::Outline => self.outline,
+            ShapeChannel::Occlusion => self.occlusion,
+            ShapeChannel::Interaction => self.interaction,
+            ShapeChannel::Visual => self.visual,
+        }
+    }
+}
+
 use super::properties::Direction;
 
 /// Returns the overall bounding box of a voxel shape (union of all AABBs).

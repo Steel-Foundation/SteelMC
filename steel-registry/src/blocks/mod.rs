@@ -5,11 +5,13 @@ pub mod shapes;
 
 use std::sync::OnceLock;
 
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 
 use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
 use crate::{RegistryExt, TaggedRegistryExt};
+use steel_utils::{BlockPos, BlockStateId};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
@@ -31,6 +33,8 @@ pub struct Block {
     pub interaction_shape: ShapeFn,
     /// Function to get visual shape for a state offset
     pub visual_shape: ShapeFn,
+    /// Shape channels whose extracted boxes are normalized and need positional offset.
+    pub shape_offsets: shapes::ShapeOffsetFlags,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
 }
@@ -73,6 +77,7 @@ impl Block {
             occlusion_shape: full_block_shape,
             interaction_shape: empty_shape,
             visual_shape: full_block_shape,
+            shape_offsets: shapes::ShapeOffsetFlags::NONE,
             id: OnceLock::new(),
         }
     }
@@ -93,6 +98,12 @@ impl Block {
         self.occlusion_shape = occlusion;
         self.interaction_shape = interaction;
         self.visual_shape = visual;
+        self
+    }
+
+    /// Sets which shape channels use the block state's positional offset.
+    pub const fn with_shape_offsets(mut self, offsets: shapes::ShapeOffsetFlags) -> Self {
+        self.shape_offsets = offsets;
         self
     }
 
@@ -130,6 +141,12 @@ impl Block {
     #[inline]
     pub fn get_visual_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.visual_shape)(offset)
+    }
+
+    /// Returns the vanilla block-state positional offset for this block.
+    #[must_use]
+    pub fn offset_at(&self, pos: BlockPos) -> DVec3 {
+        self.config.offset_at(pos)
     }
 
     /// Sets the default state offset for this block.
@@ -677,7 +694,7 @@ macro_rules! offset {
 
 /// Re-export for easier access
 pub use offset;
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::Identifier;
 
 #[cfg(test)]
 mod tests {

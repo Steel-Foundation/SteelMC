@@ -6,7 +6,7 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
+use steel_registry::blocks::shapes::{BooleanOp, ShapeChannel, VoxelShape, join_unoptimized_boxes};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -695,7 +695,7 @@ pub trait BlockBehavior: Send + Sync {
     /// `getCollisionShape` delegates to the offset outline shape.
     #[expect(
         unused_variables,
-        reason = "default trait implementation has no positional collision offset"
+        reason = "default trait implementation ignores world and collision context"
     )]
     fn get_collision_shape_offset(
         &self,
@@ -704,6 +704,14 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: BlockCollisionContext,
     ) -> DVec3 {
+        if state
+            .get_block()
+            .shape_offsets
+            .uses_offset(ShapeChannel::Collision)
+        {
+            return state.get_offset(pos);
+        }
+
         DVec3::ZERO
     }
 
