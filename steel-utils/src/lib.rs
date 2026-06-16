@@ -5,7 +5,7 @@
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
 /// The Minecraft version this server supports.
-pub const MC_VERSION: &str = "26.1";
+pub const MC_VERSION: &str = "26.2";
 
 /// axis
 pub mod axis;

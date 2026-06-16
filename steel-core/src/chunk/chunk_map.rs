@@ -613,13 +613,6 @@ impl ChunkMap {
         let mut ready_block_ticks = Vec::new();
         let mut ready_fluid_ticks = Vec::new();
 
-        {
-            let _span = tracing::trace_span!("broadcast_changes").entered();
-            let start = Instant::now();
-            self.broadcast_changed_chunks();
-            timings.broadcast_changes = start.elapsed();
-        }
-
         if tick_count.is_multiple_of(100) {
             tracing::debug!(
                 chunks = self.chunks.len(),
@@ -676,6 +669,13 @@ impl ChunkMap {
         }
 
         Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+
+        {
+            let _span = tracing::trace_span!("broadcast_changes").entered();
+            let start = Instant::now();
+            self.broadcast_changed_chunks();
+            timings.broadcast_changes = start.elapsed();
+        }
 
         timings
     }

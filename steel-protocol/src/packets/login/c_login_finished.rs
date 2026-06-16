@@ -13,23 +13,28 @@ pub struct GameProfileProperty {
     pub signature: Option<String>,
 }
 
-#[derive(ClientPacket, WriteTo, Clone, Debug)]
-#[packet_id(Login = C_LOGIN_FINISHED)]
-pub struct CLoginFinished<'a> {
-    pub uuid: Uuid,
+#[derive(Clone, Debug, WriteTo, Serialize)]
+pub struct LoginGameProfile<'a> {
+    pub id: Uuid,
     #[write(as = Prefixed(VarInt), bound = 16)]
     pub name: &'a str,
     #[write(as = Prefixed(VarInt))]
     pub properties: &'a [GameProfileProperty],
 }
 
+#[derive(ClientPacket, WriteTo, Clone, Debug)]
+#[packet_id(Login = C_LOGIN_FINISHED)]
+pub struct CLoginFinished<'a> {
+    pub game_profile: LoginGameProfile<'a>,
+    pub session_id: Uuid,
+}
+
 impl<'a> CLoginFinished<'a> {
     #[must_use]
-    pub fn new(uuid: Uuid, name: &'a str, properties: &'a [GameProfileProperty]) -> Self {
+    pub fn new(game_profile: LoginGameProfile<'a>, session_id: Uuid) -> Self {
         Self {
-            uuid,
-            name,
-            properties,
+            game_profile,
+            session_id,
         }
     }
 }

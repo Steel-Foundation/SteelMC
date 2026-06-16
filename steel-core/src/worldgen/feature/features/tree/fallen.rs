@@ -149,9 +149,10 @@ impl FeatureDecorationRunner {
     }
 
     fn is_over_solid_ground_for_fallen_log(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+        let below_pos = pos.below();
         region
-            .block_state(pos.below())
-            .is_face_sturdy(Direction::Up)
+            .block_state(below_pos)
+            .is_face_sturdy_at(below_pos, Direction::Up)
     }
 
     fn place_fallen_log_block(

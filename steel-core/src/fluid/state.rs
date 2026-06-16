@@ -277,7 +277,7 @@ where
     if direction == Direction::Up {
         return true;
     }
-    state.get_block() != &vanilla_blocks::ICE && state.is_face_sturdy(direction)
+    state.get_block() != &vanilla_blocks::ICE && state.is_face_sturdy_at(pos, direction)
 }
 
 #[cfg(test)]

@@ -38,5 +38,6 @@ pub struct CLogin {
     pub show_death_screen: bool,
     pub do_limited_crafting: bool,
     pub common_player_spawn_info: CommonPlayerSpawnInfo,
+    pub online_mode: bool,
     pub enforces_secure_chat: bool,
 }

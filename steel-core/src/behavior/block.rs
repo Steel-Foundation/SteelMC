@@ -6,7 +6,7 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
+use steel_registry::blocks::shapes::{BooleanOp, ShapeChannel, VoxelShape, join_unoptimized_boxes};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -85,6 +85,19 @@ impl BlockCollisionContext {
             is_falling_block: false,
             descending,
             placement: true,
+        }
+    }
+
+    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    #[must_use]
+    pub const fn position_context(y: f64) -> Self {
+        Self {
+            entity_bottom: Some(y),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending: false,
+            placement: false,
         }
     }
 
@@ -672,7 +685,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: BlockCollisionContext,
     ) -> VoxelShape {
-        state.get_collision_shape()
+        state.get_static_collision_shape()
     }
 
     /// Returns this block state's collision shape for the supplied collision context.
@@ -687,6 +700,32 @@ pub trait BlockBehavior: Send + Sync {
         context: BlockCollisionContext,
     ) -> VoxelShape {
         self.default_get_collision_shape(state, world, pos, context)
+    }
+
+    /// Returns a block-local translation for this block state's collision shape.
+    ///
+    /// Vanilla baseline for `BlockState.getOffset(BlockPos)` where
+    /// `getCollisionShape` delegates to the offset outline shape.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores world and collision context"
+    )]
+    fn get_collision_shape_offset(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> DVec3 {
+        if state
+            .get_block()
+            .shape_offsets
+            .uses_offset(ShapeChannel::Collision)
+        {
+            return state.get_offset(pos);
+        }
+
+        DVec3::ZERO
     }
 
     /// Returns this block state's shape used by vanilla entity-inside effects.

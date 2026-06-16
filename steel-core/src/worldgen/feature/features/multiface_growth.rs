@@ -297,7 +297,7 @@ impl FeatureDecorationRunner {
             let neighbor_pos = source_pos.relative(placement_direction.opposite());
             if region
                 .block_state(neighbor_pos)
-                .is_face_sturdy(placement_direction)
+                .is_face_sturdy_at(neighbor_pos, placement_direction)
             {
                 return false;
             }

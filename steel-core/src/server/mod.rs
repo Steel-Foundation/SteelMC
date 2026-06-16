@@ -723,6 +723,7 @@ impl Server {
                 portal_cooldown: 0,
                 sea_level: world.sea_level,
             },
+            online_mode: self.config.online_mode,
             enforces_secure_chat: self.config.enforce_secure_chat,
         });
     }

@@ -118,7 +118,7 @@ impl CSound {
 mod tests {
     use std::sync::Once;
 
-    use steel_registry::{REGISTRY, Registry, sound_events};
+    use steel_registry::{REGISTRY, Registry, RegistryEntry, sound_events};
     use steel_utils::BlockPos;
 
     use super::CSound;
@@ -145,10 +145,11 @@ mod tests {
             0,
         );
 
+        let expected_holder_id = sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON.id() as i32 + 1;
         assert_eq!(
             sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON.packet_holder_id(),
-            1841
+            expected_holder_id
         );
-        assert_eq!(packet.sound_id, 1841);
+        assert_eq!(packet.sound_id, expected_holder_id);
     }
 }

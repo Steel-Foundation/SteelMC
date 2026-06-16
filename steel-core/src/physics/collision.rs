@@ -4,15 +4,18 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    blocks::{block_state_ext::BlockStateExt, shapes::VoxelShape},
+    blocks::{
+        block_state_ext::BlockStateExt,
+        shapes::{OffsetVoxelShape, VoxelShape},
+    },
     vanilla_blocks, vanilla_entities,
 };
-use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::Entity;
 use crate::physics::COLLISION_EPSILON;
-use crate::physics::shapes::{join_is_not_empty, translate_shape};
+use crate::physics::shapes::join_is_not_empty;
 use crate::world::World;
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -162,9 +165,21 @@ enum CollisionCursorType {
     Corner,
 }
 
+#[derive(Clone, Copy)]
+struct CollisionShape {
+    shape: VoxelShape,
+    offset: DVec3,
+}
+
+impl CollisionShape {
+    fn has_large_collision_shape(self) -> bool {
+        OffsetVoxelShape::new(self.shape, self.offset).has_large_collision_shape()
+    }
+}
+
 fn should_query_collision_shape(
     block_state: BlockStateId,
-    collision_shape: VoxelShape,
+    collision_shape: CollisionShape,
     cursor_type: CollisionCursorType,
 ) -> bool {
     match cursor_type {
@@ -176,6 +191,16 @@ fn should_query_collision_shape(
         CollisionCursorType::Edge => block_state.get_block() == &vanilla_blocks::MOVING_PISTON,
         CollisionCursorType::Corner => false,
     }
+}
+
+fn translate_collision_shape(
+    shape: &BlockLocalAabb,
+    block_pos: BlockPos,
+    offset: DVec3,
+) -> WorldAabb {
+    shape
+        .move_by(offset.x, offset.y, offset.z)
+        .at_block(block_pos)
 }
 
 impl<'a> WorldCollisionProvider<'a> {
@@ -200,9 +225,22 @@ impl<'a> WorldCollisionProvider<'a> {
         block_state: BlockStateId,
         block_pos: BlockPos,
         context: BlockCollisionContext,
-    ) -> VoxelShape {
+    ) -> CollisionShape {
         let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
-        behavior.get_collision_shape(block_state, self.world.as_ref(), block_pos, context)
+        let shape =
+            behavior.get_collision_shape(block_state, self.world.as_ref(), block_pos, context);
+        let offset = if shape.is_empty() {
+            DVec3::ZERO
+        } else {
+            behavior.get_collision_shape_offset(
+                block_state,
+                self.world.as_ref(),
+                block_pos,
+                context,
+            )
+        };
+
+        CollisionShape { shape, offset }
     }
 
     fn entity_collision_context(
@@ -281,7 +319,7 @@ impl<'a> WorldCollisionProvider<'a> {
                     }
 
                     let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-                    if collision_shape.is_empty() {
+                    if collision_shape.shape.is_empty() {
                         continue;
                     }
                     if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
@@ -289,8 +327,11 @@ impl<'a> WorldCollisionProvider<'a> {
                     }
 
                     let supports_entity = collision_shape
+                        .shape
                         .into_iter()
-                        .map(|shape_aabb| translate_shape(shape_aabb, block_pos))
+                        .map(|shape_aabb| {
+                            translate_collision_shape(shape_aabb, block_pos, collision_shape.offset)
+                        })
                         .any(|world_aabb| aabb.intersects(world_aabb));
                     if !supports_entity {
                         continue;
@@ -410,15 +451,19 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
 
                     let collision_shape = self.get_collision_shape(block_state, block_pos, context);
 
-                    if collision_shape.is_empty() {
+                    if collision_shape.shape.is_empty() {
                         continue;
                     }
                     if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
-                    for shape_aabb in collision_shape {
-                        let world_aabb = translate_shape(shape_aabb, block_pos);
+                    for shape_aabb in collision_shape.shape {
+                        let world_aabb = translate_collision_shape(
+                            shape_aabb,
+                            block_pos,
+                            collision_shape.offset,
+                        );
 
                         if aabb.intersects(world_aabb) {
                             collisions.push(world_aabb);
@@ -455,15 +500,19 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
 
                     let collision_shape = self.get_collision_shape(block_state, block_pos, context);
 
-                    if collision_shape.is_empty() {
+                    if collision_shape.shape.is_empty() {
                         continue;
                     }
                     if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
-                    for shape_aabb in collision_shape {
-                        let world_aabb = translate_shape(shape_aabb, block_pos);
+                    for shape_aabb in collision_shape.shape {
+                        let world_aabb = translate_collision_shape(
+                            shape_aabb,
+                            block_pos,
+                            collision_shape.offset,
+                        );
 
                         if aabb.intersects(world_aabb) {
                             return true;
@@ -728,36 +777,57 @@ mod tests {
         let stone = vanilla_blocks::STONE.default_state();
         let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
         let large_shape = VoxelShape::from_boxes(LARGE_COLLISION_SHAPE);
+        let shape = |shape| CollisionShape {
+            shape,
+            offset: DVec3::ZERO,
+        };
 
         assert!(should_query_collision_shape(
             stone,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Inside
         ));
         assert!(!should_query_collision_shape(
             stone,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Face
         ));
         assert!(should_query_collision_shape(
             stone,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Face
         ));
         assert!(!should_query_collision_shape(
             stone,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Edge
         ));
         assert!(should_query_collision_shape(
             moving_piston,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Edge
         ));
         assert!(!should_query_collision_shape(
             moving_piston,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Corner
+        ));
+    }
+
+    #[test]
+    fn collision_shape_filter_uses_position_resolved_offset_bounds() {
+        test_support::init_test_registry();
+
+        let stone = vanilla_blocks::STONE.default_state();
+        let shifted_full_block = CollisionShape {
+            shape: VoxelShape::FULL_BLOCK,
+            offset: DVec3::new(0.25, 0.0, 0.0),
+        };
+
+        assert!(should_query_collision_shape(
+            stone,
+            shifted_full_block,
+            CollisionCursorType::Face
         ));
     }
 }
