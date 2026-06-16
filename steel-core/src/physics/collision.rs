@@ -198,9 +198,7 @@ fn translate_collision_shape(
     block_pos: BlockPos,
     offset: DVec3,
 ) -> WorldAabb {
-    shape
-        .move_by(offset.x, offset.y, offset.z)
-        .at_block(block_pos)
+    shape.translate(offset).at_block(block_pos)
 }
 
 impl<'a> WorldCollisionProvider<'a> {

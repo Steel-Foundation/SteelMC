@@ -202,10 +202,9 @@ impl OffsetVoxelShape {
     }
 
     pub fn iter(self) -> impl Iterator<Item = BlockLocalAabb> {
-        let offset = self.offset;
         self.shape
             .into_iter()
-            .map(move |aabb| aabb.move_by(offset.x, offset.y, offset.z))
+            .map(move |aabb| aabb.translate(self.offset))
     }
 
     #[must_use]
@@ -220,10 +219,9 @@ impl OffsetVoxelShape {
 
     #[must_use]
     pub fn bounds(self) -> Option<BlockLocalAabb> {
-        let offset = self.offset;
         self.shape
             .bounds()
-            .map(|bounds| bounds.move_by(offset.x, offset.y, offset.z))
+            .map(|bounds| bounds.translate(self.offset))
     }
 
     #[must_use]
@@ -498,17 +496,17 @@ pub fn is_offset_shape_full_block(shape: OffsetVoxelShape) -> bool {
         if aabb.is_empty() {
             continue;
         }
-        if aabb.max_x() > VOXEL_EPSILON && aabb.min_x() < 1.0 - VOXEL_EPSILON {
-            x_edges.push(aabb.min_x().clamp(0.0, 1.0));
-            x_edges.push(aabb.max_x().clamp(0.0, 1.0));
+        if aabb.max.x > VOXEL_EPSILON && aabb.min.x < 1.0 - VOXEL_EPSILON {
+            x_edges.push(aabb.min.x.clamp(0.0, 1.0));
+            x_edges.push(aabb.max.x.clamp(0.0, 1.0));
         }
-        if aabb.max_y() > VOXEL_EPSILON && aabb.min_y() < 1.0 - VOXEL_EPSILON {
-            y_edges.push(aabb.min_y().clamp(0.0, 1.0));
-            y_edges.push(aabb.max_y().clamp(0.0, 1.0));
+        if aabb.max.y > VOXEL_EPSILON && aabb.min.y < 1.0 - VOXEL_EPSILON {
+            y_edges.push(aabb.min.y.clamp(0.0, 1.0));
+            y_edges.push(aabb.max.y.clamp(0.0, 1.0));
         }
-        if aabb.max_z() > VOXEL_EPSILON && aabb.min_z() < 1.0 - VOXEL_EPSILON {
-            z_edges.push(aabb.min_z().clamp(0.0, 1.0));
-            z_edges.push(aabb.max_z().clamp(0.0, 1.0));
+        if aabb.max.z > VOXEL_EPSILON && aabb.min.y < 1.0 - VOXEL_EPSILON {
+            z_edges.push(aabb.min.y.clamp(0.0, 1.0));
+            z_edges.push(aabb.max.z.clamp(0.0, 1.0));
         }
     }
     sort_and_dedup_voxel_edges(&mut x_edges);
@@ -710,12 +708,12 @@ fn offset_shape_fills_cell(
 ) -> bool {
     shape.iter().any(|aabb| {
         !aabb.is_empty()
-            && aabb.min_x() <= min_x + VOXEL_EPSILON
-            && aabb.max_x() >= max_x - VOXEL_EPSILON
-            && aabb.min_y() <= min_y + VOXEL_EPSILON
-            && aabb.max_y() >= max_y - VOXEL_EPSILON
-            && aabb.min_z() <= min_z + VOXEL_EPSILON
-            && aabb.max_z() >= max_z - VOXEL_EPSILON
+            && aabb.min.x <= min_x + VOXEL_EPSILON
+            && aabb.max.x >= max_x - VOXEL_EPSILON
+            && aabb.min.y <= min_y + VOXEL_EPSILON
+            && aabb.max.y >= max_y - VOXEL_EPSILON
+            && aabb.min.y <= min_z + VOXEL_EPSILON
+            && aabb.max.z >= max_z - VOXEL_EPSILON
     })
 }
 

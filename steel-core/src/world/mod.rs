@@ -2279,7 +2279,7 @@ impl World {
         }
 
         let mut closest: Option<(f64, Direction)> = None;
-      
+
         for shape in shape.iter() {
             let world_min = DVec3::new(shape.min.x, shape.min.y, shape.min.z) + block_vec;
             let world_max = DVec3::new(shape.max.x, shape.max.y, shape.max.z) + block_vec;

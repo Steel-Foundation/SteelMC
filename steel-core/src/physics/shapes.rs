@@ -260,12 +260,12 @@ fn project_offset_shape_onto_grid(
 
     for aabb in shape.iter() {
         let touches_face = match face {
-            Direction::Down => aabb.min_y() <= 1.0e-5,
-            Direction::Up => aabb.max_y() >= 1.0 - 1.0e-5,
-            Direction::North => aabb.min_z() <= 1.0e-5,
-            Direction::South => aabb.max_z() >= 1.0 - 1.0e-5,
-            Direction::West => aabb.min_x() <= 1.0e-5,
-            Direction::East => aabb.max_x() >= 1.0 - 1.0e-5,
+            Direction::Down => aabb.min.y <= 1.0e-5,
+            Direction::Up => aabb.max.y >= 1.0 - 1.0e-5,
+            Direction::North => aabb.min.z <= 1.0e-5,
+            Direction::South => aabb.max.z >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min.x <= 1.0e-5,
+            Direction::East => aabb.max.x >= 1.0 - 1.0e-5,
         };
 
         if !touches_face {
@@ -273,15 +273,9 @@ fn project_offset_shape_onto_grid(
         }
 
         let (min_u, max_u, min_v, max_v) = match face {
-            Direction::Down | Direction::Up => {
-                (aabb.min_x(), aabb.max_x(), aabb.min_z(), aabb.max_z())
-            }
-            Direction::North | Direction::South => {
-                (aabb.min_x(), aabb.max_x(), aabb.min_y(), aabb.max_y())
-            }
-            Direction::West | Direction::East => {
-                (aabb.min_z(), aabb.max_z(), aabb.min_y(), aabb.max_y())
-            }
+            Direction::Down | Direction::Up => (aabb.min.x, aabb.max.x, aabb.min.z, aabb.max.z),
+            Direction::North | Direction::South => (aabb.min.x, aabb.max.x, aabb.min.y, aabb.max.y),
+            Direction::West | Direction::East => (aabb.min.z, aabb.max.z, aabb.min.y, aabb.max.y),
         };
 
         let u_start = ((min_u * 16.0).round() as i32).clamp(0, 16) as usize;

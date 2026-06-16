@@ -3,6 +3,7 @@ use super::runner::FeatureDecorationRunner;
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
+use glam::IVec3;
 use steel_registry::structure::LiquidSettingsData;
 use steel_utils::BoundingBox;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
@@ -348,28 +349,20 @@ fn weighted_index(
     None
 }
 
-const fn template_feature_position(
-    origin: BlockPos,
-    rotation: Rotation,
-    size: [i32; 3],
-) -> BlockPos {
+const fn template_feature_position(origin: BlockPos, rotation: Rotation, size: IVec3) -> BlockPos {
     let west_offset = rotation.rotate(Direction::West).offset();
     let north_offset = rotation.rotate(Direction::North).offset();
     origin.offset(
-        west_offset.0 * (size[0] / 2) + north_offset.0 * (size[2] / 2),
+        west_offset.0 * (size.x / 2) + north_offset.0 * (size.y / 2),
         0,
-        west_offset.2 * (size[0] / 2) + north_offset.2 * (size[2] / 2),
+        west_offset.2 * (size.x / 2) + north_offset.2 * (size.y / 2),
     )
 }
 
 fn template_feature_bounding_box(region: &WorldGenRegion<'_>) -> BoundingBox {
     BoundingBox::new(
-        i32::MIN,
-        region.min_y(),
-        i32::MIN,
-        i32::MAX,
-        region.max_y_exclusive() - 1,
-        i32::MAX,
+        IVec3::MIN.with_y(region.min_y()),
+        IVec3::MAX.with_y(region.max_y_exclusive() - 1),
     )
 }
 
