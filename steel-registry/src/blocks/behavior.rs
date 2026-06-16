@@ -19,7 +19,7 @@ pub enum PushReaction {
     PushOnly,
 }
 
-/// Vanilla `BlockBehaviour.OffsetType`.
+/// Vanilla `BlockBehavior.OffsetType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffsetType {
     None,

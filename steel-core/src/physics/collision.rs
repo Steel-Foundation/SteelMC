@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    blocks::{block_state_ext::BlockStateExt, shapes::VoxelShape},
+    blocks::{
+        block_state_ext::BlockStateExt,
+        shapes::{OffsetVoxelShape, VoxelShape},
+    },
     vanilla_blocks, vanilla_entities,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
@@ -168,9 +171,15 @@ struct CollisionShape {
     offset: DVec3,
 }
 
+impl CollisionShape {
+    fn has_large_collision_shape(self) -> bool {
+        OffsetVoxelShape::new(self.shape, self.offset).has_large_collision_shape()
+    }
+}
+
 fn should_query_collision_shape(
     block_state: BlockStateId,
-    collision_shape: VoxelShape,
+    collision_shape: CollisionShape,
     cursor_type: CollisionCursorType,
 ) -> bool {
     match cursor_type {
@@ -313,11 +322,7 @@ impl<'a> WorldCollisionProvider<'a> {
                     if collision_shape.shape.is_empty() {
                         continue;
                     }
-                    if !should_query_collision_shape(
-                        block_state,
-                        collision_shape.shape,
-                        cursor_type,
-                    ) {
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
@@ -449,11 +454,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                     if collision_shape.shape.is_empty() {
                         continue;
                     }
-                    if !should_query_collision_shape(
-                        block_state,
-                        collision_shape.shape,
-                        cursor_type,
-                    ) {
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
@@ -502,11 +503,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                     if collision_shape.shape.is_empty() {
                         continue;
                     }
-                    if !should_query_collision_shape(
-                        block_state,
-                        collision_shape.shape,
-                        cursor_type,
-                    ) {
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
@@ -780,36 +777,57 @@ mod tests {
         let stone = vanilla_blocks::STONE.default_state();
         let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
         let large_shape = VoxelShape::from_boxes(LARGE_COLLISION_SHAPE);
+        let shape = |shape| CollisionShape {
+            shape,
+            offset: DVec3::ZERO,
+        };
 
         assert!(should_query_collision_shape(
             stone,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Inside
         ));
         assert!(!should_query_collision_shape(
             stone,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Face
         ));
         assert!(should_query_collision_shape(
             stone,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Face
         ));
         assert!(!should_query_collision_shape(
             stone,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Edge
         ));
         assert!(should_query_collision_shape(
             moving_piston,
-            VoxelShape::FULL_BLOCK,
+            shape(VoxelShape::FULL_BLOCK),
             CollisionCursorType::Edge
         ));
         assert!(!should_query_collision_shape(
             moving_piston,
-            large_shape,
+            shape(large_shape),
             CollisionCursorType::Corner
+        ));
+    }
+
+    #[test]
+    fn collision_shape_filter_uses_position_resolved_offset_bounds() {
+        test_support::init_test_registry();
+
+        let stone = vanilla_blocks::STONE.default_state();
+        let shifted_full_block = CollisionShape {
+            shape: VoxelShape::FULL_BLOCK,
+            offset: DVec3::new(0.25, 0.0, 0.0),
+        };
+
+        assert!(should_query_collision_shape(
+            stone,
+            shifted_full_block,
+            CollisionCursorType::Face
         ));
     }
 }

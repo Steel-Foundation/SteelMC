@@ -566,7 +566,10 @@ crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 // Shape lookup methods
 impl BlockRegistry {
     fn block_and_state_offset(&self, state_id: BlockStateId) -> Option<(BlockRef, u16)> {
-        let block = self.state_to_block_lookup.get(state_id.0 as usize).copied()?;
+        let block = self
+            .state_to_block_lookup
+            .get(state_id.0 as usize)
+            .copied()?;
         let block_id = self
             .state_to_block_id
             .get(state_id.0 as usize)
@@ -724,12 +727,7 @@ impl BlockRegistry {
         state_id: BlockStateId,
         pos: BlockPos,
     ) -> shapes::OffsetVoxelShape {
-        self.offset_shape_for_state(
-            state_id,
-            pos,
-            ShapeChannel::Visual,
-            Block::get_visual_shape,
-        )
+        self.offset_shape_for_state(state_id, pos, ShapeChannel::Visual, Block::get_visual_shape)
     }
 
     /// Gets all static shape channels for a block state.

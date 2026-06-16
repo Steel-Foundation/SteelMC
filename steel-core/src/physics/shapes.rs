@@ -404,10 +404,8 @@ mod tests {
 
     #[test]
     fn merged_offset_face_occludes_respects_shape_offset() {
-        let shifted_up = OffsetVoxelShape::new(
-            VoxelShape::FULL_BLOCK,
-            glam::DVec3::new(0.0, 0.25, 0.0),
-        );
+        let shifted_up =
+            OffsetVoxelShape::new(VoxelShape::FULL_BLOCK, glam::DVec3::new(0.0, 0.25, 0.0));
         let empty = OffsetVoxelShape::without_offset(VoxelShape::EMPTY);
 
         assert!(!merged_offset_face_occludes(

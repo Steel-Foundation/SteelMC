@@ -874,14 +874,7 @@ pub fn is_offset_face_rigid_supported(shape: OffsetVoxelShape, direction: Direct
     match direction {
         Direction::Down | Direction::Up => {
             offset_face_rectangles_cover(shape, direction, 0.0, RIGID_BORDER, 0.0, 1.0)
-                && offset_face_rectangles_cover(
-                    shape,
-                    direction,
-                    1.0 - RIGID_BORDER,
-                    1.0,
-                    0.0,
-                    1.0,
-                )
+                && offset_face_rectangles_cover(shape, direction, 1.0 - RIGID_BORDER, 1.0, 0.0, 1.0)
                 && offset_face_rectangles_cover(
                     shape,
                     direction,
@@ -966,7 +959,13 @@ fn face_rectangles_cover(
         });
     }
 
-    face_rects_cover_target(rects, target_min_a, target_max_a, target_min_b, target_max_b)
+    face_rects_cover_target(
+        rects,
+        target_min_a,
+        target_max_a,
+        target_min_b,
+        target_max_b,
+    )
 }
 
 fn offset_face_rectangles_cover(
@@ -997,7 +996,13 @@ fn offset_face_rectangles_cover(
         });
     }
 
-    face_rects_cover_target(rects, target_min_a, target_max_a, target_min_b, target_max_b)
+    face_rects_cover_target(
+        rects,
+        target_min_a,
+        target_max_a,
+        target_min_b,
+        target_max_b,
+    )
 }
 
 fn face_rects_cover_target(

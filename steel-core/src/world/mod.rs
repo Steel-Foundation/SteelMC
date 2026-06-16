@@ -2124,9 +2124,13 @@ impl World {
         fluid: ClipFluid,
     ) -> Option<ClipHitResult> {
         let state = self.get_block_state(pos);
-        let block_result =
-            Self::clip_shape(pos, from, to, self.clip_block_shape(state, pos, block_shape))
-                .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
+        let block_result = Self::clip_shape(
+            pos,
+            from,
+            to,
+            self.clip_block_shape(state, pos, block_shape),
+        )
+        .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
         let fluid_result = self.clip_fluid_shape(pos, from, to, state, fluid);
 
         match (block_result, fluid_result) {
@@ -2151,7 +2155,8 @@ impl World {
         state: BlockStateId,
         block_hit: ClipHitResult,
     ) -> ClipHitResult {
-        let Some(override_hit) = Self::clip_shape(pos, from, to, state.get_interaction_shape_at(pos))
+        let Some(override_hit) =
+            Self::clip_shape(pos, from, to, state.get_interaction_shape_at(pos))
         else {
             return block_hit;
         };
@@ -2350,11 +2355,7 @@ impl World {
         })
     }
 
-    fn shape_contains_world_point(
-        shape: OffsetVoxelShape,
-        block_vec: DVec3,
-        point: DVec3,
-    ) -> bool {
+    fn shape_contains_world_point(shape: OffsetVoxelShape, block_vec: DVec3, point: DVec3) -> bool {
         shape
             .iter()
             .any(|aabb| Self::local_aabb_contains_world_point(aabb, block_vec, point))

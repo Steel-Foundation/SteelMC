@@ -74,10 +74,7 @@ impl BlockStateExt for BlockStateId {
     }
 
     fn is_air(&self) -> bool {
-        let block = self.get_block();
-        block.config.is_air
-            || block == &vanilla_blocks::CAVE_AIR
-            || block == &vanilla_blocks::VOID_AIR
+        self.get_block().config.is_air
     }
 
     fn has_block_entity(&self) -> bool {
@@ -294,11 +291,7 @@ mod tests {
             .default_state()
             .set_value(&BlockStateProperties::EAST, true);
 
-        assert!(fence.is_face_sturdy_for_at(
-            BlockPos::ZERO,
-            Direction::Down,
-            SupportType::Center
-        ));
+        assert!(fence.is_face_sturdy_for_at(BlockPos::ZERO, Direction::Down, SupportType::Center));
     }
 
     #[test]

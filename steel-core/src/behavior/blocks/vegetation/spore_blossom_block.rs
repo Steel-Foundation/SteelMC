@@ -29,10 +29,11 @@ impl SporeBlossomBlock {
 impl BlockBehavior for SporeBlossomBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let above_pos = pos.above();
-        world
-            .get_block_state(above_pos)
-            .is_face_sturdy_for_at(above_pos, Direction::Down, SupportType::Center)
-            && get_fluid_state_from_block(world.get_block_state(pos)).is_empty()
+        world.get_block_state(above_pos).is_face_sturdy_for_at(
+            above_pos,
+            Direction::Down,
+            SupportType::Center,
+        ) && get_fluid_state_from_block(world.get_block_state(pos)).is_empty()
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

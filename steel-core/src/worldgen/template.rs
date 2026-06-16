@@ -407,7 +407,9 @@ impl StructureTemplate {
             return false;
         };
         !block.config.dynamic_shape
-            && blocks::shapes::is_shape_full_block(registry.blocks.get_static_collision_shape(state))
+            && blocks::shapes::is_shape_full_block(
+                registry.blocks.get_static_collision_shape(state),
+            )
     }
 
     fn sort_block_infos(blocks: &mut [StructureBlockInfo]) {

@@ -67,7 +67,9 @@ impl BoneMealItem {
                 );
 
                 if is_offset_shape_full_block(
-                    world.get_block_state(new_pos).get_collision_shape_at(new_pos),
+                    world
+                        .get_block_state(new_pos)
+                        .get_collision_shape_at(new_pos),
                 ) {
                     continue 'outer;
                 }

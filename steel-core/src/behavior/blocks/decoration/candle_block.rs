@@ -52,9 +52,11 @@ impl BlockBehavior for CandleBlock {
         pos: BlockPos,
     ) -> bool {
         let below_pos = pos.below();
-        world
-            .get_block_state(below_pos)
-            .is_face_sturdy_for_at(below_pos, Direction::Up, SupportType::Center)
+        world.get_block_state(below_pos).is_face_sturdy_for_at(
+            below_pos,
+            Direction::Up,
+            SupportType::Center,
+        )
     }
 
     fn get_state_for_placement(

@@ -221,14 +221,12 @@ impl FeatureDecorationRunner {
                 pos,
             );
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            if behavior.can_survive(state, region, pos)
-                && {
-                    let above_pos = pos.above();
-                    region
-                        .block_state(above_pos)
-                        .is_face_sturdy_at(above_pos, Direction::Down)
-                }
-            {
+            if behavior.can_survive(state, region, pos) && {
+                let above_pos = pos.above();
+                region
+                    .block_state(above_pos)
+                    .is_face_sturdy_at(above_pos, Direction::Down)
+            } {
                 let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
             }
         }
