@@ -18,8 +18,6 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub mod config;
 /// A module for logging utilities.
 pub mod logger;
-/// Spawn chunk generation with optional terminal progress display.
-pub mod spawn_progress;
 
 /// Static access to the server
 pub static SERVER: OnceLock<Arc<Server>> = OnceLock::new();
