@@ -2,6 +2,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use futures::future::join_all;
+use glam::IVec3;
 use std::cmp::Reverse;
 use std::env;
 use std::hint::black_box;
@@ -87,15 +88,15 @@ fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAcc
 /// In a real pipeline this reads from a neighbor cache, but for a single-chunk
 /// benchmark the chunk is its own neighbor (biome lookups near edges will
 /// wrap but that's fine for timing).
-fn self_neighbor_biomes(chunk: &ChunkAccess) -> impl Fn(i32, i32, i32) -> u16 + '_ {
+fn self_neighbor_biomes(chunk: &ChunkAccess) -> impl Fn(IVec3) -> u16 + '_ {
     let sections = chunk.sections();
     let min_qy = chunk.min_y() >> 2;
     let total_quarts_y = (sections.sections.len() * 4) as i32;
 
-    move |qx: i32, qy: i32, qz: i32| -> u16 {
-        let local_qx = qx.rem_euclid(4) as usize;
-        let local_qz = qz.rem_euclid(4) as usize;
-        let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+    move |q: IVec3| -> u16 {
+        let local_qx = q.x.rem_euclid(4) as usize;
+        let local_qz = q.z.rem_euclid(4) as usize;
+        let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
         let section_idx = qy_clamped / 4;
         let local_qy = qy_clamped % 4;
         sections.sections[section_idx]

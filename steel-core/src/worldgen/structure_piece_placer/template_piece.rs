@@ -57,11 +57,7 @@ impl StructurePiecePlacer {
         let settings = StructurePlaceSettings {
             mirror: data.mirror,
             rotation: data.rotation,
-            rotation_pivot: BlockPos::new(
-                data.rotation_pivot.x,
-                data.rotation_pivot.y,
-                data.rotation_pivot.z,
-            ),
+            rotation_pivot: BlockPos(data.rotation_pivot),
             bounding_box: clip,
             processors: processor_list,
             block_ignore: data.block_ignore,
@@ -135,11 +131,7 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
     ) -> BlockPos {
         match &mut data.placement_adjustment {
-            TemplatePlacementAdjustment::None => BlockPos::new(
-                data.template_position.x,
-                data.template_position.y,
-                data.template_position.z,
-            ),
+            TemplatePlacementAdjustment::None => BlockPos(data.template_position),
             TemplatePlacementAdjustment::Shipwreck {
                 is_beached,
                 height_adjusted,
@@ -148,39 +140,23 @@ impl StructurePiecePlacer {
                     let new_y = Self::adjusted_shipwreck_y(
                         region,
                         template,
-                        (
-                            data.template_position.x,
-                            data.template_position.y,
-                            data.template_position.z,
-                        ),
+                        data.template_position,
                         *is_beached,
                         random,
                     );
                     data.template_position.y = new_y;
                     *height_adjusted = true;
                 }
-                BlockPos::new(
-                    data.template_position.x,
-                    data.template_position.y,
-                    data.template_position.z,
-                )
+                BlockPos(data.template_position)
             }
             TemplatePlacementAdjustment::Igloo { template_offset } => {
                 Self::adjusted_igloo_position(
                     region,
-                    (
-                        data.template_position.x,
-                        data.template_position.y,
-                        data.template_position.z,
-                    ),
+                    data.template_position,
                     data.mirror,
                     data.rotation,
-                    BlockPos::new(
-                        data.rotation_pivot.x,
-                        data.rotation_pivot.y,
-                        data.rotation_pivot.z,
-                    ),
-                    *template_offset,
+                    BlockPos(data.rotation_pivot),
+                    IVec3::new(template_offset.0, template_offset.1, template_offset.2),
                 )
             }
             TemplatePlacementAdjustment::OceanRuin => {
@@ -197,7 +173,7 @@ impl StructurePiecePlacer {
     fn adjusted_shipwreck_y(
         region: &WorldGenRegion<'_>,
         template: &StructureTemplate,
-        position: (i32, i32, i32),
+        position: IVec3,
         is_beached: bool,
         random: &mut WorldgenRandom,
     ) -> i32 {
@@ -207,15 +183,15 @@ impl StructurePiecePlacer {
         } else {
             HeightmapType::OceanFloorWg
         };
-        let base_area = size[0] * size[2];
+        let base_area = size.x * size.z;
         if base_area == 0 {
-            return region.height_at(heightmap_type, position.0, position.2);
+            return region.height_at(heightmap_type, position.x, position.z);
         }
 
         let mut min_y = region.max_y_exclusive();
         let mut mean = 0;
-        for z in position.2..position.2 + size[2] {
-            for x in position.0..position.0 + size[0] {
+        for z in position.z..position.z + size.z {
+            for x in position.x..position.x + size.x {
                 let height = region.height_at(heightmap_type, x, z);
                 mean += height;
                 min_y = min_y.min(height);
@@ -224,7 +200,7 @@ impl StructurePiecePlacer {
         mean /= base_area;
 
         if is_beached {
-            min_y - size[1] / 2 - random.next_i32_bounded(3)
+            min_y - size.y / 2 - random.next_i32_bounded(3)
         } else {
             mean
         }
@@ -232,17 +208,17 @@ impl StructurePiecePlacer {
 
     fn adjusted_igloo_position(
         region: &WorldGenRegion<'_>,
-        position: (i32, i32, i32),
+        position: IVec3,
         mirror: StructureMirror,
         rotation: Rotation,
         pivot: BlockPos,
-        template_offset: (i32, i32, i32),
+        template_offset: IVec3,
     ) -> BlockPos {
         const IGLOO_GENERATION_HEIGHT: i32 = 90;
 
-        let raw_position = BlockPos::new(position.0, position.1, position.2);
+        let raw_position = BlockPos(position);
         let entrance_relative = StructureTemplate::calculate_relative_position(
-            BlockPos::new(3 - template_offset.0, 0, -template_offset.2),
+            BlockPos(IVec3::new(3 - template_offset.x, 0, -template_offset.z)),
             mirror,
             rotation,
             pivot,
@@ -270,19 +246,15 @@ impl StructurePiecePlacer {
             data.template_position.x,
             data.template_position.z,
         );
-        let base = BlockPos::new(
-            data.template_position.x,
-            ocean_floor_y,
-            data.template_position.z,
-        );
+        let base = BlockPos(data.template_position.with_y(ocean_floor_y));
         let size = template.size(Rotation::None);
         let corner_iv = data
             .rotation
-            .transform_pos(IVec3::new(size[0] - 1, 0, size[2] - 1), IVec3::new(0, 0, 0));
+            .transform_pos(IVec3::new(size.x - 1, 0, size.z - 1), IVec3::ZERO);
         let corner = base.offset(corner_iv.x, 0, corner_iv.z);
         let y = Self::adjusted_ocean_ruin_height(region, base, corner);
         data.template_position.y = y;
-        BlockPos::new(data.template_position.x, y, data.template_position.z)
+        BlockPos(data.template_position)
     }
 
     fn adjusted_ocean_ruin_height(
@@ -738,7 +710,7 @@ impl StructurePiecePlacer {
         settings: &StructurePlaceSettings<'_>,
     ) {
         let trapdoor_relative = StructureTemplate::calculate_relative_position(
-            BlockPos::new(3, 0, 5),
+            BlockPos(IVec3::new(3, 0, 5)),
             settings.mirror,
             settings.rotation,
             settings.rotation_pivot,

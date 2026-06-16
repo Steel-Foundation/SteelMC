@@ -19,13 +19,9 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_filter_feature_key: Option<&Identifier>,
     ) -> bool {
-        let biome_id = fuzzed_biome_at_block(
-            biome_zoom_seed,
-            origin.x(),
-            origin.y(),
-            origin.z(),
-            |quart_x, quart_y, quart_z| region.noise_biome_id(quart_x, quart_y, quart_z),
-        );
+        let biome_id = fuzzed_biome_at_block(biome_zoom_seed, origin, |quart| {
+            region.noise_biome_id(quart.x, quart.y, quart.z)
+        });
         let Some(biome) = registry.biomes.by_id(usize::from(biome_id)) else {
             panic!("biome filter resolved unknown biome id {biome_id}");
         };

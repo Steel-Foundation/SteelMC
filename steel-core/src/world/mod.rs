@@ -1367,19 +1367,13 @@ impl World {
     fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
         let biome_zoom_seed = obfuscate_biome_seed(self.seed());
         let mut missing_chunk = false;
-        let biome_id = fuzzed_biome_at_block(
-            biome_zoom_seed,
-            pos.x(),
-            pos.y(),
-            pos.z(),
-            |quart_x, quart_y, quart_z| {
-                self.noise_biome_id(quart_x, quart_y, quart_z)
-                    .unwrap_or_else(|| {
-                        missing_chunk = true;
-                        0
-                    })
-            },
-        );
+        let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
+            self.noise_biome_id(quart.x, quart.y, quart.z)
+                .unwrap_or_else(|| {
+                    missing_chunk = true;
+                    0
+                })
+        });
 
         if missing_chunk {
             return None;
