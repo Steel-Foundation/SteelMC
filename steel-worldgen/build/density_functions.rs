@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::string::String;
 use std::sync::Arc;
@@ -195,12 +195,15 @@ pub enum DensityFunctionData {
 /// In the datapack format, a spline value can be:
 /// - A bare number -> Constant
 /// - An object with {coordinate, points} -> Multipoint
+///
+/// The coordinate is itself a density function. Vanilla datapacks use both
+/// string references and inline density function objects here.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum SplineJson {
     Constant(f32),
     Multipoint {
-        coordinate: String,
+        coordinate: Box<DensityFunctionJson>,
         #[serde(default)]
         points: Vec<SplinePointJson>,
     },
@@ -576,10 +579,7 @@ fn json_spline_to_cubic(spline: &SplineJson) -> CubicSpline {
             }],
         ),
         SplineJson::Multipoint { coordinate, points } => CubicSpline::new(
-            Arc::new(DensityFunction::Reference(Reference {
-                id: coordinate.clone(),
-                resolved: None,
-            })),
+            Arc::new(json_to_df(coordinate)),
             points.iter().map(json_spline_point).collect(),
         ),
     }
@@ -600,7 +600,7 @@ fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
 
 // ── Build entry point ───────────────────────────────────────────────────────
 
-use crate::density::{TranspilerInput, transpile};
+use crate::density::{TranspilerInput, has_blended_noise, transpile};
 
 /// Convert a noise router JSON into a `BTreeMap` of router entries.
 fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFunction> {
@@ -637,14 +637,17 @@ fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFuncti
     entries
 }
 
-/// Transpile density functions for a single dimension.
-fn transpile_dimension(
+/// Build generated density code and settings glue for a single dimension.
+fn build_dimension(
     dimension: &str,
     prefix: &str,
     registry: &BTreeMap<String, DensityFunction>,
-) -> TokenStream {
+) -> (TokenStream, TokenStream) {
     let settings = read_noise_settings(dimension);
     let router_entries = router_to_entries(&settings.noise_router);
+    let uses_blended_noise = router_entries
+        .values()
+        .any(|df| has_blended_noise(df, registry, &mut BTreeSet::new()));
 
     let cell_width = settings.noise.size_horizontal * 4;
     let input = TranspilerInput {
@@ -655,7 +658,10 @@ fn transpile_dimension(
         legacy_random_source: settings.legacy_random_source,
     };
 
-    transpile(&input)
+    (
+        transpile(&input),
+        generate_noise_settings(settings, prefix, uses_blended_noise),
+    )
 }
 
 /// Generate noise settings constants and trait impls for a dimension.
@@ -663,9 +669,11 @@ fn transpile_dimension(
     clippy::too_many_lines,
     reason = "generated noise settings include all trait glue in one quoted block"
 )]
-fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
-    let mut settings = read_noise_settings(dimension);
-
+fn generate_noise_settings(
+    mut settings: NoiseSettingsJson,
+    prefix: &str,
+    uses_blended_noise: bool,
+) -> TokenStream {
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
     let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
@@ -772,6 +780,14 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
     let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
     let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
+
+    let compute_noise_column = uses_blended_noise.then(|| {
+        quote! {
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+                self.blended_noise.compute_column(x, block_ys, z, out);
+            }
+        }
+    });
 
     quote! {
         /// Noise settings for this dimension, parsed from the datapack.
@@ -945,9 +961,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 VEIN_INTERP_ENABLED
             }
 
-            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
-                self.blended_noise.compute_column(x, block_ys, z, out);
-            }
+            #compute_noise_column
 
             #[inline]
             fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
@@ -1035,12 +1049,9 @@ pub(crate) fn build() -> DensityFunctionFiles {
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
 
-    let overworld_df = transpile_dimension("overworld", "Overworld", &registry);
-    let overworld_settings = generate_noise_settings("overworld", "Overworld");
-    let nether_df = transpile_dimension("nether", "Nether", &registry);
-    let nether_settings = generate_noise_settings("nether", "Nether");
-    let end_df = transpile_dimension("end", "End", &registry);
-    let end_settings = generate_noise_settings("end", "End");
+    let (overworld_df, overworld_settings) = build_dimension("overworld", "Overworld", &registry);
+    let (nether_df, nether_settings) = build_dimension("nether", "Nether", &registry);
+    let (end_df, end_settings) = build_dimension("end", "End", &registry);
 
     // Note: the transpiler already emits `use` imports in #overworld_df / #nether_df / #end_df.
     let overworld = quote! {

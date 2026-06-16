@@ -1,6 +1,7 @@
 mod transpiler;
 mod types;
 
+pub(crate) use transpiler::has_blended_noise;
 pub use transpiler::{TranspilerInput, transpile};
 pub use types::{
     BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,

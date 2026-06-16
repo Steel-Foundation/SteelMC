@@ -1943,7 +1943,7 @@ fn collect_interpolated_spline_walk(
 }
 
 /// Check if a density function tree transitively contains `BlendedNoise`.
-fn has_blended_noise(
+pub(crate) fn has_blended_noise(
     df: &DensityFunction,
     registry: &BTreeMap<String, DensityFunction>,
     visited: &mut BTreeSet<String>,
