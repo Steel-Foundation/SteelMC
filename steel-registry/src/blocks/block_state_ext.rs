@@ -4,7 +4,7 @@ use crate::{
     blocks::{
         self, BlockRef,
         properties::{BlockStateProperties, Direction, Property},
-        shapes::SupportType,
+        shapes::{OffsetVoxelShape, SupportType},
     },
 };
 use glam::DVec3;
@@ -21,19 +21,29 @@ pub trait BlockStateExt {
     #[must_use]
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId;
     fn get_property_str(&self, name: &str) -> Option<String>;
-    fn get_collision_shape(&self) -> blocks::shapes::VoxelShape;
-    fn get_support_shape(&self) -> blocks::shapes::VoxelShape;
-    fn get_outline_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_collision_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
+    fn get_static_support_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_support_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
+    fn get_static_outline_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_outline_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
     fn get_occlusion_shape(&self) -> blocks::shapes::VoxelShape;
-    fn get_interaction_shape(&self) -> blocks::shapes::VoxelShape;
-    fn get_visual_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_static_interaction_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_interaction_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
+    fn get_static_visual_shape(&self) -> blocks::shapes::VoxelShape;
+    fn get_visual_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
     /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
     fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
-    fn is_face_sturdy(&self, direction: Direction) -> bool;
+    fn is_face_sturdy_at(&self, pos: BlockPos, direction: Direction) -> bool;
     /// Checks if this block face is sturdy for the given support type.
-    fn is_face_sturdy_for(&self, direction: Direction, support_type: SupportType) -> bool;
+    fn is_face_sturdy_for_at(
+        &self,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool;
     /// Checks if this block state is solid (has a full cube collision shape).
     ///
     /// This matches vanilla's `BlockState.isSolid()` which is used by standing signs
@@ -96,41 +106,66 @@ impl BlockStateExt for BlockStateId {
             .map(|(_, v)| v.to_string())
     }
 
-    fn get_collision_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_collision_shape(*self)
+    fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape {
+        REGISTRY.blocks.get_static_collision_shape(*self)
     }
 
-    fn get_support_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_support_shape(*self)
+    fn get_collision_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape {
+        REGISTRY.blocks.get_collision_shape_at(*self, pos)
     }
 
-    fn get_outline_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_outline_shape(*self)
+    fn get_static_support_shape(&self) -> blocks::shapes::VoxelShape {
+        REGISTRY.blocks.get_static_support_shape(*self)
+    }
+
+    fn get_support_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape {
+        REGISTRY.blocks.get_support_shape_at(*self, pos)
+    }
+
+    fn get_static_outline_shape(&self) -> blocks::shapes::VoxelShape {
+        REGISTRY.blocks.get_static_outline_shape(*self)
+    }
+
+    fn get_outline_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape {
+        REGISTRY.blocks.get_outline_shape_at(*self, pos)
     }
 
     fn get_occlusion_shape(&self) -> blocks::shapes::VoxelShape {
         REGISTRY.blocks.get_occlusion_shape(*self)
     }
 
-    fn get_interaction_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_interaction_shape(*self)
+    fn get_static_interaction_shape(&self) -> blocks::shapes::VoxelShape {
+        REGISTRY.blocks.get_static_interaction_shape(*self)
     }
 
-    fn get_visual_shape(&self) -> blocks::shapes::VoxelShape {
-        REGISTRY.blocks.get_visual_shape(*self)
+    fn get_interaction_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape {
+        REGISTRY.blocks.get_interaction_shape_at(*self, pos)
+    }
+
+    fn get_static_visual_shape(&self) -> blocks::shapes::VoxelShape {
+        REGISTRY.blocks.get_static_visual_shape(*self)
+    }
+
+    fn get_visual_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape {
+        REGISTRY.blocks.get_visual_shape_at(*self, pos)
     }
 
     fn get_offset(&self, pos: BlockPos) -> DVec3 {
         self.get_block().offset_at(pos)
     }
 
-    fn is_face_sturdy(&self, direction: Direction) -> bool {
-        self.is_face_sturdy_for(direction, SupportType::Full)
+    fn is_face_sturdy_at(&self, pos: BlockPos, direction: Direction) -> bool {
+        self.is_face_sturdy_for_at(pos, direction, SupportType::Full)
     }
 
-    fn is_face_sturdy_for(&self, direction: Direction, support_type: SupportType) -> bool {
-        let shape = self.get_support_shape();
-        blocks::shapes::is_face_sturdy(shape, direction, support_type)
+    fn is_face_sturdy_for_at(
+        &self,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        let shape = self.get_support_shape_at(pos);
+        blocks::shapes::is_offset_face_sturdy(shape, direction, support_type)
     }
 
     fn is_solid(&self) -> bool {
@@ -147,7 +182,7 @@ impl BlockStateExt for BlockStateId {
         // Vanilla's calculateSolid: check collision shape bounding box.
         // A block is solid if its average dimension size >= 35/48 (~0.7292)
         // or its Y size >= 1.0. This catches partial blocks like cactus
-        let shape = self.get_collision_shape();
+        let shape = self.get_static_collision_shape();
         if shape.is_empty() {
             return false;
         }
@@ -220,7 +255,7 @@ mod tests {
 
         let glass = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::GLASS);
         assert!(blocks::shapes::is_shape_full_block(
-            glass.get_collision_shape()
+            glass.get_static_collision_shape()
         ));
         assert!(!glass.is_solid_render());
     }
@@ -259,7 +294,11 @@ mod tests {
             .default_state()
             .set_value(&BlockStateProperties::EAST, true);
 
-        assert!(fence.is_face_sturdy_for(Direction::Down, SupportType::Center));
+        assert!(fence.is_face_sturdy_for_at(
+            BlockPos::ZERO,
+            Direction::Down,
+            SupportType::Center
+        ));
     }
 
     #[test]

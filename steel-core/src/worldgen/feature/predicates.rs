@@ -83,9 +83,12 @@ impl FeatureDecorationRunner {
             BlockPredicate::Replaceable { offset } => region
                 .block_state(Self::offset(origin, offset))
                 .is_replaceable(),
-            BlockPredicate::HasSturdyFace { direction, offset } => region
-                .block_state(Self::offset(origin, offset))
-                .is_face_sturdy(*direction),
+            BlockPredicate::HasSturdyFace { direction, offset } => {
+                let position = Self::offset(origin, offset);
+                region
+                    .block_state(position)
+                    .is_face_sturdy_at(position, *direction)
+            }
             BlockPredicate::InsideWorldBounds { offset } => {
                 let position = Self::offset(origin, offset);
                 !region.is_outside_build_height(position.y())

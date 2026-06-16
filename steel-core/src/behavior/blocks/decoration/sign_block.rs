@@ -143,7 +143,7 @@ fn can_wall_sign_survive(world: &dyn LevelReader, pos: BlockPos, facing: Directi
 fn can_ceiling_hanging_sign_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let above_pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
     let above_state = world.get_block_state(above_pos);
-    above_state.is_face_sturdy_for(Direction::Down, SupportType::Center)
+    above_state.is_face_sturdy_for_at(above_pos, Direction::Down, SupportType::Center)
 }
 
 /// Checks if a wall hanging sign can attach to a neighboring block.
@@ -173,7 +173,7 @@ fn can_attach_to(
     }
 
     // Otherwise, check for sturdy face with FULL support
-    attach_state.is_face_sturdy_for(attach_face, SupportType::Full)
+    attach_state.is_face_sturdy_for_at(attach_pos, attach_face, SupportType::Full)
 }
 
 /// Checks if a wall hanging sign can survive at the given position.
@@ -495,7 +495,8 @@ impl BlockBehavior for CeilingHangingSignBlock {
 
         // Determine if we should attach to the middle or not based on block above
         let direction = Direction::from_yaw(context.rotation);
-        let is_above_full = above_state.is_face_sturdy_for(Direction::Down, SupportType::Full);
+        let is_above_full =
+            above_state.is_face_sturdy_for_at(above_pos, Direction::Down, SupportType::Full);
 
         // Check if block above is also a hanging sign
         let above_block = REGISTRY.blocks.by_state_id(above_state);

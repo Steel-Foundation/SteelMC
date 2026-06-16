@@ -81,7 +81,7 @@ impl PotentSulfurBlockEntity {
         if state.is_air() || state.get_block() == &vanilla_blocks::WATER {
             return true;
         }
-        state.get_collision_shape().is_empty()
+        state.get_collision_shape_at(pos).is_empty()
     }
 
     fn find_source_block(world: &World, origin: BlockPos) -> Option<BlockPos> {

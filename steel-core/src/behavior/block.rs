@@ -672,7 +672,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: BlockCollisionContext,
     ) -> VoxelShape {
-        state.get_collision_shape()
+        state.get_static_collision_shape()
     }
 
     /// Returns this block state's collision shape for the supplied collision context.

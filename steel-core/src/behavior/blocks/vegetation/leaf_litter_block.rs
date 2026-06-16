@@ -26,9 +26,10 @@ impl LeafLitterBlock {
 
 impl BlockBehavior for LeafLitterBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        let below_pos = pos.below();
         world
-            .get_block_state(pos.below())
-            .is_face_sturdy(Direction::Up)
+            .get_block_state(below_pos)
+            .is_face_sturdy_at(below_pos, Direction::Up)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
