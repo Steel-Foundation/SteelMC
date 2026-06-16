@@ -3,31 +3,71 @@
     "id": 0,
     "name": "speed",
     "category": "BENEFICIAL",
-    "color": 3402751
+    "color": 3402751,
+    "attribute_modifiers": [
+      {
+        "attribute": "movement_speed",
+        "id": "effect.speed",
+        "amount": 0.20000000298023224,
+        "operation": "ADD_MULTIPLIED_TOTAL"
+      }
+    ]
   },
   {
     "id": 1,
     "name": "slowness",
     "category": "HARMFUL",
-    "color": 9154528
+    "color": 9154528,
+    "attribute_modifiers": [
+      {
+        "attribute": "movement_speed",
+        "id": "effect.slowness",
+        "amount": -0.15000000596046448,
+        "operation": "ADD_MULTIPLIED_TOTAL"
+      }
+    ]
   },
   {
     "id": 2,
     "name": "haste",
     "category": "BENEFICIAL",
-    "color": 14270531
+    "color": 14270531,
+    "attribute_modifiers": [
+      {
+        "attribute": "attack_speed",
+        "id": "effect.haste",
+        "amount": 0.10000000149011612,
+        "operation": "ADD_MULTIPLIED_TOTAL"
+      }
+    ]
   },
   {
     "id": 3,
     "name": "mining_fatigue",
     "category": "HARMFUL",
-    "color": 4866583
+    "color": 4866583,
+    "attribute_modifiers": [
+      {
+        "attribute": "attack_speed",
+        "id": "effect.mining_fatigue",
+        "amount": -0.10000000149011612,
+        "operation": "ADD_MULTIPLIED_TOTAL"
+      }
+    ]
   },
   {
     "id": 4,
     "name": "strength",
     "category": "BENEFICIAL",
-    "color": 16762624
+    "color": 16762624,
+    "attribute_modifiers": [
+      {
+        "attribute": "attack_damage",
+        "id": "effect.strength",
+        "amount": 3.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 5,
@@ -45,7 +85,15 @@
     "id": 7,
     "name": "jump_boost",
     "category": "BENEFICIAL",
-    "color": 16646020
+    "color": 16646020,
+    "attribute_modifiers": [
+      {
+        "attribute": "safe_fall_distance",
+        "id": "effect.jump_boost",
+        "amount": 1.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 8,
@@ -81,7 +129,15 @@
     "id": 13,
     "name": "invisibility",
     "category": "BENEFICIAL",
-    "color": 16185078
+    "color": 16185078,
+    "attribute_modifiers": [
+      {
+        "attribute": "waypoint_transmit_range",
+        "id": "effect.waypoint_transmit_range_hide",
+        "amount": -1.0,
+        "operation": "ADD_MULTIPLIED_TOTAL"
+      }
+    ]
   },
   {
     "id": 14,
@@ -105,7 +161,15 @@
     "id": 17,
     "name": "weakness",
     "category": "HARMFUL",
-    "color": 4738376
+    "color": 4738376,
+    "attribute_modifiers": [
+      {
+        "attribute": "attack_damage",
+        "id": "effect.weakness",
+        "amount": -4.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 18,
@@ -123,13 +187,29 @@
     "id": 20,
     "name": "health_boost",
     "category": "BENEFICIAL",
-    "color": 16284963
+    "color": 16284963,
+    "attribute_modifiers": [
+      {
+        "attribute": "max_health",
+        "id": "effect.health_boost",
+        "amount": 4.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 21,
     "name": "absorption",
     "category": "BENEFICIAL",
-    "color": 2445989
+    "color": 2445989,
+    "attribute_modifiers": [
+      {
+        "attribute": "max_absorption",
+        "id": "effect.absorption",
+        "amount": 4.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 22,
@@ -153,13 +233,29 @@
     "id": 25,
     "name": "luck",
     "category": "BENEFICIAL",
-    "color": 5882118
+    "color": 5882118,
+    "attribute_modifiers": [
+      {
+        "attribute": "luck",
+        "id": "effect.luck",
+        "amount": 1.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 26,
     "name": "unluck",
     "category": "HARMFUL",
-    "color": 12624973
+    "color": 12624973,
+    "attribute_modifiers": [
+      {
+        "attribute": "luck",
+        "id": "effect.unluck",
+        "amount": -1.0,
+        "operation": "ADD_VALUE"
+      }
+    ]
   },
   {
     "id": 27,

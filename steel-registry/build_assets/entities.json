@@ -60,6 +60,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -292,6 +293,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -533,6 +535,7 @@
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -823,6 +826,7 @@
     "update_interval": 2147483647,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -1036,6 +1040,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -1351,6 +1356,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -1688,6 +1694,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -1917,6 +1924,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -2257,6 +2265,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -2489,6 +2498,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -2726,6 +2736,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -3031,6 +3042,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -3360,6 +3372,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -3592,6 +3605,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -3837,6 +3851,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -4126,6 +4141,7 @@
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -4465,6 +4481,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -4775,6 +4792,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -5058,6 +5076,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -5251,6 +5270,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -5621,6 +5641,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -5991,6 +6012,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -6388,6 +6410,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -6685,6 +6708,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -6917,6 +6941,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -7153,6 +7178,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -7396,6 +7422,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -7744,6 +7771,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -8057,6 +8085,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -8357,6 +8386,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -8622,6 +8652,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -8966,6 +8997,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -9298,6 +9330,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -9607,6 +9640,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -9839,6 +9873,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -10088,6 +10123,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -10440,6 +10476,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -10781,6 +10818,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -10966,6 +11004,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -11284,6 +11323,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -11490,6 +11530,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -11808,6 +11849,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -12132,6 +12174,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -12458,6 +12501,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -12746,6 +12790,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -12927,6 +12972,7 @@
     "update_interval": 2147483647,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -13140,6 +13186,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -13455,6 +13502,7 @@
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -13619,6 +13667,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -13800,6 +13849,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -13966,6 +14016,7 @@
     "update_interval": 4,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -14135,6 +14186,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -14317,6 +14369,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -14502,6 +14555,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -14718,6 +14772,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -15083,6 +15138,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -15413,6 +15469,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -15654,6 +15711,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -15971,6 +16029,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -16312,6 +16371,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -16595,6 +16655,7 @@
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -16824,6 +16885,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -17163,6 +17225,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -17512,6 +17575,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -17830,6 +17894,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -18153,6 +18218,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -18400,6 +18466,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -18754,6 +18821,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -19097,6 +19165,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -19412,6 +19481,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -19615,6 +19685,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -19900,6 +19971,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -20070,6 +20142,7 @@
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -20400,6 +20473,7 @@
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -20604,6 +20678,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -20836,6 +20911,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -21064,6 +21140,7 @@
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -21220,6 +21297,7 @@
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -21405,6 +21483,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -21764,6 +21843,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -21945,6 +22025,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -22264,6 +22345,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -22496,6 +22578,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -22728,6 +22811,7 @@
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -23030,6 +23114,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -23190,6 +23275,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -23433,6 +23519,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -23781,6 +23868,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -24147,6 +24235,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -24499,6 +24588,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -24731,6 +24821,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -24980,6 +25071,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -25292,6 +25384,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -25466,6 +25559,7 @@
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -25662,6 +25756,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -25894,6 +25989,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -26143,6 +26239,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -26520,6 +26617,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -26828,6 +26926,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -27186,6 +27285,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -27488,6 +27588,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -27840,6 +27941,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -28184,6 +28286,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -28506,6 +28609,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -28842,6 +28946,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -29170,6 +29275,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -29371,6 +29477,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -29581,6 +29688,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -29908,6 +30016,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -30249,6 +30358,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -30571,6 +30681,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -30902,6 +31013,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -31234,6 +31346,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -31538,6 +31651,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -31715,6 +31829,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -32011,6 +32126,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -32329,6 +32445,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -32669,6 +32786,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -32992,6 +33110,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -33198,6 +33317,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -33529,6 +33649,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -33731,6 +33852,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -34023,6 +34145,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -34245,6 +34368,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -34456,6 +34580,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -34749,6 +34874,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -34981,6 +35107,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -35230,6 +35357,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -35551,6 +35679,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -35851,6 +35980,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -36195,6 +36325,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -36553,6 +36684,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -36860,6 +36992,7 @@
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -37206,6 +37339,7 @@
     "update_interval": 10,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -37388,6 +37522,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -37639,6 +37774,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -38006,6 +38142,7 @@
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -38247,6 +38384,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -38578,6 +38716,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -38918,6 +39057,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -39228,6 +39368,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -39597,6 +39738,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -39919,6 +40061,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -40250,6 +40393,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -40547,6 +40691,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -40740,6 +40885,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -41068,6 +41214,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -41403,6 +41550,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -41686,6 +41834,7 @@
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -41889,6 +42038,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -42282,6 +42432,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -42588,6 +42739,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -42919,6 +43071,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -43267,6 +43420,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": true,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -43650,6 +43804,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -43885,7 +44040,7 @@
               "serializer": "villager_data",
               "default_value": {
                 "type": "minecraft:plains",
-                "profession": "minecraft:weaponsmith",
+                "profession": "minecraft:nitwit",
                 "level": 1
               }
             },
@@ -44015,6 +44170,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "allowed_in_peaceful": false,
     "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": {
@@ -44329,6 +44485,7 @@
     "update_interval": 2,
     "fire_immune": false,
     "summonable": false,
+    "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": {
@@ -44641,6 +44798,7 @@
     "update_interval": 5,
     "fire_immune": false,
     "summonable": false,
+    "allowed_in_peaceful": true,
     "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": {
