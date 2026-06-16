@@ -76,14 +76,14 @@
           "description": "Vanilla chat spam threshold window in seconds; values <= 0 disable throttling",
           "minimum": -2147483648,
           "maximum": 2147483647,
-          "default": -1
+          "default": 10
         },
         "command_spam_threshold_seconds": {
           "type": "integer",
           "description": "Vanilla command spam threshold window in seconds; values <= 0 disable throttling",
           "minimum": -2147483648,
           "maximum": 2147483647,
-          "default": -1
+          "default": 10
         },
         "compression": {
           "type": "object",

@@ -229,8 +229,8 @@ mod tests {
     fn packaged_configs_parse() {
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
         assert!(!config.server.allow_flight);
-        assert_eq!(config.server.chat_spam_threshold_seconds, -1);
-        assert_eq!(config.server.command_spam_threshold_seconds, -1);
+        assert_eq!(config.server.chat_spam_threshold_seconds, 10);
+        assert_eq!(config.server.command_spam_threshold_seconds, 10);
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
         assert!(!worlds.domains.is_empty());
@@ -250,8 +250,8 @@ mod tests {
             use_favicon = false
             favicon = "config/favicon.png"
             enforce_secure_chat = false
-            chat_spam_threshold_seconds = -1
-            command_spam_threshold_seconds = -1
+            chat_spam_threshold_seconds = 10
+            command_spam_threshold_seconds = 10
         "#;
 
         let config: SteelConfig = toml::from_str(input).expect("config should parse");

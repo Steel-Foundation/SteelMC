@@ -292,7 +292,7 @@ impl BlockEntity for PotentSulfurBlockEntity {
 
         let game_time = world.game_time();
 
-        // TODO: Nausea effect ticker (WET / DORMANT states, every 10 ticks), requires set_mob_effect on Entity trait
+        // TODO: Add nausea ticker (WET / DORMANT states, every 10 ticks) after the mob-effect refactor adds timed instances and sync.
 
         let action = if matches!(
             &current,

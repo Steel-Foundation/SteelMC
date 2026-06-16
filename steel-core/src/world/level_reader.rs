@@ -56,6 +56,15 @@ pub trait ScheduledTickAccess: LevelReader {
     /// Schedules a block tick using vanilla's default priority.
     fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool;
 
+    /// Returns whether a tick is already scheduled for the same `(pos, block)`.
+    #[expect(
+        unused_variables,
+        reason = "most test/worldgen level surfaces do not track scheduled tick presence"
+    )]
+    fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        false
+    }
+
     /// Schedules a fluid tick using vanilla's default priority.
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool;
 }

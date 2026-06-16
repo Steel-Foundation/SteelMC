@@ -3438,6 +3438,10 @@ impl ScheduledTickAccess for Arc<World> {
         true
     }
 
+    fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        self.as_ref().has_scheduled_block_tick(pos, block)
+    }
+
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true

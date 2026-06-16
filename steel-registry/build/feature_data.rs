@@ -1221,7 +1221,7 @@ fn parse_rotation(value: &str) -> Result<Rotation, &'static str> {
     match value {
         "none" => Ok(Rotation::None),
         "clockwise_90" => Ok(Rotation::Clockwise90),
-        "clockwise_180" => Ok(Rotation::Clockwise180),
+        "180" => Ok(Rotation::Clockwise180),
         "counterclockwise_90" => Ok(Rotation::CounterClockwise90),
         _ => Err("invalid rotation"),
     }

@@ -689,6 +689,24 @@ pub trait BlockBehavior: Send + Sync {
         self.default_get_collision_shape(state, world, pos, context)
     }
 
+    /// Returns a block-local translation for this block state's collision shape.
+    ///
+    /// Vanilla baseline for `BlockState.getOffset(BlockPos)` where
+    /// `getCollisionShape` delegates to the offset outline shape.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation has no positional collision offset"
+    )]
+    fn get_collision_shape_offset(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> DVec3 {
+        DVec3::ZERO
+    }
+
     /// Returns this block state's shape used by vanilla entity-inside effects.
     ///
     /// Vanilla baseline for

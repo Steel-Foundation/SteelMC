@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, DripstoneThickness, SpeleothemThickness,
 };
 use steel_registry::{vanilla_block_tags::BlockTag, vanilla_damage_types, vanilla_fluids};
-use steel_utils::Direction;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::random::get_seed;
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
+use crate::behavior::block::{
+    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
@@ -17,13 +20,15 @@ use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::BlockRef;
 
+const SPELEOTHEM_MAX_HORIZONTAL_OFFSET: f64 = 0.125;
+
 /// Vanilla `PointedDripstoneBlock` survival and thickness updates.
 ///
 /// Survival mirrors vanilla's `isValidPointedDripstonePlacement`: the block
 /// opposite the tip direction must be face-sturdy on the face pointing toward
 /// us, or be another pointed dripstone with the same `vertical_direction`.
-// TODO: Implement scheduled-tick stalagmite breakage, trident projectile
-// breakage, fluid transfer, and growth.
+// TODO: Implement falling stalactites after falling block entities exist.
+// TODO: Implement trident projectile breakage, fluid transfer, and growth.
 #[block_behavior]
 pub struct PointedDripstoneBlock {
     block: BlockRef,
@@ -66,14 +71,7 @@ impl BlockBehavior for PointedDripstoneBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // TODO: Vanilla picks tip direction from clicked-face/looking direction
-        // and computes thickness. Placeholder: default state if it survives.
-        let state = self.block.default_state();
-        self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state.set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            ))
+        self.speleothem().state_for_placement(context)
     }
 
     fn update_shape(
@@ -87,6 +85,20 @@ impl BlockBehavior for PointedDripstoneBlock {
     ) -> BlockStateId {
         self.speleothem()
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.speleothem().tick(state, world, pos);
+    }
+
+    fn get_collision_shape_offset(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        pos: BlockPos,
+        _context: BlockCollisionContext,
+    ) -> DVec3 {
+        SpeleothemBlockBehavior::xz_shape_offset(pos)
     }
 
     fn fall_on(
@@ -128,12 +140,7 @@ impl BlockBehavior for SulfurSpikeBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let state = self.block.default_state();
-        self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state.set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            ))
+        self.speleothem().state_for_placement(context)
     }
 
     fn update_shape(
@@ -147,6 +154,20 @@ impl BlockBehavior for SulfurSpikeBlock {
     ) -> BlockStateId {
         self.speleothem()
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.speleothem().tick(state, world, pos);
+    }
+
+    fn get_collision_shape_offset(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        pos: BlockPos,
+        _context: BlockCollisionContext,
+    ) -> DVec3 {
+        SpeleothemBlockBehavior::xz_shape_offset(pos)
     }
 }
 
@@ -171,6 +192,41 @@ enum SpeleothemThicknessValue {
 }
 
 impl SpeleothemBlockBehavior {
+    fn xz_shape_offset(pos: BlockPos) -> DVec3 {
+        let seed = get_seed(pos.x(), 0, pos.z());
+        DVec3::new(
+            speleothem_offset_component(seed & 15),
+            0.0,
+            speleothem_offset_component((seed >> 8) & 15),
+        )
+    }
+
+    fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let default_tip_direction = context.get_nearest_looking_vertical_direction().opposite();
+        let tip_direction = self.calculate_tip_direction(
+            context.world.as_ref(),
+            context.relative_pos,
+            default_tip_direction,
+        )?;
+        let merge_opposing_tips = !context.is_secondary_use_active;
+        let thickness = self.calculate_thickness(
+            context.world.as_ref(),
+            context.relative_pos,
+            tip_direction,
+            merge_opposing_tips,
+        );
+        let state = self
+            .block
+            .default_state()
+            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, tip_direction)
+            .set_value(
+                &BlockStateProperties::WATERLOGGED,
+                context.is_water_source(),
+            );
+
+        Some(self.with_thickness(state, thickness))
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
         let behind_pos = pos.relative(tip_direction.opposite());
@@ -200,6 +256,10 @@ impl SpeleothemBlockBehavior {
         }
 
         let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        if tip_direction == Direction::Down && world.has_scheduled_block_tick(pos, self.block) {
+            return state;
+        }
+
         if direction == tip_direction.opposite() && !self.can_survive(state, world, pos) {
             let delay = if tip_direction == Direction::Down {
                 2
@@ -213,6 +273,35 @@ impl SpeleothemBlockBehavior {
         let merge_opposing_tips = self.thickness(state) == SpeleothemThicknessValue::TipMerge;
         let thickness = self.calculate_thickness(world, pos, tip_direction, merge_opposing_tips);
         self.with_thickness(state, thickness)
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if Self::is_stalagmite(state) && !self.can_survive(state, world.as_ref(), pos) {
+            world.destroy_block(pos, true);
+        }
+    }
+
+    fn calculate_tip_direction(
+        &self,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        default_tip_direction: Direction,
+    ) -> Option<Direction> {
+        let default_state = self.block.default_state().set_value(
+            &BlockStateProperties::VERTICAL_DIRECTION,
+            default_tip_direction,
+        );
+        if self.can_survive(default_state, world, pos) {
+            return Some(default_tip_direction);
+        }
+
+        let opposite_tip_direction = default_tip_direction.opposite();
+        let opposite_state = self.block.default_state().set_value(
+            &BlockStateProperties::VERTICAL_DIRECTION,
+            opposite_tip_direction,
+        );
+        self.can_survive(opposite_state, world, pos)
+            .then_some(opposite_tip_direction)
     }
 
     fn calculate_thickness(
@@ -257,6 +346,10 @@ impl SpeleothemBlockBehavior {
     fn is_speleothem_with_direction(state: BlockStateId, tip_direction: Direction) -> bool {
         state.get_block().has_tag(&BlockTag::SPELEOTHEMS)
             && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+    }
+
+    fn is_stalagmite(state: BlockStateId) -> bool {
+        Self::is_speleothem_with_direction(state, Direction::Up)
     }
 
     fn thickness(&self, state: BlockStateId) -> SpeleothemThicknessValue {
@@ -312,6 +405,14 @@ impl SpeleothemBlockBehavior {
     }
 }
 
+fn speleothem_offset_component(seed_bits: i64) -> f64 {
+    let raw_offset = (f64::from(seed_bits as f32 / 15.0) - 0.5) * 0.5;
+    raw_offset.clamp(
+        -SPELEOTHEM_MAX_HORIZONTAL_OFFSET,
+        SPELEOTHEM_MAX_HORIZONTAL_OFFSET,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,5 +456,33 @@ mod tests {
         let state = pointed_dripstone_state(Direction::Down, DripstoneThickness::Tip);
 
         assert!(PointedDripstoneBlock::fall_damage_for_state(state, 4.0).is_none());
+    }
+
+    fn assert_speleothem_offset(pos: BlockPos, expected_x: f64, expected_z: f64) {
+        let offset = SpeleothemBlockBehavior::xz_shape_offset(pos);
+
+        assert!((offset.x - expected_x).abs() < 1.0e-7);
+        assert!(offset.y.abs() < 1.0e-7);
+        assert!((offset.z - expected_z).abs() < 1.0e-7);
+    }
+
+    #[test]
+    fn speleothem_xz_shape_offset_matches_vanilla_clamping() {
+        assert_speleothem_offset(BlockPos::ZERO, -0.125, -0.125);
+        assert_speleothem_offset(BlockPos::new(12, 64, 34), 0.125, 0.125);
+    }
+
+    #[test]
+    fn speleothem_xz_shape_offset_uses_block_position_seed() {
+        assert_speleothem_offset(
+            BlockPos::new(1, 64, 0),
+            0.116_666_666_666_666_64,
+            -0.016_666_666_666_666_663,
+        );
+        assert_speleothem_offset(
+            BlockPos::new(-5, 12, 7),
+            -0.049_999_999_999_999_99,
+            0.116_666_666_666_666_64,
+        );
     }
 }
