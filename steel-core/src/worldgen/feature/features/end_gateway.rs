@@ -18,7 +18,7 @@ impl FeatureDecorationRunner {
                     if same_x && same_y && same_z {
                         let state = vanilla_blocks::END_GATEWAY.default_state();
                         let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
-                        let exit = config.exit.map(|[x, y, z]| BlockPos::new(x, y, z));
+                        let exit = config.exit.map(BlockPos);
                         Self::set_end_gateway_block_entity(region, pos, state, exit, config.exact);
                     } else if same_y {
                         let _ = region.set_block_state(

@@ -71,7 +71,7 @@ scc = "3.7"
 arc-swap = "1.9"
 
 # Data structures
-glam = "0.32.1"
+glam = { version = "0.32", features = ["serde"] }
 glam-traits = { git = "https://github.com/suprohub/glam-traits" }
 rustc-hash = "2.1"
 small-map = "0.1.5"
@@ -115,14 +115,14 @@ md5 = "0.8.0"
 base64 = "0.22.1"
 hex = "0.4.3"
 rsa-der = "0.3.0"
-text_components = { 
-    git = "https://github.com/Steel-Foundation/TextComponents.git", 
+text_components = {
+    git = "https://github.com/Steel-Foundation/TextComponents.git",
     rev = "e058b936e66b496385ba162b2e20344d14572a6a",
     features = [
         "custom",
         "nbt",
         "serde",
-    ] 
+    ]
 }
 
 # Compression

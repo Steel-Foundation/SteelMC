@@ -1,3 +1,5 @@
+use glam::IVec3;
+
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 
@@ -88,7 +90,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) const fn offset(origin: BlockPos, offset: &[i32; 3]) -> BlockPos {
-        origin.offset(offset[0], offset[1], offset[2])
+    pub(super) fn offset(origin: BlockPos, offset: &IVec3) -> BlockPos {
+        BlockPos(origin.0 + offset)
     }
 }

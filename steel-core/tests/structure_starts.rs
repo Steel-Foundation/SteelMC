@@ -14,6 +14,7 @@ use std::fmt::Write as _;
 use std::mem::take;
 use std::sync::Weak;
 
+use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -63,7 +64,7 @@ struct ExpectedPiece {
 #[derive(Deserialize, Debug)]
 struct ExpectedPieceData {
     #[serde(default)]
-    position: Option<[i32; 3]>,
+    position: Option<IVec3>,
     #[serde(default)]
     ground_level_delta: Option<i32>,
     #[serde(default)]
@@ -671,7 +672,7 @@ fn compare_jigsaw_state(
     };
 
     if let Some(expected_position) = expected_data.position
-        && expected_position != [jigsaw.position.x, jigsaw.position.y, jigsaw.position.z]
+        && expected_position != jigsaw.position
     {
         diffs.push(format!(
             "piece[{index}].piece_data.position: expected {:?}, got {:?}",

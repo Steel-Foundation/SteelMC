@@ -5,6 +5,7 @@
 //! placement types for actual worldgen logic.
 
 pub use crate::structure::{DimensionPadding, JigsawConfig, PoolAlias, StartHeight};
+use glam::IVec3;
 use steel_utils::Identifier;
 
 /// A structure set entry from the vanilla datapack.
@@ -47,7 +48,7 @@ pub enum PlacementData {
         /// Exclusion zone: (other_set key, chunk_count).
         exclusion_zone: Option<ExclusionZoneData>,
         /// Block offset from the placement chunk used by `/locate`.
-        locate_offset: [i32; 3],
+        locate_offset: IVec3,
     },
     /// Ring-based placement (`minecraft:concentric_rings`).
     ConcentricRings {
@@ -66,7 +67,7 @@ pub enum PlacementData {
         /// Frequency reduction method name.
         frequency_reduction_method: FrequencyMethodData,
         /// Block offset from the placement chunk used by `/locate`.
-        locate_offset: [i32; 3],
+        locate_offset: IVec3,
     },
 }
 

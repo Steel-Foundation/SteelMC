@@ -95,7 +95,7 @@ fn generate_box<T>(value: &T, f: impl Fn(&T) -> TokenStream) -> TokenStream {
 
 fn generate_offset(offset: &[i32; 3]) -> TokenStream {
     let [x, y, z] = *offset;
-    quote! { [#x, #y, #z] }
+    quote! { IVec3::new(#x, #y, #z) }
 }
 
 fn generate_block_ref_list(list: &IdentifierList) -> TokenStream {
@@ -1842,6 +1842,7 @@ pub(crate) fn build_configured() -> TokenStream {
         };
         use steel_utils::{Direction, Identifier};
         use std::sync::{LazyLock, OnceLock};
+        use glam::IVec3;
     });
 
     let mut register = TokenStream::new();
@@ -1894,6 +1895,7 @@ pub(crate) fn build_placed() -> TokenStream {
         };
         use steel_utils::{Direction, Identifier};
         use std::sync::{LazyLock, OnceLock};
+        use glam::IVec3;
     });
 
     let mut register = TokenStream::new();
