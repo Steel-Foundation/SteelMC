@@ -55,7 +55,6 @@ stand-alone = []
 deadlock_detection = ["dep:parking_lot"]
 dhat-heap = ["dhat"]
 mimalloc = ["dep:mimalloc"]
-spawn_chunk_display = []
 slow_chunk_gen = ["steel-core/slow_chunk_gen"]
 jaeger = [
     "dep:opentelemetry",

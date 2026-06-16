@@ -27,7 +27,7 @@ jobs:
       - name: Build portable release binary
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-        run: cargo build --release --features stand-alone,spawn_chunk_display,deadlock_detection --verbose
+        run: cargo build --release --features stand-alone,deadlock_detection --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: steel-${{ matrix.os }}

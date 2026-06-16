@@ -1,6 +1,7 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
 /// Tick-polled server jobs.
 pub mod jobs;
+mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
 /// The tick rate manager for the server.
@@ -12,7 +13,6 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::{
     chunk_access::ChunkStatus,
-    chunk_map::GenerationTaskCap,
     chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
 use crate::command::CommandDispatcher;
@@ -101,7 +101,7 @@ fn generation_settings_for_world(
     generator_output: &GeneratorOutput,
 ) -> WorldGenerationSettings {
     WorldGenerationSettings::from_generator_config(
-        world_entry.generator.clone(),
+        world_entry.generator_config.generator().clone(),
         &generator_output.config,
         generator_output.dimension_type.key.clone(),
         generator_output.dimension_type.min_y,
@@ -421,11 +421,7 @@ impl Server {
                 )
             })?;
             let generator_output = generator_registry
-                .create(
-                    &world_entry.generator,
-                    &world_entry.generator_config,
-                    world_seed,
-                )
+                .create(&world_entry.generator_config, world_seed)
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config(
@@ -1021,9 +1017,7 @@ impl Server {
     /// Executes one chunk scheduling tick across all worlds.
     fn tick_chunk_scheduling(&self) {
         for (i, world) in self.worlds.values().enumerate() {
-            let timings = world
-                .chunk_map
-                .tick_scheduling(GenerationTaskCap::RespectMaxCap);
+            let timings = world.chunk_map.tick_scheduling();
 
             let total = timings.ticket_updates
                 + timings.holder_creation
@@ -1031,7 +1025,7 @@ impl Server {
                 + timings.run_generation
                 + timings.process_unloads;
 
-            if total.as_millis() >= 10 {
+            if total.as_millis() >= 50 {
                 tracing::warn!(
                     world = i,
                     elapsed = ?total,
@@ -1241,7 +1235,7 @@ impl Server {
             }
         }
         for (i, timings) in all_timings.iter().enumerate() {
-            if timings.elapsed.as_millis() < 10 {
+            if timings.elapsed.as_millis() < 50 {
                 continue;
             }
             let cm = &timings.chunk_map;
