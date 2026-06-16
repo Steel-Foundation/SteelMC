@@ -23,7 +23,7 @@ const MAX_INTERP: usize = 16;
 
 /// Maximum slice length (`z_corners` * `corners_y`) across all dimensions.
 /// Overworld: (16/4+1) * (384/8+1) = 5 * 49 = 245. Rounded up for headroom.
-const MAX_SLICE_LEN: usize = 256;
+const MAX_SLICE_LEN: usize = 2048;
 
 /// Stores density values at cell corners for a single chunk and provides
 /// trilinear interpolation between corners for block-level resolution.
