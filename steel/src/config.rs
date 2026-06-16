@@ -40,6 +40,10 @@ const fn empty_worlds_config() -> WorldsConfig {
     }
 }
 
+const fn default_spam_threshold_seconds() -> i32 {
+    10
+}
+
 /// The full server configuration as deserialized from TOML.
 ///
 /// Contains both creation-time values (seed, world generator, storage)
@@ -71,8 +75,10 @@ pub struct ServerConfig {
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
     /// Vanilla chat spam threshold window in seconds
+    #[serde(default = "default_spam_threshold_seconds")]
     pub chat_spam_threshold_seconds: i32,
     /// Vanilla command spam threshold window in seconds
+    #[serde(default = "default_spam_threshold_seconds")]
     pub command_spam_threshold_seconds: i32,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
@@ -257,5 +263,27 @@ mod tests {
         let config: SteelConfig = toml::from_str(input).expect("config should parse");
 
         assert!(!config.server.allow_flight);
+    }
+
+    #[test]
+    fn server_config_defaults_spam_thresholds_for_older_configs() {
+        let input = r#"
+            [server]
+            server_port = 25565
+            max_players = 20
+            view_distance = 10
+            simulation_distance = 10
+            online_mode = true
+            encryption = true
+            motd = "A Steel Server"
+            use_favicon = false
+            favicon = "config/favicon.png"
+            enforce_secure_chat = false
+        "#;
+
+        let config: SteelConfig = toml::from_str(input).expect("config should parse");
+
+        assert_eq!(config.server.chat_spam_threshold_seconds, 10);
+        assert_eq!(config.server.command_spam_threshold_seconds, 10);
     }
 }

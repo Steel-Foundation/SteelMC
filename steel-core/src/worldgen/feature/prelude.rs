@@ -7,7 +7,7 @@ pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
-    properties::DripstoneThickness, properties::SpeleothemThickness, properties::WallSide, shapes,
+    properties::SpeleothemThickness, properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
     AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,

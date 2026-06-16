@@ -35,7 +35,12 @@ impl FeatureDecorationRunner {
             origin,
             config.floor_to_ceiling_search_range,
             Self::is_empty_or_water,
-            |state| Self::is_dripstone_base(state) || state.get_block() == &vanilla_blocks::LAVA,
+            |state| {
+                let block = state.get_block();
+                block == &vanilla_blocks::DRIPSTONE_BLOCK
+                    || Self::block_matches_holder_set(block, &config.replaceable_blocks)
+                    || block == &vanilla_blocks::LAVA
+            },
         ) else {
             return false;
         };

@@ -7,16 +7,15 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::{
     AnimateAction, CAnimate, CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent,
-    COpenSignEditor, CPlayerInfoUpdate, CSetHeldSlot, GameEventType, PlayerAction,
-    SPickItemFromBlock, SPlayerAction, SSignUpdate, SUseItem, SUseItemOn,
+    COpenSignEditor, CPlayerInfoUpdate, CSetCamera, CSetHeldSlot, GameEventType, PlayerAction,
+    SPickItemFromBlock, SPlayerAction, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::{REGISTRY, vanilla_attributes};
-use steel_utils::BlockPos;
-use steel_utils::Identifier;
 use steel_utils::translations;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
+use steel_utils::{BlockPos, Identifier, WorldAabb};
 use text_components::TextComponent;
 
 use crate::behavior::{
@@ -360,6 +359,58 @@ impl Player {
             .unwrap_or(4.5);
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
+    }
+
+    /// Returns true if the player's eye position is within entity interaction range.
+    #[must_use]
+    pub fn is_within_entity_interaction_range(&self, aabb: WorldAabb, buffer: f64) -> bool {
+        let player_pos = self.position();
+        let eye_y = player_pos.y + self.get_eye_height();
+
+        let dx = f64::max(
+            f64::max(aabb.min_x() - player_pos.x, player_pos.x - aabb.max_x()),
+            0.0,
+        );
+        let dy = f64::max(f64::max(aabb.min_y() - eye_y, eye_y - aabb.max_y()), 0.0);
+        let dz = f64::max(
+            f64::max(aabb.min_z() - player_pos.z, player_pos.z - aabb.max_z()),
+            0.0,
+        );
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+
+        let base_range = self
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
+            .unwrap_or(3.0);
+        let max_range = base_range + buffer;
+        dist_sq < max_range * max_range
+    }
+
+    /// Handles spectator camera selection.
+    pub fn handle_spectator_action(&self, packet: SSpectatorAction) {
+        if !self.has_client_loaded() || self.game_mode() != GameType::Spectator {
+            return;
+        }
+
+        let Some(entity_id) = packet.spectate_entity_id else {
+            return;
+        };
+
+        let world = self.get_world();
+        let Some(target) = world.entity_manager().get_by_id(entity_id) else {
+            return;
+        };
+
+        // TODO: Store the camera entity and apply world-border/cross-world
+        // setCamera semantics once those foundations exist.
+        if self.is_within_entity_interaction_range(target.bounding_box(), 3.0)
+            && target.is_pickable()
+        {
+            self.send_packet(CSetCamera {
+                camera_id: target.id(),
+            });
+        }
     }
 
     /// Returns true if player is sneaking (secondary use active).

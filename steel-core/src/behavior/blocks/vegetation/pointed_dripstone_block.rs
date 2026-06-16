@@ -1,16 +1,22 @@
 use std::sync::Arc;
 
+use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{
-    BlockStateProperties, DripstoneThickness, SpeleothemThickness,
+use steel_registry::blocks::properties::{BlockStateProperties, SpeleothemThickness};
+use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
+use steel_registry::{
+    vanilla_block_tags::BlockTag, vanilla_blocks, vanilla_damage_types, vanilla_fluids,
 };
-use steel_registry::{vanilla_block_tags::BlockTag, vanilla_damage_types, vanilla_fluids};
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
-use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
+use crate::behavior::block::{
+    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext,
+};
 use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt as _};
 use crate::entity::damage::DamageSource;
+use crate::fluid::FluidStateExt as _;
 use crate::world::World;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -22,7 +28,8 @@ use super::BlockRef;
 /// opposite the tip direction must be face-sturdy on the face pointing toward
 /// us, or be another pointed dripstone with the same `vertical_direction`.
 // TODO: Implement falling stalactites after falling block entities exist.
-// TODO: Implement trident projectile breakage, fluid transfer, and growth.
+// TODO: Implement trident projectile breakage and fluid transfer after
+// projectile and cauldron drip-fill foundations exist.
 #[block_behavior]
 pub struct PointedDripstoneBlock {
     block: BlockRef,
@@ -38,8 +45,8 @@ impl PointedDripstoneBlock {
     #[must_use]
     fn fall_damage_for_state(state: BlockStateId, fall_distance: f64) -> Option<EntityFallDamage> {
         if state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != Direction::Up
-            || state.get_value(&BlockStateProperties::DRIPSTONE_THICKNESS)
-                != DripstoneThickness::Tip
+            || state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
+                != SpeleothemThickness::Tip
         {
             return None;
         }
@@ -83,6 +90,14 @@ impl BlockBehavior for PointedDripstoneBlock {
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().tick(state, world, pos);
+    }
+
+    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.speleothem().random_tick(state, world, pos);
     }
 
     fn fall_on(
@@ -143,6 +158,14 @@ impl BlockBehavior for SulfurSpikeBlock {
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().tick(state, world, pos);
     }
+
+    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.speleothem().random_tick(state, world, pos);
+    }
 }
 
 struct SpeleothemBlockBehavior {
@@ -156,14 +179,13 @@ enum SpeleothemKind {
     Sulfur,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SpeleothemThicknessValue {
-    TipMerge,
-    Tip,
-    Frustum,
-    Middle,
-    Base,
-}
+const GROWTH_PROBABILITY_PER_RANDOM_TICK: f32 = 0.011_377_778;
+const MAX_GROWTH_LENGTH: i32 = 7;
+const MAX_STALAGMITE_SEARCH_RANGE_WHEN_GROWING: i32 = 10;
+const DRIP_THROUGH_COLUMN_BOXES: &[BlockLocalAabb] =
+    &[BlockLocalAabb::new(0.375, 0.0, 0.375, 0.625, 1.0, 0.625)];
+const REQUIRED_SPACE_TO_DRIP_THROUGH_NON_SOLID_BLOCK: VoxelShape =
+    VoxelShape::from_boxes(DRIP_THROUGH_COLUMN_BOXES);
 
 impl SpeleothemBlockBehavior {
     fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -189,7 +211,7 @@ impl SpeleothemBlockBehavior {
                 context.is_water_source(),
             );
 
-        Some(self.with_thickness(state, thickness))
+        Some(Self::with_thickness(state, thickness))
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
@@ -235,9 +257,9 @@ impl SpeleothemBlockBehavior {
             return state;
         }
 
-        let merge_opposing_tips = self.thickness(state) == SpeleothemThicknessValue::TipMerge;
+        let merge_opposing_tips = Self::thickness(state) == SpeleothemThickness::TipMerge;
         let thickness = self.calculate_thickness(world, pos, tip_direction, merge_opposing_tips);
-        self.with_thickness(state, thickness)
+        Self::with_thickness(state, thickness)
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -275,37 +297,37 @@ impl SpeleothemBlockBehavior {
         pos: BlockPos,
         tip_direction: Direction,
         merge_opposing_tips: bool,
-    ) -> SpeleothemThicknessValue {
+    ) -> SpeleothemThickness {
         let base_direction = tip_direction.opposite();
         let in_front_state = world.get_block_state(pos.relative(tip_direction));
         if Self::is_speleothem_with_direction(in_front_state, base_direction)
             && in_front_state.get_block() == self.block
         {
             if merge_opposing_tips
-                || self.thickness(in_front_state) == SpeleothemThicknessValue::TipMerge
+                || Self::thickness(in_front_state) == SpeleothemThickness::TipMerge
             {
-                return SpeleothemThicknessValue::TipMerge;
+                return SpeleothemThickness::TipMerge;
             }
-            return SpeleothemThicknessValue::Tip;
+            return SpeleothemThickness::Tip;
         }
 
         if !Self::is_speleothem_with_direction(in_front_state, tip_direction) {
-            return SpeleothemThicknessValue::Tip;
+            return SpeleothemThickness::Tip;
         }
 
-        let in_front_thickness = self.thickness(in_front_state);
+        let in_front_thickness = Self::thickness(in_front_state);
         if matches!(
             in_front_thickness,
-            SpeleothemThicknessValue::Tip | SpeleothemThicknessValue::TipMerge
+            SpeleothemThickness::Tip | SpeleothemThickness::TipMerge
         ) {
-            return SpeleothemThicknessValue::Frustum;
+            return SpeleothemThickness::Frustum;
         }
 
         let behind_state = world.get_block_state(pos.relative(base_direction));
         if !Self::is_speleothem_with_direction(behind_state, tip_direction) {
-            return SpeleothemThicknessValue::Base;
+            return SpeleothemThickness::Base;
         }
-        SpeleothemThicknessValue::Middle
+        SpeleothemThickness::Middle
     }
 
     fn is_speleothem_with_direction(state: BlockStateId, tip_direction: Direction) -> bool {
@@ -317,56 +339,294 @@ impl SpeleothemBlockBehavior {
         Self::is_speleothem_with_direction(state, Direction::Up)
     }
 
-    fn thickness(&self, state: BlockStateId) -> SpeleothemThicknessValue {
+    fn is_stalactite(state: BlockStateId) -> bool {
+        Self::is_speleothem_with_direction(state, Direction::Down)
+    }
+
+    fn is_stalactite_start_pos(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        Self::is_stalactite(state) && world.get_block_state(pos.above()).get_block() != self.block
+    }
+
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let mut rng = rand::rng();
+        if matches!(self.kind, SpeleothemKind::PointedDripstone) {
+            let _fluid_transfer_random_value = rng.random::<f32>();
+        }
+
+        if rng.random::<f32>() < GROWTH_PROBABILITY_PER_RANDOM_TICK
+            && self.is_stalactite_start_pos(state, world.as_ref(), pos)
+        {
+            self.grow_stalactite_or_stalagmite_if_possible(state, world, pos, &mut rng);
+        }
+    }
+
+    fn grow_stalactite_or_stalagmite_if_possible<R: RngExt + ?Sized>(
+        &self,
+        stalactite_start_state: BlockStateId,
+        world: &Arc<World>,
+        stalactite_start_pos: BlockPos,
+        rng: &mut R,
+    ) {
+        if !self.can_grow(world.as_ref(), stalactite_start_pos) {
+            return;
+        }
+
+        let Some(stalactite_tip_pos) = self.find_tip(
+            stalactite_start_state,
+            world.as_ref(),
+            stalactite_start_pos,
+            MAX_GROWTH_LENGTH,
+            false,
+        ) else {
+            return;
+        };
+
+        let stalactite_tip_state = world.get_block_state(stalactite_tip_pos);
+        if !Self::is_free_hanging_stalactite(stalactite_tip_state)
+            || !self.can_tip_grow(stalactite_tip_state, world, stalactite_tip_pos)
+        {
+            return;
+        }
+
+        if rng.random::<bool>() {
+            self.grow(world, stalactite_tip_pos, Direction::Down);
+        } else {
+            self.grow_stalagmite_below(world, stalactite_tip_pos);
+        }
+    }
+
+    fn can_grow(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        if world.get_block_state(pos.above()).get_block() != self.block_to_grow_on() {
+            return false;
+        }
+
+        if !matches!(self.kind, SpeleothemKind::PointedDripstone) {
+            return true;
+        }
+
+        let fluid_state = world.get_block_state(pos.above_n(2)).get_fluid_state();
+        fluid_state.is_water() && fluid_state.is_source()
+    }
+
+    fn block_to_grow_on(&self) -> BlockRef {
         match self.kind {
-            SpeleothemKind::PointedDripstone => {
-                match state.get_value(&BlockStateProperties::DRIPSTONE_THICKNESS) {
-                    DripstoneThickness::TipMerge => SpeleothemThicknessValue::TipMerge,
-                    DripstoneThickness::Tip => SpeleothemThicknessValue::Tip,
-                    DripstoneThickness::Frustum => SpeleothemThicknessValue::Frustum,
-                    DripstoneThickness::Middle => SpeleothemThicknessValue::Middle,
-                    DripstoneThickness::Base => SpeleothemThicknessValue::Base,
-                }
+            SpeleothemKind::PointedDripstone => &vanilla_blocks::DRIPSTONE_BLOCK,
+            SpeleothemKind::Sulfur => &vanilla_blocks::SULFUR,
+        }
+    }
+
+    fn find_tip(
+        &self,
+        speleothem_state: BlockStateId,
+        world: &dyn LevelReader,
+        speleothem_pos: BlockPos,
+        max_search_length: i32,
+        include_merged_tip: bool,
+    ) -> Option<BlockPos> {
+        if Self::is_tip(speleothem_state, include_merged_tip) {
+            return Some(speleothem_pos);
+        }
+
+        let search_direction =
+            speleothem_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let mut current_pos = speleothem_pos;
+        for _ in 1..max_search_length {
+            current_pos = current_pos.relative(search_direction);
+            let state = world.get_block_state(current_pos);
+            if Self::is_tip(state, include_merged_tip) {
+                return Some(current_pos);
             }
-            SpeleothemKind::Sulfur => {
-                match state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS) {
-                    SpeleothemThickness::TipMerge => SpeleothemThicknessValue::TipMerge,
-                    SpeleothemThickness::Tip => SpeleothemThicknessValue::Tip,
-                    SpeleothemThickness::Frustum => SpeleothemThicknessValue::Frustum,
-                    SpeleothemThickness::Middle => SpeleothemThicknessValue::Middle,
-                    SpeleothemThickness::Base => SpeleothemThicknessValue::Base,
-                }
+
+            if world.is_outside_build_height(current_pos.y())
+                || state.get_block() != self.block
+                || state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != search_direction
+            {
+                return None;
+            }
+        }
+
+        None
+    }
+
+    fn is_tip(state: BlockStateId, include_merged_tip: bool) -> bool {
+        if !state.get_block().has_tag(&BlockTag::SPELEOTHEMS) {
+            return false;
+        }
+
+        let thickness = Self::thickness(state);
+        thickness == SpeleothemThickness::Tip
+            || (include_merged_tip && thickness == SpeleothemThickness::TipMerge)
+    }
+
+    fn is_free_hanging_stalactite(state: BlockStateId) -> bool {
+        Self::is_stalactite(state)
+            && Self::thickness(state) == SpeleothemThickness::Tip
+            && !state.get_value(&BlockStateProperties::WATERLOGGED)
+    }
+
+    fn can_tip_grow(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) -> bool {
+        let grow_direction = tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let grow_pos = tip_pos.relative(grow_direction);
+        let state_at_grow_pos = world.get_block_state(grow_pos);
+        if !state_at_grow_pos.get_fluid_state().is_empty() {
+            return false;
+        }
+
+        state_at_grow_pos.is_air()
+            || self.is_unmerged_tip_with_direction(state_at_grow_pos, grow_direction.opposite())
+    }
+
+    fn is_unmerged_tip_with_direction(
+        &self,
+        state: BlockStateId,
+        tip_direction: Direction,
+    ) -> bool {
+        Self::is_tip(state, false)
+            && state.get_block() == self.block
+            && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+    }
+
+    fn grow(&self, world: &Arc<World>, grow_from_pos: BlockPos, grow_to_direction: Direction) {
+        let target_pos = grow_from_pos.relative(grow_to_direction);
+        let existing_state_at_target_pos = world.get_block_state(target_pos);
+        if self.is_unmerged_tip_with_direction(
+            existing_state_at_target_pos,
+            grow_to_direction.opposite(),
+        ) {
+            self.create_merged_tips(existing_state_at_target_pos, world, target_pos);
+            return;
+        }
+
+        if existing_state_at_target_pos.is_air()
+            || existing_state_at_target_pos.get_block() == &vanilla_blocks::WATER
+        {
+            self.create_speleothem(
+                world,
+                target_pos,
+                grow_to_direction,
+                SpeleothemThickness::Tip,
+            );
+        }
+    }
+
+    fn create_speleothem(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        direction: Direction,
+        thickness: SpeleothemThickness,
+    ) {
+        let waterlogged = world.get_block_state(pos).get_fluid_state().is_water();
+        let state = self
+            .block
+            .default_state()
+            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
+            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged);
+        world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
+    }
+
+    fn create_merged_tips(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) {
+        let (stalactite_pos, stalagmite_pos) =
+            if tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == Direction::Up {
+                (tip_pos.above(), tip_pos)
+            } else {
+                (tip_pos, tip_pos.below())
+            };
+
+        self.create_speleothem(
+            world,
+            stalactite_pos,
+            Direction::Down,
+            SpeleothemThickness::TipMerge,
+        );
+        self.create_speleothem(
+            world,
+            stalagmite_pos,
+            Direction::Up,
+            SpeleothemThickness::TipMerge,
+        );
+    }
+
+    fn grow_stalagmite_below(&self, world: &Arc<World>, pos_above_stalagmite: BlockPos) {
+        let mut pos = pos_above_stalagmite;
+        for _ in 0..MAX_STALAGMITE_SEARCH_RANGE_WHEN_GROWING {
+            pos = pos.below();
+            let state = world.get_block_state(pos);
+            if !state.get_fluid_state().is_empty() {
+                return;
+            }
+
+            if self.is_unmerged_tip_with_direction(state, Direction::Up)
+                && self.can_tip_grow(state, world, pos)
+            {
+                self.grow(world, pos, Direction::Up);
+                return;
+            }
+
+            let placement_state = self
+                .block
+                .default_state()
+                .set_value(&BlockStateProperties::VERTICAL_DIRECTION, Direction::Up);
+            if self.can_survive(placement_state, world.as_ref(), pos)
+                && !Self::is_water_at(world, pos.below())
+            {
+                self.grow(world, pos.below(), Direction::Up);
+                return;
+            }
+
+            if self.blocks_stalagmite_scan(world.as_ref(), pos, state) {
+                return;
             }
         }
     }
 
-    fn with_thickness(
+    fn is_water_at(world: &Arc<World>, pos: BlockPos) -> bool {
+        world.get_block_state(pos).get_fluid_state().is_water()
+    }
+
+    fn blocks_stalagmite_scan(
         &self,
+        world: &dyn LevelReader,
+        pos: BlockPos,
         state: BlockStateId,
-        thickness: SpeleothemThicknessValue,
-    ) -> BlockStateId {
+    ) -> bool {
         match self.kind {
-            SpeleothemKind::PointedDripstone => state.set_value(
-                &BlockStateProperties::DRIPSTONE_THICKNESS,
-                match thickness {
-                    SpeleothemThicknessValue::TipMerge => DripstoneThickness::TipMerge,
-                    SpeleothemThicknessValue::Tip => DripstoneThickness::Tip,
-                    SpeleothemThicknessValue::Frustum => DripstoneThickness::Frustum,
-                    SpeleothemThicknessValue::Middle => DripstoneThickness::Middle,
-                    SpeleothemThicknessValue::Base => DripstoneThickness::Base,
-                },
-            ),
-            SpeleothemKind::Sulfur => state.set_value(
-                &BlockStateProperties::SPELEOTHEM_THICKNESS,
-                match thickness {
-                    SpeleothemThicknessValue::TipMerge => SpeleothemThickness::TipMerge,
-                    SpeleothemThicknessValue::Tip => SpeleothemThickness::Tip,
-                    SpeleothemThicknessValue::Frustum => SpeleothemThickness::Frustum,
-                    SpeleothemThicknessValue::Middle => SpeleothemThickness::Middle,
-                    SpeleothemThicknessValue::Base => SpeleothemThickness::Base,
-                },
-            ),
+            SpeleothemKind::PointedDripstone => !Self::can_drip_through(world, pos, state),
+            SpeleothemKind::Sulfur => false,
         }
+    }
+
+    fn can_drip_through(world: &dyn LevelReader, pos: BlockPos, state: BlockStateId) -> bool {
+        if state.is_air() {
+            return true;
+        }
+
+        if state.is_solid_render() || !state.get_fluid_state().is_empty() {
+            return false;
+        }
+
+        let collision_shape = BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .get_collision_shape(state, world, pos, BlockCollisionContext::empty());
+        !join_is_not_empty(
+            REQUIRED_SPACE_TO_DRIP_THROUGH_NON_SOLID_BLOCK,
+            collision_shape,
+            BooleanOp::And,
+        )
+    }
+
+    fn thickness(state: BlockStateId) -> SpeleothemThickness {
+        state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
+    }
+
+    fn with_thickness(state: BlockStateId, thickness: SpeleothemThickness) -> BlockStateId {
+        state.set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
     }
 }
 
@@ -378,18 +638,18 @@ mod tests {
 
     fn pointed_dripstone_state(
         direction: Direction,
-        thickness: DripstoneThickness,
+        thickness: SpeleothemThickness,
     ) -> BlockStateId {
         init_test_registry();
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
             .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::DRIPSTONE_THICKNESS, thickness)
+            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
     }
 
     #[test]
     fn upward_tip_uses_stalagmite_fall_damage() {
-        let state = pointed_dripstone_state(Direction::Up, DripstoneThickness::Tip);
+        let state = pointed_dripstone_state(Direction::Up, SpeleothemThickness::Tip);
         let fall_damage = PointedDripstoneBlock::fall_damage_for_state(state, 4.0)
             .expect("upward tip should request stalagmite damage");
 
@@ -403,14 +663,14 @@ mod tests {
 
     #[test]
     fn non_tip_uses_default_fall_damage() {
-        let state = pointed_dripstone_state(Direction::Up, DripstoneThickness::Frustum);
+        let state = pointed_dripstone_state(Direction::Up, SpeleothemThickness::Frustum);
 
         assert!(PointedDripstoneBlock::fall_damage_for_state(state, 4.0).is_none());
     }
 
     #[test]
     fn downward_tip_uses_default_fall_damage() {
-        let state = pointed_dripstone_state(Direction::Down, DripstoneThickness::Tip);
+        let state = pointed_dripstone_state(Direction::Down, SpeleothemThickness::Tip);
 
         assert!(PointedDripstoneBlock::fall_damage_for_state(state, 4.0).is_none());
     }
