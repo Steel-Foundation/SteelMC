@@ -244,6 +244,9 @@ pub const BLOCK_STATE: DataComponentType<()> =
 
 pub const BEES: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("bees"));
 
+pub const SULFUR_CUBE_CONTENT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
+
 pub const LOCK: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("lock"));
 
 pub const CONTAINER_LOOT: DataComponentType<()> =
@@ -251,9 +254,6 @@ pub const CONTAINER_LOOT: DataComponentType<()> =
 
 pub const BREAK_SOUND: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("break_sound"));
-
-pub const SULFUR_CUBE_CONTENT: DataComponentType<()> =
-    DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
 
 // Entity variant components
 pub const VILLAGER_VARIANT: DataComponentType<()> =
@@ -579,14 +579,14 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     register_stub!(registry, BLOCK_STATE.key.clone());
     // 77: bees
     register_stub!(registry, BEES.key.clone());
-    // 78: lock
-    register_stub!(registry, LOCK.key.clone());
-    // 79: container_loot
-    register_stub!(registry, CONTAINER_LOOT.key.clone());
-    // 80: break_sound
-    register_stub!(registry, BREAK_SOUND.key.clone());
-    // 81: sulfur_cube_content
+    // 78: sulfur_cube_content
     register_stub!(registry, SULFUR_CUBE_CONTENT.key.clone());
+    // 79: lock
+    register_stub!(registry, LOCK.key.clone());
+    // 80: container_loot
+    register_stub!(registry, CONTAINER_LOOT.key.clone());
+    // 81: break_sound
+    register_stub!(registry, BREAK_SOUND.key.clone());
     // 82: villager/variant
     register_stub!(registry, VILLAGER_VARIANT.key.clone());
     // 83: wolf/variant
@@ -645,4 +645,22 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     register_stub!(registry, SHEEP_COLOR.key.clone());
     // 110: shulker/color
     register_stub!(registry, SHULKER_COLOR.key.clone());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sulfur_cube_content_keeps_vanilla_26_2_component_order() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        assert_eq!(registry.get_key_by_id(77), Some(&BEES.key));
+        assert_eq!(registry.get_key_by_id(78), Some(&SULFUR_CUBE_CONTENT.key));
+        assert_eq!(registry.get_key_by_id(79), Some(&LOCK.key));
+        assert_eq!(registry.get_key_by_id(80), Some(&CONTAINER_LOOT.key));
+        assert_eq!(registry.get_key_by_id(81), Some(&BREAK_SOUND.key));
+        assert_eq!(registry.get_key_by_id(82), Some(&VILLAGER_VARIANT.key));
+    }
 }

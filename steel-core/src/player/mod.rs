@@ -1351,6 +1351,10 @@ impl Entity for Player {
         self.game_mode() == GameType::Spectator
     }
 
+    fn is_flying_player(&self) -> bool {
+        self.is_flying()
+    }
+
     fn fire_immune_ticks(&self) -> i32 {
         20
     }

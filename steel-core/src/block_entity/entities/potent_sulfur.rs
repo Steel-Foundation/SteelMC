@@ -18,7 +18,7 @@ use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
-use crate::behavior::BlockStateBehaviorExt as _;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
 use crate::block_entity::{BlockEntity, BlockEntityTickAction};
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
@@ -76,16 +76,22 @@ impl PotentSulfurBlockEntity {
         }
     }
 
-    fn is_geyser_passable(world: &World, pos: BlockPos) -> bool {
+    fn is_geyser_passable(world: &World, pos: BlockPos, context: BlockCollisionContext) -> bool {
         let state = world.get_block_state(pos);
         if state.is_air() || state.get_block() == &vanilla_blocks::WATER {
             return true;
         }
-        state.get_collision_shape_at(pos).is_empty()
+
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        behavior
+            .get_collision_shape(state, world, pos, context)
+            .is_empty()
     }
 
     fn find_source_block(world: &World, origin: BlockPos) -> Option<BlockPos> {
         let max_y = origin.y() + MAX_WATER_BLOCKS_ABOVE + 1;
+        let geyser_position_context =
+            BlockCollisionContext::position_context(f64::from(origin.y()));
         let mut pos = BlockPos::new(origin.x(), origin.y() + 1, origin.z());
 
         while pos.y() <= max_y {
@@ -95,13 +101,13 @@ impl PotentSulfurBlockEntity {
 
             if is_water_source
                 && (state.get_block() == &vanilla_blocks::WATER
-                    || Self::is_geyser_passable(world, pos))
+                    || Self::is_geyser_passable(world, pos, geyser_position_context))
             {
                 pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
                 continue;
             }
 
-            if state.is_air() || Self::is_geyser_passable(world, pos) {
+            if state.is_air() || Self::is_geyser_passable(world, pos, geyser_position_context) {
                 return Some(pos);
             }
 
@@ -113,9 +119,11 @@ impl PotentSulfurBlockEntity {
 
     fn unobstructed_block_count(world: &World, start: BlockPos, water_blocks: i32) -> i32 {
         let max_height = FORCE_HEIGHT_MULTIPLIER * water_blocks;
+        let geyser_position_context =
+            BlockCollisionContext::position_context(f64::from(start.y() - 1));
         for i in 0..max_height {
             let check = BlockPos::new(start.x(), start.y() + i, start.z());
-            if !Self::is_geyser_passable(world, check) {
+            if !Self::is_geyser_passable(world, check, geyser_position_context) {
                 return i;
             }
         }
@@ -196,7 +204,15 @@ impl PotentSulfurBlockEntity {
             if !entity.is_alive() || entity.is_spectator() {
                 continue;
             }
-            // TODO: Skip creative flying players once Entity exposes is_creative_flying()
+            let vel = entity.velocity();
+            entity.check_fall_distance_accumulation();
+
+            if !entity.can_simulate_movement() {
+                continue;
+            }
+            if entity.is_flying_player() {
+                continue;
+            }
             if entity.is_passenger() {
                 continue;
             }
@@ -206,15 +222,10 @@ impl PotentSulfurBlockEntity {
             ) {
                 continue;
             }
-            if !entity.can_simulate_movement() {
-                continue;
-            }
-            if entity.velocity().y >= velocity_threshold {
+            if vel.y >= velocity_threshold {
                 continue;
             }
 
-            entity.check_fall_distance_accumulation();
-            let vel = entity.velocity();
             entity.set_velocity(glam::DVec3::new(vel.x, vel.y + LAUNCH_FORCE, vel.z));
             entity.mark_velocity_sync();
         }

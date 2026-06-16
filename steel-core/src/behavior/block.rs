@@ -88,6 +88,19 @@ impl BlockCollisionContext {
         }
     }
 
+    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    #[must_use]
+    pub const fn position_context(y: f64) -> Self {
+        Self {
+            entity_bottom: Some(y),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending: false,
+            placement: false,
+        }
+    }
+
     /// Returns a copy with vanilla accumulated fall distance.
     #[must_use]
     pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
