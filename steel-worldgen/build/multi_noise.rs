@@ -26,14 +26,10 @@ struct BiomeParameters {
 
 /// Generate the Rust code for multi-noise biome parameter lists (all presets).
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=../steel-registry/build_assets/multi_noise_biome_source_parameters.json"
-    );
+    println!("cargo:rerun-if-changed=build_assets/multi_noise_biome_source_parameters.json");
 
-    let content = fs::read_to_string(
-        "../steel-registry/build_assets/multi_noise_biome_source_parameters.json",
-    )
-    .expect("Failed to read multi_noise_biome_source_parameters.json");
+    let content = fs::read_to_string("build_assets/multi_noise_biome_source_parameters.json")
+        .expect("Failed to read multi_noise_biome_source_parameters.json");
     let presets: BTreeMap<String, Vec<BiomeEntry>> =
         serde_json::from_str(&content).expect("Failed to parse multi-noise biome parameters JSON");
 
@@ -42,7 +38,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         //! Generated multi-noise biome source parameters for all presets.
         //!
-        //! Auto-generated from steel-registry/build_assets/multi_noise_biome_source_parameters.json.
+        //! Auto-generated from steel-worldgen/build_assets/multi_noise_biome_source_parameters.json.
         //! Do not edit manually.
 
         use steel_registry::biome::BiomeRef;
