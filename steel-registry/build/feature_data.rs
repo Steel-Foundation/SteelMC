@@ -10,7 +10,7 @@ pub use crate::shared_structs::{BlockStateData, FluidStateData};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
-    Direction, Identifier,
+    Direction, Identifier, Rotation,
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
 
@@ -97,10 +97,14 @@ pub enum ConfiguredFeatureKind {
     SculkPatch(SculkPatchConfiguration),
     SeaPickle(SeaPickleConfiguration),
     Seagrass(SeagrassConfiguration),
+    Sequence(CompositeFeatureConfiguration),
     SimpleBlock(SimpleBlockConfiguration),
     SimpleRandomSelector(SimpleRandomSelectorConfiguration),
+    Speleothem(SpeleothemConfiguration),
+    SpeleothemCluster(SpeleothemClusterConfiguration),
     Spike(SpikeConfiguration),
     SpringFeature(SpringConfiguration),
+    Template(TemplateFeatureConfiguration),
     Tree(TreeConfiguration),
     TwistingVines(TwistingVinesConfiguration),
     UnderwaterMagma(UnderwaterMagmaConfiguration),
@@ -108,6 +112,7 @@ pub enum ConfiguredFeatureKind {
     Vines,
     VoidStartPlatform,
     WaterloggedVegetationPatch(VegetationPatchConfiguration),
+    WeightedRandomSelector(WeightedRandomFeatureConfiguration),
     WeepingVines,
 }
 
@@ -217,6 +222,9 @@ fn deserialize_configured_feature_kind(
         "minecraft:random_selector" => {
             ConfiguredFeatureKind::RandomSelector(parse!(RandomSelectorConfiguration)?)
         }
+        "minecraft:weighted_random_selector" => ConfiguredFeatureKind::WeightedRandomSelector(
+            parse!(WeightedRandomFeatureConfiguration)?,
+        ),
         "minecraft:root_system" => {
             ConfiguredFeatureKind::RootSystem(parse!(RootSystemConfiguration)?)
         }
@@ -226,15 +234,27 @@ fn deserialize_configured_feature_kind(
         }
         "minecraft:sea_pickle" => ConfiguredFeatureKind::SeaPickle(parse!(SeaPickleConfiguration)?),
         "minecraft:seagrass" => ConfiguredFeatureKind::Seagrass(parse!(SeagrassConfiguration)?),
+        "minecraft:sequence" => {
+            ConfiguredFeatureKind::Sequence(parse!(CompositeFeatureConfiguration)?)
+        }
         "minecraft:simple_block" => {
             ConfiguredFeatureKind::SimpleBlock(parse!(SimpleBlockConfiguration)?)
         }
         "minecraft:simple_random_selector" => {
             ConfiguredFeatureKind::SimpleRandomSelector(parse!(SimpleRandomSelectorConfiguration)?)
         }
+        "minecraft:speleothem" => {
+            ConfiguredFeatureKind::Speleothem(parse!(SpeleothemConfiguration)?)
+        }
+        "minecraft:speleothem_cluster" => {
+            ConfiguredFeatureKind::SpeleothemCluster(parse!(SpeleothemClusterConfiguration)?)
+        }
         "minecraft:spike" => ConfiguredFeatureKind::Spike(parse!(SpikeConfiguration)?),
         "minecraft:spring_feature" => {
             ConfiguredFeatureKind::SpringFeature(parse!(SpringConfiguration)?)
+        }
+        "minecraft:template" => {
+            ConfiguredFeatureKind::Template(parse!(TemplateFeatureConfiguration)?)
         }
         "minecraft:tree" => ConfiguredFeatureKind::Tree(parse!(TreeConfiguration)?),
         "minecraft:twisting_vines" => {
@@ -273,6 +293,37 @@ impl<'de> Deserialize<'de> for IdentifierList {
             Raw::Single(value) => Self(vec![value]),
             Raw::Many(values) => Self(values),
         })
+    }
+}
+
+/// Vanilla holder set for blocks, preserving tag-vs-entry semantics.
+#[derive(Debug, Clone)]
+pub enum BlockHolderSet {
+    Tag(Identifier),
+    Entries(Vec<Identifier>),
+}
+
+impl<'de> Deserialize<'de> for BlockHolderSet {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Single(String),
+            Many(Vec<Identifier>),
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw::Single(value) => {
+                if let Some(tag) = value.strip_prefix('#') {
+                    let tag = tag.parse().map_err(D::Error::custom)?;
+                    Ok(Self::Tag(tag))
+                } else {
+                    let entry = value.parse().map_err(D::Error::custom)?;
+                    Ok(Self::Entries(vec![entry]))
+                }
+            }
+            Raw::Many(values) => Ok(Self::Entries(values)),
+        }
     }
 }
 
@@ -316,6 +367,8 @@ fn parse_direction(value: &str) -> Result<Direction, &'static str> {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum BlockPredicate {
+    #[serde(rename = "minecraft:true")]
+    True,
     #[serde(rename = "minecraft:all_of")]
     AllOf { predicates: Vec<BlockPredicate> },
     #[serde(rename = "minecraft:any_of")]
@@ -492,6 +545,7 @@ pub enum PlacementModifier {
     NoiseBasedCount {
         noise_to_count_ratio: i32,
         noise_factor: f64,
+        #[serde(default)]
         noise_offset: f64,
     },
     #[serde(rename = "minecraft:noise_threshold_count")]
@@ -624,6 +678,53 @@ pub struct DripstoneClusterConfiguration {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SpeleothemClusterConfiguration {
+    pub base_block: BlockStateData,
+    pub pointed_block: BlockStateData,
+    pub replaceable_blocks: BlockHolderSet,
+    pub floor_to_ceiling_search_range: i32,
+    pub height: IntProvider,
+    pub radius: IntProvider,
+    pub max_stalagmite_stalactite_height_diff: i32,
+    pub height_deviation: i32,
+    pub speleothem_block_layer_thickness: IntProvider,
+    pub density: FloatProvider,
+    pub wetness: FloatProvider,
+    pub chance_of_speleothem_at_max_distance_from_center: f32,
+    pub max_distance_from_edge_affecting_chance_of_speleothem: i32,
+    pub max_distance_from_center_affecting_height_bias: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpeleothemConfiguration {
+    pub base_block: BlockStateData,
+    pub pointed_block: BlockStateData,
+    pub replaceable_blocks: BlockHolderSet,
+    #[serde(default = "default_speleothem_chance_of_taller_generation")]
+    pub chance_of_taller_generation: f32,
+    #[serde(default = "default_speleothem_chance_of_directional_spread")]
+    pub chance_of_directional_spread: f32,
+    #[serde(default = "default_speleothem_chance_of_spread_radius")]
+    pub chance_of_spread_radius2: f32,
+    #[serde(default = "default_speleothem_chance_of_spread_radius")]
+    pub chance_of_spread_radius3: f32,
+}
+
+const fn default_speleothem_chance_of_taller_generation() -> f32 {
+    0.2
+}
+
+const fn default_speleothem_chance_of_directional_spread() -> f32 {
+    0.7
+}
+
+const fn default_speleothem_chance_of_spread_radius() -> f32 {
+    0.5
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EndGatewayConfiguration {
     #[serde(default)]
     pub exit: Option<Offset>,
@@ -683,15 +784,24 @@ pub struct GeodeConfiguration {
     pub blocks: GeodeBlockSettings,
     pub layers: GeodeLayerSettings,
     pub crack: GeodeCrackSettings,
+    #[serde(default = "default_geode_use_potential_placements_chance")]
     pub use_potential_placements_chance: f64,
+    #[serde(default)]
     pub use_alternate_layer0_chance: f64,
+    #[serde(default = "default_true")]
     pub placements_require_layer0_alternate: bool,
+    #[serde(default = "default_geode_outer_wall_distance")]
     pub outer_wall_distance: IntProvider,
+    #[serde(default = "default_geode_distribution_points")]
     pub distribution_points: IntProvider,
+    #[serde(default = "default_geode_point_offset")]
     pub point_offset: IntProvider,
+    #[serde(default = "default_geode_min_gen_offset")]
     pub min_gen_offset: i32,
+    #[serde(default = "default_geode_max_gen_offset")]
     pub max_gen_offset: i32,
     pub invalid_blocks_threshold: i32,
+    #[serde(default = "default_geode_noise_multiplier")]
     pub noise_multiplier: f64,
 }
 
@@ -713,18 +823,94 @@ pub struct GeodeBlockSettings {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GeodeLayerSettings {
+    #[serde(default = "default_geode_filling_layer")]
     pub filling: f64,
+    #[serde(default = "default_geode_inner_layer")]
     pub inner_layer: f64,
+    #[serde(default = "default_geode_middle_layer")]
     pub middle_layer: f64,
+    #[serde(default = "default_geode_outer_layer")]
     pub outer_layer: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GeodeCrackSettings {
+    #[serde(default = "default_geode_generate_crack_chance")]
     pub generate_crack_chance: f64,
+    #[serde(default = "default_geode_base_crack_size")]
     pub base_crack_size: f64,
+    #[serde(default = "default_geode_crack_point_offset")]
     pub crack_point_offset: i32,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+const fn default_geode_use_potential_placements_chance() -> f64 {
+    0.35
+}
+
+const fn default_geode_outer_wall_distance() -> IntProvider {
+    IntProvider::Uniform {
+        min_inclusive: 4,
+        max_inclusive: 5,
+    }
+}
+
+const fn default_geode_distribution_points() -> IntProvider {
+    IntProvider::Uniform {
+        min_inclusive: 3,
+        max_inclusive: 4,
+    }
+}
+
+const fn default_geode_point_offset() -> IntProvider {
+    IntProvider::Uniform {
+        min_inclusive: 1,
+        max_inclusive: 2,
+    }
+}
+
+const fn default_geode_min_gen_offset() -> i32 {
+    -16
+}
+
+const fn default_geode_max_gen_offset() -> i32 {
+    16
+}
+
+const fn default_geode_noise_multiplier() -> f64 {
+    0.05
+}
+
+const fn default_geode_filling_layer() -> f64 {
+    1.7
+}
+
+const fn default_geode_inner_layer() -> f64 {
+    2.2
+}
+
+const fn default_geode_middle_layer() -> f64 {
+    3.2
+}
+
+const fn default_geode_outer_layer() -> f64 {
+    4.2
+}
+
+const fn default_geode_generate_crack_chance() -> f64 {
+    1.0
+}
+
+const fn default_geode_base_crack_size() -> f64 {
+    2.0
+}
+
+const fn default_geode_crack_point_offset() -> i32 {
+    2
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -732,8 +918,13 @@ pub struct GeodeCrackSettings {
 pub struct HugeMushroomConfiguration {
     pub cap_provider: BlockStateProvider,
     pub stem_provider: BlockStateProvider,
+    #[serde(default = "default_huge_mushroom_foliage_radius")]
     pub foliage_radius: i32,
     pub can_place_on: BlockPredicate,
+}
+
+const fn default_huge_mushroom_foliage_radius() -> i32 {
+    2
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -744,6 +935,7 @@ pub struct HugeFungusConfiguration {
     pub hat_state: BlockStateData,
     pub decor_state: BlockStateData,
     pub replaceable_blocks: BlockPredicate,
+    #[serde(default)]
     pub planted: bool,
 }
 
@@ -752,11 +944,16 @@ pub struct HugeFungusConfiguration {
 pub struct LakeConfiguration {
     pub fluid: BlockStateProvider,
     pub barrier: BlockStateProvider,
+    pub can_place_feature: BlockPredicate,
+    pub can_replace_with_air_or_fluid: BlockPredicate,
+    pub can_replace_with_barrier: BlockPredicate,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LargeDripstoneConfiguration {
+    pub replaceable_blocks: BlockHolderSet,
+    #[serde(default = "default_large_dripstone_floor_to_ceiling_search_range")]
     pub floor_to_ceiling_search_range: i32,
     pub column_radius: IntProvider,
     pub height_scale: FloatProvider,
@@ -768,16 +965,33 @@ pub struct LargeDripstoneConfiguration {
     pub min_bluntness_for_wind: f32,
 }
 
+const fn default_large_dripstone_floor_to_ceiling_search_range() -> i32 {
+    30
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MultifaceGrowthConfiguration {
     pub block: Identifier,
+    #[serde(default = "default_multiface_search_range")]
     pub search_range: i32,
+    #[serde(default)]
     pub can_place_on_floor: bool,
+    #[serde(default)]
     pub can_place_on_ceiling: bool,
+    #[serde(default)]
     pub can_place_on_wall: bool,
+    #[serde(default = "default_multiface_chance_of_spreading")]
     pub chance_of_spreading: f32,
     pub can_be_placed_on: Vec<Identifier>,
+}
+
+const fn default_multiface_search_range() -> i32 {
+    10
+}
+
+const fn default_multiface_chance_of_spreading() -> f32 {
+    0.5
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -853,8 +1067,38 @@ pub struct WeightedPlacedFeature {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct WeightedRandomFeatureConfiguration {
+    pub features: Vec<WeightedRandomPlacedFeature>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeightedRandomPlacedFeature {
+    pub data: PlacedFeatureRef,
+    pub weight: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SimpleRandomSelectorConfiguration {
     pub features: Vec<PlacedFeatureRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositeFeatureConfiguration {
+    #[serde(deserialize_with = "deserialize_non_empty_placed_features")]
+    pub features: Vec<PlacedFeatureRef>,
+}
+
+fn deserialize_non_empty_placed_features<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<PlacedFeatureRef>, D::Error> {
+    let features = Vec::<PlacedFeatureRef>::deserialize(deserializer)?;
+    if features.is_empty() {
+        return Err(D::Error::custom("features must not be empty"));
+    }
+    Ok(features)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -862,6 +1106,8 @@ pub struct SimpleRandomSelectorConfiguration {
 pub struct RootSystemConfiguration {
     pub feature: PlacedFeatureRef,
     pub required_vertical_space_for_tree: i32,
+    pub level_test_distance: i32,
+    pub max_level_deviation: i32,
     pub root_radius: i32,
     pub root_placement_attempts: i32,
     pub root_column_max_height: i32,
@@ -871,8 +1117,7 @@ pub struct RootSystemConfiguration {
     pub allowed_vertical_water_for_tree: i32,
     pub root_state_provider: BlockStateProvider,
     pub hanging_root_state_provider: BlockStateProvider,
-    #[serde(deserialize_with = "deserialize_tag_identifier")]
-    pub root_replaceable: Identifier,
+    pub root_replaceable: BlockHolderSet,
     pub allowed_tree_position: BlockPredicate,
 }
 
@@ -920,10 +1165,74 @@ pub struct SpikeConfiguration {
 #[serde(deny_unknown_fields)]
 pub struct SpringConfiguration {
     pub state: FluidStateData,
+    #[serde(default = "default_true")]
     pub requires_block_below: bool,
+    #[serde(default = "default_spring_rock_count")]
     pub rock_count: i32,
+    #[serde(default = "default_spring_hole_count")]
     pub hole_count: i32,
-    pub valid_blocks: IdentifierList,
+    pub valid_blocks: BlockHolderSet,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateFeatureConfiguration {
+    pub templates: Vec<WeightedTemplateEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeightedTemplateEntry {
+    pub data: TemplateEntry,
+    pub weight: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateEntry {
+    pub id: Identifier,
+    #[serde(
+        default = "default_template_rotations",
+        deserialize_with = "deserialize_template_rotations"
+    )]
+    pub rotations: Vec<Rotation>,
+}
+
+fn default_template_rotations() -> Vec<Rotation> {
+    vec![
+        Rotation::None,
+        Rotation::Clockwise90,
+        Rotation::Clockwise180,
+        Rotation::CounterClockwise90,
+    ]
+}
+
+fn deserialize_template_rotations<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Rotation>, D::Error> {
+    let values = Vec::<String>::deserialize(deserializer)?;
+    values
+        .iter()
+        .map(|value| parse_rotation(value).map_err(D::Error::custom))
+        .collect()
+}
+
+fn parse_rotation(value: &str) -> Result<Rotation, &'static str> {
+    match value {
+        "none" => Ok(Rotation::None),
+        "clockwise_90" => Ok(Rotation::Clockwise90),
+        "180" => Ok(Rotation::Clockwise180),
+        "counterclockwise_90" => Ok(Rotation::CounterClockwise90),
+        _ => Err("invalid rotation"),
+    }
+}
+
+const fn default_spring_rock_count() -> i32 {
+    4
+}
+
+const fn default_spring_hole_count() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1107,8 +1416,11 @@ pub enum FeatureSize {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TwoLayersFeatureSize {
+    #[serde(default = "default_feature_size_one")]
     pub limit: i32,
+    #[serde(default)]
     pub lower_size: i32,
+    #[serde(default = "default_feature_size_one")]
     pub upper_size: i32,
     #[serde(default)]
     pub min_clipped_height: Option<i32>,
@@ -1117,13 +1429,22 @@ pub struct TwoLayersFeatureSize {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThreeLayersFeatureSize {
+    #[serde(default = "default_feature_size_one")]
     pub limit: i32,
+    #[serde(default)]
     pub lower_size: i32,
+    #[serde(default = "default_feature_size_one")]
     pub middle_size: i32,
+    #[serde(default = "default_feature_size_one")]
     pub upper_limit: i32,
+    #[serde(default = "default_feature_size_one")]
     pub upper_size: i32,
     #[serde(default)]
     pub min_clipped_height: Option<i32>,
+}
+
+const fn default_feature_size_one() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1215,9 +1536,24 @@ pub struct AttachedToLogsDecorator {
 #[serde(deny_unknown_fields)]
 pub struct PlaceOnGroundDecorator {
     pub block_state_provider: BlockStateProvider,
+    #[serde(default = "default_place_on_ground_tries")]
     pub tries: i32,
+    #[serde(default = "default_place_on_ground_radius")]
     pub radius: i32,
+    #[serde(default = "default_place_on_ground_height")]
     pub height: i32,
+}
+
+const fn default_place_on_ground_tries() -> i32 {
+    128
+}
+
+const fn default_place_on_ground_radius() -> i32 {
+    2
+}
+
+const fn default_place_on_ground_height() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Deserialize)]

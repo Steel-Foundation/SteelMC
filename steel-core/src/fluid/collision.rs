@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockStateBehaviorExt;
-use crate::physics::shapes::merged_face_occludes;
+use crate::physics::shapes::merged_offset_face_occludes;
 use crate::world::World;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -31,10 +31,10 @@ pub fn can_pass_through_wall(
         return false;
     }
 
-    let from_shape = world.get_block_state(from).get_collision_shape();
-    let to_shape = world.get_block_state(to).get_collision_shape();
+    let from_shape = world.get_block_state(from).get_collision_shape_at(from);
+    let to_shape = world.get_block_state(to).get_collision_shape_at(to);
 
-    !merged_face_occludes(from_shape, to_shape, direction)
+    !merged_offset_face_occludes(from_shape, to_shape, direction)
 }
 
 /// Checks if a block at the given world position can hold any fluid.

@@ -102,7 +102,7 @@ impl BlockBehavior for ButtonBlock {
         let support_dir = Self::get_connected_direction(state).opposite();
         let support_pos = support_dir.relative(pos);
         let support_state = world.get_block_state(support_pos);
-        support_state.is_face_sturdy(support_dir.opposite())
+        support_state.is_face_sturdy_at(support_pos, support_dir.opposite())
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

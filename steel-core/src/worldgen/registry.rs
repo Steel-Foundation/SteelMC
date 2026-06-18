@@ -32,8 +32,30 @@ pub struct GeneratorOutput {
 }
 
 struct WorldGeneratorFactory {
-    validate: fn(&toml::Value) -> Result<(), String>,
-    create: fn(&toml::Value, i64) -> Result<GeneratorOutput, String>,
+    validate: fn(&toml::Value) -> Result<WorldGeneratorConfigData, String>,
+    create: fn(&WorldGeneratorConfigData, i64) -> Result<GeneratorOutput, String>,
+}
+
+/// Generator config after parsing, validation, and default application.
+#[derive(Debug, Clone)]
+pub struct ValidatedWorldGeneratorConfig {
+    generator: Identifier,
+    data: WorldGeneratorConfigData,
+}
+
+impl ValidatedWorldGeneratorConfig {
+    /// Generator factory identifier this config was validated for.
+    #[must_use]
+    pub const fn generator(&self) -> &Identifier {
+        &self.generator
+    }
+}
+
+#[derive(Debug, Clone)]
+enum WorldGeneratorConfigData {
+    Empty,
+    EmptyWorld(DimensionTypeOnlyConfig),
+    Flat(FlatGeneratorConfig),
 }
 
 /// Registry of server-side world generator factories.
@@ -94,37 +116,44 @@ impl WorldGeneratorRegistry {
         Ok(())
     }
 
-    /// Validates config for a generator ID.
-    pub fn validate_config(&self, key: &Identifier, config: &toml::Value) -> Result<(), String> {
+    /// Parses and validates config for a generator ID.
+    pub fn validate_config(
+        &self,
+        key: &Identifier,
+        config: &toml::Value,
+    ) -> Result<ValidatedWorldGeneratorConfig, String> {
         let factory = self
             .factories
             .get(key)
             .ok_or_else(|| format!("unknown world generator {key}"))?;
-        (factory.validate)(config)
+        let data = (factory.validate)(config)?;
+        Ok(ValidatedWorldGeneratorConfig {
+            generator: key.clone(),
+            data,
+        })
     }
 
     /// Creates a generator from a validated generator ID and config.
     pub fn create(
         &self,
-        key: &Identifier,
-        config: &toml::Value,
+        config: &ValidatedWorldGeneratorConfig,
         seed: i64,
     ) -> Result<GeneratorOutput, String> {
         let factory = self
             .factories
-            .get(key)
-            .ok_or_else(|| format!("unknown world generator {key}"))?;
-        (factory.create)(config, seed)
+            .get(&config.generator)
+            .ok_or_else(|| format!("unknown world generator {}", config.generator))?;
+        (factory.create)(&config.data, seed)
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DimensionTypeOnlyConfig {
     dimension_type: Identifier,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FlatGeneratorConfig {
     #[serde(default = "default_flat_dimension_type")]
@@ -139,7 +168,7 @@ struct FlatGeneratorConfig {
     structure_overrides: Vec<Identifier>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FlatLayerConfig {
     block: Identifier,
@@ -174,25 +203,26 @@ fn default_flat_structure_overrides() -> Vec<Identifier> {
     ]
 }
 
-fn validate_empty_config(config: &toml::Value) -> Result<(), String> {
+fn validate_empty_config(config: &toml::Value) -> Result<WorldGeneratorConfigData, String> {
     let Some(table) = config.as_table() else {
         return Err("generator config must be a table".to_owned());
     };
     if !table.is_empty() {
         return Err("this generator does not accept config".to_owned());
     }
-    Ok(())
+    Ok(WorldGeneratorConfigData::Empty)
 }
 
-fn validate_empty_world_config(config: &toml::Value) -> Result<(), String> {
+fn validate_empty_world_config(config: &toml::Value) -> Result<WorldGeneratorConfigData, String> {
     let parsed: DimensionTypeOnlyConfig = config
         .clone()
         .try_into()
         .map_err(|e| format!("invalid steel:empty config: {e}"))?;
-    dimension_type_by_key(&parsed.dimension_type).map(|_| ())
+    dimension_type_by_key(&parsed.dimension_type)?;
+    Ok(WorldGeneratorConfigData::EmptyWorld(parsed))
 }
 
-fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
+fn validate_flat_config(config: &toml::Value) -> Result<WorldGeneratorConfigData, String> {
     let parsed = parse_flat_config(config)?;
     if parsed.layers.is_empty() {
         return Err("minecraft:flat requires at least one layer".to_owned());
@@ -227,7 +257,7 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
             ));
         }
     }
-    Ok(())
+    Ok(WorldGeneratorConfigData::Flat(parsed))
 }
 
 fn parse_flat_config(config: &toml::Value) -> Result<FlatGeneratorConfig, String> {
@@ -237,8 +267,13 @@ fn parse_flat_config(config: &toml::Value) -> Result<FlatGeneratorConfig, String
         .map_err(|e| format!("invalid minecraft:flat config: {e}"))
 }
 
-fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_overworld(
+    config: &WorldGeneratorConfigData,
+    seed: i64,
+) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::Empty = config else {
+        return Err("validated config does not match minecraft:overworld".to_owned());
+    };
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &OVERWORLD,
@@ -252,8 +287,10 @@ fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, 
     })
 }
 
-fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_nether(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::Empty = config else {
+        return Err("validated config does not match minecraft:the_nether".to_owned());
+    };
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_NETHER,
@@ -267,8 +304,10 @@ fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Str
     })
 }
 
-fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    validate_empty_config(config)?;
+fn create_end(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::Empty = config else {
+        return Err("validated config does not match minecraft:the_end".to_owned());
+    };
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_END,
@@ -279,18 +318,14 @@ fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String
     })
 }
 
-fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
-    let parsed = parse_flat_config(config)?;
-    validate_flat_config(config)?;
+fn create_flat(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::Flat(parsed) = config else {
+        return Err("validated config does not match minecraft:flat".to_owned());
+    };
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
-    let normalized_config = normalized_flat_config(&parsed);
-    let FlatGeneratorConfig {
-        layers: layer_configs,
-        structure_overrides,
-        ..
-    } = parsed;
+    let normalized_config = normalized_flat_config(parsed);
     let mut layers = Vec::new();
-    for layer in layer_configs {
+    for layer in &parsed.layers {
         let block = REGISTRY
             .blocks
             .by_key(&layer.block)
@@ -299,12 +334,12 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
         layers.extend(repeat_n(state, layer.height));
     }
 
-    let structure_generator = if structure_overrides.is_empty() {
+    let structure_generator = if parsed.structure_overrides.is_empty() {
         None
     } else {
         let structure_sets = load_vanilla_structure_sets()
             .into_iter()
-            .filter(|(key, _)| structure_overrides.contains(key))
+            .filter(|(key, _)| parsed.structure_overrides.contains(key))
             .collect();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         Some(StructureGenerator::vanilla_flat_with_structure_sets(
@@ -328,11 +363,10 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
     })
 }
 
-fn create_empty(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, String> {
-    let parsed: DimensionTypeOnlyConfig = config
-        .clone()
-        .try_into()
-        .map_err(|e| format!("invalid steel:empty config: {e}"))?;
+fn create_empty(config: &WorldGeneratorConfigData, _seed: i64) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::EmptyWorld(parsed) = config else {
+        return Err("validated config does not match steel:empty".to_owned());
+    };
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     Ok(GeneratorOutput {
         dimension_type,
@@ -420,7 +454,16 @@ mod tests {
     fn default_flat_config_matches_vanilla_superflat() {
         init_test_registry();
 
-        let output = create_flat(&toml::Value::Table(Map::new()), 0)
+        let registry = WorldGeneratorRegistry::new_with_builtins()
+            .expect("built-in generator registry should initialize");
+        let config = registry
+            .validate_config(
+                &Identifier::vanilla_static("flat"),
+                &toml::Value::Table(Map::new()),
+            )
+            .expect("default flat config should validate");
+        let output = registry
+            .create(&config, 0)
             .expect("default flat config should create a generator");
         let config = output
             .config

@@ -1,4 +1,4 @@
-//! Physics engine for entity movement with vanilla Minecraft 26.1 parity.
+//! Physics engine for entity movement with vanilla Minecraft parity.
 //!
 //! This module implements the core physics simulation for moving entities through
 //! the world with proper collision detection, including:

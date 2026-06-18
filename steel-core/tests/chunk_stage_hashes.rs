@@ -712,7 +712,7 @@ fn chunk_stage_hashes_inner() {
             .as_ref()
             .map(|world| world.chunk_map.world_gen_context.clone());
 
-        eprintln!("=== {dim_key} ===");
+        eprintln!("{dim_key}");
 
         let debug_filter = debug_chunk_filter();
         let mut test_entries: Vec<&ChunkStageEntry> = if let Some(filter) = &debug_filter {
@@ -730,11 +730,11 @@ fn chunk_stage_hashes_inner() {
             .map(|entry| (entry.x, entry.z))
             .collect();
 
-        // === Pre-pass: replicate vanilla's STRUCTURE_STARTS → STRUCTURE_REFERENCES →
+        // Pre-pass: replicate vanilla's STRUCTURE_STARTS → STRUCTURE_REFERENCES →
         // BIOMES → NOISE pipeline before the per-stage hash loop. The beardifier in
         // production reads structure starts from referenced neighbor chunks, so the
         // test must populate those references the same way `generate_references` does
-        // in `worldgen::stages::structures`. ===
+        // in `worldgen::stages::structures`.
 
         // 17×17 around each test chunk feeds STRUCTURE_REFERENCES. Surface and
         // feature dependency chunks add their required biome rings below.

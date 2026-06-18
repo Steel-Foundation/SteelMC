@@ -19,7 +19,7 @@ use text_components::TextComponent;
 use toml::map::Map;
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
-use crate::worldgen::registry::WorldGeneratorRegistry;
+use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorRegistry};
 
 /// Runtime server configuration — the subset of settings needed after startup.
 ///
@@ -48,6 +48,10 @@ pub struct RuntimeConfig {
     pub favicon: String,
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
+    /// Vanilla chat spam threshold window in seconds
+    pub chat_spam_threshold_seconds: i32,
+    /// Vanilla command spam threshold window in seconds
+    pub command_spam_threshold_seconds: i32,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
@@ -283,7 +287,7 @@ pub struct ResolvedWorldConfig {
     /// Generator factory identifier.
     pub generator: Identifier,
     /// Strictly validated generator config.
-    pub generator_config: toml::Value,
+    pub generator_config: ValidatedWorldGeneratorConfig,
     /// Resolved world seed.
     pub seed: i64,
     /// Default game mode for first-visit player data in this world.
@@ -445,11 +449,12 @@ fn resolve_world_config(
     validate_world_name(&world.name, domain_name)?;
     let world_key = Identifier::new(domain_name.to_owned(), world.name.clone());
 
-    let generator_config = world
+    let raw_generator_config = world
         .config
         .clone()
         .unwrap_or_else(|| toml::Value::Table(Map::new()));
-    generator_registry.validate_config(&world.generator, &generator_config)?;
+    let generator_config =
+        generator_registry.validate_config(&world.generator, &raw_generator_config)?;
 
     let storage = world
         .storage

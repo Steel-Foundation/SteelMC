@@ -54,8 +54,9 @@ impl BlockBehavior for SeagrassBlock {
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let below = world.get_block_state(pos.below());
-        below.is_face_sturdy(Direction::Up)
+        let below_pos = pos.below();
+        let below = world.get_block_state(below_pos);
+        below.is_face_sturdy_at(below_pos, Direction::Up)
             && !below
                 .get_block()
                 .has_tag(&BlockTag::CANNOT_SUPPORT_SEAGRASS)

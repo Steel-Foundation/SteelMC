@@ -706,6 +706,28 @@ impl PropertyEnum for DripstoneThickness {
 
 #[derive(Clone, Debug)]
 #[derive_const(PartialEq)]
+pub enum SpeleothemThickness {
+    TipMerge,
+    Tip,
+    Frustum,
+    Middle,
+    Base,
+}
+
+impl PropertyEnum for SpeleothemThickness {
+    fn as_str(&self) -> &str {
+        match self {
+            SpeleothemThickness::TipMerge => "tip_merge",
+            SpeleothemThickness::Tip => "tip",
+            SpeleothemThickness::Frustum => "frustum",
+            SpeleothemThickness::Middle => "middle",
+            SpeleothemThickness::Base => "base",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[derive_const(PartialEq)]
 pub enum SculkSensorPhase {
     Inactive,
     Active,
@@ -820,6 +842,28 @@ impl PropertyEnum for Pose {
             Pose::Sitting => "sitting",
             Pose::Running => "running",
             Pose::Star => "star",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[derive_const(PartialEq)]
+pub enum PotentSulfurState {
+    Dry,
+    Wet,
+    Dormant,
+    Erupting,
+    Continuous,
+}
+
+impl PropertyEnum for PotentSulfurState {
+    fn as_str(&self) -> &str {
+        match self {
+            PotentSulfurState::Dry => "dry",
+            PotentSulfurState::Wet => "wet",
+            PotentSulfurState::Dormant => "dormant",
+            PotentSulfurState::Erupting => "erupting",
+            PotentSulfurState::Continuous => "continuous",
         }
     }
 }
@@ -1124,6 +1168,16 @@ impl BlockStateProperties {
             DripstoneThickness::Base,
         ],
     );
+    pub const SPELEOTHEM_THICKNESS: EnumProperty<SpeleothemThickness> = EnumProperty::new(
+        "thickness",
+        &[
+            SpeleothemThickness::TipMerge,
+            SpeleothemThickness::Tip,
+            SpeleothemThickness::Frustum,
+            SpeleothemThickness::Middle,
+            SpeleothemThickness::Base,
+        ],
+    );
     pub const SCULK_SENSOR_PHASE: EnumProperty<SculkSensorPhase> = EnumProperty::new(
         "sculk_sensor_phase",
         &[
@@ -1172,6 +1226,16 @@ impl BlockStateProperties {
     pub const COPPER_GOLEM_POSE: EnumProperty<Pose> = EnumProperty::new(
         "copper_golem_pose",
         &[Pose::Standing, Pose::Sitting, Pose::Running, Pose::Star],
+    );
+    pub const POTENT_SULFUR_STATE: EnumProperty<PotentSulfurState> = EnumProperty::new(
+        "potent_sulfur_state",
+        &[
+            PotentSulfurState::Dry,
+            PotentSulfurState::Wet,
+            PotentSulfurState::Dormant,
+            PotentSulfurState::Erupting,
+            PotentSulfurState::Continuous,
+        ],
     );
 
     // Additional boolean properties

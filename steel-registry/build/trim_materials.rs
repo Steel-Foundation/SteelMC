@@ -38,9 +38,8 @@ fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> Toke
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/trim_material/");
-
-    let trim_material_dir = "build_assets/builtin_datapacks/minecraft/trim_material";
+    let trim_material_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material";
+    println!("cargo:rerun-if-changed={trim_material_dir}");
     let mut trim_materials = Vec::new();
 
     // Read all trim material JSON files

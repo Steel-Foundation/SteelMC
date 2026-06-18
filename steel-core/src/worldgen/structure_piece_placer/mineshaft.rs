@@ -714,7 +714,7 @@ impl MineshaftPlacer<'_, '_> {
             if self.clip.is_inside(neighbor)
                 && self
                     .block_state(neighbor)
-                    .is_face_sturdy(direction.opposite())
+                    .is_face_sturdy_at(neighbor, direction.opposite())
             {
                 sturdy_neighbors += 1;
                 if sturdy_neighbors >= count {
@@ -765,7 +765,7 @@ impl MineshaftPlacer<'_, '_> {
                 let below_state = self.block_state(below_pos);
                 let empty_below = Self::is_replaceable_by_structures(below_state)
                     && below_state.get_block() != &vanilla_blocks::LAVA;
-                if !empty_below && Self::can_place_column_on_top_of(below_state) {
+                if !empty_below && Self::can_place_column_on_top_of(below_state, below_pos) {
                     self.fill_column_between(
                         pillar_state,
                         pos.x(),
@@ -783,7 +783,7 @@ impl MineshaftPlacer<'_, '_> {
                 let above_pos = BlockPos::new(pos.x(), world_y + distance, pos.z());
                 let above_state = self.block_state(above_pos);
                 let empty_above = Self::is_replaceable_by_structures(above_state);
-                if !empty_above && Self::can_hang_chain_below(above_state) {
+                if !empty_above && Self::can_hang_chain_below(above_state, above_pos) {
                     let fence_pos = BlockPos::new(pos.x(), world_y + 1, pos.z());
                     let _ = self.region.set_block_state(
                         fence_pos,
@@ -824,12 +824,12 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
-    fn can_place_column_on_top_of(state_below: BlockStateId) -> bool {
-        state_below.is_face_sturdy(Direction::Up)
+    fn can_place_column_on_top_of(state_below: BlockStateId, pos_below: BlockPos) -> bool {
+        state_below.is_face_sturdy_at(pos_below, Direction::Up)
     }
 
-    fn can_hang_chain_below(state_above: BlockStateId) -> bool {
-        state_above.is_face_sturdy_for(Direction::Down, SupportType::Center)
+    fn can_hang_chain_below(state_above: BlockStateId, pos_above: BlockPos) -> bool {
+        state_above.is_face_sturdy_for_at(pos_above, Direction::Down, SupportType::Center)
             && !Self::is_falling_block(state_above)
     }
 
@@ -862,7 +862,7 @@ impl MineshaftPlacer<'_, '_> {
         }
         let pos = self.world_pos(x, y, z);
         let existing = self.block_state(pos);
-        if !existing.is_face_sturdy(Direction::Up) {
+        if !existing.is_face_sturdy_at(pos, Direction::Up) {
             let _ = self
                 .region
                 .set_block_state(pos, planks, UpdateFlags::UPDATE_CLIENTS);

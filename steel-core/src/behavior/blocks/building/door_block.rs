@@ -98,14 +98,14 @@ impl DoorBlock {
         let right_above_pos = right_direction.relative(above_pos);
         let right_above_state = context.world.get_block_state(right_above_pos);
 
-        let solid_block_balance = i32::from(shapes::is_shape_full_block(
-            right_state.get_collision_shape(),
-        )) + i32::from(shapes::is_shape_full_block(
-            right_above_state.get_collision_shape(),
-        )) - i32::from(shapes::is_shape_full_block(
-            left_state.get_collision_shape(),
-        )) - i32::from(shapes::is_shape_full_block(
-            left_above_state.get_collision_shape(),
+        let solid_block_balance = i32::from(shapes::is_offset_shape_full_block(
+            right_state.get_collision_shape_at(right_pos),
+        )) + i32::from(shapes::is_offset_shape_full_block(
+            right_above_state.get_collision_shape_at(right_above_pos),
+        )) - i32::from(shapes::is_offset_shape_full_block(
+            left_state.get_collision_shape_at(left_pos),
+        )) - i32::from(shapes::is_offset_shape_full_block(
+            left_above_state.get_collision_shape_at(left_above_pos),
         ));
 
         let door_left = Self::is_lower_door(left_state);
@@ -248,9 +248,10 @@ impl BlockBehavior for DoorBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let below_state = world.get_block_state(pos.below());
+        let below_pos = pos.below();
+        let below_state = world.get_block_state(below_pos);
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
-            below_state.is_face_sturdy(Direction::Up)
+            below_state.is_face_sturdy_at(below_pos, Direction::Up)
         } else {
             below_state.get_block() == self.block
         }

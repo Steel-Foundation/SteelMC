@@ -17,9 +17,8 @@ pub struct InstrumentJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/instrument/");
-
-    let instrument_dir = "build_assets/builtin_datapacks/minecraft/instrument";
+    let instrument_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/instrument";
+    println!("cargo:rerun-if-changed={instrument_dir}");
     let mut instruments = Vec::new();
 
     // Read all instrument JSON files

@@ -301,7 +301,7 @@ fn generate_processor_list_data(data: &StructureProcessorListData) -> TokenStrea
 }
 
 pub(crate) fn build() -> TokenStream {
-    let dir = "build_assets/builtin_datapacks/minecraft/worldgen/processor_list";
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/processor_list";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();

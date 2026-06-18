@@ -795,6 +795,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns true for vanilla players whose abilities have `flying` set.
+    fn is_flying_player(&self) -> bool {
+        false
+    }
+
     /// Returns whether `other` can collide with this entity.
     ///
     /// Mirrors vanilla `Entity.canBeCollidedWith`. Base entities cannot be collided
@@ -2438,7 +2443,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    // === Physics Helper Methods ===
     // These mirror vanilla's Entity class methods.
 
     /// Gets the default gravity for this entity type.
@@ -2816,7 +2820,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
 
-    // === Persistence Methods ===
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
 
     /// Saves type-specific entity data to NBT.

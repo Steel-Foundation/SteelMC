@@ -17,9 +17,8 @@ pub struct JukeboxSongJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/jukebox_song/");
-
-    let jukebox_song_dir = "build_assets/builtin_datapacks/minecraft/jukebox_song";
+    let jukebox_song_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/jukebox_song";
+    println!("cargo:rerun-if-changed={jukebox_song_dir}");
     let mut jukebox_songs = Vec::new();
 
     // Read all jukebox song JSON files

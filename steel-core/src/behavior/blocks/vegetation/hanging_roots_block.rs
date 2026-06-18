@@ -27,8 +27,9 @@ impl HangingRootsBlock {
 impl BlockBehavior for HangingRootsBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         // Vanilla: the block above must be face-sturdy on its DOWN face.
-        let above = world.get_block_state(pos.above());
-        above.is_face_sturdy(Direction::Down)
+        let above_pos = pos.above();
+        let above = world.get_block_state(above_pos);
+        above.is_face_sturdy_at(above_pos, Direction::Down)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

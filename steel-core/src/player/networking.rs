@@ -17,7 +17,7 @@ use steel_protocol::packets::game::{
     SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
     SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
     SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
-    SSwing, SUseItem, SUseItemOn,
+    SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -370,11 +370,13 @@ impl JavaConnection {
                 }
             }
             play::S_CHAT_COMMAND => {
+                let command = SChatCommand::read_packet(data)?.command;
                 server.command_dispatcher.read().handle_command(
-                    CommandSender::Player(player),
-                    SChatCommand::read_packet(data)?.command,
+                    CommandSender::Player(Arc::clone(&player)),
+                    command,
                     &server,
                 );
+                player.detect_command_rate_spam();
             }
             play::S_COMMAND_SUGGESTION => {
                 let packet = SCommandSuggestion::read_packet(data)?;
@@ -435,6 +437,10 @@ impl JavaConnection {
             play::S_SIGN_UPDATE => {
                 let packet = SSignUpdate::read_packet(data)?;
                 player.handle_sign_update(packet);
+            }
+            play::S_SPECTATOR_ACTION => {
+                let packet = SSpectatorAction::read_packet(data)?;
+                player.handle_spectator_action(packet);
             }
             play::S_CLIENT_COMMAND => {
                 let packet = SClientCommand::read_packet(data)?;
