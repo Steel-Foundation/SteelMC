@@ -30,7 +30,7 @@ pub enum AuthError {
     #[error("Failed to parse JSON into Game Profile")]
     FailedParse,
     /// Authentication server URL is invalid.
-    #[error("Invalid authentication server URL: {0}")]
+    #[error("Invalid authentication server URL")]
     InvalidAuthServer(String),
     /// An unknown status code was returned.
     #[error("Unknown Status Code {0}")]

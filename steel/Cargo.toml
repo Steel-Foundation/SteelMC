@@ -41,6 +41,9 @@ chrono = "0.4.43"
 # Cryptography
 text_components.workspace = true
 
+# Networking
+reqwest.workspace = true
+
 # Memory
 mimalloc = { version = "0.1.48", optional = true }
 

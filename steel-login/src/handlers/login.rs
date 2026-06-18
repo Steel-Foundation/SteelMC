@@ -148,6 +148,14 @@ impl JavaTcpClient {
                         AuthError::UnverifiedUsername => TextComponent::translated(
                             translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME.msg(),
                         ),
+                        AuthError::InvalidAuthServer(auth_server) => {
+                            log::error!(
+                                "Invalid authentication server URL configured: {auth_server}"
+                            );
+                            TextComponent::translated(
+                                translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
+                            )
+                        }
                         e => e.to_string().into(),
                     })
                     .await;

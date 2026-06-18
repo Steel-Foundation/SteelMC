@@ -2801,6 +2801,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "parking_lot",
+ "reqwest 0.13.2",
  "serde",
  "steel-core",
  "steel-login",

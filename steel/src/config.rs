@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::filter::Directive;
 
+use reqwest::Url;
 use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
 
 #[cfg(feature = "stand-alone")]
@@ -286,6 +287,14 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     if !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
+    if let Some(auth_server) = &config.auth_server {
+        let Ok(url) = Url::parse(auth_server) else {
+            return Err("auth_server must be an absolute URL");
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("auth_server must use http or https");
+        }
+    }
     if config.simulation_distance > config.view_distance {
         return Err("Simulation distance must be less than or equal to view distance");
     }
@@ -359,6 +368,45 @@ mod tests {
         assert_eq!(
             config.server.into_runtime_config().auth_server.as_deref(),
             Some(auth_server)
+        );
+    }
+
+    #[test]
+    fn validate_rejects_invalid_auth_server_url() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"not a url\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("auth_server must be an absolute URL")
+        );
+    }
+
+    #[test]
+    fn validate_allows_http_auth_server_url() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"http://localhost:8080/session/minecraft/hasJoined\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("http auth server URL validates");
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_auth_server_scheme() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"ftp://auth.example.com/session/minecraft/hasJoined\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("auth_server must use http or https")
         );
     }
 
