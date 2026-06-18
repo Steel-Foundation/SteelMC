@@ -1,6 +1,6 @@
 services:
   steel:
-    image: ghcr.io/junkydeveloper/steelmc:nightly
+    image: ${STEEL_IMAGE:-ghcr.io/steel-foundation/steelmc:nightly}
     build:
       context: .
       dockerfile: Dockerfile
