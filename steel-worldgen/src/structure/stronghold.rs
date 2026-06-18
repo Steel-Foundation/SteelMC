@@ -29,29 +29,29 @@ fn random_horizontal(rng: &mut LegacyRandom) -> Direction {
 
 /// Vanilla's `BoundingBox.orientBox`.
 fn orient_box(foot: IVec3, off: IVec3, size: IVec3, dir: Direction) -> BoundingBox {
-    let fx = foot.x + off.x;
+    let fx = foot.x;
     let fy = foot.y + off.y;
-    let fz = foot.z + off.z;
+    let fz = foot.z;
     let w = size.x;
     let h = size.y;
     let d = size.z;
     match dir {
         Direction::North => BoundingBox::new(
-            IVec3::new(fx, fy, fz - d + 1),
-            IVec3::new(fx + w - 1, fy + h - 1, fz),
+            IVec3::new(fx + off.x, fy, fz - d + 1 + off.z),
+            IVec3::new(fx + w - 1 + off.x, fy + h - 1, fz + off.z),
         ),
         Direction::West => BoundingBox::new(
-            IVec3::new(fx - d + 1, fy, fz),
-            IVec3::new(fx, fy + h - 1, fz + w - 1),
+            IVec3::new(fx - d + 1 + off.z, fy, fz + off.x),
+            IVec3::new(fx + off.z, fy + h - 1, fz + w - 1 + off.x),
         ),
         Direction::East => BoundingBox::new(
-            IVec3::new(fx, fy, fz),
-            IVec3::new(fx + d - 1, fy + h - 1, fz + w - 1),
+            IVec3::new(fx + off.z, fy, fz + off.x),
+            IVec3::new(fx + d - 1 + off.z, fy + h - 1, fz + w - 1 + off.x),
         ),
         // South + default
         _ => BoundingBox::new(
-            IVec3::new(fx, fy, fz),
-            IVec3::new(fx + w - 1, fy + h - 1, fz + d - 1),
+            IVec3::new(fx + off.x, fy, fz + off.z),
+            IVec3::new(fx + w - 1 + off.x, fy + h - 1, fz + d - 1 + off.z),
         ),
     }
 }
@@ -809,6 +809,22 @@ impl Structure for StrongholdStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn orient_box_swaps_offsets_for_east_west_like_vanilla() {
+        let foot = IVec3::new(100, 50, 200);
+        let off = IVec3::new(-1, -1, 0);
+        let size = IVec3::new(5, 5, 7);
+
+        assert_eq!(
+            orient_box(foot, off, size, Direction::East),
+            BoundingBox::new(IVec3::new(100, 49, 199), IVec3::new(106, 53, 203))
+        );
+        assert_eq!(
+            orient_box(foot, off, size, Direction::West),
+            BoundingBox::new(IVec3::new(94, 49, 199), IVec3::new(100, 53, 203))
+        );
+    }
 
     #[test]
     fn constructor_rng_state_is_captured_in_piece_payloads() {

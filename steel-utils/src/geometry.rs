@@ -49,7 +49,7 @@ impl Space for Structure {
 ///
 /// `T` is the vector type (e.g. [`DVec3`] or [`IVec3`]) and `I` is a marker
 /// that differentiates coordinate spaces (block-local, world, structure).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Aabb<T, I> {
     /// Minimum corner of the box.
     pub min: T,
@@ -68,6 +68,7 @@ pub type WorldAabb = Aabb<DVec3, World>;
 pub type BoundingBox = Aabb<IVec3, Structure>;
 
 /// Integer axis-aligned bounding box for structure pieces but with wincode impl.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WincodeBoundingBox(pub BoundingBox);
 
 /// Vector operations used by generic AABB helpers.
@@ -158,58 +159,112 @@ impl AabbVector for IVec3 {
     }
 }
 
-// SAFETY: WincodeBoundingBox is a statically sized type (24 bytes, six i32 fields)
-// with no invalid bit patterns when fully initialized. The implementations
-// correctly serialize/deserialize all six components in order.
-unsafe impl<C: ConfigCore> SchemaWrite<C> for WincodeBoundingBox {
+const BOUNDING_BOX_SCHEMA_SIZE: usize = 6 * size_of::<i32>();
+
+fn write_bounding_box<C: ConfigCore>(
+    mut writer: impl Writer,
+    bbox: &BoundingBox,
+) -> WriteResult<()> {
+    for &val in &[
+        bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
+    ] {
+        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &val)?;
+    }
+    Ok(())
+}
+
+fn read_bounding_box<'de, C: ConfigCore>(mut reader: impl Reader<'de>) -> ReadResult<BoundingBox> {
+    let mut vals = [MaybeUninit::<i32>::uninit(); 6];
+    for slot in &mut vals {
+        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), slot)?;
+    }
+
+    // SAFETY: all six reads succeeded, every slot is initialized.
+    let [min_x, min_y, min_z, max_x, max_y, max_z] = vals.map(|v| unsafe { v.assume_init() });
+
+    Ok(BoundingBox {
+        min: IVec3::new(min_x, min_y, min_z),
+        max: IVec3::new(max_x, max_y, max_z),
+        p: PhantomData,
+    })
+}
+
+// SAFETY: BoundingBox is represented by six initialized i32 components and the
+// implementation writes exactly those components in min/max order.
+unsafe impl<C: ConfigCore> SchemaWrite<C> for BoundingBox {
     type Src = Self;
 
     const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: 6 * size_of::<i32>(),
+        size: BOUNDING_BOX_SCHEMA_SIZE,
         zero_copy: false,
     };
 
     fn size_of(_src: &Self::Src) -> WriteResult<usize> {
-        Ok(6 * size_of::<i32>())
+        Ok(BOUNDING_BOX_SCHEMA_SIZE)
     }
 
-    fn write(mut writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
-        let bbox = &src.0;
-        for &val in &[
-            bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
-        ] {
-            <i32 as SchemaWrite<C>>::write(writer.by_ref(), &val)?;
+    fn write(writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
+        write_bounding_box::<C>(writer, src)
+    }
+}
+
+// SAFETY: The implementation reads exactly six i32 values and writes a fully
+// initialized BoundingBox to the destination.
+unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for BoundingBox {
+    type Dst = Self;
+
+    const TYPE_META: TypeMeta = TypeMeta::Static {
+        size: BOUNDING_BOX_SCHEMA_SIZE,
+        zero_copy: false,
+    };
+
+    fn read(reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
+        let bbox = read_bounding_box::<C>(reader)?;
+
+        // SAFETY: dst is uninitialised; we write a fully-constructed value.
+        unsafe {
+            dst.as_mut_ptr().write(bbox);
         }
+
         Ok(())
     }
 }
 
-// SAFETY: The implementation reads exactly six i32 values and constructs a valid
-// WincodeBoundingBox, fully initializing the destination.
+// SAFETY: WincodeBoundingBox delegates to BoundingBox's component-complete
+// schema implementation.
+unsafe impl<C: ConfigCore> SchemaWrite<C> for WincodeBoundingBox {
+    type Src = Self;
+
+    const TYPE_META: TypeMeta = TypeMeta::Static {
+        size: BOUNDING_BOX_SCHEMA_SIZE,
+        zero_copy: false,
+    };
+
+    fn size_of(_src: &Self::Src) -> WriteResult<usize> {
+        Ok(BOUNDING_BOX_SCHEMA_SIZE)
+    }
+
+    fn write(writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
+        write_bounding_box::<C>(writer, &src.0)
+    }
+}
+
+// SAFETY: The wrapped BoundingBox is read through BoundingBox's schema
+// implementation, then written as a fully initialized wrapper.
 unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
     type Dst = Self;
 
     const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: 6 * size_of::<i32>(),
+        size: BOUNDING_BOX_SCHEMA_SIZE,
         zero_copy: false,
     };
 
-    fn read(mut reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
-        let mut vals = [MaybeUninit::<i32>::uninit(); 6];
-        for slot in &mut vals {
-            <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), slot)?;
-        }
-
-        // SAFETY: all six reads succeeded, every slot is initialized.
-        let [min_x, min_y, min_z, max_x, max_y, max_z] = vals.map(|v| unsafe { v.assume_init() });
+    fn read(reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
+        let bbox = read_bounding_box::<C>(reader)?;
 
         // SAFETY: dst is uninitialised; we write a fully-constructed value.
         unsafe {
-            dst.as_mut_ptr().write(WincodeBoundingBox(BoundingBox {
-                min: IVec3::new(min_x, min_y, min_z),
-                max: IVec3::new(max_x, max_y, max_z),
-                p: PhantomData,
-            }));
+            dst.as_mut_ptr().write(WincodeBoundingBox(bbox));
         }
 
         Ok(())
@@ -267,11 +322,7 @@ impl<T: AabbVector, I> Aabb<T, I> {
     #[must_use]
     pub fn inflate_xyz(self, x: T::Scalar, y: T::Scalar, z: T::Scalar) -> Self {
         let delta = T::new(x, y, z);
-        Self {
-            min: self.min - delta,
-            max: self.max + delta,
-            p: PhantomData,
-        }
+        Self::from_min_max(self.min - delta, self.max + delta)
     }
 
     /// Returns the smallest AABB that contains both `a` and `b`.
@@ -526,6 +577,17 @@ mod tests {
         assert_eq!(aabb.max.x, 3.0);
         assert_eq!(aabb.max.y, 4.0);
         assert_eq!(aabb.max.z, 5.0);
+    }
+
+    #[test]
+    fn inflate_and_deflate_normalize_inverted_bounds() {
+        let aabb = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0).deflate(0.75);
+        assert_eq!(aabb.min, DVec3::splat(0.25));
+        assert_eq!(aabb.max, DVec3::splat(0.75));
+
+        let bbox = BoundingBox::new(IVec3::ZERO, IVec3::splat(5)).inflate(-4);
+        assert_eq!(bbox.min, IVec3::splat(1));
+        assert_eq!(bbox.max, IVec3::splat(4));
     }
 
     #[test]

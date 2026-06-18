@@ -2600,7 +2600,7 @@ mod tests {
     fn test_structure_piece() -> StructurePiece {
         StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
-            bounding_box: BoundingBox::new(IVec3::new(0, 64, 0), IVec3::new(0, 64, 0)),
+            bounding_box: BoundingBox::new(IVec3::new(0, 64, 0), IVec3::new(1, 65, 1)),
             gen_depth: 0,
             orientation: None,
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented),
