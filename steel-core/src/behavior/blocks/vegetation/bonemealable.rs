@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use rand::Rng;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
@@ -48,6 +49,10 @@ pub trait Bonemealable {
     /// Returns how this block uses bonemeal.
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+    /// Returns if this block can grow into target block.
+    fn can_grow_into(&self, state: BlockStateId) -> bool {
+        state.is_air()
     }
 }
 
