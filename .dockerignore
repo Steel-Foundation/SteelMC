@@ -1,4 +1,5 @@
-# Build/Generated
+.github
+.git
 /target
 /steel-registry/src/generated
 /steel-utils/src/generated
@@ -7,33 +8,32 @@
 /steel-utils/build_assets/builtin_datapacks
 /steel-utils/build_assets/.asset-extract.lock
 /steel-utils/build_assets/en_us.json
-
-# Config
-/config
-/.tmp
-/.logs
-/world
-/saves
-/players
-
-# Misc
+CONTRIBUTING.md
 CLAUDE.md
-.env
-/minecraft-src
-.agents
-skills-lock.json
-
-# Package
+audit.toml
+_typos.toml
+.gitignore
+README.md
+AGENTS.md
+prek.toml
+update-minecraft-src.sh
+clippy.toml
+docker-compose.yml
+Dockerfile
+eggs
+config
+saves
+.tmp
+.logs
+world
+players
 profile.json.gz
 profile.json.syms.json
 *.gz
 *.class
-
-# ICE crash reports
 rustc-ice-*
-
-# IDE
-.vscode/settings.json
+.vscode
 .idea
-
 .DS_STORE
+.env
+minecraft-src

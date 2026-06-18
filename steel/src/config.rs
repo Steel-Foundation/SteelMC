@@ -6,7 +6,10 @@
 
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::Path};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::filter::Directive;
 
+use reqwest::Url;
 use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
 
 #[cfg(feature = "stand-alone")]
@@ -44,6 +47,18 @@ const fn default_spam_threshold_seconds() -> i32 {
     10
 }
 
+fn default_log_path() -> String {
+    "./.logs".to_string()
+}
+
+const fn default_log_file() -> bool {
+    true
+}
+
+const fn default_max_history() -> usize {
+    50
+}
+
 /// The full server configuration as deserialized from TOML.
 ///
 /// Contains both creation-time values (seed, world generator, storage)
@@ -61,6 +76,8 @@ pub struct ServerConfig {
     pub simulation_distance: u8,
     /// Whether the server is in online mode.
     pub online_mode: bool,
+    /// Optional authentication endpoint for online-mode `hasJoined` checks.
+    pub auth_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
@@ -95,6 +112,7 @@ impl ServerConfig {
             view_distance: self.view_distance,
             simulation_distance: self.simulation_distance,
             online_mode: self.online_mode,
+            auth_server: self.auth_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
             motd: self.motd,
@@ -113,17 +131,34 @@ impl ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogConfig {
+    /// Path where store the log files and history
+    #[serde(default = "default_log_path")]
+    pub log_path: String,
+    /// The level of information the logger will show
+    #[serde(default)]
+    pub log_level: LogLevel,
     /// Time display format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
     #[serde(default)]
     pub time: LogTimeFormat,
     /// Whether the `module_path` of the log should be displayed
+    #[serde(default)]
     pub module_path: bool,
     /// Whether the extra data of the log should be displayed
+    #[serde(default)]
     pub extra: bool,
+    /// Whether the log should be written into a file
+    #[serde(default = "default_log_file")]
+    pub log_file: bool,
+    /// Time between log file rotations
+    #[serde(default)]
+    pub rotation_time: RotationTimeFormat,
+    /// Amount of console commands saved
+    #[serde(default = "default_max_history")]
+    pub max_history: usize,
 }
 
 /// Time format for log entries
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogTimeFormat {
     /// No time displayed
@@ -133,6 +168,53 @@ pub enum LogTimeFormat {
     Date,
     /// Seconds since server start
     Uptime,
+}
+
+/// Time for log files rotation
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RotationTimeFormat {
+    /// No rotation
+    None,
+    /// Rotate hourly
+    Hourly,
+    /// Rotate daily
+    #[default]
+    Daily,
+    /// Rotate weekly
+    Weekly,
+    /// Rotate monthly
+    Monthly,
+}
+
+/// The level of information the logger will show
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    /// Only error logs
+    Error,
+    /// Error and warn logs
+    Warn,
+    /// All standard logs
+    #[default]
+    Info,
+    /// Standard + Debug info enabled
+    Debug,
+    /// All logs are shown
+    Trace,
+}
+impl LogLevel {
+    /// Converts the log level in it's respective logging directive
+    #[must_use]
+    pub fn to_directive(self) -> Directive {
+        match self {
+            LogLevel::Error => LevelFilter::ERROR.into(),
+            LogLevel::Warn => LevelFilter::WARN.into(),
+            LogLevel::Info => LevelFilter::INFO.into(),
+            LogLevel::Debug => LevelFilter::DEBUG.into(),
+            LogLevel::Trace => LevelFilter::TRACE.into(),
+        }
+    }
 }
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
@@ -205,6 +287,14 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     if !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
+    if let Some(auth_server) = &config.auth_server {
+        let Ok(url) = Url::parse(auth_server) else {
+            return Err("auth_server must be an absolute URL");
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("auth_server must use http or https");
+        }
+    }
     if config.simulation_distance > config.view_distance {
         return Err("Simulation distance must be less than or equal to view distance");
     }
@@ -266,6 +356,61 @@ mod tests {
     }
 
     #[test]
+    fn configured_auth_server_flows_to_runtime_config() {
+        let auth_server = "https://auth.example.com/session/minecraft/hasJoined";
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            &format!("online_mode = true\nauth_server = \"{auth_server}\""),
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(config.server.auth_server.as_deref(), Some(auth_server));
+        assert_eq!(
+            config.server.into_runtime_config().auth_server.as_deref(),
+            Some(auth_server)
+        );
+    }
+
+    #[test]
+    fn validate_rejects_invalid_auth_server_url() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"not a url\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("auth_server must be an absolute URL")
+        );
+    }
+
+    #[test]
+    fn validate_allows_http_auth_server_url() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"http://localhost:8080/session/minecraft/hasJoined\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("http auth server URL validates");
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_auth_server_scheme() {
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            "online_mode = true\nauth_server = \"ftp://auth.example.com/session/minecraft/hasJoined\"",
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("auth_server must use http or https")
+        );
+    }
+
+    #[test]
     fn server_config_defaults_spam_thresholds_for_older_configs() {
         let input = r#"
             [server]
@@ -285,5 +430,36 @@ mod tests {
 
         assert_eq!(config.server.chat_spam_threshold_seconds, 10);
         assert_eq!(config.server.command_spam_threshold_seconds, 10);
+    }
+
+    #[test]
+    fn log_config_defaults_for_older_configs() {
+        let input = r#"
+            [server]
+            server_port = 25565
+            max_players = 20
+            view_distance = 10
+            simulation_distance = 10
+            online_mode = true
+            encryption = true
+            motd = "A Steel Server"
+            use_favicon = false
+            favicon = "config/favicon.png"
+            enforce_secure_chat = false
+
+            [log]
+            time = "uptime"
+            module_path = false
+            extra = false
+        "#;
+
+        let config: SteelConfig = toml::from_str(input).expect("older log config should parse");
+        let log_config = config.log.expect("log config should be present");
+
+        assert_eq!(log_config.log_path, "./.logs");
+        assert_eq!(log_config.log_level, LogLevel::Info);
+        assert!(log_config.log_file);
+        assert_eq!(log_config.rotation_time, RotationTimeFormat::Daily);
+        assert_eq!(log_config.max_history, 50);
     }
 }
