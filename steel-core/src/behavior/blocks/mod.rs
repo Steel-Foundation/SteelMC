@@ -15,6 +15,8 @@ pub use building::{
     BedBlock, CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock,
     MagmaBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock,
     SpongeBlock, StairBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
+    MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock,
+    SlabBlock, SlimeBlock, StairBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
     WetSpongeBlock,
 };
@@ -41,6 +43,6 @@ pub use vegetation::{
     KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock, MossyCarpetBlock,
     MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock, SaplingBlock,
     SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock,
-    SporeBlossomBlock, TallDryGrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock,
-    WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
+    SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
+    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
 };

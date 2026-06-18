@@ -1105,5 +1105,41 @@
     "place_sound": "minecraft:intentionally_empty",
     "hit_sound": "minecraft:intentionally_empty",
     "fall_sound": "minecraft:block.dried_ghast.fall"
+  },
+  "SULFUR": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.sulfur.break",
+    "step_sound": "minecraft:block.sulfur.step",
+    "place_sound": "minecraft:block.sulfur.place",
+    "hit_sound": "minecraft:block.sulfur.hit",
+    "fall_sound": "minecraft:block.sulfur.fall"
+  },
+  "POTENT_SULFUR": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.potent_sulfur.break",
+    "step_sound": "minecraft:block.potent_sulfur.step",
+    "place_sound": "minecraft:block.potent_sulfur.place",
+    "hit_sound": "minecraft:block.potent_sulfur.hit",
+    "fall_sound": "minecraft:block.potent_sulfur.fall"
+  },
+  "SULFUR_SPIKE": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.sulfur_spike.break",
+    "step_sound": "minecraft:block.sulfur_spike.step",
+    "place_sound": "minecraft:block.sulfur_spike.place",
+    "hit_sound": "minecraft:block.sulfur_spike.hit",
+    "fall_sound": "minecraft:block.sulfur_spike.fall"
+  },
+  "CINNABAR": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.cinnabar.break",
+    "step_sound": "minecraft:block.cinnabar.step",
+    "place_sound": "minecraft:block.cinnabar.place",
+    "hit_sound": "minecraft:block.cinnabar.hit",
+    "fall_sound": "minecraft:block.cinnabar.fall"
   }
 }

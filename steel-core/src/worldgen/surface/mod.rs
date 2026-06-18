@@ -522,6 +522,10 @@ impl SurfaceNoiseProvider for SurfaceSystem {
         self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
     }
 
+    fn condition_noise_3d(&self, noise_index: usize, x: i32, y: i32, z: i32) -> f64 {
+        self.condition_noises[noise_index].get_value(f64::from(x), f64::from(y), f64::from(z))
+    }
+
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         // Java: (int)Math.round(noise * 4.0)
         let offset = (self

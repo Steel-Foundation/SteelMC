@@ -159,7 +159,12 @@ impl FeatureDecorationRunner {
         let neighbor_pos = pos.relative(direction_towards_neighbor);
         let neighbor_state = region.block_state(neighbor_pos);
         let support_direction = direction_towards_neighbor.opposite();
-        shapes::is_face_full(neighbor_state.get_support_shape(), support_direction)
-            || shapes::is_face_full(neighbor_state.get_collision_shape(), support_direction)
+        shapes::is_offset_face_full(
+            neighbor_state.get_support_shape_at(neighbor_pos),
+            support_direction,
+        ) || shapes::is_offset_face_full(
+            neighbor_state.get_collision_shape_at(neighbor_pos),
+            support_direction,
+        )
     }
 }

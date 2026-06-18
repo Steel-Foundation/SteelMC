@@ -795,6 +795,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns true for vanilla players whose abilities have `flying` set.
+    fn is_flying_player(&self) -> bool {
+        false
+    }
+
     /// Returns whether `other` can collide with this entity.
     ///
     /// Mirrors vanilla `Entity.canBeCollidedWith`. Base entities cannot be collided

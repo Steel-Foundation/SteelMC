@@ -28,6 +28,7 @@ pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
+mod spam_throttler;
 mod teleport_state;
 mod tick_state;
 
@@ -325,6 +326,8 @@ impl Player {
         let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
+        let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
+        let command_spam_threshold_seconds = config.command_spam_threshold_seconds;
 
         Self {
             gameprofile,
@@ -351,7 +354,10 @@ impl Player {
             last_tracking_view: SyncMutex::new(None),
             chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
-            chat: SyncMutex::new(ChatState::new()),
+            chat: SyncMutex::new(ChatState::new(
+                chat_spam_threshold_seconds,
+                command_spam_threshold_seconds,
+            )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
@@ -382,6 +388,7 @@ impl Player {
     )]
     pub fn tick(&self) {
         self.advance_tick();
+        self.tick_spam_throttlers();
         self.tick_client_load_timeout();
         if !self.is_passenger() {
             self.advance_tick_count();
@@ -1342,6 +1349,10 @@ impl Entity for Player {
 
     fn is_spectator(&self) -> bool {
         self.game_mode() == GameType::Spectator
+    }
+
+    fn is_flying_player(&self) -> bool {
+        self.is_flying()
     }
 
     fn fire_immune_ticks(&self) -> i32 {

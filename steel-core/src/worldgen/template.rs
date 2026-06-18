@@ -407,7 +407,9 @@ impl StructureTemplate {
             return false;
         };
         !block.config.dynamic_shape
-            && blocks::shapes::is_shape_full_block(registry.blocks.get_collision_shape(state))
+            && blocks::shapes::is_shape_full_block(
+                registry.blocks.get_static_collision_shape(state),
+            )
     }
 
     fn sort_block_infos(blocks: &mut [StructureBlockInfo]) {
@@ -1472,8 +1474,10 @@ impl StructureTemplate {
         mut current: ProcessedBlockInfo,
     ) -> ProcessedBlockInfo {
         if Self::block_for_state(registry, existing_state) == &vanilla_blocks::LAVA
-            && !blocks::shapes::is_shape_full_block(
-                registry.blocks.get_outline_shape(current.state),
+            && !blocks::shapes::is_offset_shape_full_block(
+                registry
+                    .blocks
+                    .get_outline_shape_at(current.state, current.world_pos),
             )
         {
             current.state = registry.blocks.get_default_state_id(&vanilla_blocks::LAVA);

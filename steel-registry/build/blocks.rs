@@ -25,6 +25,9 @@ pub struct BlockConfig {
     pub speed_factor: f32,
     pub jump_factor: f32,
     pub dynamic_shape: bool,
+    pub offset_type: Cow<'static, str>,
+    pub max_horizontal_offset: f32,
+    pub max_vertical_offset: f32,
     pub destroy_time: f32,
     pub ignited_by_lava: bool,
     pub liquid: bool,
@@ -51,6 +54,9 @@ impl BlockConfig {
             speed_factor: 1.0,
             jump_factor: 1.0,
             dynamic_shape: false,
+            offset_type: Cow::Borrowed("NONE"),
+            max_horizontal_offset: 0.25,
+            max_vertical_offset: 0.2,
             destroy_time: 0.0,
             ignited_by_lava: false,
             liquid: false,
@@ -71,6 +77,8 @@ pub struct ShapeOverwrite {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ShapeData {
+    #[serde(default, rename = "usesOffset")]
+    pub uses_offset: bool,
     pub default: Vec<u16>,
     pub overwrites: Vec<ShapeOverwrite>,
 }
@@ -154,6 +162,15 @@ fn instrument_to_tokens(instrument: &str) -> TokenStream {
     }
 }
 
+fn offset_type_to_tokens(offset_type: &str) -> TokenStream {
+    match offset_type {
+        "NONE" => quote! { OffsetType::None },
+        "XZ" => quote! { OffsetType::Xz },
+        "XYZ" => quote! { OffsetType::Xyz },
+        _ => panic!("Unknown offset type: {}", offset_type),
+    }
+}
+
 /// Generates builder method calls for properties that differ from defaults
 fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<TokenStream> {
     let mut builder_calls = Vec::new();
@@ -201,6 +218,18 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     if bp.dynamic_shape != default_props.dynamic_shape {
         let val = bp.dynamic_shape;
         builder_calls.push(quote! { .dynamic_shape(#val) });
+    }
+    if bp.offset_type != default_props.offset_type {
+        let offset_type = offset_type_to_tokens(bp.offset_type.as_ref());
+        builder_calls.push(quote! { .offset_type(#offset_type) });
+    }
+    if bp.max_horizontal_offset != default_props.max_horizontal_offset {
+        let val = bp.max_horizontal_offset;
+        builder_calls.push(quote! { .max_horizontal_offset(#val) });
+    }
+    if bp.max_vertical_offset != default_props.max_vertical_offset {
+        let val = bp.max_vertical_offset;
+        builder_calls.push(quote! { .max_vertical_offset(#val) });
     }
     if bp.destroy_time != default_props.destroy_time {
         let val = bp.destroy_time;
@@ -429,6 +458,12 @@ pub(crate) fn build() -> TokenStream {
         occlusion_fn_id: u16,
         interaction_fn_id: u16,
         visual_fn_id: u16,
+        collision_uses_offset: bool,
+        support_uses_offset: bool,
+        outline_uses_offset: bool,
+        occlusion_uses_offset: bool,
+        interaction_uses_offset: bool,
+        visual_uses_offset: bool,
     }
     let mut block_shape_infos: Vec<BlockShapeInfo> = Vec::new();
 
@@ -488,6 +523,12 @@ pub(crate) fn build() -> TokenStream {
             occlusion_fn_id,
             interaction_fn_id,
             visual_fn_id,
+            collision_uses_offset: block.collision_shapes.uses_offset,
+            support_uses_offset: block.support_shapes.uses_offset,
+            outline_uses_offset: block.outline_shapes.uses_offset,
+            occlusion_uses_offset: block.occlusion_shapes.uses_offset,
+            interaction_uses_offset: block.interaction_shapes.uses_offset,
+            visual_uses_offset: block.visual_shapes.uses_offset,
         });
     }
 
@@ -633,6 +674,32 @@ pub(crate) fn build() -> TokenStream {
             &format!("shape_fn_{}", info.visual_fn_id),
             Span::call_site(),
         );
+        let shape_offsets = if info.collision_uses_offset
+            || info.support_uses_offset
+            || info.outline_uses_offset
+            || info.occlusion_uses_offset
+            || info.interaction_uses_offset
+            || info.visual_uses_offset
+        {
+            let collision = info.collision_uses_offset;
+            let support = info.support_uses_offset;
+            let outline = info.outline_uses_offset;
+            let occlusion = info.occlusion_uses_offset;
+            let interaction = info.interaction_uses_offset;
+            let visual = info.visual_uses_offset;
+            quote! {
+                .with_shape_offsets(ShapeOffsetFlags::new(
+                    #collision,
+                    #support,
+                    #outline,
+                    #occlusion,
+                    #interaction,
+                    #visual,
+                ))
+            }
+        } else {
+            quote! {}
+        };
 
         stream.extend(quote! {
             pub static #block_name: Block = Block::new(
@@ -648,7 +715,7 @@ pub(crate) fn build() -> TokenStream {
                 #occlusion_fn,
                 #interaction_fn,
                 #visual_fn,
-            )#default_state;
+            ) #shape_offsets #default_state;
         });
     }
 
@@ -664,7 +731,11 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::{
-            blocks::{behavior::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
+            blocks::{
+                behavior::{BlockConfig, OffsetType, PushReaction},
+                shapes::ShapeOffsetFlags,
+                Block, offset, BlockRegistry,
+            },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::VoxelShape,
         };

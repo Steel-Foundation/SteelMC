@@ -213,6 +213,21 @@ pub struct RangeChoice {
     pub when_out_of_range: Arc<DensityFunction>,
 }
 
+/// Choose one of many functions based on ordered input thresholds.
+///
+/// Matches vanilla's `DensityFunctions.IntervalSelect`.
+#[derive(Debug, Clone)]
+pub struct IntervalSelect {
+    /// Input density function
+    pub input: Arc<DensityFunction>,
+    /// Ordered threshold values. The selected branch is the first threshold
+    /// greater than the input; otherwise the last function is selected.
+    pub thresholds: Vec<f64>,
+    /// Functions selected by the threshold intervals. Vanilla requires this to
+    /// have exactly one more entry than `thresholds`.
+    pub functions: Vec<Arc<DensityFunction>>,
+}
+
 /// Blended (interpolated) 3D noise.
 ///
 /// Matches vanilla's `BlendedNoise`.
@@ -373,6 +388,9 @@ pub enum DensityFunction {
     /// Choose between two functions based on input range.
     RangeChoice(RangeChoice),
 
+    /// Choose one of many functions based on ordered input thresholds.
+    IntervalSelect(IntervalSelect),
+
     /// Cubic spline evaluation.
     Spline(Spline),
 
@@ -430,6 +448,10 @@ impl DensityFunction {
         self.resolve_inner(registry, noises)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the enum variants are resolved in one exhaustive match"
+    )]
     fn resolve_inner(
         &self,
         registry: &FxHashMap<String, Arc<DensityFunction>>,
@@ -507,6 +529,16 @@ impl DensityFunction {
                 max_exclusive: rc.max_exclusive,
                 when_in_range: Arc::new(rc.when_in_range.resolve_inner(registry, noises)),
                 when_out_of_range: Arc::new(rc.when_out_of_range.resolve_inner(registry, noises)),
+            }),
+
+            Self::IntervalSelect(is) => Self::IntervalSelect(IntervalSelect {
+                input: Arc::new(is.input.resolve_inner(registry, noises)),
+                thresholds: is.thresholds.clone(),
+                functions: is
+                    .functions
+                    .iter()
+                    .map(|function| Arc::new(function.resolve_inner(registry, noises)))
+                    .collect(),
             }),
 
             Self::Spline(s) => Self::Spline(Spline {

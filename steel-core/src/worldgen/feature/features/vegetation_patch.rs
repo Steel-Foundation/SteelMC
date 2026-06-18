@@ -109,7 +109,9 @@ impl FeatureDecorationRunner {
 
                 let below_pos = pos.relative(inwards);
                 let below_state = region.block_state(below_pos);
-                if !region.block_state(pos).is_air() || !below_state.is_face_sturdy(outwards) {
+                if !region.block_state(pos).is_air()
+                    || !below_state.is_face_sturdy_at(below_pos, outwards)
+                {
                     continue;
                 }
 
@@ -239,9 +241,10 @@ impl FeatureDecorationRunner {
         ]
         .into_iter()
         .any(|direction| {
+            let neighbor_pos = pos.relative(direction);
             !region
-                .block_state(pos.relative(direction))
-                .is_face_sturdy(direction.opposite())
+                .block_state(neighbor_pos)
+                .is_face_sturdy_at(neighbor_pos, direction.opposite())
         })
     }
 

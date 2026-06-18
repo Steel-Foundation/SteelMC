@@ -23,6 +23,10 @@ use_favicon = true
 favicon = "config/favicon.png"
 # Whether to enforce secure chat
 enforce_secure_chat = false
+# Vanilla chat spam threshold window in seconds
+chat_spam_threshold_seconds = 10
+# Vanilla command spam threshold window in seconds
+command_spam_threshold_seconds = 10
 
 # Compression settings
 [server.compression]

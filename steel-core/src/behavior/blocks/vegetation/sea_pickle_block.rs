@@ -23,18 +23,19 @@ impl SeaPickleBlock {
         Self { block }
     }
 
-    fn may_place_on(state: BlockStateId) -> bool {
+    fn may_place_on(state: BlockStateId, pos: BlockPos) -> bool {
         state
-            .get_collision_shape()
+            .get_collision_shape_at(pos)
             .iter()
             .any(|aabb| !aabb.is_empty() && aabb.max_y() >= 1.0)
-            || state.is_face_sturdy(Direction::Up)
+            || state.is_face_sturdy_at(pos, Direction::Up)
     }
 }
 
 impl BlockBehavior for SeaPickleBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        Self::may_place_on(world.get_block_state(pos.below()))
+        let below_pos = pos.below();
+        Self::may_place_on(world.get_block_state(below_pos), below_pos)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

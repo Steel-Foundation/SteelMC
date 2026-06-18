@@ -36,11 +36,12 @@ impl BlockBehavior for CactusFlowerBlock {
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts the support-override tag
     /// or any block with a sturdy center face on top.
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let below = world.get_block_state(pos.below());
+        let below_pos = pos.below();
+        let below = world.get_block_state(below_pos);
         below
             .get_block()
             .has_tag(&BlockTag::SUPPORT_OVERRIDE_CACTUS_FLOWER)
-            || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
+            || below.is_face_sturdy_for_at(below_pos, Direction::Up, SupportType::Center)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
