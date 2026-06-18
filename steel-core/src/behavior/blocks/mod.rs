@@ -13,10 +13,9 @@ pub mod vegetation;
 
 pub use building::{
     BedBlock, CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock,
-    MagmaBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock,
-    SpongeBlock, StairBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
+    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SpongeBlock, StairBlock,
     MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock,
-    SlabBlock, SlimeBlock, StairBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
+    SlabBlock, SlimeBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
     WetSpongeBlock,
 };
