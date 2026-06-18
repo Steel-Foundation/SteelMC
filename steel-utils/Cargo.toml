@@ -26,7 +26,6 @@ bitflags.workspace = true
 phf.workspace = true
 rustc-hash.workspace = true
 glam.workspace = true
-glam-traits.workspace = true
 
 # UUID
 uuid.workspace = true

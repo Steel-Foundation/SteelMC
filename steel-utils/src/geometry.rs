@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 use std::ops::{Add, Div, Neg, Sub};
 
 use glam::{DVec3, IVec3};
-use glam_traits::GVec3;
 use wincode::config::ConfigCore;
 use wincode::io::{Reader, Writer};
 use wincode::{ReadResult, SchemaRead, SchemaWrite, TypeMeta, WriteResult};
@@ -71,6 +70,94 @@ pub type BoundingBox = Aabb<IVec3, Structure>;
 /// Integer axis-aligned bounding box for structure pieces but with wincode impl.
 pub struct WincodeBoundingBox(pub BoundingBox);
 
+/// Vector operations used by generic AABB helpers.
+pub trait AabbVector: Copy + Add<Output = Self> + Sub<Output = Self> {
+    /// Scalar component type.
+    type Scalar: Copy
+        + PartialOrd
+        + Add<Output = Self::Scalar>
+        + Sub<Output = Self::Scalar>
+        + Div<Output = Self::Scalar>
+        + Neg<Output = Self::Scalar>
+        + From<u8>;
+
+    /// Creates a vector from individual components.
+    fn new(x: Self::Scalar, y: Self::Scalar, z: Self::Scalar) -> Self;
+
+    /// X component.
+    fn x(self) -> Self::Scalar;
+
+    /// Y component.
+    fn y(self) -> Self::Scalar;
+
+    /// Z component.
+    fn z(self) -> Self::Scalar;
+
+    /// Per-component minimum.
+    #[must_use]
+    fn min(self, other: Self) -> Self;
+
+    /// Per-component maximum.
+    #[must_use]
+    fn max(self, other: Self) -> Self;
+}
+
+impl AabbVector for DVec3 {
+    type Scalar = f64;
+
+    fn new(x: Self::Scalar, y: Self::Scalar, z: Self::Scalar) -> Self {
+        DVec3::new(x, y, z)
+    }
+
+    fn x(self) -> Self::Scalar {
+        self.x
+    }
+
+    fn y(self) -> Self::Scalar {
+        self.y
+    }
+
+    fn z(self) -> Self::Scalar {
+        self.z
+    }
+
+    fn min(self, other: Self) -> Self {
+        self.min(other)
+    }
+
+    fn max(self, other: Self) -> Self {
+        self.max(other)
+    }
+}
+
+impl AabbVector for IVec3 {
+    type Scalar = i32;
+
+    fn new(x: Self::Scalar, y: Self::Scalar, z: Self::Scalar) -> Self {
+        IVec3::new(x, y, z)
+    }
+
+    fn x(self) -> Self::Scalar {
+        self.x
+    }
+
+    fn y(self) -> Self::Scalar {
+        self.y
+    }
+
+    fn z(self) -> Self::Scalar {
+        self.z
+    }
+
+    fn min(self, other: Self) -> Self {
+        self.min(other)
+    }
+
+    fn max(self, other: Self) -> Self {
+        self.max(other)
+    }
+}
+
 // SAFETY: WincodeBoundingBox is a statically sized type (24 bytes, six i32 fields)
 // with no invalid bit patterns when fully initialized. The implementations
 // correctly serialize/deserialize all six components in order.
@@ -129,7 +216,7 @@ unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
     }
 }
 
-impl<T: GVec3, I> Aabb<T, I> {
+impl<T: AabbVector, I> Aabb<T, I> {
     /// Returns the minimum coordinate on `axis`.
     #[must_use]
     pub fn min(&self, axis: Axis) -> T::Scalar {
@@ -198,10 +285,7 @@ impl<T: GVec3, I> Aabb<T, I> {
     }
 }
 
-impl<T: GVec3, I> Aabb<T, I>
-where
-    T::Scalar: Neg<Output = T::Scalar>,
-{
+impl<T: AabbVector, I> Aabb<T, I> {
     /// Shrinks the box by `amount` in every direction.
     #[must_use]
     pub fn deflate(self, amount: T::Scalar) -> Self {
@@ -209,10 +293,7 @@ where
     }
 }
 
-impl<T: GVec3, I: Space> Aabb<T, I>
-where
-    T::Scalar: PartialOrd,
-{
+impl<T: AabbVector, I: Space> Aabb<T, I> {
     #[inline]
     fn axis_overlaps(min1: T::Scalar, max1: T::Scalar, min2: T::Scalar, max2: T::Scalar) -> bool {
         if I::ZERO_SPAN_IS_EMPTY {
@@ -286,14 +367,7 @@ where
     }
 }
 
-impl<T: GVec3, I: Space> Aabb<T, I>
-where
-    T::Scalar: Sub<Output = T::Scalar>
-        + Add<Output = T::Scalar>
-        + From<u8>
-        + Div<Output = T::Scalar>
-        + Copy,
-{
+impl<T: AabbVector, I: Space> Aabb<T, I> {
     #[inline]
     fn span(raw: T::Scalar) -> T::Scalar {
         if I::ZERO_SPAN_IS_EMPTY {

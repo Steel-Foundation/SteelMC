@@ -55,14 +55,14 @@ impl Direction {
         ]
     }
 
-    /// Returns an array of the four horizontal cardinal directions (north, south, west, east).
+    /// Returns vanilla `Direction.Plane.HORIZONTAL` order (north, east, south, west).
     #[must_use]
     pub const fn horizontal_dirs() -> [Direction; 4] {
         [
             Direction::North,
+            Direction::East,
             Direction::South,
             Direction::West,
-            Direction::East,
         ]
     }
 
@@ -336,5 +336,23 @@ impl Direction {
             Direction::West => "west",
             Direction::East => "east",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Direction;
+
+    #[test]
+    fn horizontal_dirs_matches_vanilla_plane_horizontal_order() {
+        assert_eq!(
+            Direction::horizontal_dirs(),
+            [
+                Direction::North,
+                Direction::East,
+                Direction::South,
+                Direction::West,
+            ]
+        );
     }
 }

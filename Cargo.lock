@@ -982,14 +982,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glam-traits"
-version = "0.3.1"
-source = "git+https://github.com/suprohub/glam-traits#fc0e2a7bf61745e63fdf6e32d1bd538419853b1b"
-dependencies = [
- "glam",
-]
-
-[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2983,7 +2975,6 @@ dependencies = [
  "criterion",
  "enum_dispatch",
  "glam",
- "glam-traits",
  "heck",
  "md5",
  "num-traits",

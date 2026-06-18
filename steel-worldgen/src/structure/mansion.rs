@@ -379,7 +379,7 @@ impl MansionGrid {
                 continue;
             }
             let (nx, ny) = (x + hx, y + hz);
-            let (ndx, ndz) = heading.offset_xz();
+            let (ndx, ndz) = next_dir.offset_xz();
             if grid.get(nx + ndx, ny + ndz) == 0 && grid.get(nx + ndx * 2, ny + ndz * 2) == 0 {
                 Self::recursive_corridor(
                     grid,
@@ -1737,6 +1737,17 @@ impl Structure for WoodlandMansionStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recursive_corridor_branches_toward_selected_next_direction() {
+        let mut grid = SimpleGrid::new(8, 8, 5);
+        grid.set_cell(2, 3, 5);
+        let mut rng = LegacyRandom::from_seed(0);
+
+        MansionGrid::recursive_corridor(&mut grid, &mut rng, 4, 3, Direction::West, 2);
+
+        assert_eq!(grid.get(3, 2), 1);
+    }
 
     #[test]
     fn mansion_piece_uses_template_payload_with_marker_handling() {
