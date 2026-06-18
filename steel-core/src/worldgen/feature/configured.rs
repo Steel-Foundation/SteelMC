@@ -353,9 +353,9 @@ const fn template_feature_position(origin: BlockPos, rotation: Rotation, size: I
     let west_offset = rotation.rotate(Direction::West).offset();
     let north_offset = rotation.rotate(Direction::North).offset();
     origin.offset(
-        west_offset.0 * (size.x / 2) + north_offset.0 * (size.y / 2),
+        west_offset.0 * (size.x / 2) + north_offset.0 * (size.z / 2),
         0,
-        west_offset.2 * (size.x / 2) + north_offset.2 * (size.y / 2),
+        west_offset.2 * (size.x / 2) + north_offset.2 * (size.z / 2),
     )
 }
 
@@ -1197,4 +1197,21 @@ fn place_root_system(
         context.origin,
         context.biome_zoom_seed,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_feature_position_uses_template_depth_for_north_offset() {
+        assert_eq!(
+            template_feature_position(
+                BlockPos::new(100, 64, 200),
+                Rotation::None,
+                IVec3::new(10, 30, 6),
+            ),
+            BlockPos::new(95, 64, 197)
+        );
+    }
 }

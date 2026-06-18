@@ -504,8 +504,8 @@ pub fn is_offset_shape_full_block(shape: OffsetVoxelShape) -> bool {
             y_edges.push(aabb.min.y.clamp(0.0, 1.0));
             y_edges.push(aabb.max.y.clamp(0.0, 1.0));
         }
-        if aabb.max.z > VOXEL_EPSILON && aabb.min.y < 1.0 - VOXEL_EPSILON {
-            z_edges.push(aabb.min.y.clamp(0.0, 1.0));
+        if aabb.max.z > VOXEL_EPSILON && aabb.min.z < 1.0 - VOXEL_EPSILON {
+            z_edges.push(aabb.min.z.clamp(0.0, 1.0));
             z_edges.push(aabb.max.z.clamp(0.0, 1.0));
         }
     }
@@ -712,7 +712,7 @@ fn offset_shape_fills_cell(
             && aabb.max.x >= max_x - VOXEL_EPSILON
             && aabb.min.y <= min_y + VOXEL_EPSILON
             && aabb.max.y >= max_y - VOXEL_EPSILON
-            && aabb.min.y <= min_z + VOXEL_EPSILON
+            && aabb.min.z <= min_z + VOXEL_EPSILON
             && aabb.max.z >= max_z - VOXEL_EPSILON
     })
 }
@@ -1129,6 +1129,11 @@ mod tests {
         BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0),
     ];
 
+    const Z_GAPPED_BLOCK_WITH_OFFSET: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, -0.1, 1.0, 1.0, 0.15),
+        BlockLocalAabb::new(0.0, 0.0, 0.65, 1.0, 1.0, 0.9),
+    ];
+
     const LOWER_HALF_BLOCK: &[BlockLocalAabb] =
         &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0)];
 
@@ -1269,6 +1274,14 @@ mod tests {
         assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
             VoxelShape::FULL_BLOCK,
             DVec3::new(0.25, 0.0, 0.0)
+        )));
+    }
+
+    #[test]
+    fn offset_shape_full_block_rejects_z_gap_after_offset() {
+        assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
+            VoxelShape::from_boxes(Z_GAPPED_BLOCK_WITH_OFFSET),
+            DVec3::new(0.0, 0.0, 0.1)
         )));
     }
 
