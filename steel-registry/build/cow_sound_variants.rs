@@ -1,4 +1,4 @@
-use crate::generator_functions::{generate_identifier, read_variants_from_dir};
+use crate::generator_functions::{generate_sound_event_ref, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -24,7 +24,6 @@ pub(crate) fn build() -> TokenStream {
             CowSoundVariant, CowSoundVariantRegistry,
         };
         use steel_utils::Identifier;
-        use std::borrow::Cow;
     });
 
     // Generate static cow sound variant definitions
@@ -37,10 +36,10 @@ pub(crate) fn build() -> TokenStream {
         let cow_sound_variant_name_str = cow_sound_variant_name.clone();
 
         let key = quote! { Identifier::vanilla_static(#cow_sound_variant_name_str) };
-        let ambient_sound = generate_identifier(&cow_sound_variant.ambient_sound);
-        let death_sound = generate_identifier(&cow_sound_variant.death_sound);
-        let hurt_sound = generate_identifier(&cow_sound_variant.hurt_sound);
-        let step_sound = generate_identifier(&cow_sound_variant.step_sound);
+        let ambient_sound = generate_sound_event_ref(&cow_sound_variant.ambient_sound);
+        let death_sound = generate_sound_event_ref(&cow_sound_variant.death_sound);
+        let hurt_sound = generate_sound_event_ref(&cow_sound_variant.hurt_sound);
+        let step_sound = generate_sound_event_ref(&cow_sound_variant.step_sound);
 
         stream.extend(quote! {
             pub static #cow_sound_variant_ident: CowSoundVariant = CowSoundVariant {

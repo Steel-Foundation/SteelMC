@@ -93,11 +93,18 @@ pub enum PosRuleTestData {
     AlwaysTrue,
     #[serde(rename = "minecraft:axis_aligned_linear_pos")]
     AxisAlignedLinearPos {
-        #[serde(deserialize_with = "deserialize_processor_axis")]
+        #[serde(
+            default = "default_structure_processor_axis",
+            deserialize_with = "deserialize_processor_axis"
+        )]
         axis: StructureProcessorAxis,
+        #[serde(default)]
         min_chance: f32,
+        #[serde(default)]
         max_chance: f32,
+        #[serde(default)]
         min_dist: i32,
+        #[serde(default)]
         max_dist: i32,
     },
 }
@@ -108,6 +115,10 @@ pub enum StructureProcessorAxis {
     X,
     Y,
     Z,
+}
+
+const fn default_structure_processor_axis() -> StructureProcessorAxis {
+    StructureProcessorAxis::Y
 }
 
 fn deserialize_processor_axis<'de, D: Deserializer<'de>>(

@@ -61,11 +61,12 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         pos: BlockPos,
     ) -> bool {
-        let below = region.block_state(pos.below());
+        let below_pos = pos.below();
+        let below = region.block_state(below_pos);
         if below.get_block() == &vanilla_blocks::DIRT_PATH {
             return random.next_bool();
         }
 
-        below.is_face_sturdy(Direction::Up)
+        below.is_face_sturdy_at(below_pos, Direction::Up)
     }
 }

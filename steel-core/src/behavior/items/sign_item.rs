@@ -21,6 +21,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::entity::Entity;
 use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
 
@@ -91,7 +92,7 @@ impl ItemBehavior for SignItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
@@ -156,7 +157,7 @@ fn can_attach_to(
     }
 
     // Otherwise, check for sturdy face with FULL support
-    attach_state.is_face_sturdy_for(attach_face, SupportType::Full)
+    attach_state.is_face_sturdy_for_at(attach_pos, attach_face, SupportType::Full)
 }
 
 /// Checks if a wall hanging sign can be placed at the given position.
@@ -232,7 +233,7 @@ impl ItemBehavior for HangingSignItem {
                 continue;
             }
 
-            let collision_shape = state.get_collision_shape();
+            let collision_shape = state.get_collision_shape_at(place_pos);
             if context.world.is_unobstructed(collision_shape, place_pos) {
                 new_state = Some(state);
                 placed_block = Some(block);
@@ -259,7 +260,7 @@ impl ItemBehavior for HangingSignItem {
                 place_pos,
                 sound_type.volume,
                 sound_type.pitch,
-                Some(context.player.id),
+                Some(context.player.id()),
             );
         }
         context.world.game_event(

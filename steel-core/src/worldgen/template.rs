@@ -40,7 +40,7 @@ use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::ENTITIES;
+use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
@@ -76,7 +76,9 @@ struct StructureEntityInfo {
     entity_type: EntityTypeRef,
     rotation: (f32, f32),
     velocity: DVec3,
+    fall_distance: f64,
     on_ground: bool,
+    no_gravity: bool,
     nbt: NbtCompound,
 }
 
@@ -343,7 +345,9 @@ impl StructureTemplate {
             })?;
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
+            let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
+            let no_gravity = entity_nbt.byte("NoGravity").is_some_and(|value| value != 0);
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);
 
@@ -353,7 +357,9 @@ impl StructureTemplate {
                 entity_type,
                 rotation,
                 velocity,
+                fall_distance,
                 on_ground,
+                no_gravity,
                 nbt,
             });
         }
@@ -382,7 +388,16 @@ impl StructureTemplate {
     }
 
     fn strip_entity_base_fields(nbt: &mut NbtCompound) {
-        for field in ["id", "Pos", "Motion", "Rotation", "UUID", "OnGround"] {
+        for field in [
+            "id",
+            "Pos",
+            "Motion",
+            "Rotation",
+            "UUID",
+            "fall_distance",
+            "OnGround",
+            "NoGravity",
+        ] {
             let _ = nbt.remove(field);
         }
     }
@@ -392,7 +407,9 @@ impl StructureTemplate {
             return false;
         };
         !block.config.dynamic_shape
-            && blocks::shapes::is_shape_full_block(registry.blocks.get_collision_shape(state))
+            && blocks::shapes::is_shape_full_block(
+                registry.blocks.get_static_collision_shape(state),
+            )
     }
 
     fn sort_block_infos(blocks: &mut [StructureBlockInfo]) {
@@ -812,13 +829,18 @@ impl StructureTemplate {
             };
 
             let runtime_entity = ENTITIES.create_and_load_or_raw(
-                entity.entity_type,
-                pos,
-                Uuid::new_v4(),
-                entity.velocity,
-                rotation,
-                entity.on_ground,
-                region.weak_world(),
+                EntityLoadRequest {
+                    entity_type: entity.entity_type,
+                    position: pos,
+                    uuid: Uuid::new_v4(),
+                    velocity: entity.velocity,
+                    rotation,
+                    fall_distance: entity.fall_distance,
+                    fire_freeze: EntityFireFreezeState::new(),
+                    on_ground: entity.on_ground,
+                    no_gravity: entity.no_gravity,
+                    world: region.weak_world(),
+                },
                 &nbt,
             );
             let _ = region.add_fresh_entity(runtime_entity);
@@ -1452,8 +1474,10 @@ impl StructureTemplate {
         mut current: ProcessedBlockInfo,
     ) -> ProcessedBlockInfo {
         if Self::block_for_state(registry, existing_state) == &vanilla_blocks::LAVA
-            && !blocks::shapes::is_shape_full_block(
-                registry.blocks.get_outline_shape(current.state),
+            && !blocks::shapes::is_offset_shape_full_block(
+                registry
+                    .blocks
+                    .get_outline_shape_at(current.state, current.world_pos),
             )
         {
             current.state = registry.blocks.get_default_state_id(&vanilla_blocks::LAVA);

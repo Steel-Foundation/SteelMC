@@ -1,37 +1,66 @@
-use std::{collections::BTreeMap, fs};
+use crate::generator_functions::{
+    generate_identifier, read_json_asset, sort_contiguous_registry_entries,
+};
+use heck::ToShoutySnakeCase;
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use serde::Deserialize;
+use steel_utils::Identifier;
 
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+#[derive(Deserialize)]
+struct SoundEventEntry {
+    id: usize,
+    key: Identifier,
+    sound_id: Identifier,
+    #[serde(default)]
+    fixed_range: Option<f32>,
+}
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/sound_events.json");
+    const ASSET: &str = "build_assets/sound_events.json";
 
-    let sound_events: BTreeMap<String, i32> =
-        serde_json::from_str(&fs::read_to_string("build_assets/sound_events.json").unwrap())
-            .expect("Failed to parse sound_events.json");
+    let mut sound_events: Vec<SoundEventEntry> = read_json_asset(ASSET);
+    sort_contiguous_registry_entries(&mut sound_events, ASSET, |entry| entry.id);
 
-    let consts: TokenStream = sound_events
-        .iter()
-        .map(|(name, value)| {
-            let name = format_ident!("{}", name);
-            quote! {
-                pub const #name: i32 = #value;
-            }
-        })
-        .collect();
+    let mut constants = TokenStream::new();
+    let mut registrations = TokenStream::new();
 
-    quote!(
-        //! Sound event registry IDs matching vanilla Minecraft's SoundEvents.java.
-        //!
-        //! These IDs are used with `CSound` to play sounds on the client.
-        //!
-        //! Sound events are organized by category:
-        //! - `BLOCK_*` - Block-related sounds (break, place, step, hit, fall)
-        //! - `ENTITY_*` - Entity-related sounds
-        //! - `ITEM_*` - Item-related sounds
-        //! - `AMBIENT_*` - Ambient sounds
-        //! - `MUSIC_*` - Music tracks
+    for sound_event in &sound_events {
+        let ident = Ident::new(
+            &sound_event.key.path.to_shouty_snake_case(),
+            Span::call_site(),
+        );
+        let key = generate_identifier(&sound_event.key);
+        let sound_id = generate_identifier(&sound_event.sound_id);
+        let fixed_range = match sound_event.fixed_range {
+            Some(range) => quote! { Some(#range) },
+            None => quote! { None },
+        };
 
-        #consts
-    )
+        constants.extend(quote! {
+            pub static #ident: SoundEvent = SoundEvent {
+                key: #key,
+                sound_id: #sound_id,
+                fixed_range: #fixed_range,
+            };
+        });
+
+        registrations.extend(quote! {
+            registry.register(&#ident);
+        });
+    }
+
+    quote! {
+        //! Sound event registry entries matching vanilla Minecraft's `SoundEvents`.
+
+        use crate::sound_event::{SoundEvent, SoundEventRegistry};
+        use std::borrow::Cow;
+        use steel_utils::Identifier;
+
+        #constants
+
+        pub fn register_sound_events(registry: &mut SoundEventRegistry) {
+            #registrations
+        }
+    }
 }

@@ -77,7 +77,7 @@ impl StructurePiecePlacer {
         if !region.block_state(neighbor_pos).is_air() {
             return;
         }
-        if !shapes::is_face_full(state.get_collision_shape(), direction) {
+        if !shapes::is_offset_face_full(state.get_collision_shape_at(pos), direction) {
             return;
         }
 

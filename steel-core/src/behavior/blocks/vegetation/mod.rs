@@ -114,7 +114,7 @@ pub use nether_roots_block::NetherRootsBlock;
 pub use nether_sprouts::NetherSproutsBlock;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
-pub use pointed_dripstone_block::PointedDripstoneBlock;
+pub use pointed_dripstone_block::{PointedDripstoneBlock, SulfurSpikeBlock};
 pub use potato::PotatoBlock;
 pub use sapling_block::SaplingBlock;
 pub use sculk_vein_block::SculkVeinBlock;
@@ -190,8 +190,13 @@ pub(super) fn can_attach_to_multiface(
 ) -> bool {
     let neighbor_state = world.get_block_state(neighbor_pos);
     let support_direction = direction_to_neighbor.opposite();
-    shapes::is_face_full(neighbor_state.get_support_shape(), support_direction)
-        || shapes::is_face_full(neighbor_state.get_collision_shape(), support_direction)
+    shapes::is_offset_face_full(
+        neighbor_state.get_support_shape_at(neighbor_pos),
+        support_direction,
+    ) || shapes::is_offset_face_full(
+        neighbor_state.get_collision_shape_at(neighbor_pos),
+        support_direction,
+    )
 }
 
 /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
@@ -235,8 +240,9 @@ pub(super) fn multiface_can_survive(
 ///
 /// The block below must be face-sturdy on its UP face.
 pub(super) fn coral_plant_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
-    let below = world.get_block_state(pos.below());
-    below.is_face_sturdy(Direction::Up)
+    let below_pos = pos.below();
+    let below = world.get_block_state(below_pos);
+    below.is_face_sturdy_at(below_pos, Direction::Up)
 }
 
 /// Vanilla `BaseCoralWallFanBlock.canSurvive`.
@@ -250,7 +256,7 @@ pub(super) fn coral_wall_fan_can_survive(
 ) -> bool {
     let relative_pos = pos.relative(facing.opposite());
     let relative_state = world.get_block_state(relative_pos);
-    relative_state.is_face_sturdy(facing)
+    relative_state.is_face_sturdy_at(relative_pos, facing)
 }
 
 /// Vanilla `GrowingPlantBlock.canSurvive`.
@@ -269,11 +275,12 @@ pub(super) fn growing_plant_can_survive(
     let attached_block = attached_state.get_block();
     attached_block == head
         || attached_block == body
-        || attached_state.is_face_sturdy(growth_direction)
+        || attached_state.is_face_sturdy_at(attached_pos, growth_direction)
 }
 
 pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
-    let attached_state = world.get_block_state(pos.below());
+    let attached_pos = pos.below();
+    let attached_state = world.get_block_state(attached_pos);
     if attached_state
         .get_block()
         .has_tag(&BlockTag::CANNOT_SUPPORT_KELP)
@@ -283,5 +290,5 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
 
     attached_state.get_block() == &vanilla_blocks::KELP
         || attached_state.get_block() == &vanilla_blocks::KELP_PLANT
-        || attached_state.is_face_sturdy(Direction::Up)
+        || attached_state.is_face_sturdy_at(attached_pos, Direction::Up)
 }

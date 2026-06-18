@@ -14,9 +14,9 @@ pub struct BannerPatternJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/banner_pattern/");
-
-    let banner_pattern_dir = "build_assets/builtin_datapacks/minecraft/banner_pattern";
+    let banner_pattern_dir =
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/banner_pattern";
+    println!("cargo:rerun-if-changed={banner_pattern_dir}");
     let mut banner_patterns = Vec::new();
 
     // Read all banner pattern JSON files

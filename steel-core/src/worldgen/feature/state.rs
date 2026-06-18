@@ -3,8 +3,11 @@ use super::runner::FeatureDecorationRunner;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
-    pub(super) fn block_matches_ref_list(block: BlockRef, blocks: &BlockRefList) -> bool {
-        blocks.0.contains(&block)
+    pub(super) fn block_matches_holder_set(block: BlockRef, blocks: &BlockHolderSet) -> bool {
+        match blocks {
+            BlockHolderSet::Tag(tag) => block.has_tag(tag),
+            BlockHolderSet::Entries(entries) => entries.contains(&block),
+        }
     }
 
     pub(super) fn block_state_from_data(

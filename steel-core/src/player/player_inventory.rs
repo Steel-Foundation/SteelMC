@@ -3,7 +3,7 @@
 use std::{
     array,
     f32::consts::TAU,
-    sync::{LazyLock, Weak, atomic::Ordering},
+    sync::{LazyLock, Weak},
 };
 
 use glam::DVec3;
@@ -270,7 +270,7 @@ impl Player {
     /// - Calculates pickup area as bounding box inflated by (1.0, 0.5, 1.0)
     /// - Calls `playerTouch()` on each entity in range
     pub(super) fn touch_nearby_items(&self) {
-        if self.game_mode.load() == GameType::Spectator {
+        if self.game_mode() == GameType::Spectator {
             return;
         }
 
@@ -278,12 +278,12 @@ impl Player {
         let world = self.get_world();
         let entities = world.get_entities_in_aabb(&pickup_area);
 
-        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
             return;
         };
 
         for entity in entities {
-            if entity.id() == self.id || entity.is_removed() {
+            if entity.id() == self.id() || entity.is_removed() {
                 continue;
             }
 
@@ -338,7 +338,7 @@ impl Player {
     /// This is the common implementation shared between inventory menu and
     /// external menus (crafting table, chest, etc.).
     fn process_container_click(&self, menu: &mut dyn Menu, packet: SContainerClick) {
-        if self.game_mode.load() == GameType::Spectator {
+        if self.game_mode() == GameType::Spectator {
             menu.behavior_mut()
                 .send_all_data_to_remote(&self.connection);
             return;
@@ -366,7 +366,7 @@ impl Player {
 
         menu.behavior_mut().suppress_remote_updates();
 
-        let has_infinite_materials = self.game_mode.load() == GameType::Creative;
+        let has_infinite_materials = self.game_mode() == GameType::Creative;
         menu.clicked(
             packet.slot_num,
             packet.button_num,
@@ -430,7 +430,7 @@ impl Player {
 
     /// Handles a creative mode slot set packet.
     pub fn handle_set_creative_mode_slot(&self, packet: SSetCreativeModeSlot) {
-        if self.game_mode.load() != GameType::Creative {
+        if self.game_mode() != GameType::Creative {
             return;
         }
 
@@ -486,10 +486,7 @@ impl Player {
     ///
     /// Based on Java's `ServerPlayer::nextContainerCounter`.
     fn next_container_counter(&self) -> u8 {
-        let current = self.container_counter.load(Ordering::Relaxed);
-        let next = (current % 100) + 1;
-        self.container_counter.store(next, Ordering::Relaxed);
-        next
+        self.container_counter.lock().next()
     }
 
     /// Opens a menu for this player.
@@ -607,7 +604,7 @@ impl Player {
         }
 
         let pos = self.position();
-        let (yaw, pitch) = self.rotation.load();
+        let (yaw, pitch) = self.rotation();
 
         let spawn_y = self.get_eye_y() - 0.3;
 
@@ -645,10 +642,11 @@ impl Player {
         if let Some(entity) = self
             .get_world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)
-            && thrown_from_hand
         {
             entity.set_pickup_delay(40);
-            entity.set_thrower(self.gameprofile.id);
+            if thrown_from_hand {
+                entity.set_thrower(self.gameprofile.id);
+            }
         }
     }
 
@@ -658,7 +656,7 @@ impl Player {
     /// Returns false if the player is dead, removed, or has a flag preventing item drops.
     #[must_use]
     pub fn can_drop_items(&self) -> bool {
-        !self.removed.load(Ordering::Relaxed)
+        !self.is_removed()
         // TODO: Check if player is alive (health > 0)
     }
 

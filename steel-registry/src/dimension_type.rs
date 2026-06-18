@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::sound_event::SoundEventRef;
+
 #[derive(Debug)]
 pub struct BedRule {
     pub can_set_spawn: &'static str,
@@ -13,7 +15,7 @@ pub struct BedRule {
 
 #[derive(Debug)]
 pub struct MoodSound {
-    pub sound: &'static str,
+    pub sound: SoundEventRef,
     pub tick_delay: i32,
     pub block_search_extent: i32,
     pub offset: f64,
@@ -21,7 +23,7 @@ pub struct MoodSound {
 
 #[derive(Debug)]
 pub struct MusicEntry {
-    pub sound: &'static str,
+    pub sound: SoundEventRef,
     pub min_delay: i32,
     pub max_delay: i32,
     pub replace_current_music: bool,
@@ -234,7 +236,8 @@ impl ToNbtTag for &DimensionType {
         // Audio attributes
         if let Some(mood) = &self.mood_sound {
             let mut mood_compound = NbtCompound::new();
-            mood_compound.insert("sound", mood.sound);
+            let sound = mood.sound.key.to_string();
+            mood_compound.insert("sound", sound.as_str());
             mood_compound.insert("tick_delay", mood.tick_delay);
             mood_compound.insert("block_search_extent", mood.block_search_extent);
             mood_compound.insert("offset", mood.offset);
@@ -248,7 +251,8 @@ impl ToNbtTag for &DimensionType {
         if let Some(bg_music) = &self.background_music {
             let mut music_compound = NbtCompound::new();
             let mut default_entry = NbtCompound::new();
-            default_entry.insert("sound", bg_music.default.sound);
+            let sound = bg_music.default.sound.key.to_string();
+            default_entry.insert("sound", sound.as_str());
             default_entry.insert("min_delay", bg_music.default.min_delay);
             default_entry.insert("max_delay", bg_music.default.max_delay);
             if bg_music.default.replace_current_music {
@@ -260,7 +264,8 @@ impl ToNbtTag for &DimensionType {
             music_compound.insert("default", NbtTag::Compound(default_entry));
             if let Some(creative) = &bg_music.creative {
                 let mut creative_entry = NbtCompound::new();
-                creative_entry.insert("sound", creative.sound);
+                let sound = creative.sound.key.to_string();
+                creative_entry.insert("sound", sound.as_str());
                 creative_entry.insert("min_delay", creative.min_delay);
                 creative_entry.insert("max_delay", creative.max_delay);
                 if creative.replace_current_music {

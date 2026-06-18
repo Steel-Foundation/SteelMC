@@ -18,8 +18,8 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Maximum cactus stack height (vanilla: 3 blocks).
@@ -200,6 +200,8 @@ impl BlockBehavior for CactusBlock {
         _world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
     ) {
         entity.hurt(
             &DamageSource::environment(&vanilla_damage_types::CACTUS),

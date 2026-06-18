@@ -67,6 +67,8 @@ pub(crate) struct BlockStateSectionCounts {
     randomly_ticking: bool,
 }
 
+const BLOCKS_PER_SECTION: u16 = 16 * 16 * 16;
+
 static BLOCK_STATE_SECTION_COUNTS: LazyLock<Box<[BlockStateSectionCounts]>> = LazyLock::new(|| {
     let mut counts = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
     for state_index in 0..REGISTRY.blocks.state_to_block_lookup.len() {
@@ -330,7 +332,7 @@ impl ChunkSection {
         self.ticking_block_count
     }
 
-    /// Recalculates both cached counters by iterating all blocks.
+    /// Recalculates cached counters from the global per-state counter table.
     ///
     /// This should be called after chunk loading or generation to initialize
     /// the counters. It requires the block behavior registry to be initialized.
@@ -338,7 +340,7 @@ impl ChunkSection {
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
     pub fn recalculate_counts(&mut self) {
-        self.recalculate_counts_with(&BLOCK_BEHAVIORS);
+        self.recalculate_counts_from_palette(Self::block_state_section_counts);
     }
 
     /// Recalculates all cached counters using the provided behavior registry.
@@ -350,34 +352,42 @@ impl ChunkSection {
     /// For a `Homogeneous` section that's a single classify; for typical
     /// `Heterogeneous` sections palette is well under 16 entries.
     pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
-        // Convert any worldgen Building cube back to a paletted container.
-        // No-op if already finalized.
+        self.recalculate_counts_from_palette(|state| {
+            Self::block_state_section_counts_with(state, block_behaviors)
+        });
+    }
+
+    fn recalculate_counts_from_palette(
+        &mut self,
+        mut counts_for_state: impl FnMut(BlockStateId) -> BlockStateSectionCounts,
+    ) {
         self.states.finalize_building();
 
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
         let mut ticking: u16 = 0;
 
-        let mut classify = |state: BlockStateId, count: u16| {
-            let counts = Self::block_state_section_counts_with(state, block_behaviors);
-            if !counts.is_air {
-                non_empty += count;
-            }
-            if counts.has_fluid {
-                fluid += count;
-            }
-            if counts.randomly_ticking {
-                ticking += count;
-            }
-        };
-
         match &self.states {
             BlockPalette::Homogeneous(state) => {
-                classify(*state, BlockPalette::VOLUME as u16);
+                let counts = counts_for_state(*state);
+                Self::accumulate_counter_traits(
+                    &mut non_empty,
+                    &mut fluid,
+                    &mut ticking,
+                    counts,
+                    BLOCKS_PER_SECTION,
+                );
             }
             BlockPalette::Heterogeneous(data) => {
-                for (state, count) in &data.palette {
-                    classify(*state, *count);
+                for &(state, count) in &data.palette {
+                    let counts = counts_for_state(state);
+                    Self::accumulate_counter_traits(
+                        &mut non_empty,
+                        &mut fluid,
+                        &mut ticking,
+                        counts,
+                        count,
+                    );
                 }
             }
             BlockPalette::Building(_) => unreachable!("finalize_building was just called"),
@@ -386,6 +396,24 @@ impl ChunkSection {
         self.non_empty_block_count = non_empty;
         self.fluid_count = fluid;
         self.ticking_block_count = ticking;
+    }
+
+    const fn accumulate_counter_traits(
+        non_empty: &mut u16,
+        fluid: &mut u16,
+        ticking: &mut u16,
+        counts: BlockStateSectionCounts,
+        block_count: u16,
+    ) {
+        if !counts.is_air {
+            *non_empty += block_count;
+        }
+        if counts.has_fluid {
+            *fluid += block_count;
+        }
+        if counts.randomly_ticking {
+            *ticking += block_count;
+        }
     }
 
     /// Whether this section's palette contains any POI-type block state.
@@ -526,5 +554,67 @@ impl ChunkSection {
             .write(writer)
             .expect("Failed to write block states");
         self.biomes.write(writer).expect("Failed to write biomes");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_blocks;
+
+    use crate::behavior::init_behaviors;
+
+    use super::*;
+
+    fn plains_biomes() -> BiomePalette {
+        BiomePalette::Homogeneous(vanilla_biomes::PLAINS.id() as u16)
+    }
+
+    fn init_test_behaviors() {
+        init_test_registry();
+        init_behaviors();
+    }
+
+    #[test]
+    fn recount_uses_homogeneous_palette_frequency() {
+        init_test_behaviors();
+
+        let mut section = ChunkSection::new_with_biomes(
+            BlockPalette::Homogeneous(vanilla_blocks::LAVA.default_state()),
+            plains_biomes(),
+        );
+
+        section.recalculate_counts();
+
+        assert_eq!(section.non_empty_block_count(), BLOCKS_PER_SECTION);
+        assert_eq!(section.fluid_count(), BLOCKS_PER_SECTION);
+        assert_eq!(section.ticking_block_count(), BLOCKS_PER_SECTION);
+    }
+
+    #[test]
+    fn recount_uses_heterogeneous_palette_frequencies() {
+        init_test_behaviors();
+
+        let air = vanilla_blocks::AIR.default_state();
+        let stone = vanilla_blocks::STONE.default_state();
+        let water = vanilla_blocks::WATER.default_state();
+        let lava = vanilla_blocks::LAVA.default_state();
+        let mut cube = Box::new([[[air; 16]; 16]; 16]);
+
+        cube[0][0][0] = stone;
+        cube[1][0][0] = stone;
+        cube[2][0][0] = water;
+        cube[3][0][0] = water;
+        cube[4][0][0] = water;
+        cube[5][0][0] = lava;
+
+        let mut section =
+            ChunkSection::new_with_biomes(BlockPalette::from_cube(cube), plains_biomes());
+
+        section.recalculate_counts();
+
+        assert_eq!(section.non_empty_block_count(), 6);
+        assert_eq!(section.fluid_count(), 4);
+        assert_eq!(section.ticking_block_count(), 1);
     }
 }

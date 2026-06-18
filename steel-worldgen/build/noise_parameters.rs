@@ -45,7 +45,7 @@ fn collect_noise_files(base: &Path, dir: &Path, out: &mut BTreeMap<String, Noise
 /// Generate noise parameters code from the vanilla datapack.
 pub(crate) fn build() -> TokenStream {
     let noise_dir =
-        Path::new("../steel-registry/build_assets/builtin_datapacks/minecraft/worldgen/noise");
+        Path::new("../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/noise");
 
     println!("cargo:rerun-if-changed={}", noise_dir.display());
 
@@ -57,7 +57,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         //! Generated vanilla noise parameters from the datapack.
         //!
-        //! Auto-generated from `steel-registry/build_assets/builtin_datapacks/minecraft/worldgen/noise/*.json`.
+        //! Auto-generated from `steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/noise/*.json`.
         //! Do not edit manually.
 
         use rustc_hash::FxHashMap;

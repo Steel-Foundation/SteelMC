@@ -5,16 +5,14 @@
 //! time on the per-player `ChunkSender` mutex so that game-tick operations like
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
 use rustc_hash::FxHashSet;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU32, Ordering},
-};
+use std::sync::Arc;
 
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
 use steel_protocol::utils::ConnectionProtocol;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, PackedChunkPos};
 
 use crate::{
@@ -94,7 +92,7 @@ impl ChunkSender {
         &mut self,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
-        chunk_send_epoch: &AtomicU32,
+        chunk_send_epoch: &SyncMutex<u32>,
     ) -> Option<PreparedBatch> {
         if self.unacknowledged_batches >= self.max_unacknowledged_batches {
             return None;
@@ -112,7 +110,7 @@ impl ChunkSender {
             return None;
         }
 
-        let epoch_snapshot = chunk_send_epoch.load(Ordering::Acquire);
+        let epoch_snapshot = *chunk_send_epoch.lock();
 
         Some(PreparedBatch {
             holders,
@@ -177,9 +175,10 @@ impl ChunkSender {
         batch: &PreparedBatch,
         encoded_chunks: Vec<EncodedPacket>,
         connection: &PlayerConnection,
-        chunk_send_epoch: &AtomicU32,
+        chunk_send_epoch: &SyncMutex<u32>,
     ) {
-        if chunk_send_epoch.load(Ordering::Acquire) != batch.epoch_snapshot {
+        let epoch = chunk_send_epoch.lock();
+        if *epoch != batch.epoch_snapshot {
             return;
         }
 
@@ -244,7 +243,14 @@ impl ChunkSender {
     ///
     /// The client sends back its desired chunks per tick based on how fast it can
     /// process chunks. We clamp this value and use it to adjust our sending rate.
-    pub const fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) {
+    pub const fn on_chunk_batch_received_by_client(
+        &mut self,
+        desired_chunks_per_tick: f32,
+    ) -> bool {
+        if self.unacknowledged_batches == 0 {
+            return false;
+        }
+
         self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
 
         // Handle NaN and clamp to valid range (vanilla uses 0.01-64, we use 0.01-500)
@@ -262,6 +268,7 @@ impl ChunkSender {
         // After receiving the first acknowledgement, allow more unacknowledged batches
         // for better pipelining (vanilla behavior)
         self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
+        true
     }
 }
 
@@ -274,5 +281,44 @@ impl Default for ChunkSender {
             batch_quota: 0.0,
             max_unacknowledged_batches: 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_batch_ack_without_outstanding_batch_does_not_update_pacing() {
+        let mut sender = ChunkSender::default();
+
+        assert!(!sender.on_chunk_batch_received_by_client(64.0));
+        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(
+            sender.desired_chunks_per_tick.to_bits(),
+            START_CHUNKS_PER_TICK.to_bits()
+        );
+        assert_eq!(sender.batch_quota.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(sender.max_unacknowledged_batches, 1);
+    }
+
+    #[test]
+    fn chunk_batch_ack_updates_pacing_for_outstanding_batch() {
+        let mut sender = ChunkSender {
+            unacknowledged_batches: 1,
+            ..ChunkSender::default()
+        };
+
+        assert!(sender.on_chunk_batch_received_by_client(f32::NAN));
+        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(
+            sender.desired_chunks_per_tick.to_bits(),
+            MIN_CHUNKS_PER_TICK.to_bits()
+        );
+        assert_eq!(sender.batch_quota.to_bits(), 1.0_f32.to_bits());
+        assert_eq!(
+            sender.max_unacknowledged_batches,
+            MAX_UNACKNOWLEDGED_BATCHES
+        );
     }
 }

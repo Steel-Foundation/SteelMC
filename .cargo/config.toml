@@ -1,24 +1,24 @@
 # https://github.com/bevyengine/bevy/blob/main/.cargo/config_fast_builds.toml for more details
 
 [build]
-rustflags = ["-Zthreads=0", "-Ctarget-cpu=native"]
+rustflags = ["-Zthreads=0"]
 # TODO: remove once nightly ICE with incremental cache is fixed
 #incremental = false
 
-# Cargo NOTE: per-target rustflags replace (not extend) `build.rustflags`.
-# Repeat `-Ctarget-cpu=native` and `-Zthreads=0` here so they aren't dropped.
-# Without this, scalar `f64::floor` falls back to libm instead of inlining
-# to SSE4.1 `roundsd`, costing ~5–6% in noise-heavy worldgen.
 [target.x86_64-unknown-linux-gnu]
-rustflags = [
-    "-Zthreads=0",
-    "-Ctarget-cpu=native",
-    "-Clink-arg=-fuse-ld=lld",
-]
+rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zthreads=0"]
 
 [target.aarch64-unknown-linux-gnu]
-rustflags = [
-    "-Zthreads=0",
-    "-Ctarget-cpu=native",
-    "-Clink-arg=-fuse-ld=lld",
+rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zthreads=0"]
+
+[alias]
+build-native = [
+  "build",
+  "--config",
+  "build.rustflags=[\"-Zthreads=0\", \"-C\", \"target-cpu=native\"]",
+]
+run-native = [
+  "run",
+  "--config",
+  "build.rustflags=[\"-Zthreads=0\", \"-C\", \"target-cpu=native\"]",
 ]

@@ -4,13 +4,17 @@
 
 use steel_registry::item_stack::ItemStack;
 
-use crate::inventory::container::Container;
+use crate::{
+    chunk_saver::{ChunkStorage, PersistentEntity},
+    entity::{Entity, EntityFireFreezeState, LivingEntity},
+    inventory::container::Container,
+};
 
 use super::{Player, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 1;
+pub const PLAYER_DATA_VERSION: i32 = 3;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -32,6 +36,21 @@ pub struct PersistentPlayerData {
 
     /// Whether the player is elytra gliding.
     pub fall_flying: bool,
+
+    /// Vanilla `remainingFireTicks`.
+    pub remaining_fire_ticks: i32,
+
+    /// Synchronized vanilla `TicksFrozen`.
+    pub ticks_frozen: i32,
+
+    /// Vanilla `isInPowderSnow`.
+    pub is_in_powder_snow: bool,
+
+    /// Vanilla `wasInPowderSnow`.
+    pub was_in_powder_snow: bool,
+
+    /// Vanilla `hasVisualFire`.
+    pub has_visual_fire: bool,
 
     /// Current health points.
     pub health: f32,
@@ -82,6 +101,18 @@ pub struct PersistentPlayerData {
     /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
     /// this value can be negative by using (/xp add ... -x)
     pub score: i32,
+
+    /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
+    pub root_vehicle: Option<PersistentRootVehicle>,
+}
+
+/// A vanilla `RootVehicle` tree persisted with player data.
+#[derive(Debug, Clone)]
+pub struct PersistentRootVehicle {
+    /// UUID of the direct vehicle the player should reattach to.
+    pub attach: [u8; 16],
+    /// Root vehicle entity tree.
+    pub entity: PersistentEntity,
 }
 
 /// Persistent abilities data.
@@ -116,16 +147,14 @@ impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
     pub fn from_player(player: &Player) -> Self {
-        let pos = *player.position.lock();
-        let (yaw, pitch) = player.rotation.load();
-        let delta = player.movement.lock().delta_movement;
-        let (on_ground, fall_flying) = {
-            let es = player.entity_state.lock();
-            (es.on_ground, es.fall_flying)
-        };
+        let pos = player.position();
+        let (yaw, pitch) = player.rotation();
+        let delta = player.velocity();
+        let on_ground = player.on_ground();
+        let fall_flying = player.is_fall_flying();
+        let fire_freeze = player.fire_freeze_state();
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
-        let entity_data = player.entity_data.lock();
         let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
@@ -150,6 +179,8 @@ impl PersistentPlayerData {
                 lock.score,
             )
         };
+        let root_vehicle = Self::root_vehicle_from_player(player)
+            .or_else(|| player.pending_root_vehicle_for_current_world());
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -157,9 +188,14 @@ impl PersistentPlayerData {
             rotation: [yaw, pitch],
             on_ground,
             fall_flying,
-            health: *entity_data.health.get(),
-            game_mode: player.game_mode.load() as i32,
-            prev_game_mode: player.prev_game_mode.load() as i32,
+            remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
+            ticks_frozen: fire_freeze.ticks_frozen(),
+            is_in_powder_snow: fire_freeze.is_in_powder_snow(),
+            was_in_powder_snow: fire_freeze.was_in_powder_snow(),
+            has_visual_fire: fire_freeze.has_visual_fire(),
+            health: player.get_health(),
+            game_mode: player.game_mode() as i32,
+            prev_game_mode: player.previous_game_mode() as i32,
             abilities: PersistentAbilities {
                 invulnerable: abilities.invulnerable,
                 flying: abilities.flying,
@@ -181,7 +217,22 @@ impl PersistentPlayerData {
             experience_progress,
             experience_total,
             score,
+            root_vehicle,
         }
+    }
+
+    fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {
+        let vehicle = player.vehicle()?;
+        let root_vehicle = player.root_vehicle()?;
+        if root_vehicle.id() == player.id() || !root_vehicle.has_exactly_one_player_passenger() {
+            return None;
+        }
+
+        let entity = ChunkStorage::entity_tree_to_persistent(&root_vehicle)?;
+        Some(PersistentRootVehicle {
+            attach: *vehicle.uuid().as_bytes(),
+            entity,
+        })
     }
 }
 
@@ -248,33 +299,37 @@ impl PersistentPlayerData {
 
         if restore_location {
             // Position
-            *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
+            player
+                .base()
+                .set_position_local(DVec3::new(self.pos[0], self.pos[1], self.pos[2]));
 
             // Rotation
-            player.rotation.store((self.rotation[0], self.rotation[1]));
+            player.set_rotation((self.rotation[0], self.rotation[1]));
 
             // Motion/velocity
-            player.movement.lock().delta_movement =
-                DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
+            player.set_velocity(DVec3::new(self.motion[0], self.motion[1], self.motion[2]));
 
             // Ground state
-            {
-                let mut es = player.entity_state.lock();
-                es.on_ground = self.on_ground;
-                es.fall_flying = self.fall_flying;
-            }
+            player.set_fall_flying(self.fall_flying);
+            player.set_on_ground(self.on_ground);
         }
 
+        player
+            .base()
+            .set_fire_freeze_state(EntityFireFreezeState::from_parts(
+                self.remaining_fire_ticks,
+                self.ticks_frozen,
+                self.is_in_powder_snow,
+                self.was_in_powder_snow,
+                self.has_visual_fire,
+            ));
+        player.sync_base_fire_freeze_entity_data();
+
         // Health
-        player.entity_data.lock().health.set(self.health);
+        player.set_health(self.health);
 
         // Game mode
-        let game_mode = self.game_mode.into();
-        player.game_mode.store(game_mode);
-
-        // Previous game mode
-        let prev_game_mode = self.prev_game_mode.into();
-        player.prev_game_mode.store(prev_game_mode);
+        player.restore_game_modes(self.game_mode.into(), self.prev_game_mode.into());
 
         // Abilities
         *player.abilities.lock() = self.abilities.clone().into();

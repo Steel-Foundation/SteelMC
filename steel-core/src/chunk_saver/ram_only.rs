@@ -3,10 +3,10 @@ use std::{io, sync::Weak};
 use rustc_hash::FxHashMap;
 use steel_utils::{ChunkPos, locks::AsyncRwLock};
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_access::ChunkStatus;
 use crate::world::World;
 
-use super::{ChunkStorage, PreparedChunkSave};
+use super::{ChunkStorage, LoadedChunk, PreparedChunkSave};
 
 /// In-memory chunk storage.
 ///
@@ -51,19 +51,16 @@ impl RamOnlyStorage {
         min_y: i32,
         height: i32,
         level: Weak<World>,
-    ) -> io::Result<Option<(ChunkAccess, ChunkStatus)>> {
+    ) -> io::Result<Option<LoadedChunk>> {
         if let Ok(true) = self.chunk_exists(pos).await {
             if let Some(storage) = self.saved_chunks.read().await.get(&pos) {
-                Ok(Some((
-                    ChunkStorage::persistent_to_chunk(
-                        &storage.prepared.persistent,
-                        pos,
-                        storage.chunk_status,
-                        min_y,
-                        height,
-                        level,
-                    ),
+                Ok(Some(ChunkStorage::persistent_to_chunk(
+                    &storage.prepared.persistent,
+                    pos,
                     storage.chunk_status,
+                    min_y,
+                    height,
+                    level,
                 )))
             } else {
                 Ok(None)

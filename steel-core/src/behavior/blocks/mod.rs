@@ -12,9 +12,10 @@ mod redstone;
 pub mod vegetation;
 
 pub use building::{
-    DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
+    BedBlock, CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock,
+    MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock,
+    SlabBlock, SlimeBlock, StairBlock, WeatherState, WeatheringCopper, WeatheringCopperDoorBlock,
+    WeatheringCopperFullBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
 };
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
@@ -39,6 +40,6 @@ pub use vegetation::{
     KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock, MossyCarpetBlock,
     MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock, SaplingBlock,
     SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock,
-    SporeBlossomBlock, TallDryGrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock,
-    WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
+    SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
+    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
 };

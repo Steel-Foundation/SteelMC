@@ -25,6 +25,9 @@ pub struct BlockConfig {
     pub speed_factor: f32,
     pub jump_factor: f32,
     pub dynamic_shape: bool,
+    pub offset_type: Cow<'static, str>,
+    pub max_horizontal_offset: f32,
+    pub max_vertical_offset: f32,
     pub destroy_time: f32,
     pub ignited_by_lava: bool,
     pub liquid: bool,
@@ -51,6 +54,9 @@ impl BlockConfig {
             speed_factor: 1.0,
             jump_factor: 1.0,
             dynamic_shape: false,
+            offset_type: Cow::Borrowed("NONE"),
+            max_horizontal_offset: 0.25,
+            max_vertical_offset: 0.2,
             destroy_time: 0.0,
             ignited_by_lava: false,
             liquid: false,
@@ -71,6 +77,8 @@ pub struct ShapeOverwrite {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ShapeData {
+    #[serde(default, rename = "usesOffset")]
+    pub uses_offset: bool,
     pub default: Vec<u16>,
     pub overwrites: Vec<ShapeOverwrite>,
 }
@@ -94,8 +102,8 @@ pub struct Block {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Shape {
-    pub min: [f32; 3],
-    pub max: [f32; 3],
+    pub min: [f64; 3],
+    pub max: [f64; 3],
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -154,6 +162,15 @@ fn instrument_to_tokens(instrument: &str) -> TokenStream {
     }
 }
 
+fn offset_type_to_tokens(offset_type: &str) -> TokenStream {
+    match offset_type {
+        "NONE" => quote! { OffsetType::None },
+        "XZ" => quote! { OffsetType::Xz },
+        "XYZ" => quote! { OffsetType::Xyz },
+        _ => panic!("Unknown offset type: {}", offset_type),
+    }
+}
+
 /// Generates builder method calls for properties that differ from defaults
 fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<TokenStream> {
     let mut builder_calls = Vec::new();
@@ -201,6 +218,18 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     if bp.dynamic_shape != default_props.dynamic_shape {
         let val = bp.dynamic_shape;
         builder_calls.push(quote! { .dynamic_shape(#val) });
+    }
+    if bp.offset_type != default_props.offset_type {
+        let offset_type = offset_type_to_tokens(bp.offset_type.as_ref());
+        builder_calls.push(quote! { .offset_type(#offset_type) });
+    }
+    if bp.max_horizontal_offset != default_props.max_horizontal_offset {
+        let val = bp.max_horizontal_offset;
+        builder_calls.push(quote! { .max_horizontal_offset(#val) });
+    }
+    if bp.max_vertical_offset != default_props.max_vertical_offset {
+        let val = bp.max_vertical_offset;
+        builder_calls.push(quote! { .max_vertical_offset(#val) });
     }
     if bp.destroy_time != default_props.destroy_time {
         let val = bp.destroy_time;
@@ -305,9 +334,9 @@ fn generate_default_state(block: &Block) -> TokenStream {
 }
 
 /// VoxelShape pool that deduplicates shape combinations.
-/// Maps AABB index combinations to a ShapeId.
+/// Maps block-local box index combinations to a ShapeId.
 struct VoxelShapePool {
-    // Maps sorted AABB indices to ShapeId
+    // Maps sorted block-local box indices to ShapeId.
     shapes: FxHashMap<Vec<u16>, u16>,
     // Ordered list of shapes for generation
     shape_list: Vec<Vec<u16>>,
@@ -429,6 +458,12 @@ pub(crate) fn build() -> TokenStream {
         occlusion_fn_id: u16,
         interaction_fn_id: u16,
         visual_fn_id: u16,
+        collision_uses_offset: bool,
+        support_uses_offset: bool,
+        outline_uses_offset: bool,
+        occlusion_uses_offset: bool,
+        interaction_uses_offset: bool,
+        visual_uses_offset: bool,
     }
     let mut block_shape_infos: Vec<BlockShapeInfo> = Vec::new();
 
@@ -488,16 +523,22 @@ pub(crate) fn build() -> TokenStream {
             occlusion_fn_id,
             interaction_fn_id,
             visual_fn_id,
+            collision_uses_offset: block.collision_shapes.uses_offset,
+            support_uses_offset: block.support_shapes.uses_offset,
+            outline_uses_offset: block.outline_shapes.uses_offset,
+            occlusion_uses_offset: block.occlusion_shapes.uses_offset,
+            interaction_uses_offset: block.interaction_shapes.uses_offset,
+            visual_uses_offset: block.visual_shapes.uses_offset,
         });
     }
 
-    // Generate AABB constants
+    // Generate block-local box constants.
     let aabb_consts: Vec<TokenStream> = block_assets
         .shapes
         .iter()
         .enumerate()
         .map(|(i, shape)| {
-            let name = Ident::new(&format!("AABB_{}", i), Span::call_site());
+            let name = Ident::new(&format!("BOX_{}", i), Span::call_site());
             let min_x = shape.min[0];
             let min_y = shape.min[1];
             let min_z = shape.min[2];
@@ -505,7 +546,8 @@ pub(crate) fn build() -> TokenStream {
             let max_y = shape.max[1];
             let max_z = shape.max[2];
             quote! {
-                static #name: AABB = AABB::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
+                const #name: BlockLocalAabb =
+                    BlockLocalAabb::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
             }
         })
         .collect();
@@ -519,22 +561,22 @@ pub(crate) fn build() -> TokenStream {
             let name = Ident::new(&format!("VSHAPE_{}", id), Span::call_site());
             if aabb_indices.is_empty() {
                 quote! {
-                    static #name: &[AABB] = &[];
+                    const #name: VoxelShape = VoxelShape::EMPTY;
                 }
             } else if aabb_indices.len() == 1 && aabb_indices[0] == u16::MAX {
                 quote! {
-                    static #name: &[AABB] = &[AABB::FULL_BLOCK];
+                    const #name: VoxelShape = VoxelShape::FULL_BLOCK;
                 }
             } else {
                 let aabb_refs: Vec<TokenStream> = aabb_indices
                     .iter()
                     .map(|&idx| {
-                        let aabb_name = Ident::new(&format!("AABB_{}", idx), Span::call_site());
+                        let aabb_name = Ident::new(&format!("BOX_{}", idx), Span::call_site());
                         quote! { #aabb_name }
                     })
                     .collect();
                 quote! {
-                    static #name: &[AABB] = &[#(#aabb_refs),*];
+                    const #name: VoxelShape = VoxelShape::from_boxes(&[#(#aabb_refs),*]);
                 }
             }
         })
@@ -550,7 +592,7 @@ pub(crate) fn build() -> TokenStream {
         if sig.arms.is_empty() {
             shape_fns.extend(quote! {
                 #[inline]
-                const fn #fn_name(_offset: u16) -> &'static [AABB] {
+                const fn #fn_name(_offset: u16) -> VoxelShape {
                     #default_shape
                 }
             });
@@ -574,7 +616,7 @@ pub(crate) fn build() -> TokenStream {
 
             shape_fns.extend(quote! {
                 #[inline]
-                fn #fn_name(offset: u16) -> &'static [AABB] {
+                fn #fn_name(offset: u16) -> VoxelShape {
                     match offset {
                         #(#arms)*
                         _ => #default_shape,
@@ -632,6 +674,32 @@ pub(crate) fn build() -> TokenStream {
             &format!("shape_fn_{}", info.visual_fn_id),
             Span::call_site(),
         );
+        let shape_offsets = if info.collision_uses_offset
+            || info.support_uses_offset
+            || info.outline_uses_offset
+            || info.occlusion_uses_offset
+            || info.interaction_uses_offset
+            || info.visual_uses_offset
+        {
+            let collision = info.collision_uses_offset;
+            let support = info.support_uses_offset;
+            let outline = info.outline_uses_offset;
+            let occlusion = info.occlusion_uses_offset;
+            let interaction = info.interaction_uses_offset;
+            let visual = info.visual_uses_offset;
+            quote! {
+                .with_shape_offsets(ShapeOffsetFlags::new(
+                    #collision,
+                    #support,
+                    #outline,
+                    #occlusion,
+                    #interaction,
+                    #visual,
+                ))
+            }
+        } else {
+            quote! {}
+        };
 
         stream.extend(quote! {
             pub static #block_name: Block = Block::new(
@@ -647,7 +715,7 @@ pub(crate) fn build() -> TokenStream {
                 #occlusion_fn,
                 #interaction_fn,
                 #visual_fn,
-            )#default_state;
+            ) #shape_offsets #default_state;
         });
     }
 
@@ -663,13 +731,17 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::{
-            blocks::{behavior::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
+            blocks::{
+                behavior::{BlockConfig, OffsetType, PushReaction},
+                shapes::ShapeOffsetFlags,
+                Block, offset, BlockRegistry,
+            },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
-            blocks::shapes::AABB,
+            blocks::shapes::VoxelShape,
         };
-        use steel_utils::Identifier;
+        use steel_utils::{BlockLocalAabb, Identifier};
 
-        // AABB primitives
+        // Block-local collision primitives.
         #(#aabb_consts)*
 
         // Deduplicated VoxelShapes

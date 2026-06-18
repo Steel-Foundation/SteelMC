@@ -13,12 +13,14 @@ struct EntityTypeEntry {
     height: f32,
     eye_height: f32,
     fixed: bool,
+    attachments: AttachmentsEntry,
     mob_category: String,
     client_tracking_range: i32,
     update_interval: i32,
     fire_immune: bool,
     summonable: bool,
     can_spawn_far_from_player: bool,
+    class_hierarchy: Vec<ClassHierarchyEntry>,
     #[serde(default = "default_can_serialize")]
     can_serialize: bool,
     #[serde(default)]
@@ -27,8 +29,44 @@ struct EntityTypeEntry {
     attributes: Option<FxHashMap<String, f64>>,
 }
 
+#[derive(Deserialize)]
+struct ClassHierarchyEntry {
+    simple_name: String,
+}
+
+#[derive(Deserialize)]
+struct AttachmentsEntry {
+    passenger: Vec<AttachmentPointEntry>,
+    vehicle: Vec<AttachmentPointEntry>,
+    name_tag: Vec<AttachmentPointEntry>,
+    warden_chest: Vec<AttachmentPointEntry>,
+}
+
+#[derive(Deserialize)]
+struct AttachmentPointEntry {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
 fn default_can_serialize() -> bool {
     true
+}
+
+fn vanilla_track_deltas(entity_type_name: &str) -> bool {
+    !matches!(
+        entity_type_name,
+        "player"
+            | "llama_spit"
+            | "wither"
+            | "bat"
+            | "item_frame"
+            | "glow_item_frame"
+            | "leash_knot"
+            | "painting"
+            | "end_crystal"
+            | "evoker_fangs"
+    )
 }
 
 #[derive(Deserialize)]
@@ -62,6 +100,18 @@ fn mob_category_variant(category: &str) -> TokenStream {
     }
 }
 
+fn attachment_points(points: &[AttachmentPointEntry]) -> Vec<TokenStream> {
+    points
+        .iter()
+        .map(|point| {
+            let x = Literal::f64_suffixed(point.x);
+            let y = Literal::f64_suffixed(point.y);
+            let z = Literal::f64_suffixed(point.z);
+            quote! { EntityAttachmentPoint::new(#x, #y, #z) }
+        })
+        .collect()
+}
+
 pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/entities.json");
 
@@ -73,7 +123,10 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::entity_type::{EntityDimensions, EntityFlags, EntityType, EntityTypeRegistry, MobCategory};
+        use crate::entity_type::{
+            EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityFlags, EntityType,
+            EntityTypeRegistry, MobCategory,
+        };
         use steel_utils::Identifier;
     });
 
@@ -84,12 +137,17 @@ pub(crate) fn build() -> TokenStream {
         let entity_type_key = &entity_type.name;
         let client_tracking_range = entity_type.client_tracking_range;
         let update_interval = entity_type.update_interval;
+        let track_deltas = vanilla_track_deltas(entity_type_key);
 
         // Dimensions
         let width = Literal::f32_suffixed(entity_type.width);
         let height = Literal::f32_suffixed(entity_type.height);
         let eye_height = Literal::f32_suffixed(entity_type.eye_height);
         let fixed = entity_type.fixed;
+        let passenger_attachments = attachment_points(&entity_type.attachments.passenger);
+        let vehicle_attachments = attachment_points(&entity_type.attachments.vehicle);
+        let name_tag_attachments = attachment_points(&entity_type.attachments.name_tag);
+        let warden_chest_attachments = attachment_points(&entity_type.attachments.warden_chest);
 
         // Classification
         let mob_category = mob_category_variant(&entity_type.mob_category);
@@ -97,6 +155,14 @@ pub(crate) fn build() -> TokenStream {
         let summonable = entity_type.summonable;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
         let can_serialize = entity_type.can_serialize;
+        let is_abstract_boat = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractBoat");
+        let is_abstract_minecart = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractMinecart");
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -131,13 +197,26 @@ pub(crate) fn build() -> TokenStream {
                 key: Identifier::vanilla_static(#entity_type_key),
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
-                dimensions: EntityDimensions::new(#width, #height, #eye_height),
+                track_deltas: #track_deltas,
+                dimensions: EntityDimensions::new_with_attachments(
+                    #width,
+                    #height,
+                    #eye_height,
+                    EntityAttachments::new(
+                        &[#(#passenger_attachments),*],
+                        &[#(#vehicle_attachments),*],
+                        &[#(#name_tag_attachments),*],
+                        &[#(#warden_chest_attachments),*],
+                    ),
+                ),
                 fixed: #fixed,
                 mob_category: #mob_category,
                 fire_immune: #fire_immune,
                 summonable: #summonable,
                 can_spawn_far_from_player: #can_spawn_far,
                 can_serialize: #can_serialize,
+                is_abstract_boat: #is_abstract_boat,
+                is_abstract_minecart: #is_abstract_minecart,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,

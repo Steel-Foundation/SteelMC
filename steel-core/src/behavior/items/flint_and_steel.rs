@@ -4,6 +4,7 @@ use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use steel_macros::item_behavior;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
@@ -12,6 +13,7 @@ use steel_registry::{
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::entity::Entity;
 use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for flint and steel items.
@@ -26,7 +28,7 @@ impl ItemBehavior for FlintAndSteelItem {
             context,
             click_pos,
             clicked_state,
-            sound_events::ITEM_FLINTANDSTEEL_USE,
+            &sound_events::ITEM_FLINTANDSTEEL_USE,
             flint_and_steel_pitch(),
         ) {
             let has_infinite_materials = context.player.has_infinite_materials();
@@ -37,7 +39,7 @@ impl ItemBehavior for FlintAndSteelItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation.load();
+        let (yaw, _) = context.player.rotation();
         let forward_dir = Direction::from_yaw(yaw);
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
@@ -45,11 +47,11 @@ impl ItemBehavior for FlintAndSteelItem {
         }
 
         context.world.play_block_sound(
-            sound_events::ITEM_FLINTANDSTEEL_USE,
+            &sound_events::ITEM_FLINTANDSTEEL_USE,
             fire_pos,
             1.0,
             rand::random::<f32>() * 0.4 + 0.8,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
 
         context.world.set_block(
@@ -84,7 +86,7 @@ impl ItemBehavior for FireChargeItem {
             context,
             click_pos,
             clicked_state,
-            sound_events::ITEM_FIRECHARGE_USE,
+            &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
             context.inv.with_item(|item| item.shrink(1));
@@ -92,7 +94,7 @@ impl ItemBehavior for FireChargeItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation.load();
+        let (yaw, _) = context.player.rotation();
         let forward_dir = Direction::from_yaw(yaw);
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
@@ -100,11 +102,11 @@ impl ItemBehavior for FireChargeItem {
         }
 
         context.world.play_block_sound(
-            sound_events::ITEM_FIRECHARGE_USE,
+            &sound_events::ITEM_FIRECHARGE_USE,
             fire_pos,
             1.0,
             fire_charge_pitch(),
-            Some(context.player.id),
+            Some(context.player.id()),
         );
 
         context.world.set_block(
@@ -128,7 +130,7 @@ fn try_light_block(
     context: &UseOnContext<'_>,
     pos: BlockPos,
     state: BlockStateId,
-    sound: i32,
+    sound: SoundEventRef,
     pitch: f32,
 ) -> bool {
     if !can_light(state) {
@@ -137,7 +139,7 @@ fn try_light_block(
 
     context
         .world
-        .play_block_sound(sound, pos, 1.0, pitch, Some(context.player.id));
+        .play_block_sound(sound, pos, 1.0, pitch, Some(context.player.id()));
     context.world.set_block(
         pos,
         state.set_value(&BlockStateProperties::LIT, true),
