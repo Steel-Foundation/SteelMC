@@ -33,13 +33,34 @@ use std::sync::Arc;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
+use steel_registry::game_events::GameEventRef;
+use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex, types::UpdateFlags};
 
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub use storage::BlockEntityStorage;
 
 use crate::inventory::container::Container;
+
 use crate::world::World;
+
+/// World mutations requested by a block entity tick
+///
+/// Tick actions are applied after the ticking block entity's mutex has been
+/// released. This keeps world mutation paths free to update the same block
+/// entity without recursively locking it
+pub enum BlockEntityTickAction {
+    /// Sets a block using [`World::set_block`]
+    SetBlock {
+        /// Position to update
+        pos: BlockPos,
+        /// New block state
+        state: BlockStateId,
+        /// Update flags passed to the world
+        flags: UpdateFlags,
+        /// Optional game event dispatched after the block update.
+        game_event: Option<(GameEventRef, BlockStateId)>,
+    },
+}
 
 /// Trait for all block entities.
 ///
@@ -142,8 +163,8 @@ pub trait BlockEntity: Send + Sync {
         unused_variables,
         reason = "default trait impl; parameter used by overrides"
     )]
-    fn tick(&mut self, world: &Arc<World>) {
-        // Default: no-op
+    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
+        None
     }
 
     /// Returns this block entity as a container, if it implements Container.

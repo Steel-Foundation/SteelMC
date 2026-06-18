@@ -49,7 +49,7 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        let collision_shape = new_state.get_collision_shape();
+        let collision_shape = new_state.get_collision_shape_at(place_pos);
         if !context.world.is_unobstructed(collision_shape, place_pos) {
             return InteractionResult::Fail;
         }

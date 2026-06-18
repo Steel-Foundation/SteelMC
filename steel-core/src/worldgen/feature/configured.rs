@@ -1,5 +1,11 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
+use crate::worldgen::template::{
+    StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+};
+use steel_registry::structure::LiquidSettingsData;
+use steel_utils::BoundingBox;
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 struct ConfiguredFeaturePlaceContext<'a, 'region> {
     region: &'a mut WorldGenRegion<'region>,
@@ -104,15 +110,20 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::PointedDripstone(_) => place_pointed_dripstone,
             ConfiguredFeatureKind::RandomBooleanSelector(_) => place_random_boolean_selector,
             ConfiguredFeatureKind::RandomSelector(_) => place_random_selector,
+            ConfiguredFeatureKind::WeightedRandomSelector(_) => place_weighted_random_selector,
             ConfiguredFeatureKind::RootSystem(_) => place_root_system,
             ConfiguredFeatureKind::ScatteredOre(_) => place_scattered_ore,
             ConfiguredFeatureKind::SculkPatch(_) => place_sculk_patch,
             ConfiguredFeatureKind::SeaPickle(_) => place_sea_pickle,
             ConfiguredFeatureKind::Seagrass(_) => place_seagrass,
+            ConfiguredFeatureKind::Sequence(_) => place_sequence,
             ConfiguredFeatureKind::SimpleBlock(_) => place_simple_block,
             ConfiguredFeatureKind::SimpleRandomSelector(_) => place_simple_random_selector,
+            ConfiguredFeatureKind::Speleothem(_) => place_speleothem,
+            ConfiguredFeatureKind::SpeleothemCluster(_) => place_speleothem_cluster,
             ConfiguredFeatureKind::Spike(_) => place_spike,
             ConfiguredFeatureKind::SpringFeature(_) => place_spring_feature,
+            ConfiguredFeatureKind::Template(_) => place_template,
             ConfiguredFeatureKind::Tree(_) => place_tree,
             ConfiguredFeatureKind::TwistingVines(_) => place_twisting_vines,
             ConfiguredFeatureKind::UnderwaterMagma(_) => place_underwater_magma,
@@ -180,6 +191,30 @@ fn place_random_selector(
     )
 }
 
+fn place_weighted_random_selector(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::WeightedRandomSelector(config) = kind else {
+        panic!("weighted_random_selector placer received wrong configured feature kind");
+    };
+    let Some(feature_index) = weighted_index(
+        config.features.len(),
+        |index| config.features[index].weight,
+        context.random,
+    ) else {
+        return false;
+    };
+    FeatureDecorationRunner::place_placed_feature_ref(
+        context.region,
+        context.registry,
+        context.random,
+        context.origin,
+        &config.features[feature_index].data,
+        context.biome_zoom_seed,
+    )
+}
+
 fn place_simple_random_selector(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -205,6 +240,136 @@ fn place_simple_random_selector(
         context.origin,
         &config.features[feature_index],
         context.biome_zoom_seed,
+    )
+}
+
+fn place_sequence(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Sequence(config) = kind else {
+        panic!("sequence placer received wrong configured feature kind");
+    };
+    for feature in &config.features {
+        if !FeatureDecorationRunner::place_placed_feature_ref(
+            context.region,
+            context.registry,
+            context.random,
+            context.origin,
+            feature,
+            context.biome_zoom_seed,
+        ) {
+            return false;
+        }
+    }
+    true
+}
+
+fn place_template(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Template(config) = kind else {
+        panic!("template placer received wrong configured feature kind");
+    };
+    let Some(template_index) = weighted_index(
+        config.templates.len(),
+        |index| config.templates[index].weight,
+        context.random,
+    ) else {
+        panic!("template feature has no selectable templates");
+    };
+    let entry = &config.templates[template_index].data;
+    let Ok(rotation_count) = i32::try_from(entry.rotations.len()) else {
+        panic!(
+            "template feature rotation count {} exceeds i32 range",
+            entry.rotations.len()
+        );
+    };
+    assert!(
+        rotation_count != 0,
+        "template feature entry {} has no rotations",
+        entry.id
+    );
+    let rotation = entry.rotations[context.random.next_i32_bounded(rotation_count) as usize];
+    let template = match StructureTemplate::load_vanilla(context.registry, &entry.id) {
+        Ok(template) => template,
+        Err(err) => panic!("{err}"),
+    };
+    let size = template.size(Rotation::None);
+    let position = template_feature_position(context.origin, rotation, size);
+    let settings = StructurePlaceSettings {
+        mirror: StructureMirror::None,
+        rotation,
+        rotation_pivot: BlockPos::ZERO,
+        bounding_box: template_feature_bounding_box(context.region),
+        processors: &[],
+        block_ignore: StructureBlockIgnore::None,
+        late_block_ignore: StructureBlockIgnore::None,
+        replace_jigsaws: false,
+        projection: None,
+        processor_random: StructureProcessorRandom::Placement,
+        liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+    };
+
+    template.place_in_world(
+        context.region,
+        context.registry,
+        position,
+        position,
+        &settings,
+        context.random,
+        UpdateFlags::UPDATE_ALL,
+    )
+}
+
+fn weighted_index(
+    len: usize,
+    weight_at: impl Fn(usize) -> u32,
+    random: &mut WorldgenRandom,
+) -> Option<usize> {
+    let total_weight = (0..len)
+        .map(|index| u64::from(weight_at(index)))
+        .sum::<u64>();
+    if total_weight == 0 {
+        return None;
+    }
+    let Ok(total_weight_i32) = i32::try_from(total_weight) else {
+        panic!("weighted feature total weight {total_weight} exceeds i32 range");
+    };
+    let mut selection = random.next_i32_bounded(total_weight_i32) as u64;
+    for index in 0..len {
+        let weight = u64::from(weight_at(index));
+        if selection < weight {
+            return Some(index);
+        }
+        selection -= weight;
+    }
+    None
+}
+
+const fn template_feature_position(
+    origin: BlockPos,
+    rotation: Rotation,
+    size: [i32; 3],
+) -> BlockPos {
+    let west_offset = rotation.rotate(Direction::West).offset();
+    let north_offset = rotation.rotate(Direction::North).offset();
+    origin.offset(
+        west_offset.0 * (size[0] / 2) + north_offset.0 * (size[2] / 2),
+        0,
+        west_offset.2 * (size[0] / 2) + north_offset.2 * (size[2] / 2),
+    )
+}
+
+fn template_feature_bounding_box(region: &WorldGenRegion<'_>) -> BoundingBox {
+    BoundingBox::new(
+        i32::MIN,
+        region.min_y(),
+        i32::MIN,
+        i32::MAX,
+        region.max_y_exclusive() - 1,
+        i32::MAX,
     )
 }
 
@@ -858,6 +1023,36 @@ fn place_dripstone_cluster(
         panic!("dripstone_cluster placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_dripstone_cluster_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_speleothem(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Speleothem(config) = kind else {
+        panic!("speleothem placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_speleothem_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_speleothem_cluster(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SpeleothemCluster(config) = kind else {
+        panic!("speleothem_cluster placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_speleothem_cluster_feature(
         context.region,
         context.random,
         config,

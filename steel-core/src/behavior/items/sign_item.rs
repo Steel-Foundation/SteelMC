@@ -157,7 +157,7 @@ fn can_attach_to(
     }
 
     // Otherwise, check for sturdy face with FULL support
-    attach_state.is_face_sturdy_for(attach_face, SupportType::Full)
+    attach_state.is_face_sturdy_for_at(attach_pos, attach_face, SupportType::Full)
 }
 
 /// Checks if a wall hanging sign can be placed at the given position.
@@ -233,7 +233,7 @@ impl ItemBehavior for HangingSignItem {
                 continue;
             }
 
-            let collision_shape = state.get_collision_shape();
+            let collision_shape = state.get_collision_shape_at(place_pos);
             if context.world.is_unobstructed(collision_shape, place_pos) {
                 new_state = Some(state);
                 placed_block = Some(block);

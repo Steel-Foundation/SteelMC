@@ -8,7 +8,7 @@ impl FeatureDecorationRunner {
         config: &SpringConfiguration,
         origin: BlockPos,
     ) -> bool {
-        if !Self::block_matches_ref_list(
+        if !Self::block_matches_holder_set(
             region.block_state(origin.above()).get_block(),
             &config.valid_blocks,
         ) {
@@ -16,7 +16,7 @@ impl FeatureDecorationRunner {
         }
 
         if config.requires_block_below
-            && !Self::block_matches_ref_list(
+            && !Self::block_matches_holder_set(
                 region.block_state(origin.below()).get_block(),
                 &config.valid_blocks,
             )
@@ -26,7 +26,7 @@ impl FeatureDecorationRunner {
 
         let current_state = region.block_state(origin);
         if !current_state.is_air()
-            && !Self::block_matches_ref_list(current_state.get_block(), &config.valid_blocks)
+            && !Self::block_matches_holder_set(current_state.get_block(), &config.valid_blocks)
         {
             return false;
         }
@@ -40,7 +40,10 @@ impl FeatureDecorationRunner {
         ]
         .into_iter()
         .filter(|&pos| {
-            Self::block_matches_ref_list(region.block_state(pos).get_block(), &config.valid_blocks)
+            Self::block_matches_holder_set(
+                region.block_state(pos).get_block(),
+                &config.valid_blocks,
+            )
         })
         .count();
 

@@ -118,13 +118,13 @@ impl FeatureDecorationRunner {
         if total_length >= 3 {
             consumer(Self::create_pointed_dripstone(
                 direction,
-                DripstoneThickness::Base,
+                SpeleothemThickness::Base,
             ));
 
             for _ in 0..total_length - 3 {
                 consumer(Self::create_pointed_dripstone(
                     direction,
-                    DripstoneThickness::Middle,
+                    SpeleothemThickness::Middle,
                 ));
             }
         }
@@ -132,15 +132,15 @@ impl FeatureDecorationRunner {
         if total_length >= 2 {
             consumer(Self::create_pointed_dripstone(
                 direction,
-                DripstoneThickness::Frustum,
+                SpeleothemThickness::Frustum,
             ));
         }
 
         if total_length >= 1 {
             let thickness = if merged_tip {
-                DripstoneThickness::TipMerge
+                SpeleothemThickness::TipMerge
             } else {
-                DripstoneThickness::Tip
+                SpeleothemThickness::Tip
             };
             consumer(Self::create_pointed_dripstone(direction, thickness));
         }
@@ -167,12 +167,12 @@ impl FeatureDecorationRunner {
 
     pub(in crate::worldgen::feature) fn create_pointed_dripstone(
         direction: Direction,
-        thickness: DripstoneThickness,
+        thickness: SpeleothemThickness,
     ) -> BlockStateId {
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
             .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::DRIPSTONE_THICKNESS, thickness)
+            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
     }
 
     pub(in crate::worldgen::feature) fn is_dripstone_base(state: BlockStateId) -> bool {

@@ -44,7 +44,7 @@ impl BlockBehavior for SnowLayerBlock {
             return true;
         }
 
-        if shapes::is_face_full(below.get_collision_shape(), Direction::Up) {
+        if shapes::is_offset_face_full(below.get_collision_shape_at(pos.below()), Direction::Up) {
             return true;
         }
 

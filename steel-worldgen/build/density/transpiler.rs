@@ -315,6 +315,12 @@ impl TranspileContext {
                 self.walk_df(&rc.when_in_range, input);
                 self.walk_df(&rc.when_out_of_range, input);
             }
+            DensityFunction::IntervalSelect(interval) => {
+                self.walk_df(&interval.input, input);
+                for function in &interval.functions {
+                    self.walk_df(function, input);
+                }
+            }
             DensityFunction::Spline(s) => self.walk_spline(&s.spline, input),
             DensityFunction::BlendedNoise(bn) => {
                 self.blended_noise_config = Some(bn.clone());
@@ -1424,6 +1430,54 @@ impl TranspileContext {
                 }}
             }
 
+            DensityFunction::IntervalSelect(interval) => {
+                let input_expr = self.gen_expr(&interval.input, input, is_flat);
+
+                let input_fp = if is_cse_candidate(&interval.input) {
+                    let fp = fingerprint(&interval.input);
+                    self.cse_bindings.insert(fp, format_ident!("v"));
+                    Some(fp)
+                } else {
+                    None
+                };
+
+                let branches: Vec<_> = interval.functions.iter().collect();
+                let (hoisted, hoisted_fps) = self.hoist_common_subexprs(&branches, input, is_flat);
+
+                let function_exprs: Vec<_> = interval
+                    .functions
+                    .iter()
+                    .map(|function| self.gen_expr(function, input, is_flat))
+                    .collect();
+
+                if let Some(ref fp) = input_fp {
+                    self.cse_bindings.remove(fp);
+                }
+                for fp in &hoisted_fps {
+                    self.cse_bindings.remove(fp);
+                }
+
+                let Some((last_expr, earlier_exprs)) = function_exprs.split_last() else {
+                    panic!("minecraft:interval_select requires at least one function");
+                };
+                let mut branch_expr = quote! { #last_expr };
+                for (threshold, function_expr) in
+                    interval.thresholds.iter().zip(earlier_exprs.iter()).rev()
+                {
+                    let threshold = Literal::f64_unsuffixed(*threshold);
+                    let else_expr = branch_expr;
+                    branch_expr = quote! {
+                        if v < #threshold { #function_expr } else { #else_expr }
+                    };
+                }
+
+                quote! {{
+                    #(#hoisted)*
+                    let v = #input_expr;
+                    #branch_expr
+                }}
+            }
+
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
             DensityFunction::BlendedNoise(_) => {
@@ -1695,6 +1749,9 @@ fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::RangeChoice(rc) => {
             uses_y(&rc.input) || uses_y(&rc.when_in_range) || uses_y(&rc.when_out_of_range)
         }
+        DensityFunction::IntervalSelect(interval) => {
+            uses_y(&interval.input) || interval.functions.iter().any(|function| uses_y(function))
+        }
         DensityFunction::BlendDensity(bd) => uses_y(&bd.input),
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
@@ -1763,6 +1820,12 @@ fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
             collect_refs_inner(&rc.when_in_range, refs);
             collect_refs_inner(&rc.when_out_of_range, refs);
         }
+        DensityFunction::IntervalSelect(interval) => {
+            collect_refs_inner(&interval.input, refs);
+            for function in &interval.functions {
+                collect_refs_inner(function, refs);
+            }
+        }
         DensityFunction::ShiftedNoise(sn) => {
             collect_refs_inner(&sn.shift_x, refs);
             collect_refs_inner(&sn.shift_y, refs);
@@ -1802,6 +1865,12 @@ fn collect_inline_flat_noises(df: &DensityFunction, out: &mut BTreeMap<u64, (Str
             collect_inline_flat_noises(&rc.input, out);
             collect_inline_flat_noises(&rc.when_in_range, out);
             collect_inline_flat_noises(&rc.when_out_of_range, out);
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            collect_inline_flat_noises(&interval.input, out);
+            for function in &interval.functions {
+                collect_inline_flat_noises(function, out);
+            }
         }
         DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
         DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
@@ -1849,6 +1918,12 @@ fn collect_expensive_inner(df: &DensityFunction, out: &mut FxHashMap<u64, Densit
             collect_expensive_inner(&rc.input, out);
             collect_expensive_inner(&rc.when_in_range, out);
             collect_expensive_inner(&rc.when_out_of_range, out);
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            collect_expensive_inner(&interval.input, out);
+            for function in &interval.functions {
+                collect_expensive_inner(function, out);
+            }
         }
         DensityFunction::WeirdScaledSampler(ws) => collect_expensive_inner(&ws.input, out),
         DensityFunction::BlendDensity(bd) => collect_expensive_inner(&bd.input, out),
@@ -1901,6 +1976,12 @@ fn collect_interpolated_walk(
             collect_interpolated_walk(&rc.input, registry, inners);
             collect_interpolated_walk(&rc.when_in_range, registry, inners);
             collect_interpolated_walk(&rc.when_out_of_range, registry, inners);
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            collect_interpolated_walk(&interval.input, registry, inners);
+            for function in &interval.functions {
+                collect_interpolated_walk(function, registry, inners);
+            }
         }
         DensityFunction::BlendDensity(bd) => {
             collect_interpolated_walk(&bd.input, registry, inners);
@@ -1961,6 +2042,13 @@ fn has_blended_noise(
             has_blended_noise(&rc.input, registry, visited)
                 || has_blended_noise(&rc.when_in_range, registry, visited)
                 || has_blended_noise(&rc.when_out_of_range, registry, visited)
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            has_blended_noise(&interval.input, registry, visited)
+                || interval
+                    .functions
+                    .iter()
+                    .any(|function| has_blended_noise(function, registry, visited))
         }
         DensityFunction::BlendDensity(bd) => has_blended_noise(&bd.input, registry, visited),
         DensityFunction::WeirdScaledSampler(ws) => has_blended_noise(&ws.input, registry, visited),
@@ -2023,6 +2111,13 @@ fn has_interpolated_markers(
             has_interpolated_markers(&rc.input, registry, visited)
                 || has_interpolated_markers(&rc.when_in_range, registry, visited)
                 || has_interpolated_markers(&rc.when_out_of_range, registry, visited)
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            has_interpolated_markers(&interval.input, registry, visited)
+                || interval
+                    .functions
+                    .iter()
+                    .any(|function| has_interpolated_markers(function, registry, visited))
         }
         DensityFunction::BlendDensity(bd) => has_interpolated_markers(&bd.input, registry, visited),
         DensityFunction::WeirdScaledSampler(ws) => {
@@ -2171,6 +2266,15 @@ fn hash_df(df: &DensityFunction, h: &mut impl Hasher) {
             hash_df(&rc.input, h);
             hash_df(&rc.when_in_range, h);
             hash_df(&rc.when_out_of_range, h);
+        }
+        DensityFunction::IntervalSelect(interval) => {
+            hash_df(&interval.input, h);
+            for threshold in &interval.thresholds {
+                threshold.to_bits().hash(h);
+            }
+            for function in &interval.functions {
+                hash_df(function, h);
+            }
         }
         DensityFunction::WeirdScaledSampler(ws) => {
             mem::discriminant(&ws.rarity_value_mapper).hash(h);

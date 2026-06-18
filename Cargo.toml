@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.9.0+mc26.1"
+version = "0.10.0+mc26.2"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -114,14 +114,14 @@ md5 = "0.8.0"
 base64 = "0.22.1"
 hex = "0.4.3"
 rsa-der = "0.3.0"
-text_components = { 
-    git = "https://github.com/Steel-Foundation/TextComponents.git", 
+text_components = {
+    git = "https://github.com/Steel-Foundation/TextComponents.git",
     rev = "e058b936e66b496385ba162b2e20344d14572a6a",
     features = [
         "custom",
         "nbt",
         "serde",
-    ] 
+    ]
 }
 
 # Compression
