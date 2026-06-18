@@ -212,6 +212,17 @@
       "type": "object",
       "description": "Logging configuration",
       "properties": {
+        "log_path": {
+          "type": "string",
+          "description": "Path where store the log files and history",
+          "default": "./.logs"
+        },
+        "log_level": {
+          "type": "string",
+          "description": "The level of information the logger will show",
+          "enum": ["error", "warn", "info", "debug", "trace"],
+          "default": "info"
+        },
         "time": {
           "type": "string",
           "description": "Time format: none, date (HH:MM:SS:mmm), or uptime (seconds since start)",
@@ -227,9 +238,25 @@
           "type": "boolean",
           "description": "Whether the extra data of the log should be displayed",
           "default": false
+        },
+        "log_file": {
+          "type": "boolean",
+          "description": "Whether the log should be written into a file",
+          "default": true
+        },
+        "rotation_time": {
+          "type": "string",
+          "description": "Time between log file rotations",
+          "enum": ["none", "hourly", "daily", "weekly", "monthly"],
+          "default": "daily"
+        },
+        "max_history": {
+          "type": "integer",
+          "description": "Amount of console commands saved",
+          "default": 50,
+          "minimum": 1
         }
       },
-      "required": ["time", "module_path", "extra"],
       "additionalProperties": false
     }
   },

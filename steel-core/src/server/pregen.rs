@@ -26,6 +26,8 @@ const PREGEN_SIZE_ENV: &str = "PREGEN_SIZE";
 const VANILLA_PLAYER_SPAWN_SIZE_CHUNKS: i32 = 7;
 const PREGEN_WINDOW_SIZE: i32 = 32;
 const PREGEN_ACTIVE_WINDOWS: usize = 2;
+const PREGEN_UNLOAD_BACKPRESSURE_HIGH: usize = 8192;
+const PREGEN_UNLOAD_BACKPRESSURE_LOW: usize = 4096;
 const FULL_DEPENDENCY_RADIUS: i32 = GENERATION_PYRAMID
     .get_step_to(ChunkStatus::Full)
     .accumulated_dependencies
@@ -295,6 +297,7 @@ async fn generate_pregen(
     let mut last_report = Instant::now();
     let mut last_completed = 0usize;
     let mut completed = 0usize;
+    let mut unload_backpressure = false;
     let start = Instant::now();
 
     log::info!(
@@ -309,18 +312,22 @@ async fn generate_pregen(
             return false;
         }
 
+        drain_pregen_broadcasts(world);
         world.chunk_map.tick_scheduling();
+        update_unload_backpressure(world, &mut unload_backpressure);
 
         for active in &mut active_windows {
             active.poll(world);
         }
 
-        let newly_ready_count = active_windows
-            .iter()
-            .filter(|active| active.ready && !active.counted)
-            .count();
-        for _ in 0..newly_ready_count {
-            activate_next_window(world, &mut pending_windows, &mut active_windows);
+        if !unload_backpressure {
+            let newly_ready_count = active_windows
+                .iter()
+                .filter(|active| active.ready && !active.counted)
+                .count();
+            for _ in 0..newly_ready_count {
+                activate_next_window(world, &mut pending_windows, &mut active_windows);
+            }
         }
 
         for active in &mut active_windows {
@@ -329,9 +336,13 @@ async fn generate_pregen(
                 active.counted = true;
             }
         }
-        fill_active_windows(world, &mut pending_windows, &mut active_windows);
+        if !unload_backpressure {
+            fill_active_windows(world, &mut pending_windows, &mut active_windows);
+        }
+        drain_pregen_broadcasts(world);
         world.chunk_map.tick_scheduling();
-        release_unneeded_completed_windows(world, &pending_windows, &mut active_windows);
+        update_unload_backpressure(world, &mut unload_backpressure);
+        release_unneeded_completed_windows(world, &mut active_windows);
 
         if completed == total_chunks {
             break;
@@ -340,6 +351,7 @@ async fn generate_pregen(
         if pregen_size.side_length > VANILLA_PLAYER_SPAWN_SIZE_CHUNKS
             && last_report.elapsed() >= Duration::from_secs(5)
         {
+            let report_elapsed = last_report.elapsed().as_secs_f64();
             let ready_in_active = active_windows
                 .iter()
                 .filter(|active| !active.counted)
@@ -348,8 +360,7 @@ async fn generate_pregen(
             let current_completed = (completed + ready_in_active).min(total_chunks);
             let elapsed = start.elapsed().as_secs_f64();
             let chunks_per_sec = if elapsed > 0.0 {
-                (current_completed.saturating_sub(last_completed)) as f64
-                    / last_report.elapsed().as_secs_f64()
+                (current_completed.saturating_sub(last_completed)) as f64 / report_elapsed
             } else {
                 0.0
             };
@@ -378,6 +389,30 @@ async fn generate_pregen(
 
     release_all_windows(world, &mut active_windows);
     true
+}
+
+fn update_unload_backpressure(world: &Arc<World>, unload_backpressure: &mut bool) {
+    let unloading_chunks = world.chunk_map.unloading_chunks.len();
+    if *unload_backpressure {
+        if unloading_chunks <= PREGEN_UNLOAD_BACKPRESSURE_LOW {
+            *unload_backpressure = false;
+            log::info!(
+                "Pregen unload backpressure released: unloading_chunks={unloading_chunks}, low_watermark={PREGEN_UNLOAD_BACKPRESSURE_LOW}",
+            );
+        }
+        return;
+    }
+
+    if unloading_chunks >= PREGEN_UNLOAD_BACKPRESSURE_HIGH {
+        *unload_backpressure = true;
+        log::info!(
+            "Pregen unload backpressure active: unloading_chunks={unloading_chunks}, high_watermark={PREGEN_UNLOAD_BACKPRESSURE_HIGH}, low_watermark={PREGEN_UNLOAD_BACKPRESSURE_LOW}",
+        );
+    }
+}
+
+fn drain_pregen_broadcasts(world: &Arc<World>) {
+    world.chunk_map.broadcast_changed_chunks();
 }
 
 fn total_chunks(side_length: i32) -> usize {
@@ -412,7 +447,6 @@ fn activate_next_window(
 
 fn release_unneeded_completed_windows(
     world: &Arc<World>,
-    pending_windows: &VecDeque<PregenWindow>,
     active_windows: &mut Vec<ActivePregenWindow>,
 ) {
     let incomplete_windows = active_windows
@@ -427,14 +461,10 @@ fn release_unneeded_completed_windows(
         }
 
         let protected = active.window.protected_rect();
-        let overlaps_incomplete = incomplete_windows
-            .iter()
-            .any(|window| protected.overlaps(window.protected_rect()));
-        let overlaps_pending = pending_windows
-            .iter()
-            .any(|window| protected.overlaps(window.protected_rect()));
 
-        overlaps_incomplete || overlaps_pending
+        incomplete_windows
+            .iter()
+            .any(|window| protected.overlaps(window.protected_rect()))
     });
 
     world.chunk_map.tick_scheduling();

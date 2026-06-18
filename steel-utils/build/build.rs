@@ -26,7 +26,7 @@ const OUT_DIR: &str = "src/generated";
 const IDS: &str = "vanilla_translations/ids";
 const REGISTRY: &str = "vanilla_translations/registry";
 const ENTITY_EVENTS: &str = "entity_events";
-const ASSET_LOCK_TIMEOUT: Duration = Duration::from_secs(300);
+const ASSET_LOCK_TIMEOUT: Duration = Duration::from_mins(5);
 
 #[derive(Deserialize)]
 struct VersionManifest {

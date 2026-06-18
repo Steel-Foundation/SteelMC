@@ -1,16 +1,19 @@
-use crate::logger::Move;
+use crate::config::RotationTimeFormat;
+use crate::logger::file::LogFile;
 use crate::logger::history::History;
 use crate::logger::output::Output;
 use crate::logger::selection::Selection;
 use crate::logger::suggestions::Completer;
+use crate::{config::LogConfig, logger::Move};
 use crossterm::{
-    cursor::MoveLeft,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
 use std::{
     fmt::Write as _,
+    fs::create_dir_all,
     io::{Result, Write},
+    path::PathBuf,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -20,17 +23,32 @@ pub struct LogState {
     pub history: History,
     pub selection: Selection,
     pub cancel_token: CancellationToken,
+    pub file: LogFile,
 }
 
 impl LogState {
-    pub async fn new(path: &'static str, cancel_token: CancellationToken) -> Self {
-        LogState {
+    pub async fn new(
+        log_config: Option<&LogConfig>,
+        cancel_token: CancellationToken,
+    ) -> Result<Self> {
+        let path = log_config.map_or_else(
+            || PathBuf::from("./.tmp"),
+            |log_config| PathBuf::from(&log_config.log_path),
+        );
+        let rotation_time = log_config.map_or(RotationTimeFormat::None, |l| l.rotation_time);
+        let log_enabled = log_config.is_some_and(|l| l.log_file);
+        let max_history = log_config.map_or(50, |l| l.max_history);
+
+        create_dir_all(&path)?;
+
+        Ok(LogState {
             out: Output::new(),
             completion: Completer::new(),
-            history: History::new(path).await,
+            history: History::new(path.clone(), max_history).await,
             selection: Selection::new(),
             cancel_token,
-        }
+            file: LogFile::new(path, rotation_time, log_enabled)?,
+        })
     }
 }
 
@@ -136,7 +154,14 @@ impl LogState {
     }
 
     pub fn rewrite_input(&mut self, length: usize, pos: usize) -> Result<()> {
-        self.out.cursor_to(self.out.get_current_pos(), (0, 0))?;
+        self.out.cursor_to(0)?;
+
+        let input_width = Output::visible_input_width();
+        if self.out.start > pos {
+            self.out.start = (pos + 1).saturating_sub(input_width);
+        } else if pos.saturating_sub(self.out.start) > input_width {
+            self.out.start += pos.saturating_sub(self.out.start) - input_width;
+        }
 
         // Build the output string with selection highlighting
         let output = if self.selection.is_active() {
@@ -145,46 +170,59 @@ impl LogState {
             let end = range.end;
 
             let mut result = String::new();
-            let mut ended = false;
+            let mut highlighting = false;
+
             for (i, ch) in self.out.text.chars().enumerate() {
-                if i == start {
+                if !(i >= self.out.start && i < self.out.start + input_width) {
+                    continue;
+                }
+                let selected = i >= start && i < end;
+                if selected && !highlighting {
+                    highlighting = true;
                     write!(result, "{}", SetAttribute(Attribute::Reverse)).ok();
                 }
-                if i == end {
-                    ended = true;
+                if !selected && highlighting {
+                    highlighting = false;
                     write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
                 }
                 result.push(ch);
             }
-            if !ended {
+            if highlighting {
                 write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
             }
             result
         } else {
-            self.out.text.clone()
+            self.out
+                .text
+                .chars()
+                .skip(self.out.start)
+                .take(input_width)
+                .collect()
         };
 
-        let end_correction = if (length + 2).is_multiple_of(super::terminal_width()) {
-            format!(" {}", MoveLeft(1))
-        } else {
-            String::new()
-        };
         let input_color = if self.completion.error {
             SetForegroundColor(Color::Red)
         } else {
             SetForegroundColor(Color::White)
         };
+
+        let left_arrow = if self.out.start == 0 { ">" } else { "◄" };
+        let right_arrow = if self.out.start + input_width >= length {
+            ""
+        } else {
+            " ►"
+        };
+
         write!(
             self.out,
-            "{}> {input_color}{}{end_correction}{ResetColor}",
+            "{}{left_arrow} {input_color}{}{ResetColor}{right_arrow}",
             Clear(ClearType::FromCursorDown),
             output,
         )?;
 
         self.out.length = length;
         self.out.pos = pos;
-        self.out
-            .cursor_to(self.out.get_end(), self.out.get_current_pos())?;
+        self.out.cursor_to_relative(self.out.pos)?;
         self.out.flush()?;
         if self.completion.enabled {
             self.completion.rewrite(&mut self.out, Move::None)?;

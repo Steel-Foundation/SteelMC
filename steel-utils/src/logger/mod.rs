@@ -39,6 +39,26 @@ impl Display for Level {
         )
     }
 }
+impl Debug for Level {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Level::Tracing(level) => match *level {
+                    tracing::Level::ERROR => "[Error]".to_string(),
+                    tracing::Level::WARN => "[Warn]".to_string(),
+                    tracing::Level::INFO => "[Info]".to_string(),
+                    tracing::Level::DEBUG => "[Debug]".to_string(),
+                    tracing::Level::TRACE => "[Trace]".to_string(),
+                },
+                Level::Console => "[Console]".to_string(),
+                Level::Chat(name) => format!("[Chat: {name}]"),
+                Level::Command(name) => format!("[Command: {name}]"),
+            }
+        )
+    }
+}
 
 /// A log macro for console input.
 #[macro_export]

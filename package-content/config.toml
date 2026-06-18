@@ -58,9 +58,19 @@ url = "https://discord.gg/suSXXNdVSf"
 
 # Logging configuration
 [log]
+# Path where store the log files and history
+log_path = "./.logs"
+# The level of information the logger will show
+log_level = "info"
 # Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
 time = "uptime"
 # Whether the module_path of the log should be displayed
 module_path = false
 # Whether the extra data of the log should be displayed
 extra = false
+# Whether the log should be written into a file
+log_file = true
+# Time between log file rotations
+rotation_time = "daily"
+# Amount of console commands saved
+max_history = 50
