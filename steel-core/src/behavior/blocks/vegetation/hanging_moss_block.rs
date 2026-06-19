@@ -43,6 +43,9 @@ impl HangingMossBlock {
         }
         forward_pos.above()
     }
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
 }
 
 impl BlockBehavior for HangingMossBlock {
@@ -80,6 +83,9 @@ impl BlockBehavior for HangingMossBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
     }
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
+    }
 }
 impl Bonemealable for HangingMossBlock {
     fn is_valid_bonemeal_target(
@@ -89,7 +95,7 @@ impl Bonemealable for HangingMossBlock {
         pos: BlockPos,
     ) -> bool {
         let grow_pos = HangingMossBlock::get_tip(world, pos).below();
-        self.can_grow_into(world.get_block_state(grow_pos))
+        HangingMossBlock::can_grow_into(world.get_block_state(grow_pos))
             && !world.is_outside_build_height(grow_pos.y())
     }
 
@@ -111,7 +117,7 @@ impl Bonemealable for HangingMossBlock {
         pos: BlockPos,
     ) {
         let tip_pos = HangingMossBlock::get_tip(world, pos).below();
-        if self.can_grow_into(world.get_block_state(tip_pos)) {
+        if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
             world.set_block(
                 tip_pos,
                 state.set_value(&BlockStateProperties::TIP, true),
