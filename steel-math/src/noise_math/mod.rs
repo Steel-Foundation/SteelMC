@@ -13,7 +13,7 @@ mod square;
 mod wrap;
 
 pub use bias_towards_extreme::bias_towards_extreme;
-pub use clamp::{clamp, clamp_i32, clamped_lerp, clamped_lerp_4x, clamped_lerp_simd};
+pub use clamp::{clamp, clamp_i32, clamped_lerp, clamped_lerp_simd};
 pub use corner_noise_3d::corner_noise_3d;
 pub use cube::cube;
 pub use dot::dot;

@@ -1,4 +1,4 @@
-use core::simd::{Select, Simd, cmp::SimdPartialOrd, f64x4};
+use core::simd::{Select, Simd, cmp::SimdPartialOrd};
 
 use crate::noise_math::lerp::lerp;
 
@@ -18,13 +18,6 @@ pub fn clamped_lerp(min: f64, max: f64, factor: f64) -> f64 {
     } else {
         lerp(factor, min, max)
     }
-}
-
-/// Clamped lerp for 4 lanes.
-#[inline]
-#[must_use]
-pub fn clamped_lerp_4x(min: f64x4, max: f64x4, factor: f64x4) -> f64x4 {
-    clamped_lerp_simd::<4>(min, max, factor)
 }
 
 /// Clamped lerp for N lanes.

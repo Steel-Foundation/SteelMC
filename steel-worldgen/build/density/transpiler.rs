@@ -1168,11 +1168,10 @@ impl TranspileContext {
             inner_stmts_4x.push(quote! {
                 {
                     let __r = #expr_simd;
-                    let __arr = __r.to_array();
-                    out[#idx] = __arr[0];
-                    out[#idx + INTERPOLATED_COUNT] = __arr[1];
-                    out[#idx + 2 * INTERPOLATED_COUNT] = __arr[2];
-                    out[#idx + 3 * INTERPOLATED_COUNT] = __arr[3];
+                    out[#idx] = __r[0];
+                    out[#idx + INTERPOLATED_COUNT] = __r[1];
+                    out[#idx + 2 * INTERPOLATED_COUNT] = __r[2];
+                    out[#idx + 3 * INTERPOLATED_COUNT] = __r[3];
                 }
             });
         }

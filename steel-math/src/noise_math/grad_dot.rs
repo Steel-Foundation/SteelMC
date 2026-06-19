@@ -8,21 +8,28 @@ use crate::GRADIENT;
 #[inline]
 #[must_use]
 pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
-    grad_dot_simd::<4>(hashes, x, y, z)
+    let mut gx = [0.0f64; 4];
+    let mut gy = [0.0f64; 4];
+    let mut gz = [0.0f64; 4];
+    for i in 0..4 {
+        let g = &GRADIENT[hashes[i] & 15];
+        gx[i] = g[0];
+        gy[i] = g[1];
+        gz[i] = g[2];
+    }
+    f64x4::from_array(gx) * x + f64x4::from_array(gy) * y + f64x4::from_array(gz) * z
 }
 
 /// Generic N-lane gradient dot product.
 ///
-/// Evaluates Minecraft's 16-entry `GRADIENT` table **branchlessly from the hash
-/// bits** — Ken Perlin's reference `grad()`, which is value-identical to
-/// indexing `GRADIENT[hash & 15]` for all 16 entries (verified per-entry). This
-/// replaces the per-lane table gather + scalar→vector marshaling that dominated
-/// the kernel (~70% of its instructions, profiled) with pure vector
-/// compares/selects/negations — no memory gather, no lane assembly.
+/// Evaluates Minecraft's 16-entry `GRADIENT` table branchlessly from the hash
+/// bits using the public-domain reference formula from Ken Perlin's improved
+/// noise implementation. For `hash & 15`, that formula is value-identical to
+/// indexing Minecraft's `GRADIENT` table for all 16 entries.
 ///
-/// The earlier table forms (scalar build, and a `vgatherqpd` `SoA` variant) were
-/// both bottlenecked on getting the gathered components into SIMD lanes; this
-/// sidesteps that entirely.
+/// The specialized 4-lane path above keeps the table form because it benchmarks
+/// faster for the current noise kernel; this generic path is used for wider
+/// SIMD where the branchless formula avoids per-lane component assembly.
 #[inline]
 #[must_use]
 pub fn grad_dot_simd<const N: usize>(
