@@ -8,12 +8,14 @@ use crate::world::{ScheduledTickAccess, World};
 use rand::Rng;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
+
+pub const TIP: BoolProperty = BlockStateProperties::TIP;
 
 /// Vanilla `HangingMossBlock` survival (e.g. `pale_hanging_moss`).
 #[block_behavior]
@@ -72,7 +74,7 @@ impl BlockBehavior for HangingMossBlock {
             world.schedule_block_tick_default(pos, self.block, 1);
         }
         let is_tip = world.get_block_state(pos.below()).get_block() != self.block;
-        state.set_value(&BlockStateProperties::TIP, is_tip)
+        state.set_value(&TIP, is_tip)
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !self.can_survive(state, world, pos) {
@@ -120,7 +122,7 @@ impl Bonemealable for HangingMossBlock {
         if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
             world.set_block(
                 tip_pos,
-                state.set_value(&BlockStateProperties::TIP, true),
+                state.set_value(&TIP, true),
                 UpdateFlags::UPDATE_ALL,
             );
         }
