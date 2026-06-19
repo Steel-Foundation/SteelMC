@@ -422,7 +422,10 @@ impl ChunkHolder {
             // `None` from `await_chunk_status`.
             let self_clone = self.clone();
             return Some(Box::pin(async move {
-                self_clone.await_chunk_status(target_status).await.map(|_| ())
+                self_clone
+                    .await_chunk_status(target_status)
+                    .await
+                    .map(|_| ())
             }));
         }
 

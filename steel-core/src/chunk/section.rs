@@ -126,14 +126,15 @@ impl Sections {
         debug_assert!(z < BlockPalette::SIZE);
 
         let total = self.sections.len() * 16;
-        buf.clear();
-        buf.resize(total, BlockStateId(0));
+        if buf.len() != total {
+            buf.resize(total, BlockStateId::default());
+        }
         for (i, holder) in self.sections.iter().enumerate() {
             let guard = holder.read();
             let base = i * 16;
-            for ly in 0..16 {
-                buf[base + ly] = guard.states.get(x, ly, z);
-            }
+            guard
+                .states
+                .copy_column_into(x, z, &mut buf[base..base + 16]);
         }
     }
 
@@ -427,9 +428,10 @@ impl ChunkSection {
         let poi = &REGISTRY.poi_types;
         match &self.states {
             BlockPalette::Homogeneous(state) => poi.is_poi_state(*state),
-            BlockPalette::Heterogeneous(data) => {
-                data.palette.iter().any(|(state, _)| poi.is_poi_state(*state))
-            }
+            BlockPalette::Heterogeneous(data) => data
+                .palette
+                .iter()
+                .any(|(state, _)| poi.is_poi_state(*state)),
             // Not yet finalized (only happens mid-worldgen, not at promotion);
             // fall back to scanning rather than risk missing a POI.
             BlockPalette::Building(_) => true,

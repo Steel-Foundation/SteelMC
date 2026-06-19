@@ -289,7 +289,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         self.clip
     }
 
-    pub(super) fn sea_level(&self) -> i32 {
+    pub(super) const fn sea_level(&self) -> i32 {
         self.region.sea_level()
     }
 

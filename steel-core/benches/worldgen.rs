@@ -1542,8 +1542,10 @@ fn bench_noise_kernel(c: &mut Criterion) {
         b.iter(|| {
             let mut acc = f64x4::splat(0.0);
             for &(x, z) in &columns {
-                acc += noise.noise_with_y_scale_4x(black_box(x), ys_lo, black_box(z), y_scale, ys_lo);
-                acc += noise.noise_with_y_scale_4x(black_box(x), ys_hi, black_box(z), y_scale, ys_hi);
+                acc +=
+                    noise.noise_with_y_scale_4x(black_box(x), ys_lo, black_box(z), y_scale, ys_lo);
+                acc +=
+                    noise.noise_with_y_scale_4x(black_box(x), ys_hi, black_box(z), y_scale, ys_hi);
             }
             black_box(acc)
         });
@@ -1554,8 +1556,20 @@ fn bench_noise_kernel(c: &mut Criterion) {
         b.iter(|| {
             let mut acc = f64x4::splat(0.0);
             for &(x, z) in &columns {
-                acc += noise.noise_with_y_scale_simd::<4>(black_box(x), ys_lo, black_box(z), y_scale, ys_lo);
-                acc += noise.noise_with_y_scale_simd::<4>(black_box(x), ys_hi, black_box(z), y_scale, ys_hi);
+                acc += noise.noise_with_y_scale_simd::<4>(
+                    black_box(x),
+                    ys_lo,
+                    black_box(z),
+                    y_scale,
+                    ys_lo,
+                );
+                acc += noise.noise_with_y_scale_simd::<4>(
+                    black_box(x),
+                    ys_hi,
+                    black_box(z),
+                    y_scale,
+                    ys_hi,
+                );
             }
             black_box(acc)
         });
@@ -1566,7 +1580,13 @@ fn bench_noise_kernel(c: &mut Criterion) {
         b.iter(|| {
             let mut acc = f64x8::splat(0.0);
             for &(x, z) in &columns {
-                acc += noise.noise_with_y_scale_simd::<8>(black_box(x), ys8, black_box(z), y_scale, ys8);
+                acc += noise.noise_with_y_scale_simd::<8>(
+                    black_box(x),
+                    ys8,
+                    black_box(z),
+                    y_scale,
+                    ys8,
+                );
             }
             black_box(acc)
         });

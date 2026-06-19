@@ -226,7 +226,7 @@ impl FeatureDecorationRunner {
             .collect()
     }
 
-    pub(super) fn center_chunk_writable_box(region: &WorldGenRegion<'_>) -> BoundingBox {
+    pub(super) const fn center_chunk_writable_box(region: &WorldGenRegion<'_>) -> BoundingBox {
         Self::chunk_writable_box(region.center(), region.min_y(), region.max_y_exclusive())
     }
 

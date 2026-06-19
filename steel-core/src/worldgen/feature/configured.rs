@@ -362,7 +362,7 @@ const fn template_feature_position(
     )
 }
 
-fn template_feature_bounding_box(region: &WorldGenRegion<'_>) -> BoundingBox {
+const fn template_feature_bounding_box(region: &WorldGenRegion<'_>) -> BoundingBox {
     BoundingBox::new(
         i32::MIN,
         region.min_y(),

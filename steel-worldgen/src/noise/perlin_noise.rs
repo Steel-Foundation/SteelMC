@@ -221,6 +221,40 @@ impl PerlinNoise {
         value
     }
 
+    /// Sample the noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xz(&self, x: f64, z: f64) -> f64 {
+        let mut value = 0.0;
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise_val = octave
+                .noise
+                .noise_xz(wrap(x * input_factor), wrap(z * input_factor));
+            value += octave.output_factor * noise_val;
+        }
+
+        value
+    }
+
+    /// Sample the noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xy(&self, x: f64, y: f64) -> f64 {
+        let mut value = 0.0;
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise_val = octave
+                .noise
+                .noise_xy(wrap(x * input_factor), wrap(y * input_factor));
+            value += octave.output_factor * noise_val;
+        }
+
+        value
+    }
+
     /// Sample the noise with Y scaling parameters.
     ///
     /// # Arguments
@@ -328,8 +362,13 @@ impl PerlinNoise {
                 wrap_simd::<N>(ys * Simd::splat(input_factor))
             };
             let y_fudges = Simd::splat(y_fudge * input_factor);
-            let noise_val =
-                noise.noise_with_y_scale_simd::<N>(x_w, ys_for_call, z_w, y_scale * input_factor, y_fudges);
+            let noise_val = noise.noise_with_y_scale_simd::<N>(
+                x_w,
+                ys_for_call,
+                z_w,
+                y_scale * input_factor,
+                y_fudges,
+            );
             value += Simd::splat(octave.output_factor) * noise_val;
         }
 
@@ -442,5 +481,30 @@ mod tests {
             (v1 - v2).abs() > 0.001,
             "Two PerlinNoise from sequential random should differ: v1={v1}, v2={v2}",
         );
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(98_765);
+        let splitter = rng.next_positional();
+        let noise = PerlinNoise::create(&splitter, -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
+                assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
+            }
+        }
     }
 }

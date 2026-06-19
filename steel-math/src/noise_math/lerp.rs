@@ -87,9 +87,7 @@ pub fn lerp3_4x(
     x011: f64x4,
     x111: f64x4,
 ) -> f64x4 {
-    lerp3_simd::<4>(
-        a1, a2, a3, x000, x100, x010, x110, x001, x101, x011, x111,
-    )
+    lerp3_simd::<4>(a1, a2, a3, x000, x100, x010, x110, x001, x101, x011, x111)
 }
 
 /// Linear interpolation for N lanes. see lerp.
@@ -105,7 +103,6 @@ pub fn lerp_simd<const N: usize>(
 
 /// Bilinear interpolation for N lanes. see lerp2.
 #[inline]
-#[expect(clippy::too_many_arguments, reason = "mirrors lerp2 with SIMD vectors")]
 #[must_use]
 pub fn lerp2_simd<const N: usize>(
     a1: Simd<f64, N>,
@@ -115,7 +112,11 @@ pub fn lerp2_simd<const N: usize>(
     x01: Simd<f64, N>,
     x11: Simd<f64, N>,
 ) -> Simd<f64, N> {
-    lerp_simd::<N>(a2, lerp_simd::<N>(a1, x00, x10), lerp_simd::<N>(a1, x01, x11))
+    lerp_simd::<N>(
+        a2,
+        lerp_simd::<N>(a1, x00, x10),
+        lerp_simd::<N>(a1, x01, x11),
+    )
 }
 
 /// Trilinear interpolation for N lanes. see lerp3.

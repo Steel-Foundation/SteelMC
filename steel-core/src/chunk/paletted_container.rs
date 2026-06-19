@@ -169,6 +169,31 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         }
     }
 
+    /// Copies the full vertical column at `(x, z)` into `out`.
+    pub(crate) fn copy_column_into(&self, x: usize, z: usize, out: &mut [V]) {
+        debug_assert!(x < DIM);
+        debug_assert!(z < DIM);
+        debug_assert!(out.len() >= DIM);
+
+        match self {
+            Self::Homogeneous(value) => {
+                for slot in &mut out[..DIM] {
+                    *slot = *value;
+                }
+            }
+            Self::Heterogeneous(data) => {
+                for (y, slot) in out[..DIM].iter_mut().enumerate() {
+                    *slot = data.cube[y][z][x];
+                }
+            }
+            Self::Building(cube) => {
+                for (y, slot) in out[..DIM].iter_mut().enumerate() {
+                    *slot = cube[y][z][x];
+                }
+            }
+        }
+    }
+
     /// Collects all values in the container in y, z, x order.
     #[must_use]
     pub fn collect_values(&self) -> Vec<V> {
@@ -436,5 +461,51 @@ impl BlockPalette {
                 .flatten()
                 .all(steel_utils::BlockStateId::is_air),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BlockPalette;
+    use steel_utils::BlockStateId;
+
+    fn assert_column_matches_get(container: &BlockPalette, x: usize, z: usize) {
+        let mut column = [BlockStateId::default(); 16];
+        container.copy_column_into(x, z, &mut column);
+        for (y, state) in column.into_iter().enumerate() {
+            assert_eq!(state, container.get(x, y, z));
+        }
+    }
+
+    #[test]
+    fn copy_column_into_matches_get_for_homogeneous_container() {
+        let container = BlockPalette::Homogeneous(BlockStateId(7));
+        assert_column_matches_get(&container, 3, 12);
+    }
+
+    #[test]
+    fn copy_column_into_matches_get_for_heterogeneous_container() {
+        let x = 5;
+        let z = 9;
+        let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
+        for y in 0..16 {
+            cube[y][z][x] = BlockStateId((y + 1) as u16);
+        }
+
+        let container = BlockPalette::from_cube(cube);
+        assert_column_matches_get(&container, x, z);
+    }
+
+    #[test]
+    fn copy_column_into_matches_get_for_building_container() {
+        let x = 11;
+        let z = 2;
+        let mut container = BlockPalette::Homogeneous(BlockStateId(3));
+        container.enter_building_mode();
+        for y in 0..16 {
+            container.set(x, y, z, BlockStateId((31 + y) as u16));
+        }
+
+        assert_column_matches_get(&container, x, z);
     }
 }

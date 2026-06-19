@@ -26,6 +26,10 @@ pub struct ImprovedNoise {
     pub yo: f64,
     /// Z offset for the noise coordinates
     pub zo: f64,
+    yo_floor: i32,
+    yo_fraction: f64,
+    zo_floor: i32,
+    zo_fraction: f64,
 }
 
 impl ImprovedNoise {
@@ -53,7 +57,21 @@ impl ImprovedNoise {
             p.swap(i, i + offset);
         }
 
-        Self { p, xo, yo, zo }
+        let yo_floor = floor(yo);
+        let yo_fraction = yo - f64::from(yo_floor);
+        let zo_floor = floor(zo);
+        let zo_fraction = zo - f64::from(zo_floor);
+
+        Self {
+            p,
+            xo,
+            yo,
+            zo,
+            yo_floor,
+            yo_fraction,
+            zo_floor,
+            zo_fraction,
+        }
     }
 
     /// Sample noise at the given coordinates.
@@ -75,6 +93,46 @@ impl ImprovedNoise {
         let zr = z - f64::from(zf);
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    }
+
+    /// Sample noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xz(&self, x: f64, z: f64) -> f64 {
+        let x = x + self.xo;
+        let z = z + self.zo;
+
+        let xf = floor(x);
+        let zf = floor(z);
+
+        let xr = x - f64::from(xf);
+        let zr = z - f64::from(zf);
+
+        self.sample_and_lerp(
+            xf,
+            self.yo_floor,
+            zf,
+            xr,
+            self.yo_fraction,
+            zr,
+            self.yo_fraction,
+        )
+    }
+
+    /// Sample noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xy(&self, x: f64, y: f64) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+
+        let xf = floor(x);
+        let yf = floor(y);
+
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+
+        self.sample_and_lerp(xf, yf, self.zo_floor, xr, yr, self.zo_fraction, yr)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -349,10 +407,6 @@ impl ImprovedNoise {
     /// supported lane width yields bit-identical per-lane results — only the
     /// SIMD batch size changes. `f64x4` ≡ `noise_with_y_scale_simd::<4>`.
     #[must_use]
-    #[expect(
-        clippy::similar_names,
-        reason = "yr_fudge and y_fudge match vanilla naming"
-    )]
     pub fn noise_with_y_scale_simd<const N: usize>(
         &self,
         x: f64,
@@ -722,6 +776,30 @@ mod tests {
             assert!(
                 (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
             );
+        }
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let noise = ImprovedNoise::new(&mut rng);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
+                assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
+            }
         }
     }
 

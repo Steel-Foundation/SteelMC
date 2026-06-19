@@ -244,6 +244,51 @@ impl ChunkAccess {
         }
     }
 
+    /// Applies heightmap maintenance after direct section writes in one column.
+    pub(crate) fn update_heightmaps_after_direct_column_writes(
+        &self,
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        if relative_writes.is_empty() {
+            return;
+        }
+
+        match self {
+            Self::Full(chunk) => {
+                let min_y = chunk.min_y();
+                let sections = &chunk.sections;
+                let get_block = |lx: usize, scan_y: i32, lz: usize| {
+                    let scan_section_index = ((scan_y - min_y) / 16) as usize;
+                    let scan_local_y = ((scan_y - min_y) % 16) as usize;
+                    sections.sections[scan_section_index]
+                        .read()
+                        .states
+                        .get(lx, scan_local_y, lz)
+                };
+                let mut heightmaps = chunk.heightmaps.write();
+                for &(relative_y, state) in relative_writes {
+                    heightmaps.update(
+                        local_x,
+                        min_y + relative_y as i32,
+                        local_z,
+                        state,
+                        get_block,
+                    );
+                }
+            }
+            Self::Proto(proto) => {
+                proto.update_status_heightmaps_after_column_block_changes(
+                    local_x,
+                    local_z,
+                    relative_writes,
+                );
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns whether the chunk has been modified since last save.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -725,6 +770,44 @@ mod tests {
         let ocean_floor = heightmaps
             .get(HeightmapType::OceanFloorWg)
             .expect("generation write should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 6);
+    }
+
+    #[test]
+    fn batched_generation_column_writes_update_proto_heightmaps() {
+        init_test_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block(3, 5, 7, stone);
+        chunk.set_relative_block(3, 8, 7, stone);
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(5, stone), (8, stone)]);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("batched generation writes should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 9);
+        drop(heightmaps);
+
+        chunk.set_relative_block(3, 8, 7, air);
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(8, air)]);
+
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("OceanFloorWg should remain present");
         assert_eq!(ocean_floor.get_first_available(3, 7), 6);
     }
 

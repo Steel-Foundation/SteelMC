@@ -151,6 +151,24 @@ impl NormalNoise {
         (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
     }
 
+    /// Sample the noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xz(&self, x: f64, z: f64) -> f64 {
+        let x2 = x * INPUT_FACTOR;
+        let z2 = z * INPUT_FACTOR;
+        (self.first.get_value_xz(x, z) + self.second.get_value_xz(x2, z2)) * self.value_factor
+    }
+
+    /// Sample the noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xy(&self, x: f64, y: f64) -> f64 {
+        let x2 = x * INPUT_FACTOR;
+        let y2 = y * INPUT_FACTOR;
+        (self.first.get_value_xy(x, y) + self.second.get_value_xy(x2, y2)) * self.value_factor
+    }
+
     /// Sample 4 Y values at fixed `(x, z)` in one call.
     ///
     /// SIMD form of [`Self::get_value`] for transpiled density-function trees
@@ -259,6 +277,31 @@ mod tests {
         let v2 = noise.get_value(1001.0, 0.0, 1000.0);
         // Values at different coordinates should differ
         assert!((v1 - v2).abs() > 0.0001);
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(98_765);
+        let splitter = rng.next_positional();
+        let noise = NormalNoise::create(&splitter, "zero_axis", -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
+                assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
+            }
+        }
     }
 
     #[test]

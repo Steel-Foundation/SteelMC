@@ -158,7 +158,7 @@ impl FeatureDecorationRunner {
         lowest
     }
 
-    fn fossil_bounding_box(region: &WorldGenRegion<'_>, origin: BlockPos) -> BoundingBox {
+    const fn fossil_bounding_box(region: &WorldGenRegion<'_>, origin: BlockPos) -> BoundingBox {
         let chunk_x = SectionPos::block_to_section_coord(origin.x());
         let chunk_z = SectionPos::block_to_section_coord(origin.z());
         let min_x = chunk_x << 4;

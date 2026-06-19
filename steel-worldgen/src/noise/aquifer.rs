@@ -215,7 +215,7 @@ pub struct Aquifer<N: DimensionNoises> {
     /// Per-quart-column cache of `preliminary_surface_level` results, matching
     /// vanilla's `NoiseBasedAquifer.preliminarySurfaceLevel` `Long2IntMap`.
     /// `compute_fluid` samples surface level 13× per aquifer cell, and each miss
-    /// recomputes the entire flat NormalNoise router for that column via
+    /// recomputes the entire flat `NormalNoise` router for that column via
     /// `cache.ensure`. Memoizing the `i32` result per column collapses that to
     /// one evaluation per unique column for the chunk.
     prelim_cache: FxHashMap<(i32, i32), i32>,

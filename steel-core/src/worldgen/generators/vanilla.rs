@@ -649,13 +649,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         .sections()
                         .write_column_blocks(local_x, local_z, &pending_writes);
                     for &(relative_y, state) in &pending_writes {
-                        chunk.update_heightmaps_after_direct_write(
-                            local_x,
-                            min_y + relative_y as i32,
-                            local_z,
-                            state,
-                        );
+                        column_buf[relative_y] = state;
                     }
+                    chunk.update_heightmaps_after_direct_column_writes(
+                        local_x,
+                        local_z,
+                        &pending_writes,
+                    );
                     chunk.mark_dirty();
                 }
 
@@ -664,17 +664,28 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     && let Some(surface_biome_id) = surface_biome_id
                         .filter(|id| *id == frozen_ocean_id || *id == deep_frozen_ocean_id)
                 {
-                    self.surface_system.frozen_ocean_extension(
-                        chunk,
+                    pending_writes.clear();
+                    self.surface_system.collect_frozen_ocean_extension_writes(
                         surface_biome_id,
-                        local_x,
-                        local_z,
                         block_x,
                         block_z,
                         start_height,
                         min_surface_level,
                         min_y,
+                        &column_buf,
+                        &mut pending_writes,
                     );
+                    if !pending_writes.is_empty() {
+                        chunk
+                            .sections()
+                            .write_column_blocks(local_x, local_z, &pending_writes);
+                        chunk.update_heightmaps_after_direct_column_writes(
+                            local_x,
+                            local_z,
+                            &pending_writes,
+                        );
+                        chunk.mark_dirty();
+                    }
                 }
             }
         }

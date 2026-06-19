@@ -506,23 +506,22 @@ impl SurfaceSystem {
 
     /// Frozen ocean iceberg extension — adds packed ice and snow blocks.
     ///
-    /// Matches vanilla's `SurfaceSystem.frozenOceanExtension()`.
+    /// Collects the same writes as vanilla's `SurfaceSystem.frozenOceanExtension()`.
     /// Called after surface rules for frozen ocean / deep frozen ocean biomes.
     #[expect(
         clippy::too_many_arguments,
-        reason = "matches vanilla SurfaceSystem.frozenOceanExtension signature"
+        reason = "keeps the vanilla frozenOceanExtension inputs explicit"
     )]
-    pub fn frozen_ocean_extension(
+    pub fn collect_frozen_ocean_extension_writes(
         &self,
-        chunk: &ChunkAccess,
         biome_id: u16,
-        local_x: usize,
-        local_z: usize,
         block_x: i32,
         block_z: i32,
         height: i32,
         min_surface_level: i32,
         min_y: i32,
+        column: &[BlockStateId],
+        writes: &mut Vec<(usize, BlockStateId)>,
     ) {
         let iceberg = f64::min(
             (self
@@ -571,13 +570,12 @@ impl SurfaceSystem {
 
         let snow_block = vanilla_blocks::SNOW_BLOCK.default_state();
         let packed_ice = vanilla_blocks::PACKED_ICE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
 
         let start_y = i32::max(height, top as i32 + 1);
         for y in (min_surface_level..=start_y).rev() {
             let rel_y = (y - min_y) as usize;
-            let state = chunk
-                .get_relative_block(local_x, rel_y, local_z)
-                .unwrap_or(BlockStateId(0));
+            let state = column.get(rel_y).copied().unwrap_or(air);
 
             let is_air = state.is_air();
             let is_water = state.get_block() == &vanilla_blocks::WATER;
@@ -590,10 +588,10 @@ impl SurfaceSystem {
                     && random.next_f64() > 0.15)
             {
                 if snow_depth <= max_snow_depth && y > min_snow_height {
-                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, snow_block);
+                    writes.push((rel_y, snow_block));
                     snow_depth += 1;
                 } else {
-                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, packed_ice);
+                    writes.push((rel_y, packed_ice));
                 }
             }
         }
