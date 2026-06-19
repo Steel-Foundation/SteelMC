@@ -2076,7 +2076,10 @@ impl TranspileContext {
                 // vanilla case — they're flat-cached `shift_x`/`shift_z` and
                 // a constant `shift_y`), evaluate them as scalar splats and
                 // call `get_value_4x(`. Otherwise fall back to scalar 4×.
-                if !uses_y(&sn.shift_x) && !uses_y(&sn.shift_y) && !uses_y(&sn.shift_z) {
+                if self.is_y_independent(&sn.shift_x)
+                    && self.is_y_independent(&sn.shift_y)
+                    && self.is_y_independent(&sn.shift_z)
+                {
                     let dx = self.gen_expr(&sn.shift_x, input, is_flat);
                     let dy = self.gen_expr(&sn.shift_y, input, is_flat);
                     let dz = self.gen_expr(&sn.shift_z, input, is_flat);
@@ -2619,10 +2622,6 @@ fn compute_bounds_inner(
     input: &TranspilerInput,
     visiting: &mut Vec<String>,
 ) -> (f64, f64) {
-    // Conservative worst-case bound for noises whose `Option<NormalNoise>` is
-    // unbaked at build time. All shipping vanilla noises have `max_value < 2.0`;
-    // a slightly looser cap keeps short-circuits sound but a touch less aggressive.
-    const NORMAL_NOISE_MAX: f64 = 2.0;
     match df {
         DensityFunction::Constant(c) => (c.value, c.value),
 
@@ -2647,15 +2646,13 @@ fn compute_bounds_inner(
             (lo, hi)
         }
 
-        DensityFunction::Noise(_) | DensityFunction::ShiftedNoise(_) => {
-            (-NORMAL_NOISE_MAX, NORMAL_NOISE_MAX)
-        }
-        DensityFunction::ShiftA(_) | DensityFunction::ShiftB(_) | DensityFunction::Shift(_) => {
-            // `shift_*` returns `noise.get_value(...) * 4.0`; vanilla configures
-            // these noises with bounds in roughly [-1, 1], so the result lands
-            // in [-4, 4]. We use a slightly looser cap as a safety margin.
-            (-8.0, 8.0)
-        }
+        DensityFunction::Noise(_)
+        | DensityFunction::ShiftedNoise(_)
+        | DensityFunction::ShiftA(_)
+        | DensityFunction::ShiftB(_)
+        | DensityFunction::Shift(_)
+        | DensityFunction::Spline(_)
+        | DensityFunction::BlendedNoise(_) => (f64::NEG_INFINITY, f64::INFINITY),
 
         DensityFunction::TwoArgumentSimple(t) => {
             let (a_lo, a_hi) = compute_bounds_inner(&t.argument1, input, visiting);
@@ -2766,18 +2763,11 @@ fn compute_bounds_inner(
             }
         }
 
-        DensityFunction::Spline(s) => spline_bounds(&s.spline),
-
-        DensityFunction::BlendedNoise(_) => {
-            // BlendedNoise is bounded by `min_limit_noise.max_broken_value` in
-            // vanilla; conservatively cap at 2.0 (matches `NORMAL_NOISE_MAX`).
-            (-NORMAL_NOISE_MAX, NORMAL_NOISE_MAX)
-        }
-
         DensityFunction::WeirdScaledSampler(_) => {
             // result = scale * noise.abs() where scale ∈ [0.5, 3.0] and
-            // noise.abs() ∈ [0, max_value]. Result is non-negative.
-            (0.0, 3.0 * NORMAL_NOISE_MAX)
+            // noise.abs() is non-negative. The upper bound is noise-parameter
+            // dependent, so leave it unbounded for branch-elision purposes.
+            (0.0, f64::INFINITY)
         }
 
         DensityFunction::EndIslands => (-100.0, 80.0),
@@ -2794,34 +2784,6 @@ fn compute_bounds_inner(
             let (_, upper) = compute_bounds_inner(&fts.upper_bound, input, visiting);
             (f64::from(fts.lower_bound), upper)
         }
-    }
-}
-
-fn spline_bounds(spline: &CubicSpline) -> (f64, f64) {
-    // Splines interpolate (and may extrapolate at edges) between point values.
-    // A safe over-approximation: (min point value, max point value), recursing
-    // for nested splines. This ignores the Catmull-Rom overshoot, which is
-    // bounded but non-trivial to compute statically — using point bounds keeps
-    // the analysis simple and still useful for downstream short-circuits.
-    let mut lo = f64::INFINITY;
-    let mut hi = f64::NEG_INFINITY;
-    for p in &spline.points {
-        let (p_lo, p_hi) = match &p.value {
-            SplineValue::Constant(v) => (f64::from(*v), f64::from(*v)),
-            SplineValue::Spline(nested) => spline_bounds(nested),
-        };
-        if p_lo < lo {
-            lo = p_lo;
-        }
-        if p_hi > hi {
-            hi = p_hi;
-        }
-    }
-    if lo > hi {
-        // Empty spline — shouldn't happen in valid trees.
-        (f64::NEG_INFINITY, f64::INFINITY)
-    } else {
-        (lo, hi)
     }
 }
 

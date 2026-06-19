@@ -229,8 +229,29 @@ impl Sections {
         }
     }
 
-    /// Sets a block at a relative position in the chunk.
+    /// Sets a block at a relative position in the chunk and keeps section
+    /// counters/palette serialization ready.
     pub fn set_relative_block(
+        &self,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+        value: BlockStateId,
+    ) {
+        debug_assert!(relative_x < BlockPalette::SIZE);
+        debug_assert!(relative_z < BlockPalette::SIZE);
+
+        let idx = relative_y / BlockPalette::SIZE;
+        let relative_y = relative_y % BlockPalette::SIZE;
+        let mut guard = self.sections[idx].write();
+        guard.set_block_state(relative_x, relative_y, relative_z, value);
+    }
+
+    /// Sets a block during worldgen using the raw building palette path.
+    ///
+    /// Callers must finalize by recounting touched sections before save,
+    /// promotion, or packet serialization.
+    pub(crate) fn set_relative_block_for_generation(
         &self,
         relative_x: usize,
         relative_y: usize,

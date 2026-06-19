@@ -207,7 +207,21 @@ impl ChunkAccess {
         relative_z: usize,
         value: BlockStateId,
     ) {
-        self.set_relative_block(relative_x, relative_y, relative_z, value);
+        match self {
+            Self::Full(chunk) => {
+                chunk
+                    .sections
+                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Proto(proto_chunk) => {
+                proto_chunk
+                    .sections
+                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                proto_chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Unloaded => unreachable!(),
+        }
         let y = self.min_y() + relative_y as i32;
         self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
     }
@@ -723,6 +737,7 @@ mod tests {
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
         init_test_registry();
+        init_behaviors();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -787,8 +802,10 @@ mod tests {
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         let chunk = ChunkAccess::Proto(proto);
 
-        chunk.set_relative_block(3, 5, 7, stone);
-        chunk.set_relative_block(3, 8, 7, stone);
+        chunk
+            .sections()
+            .write_column_blocks(3, 7, &[(5, stone), (8, stone)]);
+        chunk.mark_dirty();
         chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(5, stone), (8, stone)]);
 
         let ChunkAccess::Proto(proto) = &chunk else {
@@ -801,7 +818,8 @@ mod tests {
         assert_eq!(ocean_floor.get_first_available(3, 7), 9);
         drop(heightmaps);
 
-        chunk.set_relative_block(3, 8, 7, air);
+        chunk.sections().write_column_blocks(3, 7, &[(8, air)]);
+        chunk.mark_dirty();
         chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(8, air)]);
 
         let heightmaps = proto.heightmaps.read();
@@ -825,6 +843,32 @@ mod tests {
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
             HeightmapType::MotionBlocking
         );
+    }
+
+    #[test]
+    fn public_relative_write_keeps_full_chunk_serializable() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        chunk.set_relative_block(3, 5, 7, stone);
+
+        let ChunkAccess::Full(level_chunk) = &chunk else {
+            panic!("test chunk should remain full");
+        };
+        let _ = level_chunk.extract_chunk_data();
     }
 
     #[test]
