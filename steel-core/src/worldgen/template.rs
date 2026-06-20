@@ -3,7 +3,7 @@ use std::io::{Cursor, Read};
 use std::str::FromStr;
 
 use flate2::read::GzDecoder;
-use glam::DVec3;
+use glam::{DVec3, IVec3};
 use simdnbt::borrow::{
     Nbt as BorrowedNbt, NbtCompound as BorrowedNbtCompound,
     NbtCompoundList as BorrowedNbtCompoundList, NbtList as BorrowedNbtList, read as read_nbt,
@@ -52,7 +52,7 @@ use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 /// block payload and processors, so this type mirrors vanilla's loaded `StructureTemplate`.
 #[derive(Debug, Clone)]
 pub(crate) struct StructureTemplate {
-    size: [i32; 3],
+    size: IVec3,
     palettes: Vec<StructureTemplatePalette>,
     entities: Vec<StructureEntityInfo>,
 }
@@ -169,7 +169,7 @@ impl StructureTemplate {
         list: Option<BorrowedNbtList<'_, '_>>,
         context: &str,
         field: &str,
-    ) -> Result<[i32; 3], String> {
+    ) -> Result<IVec3, String> {
         let ints = list
             .and_then(|list| list.ints())
             .ok_or_else(|| format!("structure template {context} has non-int {field} list"))?;
@@ -178,7 +178,7 @@ impl StructureTemplate {
                 "structure template {context} {field} list has fewer than 3 entries"
             ));
         }
-        Ok([ints[0], ints[1], ints[2]])
+        Ok(IVec3::new(ints[0], ints[1], ints[2]))
     }
 
     fn read_vec3d(
@@ -422,9 +422,8 @@ impl StructureTemplate {
         });
     }
 
-    pub(crate) const fn size(&self, rotation: Rotation) -> [i32; 3] {
-        let (x, y, z) = rotation.rotate_size(self.size[0], self.size[1], self.size[2]);
-        [x, y, z]
+    pub(crate) const fn size(&self, rotation: Rotation) -> IVec3 {
+        rotation.rotate_size(self.size)
     }
 
     pub(crate) const fn zero_position_with_transform(
@@ -432,8 +431,8 @@ impl StructureTemplate {
         zero_pos: BlockPos,
         rotation: Rotation,
     ) -> BlockPos {
-        let x = self.size[0] - 1;
-        let z = self.size[2] - 1;
+        let x = self.size.x - 1;
+        let z = self.size.z - 1;
         match rotation {
             Rotation::None => zero_pos,
             Rotation::Clockwise90 => zero_pos.offset(z, 0, 0),
@@ -442,18 +441,11 @@ impl StructureTemplate {
         }
     }
 
-    pub(crate) const fn bounding_box(&self, position: BlockPos, rotation: Rotation) -> BoundingBox {
-        rotation.get_bounding_box(
-            position.x(),
-            position.y(),
-            position.z(),
-            self.size[0],
-            self.size[1],
-            self.size[2],
-        )
+    pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
+        rotation.get_bounding_box(pos.0, self.size)
     }
 
-    pub(crate) const fn bounding_box_with_transform(
+    pub(crate) fn bounding_box_with_transform(
         &self,
         position: BlockPos,
         rotation: Rotation,
@@ -461,20 +453,9 @@ impl StructureTemplate {
         pivot: BlockPos,
     ) -> BoundingBox {
         let corner1 = Self::calculate_relative_position(BlockPos::ZERO, mirror, rotation, pivot);
-        let corner2 = Self::calculate_relative_position(
-            BlockPos::new(self.size[0] - 1, self.size[1] - 1, self.size[2] - 1),
-            mirror,
-            rotation,
-            pivot,
-        );
-        BoundingBox::new(
-            position.x() + corner1.x(),
-            position.y() + corner1.y(),
-            position.z() + corner1.z(),
-            position.x() + corner2.x(),
-            position.y() + corner2.y(),
-            position.z() + corner2.z(),
-        )
+        let corner2 =
+            Self::calculate_relative_position(BlockPos(self.size - 1), mirror, rotation, pivot);
+        BoundingBox::new(position.0 + corner1.0, position.0 + corner2.0)
     }
 
     pub(crate) const fn calculate_relative_position(
@@ -488,8 +469,8 @@ impl StructureTemplate {
             StructureMirror::FrontBack => (-pos.x(), pos.z()),
             StructureMirror::LeftRight => (pos.x(), -pos.z()),
         };
-        let (x, y, z) = rotation.transform_pos(x, pos.y(), z, pivot.x(), pivot.z());
-        BlockPos::new(x, y, z)
+        let pos = rotation.transform_pos(IVec3::new(x, pos.y(), z), pivot.0);
+        BlockPos(pos)
     }
 
     fn transform_entity_position(
@@ -619,7 +600,9 @@ impl StructureTemplate {
             return false;
         };
         if (palette.blocks.is_empty() && self.entities.is_empty())
-            || self.size.iter().any(|&axis| axis < 1)
+            || [self.size.x, self.size.y, self.size.z]
+                .iter()
+                .any(|&axis| axis < 1)
         {
             return false;
         }
@@ -679,7 +662,7 @@ impl StructureTemplate {
         let mut locked_fluids = Vec::new();
         let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
-            if !settings.bounding_box.is_inside(processed.world_pos) {
+            if !settings.bounding_box.contains_blockpos(processed.world_pos) {
                 continue;
             }
 
@@ -800,7 +783,7 @@ impl StructureTemplate {
                 settings.rotation_pivot,
             )
             .offset(position.x(), position.y(), position.z());
-            if !settings.bounding_box.is_inside(block_pos) {
+            if !settings.bounding_box.contains_blockpos(block_pos) {
                 continue;
             }
 
@@ -864,7 +847,7 @@ impl StructureTemplate {
                 continue;
             }
             let world_pos = Self::transformed_position(position, block.pos, settings);
-            if !settings.bounding_box.is_inside(world_pos) {
+            if !settings.bounding_box.contains_blockpos(world_pos) {
                 continue;
             }
             let Some(nbt) = block.nbt.as_ref() else {
@@ -896,7 +879,7 @@ impl StructureTemplate {
                 continue;
             }
             let world_pos = Self::transformed_position(position, block.pos, settings);
-            if !settings.bounding_box.is_inside(world_pos) {
+            if !settings.bounding_box.contains_blockpos(world_pos) {
                 continue;
             }
             let Some(nbt) = block.nbt.as_ref() else {
@@ -2373,7 +2356,7 @@ mod tests {
     #[test]
     fn zero_position_with_transform_matches_vanilla_rotation_offsets() {
         let template = StructureTemplate {
-            size: [6, 10, 8],
+            size: IVec3::new(6, 10, 8),
             palettes: Vec::new(),
             entities: Vec::new(),
         };
@@ -2400,7 +2383,7 @@ mod tests {
     #[test]
     fn bounding_box_with_transform_matches_vanilla_mirror_rotation_pivot() {
         let template = StructureTemplate {
-            size: [6, 10, 8],
+            size: IVec3::new(6, 10, 8),
             palettes: Vec::new(),
             entities: Vec::new(),
         };
@@ -2412,7 +2395,7 @@ mod tests {
                 StructureMirror::FrontBack,
                 BlockPos::new(2, 0, 3),
             ),
-            BoundingBox::new(98, 64, 196, 105, 73, 201)
+            BoundingBox::new(IVec3::new(98, 64, 196), IVec3::new(105, 73, 201))
         );
         assert_eq!(
             template.bounding_box_with_transform(
@@ -2421,7 +2404,7 @@ mod tests {
                 StructureMirror::LeftRight,
                 BlockPos::new(2, 0, 3),
             ),
-            BoundingBox::new(92, 64, 200, 99, 73, 205)
+            BoundingBox::new(IVec3::new(92, 64, 200), IVec3::new(99, 73, 205))
         );
     }
 
@@ -2769,7 +2752,7 @@ mod tests {
             mirror: StructureMirror::None,
             rotation: Rotation::Clockwise90,
             rotation_pivot: BlockPos::new(4, 0, 15),
-            bounding_box: BoundingBox::new(-64, 0, -64, 64, 128, 64),
+            bounding_box: BoundingBox::new(IVec3::new(-64, 0, -64), IVec3::new(64, 128, 64)),
             processors: &[],
             block_ignore: StructureBlockIgnore::StructureAndAir,
             late_block_ignore: StructureBlockIgnore::None,
@@ -2800,7 +2783,7 @@ mod tests {
             mirror: StructureMirror::None,
             rotation: Rotation::Clockwise180,
             rotation_pivot: BlockPos::new(3, 6, 7),
-            bounding_box: BoundingBox::new(-64, 0, -64, 64, 128, 64),
+            bounding_box: BoundingBox::new(IVec3::new(-64, 0, -64), IVec3::new(64, 128, 64)),
             processors: &[],
             block_ignore: StructureBlockIgnore::StructureBlock,
             late_block_ignore: StructureBlockIgnore::None,

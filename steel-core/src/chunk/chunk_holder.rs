@@ -11,7 +11,6 @@ use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::
 use tokio::sync::{oneshot, watch};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "slow_chunk_gen")]
 use std::time::Duration;
@@ -394,8 +393,11 @@ impl ChunkHolder {
 
     /// Applies a step to the chunk.
     ///
-    /// The `cancel_token` is from the owning generation task — dependency wait
-    /// futures are raced against it so they bail out when the task is cancelled.
+    /// Cancellation is handled structurally by the owning generation task: its
+    /// `run` loop races the whole `join_all` of dependency-wait futures against
+    /// its cancel token and drops them on cancellation, so the returned futures
+    /// don't each re-check it. A failed dependency surfaces as
+    /// `await_chunk_status` returning `None`.
     ///
     /// # Panics
     /// Panics if the target status is not Empty and has no parent, or if the
@@ -406,7 +408,6 @@ impl ChunkHolder {
         chunk_map: &Arc<ChunkMap>,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         thread_pool: Arc<rayon::ThreadPool>,
-        cancel_token: CancellationToken,
     ) -> Option<NeighborReady> {
         let target_status = step.target_status;
 
@@ -415,12 +416,16 @@ impl ChunkHolder {
         }
 
         if !self.acquire_status_bump(target_status) {
+            // Another task is already generating this chunk to `target_status`;
+            // just wait for it. Parent cancellation is handled by the owning
+            // task's run loop dropping this future; a failed dependency returns
+            // `None` from `await_chunk_status`.
             let self_clone = self.clone();
             return Some(Box::pin(async move {
-                tokio::select! {
-                    () = cancel_token.cancelled() => None,
-                    result = self_clone.await_chunk_status(target_status) => result.map(|_| ()),
-                }
+                self_clone
+                    .await_chunk_status(target_status)
+                    .await
+                    .map(|_| ())
             }));
         }
 

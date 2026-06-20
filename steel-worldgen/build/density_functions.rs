@@ -998,6 +998,19 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             }
 
             #[inline]
+            fn fill_cell_corner_densities_4x(
+                &self,
+                cache: &mut Self::ColumnCache,
+                x: i32,
+                ys: std::simd::f64x4,
+                z: i32,
+                blended_noise_values: std::simd::f64x4,
+                out: &mut [f64],
+            ) {
+                fill_cell_corner_densities_4x(self, cache, x, ys, z, blended_noise_values, out)
+            }
+
+            #[inline]
             fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
                 combine_interpolated(self, cache, interpolated, x, y, z)
             }

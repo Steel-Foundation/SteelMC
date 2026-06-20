@@ -202,10 +202,9 @@ impl OffsetVoxelShape {
     }
 
     pub fn iter(self) -> impl Iterator<Item = BlockLocalAabb> {
-        let offset = self.offset;
         self.shape
             .into_iter()
-            .map(move |aabb| aabb.move_by(offset.x, offset.y, offset.z))
+            .map(move |aabb| aabb.translate(self.offset))
     }
 
     #[must_use]
@@ -220,10 +219,9 @@ impl OffsetVoxelShape {
 
     #[must_use]
     pub fn bounds(self) -> Option<BlockLocalAabb> {
-        let offset = self.offset;
         self.shape
             .bounds()
-            .map(|bounds| bounds.move_by(offset.x, offset.y, offset.z))
+            .map(|bounds| bounds.translate(self.offset))
     }
 
     #[must_use]
@@ -1131,6 +1129,11 @@ mod tests {
         BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0),
     ];
 
+    const Z_GAPPED_BLOCK_WITH_OFFSET: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, -0.1, 1.0, 1.0, 0.15),
+        BlockLocalAabb::new(0.0, 0.0, 0.65, 1.0, 1.0, 0.9),
+    ];
+
     const LOWER_HALF_BLOCK: &[BlockLocalAabb] =
         &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0)];
 
@@ -1271,6 +1274,14 @@ mod tests {
         assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
             VoxelShape::FULL_BLOCK,
             DVec3::new(0.25, 0.0, 0.0)
+        )));
+    }
+
+    #[test]
+    fn offset_shape_full_block_rejects_z_gap_after_offset() {
+        assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
+            VoxelShape::from_boxes(Z_GAPPED_BLOCK_WITH_OFFSET),
+            DVec3::new(0.0, 0.0, 0.1)
         )));
     }
 

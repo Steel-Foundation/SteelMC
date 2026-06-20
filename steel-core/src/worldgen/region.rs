@@ -162,13 +162,13 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Returns the minimum build height.
     #[must_use]
-    pub fn min_y(&self) -> i32 {
+    pub const fn min_y(&self) -> i32 {
         self.context.min_y()
     }
 
     /// Returns the world height.
     #[must_use]
-    pub fn height(&self) -> i32 {
+    pub const fn height(&self) -> i32 {
         self.context.height()
     }
 
@@ -186,8 +186,8 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Returns this dimension's sea level.
     #[must_use]
-    pub fn sea_level(&self) -> i32 {
-        self.context.world().sea_level
+    pub const fn sea_level(&self) -> i32 {
+        self.context.sea_level()
     }
 
     /// Returns the world seed.
@@ -218,13 +218,13 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Returns the exclusive maximum build height.
     #[must_use]
-    pub fn max_y_exclusive(&self) -> i32 {
+    pub const fn max_y_exclusive(&self) -> i32 {
         self.min_y() + self.height()
     }
 
     /// Checks if a Y coordinate is outside the build height.
     #[must_use]
-    pub fn is_outside_build_height(&self, y: i32) -> bool {
+    pub const fn is_outside_build_height(&self, y: i32) -> bool {
         y < self.min_y() || y >= self.max_y_exclusive()
     }
 

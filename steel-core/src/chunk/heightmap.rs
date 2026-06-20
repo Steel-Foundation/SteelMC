@@ -16,8 +16,6 @@ use steel_registry::{
 };
 use steel_utils::BlockStateId;
 
-use crate::behavior::BlockStateBehaviorExt as _;
-
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeightmapType {
@@ -89,74 +87,70 @@ impl HeightmapType {
     }
 }
 
-static WORLD_SURFACE_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> =
-    LazyLock::new(|| build_state_opacity_cache(|_state, block| !block.config.is_air));
+static WORLD_SURFACE_OPACITY_MASK_BY_STATE: LazyLock<Box<[u8]>> =
+    LazyLock::new(build_world_surface_opacity_masks);
+static HEIGHTMAP_OPACITY_MASK_BY_STATE: LazyLock<Box<[u8]>> =
+    LazyLock::new(build_state_opacity_masks);
 
-static OCEAN_FLOOR_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> =
-    LazyLock::new(|| build_state_opacity_cache(|state, _block| state.blocks_motion()));
+fn build_world_surface_opacity_masks() -> Box<[u8]> {
+    let mut masks = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
+    for (state_index, &block) in REGISTRY.blocks.state_to_block_lookup.iter().enumerate() {
+        let Ok(_) = u16::try_from(state_index) else {
+            panic!("block state registry exceeded BlockStateId range");
+        };
+        let mask = if block.config.is_air {
+            0
+        } else {
+            HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK
+        };
+        masks.push(mask);
+    }
+    masks.into_boxed_slice()
+}
 
-static MOTION_BLOCKING_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> = LazyLock::new(|| {
-    build_state_opacity_cache(|state, _block| {
-        state.blocks_motion() || !state.get_fluid_state().is_empty()
-    })
-});
-
-static MOTION_BLOCKING_NO_LEAVES_OPAQUE_BY_STATE: LazyLock<Box<[bool]>> = LazyLock::new(|| {
-    build_state_opacity_cache(|state, block| {
-        (state.blocks_motion() || !state.get_fluid_state().is_empty())
-            && !HeightmapType::is_leaves(block)
-    })
-});
-
-fn build_state_opacity_cache(predicate: impl Fn(BlockStateId, BlockRef) -> bool) -> Box<[bool]> {
-    let mut cache = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
+fn build_state_opacity_masks() -> Box<[u8]> {
+    let mut masks = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
     for (state_index, &block) in REGISTRY.blocks.state_to_block_lookup.iter().enumerate() {
         let Ok(raw_state_id) = u16::try_from(state_index) else {
             panic!("block state registry exceeded BlockStateId range");
         };
-        cache.push(predicate(BlockStateId(raw_state_id), block));
-    }
-    cache.into_boxed_slice()
-}
+        let state = BlockStateId(raw_state_id);
+        let mut mask = 0;
+        if !block.config.is_air {
+            mask |= HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK;
 
-#[inline]
-fn cached_heightmap_opacity(cache: &LazyLock<Box<[bool]>>, state: BlockStateId) -> bool {
-    let Some(&opaque) = cache.get(state.0 as usize) else {
-        panic!("invalid block state id {}", state.0);
-    };
-    opaque
+            let blocks_motion = BlockStateExt::blocks_motion(&state);
+            if blocks_motion {
+                mask |= HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK;
+            }
+
+            if blocks_motion || BlockStateExt::has_fluid(&state) {
+                mask |= HeightmapType::MOTION_BLOCKING_MASK;
+                if !HeightmapType::is_leaves(block) {
+                    mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;
+                }
+            }
+        }
+        masks.push(mask);
+    }
+    masks.into_boxed_slice()
 }
 
 #[inline]
 fn heightmap_opacity_mask(state: BlockStateId, requested_mask: u8) -> u8 {
-    if !cached_heightmap_opacity(&WORLD_SURFACE_OPAQUE_BY_STATE, state) {
-        return 0;
+    let world_surface_mask =
+        HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK;
+    if requested_mask & !world_surface_mask == 0 {
+        let Some(&state_mask) = WORLD_SURFACE_OPACITY_MASK_BY_STATE.get(state.0 as usize) else {
+            panic!("invalid block state id {}", state.0);
+        };
+        return state_mask & requested_mask;
     }
 
-    let mut mask = 0;
-    if requested_mask & (HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK)
-        != 0
-    {
-        mask |= requested_mask
-            & (HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK);
-    }
-    if requested_mask & (HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK) != 0
-        && cached_heightmap_opacity(&OCEAN_FLOOR_OPAQUE_BY_STATE, state)
-    {
-        mask |=
-            requested_mask & (HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK);
-    }
-    if requested_mask & HeightmapType::MOTION_BLOCKING_MASK != 0
-        && cached_heightmap_opacity(&MOTION_BLOCKING_OPAQUE_BY_STATE, state)
-    {
-        mask |= HeightmapType::MOTION_BLOCKING_MASK;
-    }
-    if requested_mask & HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK != 0
-        && cached_heightmap_opacity(&MOTION_BLOCKING_NO_LEAVES_OPAQUE_BY_STATE, state)
-    {
-        mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;
-    }
-    mask
+    let Some(&state_mask) = HEIGHTMAP_OPACITY_MASK_BY_STATE.get(state.0 as usize) else {
+        panic!("invalid block state id {}", state.0);
+    };
+    state_mask & requested_mask
 }
 
 /// A heightmap that tracks the highest blocks of a specific type in a chunk.

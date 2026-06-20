@@ -35,7 +35,7 @@ impl StructurePiecePlacer {
         }
 
         for child in &data.child_pieces {
-            if !child.bounding_box.intersects(&clip) {
+            if !child.bounding_box.intersects(clip) {
                 continue;
             }
 
@@ -1683,7 +1683,7 @@ fn generate_default_floor(
 
 fn spawn_elder(placer: &mut ScatteredFeaturePlacer<'_, '_>, x: i32, y: i32, z: i32) {
     let pos = placer.world_pos(x, y, z);
-    if !placer.clip().is_inside(pos) {
+    if !placer.clip().contains_blockpos(pos) {
         return;
     }
 

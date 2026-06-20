@@ -4,6 +4,8 @@
 
 use std::io::{self, Cursor};
 
+use glam::IVec3;
+
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
@@ -40,6 +42,30 @@ impl ReadFrom for Direction {
 }
 
 impl Direction {
+    /// Returns an array of all six cardinal directions (down, up, north, south, west, east).
+    #[must_use]
+    pub const fn all_dirs() -> [Direction; 6] {
+        [
+            Direction::Down,
+            Direction::Up,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ]
+    }
+
+    /// Returns vanilla `Direction.Plane.HORIZONTAL` order (north, east, south, west).
+    #[must_use]
+    pub const fn horizontal_dirs() -> [Direction; 4] {
+        [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ]
+    }
+
     /// Returns the block position offset for this direction.
     #[must_use]
     pub const fn offset(self) -> (i32, i32, i32) {
@@ -53,11 +79,31 @@ impl Direction {
         }
     }
 
+    /// Returns the XZ offset for this direction, treating the vertical directions as no movement.
+    ///
+    /// For `Down` and `Up` the result is `(0, 0)`.
+    #[must_use]
+    pub const fn offset_xz(self) -> (i32, i32) {
+        match self {
+            Direction::Down | Direction::Up => (0, 0),
+            Direction::North => (0, -1),
+            Direction::South => (0, 1),
+            Direction::West => (-1, 0),
+            Direction::East => (1, 0),
+        }
+    }
+
+    /// Returns the block position offset for this direction as an [`IVec3`].
+    #[must_use]
+    pub const fn offset_vec(self) -> IVec3 {
+        let (x, y, z) = self.offset();
+        IVec3::new(x, y, z)
+    }
+
     /// Returns the block position relative to the given position in this direction.
     #[must_use]
-    pub const fn relative(self, pos: BlockPos) -> BlockPos {
-        let (dx, dy, dz) = self.offset();
-        pos.offset(dx, dy, dz)
+    pub fn relative(self, pos: BlockPos) -> BlockPos {
+        BlockPos(pos.0 + self.offset_vec())
     }
 
     /// Returns the axis this direction is on.
@@ -290,5 +336,23 @@ impl Direction {
             Direction::West => "west",
             Direction::East => "east",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Direction;
+
+    #[test]
+    fn horizontal_dirs_matches_vanilla_plane_horizontal_order() {
+        assert_eq!(
+            Direction::horizontal_dirs(),
+            [
+                Direction::North,
+                Direction::East,
+                Direction::South,
+                Direction::West,
+            ]
+        );
     }
 }

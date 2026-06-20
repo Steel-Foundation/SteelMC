@@ -977,6 +977,9 @@ name = "glam"
 version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "glob"
@@ -2794,16 +2797,19 @@ dependencies = [
  "chrono",
  "crossterm",
  "dhat",
+ "futures",
  "log",
  "mimalloc",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "parking_lot",
+ "reqwest 0.13.2",
  "serde",
  "steel-core",
  "steel-login",
  "steel-utils",
+ "strip-ansi-escapes",
  "text_components",
  "tokio",
  "tokio-util",
@@ -2996,6 +3002,7 @@ dependencies = [
 name = "steel-worldgen"
 version = "0.10.0+mc26.2"
 dependencies = [
+ "glam",
  "proc-macro2",
  "quote",
  "rustc-hash 2.1.2",
@@ -3006,6 +3013,15 @@ dependencies = [
  "steel-registry",
  "steel-utils",
  "tracing",
+]
+
+[[package]]
+name = "strip-ansi-escapes"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a8f8038e7e7969abb3f1b7c2a811225e9296da208539e0f79c5251d6cac0025"
+dependencies = [
+ "vte",
 ]
 
 [[package]]
@@ -3562,6 +3578,15 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vte"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "walkdir"

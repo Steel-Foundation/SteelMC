@@ -113,7 +113,7 @@ impl DoorBlock {
 
         if (!door_left || door_right) && solid_block_balance <= 0 {
             if (!door_right || door_left) && solid_block_balance >= 0 {
-                let (step_x, _, step_z) = place_direction.offset();
+                let (step_x, step_z) = place_direction.offset_xz();
                 let click_x = context.click_location.x - f64::from(pos.x());
                 let click_z = context.click_location.z - f64::from(pos.z());
 

@@ -362,6 +362,7 @@ impl World {
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
+                sea_level,
                 storage,
                 config.generator,
                 generation_pool,
@@ -1372,19 +1373,13 @@ impl World {
     fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
         let biome_zoom_seed = obfuscate_biome_seed(self.seed());
         let mut missing_chunk = false;
-        let biome_id = fuzzed_biome_at_block(
-            biome_zoom_seed,
-            pos.x(),
-            pos.y(),
-            pos.z(),
-            |quart_x, quart_y, quart_z| {
-                self.noise_biome_id(quart_x, quart_y, quart_z)
-                    .unwrap_or_else(|| {
-                        missing_chunk = true;
-                        0
-                    })
-            },
-        );
+        let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
+            self.noise_biome_id(quart.x, quart.y, quart.z)
+                .unwrap_or_else(|| {
+                    missing_chunk = true;
+                    0
+                })
+        });
 
         if missing_chunk {
             return None;
@@ -2397,8 +2392,7 @@ impl World {
             Direction::West,
             Direction::East,
         ] {
-            let (x, y, z) = direction.offset();
-            let dot = vector.dot(DVec3::new(f64::from(x), f64::from(y), f64::from(z)));
+            let dot = vector.dot(direction.offset_vec().as_dvec3());
             if dot > highest_dot {
                 highest_dot = dot;
                 result = direction;
@@ -2899,7 +2893,7 @@ impl World {
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
 
-        let packet = CSound::new(sound, source, pos.x, pos.y, pos.z, volume, pitch, seed);
+        let packet = CSound::new(sound, source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {

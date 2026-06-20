@@ -8,6 +8,7 @@
 
 use std::{cell::Cell, sync::LazyLock};
 
+use glam::IVec3;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use steel_math::lerp2;
@@ -348,7 +349,7 @@ enum CarveState {
 pub struct CarveRun<'a, 'b, N, F>
 where
     N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
+    F: FnMut(BlockPos) -> u16,
 {
     /// Dimension-level context (aquifer, surface system, bounds, psl).
     pub ctx: &'a mut CarvingContext<'b, N>,
@@ -371,7 +372,7 @@ where
 impl<N, F> CarveRun<'_, '_, N, F>
 where
     N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
+    F: FnMut(BlockPos) -> u16,
 {
     /// Carve every block inside the given ellipsoid that falls in this chunk.
     /// Mirrors vanilla's `WorldCarver.carveEllipsoid`.
@@ -492,7 +493,8 @@ where
             if self.chunk.get_block_state(below_pos) == self.ids.dirt {
                 let under_fluid = !self.ids.is_air_like(state);
                 let steep = self.steep_material_condition(world_x, world_z);
-                let biome_id = (self.biome_getter)(world_x, world_y - 1, world_z);
+                let biome_id =
+                    (self.biome_getter)(BlockPos(IVec3::new(world_x, world_y - 1, world_z)));
                 if let Some(top) = self.ctx.top_material(
                     biome_id,
                     world_x,

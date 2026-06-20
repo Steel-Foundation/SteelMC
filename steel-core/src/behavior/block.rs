@@ -349,7 +349,7 @@ pub(crate) fn push_entities_up(
     for entity in world.get_entities_in_aabb(&query_box) {
         let offset = collide(
             Axis::Y,
-            &entity.bounding_box().move_by(0.0, 1.0, 0.0),
+            &entity.bounding_box().translate(DVec3::ZERO.with_y(1.0)),
             &added_collision,
             -1.0,
         );

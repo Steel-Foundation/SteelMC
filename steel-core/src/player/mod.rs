@@ -1190,9 +1190,7 @@ impl Player {
         self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        if let Err(error) =
-            self.teleport(position.x, position.y, position.z, rotation.0, rotation.1)
-        {
+        if let Err(error) = self.teleport(position, rotation.0, rotation.1) {
             panic!(
                 "failed to synchronize player {} spawn position: {error}",
                 self.id()
@@ -1560,7 +1558,7 @@ impl Entity for Player {
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
             let rotation = teleport_transition.rotation;
-            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1) {
+            if let Err(error) = self.teleport(pos, rotation.0, rotation.1) {
                 panic!(
                     "failed to commit same-world portal teleport for player {}: {error}",
                     self.id()

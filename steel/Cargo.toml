@@ -14,6 +14,7 @@ steel-utils.workspace = true
 # Async runtime
 tokio.workspace = true
 tokio-util.workspace = true
+futures.workspace = true
 
 # Serialization
 serde.workspace = true
@@ -40,11 +41,15 @@ chrono = "0.4.43"
 # Cryptography
 text_components.workspace = true
 
+# Networking
+reqwest.workspace = true
+
 # Memory
 mimalloc = { version = "0.1.48", optional = true }
 
 # Profiling
 dhat = { version = "0.3", optional = true }
+strip-ansi-escapes = "0.2.1"
 
 [lints]
 workspace = true

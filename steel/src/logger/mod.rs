@@ -17,6 +17,7 @@ use tracing::Subscriber;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
+mod file;
 mod history;
 mod input;
 mod output;
@@ -24,9 +25,13 @@ mod selection;
 mod state;
 mod suggestions;
 
-/// Returns the terminal width, falling back to 80 columns if unavailable.
+/// Returns the terminal width, falling back to 80 columns if unavailable or it's <= 0.
 fn terminal_width() -> usize {
-    terminal::size().map_or(80, |(w, _)| (w as usize).max(1))
+    terminal::size().map_or(80, |(w, _)| if w == 0 { 80 } else { w as usize })
+}
+/// Returns the terminal height, falling back to 30 rows if unavailable or 1 if it's <= 0.
+fn terminal_height() -> usize {
+    terminal::size().map_or(30, |(_, h)| if h == 0 { 30 } else { h as usize })
 }
 
 pub(crate) use state::LogState;
@@ -43,6 +48,7 @@ pub struct CommandLogger {
     sender: mpsc::UnboundedSender<(Level, LogData)>,
     cancel_token: CancellationToken,
     stopped: CancellationToken,
+    log_stopped: CancellationToken,
     start_time: Instant,
     log_config: Option<LogConfig>,
 }
@@ -50,27 +56,30 @@ pub struct CommandLogger {
 impl CommandLogger {
     /// Initializes the `CommandLogger`
     pub async fn init(
-        history_path: &'static str,
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
-    ) -> Option<Arc<Self>> {
+    ) -> Result<Arc<Self>, String> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
+        let input = LogState::new(log_config.as_ref(), cancel_token)
+            .await
+            .map_err(|err| format!("failed to initialize logger state: {err}"))?;
 
         let log = Arc::new(Self {
-            input: Arc::new(AsyncRwLock::const_new(
-                LogState::new(history_path, cancel_token).await,
-            )),
+            input: Arc::new(AsyncRwLock::const_new(input)),
             sender,
             cancel_token: log_cancel_token.clone(),
             stopped: CancellationToken::new(),
+            log_stopped: CancellationToken::new(),
             start_time: Instant::now(),
             log_config,
         });
         task::spawn(log.clone().log_loop(receiver));
         task::spawn(log.clone().input_main());
-        STEEL_LOGGER.set(log.clone()).ok()?;
-        Some(log)
+        STEEL_LOGGER
+            .set(log.clone())
+            .map_err(|_| "Steel logger is already initialized".to_string())?;
+        Ok(log)
     }
 
     /// Stops the logger and waits for cleanup to complete
@@ -83,6 +92,13 @@ impl CommandLogger {
             let _ = disable_raw_mode();
             self.stopped.cancel();
         }
+        if timeout(time::Duration::from_secs(1), self.log_stopped.cancelled())
+            .await
+            .is_err()
+        {
+            eprintln!("Timed out waiting for logger to flush pending entries");
+            self.log_stopped.cancel();
+        }
     }
 
     async fn log_loop(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<(Level, LogData)>) {
@@ -90,25 +106,38 @@ impl CommandLogger {
             tokio::select! {
                 biased;
                 Some((lvl, data)) = receiver.recv() => {
-                    self.write_log_entry(lvl, data).await;
+                    self.write_entry(lvl, data).await;
                 }
-                () = self.cancel_token.cancelled() => break,
+                () = self.cancel_token.cancelled() => {
+                    while let Ok((lvl, data)) = receiver.try_recv() {
+                        self.write_entry(lvl, data).await;
+                    }
+                    self.flush_file().await;
+                    self.log_stopped.cancel();
+                    break;
+                }
             }
         }
     }
 
-    async fn write_log_entry(&self, lvl: Level, data: LogData) {
-        let mut input = self.input.write().await;
-        let pos = input.out.get_current_pos();
+    async fn write_entry(&self, lvl: Level, data: LogData) {
+        let (lvl, data) = self.write_log_entry(lvl, data).await;
+        if self.log_config.as_ref().is_some_and(|l| l.log_file) {
+            self.write_file_entry(lvl, data).await;
+        }
+    }
 
-        if let Err(err) = input.out.cursor_to(pos, (0, 0)) {
+    async fn write_log_entry(&self, lvl: Level, data: LogData) -> (Level, LogData) {
+        let mut input = self.input.write().await;
+
+        if let Err(err) = input.out.cursor_to(0) {
             log::error!("{err}");
-            return;
+            return (lvl, data);
         }
 
         let time_str = self.format_time();
-        let module_path_str = self.format_module_path(&data);
-        let extra_str = self.format_extra(&data);
+        let module_path_str = self.format_module_path(&data, true);
+        let extra_str = self.format_extra(&data, true);
 
         if let Err(err) = writeln!(
             input.out,
@@ -117,14 +146,40 @@ impl CommandLogger {
             data.message,
         ) {
             log::error!("{err}");
-            return;
+            return (lvl, data);
         }
 
-        if let Err(err) = input.out.cursor_to((0, 0), pos) {
+        let pos = input.out.pos;
+        if let Err(err) = input.out.cursor_to_relative(pos) {
             log::error!("{err}");
         }
         if let Err(err) = input.rewrite_current_input() {
             log::error!("{err}");
+        }
+        (lvl, data)
+    }
+
+    async fn write_file_entry(&self, lvl: Level, data: LogData) {
+        let mut input = self.input.write().await;
+
+        let time_str = self.format_time();
+        let module_path_str = self.format_module_path(&data, false);
+        let extra_str = self.format_extra(&data, false);
+
+        if let Err(err) = writeln!(
+            input.file,
+            "{time_str}{lvl:?} {module_path_str}{}{extra_str}",
+            strip_ansi_escapes::strip_str(&data.message),
+        ) {
+            input.file.disable();
+            eprintln!("Failed to write log file; disabling file logging: {err}");
+        }
+    }
+
+    async fn flush_file(&self) {
+        let mut input = self.input.write().await;
+        if let Err(err) = input.file.flush() {
+            eprintln!("Failed to flush log file: {err}");
         }
     }
 
@@ -142,27 +197,35 @@ impl CommandLogger {
         }
     }
 
-    fn format_module_path(&self, data: &LogData) -> String {
+    fn format_module_path(&self, data: &LogData, color: bool) -> String {
         if self.log_config.as_ref().is_some_and(|l| l.module_path) {
-            format!(
-                " {}{}{} ",
-                SetForegroundColor(DarkGrey),
-                data.module_path,
-                ResetColor
-            )
+            if color {
+                format!(
+                    " {}{}{} ",
+                    SetForegroundColor(DarkGrey),
+                    data.module_path,
+                    ResetColor
+                )
+            } else {
+                format!(" {} ", data.module_path)
+            }
         } else {
             String::new()
         }
     }
 
-    fn format_extra(&self, data: &LogData) -> String {
+    fn format_extra(&self, data: &LogData, color: bool) -> String {
         if self.log_config.as_ref().is_some_and(|l| l.extra) {
-            format!(
-                "{}{}{}",
-                SetForegroundColor(DarkGrey),
-                data.extra,
-                ResetColor
-            )
+            if color {
+                format!(
+                    "{}{}{}",
+                    SetForegroundColor(DarkGrey),
+                    data.extra,
+                    ResetColor
+                )
+            } else {
+                data.extra.clone()
+            }
         } else {
             String::new()
         }
@@ -181,13 +244,10 @@ pub struct LoggerLayer(pub Arc<CommandLogger>);
 impl LoggerLayer {
     /// Creates a new logger
     pub async fn new(
-        history_path: &'static str,
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
-    ) -> Option<Self> {
-        Some(Self(
-            CommandLogger::init(history_path, cancel_token, log_config).await?,
-        ))
+    ) -> Result<Self, String> {
+        Ok(Self(CommandLogger::init(cancel_token, log_config).await?))
     }
 }
 

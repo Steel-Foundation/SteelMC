@@ -3,13 +3,12 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::f64x4;
-use std::simd::{Select, StdFloat};
+use std::simd::{Select, Simd, StdFloat, f64x4};
 
 use crate::random::Random;
 use steel_math::{
-    GRADIENT, floor, grad_dot, grad_dot_4x, lerp2, lerp3, lerp3_4x, smoothstep, smoothstep_4x,
-    smoothstep_derivative,
+    GRADIENT, floor, grad_dot, grad_dot_4x, grad_dot_simd, lerp2, lerp3, lerp3_4x, lerp3_simd,
+    smoothstep, smoothstep_4x, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -27,6 +26,10 @@ pub struct ImprovedNoise {
     pub yo: f64,
     /// Z offset for the noise coordinates
     pub zo: f64,
+    yo_floor: i32,
+    yo_fraction: f64,
+    zo_floor: i32,
+    zo_fraction: f64,
 }
 
 impl ImprovedNoise {
@@ -54,7 +57,21 @@ impl ImprovedNoise {
             p.swap(i, i + offset);
         }
 
-        Self { p, xo, yo, zo }
+        let yo_floor = floor(yo);
+        let yo_fraction = yo - f64::from(yo_floor);
+        let zo_floor = floor(zo);
+        let zo_fraction = zo - f64::from(zo_floor);
+
+        Self {
+            p,
+            xo,
+            yo,
+            zo,
+            yo_floor,
+            yo_fraction,
+            zo_floor,
+            zo_fraction,
+        }
     }
 
     /// Sample noise at the given coordinates.
@@ -76,6 +93,46 @@ impl ImprovedNoise {
         let zr = z - f64::from(zf);
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    }
+
+    /// Sample noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xz(&self, x: f64, z: f64) -> f64 {
+        let x = x + self.xo;
+        let z = z + self.zo;
+
+        let xf = floor(x);
+        let zf = floor(z);
+
+        let xr = x - f64::from(xf);
+        let zr = z - f64::from(zf);
+
+        self.sample_and_lerp(
+            xf,
+            self.yo_floor,
+            zf,
+            xr,
+            self.yo_fraction,
+            zr,
+            self.yo_fraction,
+        )
+    }
+
+    /// Sample noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn noise_xy(&self, x: f64, y: f64) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+
+        let xf = floor(x);
+        let yf = floor(y);
+
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+
+        self.sample_and_lerp(xf, yf, self.zo_floor, xr, yr, self.zo_fraction, yr)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -159,6 +216,11 @@ impl ImprovedNoise {
     }
 
     /// Sample noise at grid point and interpolate.
+    ///
+    /// The 8 corner gradient-dot products are evaluated as 2 × `f64x4` so the
+    /// per-lane math stays identical to the scalar path (`((gx*xr) + (gy*yr)) + (gz*zr)`),
+    /// which preserves bit-identical output. Inspired by C2ME's `c2me-opts-math`
+    /// flat-gradient SIMD form.
     #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
     fn sample_and_lerp(
         &self,
@@ -178,15 +240,27 @@ impl ImprovedNoise {
         let xy10 = self.p(x1 as i32 + y);
         let xy11 = self.p(x1 as i32 + y + 1);
 
-        // Calculate gradient dot products at each corner
-        let d000 = grad_dot(self.p(xy00 as i32 + z), xr, yr, zr);
-        let d100 = grad_dot(self.p(xy10 as i32 + z), xr - 1.0, yr, zr);
-        let d010 = grad_dot(self.p(xy01 as i32 + z), xr, yr - 1.0, zr);
-        let d110 = grad_dot(self.p(xy11 as i32 + z), xr - 1.0, yr - 1.0, zr);
-        let d001 = grad_dot(self.p(xy00 as i32 + z + 1), xr, yr, zr - 1.0);
-        let d101 = grad_dot(self.p(xy10 as i32 + z + 1), xr - 1.0, yr, zr - 1.0);
-        let d011 = grad_dot(self.p(xy01 as i32 + z + 1), xr, yr - 1.0, zr - 1.0);
-        let d111 = grad_dot(self.p(xy11 as i32 + z + 1), xr - 1.0, yr - 1.0, zr - 1.0);
+        // Hashes for the z-face and z+1-face, in (000,100,010,110) order.
+        let h_z0 = [
+            self.p(xy00 as i32 + z),
+            self.p(xy10 as i32 + z),
+            self.p(xy01 as i32 + z),
+            self.p(xy11 as i32 + z),
+        ];
+        let h_z1 = [
+            self.p(xy00 as i32 + z + 1),
+            self.p(xy10 as i32 + z + 1),
+            self.p(xy01 as i32 + z + 1),
+            self.p(xy11 as i32 + z + 1),
+        ];
+
+        let xr_v = f64x4::from_array([xr, xr - 1.0, xr, xr - 1.0]);
+        let yr_v = f64x4::from_array([yr, yr, yr - 1.0, yr - 1.0]);
+        let zr_v0 = f64x4::splat(zr);
+        let zr_v1 = f64x4::splat(zr - 1.0);
+
+        let [d000, d100, d010, d110] = grad_dot_4x(h_z0, xr_v, yr_v, zr_v0).to_array();
+        let [d001, d101, d011, d111] = grad_dot_4x(h_z1, xr_v, yr_v, zr_v1).to_array();
 
         // Apply smoothstep interpolation
         let x_alpha = smoothstep(xr);
@@ -320,6 +394,126 @@ impl ImprovedNoise {
         let z_alpha = f64x4::splat(smoothstep(zr));
 
         lerp3_4x(
+            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // SIMD: process N Y values sharing the same (x, z)
+    // -----------------------------------------------------------------------
+
+    /// Generic N-lane form of [`Self::noise_with_y_scale_4x`]. Each lane runs the
+    /// exact per-lane math of the scalar [`Self::noise_with_y_scale`], so any
+    /// supported lane width yields bit-identical per-lane results — only the
+    /// SIMD batch size changes. `f64x4` ≡ `noise_with_y_scale_simd::<4>`.
+    #[must_use]
+    pub fn noise_with_y_scale_simd<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+        y_scale: f64,
+        y_fudges: Simd<f64, N>,
+    ) -> Simd<f64, N> {
+        // Shared x/z offset and floor
+        let x = x + self.xo;
+        let z = z + self.zo;
+        let xf = floor(x);
+        let zf = floor(z);
+        let xr = x - f64::from(xf);
+        let zr = z - f64::from(zf);
+
+        // Per-lane y offset and floor
+        let ys = ys + Simd::splat(self.yo);
+        let ys_floor = ys.floor();
+        let yrs = ys - ys_floor;
+
+        // Y fudge (per-lane)
+        let yr_fudge: Simd<f64, N> = if y_scale == 0.0 {
+            Simd::splat(0.0)
+        } else {
+            let y_scale_v: Simd<f64, N> = Simd::splat(y_scale);
+            let zero: Simd<f64, N> = Simd::splat(0.0);
+            let mask = y_fudges.simd_ge(zero) & y_fudges.simd_lt(yrs);
+            let fudge_limits = mask.select(y_fudges, yrs);
+            let epsilon: Simd<f64, N> = Simd::splat(f64::from(1.0e-7_f32));
+            ((fudge_limits / y_scale_v) + epsilon).floor() * y_scale_v
+        };
+
+        let yrs_adjusted = yrs - yr_fudge;
+
+        self.sample_and_lerp_simd::<N>(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
+    }
+
+    /// Vectorized sample-and-lerp for N Y values sharing x/z grid position.
+    /// Generic counterpart of [`Self::sample_and_lerp_4x`].
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors scalar sample_and_lerp with Nx SIMD y-batching"
+    )]
+    fn sample_and_lerp_simd<const N: usize>(
+        &self,
+        xf: i32,
+        zf: i32,
+        xr: f64,
+        zr: f64,
+        ys_floor: Simd<f64, N>,
+        yrs: Simd<f64, N>,
+        yrs_original: Simd<f64, N>,
+    ) -> Simd<f64, N> {
+        // Shared x permutation lookups (2 instead of 2×N)
+        let x0 = self.p(xf);
+        let x1 = self.p(xf + 1);
+
+        // Per-lane y-dependent permutation lookups
+        let mut h000 = [0usize; N];
+        let mut h100 = [0usize; N];
+        let mut h010 = [0usize; N];
+        let mut h110 = [0usize; N];
+        let mut h001 = [0usize; N];
+        let mut h101 = [0usize; N];
+        let mut h011 = [0usize; N];
+        let mut h111 = [0usize; N];
+
+        for i in 0..N {
+            let y = ys_floor[i] as i32;
+            let xy00 = self.p(x0 as i32 + y);
+            let xy01 = self.p(x0 as i32 + y + 1);
+            let xy10 = self.p(x1 as i32 + y);
+            let xy11 = self.p(x1 as i32 + y + 1);
+            h000[i] = self.p(xy00 as i32 + zf);
+            h100[i] = self.p(xy10 as i32 + zf);
+            h010[i] = self.p(xy01 as i32 + zf);
+            h110[i] = self.p(xy11 as i32 + zf);
+            h001[i] = self.p(xy00 as i32 + zf + 1);
+            h101[i] = self.p(xy10 as i32 + zf + 1);
+            h011[i] = self.p(xy01 as i32 + zf + 1);
+            h111[i] = self.p(xy11 as i32 + zf + 1);
+        }
+
+        // Vectorized gradient dot products
+        let xr_v: Simd<f64, N> = Simd::splat(xr);
+        let zr_v: Simd<f64, N> = Simd::splat(zr);
+        let one: Simd<f64, N> = Simd::splat(1.0);
+        let xr_m1 = xr_v - one;
+        let yr_m1 = yrs - one;
+        let zr_m1 = zr_v - one;
+
+        let d000 = grad_dot_simd::<N>(h000, xr_v, yrs, zr_v);
+        let d100 = grad_dot_simd::<N>(h100, xr_m1, yrs, zr_v);
+        let d010 = grad_dot_simd::<N>(h010, xr_v, yr_m1, zr_v);
+        let d110 = grad_dot_simd::<N>(h110, xr_m1, yr_m1, zr_v);
+        let d001 = grad_dot_simd::<N>(h001, xr_v, yrs, zr_m1);
+        let d101 = grad_dot_simd::<N>(h101, xr_m1, yrs, zr_m1);
+        let d011 = grad_dot_simd::<N>(h011, xr_v, yr_m1, zr_m1);
+        let d111 = grad_dot_simd::<N>(h111, xr_m1, yr_m1, zr_m1);
+
+        // Smoothstep — x and z are shared across lanes
+        let x_alpha: Simd<f64, N> = Simd::splat(smoothstep(xr));
+        let y_alpha = smoothstep_simd::<N>(yrs_original);
+        let z_alpha: Simd<f64, N> = Simd::splat(smoothstep(zr));
+
+        lerp3_simd::<N>(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
@@ -492,6 +686,58 @@ mod tests {
     }
 
     #[test]
+    fn test_noise_with_y_scale_simd8_matches_scalar() {
+        use std::simd::f64x8;
+
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        let test_x_zs: &[(f64, f64)] = &[
+            (0.0, 0.0),
+            (1.5, 3.7),
+            (-5.2, 100.3),
+            (0.001, -0.001),
+            (1000.0, -500.0),
+        ];
+        let test_ys: &[[f64; 8]] = &[
+            [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            [64.0, 64.5, 65.0, 65.5, 66.0, 66.5, 67.0, 67.5],
+            [-5.0, -2.5, 0.0, 2.5, 5.0, 7.5, 10.0, 12.5],
+            [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0],
+            [-100.0, -50.0, -25.0, -10.0, 10.0, 25.0, 50.0, 100.0],
+        ];
+        let y_scales = [0.0, 1.0, 8.0];
+
+        for &(x, z) in test_x_zs {
+            for ys in test_ys {
+                for &y_scale in &y_scales {
+                    let y_fudges: [f64; 8] = if y_scale == 0.0 { [0.0; 8] } else { *ys };
+
+                    let simd_result = noise.noise_with_y_scale_simd::<8>(
+                        x,
+                        f64x8::from_array(*ys),
+                        z,
+                        y_scale,
+                        f64x8::from_array(y_fudges),
+                    );
+
+                    for i in 0..8 {
+                        let scalar = noise.noise_with_y_scale(x, ys[i], z, y_scale, y_fudges[i]);
+                        let simd_val = simd_result[i];
+                        assert!(
+                            (scalar - simd_val).abs() < 1e-14,
+                            "Mismatch at x={x}, y={}, z={z}, y_scale={y_scale}: \
+                             scalar={scalar}, simd={simd_val}, diff={}",
+                            ys[i],
+                            (scalar - simd_val).abs(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_improved_noise_deterministic() {
         let mut rng1 = Xoroshiro::from_seed(12345);
         let mut rng2 = Xoroshiro::from_seed(12345);
@@ -530,6 +776,30 @@ mod tests {
             assert!(
                 (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
             );
+        }
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let noise = ImprovedNoise::new(&mut rng);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
+                assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
+            }
         }
     }
 
