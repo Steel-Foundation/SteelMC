@@ -15,7 +15,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
 
-pub const TIP: BoolProperty = BlockStateProperties::TIP;
+const TIP: BoolProperty = BlockStateProperties::TIP;
 
 /// Vanilla `HangingMossBlock` survival (e.g. `pale_hanging_moss`).
 #[block_behavior]
