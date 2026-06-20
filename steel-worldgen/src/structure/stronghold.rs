@@ -28,7 +28,7 @@ fn random_horizontal(rng: &mut LegacyRandom) -> Direction {
 }
 
 /// Vanilla's `BoundingBox.orientBox`.
-fn orient_box(foot: IVec3, off: IVec3, size: IVec3, dir: Direction) -> BoundingBox {
+const fn orient_box(foot: IVec3, off: IVec3, size: IVec3, dir: Direction) -> BoundingBox {
     let fx = foot.x;
     let fy = foot.y + off.y;
     let fz = foot.z;

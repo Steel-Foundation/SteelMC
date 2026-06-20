@@ -13,7 +13,7 @@ use crate::structure::{
 /// Single 1×1×1 piece at `(chunkMinX+9, 90, chunkMinZ+9)`. Biome check at ocean-floor Y.
 pub struct BuriedTreasureStructure;
 
-fn buried_treasure_piece(x: i32, z: i32) -> StructurePiece {
+const fn buried_treasure_piece(x: i32, z: i32) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "btp"),
         bounding_box: BoundingBox::new(IVec3::new(x, 90, z), IVec3::new(x, 90, z)),

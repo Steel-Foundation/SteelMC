@@ -39,7 +39,7 @@ impl SwampHutPieceData {
 /// Vanilla's `SwampHutStructure`.
 pub struct SwampHutStructure;
 
-fn swamp_hut_piece(west: i32, north: i32, orientation: Direction) -> StructurePiece {
+const fn swamp_hut_piece(west: i32, north: i32, orientation: Direction) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "tesh"),
         bounding_box: make_oriented_piece_bounding_box(

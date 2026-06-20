@@ -17,7 +17,7 @@ pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
 
 /// Vanilla's `StructurePiece.makeBoundingBox`: north/south keep width/depth,
 /// east/west swap them.
-pub(crate) fn make_oriented_piece_bounding_box(
+pub(crate) const fn make_oriented_piece_bounding_box(
     chunk_min_x: i32,
     y: i32,
     chunk_min_z: i32,

@@ -48,7 +48,7 @@ impl Default for DesertPyramidPieceData {
 /// Vanilla's `DesertPyramidStructure`.
 pub struct DesertPyramidStructure;
 
-fn desert_pyramid_piece(
+const fn desert_pyramid_piece(
     chunk_min_x: i32,
     chunk_min_z: i32,
     orientation: Direction,

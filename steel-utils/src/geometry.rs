@@ -566,7 +566,7 @@ impl Aabb<IVec3, Structure> {
 
     /// Creates a bounding box from two corner block positions.
     #[must_use]
-    pub fn from_corners(a: BlockPos, b: BlockPos) -> Self {
+    pub const fn from_corners(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0, b.0)
     }
 }
