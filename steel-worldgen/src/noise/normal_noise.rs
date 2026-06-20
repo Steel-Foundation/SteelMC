@@ -178,7 +178,16 @@ impl NormalNoise {
     #[inline]
     #[must_use]
     pub fn get_value_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
-        self.get_value_simd::<4>(x, ys, z)
+        let x2 = x * INPUT_FACTOR;
+        let ys2 = ys * f64x4::splat(INPUT_FACTOR);
+        let z2 = z * INPUT_FACTOR;
+        (self
+            .first
+            .get_value_with_y_params_4x(x, ys, z, 0.0, 0.0, false)
+            + self
+                .second
+                .get_value_with_y_params_4x(x2, ys2, z2, 0.0, 0.0, false))
+            * f64x4::splat(self.value_factor)
     }
 
     /// Generic N-lane form of [`Self::get_value_4x`].
