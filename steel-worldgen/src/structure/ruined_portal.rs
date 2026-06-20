@@ -182,8 +182,8 @@ pub fn find_generation_point(
         mirror_front_back,
     );
 
-    let bb_center_x = bb.min.x + (bb.max.x - bb.min.x + 1) / 2;
-    let bb_center_z = bb.min.z + (bb.max.z - bb.min.z + 1) / 2;
+    let bb_center_x = bb.min_x() + (bb.max_x() - bb.min_x() + 1) / 2;
+    let bb_center_z = bb.min_z() + (bb.max_z() - bb.min_z() + 1) / 2;
     let ocean_floor = matches!(setup.placement, RuinedPortalPlacementData::OnOceanFloor);
     let surface_y = match terrain(TerrainQuery::SurfaceHeight {
         x: bb_center_x,
@@ -228,10 +228,10 @@ pub fn find_generation_point(
     };
 
     let corners = [
-        (bb.min.x, bb.min.z),
-        (bb.max.x, bb.min.z),
-        (bb.min.x, bb.max.z),
-        (bb.max.x, bb.max.z),
+        (bb.min_x(), bb.min_z()),
+        (bb.max_x(), bb.min_z()),
+        (bb.min_x(), bb.max_z()),
+        (bb.max_x(), bb.max_z()),
     ];
     let mut projected_y = new_y;
     'scan: while projected_y > min_y_threshold {

@@ -26,8 +26,8 @@ impl StructurePiecePlacer {
         clip: BoundingBox,
         random: &mut WorldgenRandom,
     ) -> bool {
-        let x = bounding_box.min.x;
-        let z = bounding_box.min.z;
+        let x = bounding_box.min_x();
+        let z = bounding_box.min_z();
         let mut y = region.height_at(HeightmapType::OceanFloorWg, x, z);
 
         while y > region.min_y() {

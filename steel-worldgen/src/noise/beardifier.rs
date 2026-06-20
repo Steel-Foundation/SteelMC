@@ -232,10 +232,10 @@ impl Beardifier {
             let bb = &rigid.bounding_box;
 
             // Horizontal distance to closest edge of bounding box (0 if inside)
-            let dx = 0.max((bb.min.x - block_x).max(block_x - bb.max.x));
-            let dz = 0.max((bb.min.z - block_z).max(block_z - bb.max.z));
+            let dx = 0.max((bb.min_x() - block_x).max(block_x - bb.max_x()));
+            let dz = 0.max((bb.min_z() - block_z).max(block_z - bb.max_z()));
 
-            let ground_y = bb.min.y + rigid.ground_level_delta;
+            let ground_y = bb.min_y() + rigid.ground_level_delta;
             let dy_to_ground = block_y - ground_y;
 
             match rigid.terrain_adjustment {
@@ -251,11 +251,11 @@ impl Beardifier {
                     value += get_beard_contribution(dx, dy_to_ground, dz, dy_to_ground) * 0.8;
                 }
                 TerrainAdjustment::BeardBox => {
-                    let dy = 0.max((ground_y - block_y).max(block_y - bb.max.y));
+                    let dy = 0.max((ground_y - block_y).max(block_y - bb.max_y()));
                     value += get_beard_contribution(dx, dy, dz, dy_to_ground) * 0.8;
                 }
                 TerrainAdjustment::Encapsulate => {
-                    let dy = 0.max((bb.min.y - block_y).max(block_y - bb.max.y));
+                    let dy = 0.max((bb.min_y() - block_y).max(block_y - bb.max_y()));
                     value += get_bury_contribution(
                         f64::from(dx) / 2.0,
                         f64::from(dy) / 2.0,
@@ -285,8 +285,8 @@ const fn is_close_to_chunk(bb: &BoundingBox, chunk_x: i32, chunk_z: i32, margin:
     let chunk_end_x = chunk_start_x + 15;
     let chunk_end_z = chunk_start_z + 15;
 
-    bb.max.x >= chunk_start_x - margin
-        && bb.min.x <= chunk_end_x + margin
-        && bb.max.z >= chunk_start_z - margin
-        && bb.min.z <= chunk_end_z + margin
+    bb.max_x() >= chunk_start_x - margin
+        && bb.min_x() <= chunk_end_x + margin
+        && bb.max_z() >= chunk_start_z - margin
+        && bb.min_z() <= chunk_end_z + margin
 }

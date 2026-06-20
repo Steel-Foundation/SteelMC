@@ -41,12 +41,12 @@ struct ExpectedBoundingBox {
 
 impl ExpectedBoundingBox {
     const fn matches(&self, actual: &steel_utils::BoundingBox) -> bool {
-        self.min_x == actual.min.x
-            && self.min_y == actual.min.y
-            && self.min_z == actual.min.z
-            && self.max_x == actual.max.x
-            && self.max_y == actual.max.y
-            && self.max_z == actual.max.z
+        self.min_x == actual.min_x()
+            && self.min_y == actual.min_y()
+            && self.min_z == actual.min_z()
+            && self.max_x == actual.max_x()
+            && self.max_y == actual.max_y()
+            && self.max_z == actual.max_z()
     }
 }
 
@@ -166,7 +166,12 @@ const fn direction_to_2d(orientation: Option<Direction>) -> i32 {
 fn fmt_bb_actual(bb: &steel_utils::BoundingBox) -> String {
     format!(
         "[{},{},{} .. {},{},{}]",
-        bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z,
+        bb.min_x(),
+        bb.min_y(),
+        bb.min_z(),
+        bb.max_x(),
+        bb.max_y(),
+        bb.max_z(),
     )
 }
 

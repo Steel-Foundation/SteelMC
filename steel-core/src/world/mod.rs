@@ -786,12 +786,12 @@ impl World {
     /// floored before iterating the inclusive block range.
     #[must_use]
     pub fn block_states_in_aabb_are_air(&self, aabb: WorldAabb) -> bool {
-        let min_x = aabb.min.x.floor() as i32;
-        let min_y = aabb.min.y.floor() as i32;
-        let min_z = aabb.min.z.floor() as i32;
-        let max_x = aabb.max.x.floor() as i32;
-        let max_y = aabb.max.y.floor() as i32;
-        let max_z = aabb.max.z.floor() as i32;
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().floor() as i32;
+        let max_y = aabb.max_y().floor() as i32;
+        let max_z = aabb.max_z().floor() as i32;
 
         for y in min_y..=max_y {
             for z in min_z..=max_z {
@@ -2282,8 +2282,8 @@ impl World {
         let mut closest: Option<(f64, Direction)> = None;
 
         for shape in shape.iter() {
-            let world_min = DVec3::new(shape.min.x, shape.min.y, shape.min.z) + block_vec;
-            let world_max = DVec3::new(shape.max.x, shape.max.y, shape.max.z) + block_vec;
+            let world_min = DVec3::new(shape.min_x(), shape.min_y(), shape.min_z()) + block_vec;
+            let world_max = DVec3::new(shape.max_x(), shape.max_y(), shape.max_z()) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
                 && hit.0 > 0.0
@@ -2333,8 +2333,8 @@ impl World {
             });
         }
 
-        let world_min = DVec3::new(aabb.min.x, aabb.min.y, aabb.min.z) + block_vec;
-        let world_max = DVec3::new(aabb.max.x, aabb.max.y, aabb.max.z) + block_vec;
+        let world_min = DVec3::new(aabb.min_x(), aabb.min_y(), aabb.min_z()) + block_vec;
+        let world_max = DVec3::new(aabb.max_x(), aabb.max_y(), aabb.max_z()) + block_vec;
         Self::intersects_aabb_with_t(from, to, world_min, world_max).and_then(|(t, direction)| {
             if t > 0.0 && t < 1.0 {
                 Some(ClipHitResult {
@@ -2363,12 +2363,12 @@ impl World {
     ) -> bool {
         let local = point - block_vec;
         !aabb.is_empty()
-            && local.x >= aabb.min.x
-            && local.x <= aabb.max.x
-            && local.y >= aabb.min.y
-            && local.y <= aabb.max.y
-            && local.z >= aabb.min.z
-            && local.z <= aabb.max.z
+            && local.x >= aabb.min_x()
+            && local.x <= aabb.max_x()
+            && local.y >= aabb.min_y()
+            && local.y <= aabb.max_y()
+            && local.z >= aabb.min_z()
+            && local.z <= aabb.max_z()
     }
 
     fn clip_miss(from: DVec3, to: DVec3) -> ClipHitResult {

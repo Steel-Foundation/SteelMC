@@ -228,12 +228,12 @@ fn can_fall_at_least(
     }
 
     let fall_aabb = WorldAabb::new(
-        aabb.min.x + EDGE_COLLISION_EPSILON + delta_x,
-        aabb.min.y - min_height - EDGE_COLLISION_EPSILON,
-        aabb.min.z + EDGE_COLLISION_EPSILON + delta_z,
-        aabb.max.x - EDGE_COLLISION_EPSILON + delta_x,
-        aabb.min.y,
-        aabb.max.z - EDGE_COLLISION_EPSILON + delta_z,
+        aabb.min_x() + EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min_y() - min_height - EDGE_COLLISION_EPSILON,
+        aabb.min_z() + EDGE_COLLISION_EPSILON + delta_z,
+        aabb.max_x() - EDGE_COLLISION_EPSILON + delta_x,
+        aabb.min_y(),
+        aabb.max_z() - EDGE_COLLISION_EPSILON + delta_z,
     );
 
     !world.has_collision_with_context(&fall_aabb, state.block_collision_context())
@@ -456,7 +456,7 @@ fn try_step_up(
             continue;
         }
 
-        let distance_to_ground = aabb.min.y - grounded_aabb.min.y;
+        let distance_to_ground = aabb.min_y() - grounded_aabb.min_y();
         let actual_movement = step_from_ground - DVec3::new(0.0, distance_to_ground, 0.0);
         let final_aabb = stepped_aabb.translate(DVec3::ZERO.with_y(-distance_to_ground));
         let x_collision = horizontal_axis_collided(movement.x, actual_movement.x);
@@ -502,13 +502,13 @@ fn collect_candidate_step_up_heights(
     for collider in collisions {
         push_step_height_candidate(
             &mut candidates,
-            collider.min.y - grounded_aabb.min.y,
+            collider.min_y() - grounded_aabb.min_y(),
             max_step_height,
             step_height_to_skip,
         );
         push_step_height_candidate(
             &mut candidates,
-            collider.max.y - grounded_aabb.min.y,
+            collider.max_y() - grounded_aabb.min_y(),
             max_step_height,
             step_height_to_skip,
         );
@@ -571,7 +571,7 @@ mod tests {
         fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
             let mut collisions = Vec::new();
 
-            if self.has_floor && aabb.min.y <= 1.0 {
+            if self.has_floor && aabb.min_y() <= 1.0 {
                 // Full block at Y=0
                 collisions.push(WorldAabb::new(-10.0, 0.0, -10.0, 10.0, 1.0, 10.0));
             }

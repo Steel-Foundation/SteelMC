@@ -918,7 +918,7 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
     pos: BlockPos,
     mut quart_biome: F,
 ) -> u16 {
-    let abs = *pos - IVec3::splat(2);
+    let abs = pos.0 - IVec3::splat(2);
     let parent = IVec3::new(abs.x >> 2, abs.y >> 2, abs.z >> 2);
     let fract = DVec3::new(
         f64::from(abs.x & 3),

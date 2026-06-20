@@ -307,7 +307,7 @@ fn make_bounding_box(
 }
 
 const fn is_ok_box(bb: &BoundingBox) -> bool {
-    bb.min.y > LOWEST_Y
+    bb.min_y() > LOWEST_Y
 }
 
 fn find_collision<'a>(pieces: &'a [FortressPiece], bb: &BoundingBox) -> Option<&'a FortressPiece> {
@@ -473,12 +473,12 @@ fn generate_child_forward(
     is_castle: bool,
 ) {
     let bb = parent.bb;
-    let y = bb.min.y + y_off;
+    let y = bb.min_y() + y_off;
     let foot = match parent.orientation {
-        Direction::North => IVec3::new(bb.min.x + x_off, y, bb.min.z - 1),
-        Direction::South => IVec3::new(bb.min.x + x_off, y, bb.max.z + 1),
-        Direction::West => IVec3::new(bb.min.x - 1, y, bb.min.z + x_off),
-        Direction::East => IVec3::new(bb.max.x + 1, y, bb.min.z + x_off),
+        Direction::North => IVec3::new(bb.min_x() + x_off, y, bb.min_z() - 1),
+        Direction::South => IVec3::new(bb.min_x() + x_off, y, bb.max_z() + 1),
+        Direction::West => IVec3::new(bb.min_x() - 1, y, bb.min_z() + x_off),
+        Direction::East => IVec3::new(bb.max_x() + 1, y, bb.min_z() + x_off),
         _ => return,
     };
     generate_and_add_piece(
@@ -502,11 +502,11 @@ fn generate_child_left(
     let bb = parent.bb;
     let (foot, dir) = match parent.orientation {
         Direction::North | Direction::South => (
-            IVec3::new(bb.min.x - 1, bb.min.y + y_off, bb.min.z + z_off),
+            IVec3::new(bb.min_x() - 1, bb.min_y() + y_off, bb.min_z() + z_off),
             Direction::West,
         ),
         Direction::West | Direction::East => (
-            IVec3::new(bb.min.x + z_off, bb.min.y + y_off, bb.min.z - 1),
+            IVec3::new(bb.min_x() + z_off, bb.min_y() + y_off, bb.min_z() - 1),
             Direction::North,
         ),
         _ => return,
@@ -525,11 +525,11 @@ fn generate_child_right(
     let bb = parent.bb;
     let (foot, dir) = match parent.orientation {
         Direction::North | Direction::South => (
-            IVec3::new(bb.max.x + 1, bb.min.y + y_off, bb.min.z + z_off),
+            IVec3::new(bb.max_x() + 1, bb.min_y() + y_off, bb.min_z() + z_off),
             Direction::East,
         ),
         Direction::West | Direction::East => (
-            IVec3::new(bb.min.x + z_off, bb.min.y + y_off, bb.max.z + 1),
+            IVec3::new(bb.min_x() + z_off, bb.min_y() + y_off, bb.max_z() + 1),
             Direction::South,
         ),
         _ => return,
@@ -623,7 +623,7 @@ fn move_inside_heights(
     } else {
         lowest_allowed
     };
-    let dy = y0 - bb.min.y;
+    let dy = y0 - bb.min_y();
     if dy == 0 {
         return;
     }
@@ -659,7 +659,7 @@ pub fn generate_fortress_pieces(
     let mut builder = Builder {
         pieces: vec![start_piece],
         pending: Vec::new(),
-        start_bb_min: start_bb.min,
+        start_bb_min: start_bb.min_corner(),
         bridge_weights: bridge_weights(),
         castle_weights: castle_weights(),
         previous_kind: None,

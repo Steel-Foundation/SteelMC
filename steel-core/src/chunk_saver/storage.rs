@@ -30,7 +30,6 @@ use steel_registry::structure::{
 };
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
-use steel_utils::geometry::WincodeBoundingBox;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
@@ -335,8 +334,8 @@ fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
-    PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
+    PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentBoundingBox,
+    PersistentChunk, PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
     PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
@@ -1567,7 +1566,7 @@ impl ChunkStorage {
         child: &OceanMonumentChildPiece,
     ) -> PersistentOceanMonumentChildPiece {
         PersistentOceanMonumentChildPiece {
-            bounding_box: WincodeBoundingBox(child.bounding_box),
+            bounding_box: PersistentBoundingBox::from_bounding_box(child.bounding_box),
             kind: Self::ocean_monument_child_kind_to_persistent(&child.kind),
         }
     }
@@ -1576,7 +1575,7 @@ impl ChunkStorage {
         child: &PersistentOceanMonumentChildPiece,
     ) -> OceanMonumentChildPiece {
         OceanMonumentChildPiece {
-            bounding_box: child.bounding_box.0,
+            bounding_box: child.bounding_box.to_bounding_box(),
             kind: Self::persistent_to_ocean_monument_child_kind(&child.kind),
         }
     }
@@ -2032,7 +2031,7 @@ impl ChunkStorage {
             } => PersistentMineshaftPieceKind::Room {
                 child_entrance_boxes: child_entrance_boxes
                     .iter()
-                    .map(|&b| WincodeBoundingBox(b))
+                    .map(|&b| PersistentBoundingBox::from_bounding_box(b))
                     .collect(),
             },
             MineshaftPieceKind::Corridor {
@@ -2062,7 +2061,10 @@ impl ChunkStorage {
             PersistentMineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => MineshaftPieceKind::Room {
-                child_entrance_boxes: child_entrance_boxes.iter().map(|b| b.0).collect(),
+                child_entrance_boxes: child_entrance_boxes
+                    .iter()
+                    .map(|b| b.to_bounding_box())
+                    .collect(),
             },
             PersistentMineshaftPieceKind::Corridor {
                 has_rails,
@@ -2344,7 +2346,7 @@ impl ChunkStorage {
                     .iter()
                     .map(|piece| PersistentStructurePiece {
                         piece_type: piece.piece_type.clone(),
-                        bounding_box: WincodeBoundingBox(piece.bounding_box),
+                        bounding_box: PersistentBoundingBox::from_bounding_box(piece.bounding_box),
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
                         payload: Self::structure_piece_payload_to_persistent(&piece.payload),
@@ -2408,7 +2410,7 @@ impl ChunkStorage {
                     .iter()
                     .map(|pp| StructurePiece {
                         piece_type: pp.piece_type.clone(),
-                        bounding_box: pp.bounding_box.0,
+                        bounding_box: pp.bounding_box.to_bounding_box(),
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
                         payload: Self::persistent_to_structure_piece_payload(&pp.payload),

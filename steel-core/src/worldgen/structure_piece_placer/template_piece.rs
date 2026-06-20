@@ -747,9 +747,9 @@ impl StructurePiecePlacer {
         }
 
         let pos = BlockPos::new(
-            fossil_box.min.x + positional_random.next_i32_bounded(fossil_box.width()),
-            fossil_box.min.y,
-            fossil_box.min.z + positional_random.next_i32_bounded(fossil_box.depth()),
+            fossil_box.min_x() + positional_random.next_i32_bounded(fossil_box.width()),
+            fossil_box.min_y(),
+            fossil_box.min_z() + positional_random.next_i32_bounded(fossil_box.depth()),
         );
         if !placement_clip.contains_blockpos(pos) {
             return;

@@ -198,23 +198,23 @@ mod tests {
     #[test]
     fn bounding_box_none() {
         let bb = Rotation::None.get_bounding_box(IVec3::new(0, 0, 0), IVec3::new(6, 10, 6));
-        assert_eq!((bb.min.x, bb.min.y, bb.min.z), (0, 0, 0));
-        assert_eq!((bb.max.x, bb.max.y, bb.max.z), (5, 9, 5));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (0, 0, 0));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (5, 9, 5));
     }
 
     #[test]
     fn bounding_box_cw90() {
         let bb =
             Rotation::Clockwise90.get_bounding_box(IVec3::new(100, 50, 200), IVec3::new(6, 10, 8));
-        assert_eq!((bb.min.x, bb.min.y, bb.min.z), (93, 50, 200));
-        assert_eq!((bb.max.x, bb.max.y, bb.max.z), (100, 59, 205));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (93, 50, 200));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (100, 59, 205));
     }
 
     #[test]
     fn bounding_box_cw180() {
         let bb = Rotation::Clockwise180.get_bounding_box(IVec3::new(0, 0, 0), IVec3::new(6, 10, 8));
-        assert_eq!((bb.min.x, bb.min.y, bb.min.z), (-5, 0, -7));
-        assert_eq!((bb.max.x, bb.max.y, bb.max.z), (0, 9, 0));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (-5, 0, -7));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (0, 9, 0));
     }
 
     #[test]

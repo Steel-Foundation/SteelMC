@@ -57,7 +57,7 @@ const fn orient_box(foot: IVec3, off: IVec3, size: IVec3, dir: Direction) -> Bou
 }
 
 const fn is_ok(bb: &BoundingBox) -> bool {
-    bb.min.y > LOWEST_Y
+    bb.min_y() > LOWEST_Y
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -348,7 +348,7 @@ fn find_box(pt: PT, s: &State, foot: IVec3, dir: Direction) -> Option<BoundingBo
         PT::Filler => {
             let full_box = orient_box(foot, IVec3::new(-1, -1, 0), IVec3::new(5, 5, 4), dir);
             let collision = s.pieces.iter().find(|p| p.bb.intersects(full_box))?;
-            if collision.bb.min.y != full_box.min.y {
+            if collision.bb.min_y() != full_box.min_y() {
                 return None;
             }
             for d in (1..=2).rev() {
@@ -493,7 +493,7 @@ fn generate_piece(
     }
 
     if let Some(bb) = find_box(PT::Filler, s, foot, dir)
-        && bb.min.y > 1
+        && bb.min_y() > 1
     {
         return Some(create_piece(PT::Filler, bb, dir, depth, rng));
     }
@@ -510,8 +510,8 @@ fn gen_and_add(
     depth: i32,
 ) {
     if depth > MAX_DEPTH
-        || (fx - s.start_bb.min.x).abs() > MAX_DISTANCE
-        || (fz - s.start_bb.min.z).abs() > MAX_DISTANCE
+        || (fx - s.start_bb.min_x()).abs() > MAX_DISTANCE
+        || (fz - s.start_bb.min_z()).abs() > MAX_DISTANCE
     {
         return;
     }
@@ -626,13 +626,13 @@ fn fwd(
     y_off: i32,
 ) {
     let (fx, fz) = match dir {
-        Direction::North => (bb.min.x + x_off, bb.min.z - 1),
-        Direction::South => (bb.min.x + x_off, bb.max.z + 1),
-        Direction::West => (bb.min.x - 1, bb.min.z + x_off),
-        Direction::East => (bb.max.x + 1, bb.min.z + x_off),
+        Direction::North => (bb.min_x() + x_off, bb.min_z() - 1),
+        Direction::South => (bb.min_x() + x_off, bb.max_z() + 1),
+        Direction::West => (bb.min_x() - 1, bb.min_z() + x_off),
+        Direction::East => (bb.max_x() + 1, bb.min_z() + x_off),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, dir, depth + 1);
+    gen_and_add(s, rng, fx, bb.min_y() + y_off, fz, dir, depth + 1);
 }
 
 fn left(
@@ -645,11 +645,13 @@ fn left(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => (bb.min.x - 1, bb.min.z + z_off, Direction::West),
-        Direction::West | Direction::East => (bb.min.x + z_off, bb.min.z - 1, Direction::North),
+        Direction::North | Direction::South => {
+            (bb.min_x() - 1, bb.min_z() + z_off, Direction::West)
+        }
+        Direction::West | Direction::East => (bb.min_x() + z_off, bb.min_z() - 1, Direction::North),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, d, depth + 1);
+    gen_and_add(s, rng, fx, bb.min_y() + y_off, fz, d, depth + 1);
 }
 
 fn right(
@@ -662,11 +664,13 @@ fn right(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => (bb.max.x + 1, bb.min.z + z_off, Direction::East),
-        Direction::West | Direction::East => (bb.min.x + z_off, bb.max.z + 1, Direction::South),
+        Direction::North | Direction::South => {
+            (bb.max_x() + 1, bb.min_z() + z_off, Direction::East)
+        }
+        Direction::West | Direction::East => (bb.min_x() + z_off, bb.max_z() + 1, Direction::South),
         _ => return,
     };
-    gen_and_add(s, rng, fx, bb.min.y + y_off, fz, d, depth + 1);
+    gen_and_add(s, rng, fx, bb.min_y() + y_off, fz, d, depth + 1);
 }
 
 /// One generated stronghold piece.
@@ -734,29 +738,29 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<StrongholdG
         for p in &s.pieces[1..] {
             overall = BoundingBox::new(
                 IVec3::new(
-                    overall.min.x.min(p.bb.min.x),
-                    overall.min.y.min(p.bb.min.y),
-                    overall.min.z.min(p.bb.min.z),
+                    overall.min_x().min(p.bb.min_x()),
+                    overall.min_y().min(p.bb.min_y()),
+                    overall.min_z().min(p.bb.min_z()),
                 ),
                 IVec3::new(
-                    overall.max.x.max(p.bb.max.x),
-                    overall.max.y.max(p.bb.max.y),
-                    overall.max.z.max(p.bb.max.z),
+                    overall.max_x().max(p.bb.max_x()),
+                    overall.max_y().max(p.bb.max_y()),
+                    overall.max_z().max(p.bb.max_z()),
                 ),
             );
         }
-        let mut y1_pos = (overall.max.y - overall.min.y + 1) + min_y + 1;
+        let mut y1_pos = (overall.max_y() - overall.min_y() + 1) + min_y + 1;
         if y1_pos < max_y {
             y1_pos += rng.next_i32_bounded(max_y - y1_pos);
         }
-        let dy = y1_pos - overall.max.y;
+        let dy = y1_pos - overall.max_y();
         return s
             .pieces
             .into_iter()
             .map(|p| StrongholdGeneratedPiece {
                 bounding_box: BoundingBox::new(
-                    IVec3::new(p.bb.min.x, p.bb.min.y + dy, p.bb.min.z),
-                    IVec3::new(p.bb.max.x, p.bb.max.y + dy, p.bb.max.z),
+                    IVec3::new(p.bb.min_x(), p.bb.min_y() + dy, p.bb.min_z()),
+                    IVec3::new(p.bb.max_x(), p.bb.max_y() + dy, p.bb.max_z()),
                 ),
                 orientation: p.dir,
                 gen_depth: p.depth,

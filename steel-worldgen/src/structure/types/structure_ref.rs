@@ -61,10 +61,7 @@ impl StructureStart {
         let (first, rest) = pieces.split_first()?;
         let mut bb = first.bounding_box;
         for piece in rest {
-            bb = BoundingBox::new(
-                bb.min.min(piece.bounding_box.min),
-                bb.max.max(piece.bounding_box.max),
-            );
+            bb = BoundingBox::encapsulating(&bb, &piece.bounding_box);
         }
         Some(bb.inflate_xyz(bb_inflate, bb_inflate, bb_inflate))
     }
@@ -77,7 +74,7 @@ impl StructureStart {
         let center = first_piece.bounding_box.center();
         Some(BlockPos::new(
             center.x,
-            first_piece.bounding_box.min.y,
+            first_piece.bounding_box.min_y(),
             center.z,
         ))
     }

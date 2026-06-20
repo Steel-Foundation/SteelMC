@@ -1,13 +1,9 @@
 //! Geometry primitives shared by registry data, physics, and world queries.
 
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 use std::ops::{Add, Div, Neg, Sub};
 
 use glam::{DVec3, IVec3};
-use wincode::config::ConfigCore;
-use wincode::io::{Reader, Writer};
-use wincode::{ReadResult, SchemaRead, SchemaWrite, TypeMeta, WriteResult};
 
 use crate::{BlockPos, axis::Axis};
 
@@ -56,9 +52,9 @@ impl Space for Structure {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Aabb<T, I> {
     /// Minimum corner of the box.
-    pub min: T,
+    min: T,
     /// Maximum corner of the box.
-    pub max: T,
+    max: T,
     p: PhantomData<I>,
 }
 
@@ -70,10 +66,6 @@ pub type WorldAabb = Aabb<DVec3, World>;
 
 /// Integer axis-aligned bounding box for structure pieces.
 pub type BoundingBox = Aabb<IVec3, Structure>;
-
-/// Integer axis-aligned bounding box for structure pieces but with wincode impl.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WincodeBoundingBox(pub BoundingBox);
 
 /// Vector operations used by generic AABB helpers.
 pub trait AabbVector: Copy + Add<Output = Self> + Sub<Output = Self> {
@@ -163,118 +155,6 @@ impl AabbVector for IVec3 {
     }
 }
 
-const BOUNDING_BOX_SCHEMA_SIZE: usize = 6 * size_of::<i32>();
-
-fn write_bounding_box<C: ConfigCore>(
-    mut writer: impl Writer,
-    bbox: &BoundingBox,
-) -> WriteResult<()> {
-    for &val in &[
-        bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
-    ] {
-        <i32 as SchemaWrite<C>>::write(writer.by_ref(), &val)?;
-    }
-    Ok(())
-}
-
-fn read_bounding_box<'de, C: ConfigCore>(mut reader: impl Reader<'de>) -> ReadResult<BoundingBox> {
-    let mut vals = [MaybeUninit::<i32>::uninit(); 6];
-    for slot in &mut vals {
-        <i32 as SchemaRead<'de, C>>::read(reader.by_ref(), slot)?;
-    }
-
-    // SAFETY: all six reads succeeded, every slot is initialized.
-    let [min_x, min_y, min_z, max_x, max_y, max_z] = vals.map(|v| unsafe { v.assume_init() });
-
-    Ok(BoundingBox {
-        min: IVec3::new(min_x, min_y, min_z),
-        max: IVec3::new(max_x, max_y, max_z),
-        p: PhantomData,
-    })
-}
-
-// SAFETY: BoundingBox is represented by six initialized i32 components and the
-// implementation writes exactly those components in min/max order.
-unsafe impl<C: ConfigCore> SchemaWrite<C> for BoundingBox {
-    type Src = Self;
-
-    const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: BOUNDING_BOX_SCHEMA_SIZE,
-        zero_copy: false,
-    };
-
-    fn size_of(_src: &Self::Src) -> WriteResult<usize> {
-        Ok(BOUNDING_BOX_SCHEMA_SIZE)
-    }
-
-    fn write(writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
-        write_bounding_box::<C>(writer, src)
-    }
-}
-
-// SAFETY: The implementation reads exactly six i32 values and writes a fully
-// initialized BoundingBox to the destination.
-unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for BoundingBox {
-    type Dst = Self;
-
-    const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: BOUNDING_BOX_SCHEMA_SIZE,
-        zero_copy: false,
-    };
-
-    fn read(reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
-        let bbox = read_bounding_box::<C>(reader)?;
-
-        // SAFETY: dst is uninitialised; we write a fully-constructed value.
-        unsafe {
-            dst.as_mut_ptr().write(bbox);
-        }
-
-        Ok(())
-    }
-}
-
-// SAFETY: WincodeBoundingBox delegates to BoundingBox's component-complete
-// schema implementation.
-unsafe impl<C: ConfigCore> SchemaWrite<C> for WincodeBoundingBox {
-    type Src = Self;
-
-    const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: BOUNDING_BOX_SCHEMA_SIZE,
-        zero_copy: false,
-    };
-
-    fn size_of(_src: &Self::Src) -> WriteResult<usize> {
-        Ok(BOUNDING_BOX_SCHEMA_SIZE)
-    }
-
-    fn write(writer: impl Writer, src: &Self::Src) -> WriteResult<()> {
-        write_bounding_box::<C>(writer, &src.0)
-    }
-}
-
-// SAFETY: The wrapped BoundingBox is read through BoundingBox's schema
-// implementation, then written as a fully initialized wrapper.
-unsafe impl<'de, C: ConfigCore> SchemaRead<'de, C> for WincodeBoundingBox {
-    type Dst = Self;
-
-    const TYPE_META: TypeMeta = TypeMeta::Static {
-        size: BOUNDING_BOX_SCHEMA_SIZE,
-        zero_copy: false,
-    };
-
-    fn read(reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> ReadResult<()> {
-        let bbox = read_bounding_box::<C>(reader)?;
-
-        // SAFETY: dst is uninitialised; we write a fully-constructed value.
-        unsafe {
-            dst.as_mut_ptr().write(WincodeBoundingBox(bbox));
-        }
-
-        Ok(())
-    }
-}
-
 impl<T: AabbVector, I> Aabb<T, I> {
     /// Returns the minimum coordinate on `axis`.
     #[must_use]
@@ -337,6 +217,106 @@ impl<T: AabbVector, I> Aabb<T, I> {
             max: a.max.max(b.max),
             p: PhantomData,
         }
+    }
+}
+
+impl<I> Aabb<DVec3, I> {
+    /// Returns the minimum corner.
+    #[must_use]
+    pub const fn min_corner(&self) -> DVec3 {
+        self.min
+    }
+
+    /// Returns the maximum corner.
+    #[must_use]
+    pub const fn max_corner(&self) -> DVec3 {
+        self.max
+    }
+
+    /// Returns the minimum X coordinate.
+    #[must_use]
+    pub const fn min_x(&self) -> f64 {
+        self.min.x
+    }
+
+    /// Returns the minimum Y coordinate.
+    #[must_use]
+    pub const fn min_y(&self) -> f64 {
+        self.min.y
+    }
+
+    /// Returns the minimum Z coordinate.
+    #[must_use]
+    pub const fn min_z(&self) -> f64 {
+        self.min.z
+    }
+
+    /// Returns the maximum X coordinate.
+    #[must_use]
+    pub const fn max_x(&self) -> f64 {
+        self.max.x
+    }
+
+    /// Returns the maximum Y coordinate.
+    #[must_use]
+    pub const fn max_y(&self) -> f64 {
+        self.max.y
+    }
+
+    /// Returns the maximum Z coordinate.
+    #[must_use]
+    pub const fn max_z(&self) -> f64 {
+        self.max.z
+    }
+}
+
+impl<I> Aabb<IVec3, I> {
+    /// Returns the minimum corner.
+    #[must_use]
+    pub const fn min_corner(&self) -> IVec3 {
+        self.min
+    }
+
+    /// Returns the maximum corner.
+    #[must_use]
+    pub const fn max_corner(&self) -> IVec3 {
+        self.max
+    }
+
+    /// Returns the minimum X coordinate.
+    #[must_use]
+    pub const fn min_x(&self) -> i32 {
+        self.min.x
+    }
+
+    /// Returns the minimum Y coordinate.
+    #[must_use]
+    pub const fn min_y(&self) -> i32 {
+        self.min.y
+    }
+
+    /// Returns the minimum Z coordinate.
+    #[must_use]
+    pub const fn min_z(&self) -> i32 {
+        self.min.z
+    }
+
+    /// Returns the maximum X coordinate.
+    #[must_use]
+    pub const fn max_x(&self) -> i32 {
+        self.max.x
+    }
+
+    /// Returns the maximum Y coordinate.
+    #[must_use]
+    pub const fn max_y(&self) -> i32 {
+        self.max.y
+    }
+
+    /// Returns the maximum Z coordinate.
+    #[must_use]
+    pub const fn max_z(&self) -> i32 {
+        self.max.z
     }
 }
 
@@ -582,23 +562,23 @@ mod tests {
     #[test]
     fn constructors_normalize_endpoints_like_vanilla() {
         let aabb = WorldAabb::new(3.0, 4.0, 5.0, 1.0, 2.0, 0.0);
-        assert_eq!(aabb.min.x, 1.0);
-        assert_eq!(aabb.min.y, 2.0);
-        assert_eq!(aabb.min.z, 0.0);
-        assert_eq!(aabb.max.x, 3.0);
-        assert_eq!(aabb.max.y, 4.0);
-        assert_eq!(aabb.max.z, 5.0);
+        assert_eq!(aabb.min_x(), 1.0);
+        assert_eq!(aabb.min_y(), 2.0);
+        assert_eq!(aabb.min_z(), 0.0);
+        assert_eq!(aabb.max_x(), 3.0);
+        assert_eq!(aabb.max_y(), 4.0);
+        assert_eq!(aabb.max_z(), 5.0);
     }
 
     #[test]
     fn inflate_and_deflate_normalize_inverted_bounds() {
         let aabb = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0).deflate(0.75);
-        assert_eq!(aabb.min, DVec3::splat(0.25));
-        assert_eq!(aabb.max, DVec3::splat(0.75));
+        assert_eq!(aabb.min_corner(), DVec3::splat(0.25));
+        assert_eq!(aabb.max_corner(), DVec3::splat(0.75));
 
         let bbox = BoundingBox::new(IVec3::ZERO, IVec3::splat(5)).inflate(-4);
-        assert_eq!(bbox.min, IVec3::splat(1));
-        assert_eq!(bbox.max, IVec3::splat(4));
+        assert_eq!(bbox.min_corner(), IVec3::splat(1));
+        assert_eq!(bbox.max_corner(), IVec3::splat(4));
     }
 
     #[test]
@@ -606,12 +586,12 @@ mod tests {
         let local = BlockLocalAabb::new(0.0, 0.25, 0.0, 1.0, 0.75, 1.0);
         let world = local.at_block(BlockPos::new(10, 64, -5));
 
-        assert_eq!(world.min.x, 10.0);
-        assert_eq!(world.min.y, 64.25);
-        assert_eq!(world.min.z, -5.0);
-        assert_eq!(world.max.x, 11.0);
-        assert_eq!(world.max.y, 64.75);
-        assert_eq!(world.max.z, -4.0);
+        assert_eq!(world.min_x(), 10.0);
+        assert_eq!(world.min_y(), 64.25);
+        assert_eq!(world.min_z(), -5.0);
+        assert_eq!(world.max_x(), 11.0);
+        assert_eq!(world.max_y(), 64.75);
+        assert_eq!(world.max_z(), -4.0);
     }
 
     #[test]
@@ -628,11 +608,11 @@ mod tests {
         let aabb = WorldAabb::new(1.0, 1.0, 1.0, 2.0, 2.0, 2.0);
         let swept = aabb.expand_towards(DVec3::new(-0.5, 1.5, 0.0));
 
-        assert_eq!(swept.min.x, 0.5);
-        assert_eq!(swept.min.y, 1.0);
-        assert_eq!(swept.min.z, 1.0);
-        assert_eq!(swept.max.x, 2.0);
-        assert_eq!(swept.max.y, 3.5);
-        assert_eq!(swept.max.z, 2.0);
+        assert_eq!(swept.min_x(), 0.5);
+        assert_eq!(swept.min_y(), 1.0);
+        assert_eq!(swept.min_z(), 1.0);
+        assert_eq!(swept.max_x(), 2.0);
+        assert_eq!(swept.max_y(), 3.5);
+        assert_eq!(swept.max_z(), 2.0);
     }
 }

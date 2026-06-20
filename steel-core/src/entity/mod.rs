@@ -101,9 +101,9 @@ const fn equipment_slot_matches_equippable(
 }
 
 fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    (aabb.min.x.floor() as i32..aabb.max.x.ceil() as i32).any(|x| {
-        (aabb.min.y.floor() as i32..aabb.max.y.ceil() as i32).any(|y| {
-            (aabb.min.z.floor() as i32..aabb.max.z.ceil() as i32)
+    (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
+        (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
+            (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
                 .any(|z| !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty())
         })
     })
@@ -170,7 +170,7 @@ fn is_in_rain(entity: &dyn Entity) -> bool {
     world.is_raining_at(pos)
         || world.is_raining_at(BlockPos::new(
             pos.x(),
-            entity.bounding_box().max.y.floor() as i32,
+            entity.bounding_box().max_y().floor() as i32,
             pos.z(),
         ))
 }
@@ -1825,7 +1825,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             let bounding_box = self.bounding_box();
             self.move_towards_closest_space(
                 self.position().x,
-                f64::midpoint(bounding_box.min.y, bounding_box.max.y),
+                f64::midpoint(bounding_box.min_y(), bounding_box.max_y()),
                 self.position().z,
             );
         }
@@ -2764,12 +2764,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
         let bounding_box = self.bounding_box();
         let test_area = WorldAabb::new(
-            bounding_box.min.x,
-            bounding_box.min.y - 1.0e-6,
-            bounding_box.min.z,
-            bounding_box.max.x,
-            bounding_box.min.y,
-            bounding_box.max.z,
+            bounding_box.min_x(),
+            bounding_box.min_y() - 1.0e-6,
+            bounding_box.min_z(),
+            bounding_box.max_x(),
+            bounding_box.min_y(),
+            bounding_box.max_z(),
         );
         let collision_world =
             WorldCollisionProvider::for_entity(world, self.as_entity_event_source());

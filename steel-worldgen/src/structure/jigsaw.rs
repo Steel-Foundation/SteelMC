@@ -439,14 +439,14 @@ fn element_bounding_box(
                     result = Some(match result {
                         Some(prev) => BoundingBox::new(
                             IVec3::new(
-                                prev.min.x.min(sub_bb.min.x),
-                                prev.min.y.min(sub_bb.min.y),
-                                prev.min.z.min(sub_bb.min.z),
+                                prev.min_x().min(sub_bb.min_x()),
+                                prev.min_y().min(sub_bb.min_y()),
+                                prev.min_z().min(sub_bb.min_z()),
                             ),
                             IVec3::new(
-                                prev.max.x.max(sub_bb.max.x),
-                                prev.max.y.max(sub_bb.max.y),
-                                prev.max.z.max(sub_bb.max.z),
+                                prev.max_x().max(sub_bb.max_x()),
+                                prev.max_y().max(sub_bb.max_y()),
+                                prev.max_z().max(sub_bb.max_z()),
                             ),
                         ),
                         None => sub_bb,
@@ -511,12 +511,12 @@ struct FreeSpace {
 
 impl FreeSpace {
     fn collides(&self, candidate: &BoundingBox) -> bool {
-        if candidate.min.x < self.constraint.min.x
-            || candidate.max.x > self.constraint.max.x
-            || candidate.min.y < self.constraint.min.y
-            || candidate.max.y > self.constraint.max.y
-            || candidate.min.z < self.constraint.min.z
-            || candidate.max.z > self.constraint.max.z
+        if candidate.min_x() < self.constraint.min_x()
+            || candidate.max_x() > self.constraint.max_x()
+            || candidate.min_y() < self.constraint.min_y()
+            || candidate.max_y() > self.constraint.max_y()
+            || candidate.min_z() < self.constraint.min_z()
+            || candidate.max_z() > self.constraint.max_z()
         {
             return true;
         }
@@ -585,23 +585,23 @@ fn start_assembly(
     let center_bb = element_bounding_box(center_element, templates, adjusted, center_rotation)?;
 
     let bottom_y = if config.project_start_to_heightmap.is_some() {
-        let mid_x = java_center(center_bb.min.x, center_bb.max.x);
-        let mid_z = java_center(center_bb.min.z, center_bb.max.z);
+        let mid_x = java_center(center_bb.min_x(), center_bb.max_x());
+        let mid_z = java_center(center_bb.min_z(), center_bb.max_z());
         start_y + get_height(mid_x, mid_z)
     } else {
         adjusted.y
     };
 
     let ground_level_delta = center_element.projection().ground_level_delta();
-    let dy = bottom_y - (center_bb.min.y + ground_level_delta);
+    let dy = bottom_y - (center_bb.min_y() + ground_level_delta);
     let center_bb = BoundingBox::new(
-        IVec3::new(center_bb.min.x, center_bb.min.y + dy, center_bb.min.z),
-        IVec3::new(center_bb.max.x, center_bb.max.y + dy, center_bb.max.z),
+        IVec3::new(center_bb.min_x(), center_bb.min_y() + dy, center_bb.min_z()),
+        IVec3::new(center_bb.max_x(), center_bb.max_y() + dy, center_bb.max_z()),
     );
     let adjusted_y = adjusted.y + dy;
 
     let padding = &config.dimension_padding;
-    if center_bb.min.y < min_y + padding.bottom || center_bb.max.y > max_y - 1 - padding.top {
+    if center_bb.min_y() < min_y + padding.bottom || center_bb.max_y() > max_y - 1 - padding.top {
         return None;
     }
 
@@ -618,8 +618,8 @@ fn start_assembly(
         junctions: Vec::new(),
     }];
 
-    let center_stub_x = java_center(center_bb.min.x, center_bb.max.x);
-    let center_stub_z = java_center(center_bb.min.z, center_bb.max.z);
+    let center_stub_x = java_center(center_bb.min_x(), center_bb.max_x());
+    let center_stub_z = java_center(center_bb.min_z(), center_bb.max_z());
     let center_stub_y = bottom_y + anchor_offset.y;
     let biome_check_pos = IVec3::new(center_stub_x, center_stub_y, center_stub_z);
 
@@ -911,7 +911,7 @@ fn try_placing_children<'a>(
             source_piece.ground_level_delta,
         )
     };
-    let source_box_y = source_bb.min.y;
+    let source_box_y = source_bb.min_y();
     let source_rigid = source_projection == Projection::Rigid;
 
     let mut internal_ctx_idx: Option<usize> = None;
@@ -995,7 +995,7 @@ fn try_placing_children<'a>(
                     if let Some(template_data) = hack_data {
                         let hack_box = candidate_rotation
                             .get_bounding_box(IVec3::ZERO, IVec3::from(template_data.size));
-                        if hack_box.max.y - hack_box.min.y < 16 {
+                        if hack_box.max_y() - hack_box.min_y() < 16 {
                             template_data
                                 .jigsaws
                                 .iter()
@@ -1074,22 +1074,27 @@ fn try_placing_children<'a>(
                         base_height - target_jigsaw_local_y
                     };
 
-                    let y_offset = target_box_y - raw_bb.min.y;
+                    let y_offset = target_box_y - raw_bb.min_y();
                     let candidate_bb = BoundingBox::new(
-                        IVec3::new(raw_bb.min.x, raw_bb.min.y + y_offset, raw_bb.min.z),
-                        IVec3::new(raw_bb.max.x, raw_bb.max.y + y_offset, raw_bb.max.z),
+                        IVec3::new(raw_bb.min_x(), raw_bb.min_y() + y_offset, raw_bb.min_z()),
+                        IVec3::new(raw_bb.max_x(), raw_bb.max_y() + y_offset, raw_bb.max_z()),
                     );
                     let target_position =
-                        IVec3::new(raw_target.x, raw_bb.min.y + y_offset, raw_target.z);
+                        IVec3::new(raw_target.x, raw_bb.min_y() + y_offset, raw_target.z);
 
                     let expanded_bb = if expand_to > 0 {
-                        let new_size = (expand_to + 1).max(candidate_bb.max.y - candidate_bb.min.y);
+                        let new_size =
+                            (expand_to + 1).max(candidate_bb.max_y() - candidate_bb.min_y());
                         BoundingBox::new(
-                            IVec3::new(candidate_bb.min.x, candidate_bb.min.y, candidate_bb.min.z),
                             IVec3::new(
-                                candidate_bb.max.x,
-                                candidate_bb.min.y + new_size,
-                                candidate_bb.max.z,
+                                candidate_bb.min_x(),
+                                candidate_bb.min_y(),
+                                candidate_bb.min_z(),
+                            ),
+                            IVec3::new(
+                                candidate_bb.max_x(),
+                                candidate_bb.min_y() + new_size,
+                                candidate_bb.max_z(),
                             ),
                         )
                     } else {

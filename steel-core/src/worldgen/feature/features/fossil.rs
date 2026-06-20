@@ -176,9 +176,9 @@ impl FeatureDecorationRunner {
 
     fn count_empty_corners(region: &WorldGenRegion<'_>, bounding_box: BoundingBox) -> i32 {
         let mut count = 0;
-        for x in [bounding_box.min.x, bounding_box.max.x] {
-            for y in [bounding_box.min.y, bounding_box.max.y] {
-                for z in [bounding_box.min.z, bounding_box.max.z] {
+        for x in [bounding_box.min_x(), bounding_box.max_x()] {
+            for y in [bounding_box.min_y(), bounding_box.max_y()] {
+                for z in [bounding_box.min_z(), bounding_box.max_z()] {
                     let state = region.block_state(BlockPos::new(x, y, z));
                     let block = state.get_block();
                     if state.is_air()

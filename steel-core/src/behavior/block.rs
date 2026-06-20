@@ -388,20 +388,20 @@ fn added_collision_boxes(
 
 fn world_aabb_bounds(boxes: &[WorldAabb]) -> Option<WorldAabb> {
     let first = boxes.first()?;
-    let mut min_x = first.min.x;
-    let mut min_y = first.min.y;
-    let mut min_z = first.min.z;
-    let mut max_x = first.max.x;
-    let mut max_y = first.max.y;
-    let mut max_z = first.max.z;
+    let mut min_x = first.min_x();
+    let mut min_y = first.min_y();
+    let mut min_z = first.min_z();
+    let mut max_x = first.max_x();
+    let mut max_y = first.max_y();
+    let mut max_z = first.max_z();
 
     for aabb in boxes {
-        min_x = min_x.min(aabb.min.x);
-        min_y = min_y.min(aabb.min.y);
-        min_z = min_z.min(aabb.min.z);
-        max_x = max_x.max(aabb.max.x);
-        max_y = max_y.max(aabb.max.y);
-        max_z = max_z.max(aabb.max.z);
+        min_x = min_x.min(aabb.min_x());
+        min_y = min_y.min(aabb.min_y());
+        min_z = min_z.min(aabb.min_z());
+        max_x = max_x.max(aabb.max_x());
+        max_y = max_y.max(aabb.max_y());
+        max_z = max_z.max(aabb.max_z());
     }
 
     Some(WorldAabb::new(min_x, min_y, min_z, max_x, max_y, max_z))

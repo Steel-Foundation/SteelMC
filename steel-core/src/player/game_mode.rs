@@ -368,12 +368,12 @@ impl Player {
         let eye_y = player_pos.y + self.get_eye_height();
 
         let dx = f64::max(
-            f64::max(aabb.min.x - player_pos.x, player_pos.x - aabb.max.x),
+            f64::max(aabb.min_x() - player_pos.x, player_pos.x - aabb.max_x()),
             0.0,
         );
-        let dy = f64::max(f64::max(aabb.min.y - eye_y, eye_y - aabb.max.y), 0.0);
+        let dy = f64::max(f64::max(aabb.min_y() - eye_y, eye_y - aabb.max_y()), 0.0);
         let dz = f64::max(
-            f64::max(aabb.min.z - player_pos.z, player_pos.z - aabb.max.z),
+            f64::max(aabb.min_z() - player_pos.z, player_pos.z - aabb.max_z()),
             0.0,
         );
         let dist_sq = dx * dx + dy * dy + dz * dz;

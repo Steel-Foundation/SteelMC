@@ -46,9 +46,9 @@ impl StructurePiecePlacer {
             return;
         }
 
-        for z in portal_box.min.z..=portal_box.max.z {
-            for y in portal_box.min.y..=portal_box.max.y {
-                for x in portal_box.min.x..=portal_box.max.x {
+        for z in portal_box.min_z()..=portal_box.max_z() {
+            for y in portal_box.min_y()..=portal_box.max_y() {
+                for x in portal_box.min_x()..=portal_box.max_x() {
                     let pos = BlockPos::new(x, y, z);
                     if properties.vines {
                         Self::maybe_add_ruined_portal_vines(region, pos, random);
@@ -114,9 +114,9 @@ impl StructurePiecePlacer {
         portal_box: BoundingBox,
         random: &mut WorldgenRandom,
     ) {
-        for x in portal_box.min.x + 1..portal_box.max.x {
-            for z in portal_box.min.z + 1..portal_box.max.z {
-                let pos = BlockPos::new(x, portal_box.min.y, z);
+        for x in portal_box.min_x() + 1..portal_box.max_x() {
+            for z in portal_box.min_z() + 1..portal_box.max_z() {
+                let pos = BlockPos::new(x, portal_box.min_y(), z);
                 if region.block_state(pos).get_block() == &vanilla_blocks::NETHERRACK {
                     Self::add_ruined_portal_netherrack_drip_column(
                         region,
@@ -179,10 +179,10 @@ impl StructurePiecePlacer {
                 let y = if follow_ground_surface {
                     surface_y
                 } else {
-                    portal_box.min.y.min(surface_y)
+                    portal_box.min_y().min(surface_y)
                 };
                 let pos = BlockPos::new(x, y, z);
-                if (y - portal_box.min.y).abs() > 3
+                if (y - portal_box.min_y()).abs() > 3
                     || !Self::can_replace_with_ruined_portal_netherrack_or_magma(
                         region,
                         vertical_placement,

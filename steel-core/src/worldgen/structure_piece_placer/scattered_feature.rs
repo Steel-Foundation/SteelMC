@@ -1,5 +1,6 @@
 use std::sync::Weak;
 
+use glam::IVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
@@ -52,8 +53,8 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let mut total = 0;
         let mut count = 0;
-        for z in self.bounding_box.min.z..=self.bounding_box.max.z {
-            for x in self.bounding_box.min.x..=self.bounding_box.max.x {
+        for z in self.bounding_box.min_z()..=self.bounding_box.max_z() {
+            for x in self.bounding_box.min_x()..=self.bounding_box.max_x() {
                 if self.clip.contains_blockpos(BlockPos::new(x, 64, z)) {
                     total += self
                         .region
@@ -69,9 +70,8 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let adjusted = total / count;
         *height_position = Some(adjusted);
-        let dy = adjusted - self.bounding_box.min.y + offset;
-        self.bounding_box.min.y += dy;
-        self.bounding_box.max.y += dy;
+        let dy = adjusted - self.bounding_box.min_y() + offset;
+        *self.bounding_box = self.bounding_box.translate(IVec3::new(0, dy, 0));
         true
     }
 
@@ -271,16 +271,20 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min.y
+            y + self.bounding_box.min_y()
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
             None | Some(Direction::Up | Direction::Down) => (x, z),
-            Some(Direction::North) => (self.bounding_box.min.x + x, self.bounding_box.max.z - z),
-            Some(Direction::South) => (self.bounding_box.min.x + x, self.bounding_box.min.z + z),
-            Some(Direction::West) => (self.bounding_box.max.x - z, self.bounding_box.min.z + x),
-            Some(Direction::East) => (self.bounding_box.min.x + z, self.bounding_box.min.z + x),
+            Some(Direction::North) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.max_z() - z)
+            }
+            Some(Direction::South) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.min_z() + z)
+            }
+            Some(Direction::West) => (self.bounding_box.max_x() - z, self.bounding_box.min_z() + x),
+            Some(Direction::East) => (self.bounding_box.min_x() + z, self.bounding_box.min_z() + x),
         };
         BlockPos::new(world_x, world_y, world_z)
     }

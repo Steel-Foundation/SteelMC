@@ -886,16 +886,16 @@ const fn world_pos(
     z: i32,
 ) -> BlockPos {
     let world_y = if orientation.is_some() {
-        y + bounding_box.min.y
+        y + bounding_box.min_y()
     } else {
         y
     };
     let (world_x, world_z) = match orientation {
         None | Some(Direction::Up | Direction::Down) => (x, z),
-        Some(Direction::North) => (bounding_box.min.x + x, bounding_box.max.z - z),
-        Some(Direction::South) => (bounding_box.min.x + x, bounding_box.min.z + z),
-        Some(Direction::West) => (bounding_box.max.x - z, bounding_box.min.z + x),
-        Some(Direction::East) => (bounding_box.min.x + z, bounding_box.min.z + x),
+        Some(Direction::North) => (bounding_box.min_x() + x, bounding_box.max_z() - z),
+        Some(Direction::South) => (bounding_box.min_x() + x, bounding_box.min_z() + z),
+        Some(Direction::West) => (bounding_box.max_x() - z, bounding_box.min_z() + x),
+        Some(Direction::East) => (bounding_box.min_x() + z, bounding_box.min_z() + x),
     };
     BlockPos::new(world_x, world_y, world_z)
 }
