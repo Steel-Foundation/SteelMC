@@ -3,9 +3,11 @@
 use std::sync::Arc;
 
 use rand::Rng;
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_utils::{BlockPos, BlockStateId, Direction, random::Random, types::UpdateFlags};
 
 use crate::{
+    behavior::BLOCK_BEHAVIORS,
     behavior::blocks::vegetation::crop_block::CropLike,
     world::{LevelReader, World},
 };
@@ -68,6 +70,62 @@ impl BonemealAction {
             BonemealAction::Grower => pos,
         }
     }
+}
+
+/// Checks if the block at the given position has a spreadable neighbor in the horizontal directions for the given block to place
+pub fn has_spreadable_neighbour_pos(
+    world: &dyn LevelReader,
+    pos: BlockPos,
+    block_to_place: BlockStateId,
+) -> bool {
+    get_spreadable_neighbour_pos(Direction::HORIZONTAL, world, pos, block_to_place).is_some()
+}
+
+/// Finds a spreadable neighbor position in the horizontal directions for the given block to place, or non if there are no spreadable neighbors
+pub fn find_spreadable_neighbour_pos(
+    world: &World,
+    pos: BlockPos,
+    block_to_place: BlockStateId,
+) -> Option<BlockPos> {
+    let mut directions = Direction::HORIZONTAL;
+    {
+        let mut random = world.random().lock();
+        shuffle_directions(&mut directions, &mut *random);
+    }
+    get_spreadable_neighbour_pos(directions, world, pos, block_to_place)
+}
+
+fn shuffle_directions(directions: &mut [Direction; 4], random: &mut impl Random) {
+    for i in (1..directions.len()).rev() {
+        let Ok(bound) = i32::try_from(i + 1) else {
+            panic!(
+                "direction shuffle length {} exceeds i32 range",
+                directions.len()
+            );
+        };
+        let j = random.next_i32_bounded(bound) as usize;
+        directions.swap(i, j);
+    }
+}
+
+fn get_spreadable_neighbour_pos(
+    directions: [Direction; 4],
+    world: &dyn LevelReader,
+    pos: BlockPos,
+    block_to_place: BlockStateId,
+) -> Option<BlockPos> {
+    let behavior = BLOCK_BEHAVIORS.get_behavior_for_state(block_to_place)?;
+
+    for direction in directions {
+        let neighbour_pos = pos.relative(direction);
+        if world.get_block_state(neighbour_pos).is_air()
+            && behavior.can_survive(block_to_place, world, neighbour_pos)
+        {
+            return Some(neighbour_pos);
+        }
+    }
+
+    None
 }
 
 /// Default Bonemeal implementation for all crops
