@@ -361,8 +361,8 @@ const fn template_feature_position(origin: BlockPos, rotation: Rotation, size: I
 
 const fn template_feature_bounding_box(region: &WorldGenRegion<'_>) -> BoundingBox {
     BoundingBox::new(
-        IVec3::MIN.with_y(region.min_y()),
-        IVec3::MAX.with_y(region.max_y_exclusive() - 1),
+        IVec3::new(i32::MIN, region.min_y(), i32::MIN),
+        IVec3::new(i32::MAX, region.max_y_exclusive() - 1, i32::MAX),
     )
 }
 

@@ -231,7 +231,7 @@ impl FeatureDecorationRunner {
         Self::chunk_writable_box(region.center(), region.min_y(), region.max_y_exclusive())
     }
 
-    pub(super) fn chunk_writable_box(
+    pub(super) const fn chunk_writable_box(
         center: ChunkPos,
         min_y: i32,
         max_y_exclusive: i32,

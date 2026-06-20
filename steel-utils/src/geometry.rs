@@ -15,6 +15,10 @@ const fn ordered_pair(a: f64, b: f64) -> (f64, f64) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
+const fn ordered_pair_i32(a: i32, b: i32) -> (i32, i32) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
 /// Encodes the edge semantics of a coordinate space.
 pub trait Space {
     /// Whether `min == max` on an axis means the box has zero extent.
@@ -549,8 +553,15 @@ impl Aabb<DVec3, World> {
 impl Aabb<IVec3, Structure> {
     /// Creates a new bounding box, normalizing so min <= max on each axis.
     #[must_use]
-    pub fn new(pos1: IVec3, pos2: IVec3) -> Self {
-        Self::from_min_max(pos1, pos2)
+    pub const fn new(pos1: IVec3, pos2: IVec3) -> Self {
+        let (min_x, max_x) = ordered_pair_i32(pos1.x, pos2.x);
+        let (min_y, max_y) = ordered_pair_i32(pos1.y, pos2.y);
+        let (min_z, max_z) = ordered_pair_i32(pos1.z, pos2.z);
+        Self {
+            min: IVec3::new(min_x, min_y, min_z),
+            max: IVec3::new(max_x, max_y, max_z),
+            p: PhantomData,
+        }
     }
 
     /// Creates a bounding box from two corner block positions.
