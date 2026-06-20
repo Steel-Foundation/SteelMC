@@ -3,21 +3,31 @@ use core::simd::{Select, Simd, f64x4};
 
 use crate::GRADIENT;
 
-/// Gather gradient components for 4 hashes into separate x/y/z SIMD vectors,
-/// then compute the dot product with the given position vectors.
+/// Calculate 4 gradient dot products.
+///
+/// Baseline builds use table assembly because it is faster without AVX-512
+/// masks; native AVX-512 builds use the branchless hash formula.
 #[inline]
 #[must_use]
 pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
-    let mut gx = [0.0f64; 4];
-    let mut gy = [0.0f64; 4];
-    let mut gz = [0.0f64; 4];
-    for i in 0..4 {
-        let g = &GRADIENT[hashes[i] & 15];
-        gx[i] = g[0];
-        gy[i] = g[1];
-        gz[i] = g[2];
+    #[cfg(target_feature = "avx512f")]
+    {
+        grad_dot_simd::<4>(hashes, x, y, z)
     }
-    f64x4::from_array(gx) * x + f64x4::from_array(gy) * y + f64x4::from_array(gz) * z
+
+    #[cfg(not(target_feature = "avx512f"))]
+    {
+        let mut gx = [0.0f64; 4];
+        let mut gy = [0.0f64; 4];
+        let mut gz = [0.0f64; 4];
+        for i in 0..4 {
+            let g = &GRADIENT[hashes[i] & 15];
+            gx[i] = g[0];
+            gy[i] = g[1];
+            gz[i] = g[2];
+        }
+        f64x4::from_array(gx) * x + f64x4::from_array(gy) * y + f64x4::from_array(gz) * z
+    }
 }
 
 /// Generic N-lane gradient dot product.
@@ -27,9 +37,8 @@ pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
 /// noise implementation. For `hash & 15`, that formula is value-identical to
 /// indexing Minecraft's `GRADIENT` table for all 16 entries.
 ///
-/// The specialized 4-lane path above keeps the table form because it benchmarks
-/// faster for the current noise kernel; this generic path is used for wider
-/// SIMD where the branchless formula avoids per-lane component assembly.
+/// Wider SIMD uses this path because the branchless formula avoids per-lane
+/// component assembly.
 #[inline]
 #[must_use]
 pub fn grad_dot_simd<const N: usize>(
