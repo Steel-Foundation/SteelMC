@@ -72,7 +72,7 @@ impl BonemealAction {
     }
 }
 
-/// Vanilla `BonemealableBlock.hasSpreadableNeighbourPos`.
+/// Vanilla spreadable-neighbor target check.
 pub fn has_spreadable_neighbor_pos(
     world: &dyn LevelReader,
     pos: BlockPos,
@@ -81,7 +81,7 @@ pub fn has_spreadable_neighbor_pos(
     get_spreadable_neighbor_pos(Direction::HORIZONTAL, world, pos, block_to_place).is_some()
 }
 
-/// Vanilla `BonemealableBlock.findSpreadableNeighbourPos`.
+/// Vanilla spreadable-neighbor target selection.
 pub fn find_spreadable_neighbor_pos(
     world: &World,
     pos: BlockPos,
