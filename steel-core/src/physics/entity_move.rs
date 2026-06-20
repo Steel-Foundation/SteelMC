@@ -356,9 +356,9 @@ fn collect_collisions_with_context(
 /// Moves an AABB along a single axis by the given amount.
 fn move_aabb(aabb: &WorldAabb, axis: Axis, amount: f64) -> WorldAabb {
     match axis {
-        Axis::X => aabb.move_by(amount, 0.0, 0.0),
-        Axis::Y => aabb.move_by(0.0, amount, 0.0),
-        Axis::Z => aabb.move_by(0.0, 0.0, amount),
+        Axis::X => aabb.translate(DVec3::ZERO.with_x(amount)),
+        Axis::Y => aabb.translate(DVec3::ZERO.with_y(amount)),
+        Axis::Z => aabb.translate(DVec3::ZERO.with_z(amount)),
     }
 }
 
@@ -419,7 +419,7 @@ fn try_step_up(
     let max_step = f64::from(state.max_up_step());
     let on_ground_after_collision = ground_result.vertical_collision && movement.y < 0.0;
     let grounded_aabb = if on_ground_after_collision {
-        aabb.move_by(0.0, ground_result.actual_movement.y, 0.0)
+        aabb.translate(DVec3::ZERO.with_y(ground_result.actual_movement.y))
     } else {
         *aabb
     };
@@ -458,7 +458,7 @@ fn try_step_up(
 
         let distance_to_ground = aabb.min_y() - grounded_aabb.min_y();
         let actual_movement = step_from_ground - DVec3::new(0.0, distance_to_ground, 0.0);
-        let final_aabb = stepped_aabb.move_by(0.0, -distance_to_ground, 0.0);
+        let final_aabb = stepped_aabb.translate(DVec3::ZERO.with_y(-distance_to_ground));
         let x_collision = horizontal_axis_collided(movement.x, actual_movement.x);
         let z_collision = horizontal_axis_collided(movement.z, actual_movement.z);
         let vertical_collision = actual_movement.y != movement.y;

@@ -11,6 +11,8 @@ view_distance = 10
 simulation_distance = 10
 # Whether to use Mojang's authentication service
 online_mode = true
+# Optional authentication endpoint for online mode. Omit to use Mojang's session server.
+# auth_server = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
 # Whether to enable encryption for client-server communication
 encryption = true
 # Whether the server allows unauthorized client flight
@@ -23,6 +25,10 @@ use_favicon = true
 favicon = "config/favicon.png"
 # Whether to enforce secure chat
 enforce_secure_chat = false
+# Vanilla chat spam threshold window in seconds
+chat_spam_threshold_seconds = 10
+# Vanilla command spam threshold window in seconds
+command_spam_threshold_seconds = 10
 
 # Compression settings
 [server.compression]
@@ -54,9 +60,19 @@ url = "https://discord.gg/suSXXNdVSf"
 
 # Logging configuration
 [log]
+# Path where store the log files and history
+log_path = "./.logs"
+# The level of information the logger will show
+log_level = "info"
 # Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
 time = "uptime"
 # Whether the module_path of the log should be displayed
 module_path = false
 # Whether the extra data of the log should be displayed
 extra = false
+# Whether the log should be written into a file
+log_file = true
+# Time between log file rotations
+rotation_time = "daily"
+# Amount of console commands saved
+max_history = 50

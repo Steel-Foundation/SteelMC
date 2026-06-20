@@ -1,5 +1,6 @@
 use std::{cell::Cell, marker::PhantomData};
 
+use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 use steel_math::lerp2;
@@ -239,6 +240,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let chunk_z = pos.0.y;
 
         let mut sampler = self.biome_source.chunk_sampler();
+        // Pre-compute the flat (xz-only) climate-noise grid for this chunk so the
+        // per-cell sampling below does O(1) column lookups instead of recomputing
+        // the flat noise for all 1536 cells (the noise stage's `fill_from_noise`
+        // already does this). Values are bit-identical — same functions, same quart
+        // coordinates — so biome selection is unchanged.
+        sampler.init_grid(chunk_x * 16, chunk_z * 16);
 
         // Match vanilla's iteration order: Section(Y) → X → Y → Z.
         // This is critical because the R-tree biome cache (persistent warm-start)
@@ -380,7 +387,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
     }
 
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
-    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
+    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(IVec3) -> u16) {
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
@@ -643,13 +650,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         .sections()
                         .write_column_blocks(local_x, local_z, &pending_writes);
                     for &(relative_y, state) in &pending_writes {
-                        chunk.update_heightmaps_after_direct_write(
-                            local_x,
-                            min_y + relative_y as i32,
-                            local_z,
-                            state,
-                        );
+                        column_buf[relative_y] = state;
                     }
+                    chunk.update_heightmaps_after_direct_column_writes(
+                        local_x,
+                        local_z,
+                        &pending_writes,
+                    );
                     chunk.mark_dirty();
                 }
 
@@ -658,17 +665,28 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     && let Some(surface_biome_id) = surface_biome_id
                         .filter(|id| *id == frozen_ocean_id || *id == deep_frozen_ocean_id)
                 {
-                    self.surface_system.frozen_ocean_extension(
-                        chunk,
+                    pending_writes.clear();
+                    self.surface_system.collect_frozen_ocean_extension_writes(
                         surface_biome_id,
-                        local_x,
-                        local_z,
                         block_x,
                         block_z,
                         start_height,
                         min_surface_level,
                         min_y,
+                        &column_buf,
+                        &mut pending_writes,
                     );
+                    if !pending_writes.is_empty() {
+                        chunk
+                            .sections()
+                            .write_column_blocks(local_x, local_z, &pending_writes);
+                        chunk.update_heightmaps_after_direct_column_writes(
+                            local_x,
+                            local_z,
+                            &pending_writes,
+                        );
+                        chunk.mark_dirty();
+                    }
                 }
             }
         }
@@ -790,9 +808,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // BiomeManager-fuzzed lookup — matches vanilla's `BiomeManager.getBiome`
         // used by the carver's top-material path. An unfuzzed quart lookup
         // would mismatch vanilla at quart-cell boundaries.
-        let mut biome_getter = |bx: i32, by: i32, bz: i32| -> u16 {
-            fuzzed_biome_at_block(biome_zoom_seed, bx, by, bz, |qx, qy, qz| {
-                biome_sampler.sample(qx, qy, qz).id() as u16
+        let mut biome_getter = |pos: BlockPos| -> u16 {
+            fuzzed_biome_at_block(biome_zoom_seed, pos, |q_pos| {
+                biome_sampler.sample(q_pos.x, q_pos.y, q_pos.z).id() as u16
             })
         };
 
@@ -823,7 +841,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 impl<N, F> CarveRun<'_, '_, N, F>
 where
     N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
+    F: FnMut(BlockPos) -> u16,
 {
     /// Drive the 17×17 source-chunk carver loop. Each carver in each source
     /// biome is seeded via `set_large_feature_seed`, probability-checked,
@@ -895,22 +913,18 @@ fn get_fiddle(rval: i64) -> f64 {
 ///
 /// Used by carver top-material lookups where a simple unfuzzed lookup would
 /// differ from vanilla at the quart-cell boundaries.
-pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
+pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
     biome_zoom_seed: i64,
-    block_x: i32,
-    block_y: i32,
-    block_z: i32,
+    pos: BlockPos,
     mut quart_biome: F,
 ) -> u16 {
-    let abs_x = block_x - 2;
-    let abs_y = block_y - 2;
-    let abs_z = block_z - 2;
-    let parent_x = abs_x >> 2;
-    let parent_y = abs_y >> 2;
-    let parent_z = abs_z >> 2;
-    let fract_x = f64::from(abs_x & 3) / 4.0;
-    let fract_y = f64::from(abs_y & 3) / 4.0;
-    let fract_z = f64::from(abs_z & 3) / 4.0;
+    let abs = pos.0 - IVec3::splat(2);
+    let parent = IVec3::new(abs.x >> 2, abs.y >> 2, abs.z >> 2);
+    let fract = DVec3::new(
+        f64::from(abs.x & 3),
+        f64::from(abs.y & 3),
+        f64::from(abs.z & 3),
+    ) / 4.0;
 
     let mut min_i = 0usize;
     let mut min_dist = f64::INFINITY;
@@ -919,12 +933,12 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
         let x_even = (i & 4) == 0;
         let y_even = (i & 2) == 0;
         let z_even = (i & 1) == 0;
-        let cx = if x_even { parent_x } else { parent_x + 1 };
-        let cy = if y_even { parent_y } else { parent_y + 1 };
-        let cz = if z_even { parent_z } else { parent_z + 1 };
-        let dx = if x_even { fract_x } else { fract_x - 1.0 };
-        let dy = if y_even { fract_y } else { fract_y - 1.0 };
-        let dz = if z_even { fract_z } else { fract_z - 1.0 };
+        let cx = if x_even { parent.x } else { parent.x + 1 };
+        let cy = if y_even { parent.y } else { parent.y + 1 };
+        let cz = if z_even { parent.z } else { parent.z + 1 };
+        let dx = if x_even { fract.x } else { fract.x - 1.0 };
+        let dy = if y_even { fract.y } else { fract.y - 1.0 };
+        let dz = if z_even { fract.z } else { fract.z - 1.0 };
 
         // BiomeManager.getFiddledDistance — identical sequence to
         // FuzzedBiomeColumn::compute_cy_group but without the column cache.
@@ -947,22 +961,24 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
         }
     }
 
-    let bx = if (min_i & 4) == 0 {
-        parent_x
-    } else {
-        parent_x + 1
-    };
-    let by = if (min_i & 2) == 0 {
-        parent_y
-    } else {
-        parent_y + 1
-    };
-    let bz = if (min_i & 1) == 0 {
-        parent_z
-    } else {
-        parent_z + 1
-    };
-    quart_biome(bx, by, bz)
+    let b = IVec3::new(
+        if (min_i & 4) == 0 {
+            parent.x
+        } else {
+            parent.x + 1
+        },
+        if (min_i & 2) == 0 {
+            parent.y
+        } else {
+            parent.y + 1
+        },
+        if (min_i & 1) == 0 {
+            parent.z
+        } else {
+            parent.z + 1
+        },
+    );
+    quart_biome(b)
 }
 
 /// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
@@ -983,7 +999,7 @@ struct FuzzedBiomeColumn<'a> {
     min_y: i32,
     chunk_quart_x: i32,
     chunk_quart_z: i32,
-    neighbor_biomes: &'a dyn Fn(i32, i32, i32) -> u16,
+    neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     cached_parent_y: i32,
     /// Per-candidate cached values: (`fy`, `xz_partial_distance`).
     candidates: [(f64, f64); 8],
@@ -1005,7 +1021,7 @@ impl<'a> FuzzedBiomeColumn<'a> {
         min_y: i32,
         chunk_quart_x: i32,
         chunk_quart_z: i32,
-        neighbor_biomes: &'a dyn Fn(i32, i32, i32) -> u16,
+        neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     ) -> Self {
         let abs_x = block_x - 2;
         let abs_z = block_z - 2;
@@ -1117,38 +1133,40 @@ impl<'a> FuzzedBiomeColumn<'a> {
             }
         }
 
-        let biome_qx = if (min_i & 4) == 0 {
-            self.parent_x
-        } else {
-            self.parent_x + 1
-        };
-        let biome_qy = if (min_i & 2) == 0 {
-            parent_y
-        } else {
-            parent_y + 1
-        };
-        let biome_qz = if (min_i & 1) == 0 {
-            self.parent_z
-        } else {
-            self.parent_z + 1
-        };
+        let biome_quart = IVec3::new(
+            if (min_i & 4) == 0 {
+                self.parent_x
+            } else {
+                self.parent_x + 1
+            },
+            if (min_i & 2) == 0 {
+                parent_y
+            } else {
+                parent_y + 1
+            },
+            if (min_i & 1) == 0 {
+                self.parent_z
+            } else {
+                self.parent_z + 1
+            },
+        );
 
-        let in_chunk = biome_qx >= self.chunk_quart_x
-            && biome_qx < self.chunk_quart_x + 4
-            && biome_qz >= self.chunk_quart_z
-            && biome_qz < self.chunk_quart_z + 4;
+        let in_chunk = biome_quart.x >= self.chunk_quart_x
+            && biome_quart.x < self.chunk_quart_x + 4
+            && biome_quart.z >= self.chunk_quart_z
+            && biome_quart.z < self.chunk_quart_z + 4;
 
         if in_chunk {
             let min_qy = self.min_y >> 2;
             let total_quarts_y = self.section_count * 4;
-            let local_qx = (biome_qx - self.chunk_quart_x) as usize;
-            let local_qz = (biome_qz - self.chunk_quart_z) as usize;
-            let qy_in_chunk = (biome_qy - min_qy).clamp(0, total_quarts_y as i32 - 1) as usize;
+            let local_qx = (biome_quart.x - self.chunk_quart_x) as usize;
+            let local_qz = (biome_quart.z - self.chunk_quart_z) as usize;
+            let qy_in_chunk = (biome_quart.y - min_qy).clamp(0, total_quarts_y as i32 - 1) as usize;
             let section_idx = qy_in_chunk / 4;
             let local_qy = qy_in_chunk % 4;
             self.biome_data[section_idx * 64 + local_qy * 16 + local_qz * 4 + local_qx]
         } else {
-            (self.neighbor_biomes)(biome_qx, biome_qy, biome_qz)
+            (self.neighbor_biomes)(biome_quart)
         }
     }
 }

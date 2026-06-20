@@ -28,7 +28,6 @@ const RUINED_PORTAL_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
 impl StructurePiecePlacer {
     pub(super) fn post_process_ruined_portal(
         region: &mut WorldGenRegion<'_>,
-
         vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         portal_box: BoundingBox,
@@ -47,9 +46,9 @@ impl StructurePiecePlacer {
             return;
         }
 
-        for z in portal_box.min_z..=portal_box.max_z {
-            for y in portal_box.min_y..=portal_box.max_y {
-                for x in portal_box.min_x..=portal_box.max_x {
+        for z in portal_box.min_z()..=portal_box.max_z() {
+            for y in portal_box.min_y()..=portal_box.max_y() {
+                for x in portal_box.min_x()..=portal_box.max_x() {
                     let pos = BlockPos::new(x, y, z);
                     if properties.vines {
                         Self::maybe_add_ruined_portal_vines(region, pos, random);
@@ -77,7 +76,7 @@ impl StructurePiecePlacer {
         if !region.block_state(neighbor_pos).is_air() {
             return;
         }
-        if !shapes::is_face_full(state.get_collision_shape(), direction) {
+        if !shapes::is_offset_face_full(state.get_collision_shape_at(pos), direction) {
             return;
         }
 
@@ -115,9 +114,9 @@ impl StructurePiecePlacer {
         portal_box: BoundingBox,
         random: &mut WorldgenRandom,
     ) {
-        for x in portal_box.min_x + 1..portal_box.max_x {
-            for z in portal_box.min_z + 1..portal_box.max_z {
-                let pos = BlockPos::new(x, portal_box.min_y, z);
+        for x in portal_box.min_x() + 1..portal_box.max_x() {
+            for z in portal_box.min_z() + 1..portal_box.max_z() {
+                let pos = BlockPos::new(x, portal_box.min_y(), z);
                 if region.block_state(pos).get_block() == &vanilla_blocks::NETHERRACK {
                     Self::add_ruined_portal_netherrack_drip_column(
                         region,
@@ -148,7 +147,6 @@ impl StructurePiecePlacer {
 
     fn spread_ruined_portal_netherrack(
         region: &mut WorldGenRegion<'_>,
-
         vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         portal_box: BoundingBox,
@@ -158,15 +156,15 @@ impl StructurePiecePlacer {
             vertical_placement,
             RuinedPortalPlacementData::OnLandSurface | RuinedPortalPlacementData::OnOceanFloor
         );
-        let center = portal_box.get_center();
-        let average_width = i32::midpoint(portal_box.get_x_span(), portal_box.get_z_span());
+        let center = portal_box.center();
+        let average_width = i32::midpoint(portal_box.width(), portal_box.depth());
         let distance_adjustment = random.next_i32_bounded(1.max(8 - average_width / 2));
         let max_distance =
             i32::try_from(NETHERRACK_PROBABILITY_BY_DISTANCE.len()).unwrap_or(i32::MAX);
 
-        for x in center.x() - max_distance..=center.x() + max_distance {
-            for z in center.z() - max_distance..=center.z() + max_distance {
-                let distance = (x - center.x()).abs() + (z - center.z()).abs();
+        for x in center.x - max_distance..=center.x + max_distance {
+            for z in center.z - max_distance..=center.z + max_distance {
+                let distance = (x - center.x).abs() + (z - center.z).abs();
                 let adjusted_distance = 0.max(distance + distance_adjustment);
                 if adjusted_distance >= max_distance {
                     continue;
@@ -181,10 +179,10 @@ impl StructurePiecePlacer {
                 let y = if follow_ground_surface {
                     surface_y
                 } else {
-                    portal_box.min_y.min(surface_y)
+                    portal_box.min_y().min(surface_y)
                 };
                 let pos = BlockPos::new(x, y, z);
-                if (y - portal_box.min_y).abs() > 3
+                if (y - portal_box.min_y()).abs() > 3
                     || !Self::can_replace_with_ruined_portal_netherrack_or_magma(
                         region,
                         vertical_placement,
@@ -210,7 +208,6 @@ impl StructurePiecePlacer {
 
     fn can_replace_with_ruined_portal_netherrack_or_magma(
         region: &WorldGenRegion<'_>,
-
         vertical_placement: RuinedPortalPlacementData,
         pos: BlockPos,
     ) -> bool {

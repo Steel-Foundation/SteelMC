@@ -101,24 +101,12 @@ const fn equipment_slot_matches_equippable(
 }
 
 fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    let min_x = aabb.min_x().floor() as i32;
-    let max_x = aabb.max_x().ceil() as i32;
-    let min_y = aabb.min_y().floor() as i32;
-    let max_y = aabb.max_y().ceil() as i32;
-    let min_z = aabb.min_z().floor() as i32;
-    let max_z = aabb.max_z().ceil() as i32;
-
-    for x in min_x..max_x {
-        for y in min_y..max_y {
-            for z in min_z..max_z {
-                if !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty() {
-                    return true;
-                }
-            }
-        }
-    }
-
-    false
+    (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
+        (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
+            (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
+                .any(|z| !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty())
+        })
+    })
 }
 
 enum BlockEffectSegmentResult {
@@ -745,7 +733,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return false;
         };
 
-        let target_box = self.bounding_box().move_vec(delta);
+        let target_box = self.bounding_box().translate(delta);
         let collision_world =
             WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
         if collision_world.has_collision_with_context(
@@ -792,6 +780,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla `Entity.isSpectator`. Base entities are never spectators;
     /// players override this from their game mode.
     fn is_spectator(&self) -> bool {
+        false
+    }
+
+    /// Returns true for vanilla players whose abilities have `flying` set.
+    fn is_flying_player(&self) -> bool {
         false
     }
 
@@ -2438,7 +2431,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    // === Physics Helper Methods ===
     // These mirror vanilla's Entity class methods.
 
     /// Gets the default gravity for this entity type.
@@ -2789,7 +2781,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             && !self.base().on_ground_no_blocks()
             && let Some(movement) = movement
         {
-            let previous_test_area = test_area.move_by(-movement.x, 0.0, -movement.z);
+            let previous_test_area = test_area.translate(DVec3::new(-movement.x, 0.0, -movement.z));
             supporting_block = collision_world.find_supporting_block(
                 self.position(),
                 &previous_test_area,
@@ -2816,7 +2808,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
 
-    // === Persistence Methods ===
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
 
     /// Saves type-specific entity data to NBT.

@@ -18,10 +18,6 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 
-// ---------------------------------------------------------------------------
-// TickPriority
-// ---------------------------------------------------------------------------
-
 /// Priority levels for scheduled ticks. Lower discriminant = higher priority.
 ///
 /// Matches vanilla's `TickPriority` enum. `Ord` is derived so that
@@ -62,10 +58,6 @@ impl TickPriority {
     }
 }
 
-// ---------------------------------------------------------------------------
-// TickKey trait
-// ---------------------------------------------------------------------------
-
 /// Trait for types that can be used as the tick target in `ScheduledTick`.
 ///
 /// Provides a `usize` key for deduplication (one tick per `(BlockPos, key)` pair).
@@ -91,10 +83,6 @@ impl TickKey for FluidRef {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ScheduledTick
-// ---------------------------------------------------------------------------
-
 /// A single scheduled tick targeting a block or fluid at a specific position.
 #[derive(Debug)]
 pub struct ScheduledTick<T: TickKey> {
@@ -112,10 +100,6 @@ pub struct ScheduledTick<T: TickKey> {
     pub sub_tick_order: i64,
 }
 
-// ---------------------------------------------------------------------------
-// Type aliases
-// ---------------------------------------------------------------------------
-
 /// A scheduled tick targeting a block.
 pub type BlockTick = ScheduledTick<BlockRef>;
 /// A scheduled tick targeting a fluid.
@@ -124,10 +108,6 @@ pub type FluidTick = ScheduledTick<FluidRef>;
 pub type BlockTickList = TickList<BlockRef>;
 /// Per-chunk storage for scheduled fluid ticks.
 pub type FluidTickList = TickList<FluidRef>;
-
-// ---------------------------------------------------------------------------
-// TickList — per-chunk tick storage
-// ---------------------------------------------------------------------------
 
 /// Per-chunk storage for scheduled ticks of one type (block or fluid).
 ///

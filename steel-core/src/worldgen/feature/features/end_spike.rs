@@ -180,11 +180,7 @@ impl FeatureDecorationRunner {
             position,
             region.weak_world(),
         ));
-        crystal.set_beam_target(
-            config
-                .crystal_beam_target
-                .map(|[x, y, z]| BlockPos::new(x, y, z)),
-        );
+        crystal.set_beam_target(config.crystal_beam_target.map(BlockPos));
         crystal.set_invulnerable(config.crystal_invulnerable);
         crystal.snap_to(position, random.next_f32() * 360.0, 0.0);
         let _ = region.add_fresh_entity(crystal);

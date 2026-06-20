@@ -62,14 +62,14 @@ impl SMovePlayer {
 
 #[derive(ReadFrom, Clone, Debug, ServerPacket)]
 pub struct SMovePlayerPos {
-    pub position: DVec3,
+    pub pos: DVec3,
     pub packed_byte: u8,
 }
 
 impl From<SMovePlayerPos> for SMovePlayer {
     fn from(value: SMovePlayerPos) -> Self {
         Self {
-            position: value.position,
+            position: value.pos,
             has_pos: true,
             has_rot: false,
             x_rot: 0.0,
@@ -82,7 +82,7 @@ impl From<SMovePlayerPos> for SMovePlayer {
 
 #[derive(ReadFrom, Clone, Debug, ServerPacket)]
 pub struct SMovePlayerPosRot {
-    pub position: DVec3,
+    pub pos: DVec3,
     pub y_rot: f32,
     pub x_rot: f32,
     pub packed_byte: u8,
@@ -91,7 +91,7 @@ pub struct SMovePlayerPosRot {
 impl From<SMovePlayerPosRot> for SMovePlayer {
     fn from(value: SMovePlayerPosRot) -> Self {
         Self {
-            position: value.position,
+            position: value.pos,
             has_pos: true,
             has_rot: true,
             x_rot: value.x_rot,

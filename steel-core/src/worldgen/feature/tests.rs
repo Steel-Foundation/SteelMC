@@ -1,3 +1,4 @@
+use glam::IVec3;
 use steel_registry::Registry;
 
 use super::runner::FeatureDecorationRunner;
@@ -214,7 +215,7 @@ fn structure_start_resolution_uses_vanilla_reference_order_and_filters_invalid_s
                 start_pos,
                 vec![StructurePiece::non_jigsaw(
                     Identifier::vanilla_static("test_piece"),
-                    BoundingBox::new(0, 0, 0, 0, 0, 0),
+                    BoundingBox::new(IVec3::ZERO, IVec3::ZERO),
                     0,
                     None,
                 )],
@@ -270,7 +271,7 @@ fn structure_step_seed_uses_vanilla_feature_seed_shape() {
 fn structure_piece_clip_box_is_center_chunk_build_height_box() {
     assert_eq!(
         FeatureDecorationRunner::chunk_writable_box(ChunkPos::new(-2, 3), -64, 320),
-        BoundingBox::new(-32, -63, 48, -17, 319, 63)
+        BoundingBox::new(IVec3::new(-32, -63, 48), IVec3::new(-17, 319, 63))
     );
 }
 
@@ -282,13 +283,13 @@ fn structure_start_reference_pos_uses_first_piece_center_and_min_y() {
         vec![
             StructurePiece::non_jigsaw(
                 Identifier::vanilla_static("first_piece"),
-                BoundingBox::new(10, 42, 20, 19, 50, 29),
+                BoundingBox::new(IVec3::new(10, 42, 20), IVec3::new(19, 50, 29)),
                 0,
                 None,
             ),
             StructurePiece::non_jigsaw(
                 Identifier::vanilla_static("second_piece"),
-                BoundingBox::new(100, 5, 100, 110, 9, 110),
+                BoundingBox::new(IVec3::new(100, 5, 100), IVec3::new(110, 9, 110)),
                 1,
                 None,
             ),

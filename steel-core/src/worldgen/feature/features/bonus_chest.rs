@@ -23,7 +23,7 @@ impl FeatureDecorationRunner {
                 let y = region.height_at(HeightmapType::MotionBlockingNoLeaves, x, z);
                 let chest_pos = BlockPos::new(x, y, z);
                 let state = region.block_state(chest_pos);
-                if state.is_air() || state.get_collision_shape().is_empty() {
+                if state.is_air() || state.get_collision_shape_at(chest_pos).is_empty() {
                     let _ = region.set_block_state(chest_pos, chest, UpdateFlags::UPDATE_CLIENTS);
                     Self::set_loot_table_block_entity(
                         region,

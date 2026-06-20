@@ -1,6 +1,7 @@
 //! Woodland mansion. Vanilla's `WoodlandMansionPieces`: grid-based layout with
 //! template pieces for walls, corridors, rooms, and roofs.
 
+use glam::IVec3;
 use steel_registry::structure::{LiquidSettingsData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -12,7 +13,6 @@ use crate::structure::{
     TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
-/// (sizeX, sizeY, sizeZ) for a `woodland_mansion` template.
 fn template_size(name: &str) -> [i32; 3] {
     match name {
         "entrance" => [21, 19, 16],
@@ -32,10 +32,8 @@ fn template_size(name: &str) -> [i32; 3] {
         "roof_front" => [4, 4, 8],
         "small_wall" => [2, 4, 8],
         "small_wall_corner" => [2, 4, 2],
-        // 1x1 rooms (floor 1: 8 high, floor 2+: 11 high)
         s if s.starts_with("1x1_a") => [7, 8, 7],
         s if s.starts_with("1x1_b") => [7, 11, 7],
-        // 1x2 rooms
         "1x2_c_stairs" | "1x2_d_stairs" => [7, 22, 15],
         s if s.starts_with("1x2_c") || s.starts_with("1x2_d") || s.starts_with("1x2_se") => {
             [7, 11, 15]
@@ -43,7 +41,6 @@ fn template_size(name: &str) -> [i32; 3] {
         s if s.starts_with("1x2_a") || s.starts_with("1x2_b") || s.starts_with("1x2_s") => {
             [7, 8, 15]
         }
-        // 2x2 rooms
         s if s.starts_with("2x2_a") => [15, 8, 15],
         s if s.starts_with("2x2_b") || s.starts_with("2x2_s") => [15, 11, 15],
         _ => {
@@ -60,24 +57,17 @@ enum Mirror {
     FrontBack,
 }
 
-fn piece_bb(
-    pos: (i32, i32, i32),
-    size: [i32; 3],
-    rotation: Rotation,
-    mirror: Mirror,
-) -> BoundingBox {
-    let (dx, dy, dz) = (size[0] - 1, size[1] - 1, size[2] - 1);
+fn piece_bb(pos: IVec3, size: IVec3, rotation: Rotation, mirror: Mirror) -> BoundingBox {
+    let dx = size.x - 1;
+    let dy = size.y - 1;
+    let dz = size.z - 1;
     let (x1, z1) = apply_mirror(0, 0, mirror);
     let (x2, z2) = apply_mirror(dx, dz, mirror);
-    let (c1x, c1y, c1z) = rotation.transform_pos(x1, 0, z1, 0, 0);
-    let (c2x, c2y, c2z) = rotation.transform_pos(x2, dy, z2, 0, 0);
+    let c1 = rotation.transform_pos(IVec3::new(x1, 0, z1), IVec3::ZERO);
+    let c2 = rotation.transform_pos(IVec3::new(x2, dy, z2), IVec3::ZERO);
     BoundingBox::new(
-        c1x.min(c2x) + pos.0,
-        c1y.min(c2y) + pos.1,
-        c1z.min(c2z) + pos.2,
-        c1x.max(c2x) + pos.0,
-        c1y.max(c2y) + pos.1,
-        c1z.max(c2z) + pos.2,
+        IVec3::new(c1.x.min(c2.x), c1.y.min(c2.y), c1.z.min(c2.z)) + pos,
+        IVec3::new(c1.x.max(c2.x), c1.y.max(c2.y), c1.z.max(c2.z)) + pos,
     )
 }
 
@@ -100,7 +90,7 @@ const fn structure_mirror(mirror: Mirror) -> StructureMirror {
 #[derive(Debug, PartialEq, Eq)]
 struct MansionTemplatePiece {
     template_name: String,
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
     mirror: Mirror,
 }
@@ -108,7 +98,7 @@ struct MansionTemplatePiece {
 impl MansionTemplatePiece {
     fn new(
         template_name: impl Into<String>,
-        position: (i32, i32, i32),
+        position: IVec3,
         rotation: Rotation,
         mirror: Mirror,
     ) -> Self {
@@ -123,7 +113,7 @@ impl MansionTemplatePiece {
     fn bounding_box(&self) -> BoundingBox {
         piece_bb(
             self.position,
-            template_size(&self.template_name),
+            IVec3::from(template_size(&self.template_name)),
             self.rotation,
             self.mirror,
         )
@@ -147,7 +137,7 @@ impl MansionTemplatePiece {
                 template_position: self.position,
                 rotation: self.rotation,
                 mirror,
-                rotation_pivot: (0, 0, 0),
+                rotation_pivot: IVec3::ZERO,
                 block_ignore: StructureBlockIgnore::StructureBlock,
                 late_block_ignore: StructureBlockIgnore::None,
                 processors: TemplateProcessorList::Empty,
@@ -167,7 +157,7 @@ impl MansionTemplatePiece {
 fn add_piece(
     pieces: &mut Vec<MansionTemplatePiece>,
     template_name: impl Into<String>,
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
     mirror: Mirror,
 ) {
@@ -179,33 +169,17 @@ fn add_piece(
     ));
 }
 
-/// `pos.relative(rotation.rotate(direction), amount)`.
-const fn relative(
-    pos: (i32, i32, i32),
-    rotation: Rotation,
-    dir: Direction,
-    amount: i32,
-) -> (i32, i32, i32) {
+fn relative(pos: IVec3, rotation: Rotation, dir: Direction, amount: i32) -> IVec3 {
     let rotated = rotation.rotate(dir);
-    let (dx, dy, dz) = rotated.offset();
-    (
-        pos.0 + dx * amount,
-        pos.1 + dy * amount,
-        pos.2 + dz * amount,
-    )
+    let offset = rotated.offset_vec();
+    pos + offset * amount
 }
 
-const fn above(pos: (i32, i32, i32), amount: i32) -> (i32, i32, i32) {
-    (pos.0, pos.1 + amount, pos.2)
+const fn above(pos: IVec3, amount: i32) -> IVec3 {
+    IVec3::new(pos.x, pos.y + amount, pos.z)
 }
 
-/// Vanilla's `getZeroPositionWithTransform(zeroPos, Mirror.NONE, rotation, sx, sz)`.
-const fn zero_pos_transform(
-    zero: (i32, i32, i32),
-    rotation: Rotation,
-    size_x: i32,
-    size_z: i32,
-) -> (i32, i32, i32) {
+const fn zero_pos_transform(zero: IVec3, rotation: Rotation, size_x: i32, size_z: i32) -> IVec3 {
     let sx = size_x - 1;
     let sz = size_z - 1;
     let (dx, dz) = match rotation {
@@ -214,15 +188,13 @@ const fn zero_pos_transform(
         Rotation::Clockwise180 => (sx, sz),
         Rotation::CounterClockwise90 => (0, sx),
     };
-    (zero.0 + dx, zero.1, zero.2 + dz)
+    IVec3::new(zero.x + dx, zero.y, zero.z + dz)
 }
 
-/// Vanilla's `Rotation.getRotated`.
 const fn compose_rotation(base: Rotation, add: Rotation) -> Rotation {
     base.then(add)
 }
 
-/// Vanilla's `Direction.from2DDataValue`: 0=S, 1=W, 2=N, 3=E.
 const fn dir_from_2d(value: i32) -> Direction {
     match value & 3 {
         0 => Direction::South,
@@ -398,7 +370,7 @@ impl MansionGrid {
             return;
         }
         grid.set_cell(x, y, 1);
-        let (hx, _, hz) = heading.offset();
+        let (hx, hz) = heading.offset_xz();
         grid.setif(x + hx, y + hz, 0, 1);
 
         for _ in 0..8 {
@@ -407,7 +379,7 @@ impl MansionGrid {
                 continue;
             }
             let (nx, ny) = (x + hx, y + hz);
-            let (ndx, ndz) = (next_dir.offset().0, next_dir.offset().2);
+            let (ndx, ndz) = next_dir.offset_xz();
             if grid.get(nx + ndx, ny + ndz) == 0 && grid.get(nx + ndx * 2, ny + ndz * 2) == 0 {
                 Self::recursive_corridor(
                     grid,
@@ -423,13 +395,15 @@ impl MansionGrid {
 
         let cw = heading.rotate_y_clockwise();
         let ccw = heading.rotate_y_counter_clockwise();
-        grid.setif(x + cw.offset().0, y + cw.offset().2, 0, 2);
-        grid.setif(x + ccw.offset().0, y + ccw.offset().2, 0, 2);
-        grid.setif(x + hx + cw.offset().0, y + hz + cw.offset().2, 0, 2);
-        grid.setif(x + hx + ccw.offset().0, y + hz + ccw.offset().2, 0, 2);
+        let a_cw_off = cw.offset_vec();
+        let b_ccw_off = ccw.offset_vec();
+        grid.setif(x + a_cw_off.x, y + a_cw_off.z, 0, 2);
+        grid.setif(x + b_ccw_off.x, y + b_ccw_off.z, 0, 2);
+        grid.setif(x + hx + a_cw_off.x, y + hz + a_cw_off.z, 0, 2);
+        grid.setif(x + hx + b_ccw_off.x, y + hz + b_ccw_off.z, 0, 2);
         grid.setif(x + hx * 2, y + hz * 2, 0, 2);
-        grid.setif(x + cw.offset().0 * 2, y + cw.offset().2 * 2, 0, 2);
-        grid.setif(x + ccw.offset().0 * 2, y + ccw.offset().2 * 2, 0, 2);
+        grid.setif(x + a_cw_off.x * 2, y + a_cw_off.z * 2, 0, 2);
+        grid.setif(x + b_ccw_off.x * 2, y + b_ccw_off.z * 2, 0, 2);
     }
 
     fn clean_edges(grid: &mut SimpleGrid) -> bool {
@@ -470,7 +444,6 @@ impl MansionGrid {
                 }
             }
         }
-        // Vanilla: Util.shuffle(roomPos, random)
         let len = positions.len();
         for i in (1..len).rev() {
             let j = rng.next_i32_bounded((i + 1) as i32) as usize;
@@ -590,7 +563,10 @@ impl MansionGrid {
         let room_id = room_data & ROOM_ID_MASK;
         let room_dir = Self::get_1x2_room_direction_static(&floor_rooms[1], rx, ry, room_id);
         let (rex, rey) = match room_dir {
-            Some(d) => (rx + d.offset().0, ry + d.offset().2),
+            Some(d) => {
+                let off = d.offset_vec();
+                (rx + off.x, ry + off.z)
+            }
             None => (rx, ry),
         };
 
@@ -607,16 +583,11 @@ impl MansionGrid {
             }
         }
 
-        // Find corridor direction from room end
         let mut potential_dirs: Vec<Direction> = Vec::new();
-        for dir in &[
-            Direction::North,
-            Direction::East,
-            Direction::South,
-            Direction::West,
-        ] {
-            if third.get(rex + dir.offset().0, rey + dir.offset().2) == 0 {
-                potential_dirs.push(*dir);
+        for dir in Direction::horizontal_dirs() {
+            let (ox, oz) = dir.offset_xz();
+            if third.get(rex + ox, rey + oz) == 0 {
+                potential_dirs.push(dir);
             }
         }
 
@@ -626,14 +597,8 @@ impl MansionGrid {
         } else {
             let corridor_dir =
                 potential_dirs[rng.next_i32_bounded(potential_dirs.len() as i32) as usize];
-            Self::recursive_corridor(
-                third,
-                rng,
-                rex + corridor_dir.offset().0,
-                rey + corridor_dir.offset().2,
-                corridor_dir,
-                4,
-            );
+            let (ox, oz) = corridor_dir.offset_xz();
+            Self::recursive_corridor(third, rng, rex + ox, rey + oz, corridor_dir, 4);
             while Self::clean_edges(third) {}
         }
     }
@@ -655,7 +620,8 @@ impl MansionGrid {
             Direction::South,
             Direction::West,
         ] {
-            if self.is_room_id(x + dir.offset().0, y + dir.offset().2, floor, room_id) {
+            let (ox, oz) = dir.offset_xz();
+            if self.is_room_id(x + ox, y + oz, floor, room_id) {
                 return Some(*dir);
             }
         }
@@ -674,7 +640,8 @@ impl MansionGrid {
             Direction::South,
             Direction::West,
         ] {
-            if (floor_rooms.get(x + dir.offset().0, y + dir.offset().2) & ROOM_ID_MASK) == room_id {
+            let (ox, oz) = dir.offset_xz();
+            if (floor_rooms.get(x + ox, y + oz) & ROOM_ID_MASK) == room_id {
                 return Some(*dir);
             }
         }
@@ -695,7 +662,6 @@ fn get_room_name(rng: &mut LegacyRandom, floor: usize, kind: &str, is_stairs: bo
         (0, "1x2secret") => format!("1x2_s{}", rng.next_i32_bounded(2) + 1),
         (0, "2x2") => format!("2x2_a{}", rng.next_i32_bounded(4) + 1),
         (0, "2x2secret") => "2x2_s1".to_string(),
-        // Floor 1 and 2 (ThirdFloorRoomCollection extends SecondFloorRoomCollection)
         (_, "1x1") => format!("1x1_b{}", rng.next_i32_bounded(5) + 1),
         (_, "1x1s") => format!("1x1_as{}", rng.next_i32_bounded(4) + 1),
         (_, "1x2side") => {
@@ -720,18 +686,17 @@ fn get_room_name(rng: &mut LegacyRandom, floor: usize, kind: &str, is_stairs: bo
 }
 
 struct PlacementData {
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
     wall_type: &'static str,
 }
 
-/// All mansion template pieces.
 #[expect(
     clippy::too_many_lines,
     reason = "mirrors vanilla's MansionPiecePlacer traversal order"
 )]
 fn generate_mansion_pieces(
-    origin: (i32, i32, i32),
+    origin: IVec3,
     rotation: Rotation,
     rng: &mut LegacyRandom,
 ) -> Vec<MansionTemplatePiece> {
@@ -750,7 +715,6 @@ fn generate_mansion_pieces(
     };
     place_entrance(&mut pieces, &mut data);
 
-    // Capture second-floor placement BEFORE floor-0 traversal mutates `data`.
     let mut second = PlacementData {
         position: above(data.position, 8),
         rotation: data.rotation,
@@ -778,7 +742,6 @@ fn generate_mansion_pieces(
         end_y,
     );
 
-    // Third floor uses data.position.above(19) AFTER floor-0 traversal.
     let mut third_data = PlacementData {
         position: above(data.position, 19),
         rotation: data.rotation,
@@ -823,7 +786,6 @@ fn generate_mansion_pieces(
         }
     }
 
-    // Roofs
     create_roof(
         &mut pieces,
         above(origin, 16),
@@ -843,7 +805,6 @@ fn generate_mansion_pieces(
         start_y,
     );
 
-    // Interior: corridors, walls, doors, rooms for 3 floors
     for floor_num in 0..3_usize {
         let floor_origin = above(
             origin,
@@ -866,7 +827,6 @@ fn generate_mansion_pieces(
             "carpet_west_2"
         };
 
-        // Corridors
         for y in 0..grid.height {
             for x in 0..grid.width {
                 if grid.get(x, y) == 1 {
@@ -925,7 +885,6 @@ fn generate_mansion_pieces(
             }
         }
 
-        // Interior walls, doors, rooms
         let wall_piece = if floor_num == 0 {
             "indoors_wall_1"
         } else {
@@ -948,17 +907,12 @@ fn generate_mansion_pieces(
                 let room_id = room_data & ROOM_ID_MASK;
                 let is_corridor_start = is_third_start && (room_data & ROOM_CORRIDOR_FLAG) != 0;
 
-                // Find door direction
                 let mut door_dirs: Vec<Direction> = Vec::new();
                 if (room_data & ROOM_DOOR_FLAG) != 0 {
-                    for dir in &[
-                        Direction::North,
-                        Direction::East,
-                        Direction::South,
-                        Direction::West,
-                    ] {
-                        if grid.get(x + dir.offset().0, y + dir.offset().2) == 1 {
-                            door_dirs.push(*dir);
+                    for dir in Direction::horizontal_dirs() {
+                        let (ox, oz) = dir.offset_xz();
+                        if grid.get(x + ox, y + oz) == 1 {
+                            door_dirs.push(dir);
                         }
                     }
                 }
@@ -979,7 +933,6 @@ fn generate_mansion_pieces(
                 );
                 room_pos = relative(room_pos, rotation, Direction::East, -1 + (x - start_x) * 8);
 
-                // West wall
                 if is_house(grid, x - 1, y) && !mansion.is_room_id(x - 1, y, floor_num, room_id) {
                     let template = if door_dir == Some(Direction::West) {
                         door_piece
@@ -989,7 +942,6 @@ fn generate_mansion_pieces(
                     add_piece(&mut pieces, template, room_pos, rotation, Mirror::None);
                 }
 
-                // East wall (corridor side)
                 if grid.get(x + 1, y) == 1 && !is_corridor_start {
                     let p = relative(room_pos, rotation, Direction::East, 8);
                     let template = if door_dir == Some(Direction::East) {
@@ -1000,7 +952,6 @@ fn generate_mansion_pieces(
                     add_piece(&mut pieces, template, p, rotation, Mirror::None);
                 }
 
-                // South wall
                 if is_house(grid, x, y + 1) && !mansion.is_room_id(x, y + 1, floor_num, room_id) {
                     let p = relative(
                         relative(room_pos, rotation, Direction::South, 7),
@@ -1022,7 +973,6 @@ fn generate_mansion_pieces(
                     );
                 }
 
-                // North wall (corridor side)
                 if grid.get(x, y - 1) == 1 && !is_corridor_start {
                     let p = relative(
                         relative(room_pos, rotation, Direction::North, 1),
@@ -1044,7 +994,6 @@ fn generate_mansion_pieces(
                     );
                 }
 
-                // Room contents
                 if room_type == ROOM_1X1 {
                     add_room_1x1(&mut pieces, room_pos, rotation, door_dir, floor_num, rng);
                 } else if room_type == ROOM_1X2 && door_dir.is_some() {
@@ -1066,12 +1015,8 @@ fn generate_mansion_pieces(
                     && dd != Direction::Up
                 {
                     let mut room_dir = dd.rotate_y_clockwise();
-                    if !mansion.is_room_id(
-                        x + room_dir.offset().0,
-                        y + room_dir.offset().2,
-                        floor_num,
-                        room_id,
-                    ) {
+                    let (ox, oz) = room_dir.offset_xz();
+                    if !mansion.is_room_id(x + ox, y + oz, floor_num, room_id) {
                         room_dir = room_dir.opposite();
                     }
                     add_room_2x2(
@@ -1119,7 +1064,7 @@ fn traverse_turn(pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementDat
     data.rotation = compose_rotation(data.rotation, Rotation::Clockwise90);
 }
 
-const fn traverse_inner_turn(_pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
+fn traverse_inner_turn(_pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
     data.position = relative(data.position, data.rotation, Direction::South, 6);
     data.position = relative(data.position, data.rotation, Direction::East, 8);
     data.rotation = compose_rotation(data.rotation, Rotation::CounterClockwise90);
@@ -1145,7 +1090,7 @@ fn traverse_outer_walls(
     let start_dir = dir;
 
     loop {
-        let (dx, dz) = (dir.offset().0, dir.offset().2);
+        let (dx, dz) = dir.offset_xz();
         if !is_house(grid, grid_x + dx, grid_y + dz) {
             traverse_turn(pieces, data);
             dir = dir.rotate_y_clockwise();
@@ -1155,8 +1100,8 @@ fn traverse_outer_walls(
         } else if is_house(grid, grid_x + dx, grid_y + dz)
             && is_house(
                 grid,
-                grid_x + dx + dir.rotate_y_counter_clockwise().offset().0,
-                grid_y + dz + dir.rotate_y_counter_clockwise().offset().2,
+                grid_x + dx + dir.rotate_y_counter_clockwise().offset_vec().x,
+                grid_y + dz + dir.rotate_y_counter_clockwise().offset_vec().z,
             )
         {
             traverse_inner_turn(pieces, data);
@@ -1183,7 +1128,7 @@ fn traverse_outer_walls(
 )]
 fn create_roof(
     pieces: &mut Vec<MansionTemplatePiece>,
-    roof_origin: (i32, i32, i32),
+    roof_origin: IVec3,
     rotation: Rotation,
     grid: &SimpleGrid,
     above_grid: Option<&SimpleGrid>,
@@ -1252,7 +1197,6 @@ fn create_roof(
         }
     }
 
-    // Small walls between floors
     if let Some(above_g) = above_grid {
         for y in 0..grid.height {
             for x in 0..grid.width {
@@ -1318,7 +1262,6 @@ fn create_roof(
                     );
                 }
 
-                // Corners
                 if !is_house(grid, x + 1, y) {
                     if !is_house(grid, x, y - 1) {
                         let p = relative(
@@ -1381,7 +1324,6 @@ fn create_roof(
         }
     }
 
-    // Roof corners and inner corners
     for y in 0..grid.height {
         for x in 0..grid.width {
             let mut pos = relative(
@@ -1396,7 +1338,6 @@ fn create_roof(
                 continue;
             }
 
-            // East side corners
             if !is_house(grid, x + 1, y) {
                 let p = relative(pos, rotation, Direction::East, 6);
                 if !is_house(grid, x, y + 1) {
@@ -1431,7 +1372,6 @@ fn create_roof(
                 }
             }
 
-            // West side corners
             if !is_house(grid, x - 1, y) {
                 let p = relative(pos, rotation, Direction::East, 0);
                 let p = relative(p, rotation, Direction::South, 0);
@@ -1484,7 +1424,7 @@ fn create_roof(
 
 fn add_room_1x1(
     pieces: &mut Vec<MansionTemplatePiece>,
-    room_pos: (i32, i32, i32),
+    room_pos: IVec3,
     rotation: Rotation,
     door_dir: Option<Direction>,
     floor: usize,
@@ -1509,10 +1449,10 @@ fn add_room_1x1(
         _ => kind = "1x1s",
     }
     let name = get_room_name(rng, floor, kind, false);
-    let orient = zero_pos_transform((1, 0, 0), piece_rot, 7, 7);
+    let orient = zero_pos_transform(IVec3::new(1, 0, 0), piece_rot, 7, 7);
     piece_rot = compose_rotation(piece_rot, rotation);
-    let orient = rotation.transform_pos(orient.0, orient.1, orient.2, 0, 0);
-    let pos = (room_pos.0 + orient.0, room_pos.1, room_pos.2 + orient.2);
+    let orient = rotation.transform_pos(orient, IVec3::ZERO);
+    let pos = room_pos + IVec3::new(orient.x, 0, orient.z);
     add_piece(pieces, name, pos, piece_rot, Mirror::None);
 }
 
@@ -1526,7 +1466,7 @@ fn add_room_1x1(
 )]
 fn add_room_1x2(
     pieces: &mut Vec<MansionTemplatePiece>,
-    room_pos: (i32, i32, i32),
+    room_pos: IVec3,
     rotation: Rotation,
     room_dir: Direction,
     door_dir: Direction,
@@ -1677,7 +1617,7 @@ fn add_room_1x2(
 
 fn add_room_2x2(
     pieces: &mut Vec<MansionTemplatePiece>,
-    room_pos: (i32, i32, i32),
+    room_pos: IVec3,
     rotation: Rotation,
     room_dir: Direction,
     door_dir: Direction,
@@ -1733,7 +1673,7 @@ fn add_room_2x2(
 
 fn add_room_2x2_secret(
     pieces: &mut Vec<MansionTemplatePiece>,
-    room_pos: (i32, i32, i32),
+    room_pos: IVec3,
     rotation: Rotation,
     floor: usize,
     rng: &mut LegacyRandom,
@@ -1781,13 +1721,14 @@ impl Structure for WoodlandMansionStructure {
             return None;
         }
 
-        let pieces = generate_mansion_pieces((bx, lowest, bz), rotation, rng)
+        let origin = IVec3::new(bx, lowest, bz);
+        let pieces = generate_mansion_pieces(origin, rotation, rng)
             .into_iter()
             .map(MansionTemplatePiece::into_structure_piece)
             .collect();
 
         Some(GenerationStub {
-            position: (bx, lowest, bz),
+            position: (origin.x, origin.y, origin.z),
             pieces,
         })
     }
@@ -1798,10 +1739,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recursive_corridor_branches_toward_selected_next_direction() {
+        let mut grid = SimpleGrid::new(8, 8, 5);
+        grid.set_cell(2, 3, 5);
+        let mut rng = LegacyRandom::from_seed(0);
+
+        MansionGrid::recursive_corridor(&mut grid, &mut rng, 4, 3, Direction::West, 2);
+
+        assert_eq!(grid.get(3, 2), 1);
+    }
+
+    #[test]
     fn mansion_piece_uses_template_payload_with_marker_handling() {
         let piece = MansionTemplatePiece::new(
             "entrance",
-            (10, 64, 20),
+            IVec3::new(10, 64, 20),
             Rotation::Clockwise90,
             Mirror::LeftRight,
         );
@@ -1821,10 +1773,10 @@ mod tests {
             data.template_id,
             Identifier::vanilla_static("woodland_mansion/entrance")
         );
-        assert_eq!(data.template_position, (10, 64, 20));
+        assert_eq!(data.template_position, IVec3::new(10, 64, 20));
         assert_eq!(data.rotation, Rotation::Clockwise90);
         assert_eq!(data.mirror, StructureMirror::LeftRight);
-        assert_eq!(data.rotation_pivot, (0, 0, 0));
+        assert_eq!(data.rotation_pivot, IVec3::ZERO);
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureBlock);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(data.processors, TemplateProcessorList::Empty);

@@ -139,7 +139,7 @@ impl FeatureDecorationRunner {
         let below = origin.below();
         let below_state = region.block_state(below);
         if random.next_f32() <= config.catalyst_chance
-            && shapes::is_shape_full_block(below_state.get_collision_shape())
+            && shapes::is_offset_shape_full_block(below_state.get_collision_shape_at(below))
         {
             let catalyst = vanilla_blocks::SCULK_CATALYST.default_state();
             if region.set_block_state(origin, catalyst, UpdateFlags::UPDATE_ALL) {
@@ -159,10 +159,11 @@ impl FeatureDecorationRunner {
                 0,
                 random.next_i32_bounded(5) - 2,
             );
+            let below = candidate.below();
             if !region.block_state(candidate).is_air()
                 || !region
-                    .block_state(candidate.below())
-                    .is_face_sturdy(Direction::Up)
+                    .block_state(below)
+                    .is_face_sturdy_at(below, Direction::Up)
             {
                 continue;
             }
@@ -197,8 +198,9 @@ impl FeatureDecorationRunner {
         }
 
         Self::VANILLA_DIRECTION_VALUES.iter().any(|direction| {
-            let state = region.block_state(origin.relative(*direction));
-            shapes::is_shape_full_block(state.get_collision_shape())
+            let pos = origin.relative(*direction);
+            let state = region.block_state(pos);
+            shapes::is_offset_shape_full_block(state.get_collision_shape_at(pos))
         })
     }
 
@@ -631,7 +633,7 @@ impl FeatureDecorationRunner {
             let neighbor_pos = source_pos.relative(placement_direction.opposite());
             if region
                 .block_state(neighbor_pos)
-                .is_face_sturdy(placement_direction)
+                .is_face_sturdy_at(neighbor_pos, placement_direction)
             {
                 return false;
             }
@@ -844,7 +846,7 @@ impl FeatureDecorationRunner {
         let test_pos = from.relative(direction);
         !region
             .block_state(test_pos)
-            .is_face_sturdy(direction.opposite())
+            .is_face_sturdy_at(test_pos, direction.opposite())
     }
 
     const fn sculk_direction_from_axis_delta(axis: Axis, delta: i32) -> Direction {
@@ -1054,7 +1056,7 @@ impl FeatureDecorationRunner {
         state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    const fn sculk_vein_spread_pos(
+    fn sculk_vein_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,

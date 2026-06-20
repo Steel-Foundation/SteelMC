@@ -11,7 +11,7 @@ const SILVER_RATIO_64: u64 = 0x6A09_E667_F3BC_C909;
 pub struct Xoroshiro {
     seed_lo: u64,
     seed_hi: u64,
-    next_gaussian: Option<f64>,
+    next_gaussian: f64,
 }
 
 /// A splitter for the Xoroshiro128++ random number generator.
@@ -49,7 +49,7 @@ impl Xoroshiro {
         Self {
             seed_lo: lo,
             seed_hi: hi,
-            next_gaussian: None,
+            next_gaussian: f64::NAN,
         }
     }
 
@@ -81,11 +81,15 @@ impl Xoroshiro {
 
 impl MarsagliaPolarGaussian for Xoroshiro {
     fn stored_next_gaussian(&self) -> Option<f64> {
-        self.next_gaussian
+        if self.next_gaussian.is_nan() {
+            None
+        } else {
+            Some(self.next_gaussian)
+        }
     }
 
     fn set_stored_next_gaussian(&mut self, value: Option<f64>) {
-        self.next_gaussian = value;
+        self.next_gaussian = value.unwrap_or(f64::NAN);
     }
 }
 

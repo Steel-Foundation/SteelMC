@@ -2,6 +2,7 @@
 //! and the cluster check passes — a scatter of smaller ruins with collision checks.
 //! Warm uses one piece; cold stacks three (brick + cracked + mossy) from the same index.
 
+use glam::IVec3;
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, StructureConfigData, StructureData,
 };
@@ -80,10 +81,8 @@ static COLD_BIG_MOSSY: &[&str] = &[
     "underwater_ruin/big_mossy_8",
 ];
 
-const fn template_bb(position: (i32, i32, i32), size: [i32; 3], rotation: Rotation) -> BoundingBox {
-    rotation.get_bounding_box(
-        position.0, position.1, position.2, size[0], size[1], size[2],
-    )
+fn template_bb(position: IVec3, size: IVec3, rotation: Rotation) -> BoundingBox {
+    rotation.get_bounding_box(position, size)
 }
 
 /// `(x_base, z_base, x_between, z_between)` for a single candidate.
@@ -102,10 +101,10 @@ const CLUSTER_OFFSETS: [ClusterOffset; 8] = [
     ( 16, -16, (1, 7), (4, 8)),
 ];
 
-const fn ocean_ruin_piece(
+fn ocean_ruin_piece(
     template_id: Identifier,
-    position: (i32, i32, i32),
-    size: [i32; 3],
+    position: IVec3,
+    size: IVec3,
     rotation: Rotation,
     biome_temp: OceanRuinBiomeTempData,
     is_large: bool,
@@ -121,7 +120,7 @@ const fn ocean_ruin_piece(
             template_position: position,
             rotation,
             mirror: StructureMirror::None,
-            rotation_pivot: (0, 0, 0),
+            rotation_pivot: IVec3::ZERO,
             block_ignore: StructureBlockIgnore::None,
             late_block_ignore: StructureBlockIgnore::StructureAndAir,
             processors: TemplateProcessorList::OceanRuin {
@@ -175,21 +174,28 @@ impl Structure for OceanRuinStructure {
         let (pos_x, pos_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
 
         let mut pieces: Vec<StructurePiece> = Vec::new();
-        let push_piece =
-            |pieces: &mut Vec<StructurePiece>, name: &str, x, z, rot, is_large_piece, integrity| {
-                let template_id = Identifier::new("minecraft", name.to_string());
-                if let Some(template) = ctx.templates().get(&template_id) {
-                    pieces.push(ocean_ruin_piece(
-                        template_id,
-                        (x, 90, z),
-                        template.size,
-                        rot,
-                        *biome_temp,
-                        is_large_piece,
-                        integrity,
-                    ));
-                }
-            };
+        let push_piece = |pieces: &mut Vec<StructurePiece>,
+                          name: &str,
+                          x: i32,
+                          z: i32,
+                          rot: Rotation,
+                          is_large_piece: bool,
+                          integrity: f32| {
+            let template_id = Identifier::new("minecraft", name.to_string());
+            if let Some(template) = ctx.templates().get(&template_id) {
+                let pos = IVec3::new(x, 90, z);
+                let size = IVec3::from(template.size);
+                pieces.push(ocean_ruin_piece(
+                    template_id,
+                    pos,
+                    size,
+                    rot,
+                    *biome_temp,
+                    is_large_piece,
+                    integrity,
+                ));
+            }
+        };
         let base_integrity = if is_large { 0.9 } else { 0.8 };
 
         if is_warm {
@@ -241,17 +247,13 @@ impl Structure for OceanRuinStructure {
         }
 
         if is_large && rng.next_f32() <= *cluster_probability {
-            let (pc_x, _, pc_z) = rotation.transform_pos(15, 0, 15, 0, 0);
-            let parent_corner_x = pos_x + pc_x;
-            let parent_corner_z = pos_z + pc_z;
-            let parent_bb = BoundingBox::new(
-                pos_x.min(parent_corner_x),
-                0,
-                pos_z.min(parent_corner_z),
-                pos_x.max(parent_corner_x),
-                255,
-                pos_z.max(parent_corner_z),
-            );
+            let pc = rotation.transform_pos(IVec3::new(15, 0, 15), IVec3::ZERO);
+            let parent_corner_x = pos_x + pc.x;
+            let parent_corner_z = pos_z + pc.z;
+            let parent_min = IVec3::new(pos_x.min(parent_corner_x), 0, pos_z.min(parent_corner_z));
+            let parent_max =
+                IVec3::new(pos_x.max(parent_corner_x), 255, pos_z.max(parent_corner_z));
+            let parent_bb = BoundingBox::new(parent_min, parent_max);
             let bl_x = pos_x.min(parent_corner_x);
             let bl_z = pos_z.min(parent_corner_z);
 
@@ -272,16 +274,11 @@ impl Structure for OceanRuinStructure {
                 let idx = rng.next_i32_bounded(candidates.len() as i32) as usize;
                 let (cx, cz) = candidates.remove(idx);
                 let cluster_rot = Rotation::get_random(rng);
-                let (nc_x, _, nc_z) = cluster_rot.transform_pos(5, 0, 6, 0, 0);
-                let cluster_bb = BoundingBox::new(
-                    cx.min(cx + nc_x),
-                    0,
-                    cz.min(cz + nc_z),
-                    cx.max(cx + nc_x),
-                    255,
-                    cz.max(cz + nc_z),
-                );
-                if !cluster_bb.intersects(&parent_bb) {
+                let nc = cluster_rot.transform_pos(IVec3::new(5, 0, 6), IVec3::ZERO);
+                let cluster_min = IVec3::new(cx.min(cx + nc.x), 0, cz.min(cz + nc.z));
+                let cluster_max = IVec3::new(cx.max(cx + nc.x), 255, cz.max(cz + nc.z));
+                let cluster_bb = BoundingBox::new(cluster_min, cluster_max);
+                if !cluster_bb.intersects(parent_bb) {
                     if is_warm {
                         let tidx = rng.next_i32_bounded(WARM_SMALL.len() as i32) as usize;
                         push_piece(
@@ -341,8 +338,8 @@ mod tests {
     #[test]
     fn ocean_ruin_piece_uses_template_payload_with_height_adjustment_and_processors() {
         let template_id = Identifier::vanilla_static("underwater_ruin/warm_1");
-        let position = (32, 90, -48);
-        let size = [9, 7, 9];
+        let position = IVec3::new(32, 90, -48);
+        let size = IVec3::new(9, 7, 9);
         let piece = ocean_ruin_piece(
             template_id.clone(),
             position,
@@ -358,9 +355,7 @@ mod tests {
         assert_eq!(piece.orientation, Some(Direction::North));
         assert_eq!(
             piece.bounding_box,
-            Rotation::Clockwise90.get_bounding_box(
-                position.0, position.1, position.2, size[0], size[1], size[2],
-            )
+            Rotation::Clockwise90.get_bounding_box(position, size)
         );
 
         let StructurePiecePayload::Template(data) = piece.payload else {
@@ -370,7 +365,7 @@ mod tests {
         assert_eq!(data.template_position, position);
         assert_eq!(data.rotation, Rotation::Clockwise90);
         assert_eq!(data.mirror, StructureMirror::None);
-        assert_eq!(data.rotation_pivot, (0, 0, 0));
+        assert_eq!(data.rotation_pivot, IVec3::ZERO);
         assert_eq!(data.block_ignore, StructureBlockIgnore::None);
         assert_eq!(
             data.late_block_ignore,

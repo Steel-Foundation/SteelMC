@@ -7,6 +7,7 @@
 
 use std::sync::LazyLock;
 
+use glam::IVec3;
 use steel_math::map_clamped;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::template_pool::Projection;
@@ -176,15 +177,16 @@ impl Beardifier {
                 // `(chunkStartBlockX - 12, chunkStartBlockX + 15 + 12)`, same for Z.
                 if is_jigsaw {
                     for junction in &piece.junctions {
-                        let jx = junction.source_x;
-                        let jz = junction.source_z;
+                        let jx = junction.source_pos.x;
+                        let jz = junction.source_pos.z;
                         if jx > chunk_start_x - 12
                             && jz > chunk_start_z - 12
                             && jx < chunk_start_x + 15 + 12
                             && jz < chunk_start_z + 15 + 12
                         {
-                            let jy = junction.source_ground_y;
-                            let junction_bb = BoundingBox::new(jx, jy, jz, jx, jy, jz);
+                            let jy = junction.source_pos.y;
+                            let junction_bb =
+                                BoundingBox::new(IVec3::new(jx, jy, jz), IVec3::new(jx, jy, jz));
                             encompassing = Some(match encompassing {
                                 Some(enc) => BoundingBox::encapsulating(&enc, &junction_bb),
                                 None => junction_bb,
@@ -197,7 +199,7 @@ impl Beardifier {
         }
 
         let affected_box = encompassing
-            .map(|bb| bb.inflated_by(KERNEL_SIZE as i32, KERNEL_SIZE as i32, KERNEL_SIZE as i32));
+            .map(|bb| bb.inflate_xyz(KERNEL_SIZE as i32, KERNEL_SIZE as i32, KERNEL_SIZE as i32));
 
         Self {
             rigids,
@@ -230,10 +232,10 @@ impl Beardifier {
             let bb = &rigid.bounding_box;
 
             // Horizontal distance to closest edge of bounding box (0 if inside)
-            let dx = 0.max((bb.min_x - block_x).max(block_x - bb.max_x));
-            let dz = 0.max((bb.min_z - block_z).max(block_z - bb.max_z));
+            let dx = 0.max((bb.min_x() - block_x).max(block_x - bb.max_x()));
+            let dz = 0.max((bb.min_z() - block_z).max(block_z - bb.max_z()));
 
-            let ground_y = bb.min_y + rigid.ground_level_delta;
+            let ground_y = bb.min_y() + rigid.ground_level_delta;
             let dy_to_ground = block_y - ground_y;
 
             match rigid.terrain_adjustment {
@@ -249,11 +251,11 @@ impl Beardifier {
                     value += get_beard_contribution(dx, dy_to_ground, dz, dy_to_ground) * 0.8;
                 }
                 TerrainAdjustment::BeardBox => {
-                    let dy = 0.max((ground_y - block_y).max(block_y - bb.max_y));
+                    let dy = 0.max((ground_y - block_y).max(block_y - bb.max_y()));
                     value += get_beard_contribution(dx, dy, dz, dy_to_ground) * 0.8;
                 }
                 TerrainAdjustment::Encapsulate => {
-                    let dy = 0.max((bb.min_y - block_y).max(block_y - bb.max_y));
+                    let dy = 0.max((bb.min_y() - block_y).max(block_y - bb.max_y()));
                     value += get_bury_contribution(
                         f64::from(dx) / 2.0,
                         f64::from(dy) / 2.0,
@@ -264,9 +266,9 @@ impl Beardifier {
         }
 
         for junction in &self.junctions {
-            let dx = block_x - junction.source_x;
-            let dy = block_y - junction.source_ground_y;
-            let dz = block_z - junction.source_z;
+            let dx = block_x - junction.source_pos.x;
+            let dy = block_y - junction.source_pos.y;
+            let dz = block_z - junction.source_pos.z;
             value += get_beard_contribution(dx, dy, dz, dy) * 0.4;
         }
 
@@ -283,8 +285,8 @@ const fn is_close_to_chunk(bb: &BoundingBox, chunk_x: i32, chunk_z: i32, margin:
     let chunk_end_x = chunk_start_x + 15;
     let chunk_end_z = chunk_start_z + 15;
 
-    bb.max_x >= chunk_start_x - margin
-        && bb.min_x <= chunk_end_x + margin
-        && bb.max_z >= chunk_start_z - margin
-        && bb.min_z <= chunk_end_z + margin
+    bb.max_x() >= chunk_start_x - margin
+        && bb.min_x() <= chunk_end_x + margin
+        && bb.max_z() >= chunk_start_z - margin
+        && bb.min_z() <= chunk_end_z + margin
 }

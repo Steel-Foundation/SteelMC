@@ -15,6 +15,7 @@ use std::mem;
 use std::sync::{Arc, Weak};
 
 use flate2::read::GzDecoder;
+use glam::IVec3;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::Deserialize;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
@@ -712,7 +713,7 @@ fn chunk_stage_hashes_inner() {
             .as_ref()
             .map(|world| world.chunk_map.world_gen_context.clone());
 
-        eprintln!("=== {dim_key} ===");
+        eprintln!("{dim_key}");
 
         let debug_filter = debug_chunk_filter();
         let mut test_entries: Vec<&ChunkStageEntry> = if let Some(filter) = &debug_filter {
@@ -730,11 +731,11 @@ fn chunk_stage_hashes_inner() {
             .map(|entry| (entry.x, entry.z))
             .collect();
 
-        // === Pre-pass: replicate vanilla's STRUCTURE_STARTS → STRUCTURE_REFERENCES →
+        // Pre-pass: replicate vanilla's STRUCTURE_STARTS → STRUCTURE_REFERENCES →
         // BIOMES → NOISE pipeline before the per-stage hash loop. The beardifier in
         // production reads structure starts from referenced neighbor chunks, so the
         // test must populate those references the same way `generate_references` does
-        // in `worldgen::stages::structures`. ===
+        // in `worldgen::stages::structures`.
 
         // 17×17 around each test chunk feeds STRUCTURE_REFERENCES. Surface and
         // feature dependency chunks add their required biome rings below.
@@ -896,14 +897,14 @@ fn chunk_stage_hashes_inner() {
                         continue;
                     }
                     let chunk = chunk_or_panic(&chunks, pos);
-                    let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
-                        let cx = qx >> 2;
-                        let cz = qz >> 2;
+                    let neighbor_biomes = |q: IVec3| -> u16 {
+                        let cx = q.x >> 2;
+                        let cz = q.z >> 2;
                         let neighbor = chunk_or_panic(&chunks, (cx, cz));
                         let sections = neighbor.sections();
-                        let local_qx = (qx - cx * 4) as usize;
-                        let local_qz = (qz - cz * 4) as usize;
-                        let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                        let local_qx = (q.x - cx * 4) as usize;
+                        let local_qz = (q.z - cz * 4) as usize;
+                        let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
                         let section_idx = qy_clamped / 4;
                         let local_qy = qy_clamped % 4;
                         sections.sections[section_idx]
@@ -989,14 +990,14 @@ fn chunk_stage_hashes_inner() {
                     // Apply current stage (structure_starts, references, biomes, noise
                     // already done by pre-pass).
                     if stage != "minecraft:noise" {
-                        let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
-                            let cx = qx >> 2;
-                            let cz = qz >> 2;
+                        let neighbor_biomes = |q: IVec3| -> u16 {
+                            let cx = q.x >> 2;
+                            let cz = q.z >> 2;
                             let neighbor = chunk_or_panic(&chunks, (cx, cz));
                             let sections = neighbor.sections();
-                            let local_qx = (qx - cx * 4) as usize;
-                            let local_qz = (qz - cz * 4) as usize;
-                            let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                            let local_qx = (q.x - cx * 4) as usize;
+                            let local_qz = (q.z - cz * 4) as usize;
+                            let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
                             let section_idx = qy_clamped / 4;
                             let local_qy = qy_clamped % 4;
                             sections.sections[section_idx]

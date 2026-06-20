@@ -182,10 +182,6 @@ impl ChunkDependencies {
     }
 }
 
-// ============================================================================
-// Const helper functions
-// ============================================================================
-
 const fn const_max(a: usize, b: usize) -> usize {
     if a > b { a } else { b }
 }
@@ -207,10 +203,6 @@ const fn const_max_status(a: Option<ChunkStatus>, b: Option<ChunkStatus>) -> Opt
         (None, None) => None,
     }
 }
-
-// ============================================================================
-// ChunkStep
-// ============================================================================
 
 /// A task that generates a chunk.
 pub type ChunkStatusTask =
@@ -259,10 +251,6 @@ fn noop_task(
     _holder: Arc<ChunkHolder>,
 ) {
 }
-
-// ============================================================================
-// ChunkPyramid and const builder
-// ============================================================================
 
 /// Represents the hierarchy and dependencies for chunk generation or loading.
 pub struct ChunkPyramid {
@@ -334,10 +322,6 @@ impl ConstPyramidBuilder {
     }
 }
 
-// ============================================================================
-// Macro for ergonomic pyramid definition
-// ============================================================================
-
 /// Macro for defining chunk pyramids with nice syntax.
 ///
 /// # Example
@@ -381,10 +365,6 @@ macro_rules! define_pyramid {
     (@bswr) => { -1 };
     (@bswr $bswr:expr) => { $bswr };
 }
-
-// ============================================================================
-// Pyramid definitions
-// ============================================================================
 
 define_pyramid! {
     pub const GENERATION_PYRAMID = {

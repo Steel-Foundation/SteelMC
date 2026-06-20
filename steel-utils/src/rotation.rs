@@ -1,7 +1,10 @@
 //! Vanilla's `Rotation` — horizontal rotations around the Y axis.
 
+use glam::IVec3;
+
+use crate::Direction;
+use crate::geometry::BoundingBox;
 use crate::random::Random;
-use crate::{BoundingBox, Direction};
 
 /// Horizontal rotation around the Y axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,29 +62,26 @@ impl Rotation {
     }
 
     /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.NONE, rotation, pivot)`.
+    ///
+    /// `pivot.y` is ignored (only the XZ plane matters).
     #[must_use]
-    pub const fn transform_pos(
-        self,
-        x: i32,
-        y: i32,
-        z: i32,
-        pivot_x: i32,
-        pivot_z: i32,
-    ) -> (i32, i32, i32) {
+    pub const fn transform_pos(self, pos: IVec3, pivot: IVec3) -> IVec3 {
+        let (x, y, z) = (pos.x, pos.y, pos.z);
+        let (px, pz) = (pivot.x, pivot.z);
         match self {
-            Self::None => (x, y, z),
-            Self::Clockwise90 => (pivot_x + pivot_z - z, y, pivot_z - pivot_x + x),
-            Self::Clockwise180 => (pivot_x + pivot_x - x, y, pivot_z + pivot_z - z),
-            Self::CounterClockwise90 => (pivot_x - pivot_z + z, y, pivot_x + pivot_z - x),
+            Self::None => IVec3::new(x, y, z),
+            Self::Clockwise90 => IVec3::new(px + pz - z, y, pz - px + x),
+            Self::Clockwise180 => IVec3::new(px + px - x, y, pz + pz - z),
+            Self::CounterClockwise90 => IVec3::new(px - pz + z, y, px + pz - x),
         }
     }
 
     /// 90°/270° swap the X and Z dimensions.
     #[must_use]
-    pub const fn rotate_size(self, size_x: i32, size_y: i32, size_z: i32) -> (i32, i32, i32) {
+    pub const fn rotate_size(self, size: IVec3) -> IVec3 {
         match self {
-            Self::Clockwise90 | Self::CounterClockwise90 => (size_z, size_y, size_x),
-            Self::None | Self::Clockwise180 => (size_x, size_y, size_z),
+            Self::Clockwise90 | Self::CounterClockwise90 => IVec3::new(size.z, size.y, size.x),
+            Self::None | Self::Clockwise180 => size,
         }
     }
 
@@ -89,71 +89,43 @@ impl Rotation {
     #[must_use]
     pub const fn transform_pos_mirrored(
         self,
-        x: i32,
-        y: i32,
-        z: i32,
-        pivot_x: i32,
-        pivot_z: i32,
+        pos: IVec3,
+        pivot: IVec3,
         mirror_front_back: bool,
-    ) -> (i32, i32, i32) {
-        let mx = if mirror_front_back { -x } else { x };
-        self.transform_pos(mx, y, z, pivot_x, pivot_z)
+    ) -> IVec3 {
+        let mx = if mirror_front_back { -pos.x } else { pos.x };
+        let mirrored_pos = IVec3::new(mx, pos.y, pos.z);
+        self.transform_pos(mirrored_pos, pivot)
     }
 
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror, size)`.
     #[must_use]
-    pub const fn get_bounding_box_full(
+    pub fn get_bounding_box_full(
         self,
-        pos: (i32, i32, i32),
-        size: (i32, i32, i32),
-        pivot_x: i32,
-        pivot_z: i32,
+        pos: IVec3,
+        size: IVec3,
+        pivot: IVec3,
         mirror_front_back: bool,
     ) -> BoundingBox {
-        let (c1x, c1y, c1z) =
-            self.transform_pos_mirrored(0, 0, 0, pivot_x, pivot_z, mirror_front_back);
-        let (c2x, c2y, c2z) = self.transform_pos_mirrored(
-            size.0 - 1,
-            size.1 - 1,
-            size.2 - 1,
-            pivot_x,
-            pivot_z,
+        let c1 = self.transform_pos_mirrored(IVec3::ZERO, pivot, mirror_front_back);
+        let c2 = self.transform_pos_mirrored(
+            IVec3::new(size.x - 1, size.y - 1, size.z - 1),
+            pivot,
             mirror_front_back,
         );
-        BoundingBox::new(
-            c1x.min(c2x) + pos.0,
-            c1y.min(c2y) + pos.1,
-            c1z.min(c2z) + pos.2,
-            c1x.max(c2x) + pos.0,
-            c1y.max(c2y) + pos.1,
-            c1z.max(c2z) + pos.2,
-        )
+        BoundingBox::new(c1.min(c2) + pos, c1.max(c2) + pos)
     }
 
     /// [`get_bounding_box_full`] with `mirror=NONE`.
     #[must_use]
-    pub const fn get_bounding_box_with_pivot(
-        self,
-        pos: (i32, i32, i32),
-        size: (i32, i32, i32),
-        pivot_x: i32,
-        pivot_z: i32,
-    ) -> BoundingBox {
-        self.get_bounding_box_full(pos, size, pivot_x, pivot_z, false)
+    pub fn get_bounding_box_with_pivot(self, pos: IVec3, size: IVec3, pivot: IVec3) -> BoundingBox {
+        self.get_bounding_box_full(pos, size, pivot, false)
     }
 
     /// [`get_bounding_box_full`] with `pivot=ZERO` and `mirror=NONE`. Used by jigsaw pool elements.
     #[must_use]
-    pub const fn get_bounding_box(
-        self,
-        pos_x: i32,
-        pos_y: i32,
-        pos_z: i32,
-        size_x: i32,
-        size_y: i32,
-        size_z: i32,
-    ) -> BoundingBox {
-        self.get_bounding_box_full((pos_x, pos_y, pos_z), (size_x, size_y, size_z), 0, 0, false)
+    pub fn get_bounding_box(self, pos: IVec3, size: IVec3) -> BoundingBox {
+        self.get_bounding_box_full(pos, size, IVec3::ZERO, false)
     }
 }
 
@@ -205,50 +177,63 @@ mod tests {
 
     #[test]
     fn transform_pos_pivot_zero() {
-        assert_eq!(Rotation::None.transform_pos(3, 5, 7, 0, 0), (3, 5, 7));
         assert_eq!(
-            Rotation::Clockwise90.transform_pos(3, 5, 7, 0, 0),
-            (-7, 5, 3)
+            Rotation::None.transform_pos(IVec3::new(3, 5, 7), IVec3::ZERO),
+            IVec3::new(3, 5, 7)
         );
         assert_eq!(
-            Rotation::Clockwise180.transform_pos(3, 5, 7, 0, 0),
-            (-3, 5, -7)
+            Rotation::Clockwise90.transform_pos(IVec3::new(3, 5, 7), IVec3::ZERO),
+            IVec3::new(-7, 5, 3)
         );
         assert_eq!(
-            Rotation::CounterClockwise90.transform_pos(3, 5, 7, 0, 0),
-            (7, 5, -3)
+            Rotation::Clockwise180.transform_pos(IVec3::new(3, 5, 7), IVec3::ZERO),
+            IVec3::new(-3, 5, -7)
+        );
+        assert_eq!(
+            Rotation::CounterClockwise90.transform_pos(IVec3::new(3, 5, 7), IVec3::ZERO),
+            IVec3::new(7, 5, -3)
         );
     }
 
     #[test]
     fn bounding_box_none() {
-        let bb = Rotation::None.get_bounding_box(0, 0, 0, 6, 10, 6);
-        assert_eq!((bb.min_x, bb.min_y, bb.min_z), (0, 0, 0));
-        assert_eq!((bb.max_x, bb.max_y, bb.max_z), (5, 9, 5));
+        let bb = Rotation::None.get_bounding_box(IVec3::new(0, 0, 0), IVec3::new(6, 10, 6));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (0, 0, 0));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (5, 9, 5));
     }
 
     #[test]
     fn bounding_box_cw90() {
-        let bb = Rotation::Clockwise90.get_bounding_box(100, 50, 200, 6, 10, 8);
-        assert_eq!((bb.min_x, bb.min_y, bb.min_z), (93, 50, 200));
-        assert_eq!((bb.max_x, bb.max_y, bb.max_z), (100, 59, 205));
+        let bb =
+            Rotation::Clockwise90.get_bounding_box(IVec3::new(100, 50, 200), IVec3::new(6, 10, 8));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (93, 50, 200));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (100, 59, 205));
     }
 
     #[test]
     fn bounding_box_cw180() {
-        let bb = Rotation::Clockwise180.get_bounding_box(0, 0, 0, 6, 10, 8);
-        assert_eq!((bb.min_x, bb.min_y, bb.min_z), (-5, 0, -7));
-        assert_eq!((bb.max_x, bb.max_y, bb.max_z), (0, 9, 0));
+        let bb = Rotation::Clockwise180.get_bounding_box(IVec3::new(0, 0, 0), IVec3::new(6, 10, 8));
+        assert_eq!((bb.min_x(), bb.min_y(), bb.min_z()), (-5, 0, -7));
+        assert_eq!((bb.max_x(), bb.max_y(), bb.max_z()), (0, 9, 0));
     }
 
     #[test]
     fn rotate_size() {
-        assert_eq!(Rotation::None.rotate_size(6, 10, 8), (6, 10, 8));
-        assert_eq!(Rotation::Clockwise90.rotate_size(6, 10, 8), (8, 10, 6));
-        assert_eq!(Rotation::Clockwise180.rotate_size(6, 10, 8), (6, 10, 8));
         assert_eq!(
-            Rotation::CounterClockwise90.rotate_size(6, 10, 8),
-            (8, 10, 6)
+            Rotation::None.rotate_size(IVec3::new(6, 10, 8)),
+            IVec3::new(6, 10, 8)
+        );
+        assert_eq!(
+            Rotation::Clockwise90.rotate_size(IVec3::new(6, 10, 8)),
+            IVec3::new(8, 10, 6)
+        );
+        assert_eq!(
+            Rotation::Clockwise180.rotate_size(IVec3::new(6, 10, 8)),
+            IVec3::new(6, 10, 8)
+        );
+        assert_eq!(
+            Rotation::CounterClockwise90.rotate_size(IVec3::new(6, 10, 8)),
+            IVec3::new(8, 10, 6)
         );
     }
 }

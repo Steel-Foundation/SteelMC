@@ -68,14 +68,15 @@ impl BlockBehavior for TallSeagrassBlock {
                     == DoubleBlockHalf::Lower;
         }
 
-        let below = world.get_block_state(pos.below());
+        let below_pos = pos.below();
+        let below = world.get_block_state(below_pos);
         let current = world.get_block_state(pos);
         let fluid = if current.get_block() == self.block {
             water_source_fluid_state()
         } else {
             get_fluid_state_from_block(current)
         };
-        below.is_face_sturdy(Direction::Up)
+        below.is_face_sturdy_at(below_pos, Direction::Up)
             && !below
                 .get_block()
                 .has_tag(&BlockTag::CANNOT_SUPPORT_SEAGRASS)

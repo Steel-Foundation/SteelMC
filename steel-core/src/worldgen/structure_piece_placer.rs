@@ -71,7 +71,7 @@ impl StructurePiecePlacer {
                 region,
                 registry,
                 &data.pool_element,
-                BlockPos::new(data.position.0, data.position.1, data.position.2),
+                BlockPos::new(data.position.x, data.position.y, data.position.z),
                 reference_pos,
                 data.rotation,
                 clip,
@@ -246,7 +246,9 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         loot_table: &'static str,
     ) -> bool {
-        if !clip.is_inside(pos) || region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+        if !clip.contains_blockpos(pos)
+            || region.block_state(pos).get_block() == &vanilla_blocks::CHEST
+        {
             return false;
         }
 

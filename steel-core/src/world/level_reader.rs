@@ -8,10 +8,21 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::block_entity::SharedBlockEntity;
+
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
     /// Gets the block state at a position.
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId;
+
+    /// Gets the block entity at a position when this level surface supports it
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores position"
+    )]
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        None
+    }
 
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
@@ -44,6 +55,15 @@ pub trait ScheduledTickAccess: LevelReader {
 
     /// Schedules a block tick using vanilla's default priority.
     fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool;
+
+    /// Returns whether a tick is already scheduled for the same `(pos, block)`.
+    #[expect(
+        unused_variables,
+        reason = "most test/worldgen level surfaces do not track scheduled tick presence"
+    )]
+    fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        false
+    }
 
     /// Schedules a fluid tick using vanilla's default priority.
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool;

@@ -1,5 +1,6 @@
 //! Runtime structure-piece payload model used by feature-stage placement.
 
+use glam::IVec3;
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData,
 };
@@ -84,13 +85,13 @@ pub struct TemplatePieceData {
     /// Structure template identifier.
     pub template_id: Identifier,
     /// World-space template origin before rotation/mirror transforms.
-    pub template_position: (i32, i32, i32),
+    pub template_position: IVec3,
     /// Template rotation.
     pub rotation: Rotation,
     /// Template mirror mode.
     pub mirror: StructureMirror,
     /// Rotation pivot in template-local block coordinates.
-    pub rotation_pivot: (i32, i32, i32),
+    pub rotation_pivot: IVec3,
     /// Block-ignore processor applied before the registry processor list.
     pub block_ignore: StructureBlockIgnore,
     /// Block-ignore processor applied after the registry processor list.

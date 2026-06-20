@@ -16,8 +16,11 @@ steel-math.workspace = true
 rustc-hash.workspace = true
 sha2.workspace = true
 tracing.workspace = true
+glam.workspace = true
 
 [build-dependencies]
+steel-utils.workspace = true
+
 # Serialization
 serde.workspace = true
 serde_json.workspace = true

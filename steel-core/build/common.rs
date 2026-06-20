@@ -18,8 +18,6 @@ pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
     path.segments.last().is_some_and(|s| s.ident == name)
 }
 
-// --- JSON arg parsing ---
-
 /// How a `#[json_arg]` field maps JSON data to Rust tokens.
 #[derive(Debug, Clone)]
 pub(crate) enum JsonArgKind {
@@ -158,8 +156,6 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     })
 }
 
-// --- JSON helpers ---
-
 /// Gets a string value from a JSON extra map.
 pub(crate) fn get_json_str<'a>(
     extra: &'a serde_json::Map<String, serde_json::Value>,
@@ -206,8 +202,6 @@ pub(crate) fn json_value_to_tokens(
         _ => panic!("Unsupported JSON value type for entry '{entry_name}' field '{key}'"),
     }
 }
-
-// --- Code generation ---
 
 /// Generates a constructor argument token stream from a `JsonArgField` and JSON data.
 ///

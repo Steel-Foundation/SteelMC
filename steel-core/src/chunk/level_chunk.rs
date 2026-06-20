@@ -23,8 +23,7 @@ use steel_utils::{
 
 use steel_utils::locks::SyncMutex;
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
-use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
+use crate::block_entity::{BlockEntityStorage, BlockEntityTickAction, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
     proto_chunk::ProtoChunk,
@@ -33,6 +32,10 @@ use crate::chunk::{
 use crate::entity::SharedEntity;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
+use crate::{
+    behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS},
+    world::game_event_context::GameEventContext,
+};
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
@@ -386,14 +389,28 @@ impl LevelChunk {
         let Some(world) = level.upgrade() else {
             return;
         };
-        let mut poi_storage = world.poi_storage.lock();
+
+        // Palette pre-check WITHOUT the global POI lock: collect only the
+        // sections that actually contain POI blocks. The vast majority of
+        // worldgen chunks have none, so they never touch the (heavily
+        // contended) `poi_storage` mutex and never do a per-block scan.
+        // `Vec::new()` doesn't allocate until the first push, so the common
+        // empty case is allocation-free.
+        let mut poi_sections: Vec<(usize, SectionPos)> = Vec::new();
         for (i, section) in sections.sections.iter().enumerate() {
-            let section_y = min_y / 16 + i as i32;
-            let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
-            let guard = section.read();
-            if !guard.is_empty() {
-                poi_storage.scan_and_populate(&guard, section_pos);
+            if section.read().contains_poi() {
+                let section_y = min_y / 16 + i as i32;
+                poi_sections.push((i, SectionPos::new(pos.0.x, section_y, pos.0.y)));
             }
+        }
+        if poi_sections.is_empty() {
+            return;
+        }
+
+        let mut poi_storage = world.poi_storage.lock();
+        for (i, section_pos) in poi_sections {
+            let guard = sections.sections[i].read();
+            poi_storage.scan_and_populate(&guard, section_pos);
         }
     }
 
@@ -433,8 +450,6 @@ impl LevelChunk {
     fn mark_unsaved(&self) {
         self.dirty.store(true, Ordering::Release);
     }
-
-    // === Block Entity Methods ===
 
     /// Gets a block entity at the given position.
     ///
@@ -504,11 +519,33 @@ impl LevelChunk {
 
         // Tick each entity
         for entity in entities {
-            let mut guard = entity.lock();
-            if guard.is_removed() {
-                continue;
+            let action = {
+                let mut guard = entity.lock();
+                if guard.is_removed() {
+                    continue;
+                }
+                guard.tick(&world)
+            };
+
+            if let Some(action) = action {
+                match action {
+                    BlockEntityTickAction::SetBlock {
+                        pos,
+                        state,
+                        flags,
+                        game_event,
+                    } => {
+                        world.set_block(pos, state, flags);
+                        if let Some((event, event_state)) = game_event {
+                            world.game_event(
+                                event,
+                                pos,
+                                &GameEventContext::new(None, Some(event_state)),
+                            );
+                        }
+                    }
+                }
             }
-            guard.tick(&world);
         }
 
         // Clean up removed entities from the ticking list

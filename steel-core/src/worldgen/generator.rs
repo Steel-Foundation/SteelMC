@@ -1,6 +1,7 @@
 //! This module contains the `ChunkGenerator` trait, which is used to generate chunks.
 
 use enum_dispatch::enum_dispatch;
+use glam::IVec3;
 use steel_utils::random::{
     PositionalRandom as _, Random as _, RandomSource, RandomSplitter, name_hash::NameHash,
     xoroshiro::Xoroshiro,
@@ -61,7 +62,7 @@ pub trait ChunkGenerator: Send + Sync {
     /// `neighbor_biomes` maps `(quart_x, quart_y, quart_z)` to a biome palette ID,
     /// reading from neighbor chunk palettes for out-of-chunk biome lookups (matching
     /// vanilla's `WorldGenRegion.getNoiseBiome`).
-    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16);
+    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(IVec3) -> u16);
 
     /// Applies carvers to the chunk.
     fn apply_carvers(&self, chunk: &ChunkAccess);

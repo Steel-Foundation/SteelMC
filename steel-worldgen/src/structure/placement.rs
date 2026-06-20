@@ -1,6 +1,7 @@
 //! Structure placement. Determines which chunks are valid for structure
 //! generation — vanilla's `StructurePlacement` hierarchy.
 
+use glam::IVec3;
 use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
@@ -203,7 +204,7 @@ pub struct StructurePlacement {
     /// Optional exclusion zone against another structure set.
     pub exclusion_zone: Option<ExclusionZone>,
     /// Block offset from the placement chunk used by `/locate`.
-    pub locate_offset: [i32; 3],
+    pub locate_offset: IVec3,
     /// Kind-specific parameters.
     pub kind: PlacementKind,
 }
@@ -213,9 +214,9 @@ impl StructurePlacement {
     #[must_use]
     pub const fn locate_pos(&self, chunk_pos: ChunkPos) -> BlockPos {
         BlockPos::new(
-            chunk_pos.0.x * 16 + self.locate_offset[0],
-            self.locate_offset[1],
-            chunk_pos.0.y * 16 + self.locate_offset[2],
+            chunk_pos.0.x * 16 + self.locate_offset.x,
+            self.locate_offset.y,
+            chunk_pos.0.y * 16 + self.locate_offset.z,
         )
     }
 
@@ -448,7 +449,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
-            locate_offset: [0, 0, 0],
+            locate_offset: IVec3::ZERO,
             kind: PlacementKind::RandomSpread {
                 spacing: 34,
                 separation: 8,
@@ -512,7 +513,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
-            locate_offset: [0, 0, 0],
+            locate_offset: IVec3::ZERO,
             kind: PlacementKind::RandomSpread {
                 spacing: 32,
                 separation: 8,
@@ -564,7 +565,10 @@ mod tests {
             .iter()
             .find(|(k, _)| &*k.path == "buried_treasures")
             .expect("buried_treasures structure set must be present");
-        assert_eq!(buried_treasures.placement.locate_offset, [9, 0, 9]);
+        assert_eq!(
+            buried_treasures.placement.locate_offset,
+            IVec3::new(9, 0, 9)
+        );
 
         // Verify strongholds use ConcentricRings
         let (_, strongholds) = sets
@@ -597,7 +601,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
-            locate_offset: [0, 0, 0],
+            locate_offset: IVec3::ZERO,
             kind: PlacementKind::ConcentricRings {
                 distance: 32,
                 spread: 3,
