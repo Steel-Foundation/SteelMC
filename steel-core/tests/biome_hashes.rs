@@ -48,6 +48,9 @@ fn chunk_biome_hash(
 ) -> String {
     let mut biomes: FxHashMap<(i32, i32, i32, i32), BiomeRef> = FxHashMap::default();
 
+    // Exercise the same flat-noise grid path the generator's `create_biomes` uses.
+    sampler.init_grid(chunk_x * 16, chunk_z * 16);
+
     for section_y in min_section_y..=max_section_y {
         for x in 0..4i32 {
             for y in 0..4i32 {

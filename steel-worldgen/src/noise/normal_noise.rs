@@ -3,6 +3,8 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
+use std::simd::{Simd, f64x4};
+
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
 
@@ -149,6 +151,61 @@ impl NormalNoise {
         (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
     }
 
+    /// Sample the noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xz(&self, x: f64, z: f64) -> f64 {
+        let x2 = x * INPUT_FACTOR;
+        let z2 = z * INPUT_FACTOR;
+        (self.first.get_value_xz(x, z) + self.second.get_value_xz(x2, z2)) * self.value_factor
+    }
+
+    /// Sample the noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xy(&self, x: f64, y: f64) -> f64 {
+        let x2 = x * INPUT_FACTOR;
+        let y2 = y * INPUT_FACTOR;
+        (self.first.get_value_xy(x, y) + self.second.get_value_xy(x2, y2)) * self.value_factor
+    }
+
+    /// Sample 4 Y values at fixed `(x, z)` in one call.
+    ///
+    /// SIMD form of [`Self::get_value`] for transpiled density-function trees
+    /// that batch 4 cell-corner Ys together. Per-lane math is identical to
+    /// the scalar path, so `get_value_4x(x, splat(y), z)[i] == get_value(x, y, z)`
+    /// for any finite `y`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
+        let x2 = x * INPUT_FACTOR;
+        let ys2 = ys * f64x4::splat(INPUT_FACTOR);
+        let z2 = z * INPUT_FACTOR;
+        (self
+            .first
+            .get_value_with_y_params_4x(x, ys, z, 0.0, 0.0, false)
+            + self
+                .second
+                .get_value_with_y_params_4x(x2, ys2, z2, 0.0, 0.0, false))
+            * f64x4::splat(self.value_factor)
+    }
+
+    /// Generic N-lane form of [`Self::get_value_4x`].
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<const N: usize>(&self, x: f64, ys: Simd<f64, N>, z: f64) -> Simd<f64, N> {
+        let x2 = x * INPUT_FACTOR;
+        let ys2 = ys * Simd::splat(INPUT_FACTOR);
+        let z2 = z * INPUT_FACTOR;
+        (self
+            .first
+            .get_value_with_y_params_simd::<N>(x, ys, z, 0.0, 0.0, false)
+            + self
+                .second
+                .get_value_with_y_params_simd::<N>(x2, ys2, z2, 0.0, 0.0, false))
+            * Simd::splat(self.value_factor)
+    }
+
     /// Get the maximum possible output value.
     #[inline]
     #[must_use]
@@ -223,6 +280,31 @@ mod tests {
     }
 
     #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(98_765);
+        let splitter = rng.next_positional();
+        let noise = NormalNoise::create(&splitter, "zero_axis", -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
+                assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
+            }
+        }
+    }
+
+    #[test]
     fn test_expected_deviation() {
         // Check the formula produces expected values
         assert!((expected_deviation(0) - 0.2).abs() < 1e-10);
@@ -234,5 +316,38 @@ mod tests {
     fn test_input_factor() {
         // Verify the constant matches vanilla
         assert!((INPUT_FACTOR - 1.0181268882175227).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_get_value_4x_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(54321);
+        let splitter = rng.next_positional();
+        let noise = NormalNoise::create(&splitter, "test_4x", -7, &[1.0; 8]);
+
+        // Various (x, z) and 4-Y batches.
+        let test_cases: &[(f64, [f64; 4], f64)] = &[
+            (0.0, [0.0, 8.0, 16.0, 24.0], 0.0),
+            (12.5, [-5.0, 10.0, 25.0, 40.0], 7.25),
+            (-100.5, [64.0, 65.0, 66.0, 67.0], 200.0),
+            (1.0, [0.0; 4], -1.0),
+        ];
+
+        for &(x, ys, z) in test_cases {
+            let simd = noise.get_value_4x(x, f64x4::from_array(ys), z);
+            for i in 0..4 {
+                let scalar = noise.get_value(x, ys[i], z);
+                let simd_val = simd[i];
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "SIMD/scalar paths must produce bit-identical results for vanilla determinism"
+                )]
+                let bit_match = scalar == simd_val;
+                assert!(
+                    bit_match,
+                    "Mismatch at x={x}, y={}, z={z}: scalar={scalar}, simd={simd_val}",
+                    ys[i]
+                );
+            }
+        }
     }
 }

@@ -20,6 +20,42 @@ use crate::chunk::chunk_access::ChunkAccess;
 
 const CLAY_BAND_LENGTH: usize = 192;
 
+/// Lazy XZ-only noise cache for `SurfaceSystem::get_temperature`.
+///
+/// All three noise samples used by `get_temperature` (frozen large/edge/small,
+/// height-based temperature) are 2D — they only depend on `(block_x, block_z)`.
+/// The `build_surface` column scan calls `cold_enough_to_snow` once per Y, so
+/// reusing these noise values across the whole column saves one sample per
+/// rare-modifier hit and one per height-adjusted block.
+///
+/// `NAN` is the "not yet computed" sentinel: the noise functions only ever
+/// return finite values, so any non-NaN read is a valid cached value. This
+/// keeps the struct 16 bytes smaller than the equivalent `Option<f64>` layout
+/// (no niche for `f64`).
+pub struct TemperatureXzCache {
+    block_x: i32,
+    block_z: i32,
+    frozen_large_x7: f64,
+    frozen_edge: f64,
+    frozen_small: f64,
+    height_temp_noise_x8: f64,
+}
+
+impl TemperatureXzCache {
+    /// Create a fresh (empty) cache for a column at `(block_x, block_z)`.
+    #[must_use]
+    pub const fn new(block_x: i32, block_z: i32) -> Self {
+        Self {
+            block_x,
+            block_z,
+            frozen_large_x7: f64::NAN,
+            frozen_edge: f64::NAN,
+            frozen_small: f64::NAN,
+            height_temp_noise_x8: f64::NAN,
+        }
+    }
+}
+
 /// Runtime surface system holding noises and clay band data.
 ///
 /// Matches vanilla's `SurfaceSystem`. Constructed once per generator and
@@ -181,14 +217,74 @@ impl SurfaceSystem {
             .get_value(f64::from(x), 0.0, f64::from(z))
     }
 
-    /// Compute the effective temperature at a position.
+    // ── Temperature XZ-cache helpers (column-scoped) ────────────────────────
+
+    /// `frozen_temperature_noise.get_value(x*0.05, z*0.05) * 7.0`, lazily
+    /// cached on first access. NaN sentinel = not yet computed.
+    #[inline]
+    fn frozen_large_x7(&self, xz: &mut TemperatureXzCache) -> f64 {
+        if !xz.frozen_large_x7.is_nan() {
+            return xz.frozen_large_x7;
+        }
+        let v = self
+            .frozen_temperature_noise
+            .get_value(f64::from(xz.block_x) * 0.05, f64::from(xz.block_z) * 0.05)
+            * 7.0;
+        xz.frozen_large_x7 = v;
+        v
+    }
+
+    /// `biome_info_noise.get_value(x*0.2, z*0.2)`, lazily cached.
+    #[inline]
+    fn frozen_edge(&self, xz: &mut TemperatureXzCache) -> f64 {
+        if !xz.frozen_edge.is_nan() {
+            return xz.frozen_edge;
+        }
+        let v = self
+            .biome_info_noise
+            .get_value(f64::from(xz.block_x) * 0.2, f64::from(xz.block_z) * 0.2);
+        xz.frozen_edge = v;
+        v
+    }
+
+    /// `biome_info_noise.get_value(x*0.09, z*0.09)`, lazily cached.
+    #[inline]
+    fn frozen_small(&self, xz: &mut TemperatureXzCache) -> f64 {
+        if !xz.frozen_small.is_nan() {
+            return xz.frozen_small;
+        }
+        let v = self
+            .biome_info_noise
+            .get_value(f64::from(xz.block_x) * 0.09, f64::from(xz.block_z) * 0.09);
+        xz.frozen_small = v;
+        v
+    }
+
+    /// `temperature_noise.get_value(x/8, z/8) * 8.0`, lazily cached.
+    #[inline]
+    fn height_temp_noise_x8(&self, xz: &mut TemperatureXzCache) -> f64 {
+        if !xz.height_temp_noise_x8.is_nan() {
+            return xz.height_temp_noise_x8;
+        }
+        let v = self
+            .temperature_noise
+            .get_value(f64::from(xz.block_x) / 8.0, f64::from(xz.block_z) / 8.0)
+            * 8.0;
+        xz.height_temp_noise_x8 = v;
+        v
+    }
+
+    /// Compute the effective temperature at a position, using a column-local
+    /// XZ cache.
     ///
-    /// Matches vanilla's `Biome.getTemperature()` with temperature modifier
-    /// and height-based adjustment above `seaLevel + 17`.
+    /// Matches vanilla's `Biome.getTemperature()` with the temperature modifier
+    /// and height-based adjustment above `sea_level + 17`. All three contributing
+    /// noise samples are 2D (XZ-only), so reusing them across every Y in a column
+    /// is determinism-preserving.
     ///
     /// # Panics
     /// Panics if `biome_id` does not correspond to a registered biome.
-    fn get_temperature(&self, biome_id: u16, block_x: i32, block_y: i32, block_z: i32) -> f32 {
+    fn get_temperature(&self, biome_id: u16, block_y: i32, xz: &mut TemperatureXzCache) -> f32 {
         let biome = REGISTRY
             .biomes
             .by_id(biome_id as usize)
@@ -199,19 +295,9 @@ impl SurfaceSystem {
         let modified_temp = match biome.temperature_modifier {
             TemperatureModifier::None => base_temp,
             TemperatureModifier::Frozen => {
-                let large = self
-                    .frozen_temperature_noise
-                    .get_value(f64::from(block_x) * 0.05, f64::from(block_z) * 0.05)
-                    * 7.0;
-                let edge = self
-                    .biome_info_noise
-                    .get_value(f64::from(block_x) * 0.2, f64::from(block_z) * 0.2);
-                let combined = large + edge;
+                let combined = self.frozen_large_x7(xz) + self.frozen_edge(xz);
                 if combined < 0.3 {
-                    let small = self
-                        .biome_info_noise
-                        .get_value(f64::from(block_x) * 0.09, f64::from(block_z) * 0.09);
-                    if small < 0.8 {
+                    if self.frozen_small(xz) < 0.8 {
                         0.2 // Force warm
                     } else {
                         base_temp
@@ -225,11 +311,7 @@ impl SurfaceSystem {
         // Height-based temperature adjustment above seaLevel + 17
         let snow_level = self.sea_level + 17;
         if block_y > snow_level {
-            let v = self
-                .temperature_noise
-                .get_value(f64::from(block_x) / 8.0, f64::from(block_z) / 8.0)
-                as f32
-                * 8.0;
+            let v = self.height_temp_noise_x8(xz) as f32;
             modified_temp - (v + block_y as f32 - snow_level as f32) * 0.05 / 40.0
         } else {
             modified_temp
@@ -239,16 +321,16 @@ impl SurfaceSystem {
     /// Check if a position is cold enough to snow.
     ///
     /// Matches vanilla's `Biome.coldEnoughToSnow()` → `!warmEnoughToRain()` →
-    /// `getTemperature() >= 0.15`.
+    /// `getTemperature() >= 0.15`. Takes a column-local `xz` cache so the
+    /// XZ-only noise samples are reused across every Y in the column scan.
     #[must_use]
     pub fn cold_enough_to_snow(
         &self,
         biome_id: u16,
-        block_x: i32,
         block_y: i32,
-        block_z: i32,
+        xz: &mut TemperatureXzCache,
     ) -> bool {
-        self.get_temperature(biome_id, block_x, block_y, block_z) < 0.15
+        self.get_temperature(biome_id, block_y, xz) < 0.15
     }
 
     /// Check if an iceberg at this position should melt slightly.
@@ -261,7 +343,8 @@ impl SurfaceSystem {
         block_x: i32,
         block_z: i32,
     ) -> bool {
-        self.get_temperature(biome_id, block_x, self.sea_level, block_z) > 0.1
+        let mut xz = TemperatureXzCache::new(block_x, block_z);
+        self.get_temperature(biome_id, self.sea_level, &mut xz) > 0.1
     }
 
     // ── Clay band generation ────────────────────────────────────────────────
@@ -423,23 +506,22 @@ impl SurfaceSystem {
 
     /// Frozen ocean iceberg extension — adds packed ice and snow blocks.
     ///
-    /// Matches vanilla's `SurfaceSystem.frozenOceanExtension()`.
+    /// Collects the same writes as vanilla's `SurfaceSystem.frozenOceanExtension()`.
     /// Called after surface rules for frozen ocean / deep frozen ocean biomes.
     #[expect(
         clippy::too_many_arguments,
-        reason = "matches vanilla SurfaceSystem.frozenOceanExtension signature"
+        reason = "keeps the vanilla frozenOceanExtension inputs explicit"
     )]
-    pub fn frozen_ocean_extension(
+    pub fn collect_frozen_ocean_extension_writes(
         &self,
-        chunk: &ChunkAccess,
         biome_id: u16,
-        local_x: usize,
-        local_z: usize,
         block_x: i32,
         block_z: i32,
         height: i32,
         min_surface_level: i32,
         min_y: i32,
+        column: &[BlockStateId],
+        writes: &mut Vec<(usize, BlockStateId)>,
     ) {
         let iceberg = f64::min(
             (self
@@ -488,13 +570,12 @@ impl SurfaceSystem {
 
         let snow_block = vanilla_blocks::SNOW_BLOCK.default_state();
         let packed_ice = vanilla_blocks::PACKED_ICE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
 
         let start_y = i32::max(height, top as i32 + 1);
         for y in (min_surface_level..=start_y).rev() {
             let rel_y = (y - min_y) as usize;
-            let state = chunk
-                .get_relative_block(local_x, rel_y, local_z)
-                .unwrap_or(BlockStateId(0));
+            let state = column.get(rel_y).copied().unwrap_or(air);
 
             let is_air = state.is_air();
             let is_water = state.get_block() == &vanilla_blocks::WATER;
@@ -507,10 +588,10 @@ impl SurfaceSystem {
                     && random.next_f64() > 0.15)
             {
                 if snow_depth <= max_snow_depth && y > min_snow_height {
-                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, snow_block);
+                    writes.push((rel_y, snow_block));
                     snow_depth += 1;
                 } else {
-                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, packed_ice);
+                    writes.push((rel_y, packed_ice));
                 }
             }
         }
@@ -540,7 +621,8 @@ impl SurfaceNoiseProvider for SurfaceSystem {
     }
 
     fn cold_enough_to_snow(&self, biome_id: u16, block_x: i32, block_y: i32, block_z: i32) -> bool {
-        self.cold_enough_to_snow(biome_id, block_x, block_y, block_z)
+        let mut xz = TemperatureXzCache::new(block_x, block_z);
+        SurfaceSystem::cold_enough_to_snow(self, biome_id, block_y, &mut xz)
     }
 
     fn vertical_gradient(

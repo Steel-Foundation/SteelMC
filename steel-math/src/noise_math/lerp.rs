@@ -1,4 +1,4 @@
-use core::simd::f64x4;
+use core::simd::{Simd, f64x4};
 
 /// Linear interpolation.
 ///
@@ -60,14 +60,14 @@ pub fn lerp3(
 #[inline]
 #[must_use]
 pub fn lerp_4x(alpha: f64x4, a: f64x4, b: f64x4) -> f64x4 {
-    a + alpha * (b - a)
+    lerp_simd::<4>(alpha, a, b)
 }
 
 /// Bilinear interpolation for 4 lanes. see lerp2.
 #[inline]
 #[must_use]
 pub fn lerp2_4x(a1: f64x4, a2: f64x4, x00: f64x4, x10: f64x4, x01: f64x4, x11: f64x4) -> f64x4 {
-    lerp_4x(a2, lerp_4x(a1, x00, x10), lerp_4x(a1, x01, x11))
+    lerp2_simd::<4>(a1, a2, x00, x10, x01, x11)
 }
 
 /// Trilinear interpolation for 4 lanes. see lerp3.
@@ -87,10 +87,59 @@ pub fn lerp3_4x(
     x011: f64x4,
     x111: f64x4,
 ) -> f64x4 {
-    lerp_4x(
+    lerp3_simd::<4>(a1, a2, a3, x000, x100, x010, x110, x001, x101, x011, x111)
+}
+
+/// Linear interpolation for N lanes. see lerp.
+#[inline]
+#[must_use]
+pub fn lerp_simd<const N: usize>(
+    alpha: Simd<f64, N>,
+    a: Simd<f64, N>,
+    b: Simd<f64, N>,
+) -> Simd<f64, N> {
+    a + alpha * (b - a)
+}
+
+/// Bilinear interpolation for N lanes. see lerp2.
+#[inline]
+#[must_use]
+pub fn lerp2_simd<const N: usize>(
+    a1: Simd<f64, N>,
+    a2: Simd<f64, N>,
+    x00: Simd<f64, N>,
+    x10: Simd<f64, N>,
+    x01: Simd<f64, N>,
+    x11: Simd<f64, N>,
+) -> Simd<f64, N> {
+    lerp_simd::<N>(
+        a2,
+        lerp_simd::<N>(a1, x00, x10),
+        lerp_simd::<N>(a1, x01, x11),
+    )
+}
+
+/// Trilinear interpolation for N lanes. see lerp3.
+#[inline]
+#[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
+#[must_use]
+pub fn lerp3_simd<const N: usize>(
+    a1: Simd<f64, N>,
+    a2: Simd<f64, N>,
+    a3: Simd<f64, N>,
+    x000: Simd<f64, N>,
+    x100: Simd<f64, N>,
+    x010: Simd<f64, N>,
+    x110: Simd<f64, N>,
+    x001: Simd<f64, N>,
+    x101: Simd<f64, N>,
+    x011: Simd<f64, N>,
+    x111: Simd<f64, N>,
+) -> Simd<f64, N> {
+    lerp_simd::<N>(
         a3,
-        lerp2_4x(a1, a2, x000, x100, x010, x110),
-        lerp2_4x(a1, a2, x001, x101, x011, x111),
+        lerp2_simd::<N>(a1, a2, x000, x100, x010, x110),
+        lerp2_simd::<N>(a1, a2, x001, x101, x011, x111),
     )
 }
 

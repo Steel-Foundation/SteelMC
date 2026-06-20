@@ -20,7 +20,6 @@ update-minecraft-src.sh
 clippy.toml
 docker-compose.yml
 Dockerfile
-eggs
 config
 saves
 .tmp

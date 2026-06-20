@@ -404,6 +404,20 @@ impl ProtoChunk {
         );
     }
 
+    pub(crate) fn update_status_heightmaps_after_column_block_changes(
+        &self,
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        self.update_heightmaps_after_column_block_changes(
+            self.status().heightmaps_after(),
+            local_x,
+            local_z,
+            relative_writes,
+        );
+    }
+
     fn update_heightmaps_after_block_change(
         &self,
         heightmap_types: &[HeightmapType],
@@ -431,6 +445,43 @@ impl ProtoChunk {
         for &hm_type in heightmap_types {
             if let Some(heightmap) = heightmaps.get_mut(hm_type) {
                 heightmap.update(local_x, y, local_z, state, get_block);
+            }
+        }
+    }
+
+    fn update_heightmaps_after_column_block_changes(
+        &self,
+        heightmap_types: &[HeightmapType],
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        if relative_writes.is_empty() {
+            return;
+        }
+
+        let min_y = self.min_y;
+        let height = self.height;
+        let sections = &self.sections;
+
+        let get_block = |lx: usize, scan_y: i32, lz: usize| {
+            let scan_section_index = ((scan_y - min_y) / 16) as usize;
+            let scan_local_y = ((scan_y - min_y) % 16) as usize;
+            sections.sections[scan_section_index]
+                .read()
+                .states
+                .get(lx, scan_local_y, lz)
+        };
+
+        let mut heightmaps = self.heightmaps.write();
+        heightmaps.prime(heightmap_types, min_y, height, get_block);
+
+        for &(relative_y, state) in relative_writes {
+            let y = min_y + relative_y as i32;
+            for &hm_type in heightmap_types {
+                if let Some(heightmap) = heightmaps.get_mut(hm_type) {
+                    heightmap.update(local_x, y, local_z, state, get_block);
+                }
             }
         }
     }

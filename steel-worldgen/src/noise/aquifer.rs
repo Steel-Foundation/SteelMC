@@ -7,6 +7,10 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
+use std::simd::i32x4;
+
+use rustc_hash::FxHashMap;
+
 use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_math::{clamp, map, map_clamped};
 use steel_registry::{REGISTRY, vanilla_blocks};
@@ -133,6 +137,43 @@ pub enum AquiferResult {
     Fluid(BlockStateId),
 }
 
+/// Column-scan state for the 12 aquifer-neighborhood cells, stored `SoA` so the
+/// per-Y distance computation can be SIMD-batched as 3× `i32x4`.
+///
+/// `compute_substance` is called many times with the same `(world_x, world_z)`
+/// and decreasing `world_y` (innermost loop in `noise_chunk::fill`). Within a
+/// stable `y_anchor` window (`Y_SPACING` blocks tall) the 12 cells of the
+/// neighborhood don't change, and `dx*dx + dz*dz` only depends on x/z — only
+/// `dy = loc_y - world_y` varies per call.
+///
+/// `y_anchor = i32::MIN` marks the cache as invalid (forces a refill).
+struct AquiferColumnCache {
+    world_x: i32,
+    world_z: i32,
+    y_anchor: i32,
+    /// Per-cell unpacked Y of the aquifer-cell center (constant while cached).
+    /// Padded to 16 entries so the 12 valid cells fit cleanly into 3× i32x4
+    /// SIMD batches; trailing slots stay at default `0`.
+    cell_loc_y: [i32; 16],
+    /// Per-cell `(dx + fx)² + (dz + fz)²` (Y-independent component of distance).
+    cell_xz_dist_sq: [i32; 16],
+    /// Per-cell index into `location_cache` / `status_cache`.
+    cell_idx: [u32; 12],
+}
+
+impl Default for AquiferColumnCache {
+    fn default() -> Self {
+        Self {
+            world_x: 0,
+            world_z: 0,
+            y_anchor: i32::MIN,
+            cell_loc_y: [0; 16],
+            cell_xz_dist_sq: [0; 16],
+            cell_idx: [0; 12],
+        }
+    }
+}
+
 /// Noise-based aquifer for a single chunk.
 ///
 /// Constructed once per chunk, used throughout the fill loop.
@@ -156,6 +197,10 @@ pub struct Aquifer<N: DimensionNoises> {
     skip_sampling_above_y: i32,
     /// Sea level for this dimension.
     sea_level: i32,
+    /// Precomputed `min(LAVA_LEVEL, sea_level)`. Hoisted out of `global_fluid`
+    /// (which is on the per-block hot path) so we don't recompute it millions
+    /// of times per chunk.
+    lava_floor: i32,
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
@@ -163,6 +208,17 @@ pub struct Aquifer<N: DimensionNoises> {
     default_fluid_id: BlockStateId,
     /// Vanilla's `shouldScheduleFluidUpdate` flag from the most recent substance lookup.
     should_schedule_fluid_update: bool,
+    /// 12-cell neighborhood snapshot for the current Y-column.
+    /// Placed at the end so dimensions with disabled aquifers (nether/end)
+    /// keep the hot fluid-id fields earlier in the struct's cache lines.
+    col_cache: AquiferColumnCache,
+    /// Per-quart-column cache of `preliminary_surface_level` results, matching
+    /// vanilla's `NoiseBasedAquifer.preliminarySurfaceLevel` `Long2IntMap`.
+    /// `compute_fluid` samples surface level 13× per aquifer cell, and each miss
+    /// recomputes the entire flat `NormalNoise` router for that column via
+    /// `cache.ensure`. Memoizing the `i32` result per column collapses that to
+    /// one evaluation per unique column for the chunk.
+    prelim_cache: FxHashMap<(i32, i32), i32>,
 }
 
 // Grid coordinate conversions
@@ -245,13 +301,14 @@ fn is_deep_dark_region<N: DimensionNoises>(
 ///
 /// Below `min(-54, sea_level)` → lava at Y=-54. Otherwise → the dimension's
 /// default fluid at sea level (water for overworld, lava for nether).
-fn global_fluid(
+const fn global_fluid(
     y: i32,
+    lava_floor: i32,
     sea_level: i32,
     lava_id: BlockStateId,
     default_fluid_id: BlockStateId,
 ) -> FluidStatus {
-    if y < LAVA_LEVEL.min(sea_level) {
+    if y < lava_floor {
         FluidStatus {
             fluid_level: LAVA_LEVEL,
             fluid_type: lava_id,
@@ -330,6 +387,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 status_cache: Vec::new(),
                 splitter,
                 cache,
+                col_cache: AquiferColumnCache::default(),
                 min_grid_x: 0,
                 min_grid_y: 0,
                 min_grid_z: 0,
@@ -337,10 +395,12 @@ impl<N: DimensionNoises> Aquifer<N> {
                 grid_size_z: 0,
                 skip_sampling_above_y: 0,
                 sea_level,
+                lava_floor: LAVA_LEVEL.min(sea_level),
                 water_id,
                 lava_id,
                 default_fluid_id,
                 should_schedule_fluid_update: false,
+                prelim_cache: FxHashMap::default(),
             };
         }
 
@@ -363,10 +423,13 @@ impl<N: DimensionNoises> Aquifer<N> {
         let location_cache = vec![i64::MAX; total];
         let status_cache = vec![None; total];
 
-        // Compute skip_sampling_above_y from max preliminary surface level
+        // Compute skip_sampling_above_y from max preliminary surface level.
+        // The scan primes `prelim_cache` for the columns `compute_fluid` reuses.
+        let mut prelim_cache = FxHashMap::default();
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
+            &mut prelim_cache,
             from_grid_x(min_grid_x, 0),
             from_grid_z(min_grid_z, 0),
             from_grid_x(max_grid_x, X_RANGE - 1),
@@ -381,6 +444,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             status_cache,
             splitter,
             cache,
+            col_cache: AquiferColumnCache::default(),
             min_grid_x,
             min_grid_y,
             min_grid_z,
@@ -388,16 +452,19 @@ impl<N: DimensionNoises> Aquifer<N> {
             grid_size_z,
             skip_sampling_above_y,
             sea_level,
+            lava_floor: LAVA_LEVEL.min(sea_level),
             water_id,
             lava_id,
             default_fluid_id,
             should_schedule_fluid_update: false,
+            prelim_cache,
         }
     }
 
     fn max_preliminary_surface_level(
         noises: &N,
         cache: &mut N::ColumnCache,
+        prelim_cache: &mut FxHashMap<(i32, i32), i32>,
         min_x: i32,
         min_z: i32,
         max_x: i32,
@@ -409,7 +476,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         while z <= max_z {
             let mut x = min_x;
             while x <= max_x {
-                let level = preliminary_surface_level(noises, cache, x, z);
+                let level = cached_preliminary_surface_level(noises, cache, prelim_cache, x, z);
                 if level > max_level {
                     max_level = level;
                 }
@@ -426,6 +493,55 @@ impl<N: DimensionNoises> Aquifer<N> {
         let y = gy - self.min_grid_y;
         let z = gz - self.min_grid_z;
         ((y * self.grid_size_z + z) * self.grid_size_x + x) as usize
+    }
+
+    /// Refill the 12-cell column cache for the current `(world_x, world_z, y_anchor)`.
+    ///
+    /// Iterates the same `(x1, y1, z1)` order as the inline scan so cells are
+    /// stored at consistent indices, preserving tie-breaking when the per-Y
+    /// `new_dist` values are compared in `compute_substance`.
+    fn refill_col_cache(&mut self, world_x: i32, world_y: i32, world_z: i32) -> i32 {
+        let x_anchor = grid_x(world_x + SAMPLE_OFFSET_X);
+        let y_anchor = grid_y(world_y + SAMPLE_OFFSET_Y);
+        let z_anchor = grid_z(world_z + SAMPLE_OFFSET_Z);
+
+        let mut i = 0;
+        for x1 in 0..=1i32 {
+            for y1 in -1..=1i32 {
+                for z1 in 0..=1i32 {
+                    let gx = x_anchor + x1;
+                    let gy = y_anchor + y1;
+                    let gz = z_anchor + z1;
+                    let idx = self.get_index(gx, gy, gz);
+
+                    let loc = self.location_cache[idx];
+                    let loc = if loc == i64::MAX {
+                        let mut rng = self.splitter.at(gx, gy, gz);
+                        let packed = pack_pos(
+                            from_grid_x(gx, rng.next_i32_bounded(X_RANGE)),
+                            from_grid_y(gy, rng.next_i32_bounded(Y_RANGE)),
+                            from_grid_z(gz, rng.next_i32_bounded(Z_RANGE)),
+                        );
+                        self.location_cache[idx] = packed;
+                        packed
+                    } else {
+                        loc
+                    };
+
+                    let dx = unpack_x(loc) - world_x;
+                    let dz = unpack_z(loc) - world_z;
+                    self.col_cache.cell_loc_y[i] = unpack_y(loc);
+                    self.col_cache.cell_xz_dist_sq[i] = dx * dx + dz * dz;
+                    self.col_cache.cell_idx[i] = idx as u32;
+                    i += 1;
+                }
+            }
+        }
+
+        self.col_cache.world_x = world_x;
+        self.col_cache.world_z = world_z;
+        self.col_cache.y_anchor = y_anchor;
+        y_anchor
     }
 
     /// Compute what block to place at this position given the interpolated density.
@@ -451,14 +567,26 @@ impl<N: DimensionNoises> Aquifer<N> {
         // matching vanilla's `Aquifer.createDisabled`.
         if !N::Settings::AQUIFERS_ENABLED {
             self.should_schedule_fluid_update = false;
-            let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
+            let gf = global_fluid(
+                world_y,
+                self.lava_floor,
+                self.sea_level,
+                self.lava_id,
+                self.default_fluid_id,
+            );
             return match gf.at(world_y) {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
             };
         }
 
-        let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
+        let gf = global_fluid(
+            world_y,
+            self.lava_floor,
+            self.sea_level,
+            self.lava_id,
+            self.default_fluid_id,
+        );
 
         // Above the skip threshold: use global fluid directly
         if world_y > self.skip_sampling_above_y {
@@ -475,90 +603,88 @@ impl<N: DimensionNoises> Aquifer<N> {
             return AquiferResult::Fluid(self.lava_id);
         }
 
-        // Find 4 nearest aquifer cell centers from 2×3×2 neighborhood
-        let x_anchor = grid_x(world_x + SAMPLE_OFFSET_X);
+        // Find 4 nearest aquifer cell centers from the 2×3×2 neighborhood.
+        // Within a Y-column scan, the 12 cells and their `xz_dist_sq` values
+        // are constant for a given `y_anchor`; only `dy` varies. The column
+        // cache amortizes location lookup, splitter calls, and i64 unpacking.
         let y_anchor = grid_y(world_y + SAMPLE_OFFSET_Y);
-        let z_anchor = grid_z(world_z + SAMPLE_OFFSET_Z);
+        if self.col_cache.world_x != world_x
+            || self.col_cache.world_z != world_z
+            || self.col_cache.y_anchor != y_anchor
+        {
+            self.refill_col_cache(world_x, world_y, world_z);
+        }
+
+        // SIMD-batch the per-cell distance computation: `loc_y - world_y` then
+        // `xz_dist_sq + dy²`, processing 4 cells per `i32x4` op. The 12 valid
+        // cells fit in 3 batches; the 4-slot tail of `cell_loc_y` /
+        // `cell_xz_dist_sq` is harmless padding (we ignore the trailing slot).
+        let world_y_v = i32x4::splat(world_y);
+        let mut dists = [0i32; 12];
+        for batch in 0..3 {
+            let base = batch * 4;
+            let loc_y_v = i32x4::from_slice(&self.col_cache.cell_loc_y[base..base + 4]);
+            let xz_v = i32x4::from_slice(&self.col_cache.cell_xz_dist_sq[base..base + 4]);
+            let dy = loc_y_v - world_y_v;
+            let dist_v = xz_v + dy * dy;
+            dists[base..base + 4].copy_from_slice(&dist_v.to_array());
+        }
 
         let mut dist_sq = [i32::MAX; 4];
         let mut closest_idx = [0usize; 4];
 
-        for x1 in 0..=1 {
-            for y1 in -1..=1 {
-                for z1 in 0..=1 {
-                    let gx = x_anchor + x1;
-                    let gy = y_anchor + y1;
-                    let gz = z_anchor + z1;
-                    let index = self.get_index(gx, gy, gz);
+        for (i, &new_dist) in dists.iter().enumerate() {
+            let index = self.col_cache.cell_idx[i] as usize;
 
-                    // Get or compute cell center location
-                    let loc = self.location_cache[index];
-                    let loc = if loc == i64::MAX {
-                        let mut rng = self.splitter.at(gx, gy, gz);
-                        let packed = pack_pos(
-                            from_grid_x(gx, rng.next_i32_bounded(X_RANGE)),
-                            from_grid_y(gy, rng.next_i32_bounded(Y_RANGE)),
-                            from_grid_z(gz, rng.next_i32_bounded(Z_RANGE)),
-                        );
-                        self.location_cache[index] = packed;
-                        packed
-                    } else {
-                        loc
-                    };
-
-                    let dx = unpack_x(loc) - world_x;
-                    let dy = unpack_y(loc) - world_y;
-                    let dz = unpack_z(loc) - world_z;
-                    let new_dist = dx * dx + dy * dy + dz * dz;
-
-                    // Insert into sorted top-4
-                    if dist_sq[0] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = dist_sq[1];
-                        closest_idx[2] = closest_idx[1];
-                        dist_sq[1] = dist_sq[0];
-                        closest_idx[1] = closest_idx[0];
-                        dist_sq[0] = new_dist;
-                        closest_idx[0] = index;
-                    } else if dist_sq[1] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = dist_sq[1];
-                        closest_idx[2] = closest_idx[1];
-                        dist_sq[1] = new_dist;
-                        closest_idx[1] = index;
-                    } else if dist_sq[2] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = new_dist;
-                        closest_idx[2] = index;
-                    } else if dist_sq[3] >= new_dist {
-                        dist_sq[3] = new_dist;
-                        closest_idx[3] = index;
-                    }
-                }
+            // Insert into sorted top-4
+            if dist_sq[0] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = dist_sq[1];
+                closest_idx[2] = closest_idx[1];
+                dist_sq[1] = dist_sq[0];
+                closest_idx[1] = closest_idx[0];
+                dist_sq[0] = new_dist;
+                closest_idx[0] = index;
+            } else if dist_sq[1] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = dist_sq[1];
+                closest_idx[2] = closest_idx[1];
+                dist_sq[1] = new_dist;
+                closest_idx[1] = index;
+            } else if dist_sq[2] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = new_dist;
+                closest_idx[2] = index;
+            } else if dist_sq[3] >= new_dist {
+                dist_sq[3] = new_dist;
+                closest_idx[3] = index;
             }
         }
 
         let status1 = self.get_aquifer_status(closest_idx[0], noises);
-        let sim12 = similarity(dist_sq[0], dist_sq[1]);
-
         let fluid_at = status1.at(world_y);
 
-        if sim12 <= 0.0 {
-            if sim12 >= FLOWING_UPDATE_SIMILARITY {
+        // `similarity(d1, d2) = 1 - (d2 - d1) / 25`, so `sim12 <= 0.0` is exactly
+        // `d2 - d1 >= 25` in i32. Defer the f64 conversion + divide until after
+        // the early-return check. Fluid-update scheduling still matches vanilla:
+        // `sim12 >= FLOWING_UPDATE_SIMILARITY` is exactly `d2 - d1 <= 44`.
+        let dist12_delta = dist_sq[1] - dist_sq[0];
+        if dist12_delta >= 25 {
+            if dist12_delta <= 12 * 12 - 10 * 10 {
                 let status2 = self.get_aquifer_status(closest_idx[1], noises);
                 self.should_schedule_fluid_update = status1 != status2;
             } else {
                 self.should_schedule_fluid_update = false;
             }
-
             return match fluid_at {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
             };
         }
+        let sim12 = similarity(dist_sq[0], dist_sq[1]);
 
         // Water adjacent to global lava below → return water
         if let Some(id) = fluid_at
@@ -566,6 +692,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         {
             let below = global_fluid(
                 world_y - 1,
+                self.lava_floor,
                 self.sea_level,
                 self.lava_id,
                 self.default_fluid_id,
@@ -674,7 +801,13 @@ impl<N: DimensionNoises> Aquifer<N> {
 
     /// Compute the fluid status for an aquifer cell centered at (x, y, z).
     fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &N) -> FluidStatus {
-        let gf = global_fluid(y, self.sea_level, self.lava_id, self.default_fluid_id);
+        let gf = global_fluid(
+            y,
+            self.lava_floor,
+            self.sea_level,
+            self.lava_id,
+            self.default_fluid_id,
+        );
         let mut lowest_surface = i32::MAX;
         let top_of_cell = y + Y_SPACING;
         let bottom_of_cell = y - Y_SPACING;
@@ -684,7 +817,13 @@ impl<N: DimensionNoises> Aquifer<N> {
             let sx = x + offset[0] * 16; // sectionToBlockCoord
             let sz = z + offset[1] * 16;
 
-            let preliminary = preliminary_surface_level(noises, &mut self.cache, sx, sz);
+            let preliminary = cached_preliminary_surface_level(
+                noises,
+                &mut self.cache,
+                &mut self.prelim_cache,
+                sx,
+                sz,
+            );
             let adjusted = preliminary + 8;
 
             let is_center = offset[0] == 0 && offset[1] == 0;
@@ -697,6 +836,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             if top_pokes_above || is_center {
                 let gf_at_surface = global_fluid(
                     adjusted,
+                    self.lava_floor,
                     self.sea_level,
                     self.lava_id,
                     self.default_fluid_id,
@@ -915,4 +1055,24 @@ pub fn preliminary_surface_level<N: DimensionNoises>(
     noises
         .router_preliminary_surface_level(cache, qx, 0, qz)
         .floor() as i32
+}
+
+/// [`preliminary_surface_level`] with a per-quart-column result cache (vanilla's
+/// `Long2IntMap`). On a hit it returns the memoized `i32` and skips the
+/// expensive flat-router recompute in `cache.ensure`. Bit-identical: the cached
+/// value is the same deterministic function of the quart column.
+fn cached_preliminary_surface_level<N: DimensionNoises>(
+    noises: &N,
+    cache: &mut N::ColumnCache,
+    prelim_cache: &mut FxHashMap<(i32, i32), i32>,
+    x: i32,
+    z: i32,
+) -> i32 {
+    let key = ((x >> 2) << 2, (z >> 2) << 2);
+    if let Some(&level) = prelim_cache.get(&key) {
+        return level;
+    }
+    let level = preliminary_surface_level(noises, cache, x, z);
+    prelim_cache.insert(key, level);
+    level
 }

@@ -362,6 +362,7 @@ impl World {
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
+                sea_level,
                 storage,
                 config.generator,
                 generation_pool,
