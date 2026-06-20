@@ -72,17 +72,17 @@ impl BonemealAction {
     }
 }
 
-/// Checks if the block at the given position has a spreadable neighbor in the horizontal directions for the given block to place
-pub fn has_spreadable_neighbour_pos(
+/// Vanilla `BonemealableBlock.hasSpreadableNeighbourPos`.
+pub fn has_spreadable_neighbor_pos(
     world: &dyn LevelReader,
     pos: BlockPos,
     block_to_place: BlockStateId,
 ) -> bool {
-    get_spreadable_neighbour_pos(Direction::HORIZONTAL, world, pos, block_to_place).is_some()
+    get_spreadable_neighbor_pos(Direction::HORIZONTAL, world, pos, block_to_place).is_some()
 }
 
-/// Finds a spreadable neighbor position in the horizontal directions for the given block to place, or non if there are no spreadable neighbors
-pub fn find_spreadable_neighbour_pos(
+/// Vanilla `BonemealableBlock.findSpreadableNeighbourPos`.
+pub fn find_spreadable_neighbor_pos(
     world: &World,
     pos: BlockPos,
     block_to_place: BlockStateId,
@@ -92,7 +92,7 @@ pub fn find_spreadable_neighbour_pos(
         let mut random = world.random().lock();
         shuffle_directions(&mut directions, &mut *random);
     }
-    get_spreadable_neighbour_pos(directions, world, pos, block_to_place)
+    get_spreadable_neighbor_pos(directions, world, pos, block_to_place)
 }
 
 fn shuffle_directions(directions: &mut [Direction; 4], random: &mut impl Random) {
@@ -108,7 +108,7 @@ fn shuffle_directions(directions: &mut [Direction; 4], random: &mut impl Random)
     }
 }
 
-fn get_spreadable_neighbour_pos(
+fn get_spreadable_neighbor_pos(
     directions: [Direction; 4],
     world: &dyn LevelReader,
     pos: BlockPos,
@@ -117,11 +117,11 @@ fn get_spreadable_neighbour_pos(
     let behavior = BLOCK_BEHAVIORS.get_behavior_for_state(block_to_place)?;
 
     for direction in directions {
-        let neighbour_pos = pos.relative(direction);
-        if world.get_block_state(neighbour_pos).is_air()
-            && behavior.can_survive(block_to_place, world, neighbour_pos)
+        let neighbor_pos = pos.relative(direction);
+        if world.get_block_state(neighbor_pos).is_air()
+            && behavior.can_survive(block_to_place, world, neighbor_pos)
         {
-            return Some(neighbour_pos);
+            return Some(neighbor_pos);
         }
     }
 

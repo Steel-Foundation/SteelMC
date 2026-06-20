@@ -8,7 +8,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::behavior::{
     block::BlockBehavior,
     blocks::vegetation::bonemealable::{
-        BonemealAction, Bonemealable, find_spreadable_neighbour_pos, has_spreadable_neighbour_pos,
+        BonemealAction, Bonemealable, find_spreadable_neighbor_pos, has_spreadable_neighbor_pos,
     },
     context::BlockPlaceContext,
 };
@@ -65,7 +65,7 @@ impl Bonemealable for TallDryGrassBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        has_spreadable_neighbour_pos(world, pos, vanilla_blocks::SHORT_DRY_GRASS.default_state())
+        has_spreadable_neighbor_pos(world, pos, vanilla_blocks::SHORT_DRY_GRASS.default_state())
     }
 
     fn perform_bonemeal(
@@ -75,7 +75,7 @@ impl Bonemealable for TallDryGrassBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        if let Some(spread_pos) = find_spreadable_neighbour_pos(
+        if let Some(spread_pos) = find_spreadable_neighbor_pos(
             world,
             pos,
             vanilla_blocks::SHORT_DRY_GRASS.default_state(),
