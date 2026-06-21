@@ -833,8 +833,8 @@ impl<T: Entity> EntityEventSource for T {
 ///
 /// This mirrors vanilla `instanceof` branches without relying on `Any` or
 /// introducing a shared implementation hierarchy. Concrete entities should
-/// expose these through the `#[entity_impl(capabilities(...))]` macro so
-/// missing trait impls fail at compile time.
+/// expose these through the `#[entity_impl(class(...), interfaces(...))]`
+/// macro so missing trait impls fail at compile time.
 pub struct EntityCapabilities<'a> {
     player: Option<&'a Player>,
     living: Option<&'a dyn LivingEntity>,
@@ -1461,16 +1461,20 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
     }
 
-    /// Runs the vanilla base-tick physics pieces Steel currently implements.
+    /// Runs vanilla `Entity.baseTick` pieces Steel currently implements.
     ///
     /// This intentionally stays separate from `tick()` because several vanilla
     /// subclasses override tick without calling `super.tick()`.
     fn base_tick(&self) {
+        self.entity_base_tick();
+    }
+
+    /// Runs only vanilla `Entity.baseTick` behavior.
+    ///
+    /// Subtype base-tick chains call this from their owner trait instead of
+    /// discovering subtype behavior through runtime capabilities.
+    fn entity_base_tick(&self) {
         self.base().advance_base_tick_state();
-        if let Some(living) = self.as_living_entity() {
-            living.advance_living_rotation_for_base_tick();
-            living.advance_attack_animation_for_base_tick();
-        }
         self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
         self.update_swimming();
@@ -1487,11 +1491,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
-        if let Some(living) = self.as_living_entity() {
-            living.tick_living_environmental_damage();
-        }
+        // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
         if let Some(mob) = self.as_mob() {
-            mob.mob_base_tick();
             mob.tick_leash();
         }
         // TODO: Add remaining vanilla baseTick pieces: portal and sprint particles.
@@ -3908,6 +3909,14 @@ pub trait LivingEntity: Entity {
     /// Copies current attack animation to vanilla old attack-animation state.
     fn advance_attack_animation_for_base_tick(&self) {
         self.living_base().advance_attack_animation_for_base_tick();
+    }
+
+    /// Runs vanilla `LivingEntity.baseTick`.
+    fn base_tick_living_entity(&self) {
+        self.advance_living_rotation_for_base_tick();
+        self.advance_attack_animation_for_base_tick();
+        self.entity_base_tick();
+        self.tick_living_environmental_damage();
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -7778,7 +7787,7 @@ mod tests {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
 
-        entity.base_tick();
+        entity.base_tick_living_entity();
 
         assert_f32_close(entity.get_health(), 19.0);
     }
@@ -7808,7 +7817,7 @@ mod tests {
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
         entity.set_sleeping_pos(BlockPos::ZERO);
 
-        entity.base_tick();
+        entity.base_tick_living_entity();
 
         assert_f32_close(entity.get_health(), 20.0);
     }

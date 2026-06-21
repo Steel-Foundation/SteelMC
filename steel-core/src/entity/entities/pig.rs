@@ -355,7 +355,7 @@ impl PigEntity {
     }
 }
 
-#[entity_impl(capabilities(living, pathfinder_mob, mob, animal, item_steerable))]
+#[entity_impl(class(animal), interfaces(item_steerable))]
 impl Entity for PigEntity {
     fn base(&self) -> &EntityBase {
         &self.base

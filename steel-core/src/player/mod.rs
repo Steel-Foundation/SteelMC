@@ -1477,7 +1477,7 @@ pub enum ResetReason {
     WorldChange,
 }
 
-#[entity_impl(capabilities(player, living))]
+#[entity_impl(class(player))]
 impl Entity for Player {
     fn base(&self) -> &EntityBase {
         &self.base

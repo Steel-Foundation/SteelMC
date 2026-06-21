@@ -613,6 +613,13 @@ pub trait Mob: LivingEntity {
             .set_ambient_sound_time(-self.ambient_sound_interval());
     }
 
+    /// Runs vanilla `Mob.baseTick`.
+    fn base_tick_mob(&self) {
+        self.base_tick_living_entity();
+        self.mob_base_tick();
+    }
+
+    /// Runs the mob-owned portion of vanilla `Mob.baseTick`.
     fn mob_base_tick(&self) {
         if !LivingEntity::is_alive(self) {
             return;
