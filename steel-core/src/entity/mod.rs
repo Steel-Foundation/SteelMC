@@ -30,7 +30,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
-use steel_registry::vanilla_game_rules::MOB_DROPS;
+use steel_registry::vanilla_game_rules::{MAX_ENTITY_CRAMMING, MOB_DROPS};
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_damage_type_tags, vanilla_damage_types,
@@ -81,6 +81,20 @@ const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::East,
     Direction::Up,
 ];
+
+const fn should_apply_entity_cramming_damage(
+    max_cramming: i32,
+    pushable_count: usize,
+    non_passenger_count: usize,
+    random_roll: i32,
+) -> bool {
+    if max_cramming <= 0 || random_roll != 0 {
+        return false;
+    }
+
+    let threshold = (max_cramming - 1) as usize;
+    pushable_count > threshold && non_passenger_count > threshold
+}
 const LEASH_SCAN_SIZE: f64 = 32.0;
 const LEASH_SCAN_HALF_SIZE: f64 = LEASH_SCAN_SIZE / 2.0;
 const SPEED_MODIFIER_POWDER_SNOW_ID: Identifier = Identifier::vanilla_static("powder_snow");
@@ -5592,12 +5606,65 @@ pub trait LivingEntity: Entity {
 
         self.apply_effects_from_blocks();
         self.tick_freezing();
+        self.push_entities();
         result
     }
 
     /// Mirrors vanilla `LivingEntity.aiStep()`.
     fn ai_step(&self) -> Option<MoveResult> {
         self.default_ai_step()
+    }
+
+    /// Mirrors vanilla `LivingEntity.pushEntities()`.
+    fn push_entities(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !world.tick_runs_normally() {
+            return;
+        }
+
+        let pusher = self.as_entity_event_source();
+        let pushable_entities = world.get_pushable_entities(pusher, &self.bounding_box());
+        if pushable_entities.is_empty() {
+            return;
+        }
+
+        self.apply_entity_cramming_damage(&world, &pushable_entities);
+
+        for entity in pushable_entities {
+            entity.push_entity(pusher);
+        }
+    }
+
+    /// Applies vanilla max entity cramming damage from `LivingEntity.pushEntities()`.
+    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
+        let max_cramming = world
+            .get_game_rule(&MAX_ENTITY_CRAMMING)
+            .as_int()
+            .unwrap_or(24);
+
+        if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
+            return;
+        }
+
+        let random_roll = self.base().random().lock().next_i32_bounded(4);
+        let non_passenger_count = pushable_entities
+            .iter()
+            .filter(|entity| !entity.is_passenger())
+            .count();
+
+        if should_apply_entity_cramming_damage(
+            max_cramming,
+            pushable_entities.len(),
+            non_passenger_count,
+            random_roll,
+        ) {
+            self.hurt(
+                &DamageSource::environment(&vanilla_damage_types::CRAMMING),
+                6.0,
+            );
+        }
     }
 
     /// Returns vanilla `LivingEntity.isSuppressingSlidingDownLadder()`.
@@ -6277,8 +6344,9 @@ mod tests {
         LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
         block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
-        fall_flying_free_fall_interval, get_input_vector, should_apply_resolved_movement,
-        start_riding_entities, transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
+        fall_flying_free_fall_interval, get_input_vector, should_apply_entity_cramming_damage,
+        should_apply_resolved_movement, start_riding_entities, transfer_leashables_to_holder,
+        trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -7287,6 +7355,15 @@ mod tests {
             vec![vanilla_damage_types::FREEZE.key.clone()]
         );
         assert_f32_close(entity.get_health(), 19.0);
+    }
+
+    #[test]
+    fn entity_cramming_damage_threshold_matches_vanilla_push_entities() {
+        assert!(!should_apply_entity_cramming_damage(0, 100, 100, 0));
+        assert!(!should_apply_entity_cramming_damage(24, 23, 23, 0));
+        assert!(!should_apply_entity_cramming_damage(24, 24, 23, 0));
+        assert!(!should_apply_entity_cramming_damage(24, 24, 24, 1));
+        assert!(should_apply_entity_cramming_damage(24, 24, 24, 0));
     }
 
     #[test]

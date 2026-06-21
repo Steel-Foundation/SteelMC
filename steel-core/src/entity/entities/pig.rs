@@ -16,12 +16,10 @@ use steel_registry::pig_sound_variant::{PigAge, PigSoundVariantRef};
 use steel_registry::pig_variant::PigVariantRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PigEntityData;
-use steel_registry::vanilla_game_rules::MAX_ENTITY_CRAMMING;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes,
-    vanilla_damage_types, vanilla_items, vanilla_particle_types, vanilla_pig_sound_variants,
-    vanilla_pig_variants,
+    vanilla_items, vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random as _;
@@ -86,54 +84,36 @@ impl PigEntity {
         let steering = SyncMutex::new(ItemBasedSteering::new());
         let mut entity_data = PigEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(0, FloatGoal::new(&mob_base));
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(1, PanicGoal::new(1.25));
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(3, BreedGoal::new(1.0));
-        mob_base.goal_selector().lock().add_goal(
-            4,
-            TemptGoal::new(
-                1.2,
-                |item_stack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick),
-                false,
-            ),
-        );
-        mob_base.goal_selector().lock().add_goal(
-            4,
-            TemptGoal::new(
-                1.2,
-                |item_stack| {
-                    REGISTRY
-                        .items
-                        .is_in_tag(item_stack.item(), &ItemTag::PIG_FOOD)
-                },
-                false,
-            ),
-        );
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(5, FollowParentGoal::new(1.1));
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(6, WaterAvoidingRandomStrollGoal::new(1.0));
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(7, LookAtPlayerGoal::new(6.0));
-        mob_base
-            .goal_selector()
-            .lock()
-            .add_goal(8, RandomLookAroundGoal::new());
+        {
+            let mut goal_selector = mob_base.goal_selector().lock();
+            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
+            goal_selector.add_goal(1, PanicGoal::new(1.25));
+            goal_selector.add_goal(3, BreedGoal::new(1.0));
+            goal_selector.add_goal(
+                4,
+                TemptGoal::new(
+                    1.2,
+                    |item_stack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick),
+                    false,
+                ),
+            );
+            goal_selector.add_goal(
+                4,
+                TemptGoal::new(
+                    1.2,
+                    |item_stack| {
+                        REGISTRY
+                            .items
+                            .is_in_tag(item_stack.item(), &ItemTag::PIG_FOOD)
+                    },
+                    false,
+                ),
+            );
+            goal_selector.add_goal(5, FollowParentGoal::new(1.1));
+            goal_selector.add_goal(6, WaterAvoidingRandomStrollGoal::new(1.0));
+            goal_selector.add_goal(7, LookAtPlayerGoal::new(6.0));
+            goal_selector.add_goal(8, RandomLookAroundGoal::new());
+        }
 
         Self {
             base,
@@ -364,67 +344,6 @@ impl PigEntity {
         self.entity_data.set_base_invisible_flag(display.invisible);
         self.entity_data
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-    }
-
-    fn push_entities(&self, world: &Arc<World>) {
-        if !world.tick_runs_normally() {
-            return;
-        }
-
-        let pusher = self as &dyn Entity;
-        let pushable_entities = world.get_pushable_entities(pusher, &self.bounding_box());
-        if pushable_entities.is_empty() {
-            return;
-        }
-
-        self.apply_entity_cramming_damage(world, &pushable_entities);
-
-        for entity in pushable_entities {
-            entity.push_entity(pusher);
-        }
-    }
-
-    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
-        let max_cramming = world
-            .get_game_rule(&MAX_ENTITY_CRAMMING)
-            .as_int()
-            .unwrap_or(24);
-
-        if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
-            return;
-        }
-
-        let random_roll = self.base.random().lock().next_i32_bounded(4);
-        let non_passenger_count = pushable_entities
-            .iter()
-            .filter(|entity| !entity.is_passenger())
-            .count();
-
-        if Self::should_apply_entity_cramming_damage(
-            max_cramming,
-            pushable_entities.len(),
-            non_passenger_count,
-            random_roll,
-        ) {
-            self.hurt(
-                &DamageSource::environment(&vanilla_damage_types::CRAMMING),
-                6.0,
-            );
-        }
-    }
-
-    const fn should_apply_entity_cramming_damage(
-        max_cramming: i32,
-        pushable_count: usize,
-        non_passenger_count: usize,
-        random_roll: i32,
-    ) -> bool {
-        if max_cramming <= 0 || random_roll != 0 {
-            return false;
-        }
-
-        let threshold = (max_cramming - 1) as usize;
-        pushable_count > threshold && non_passenger_count > threshold
     }
 
     /// Returns whether the stack is vanilla pig food.
@@ -680,12 +599,6 @@ impl LivingEntity for PigEntity {
     fn ai_step(&self) -> Option<MoveResult> {
         let result = self.default_ai_step();
 
-        if !self.is_removed()
-            && let Some(world) = self.level()
-        {
-            self.push_entities(&world);
-        }
-
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
         result
@@ -876,7 +789,9 @@ mod tests {
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtTag;
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_items::ITEMS};
+    use steel_registry::{
+        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items::ITEMS,
+    };
     use steel_utils::UuidExt;
     use uuid::Uuid;
 
