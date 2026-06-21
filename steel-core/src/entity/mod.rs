@@ -58,7 +58,7 @@ use crate::physics::{
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event_context::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, World};
+use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::{ExperienceOrbEntity, ItemEntity, LeashFenceKnotEntity};
@@ -70,6 +70,7 @@ use entities::{ExperienceOrbEntity, ItemEntity, LeashFenceKnotEntity};
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
+const IN_WALL_EYE_BOX_HEIGHT: f64 = 1.0e-6;
 const WATER_ENTITY_FLOW_SCALE: f64 = 0.014;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
@@ -148,6 +149,37 @@ fn transfer_leashables_to_holder(leashables: Vec<SharedEntity>, new_holder: &Sha
 
 fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_speed: f64) -> f32 {
     ((previous_horizontal_speed - new_horizontal_speed) * 10.0 - 3.0) as f32
+}
+
+fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
+    let half_width = width * 0.5;
+    let half_height = IN_WALL_EYE_BOX_HEIGHT * 0.5;
+    WorldAabb::new(
+        eye_pos.x - half_width,
+        eye_pos.y - half_height,
+        eye_pos.z - half_width,
+        eye_pos.x + half_width,
+        eye_pos.y + half_height,
+        eye_pos.z + half_width,
+    )
+}
+
+fn block_state_suffocates_eye_box(
+    state: BlockStateId,
+    world: &dyn LevelReader,
+    pos: BlockPos,
+    eye_box: WorldAabb,
+) -> bool {
+    if state.is_air() || !state.is_suffocating() {
+        return false;
+    }
+
+    let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+    behavior
+        .get_collision_shape(state, world, pos, BlockCollisionContext::empty())
+        .iter()
+        .copied()
+        .any(|shape| eye_box.intersects(shape.at_block(pos)))
 }
 
 const fn fall_flying_free_fall_interval(fall_flying_ticks: i32) -> Option<i32> {
@@ -1366,6 +1398,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.sync_base_fire_freeze_entity_data();
         if let Some(living) = self.as_living_entity() {
             living.tick_living_air_supply();
+            living.tick_in_wall_damage();
         }
         if let Some(mob) = self.as_mob() {
             mob.mob_base_tick();
@@ -2082,6 +2115,29 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Equivalent to vanilla's `Entity.getEyeY()`.
     fn get_eye_y(&self) -> f64 {
         self.position().y + self.get_eye_height()
+    }
+
+    /// Mirrors vanilla `Entity.isInWall`.
+    fn is_in_wall(&self) -> bool {
+        if self.no_physics() {
+            return false;
+        }
+
+        let Some(world) = self.level() else {
+            return false;
+        };
+
+        let position = self.position();
+        let check_width = f64::from(self.base().dimensions().width * 0.8);
+        let eye_box = entity_eye_suffocation_box(
+            DVec3::new(position.x, self.get_eye_y(), position.z),
+            check_width,
+        );
+
+        !block_effects::for_each_block_in_aabb(eye_box, |pos| {
+            let state = world.get_block_state(pos);
+            !block_state_suffocates_eye_box(state, world.as_ref(), pos, eye_box)
+        })
     }
 
     /// Calculates vanilla `Entity.calculateViewVector()`.
@@ -4706,6 +4762,23 @@ pub trait LivingEntity: Entity {
         }
     }
 
+    /// Mirrors vanilla `LivingEntity.isInWall`.
+    fn is_in_wall(&self) -> bool {
+        !self.is_sleeping() && Entity::is_in_wall(self)
+    }
+
+    /// Applies vanilla living in-wall damage from `baseTick`.
+    fn tick_in_wall_damage(&self) {
+        if !LivingEntity::is_alive(self) || !LivingEntity::is_in_wall(self) {
+            return;
+        }
+
+        self.hurt(
+            &DamageSource::environment(&vanilla_damage_types::IN_WALL),
+            1.0,
+        );
+    }
+
     /// Returns vanilla `LivingEntity.isAffectedByFluids()`.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -6029,19 +6102,21 @@ mod tests {
     use steel_registry::item_stack::ItemStack;
     use steel_registry::vanilla_entity_data::LivingEntityData as SyncedLivingEntityData;
     use steel_registry::{
-        sound_events, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
-        vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_items, vanilla_loot_tables,
-        vanilla_mob_effects,
+        REGISTRY, sound_events, test_support::init_test_registry, vanilla_attributes,
+        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_items,
+        vanilla_loot_tables, vanilla_mob_effects,
     };
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
-    use steel_utils::{BlockPos, Direction, Identifier};
+    use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, WorldAabb};
     use uuid::Uuid;
 
+    use crate::behavior::init_behaviors;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::PigEntity;
     use crate::entity::mob::Mob;
     use crate::inventory::equipment::EquipmentSlot;
+    use crate::world::LevelReader;
 
     use super::{
         AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
@@ -6049,7 +6124,8 @@ mod tests {
         EntityFluidContact, EntityLevelCallback, EntityMoveError, EntitySyncedData,
         EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
         LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
-        closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
+        block_state_suffocates_eye_box, closest_open_space_direction,
+        fall_damage_reset_clip_target, fall_flying_collision_damage,
         fall_flying_free_fall_interval, get_input_vector, should_apply_resolved_movement,
         start_riding_entities, transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
     };
@@ -6236,6 +6312,7 @@ mod tests {
         can_stand_on_fluid: bool,
         vehicle: bool,
         on_non_air_block_for_frost: bool,
+        in_wall_for_base_tick: bool,
     }
 
     impl LivingFluidTestEntity {
@@ -6262,6 +6339,7 @@ mod tests {
                 can_stand_on_fluid: false,
                 vehicle: false,
                 on_non_air_block_for_frost: false,
+                in_wall_for_base_tick: false,
             }
         }
 
@@ -6282,6 +6360,11 @@ mod tests {
 
         const fn with_non_air_frost_block(mut self) -> Self {
             self.on_non_air_block_for_frost = true;
+            self
+        }
+
+        const fn with_in_wall_for_base_tick(mut self) -> Self {
+            self.in_wall_for_base_tick = true;
             self
         }
 
@@ -6366,11 +6449,35 @@ mod tests {
         fn is_on_non_air_block_for_frost(&self) -> bool {
             self.on_non_air_block_for_frost
         }
+
+        fn is_in_wall(&self) -> bool {
+            !self.is_sleeping() && (self.in_wall_for_base_tick || Entity::is_in_wall(self))
+        }
     }
 
     struct ControlledVehicleTestEntity {
         base: EntityBase,
         controller: Option<SharedEntity>,
+    }
+
+    struct EmptyTestLevel;
+
+    impl LevelReader for EmptyTestLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            15
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
     }
 
     impl ControlledVehicleTestEntity {
@@ -6708,6 +6815,36 @@ mod tests {
     fn fall_flying_collision_damage_matches_vanilla_threshold() {
         assert!(fall_flying_collision_damage(1.0, 0.8) <= 0.0);
         assert!((fall_flying_collision_damage(1.0, 0.6) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn in_wall_eye_box_requires_suffocating_state_and_shape_overlap() {
+        init_test_registry();
+        init_behaviors();
+        let pos = BlockPos::ZERO;
+        let level = EmptyTestLevel;
+        let inside_box = WorldAabb::new(0.1, 0.5, 0.1, 0.9, 0.500001, 0.9);
+        let outside_box = WorldAabb::new(1.1, 0.5, 0.1, 1.9, 0.500001, 0.9);
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let glass = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::GLASS);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+
+        assert!(block_state_suffocates_eye_box(
+            stone, &level, pos, inside_box
+        ));
+        assert!(!block_state_suffocates_eye_box(
+            glass, &level, pos, inside_box
+        ));
+        assert!(!block_state_suffocates_eye_box(
+            air, &level, pos, inside_box
+        ));
+        assert!(!block_state_suffocates_eye_box(
+            stone,
+            &level,
+            pos,
+            outside_box
+        ));
     }
 
     #[test]
@@ -7248,6 +7385,27 @@ mod tests {
         entity.tick_living_air_supply();
 
         assert_eq!(entity.air_supply(), entity.max_air_supply() - 4);
+    }
+
+    #[test]
+    fn living_base_tick_damages_entities_in_wall() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
+
+        entity.base_tick();
+
+        assert_f32_close(entity.get_health(), 19.0);
+    }
+
+    #[test]
+    fn living_base_tick_skips_in_wall_damage_while_sleeping() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
+        entity.set_sleeping_pos(BlockPos::ZERO);
+
+        entity.base_tick();
+
+        assert_f32_close(entity.get_health(), 20.0);
     }
 
     #[test]
