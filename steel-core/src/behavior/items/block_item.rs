@@ -1,17 +1,30 @@
 //! Block item behavior implementation.
 
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
+    items::item::BlockHitResult,
     vanilla_blocks, vanilla_game_events,
 };
-use steel_utils::{BlockStateId, types::UpdateFlags};
+use steel_utils::{
+    BlockStateId,
+    types::{InteractionHand, UpdateFlags},
+};
 
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, context::build_place_context};
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::world::game_event_context::GameEventContext;
+use crate::{
+    behavior::{
+        InventoryAccess,
+        context::{BlockPlaceContext, InteractionResult},
+    },
+    player::Player,
+    world::World,
+};
 
 /// Behavior for items that place blocks.
 #[item_behavior]
@@ -32,10 +45,13 @@ impl BlockItem {
 
     fn place_with(
         &self,
-        context: &mut UseOnContext<'_>,
+        player: &Player,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
         place_block: impl FnOnce(&BlockPlaceContext<'_>, BlockStateId) -> bool,
     ) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+        let Some(place_context) = build_place_context(player, hit_result, world) else {
             return InteractionResult::Fail;
         };
         let place_pos = place_context.relative_pos;
@@ -50,7 +66,7 @@ impl BlockItem {
         }
 
         let collision_shape = new_state.get_collision_shape_at(place_pos);
-        if !context.world.is_unobstructed(collision_shape, place_pos) {
+        if !world.is_unobstructed(collision_shape, place_pos) {
             return InteractionResult::Fail;
         }
 
@@ -58,34 +74,28 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        let placed_state = context.world.get_block_state(place_pos);
+        let placed_state = world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-            placed_behavior.set_placed_by(
-                placed_state,
-                context.world,
-                place_pos,
-                Some(context.player),
-                &context.inv,
-            );
+            placed_behavior.set_placed_by(placed_state, world, place_pos, Some(player), inv);
         }
 
         // Play place sound (exclude the placing player, they hear it client-side)
         let sound_type = &self.block.config.sound_type;
-        context.world.play_block_sound(
+        world.play_block_sound(
             sound_type.place_sound,
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id()),
+            Some(player.id()),
         );
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
+            &GameEventContext::new(Some(player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }
@@ -98,8 +108,15 @@ impl BlockItem {
 }
 
 impl ItemBehavior for BlockItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        self.place_with(context, |place_context, state| {
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        self.place_with(player, hit_result, world, inv, |place_context, state| {
             Self::place_block(place_context, state)
         })
     }
@@ -148,9 +165,17 @@ impl DoubleHighBlockItem {
 }
 
 impl ItemBehavior for DoubleHighBlockItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        self.base.place_with(context, |place_context, state| {
-            Self::place_block(place_context, state)
-        })
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        self.base
+            .place_with(player, hit_result, world, inv, |place_context, state| {
+                Self::place_block(place_context, state)
+            })
     }
 }

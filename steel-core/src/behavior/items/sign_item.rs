@@ -13,15 +13,17 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::standing_and_wall_block_item::StandingAndWallBlockItem;
-use crate::behavior::context::{InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::behavior::context::{InteractionResult, build_place_context};
+use crate::behavior::{BLOCK_BEHAVIORS, InventoryAccess, ItemBehavior};
 use crate::entity::Entity;
+use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
 
@@ -67,8 +69,15 @@ impl SignItem {
 }
 
 impl ItemBehavior for SignItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let Some(place_context) = build_place_context(player, hit_result, world) else {
             return InteractionResult::Fail;
         };
         let place_pos = place_context.relative_pos;
@@ -77,33 +86,30 @@ impl ItemBehavior for SignItem {
             return InteractionResult::Fail;
         };
 
-        if !context
-            .world
-            .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
+        if !world.set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
             return InteractionResult::Fail;
         }
-        let placed_state = context.world.get_block_state(place_pos);
+        let placed_state = world.get_block_state(place_pos);
 
         let block = self.inner.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;
-        context.world.play_block_sound(
+        world.play_block_sound(
             sound_type.place_sound,
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id()),
+            Some(player.id()),
         );
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
+            &GameEventContext::new(Some(player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        inv.with_item(|item| item.shrink(1));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
-        context.player.open_sign_editor(place_pos, true);
+        player.open_sign_editor(place_pos, true);
 
         InteractionResult::Success
     }
@@ -205,8 +211,15 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 }
 
 impl ItemBehavior for HangingSignItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let Some(place_context) = build_place_context(player, hit_result.clone(), world) else {
             return InteractionResult::Fail;
         };
         let place_pos = place_context.relative_pos;
@@ -214,7 +227,7 @@ impl ItemBehavior for HangingSignItem {
         let block_behaviors = &*BLOCK_BEHAVIORS;
 
         // Try ceiling hanging sign first if clicked from below, otherwise try wall
-        let blocks_to_try = if context.hit_result.direction == Direction::Down {
+        let blocks_to_try = if hit_result.direction == Direction::Down {
             [self.ceiling_block, self.wall_block]
         } else {
             [self.wall_block, self.ceiling_block]
@@ -229,12 +242,12 @@ impl ItemBehavior for HangingSignItem {
             };
 
             // Vanilla's HangingSignItem.canPlace has additional check for wall hanging signs
-            if !can_place_hanging_sign(context.world, state, place_pos) {
+            if !can_place_hanging_sign(world, state, place_pos) {
                 continue;
             }
 
             let collision_shape = state.get_collision_shape_at(place_pos);
-            if context.world.is_unobstructed(collision_shape, place_pos) {
+            if world.is_unobstructed(collision_shape, place_pos) {
                 new_state = Some(state);
                 placed_block = Some(block);
                 break;
@@ -245,34 +258,31 @@ impl ItemBehavior for HangingSignItem {
             return InteractionResult::Fail;
         };
 
-        if !context
-            .world
-            .set_block(place_pos, state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
+        if !world.set_block(place_pos, state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
             return InteractionResult::Fail;
         }
-        let placed_state = context.world.get_block_state(place_pos);
+        let placed_state = world.get_block_state(place_pos);
 
         if let Some(block) = placed_block {
             let sound_type = &block.config.sound_type;
-            context.world.play_block_sound(
+            world.play_block_sound(
                 sound_type.place_sound,
                 place_pos,
                 sound_type.volume,
                 sound_type.pitch,
-                Some(context.player.id()),
+                Some(player.id()),
             );
         }
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
+            &GameEventContext::new(Some(player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        inv.with_item(|item| item.shrink(1));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
-        context.player.open_sign_editor(place_pos, true);
+        player.open_sign_editor(place_pos, true);
 
         InteractionResult::Success
     }

@@ -1,15 +1,22 @@
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     item_stack::ItemStack,
+    items::item::BlockHitResult,
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items,
 };
-use steel_utils::{Direction, types::UpdateFlags};
+use steel_utils::{
+    Direction,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use crate::{
-    behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    behavior::{InteractionResult, InventoryAccess, ItemBehavior},
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    player::Player,
+    world::{World, game_event_context::GameEventContext},
 };
 
 /// Behavior for Hoes
@@ -33,54 +40,56 @@ impl HoeItem {
 }
 
 impl ItemBehavior for HoeItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let state = context.world.get_block_state(context.hit_result.block_pos);
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let state = world.get_block_state(hit_result.block_pos);
         let Some(tilled_variant) = Self::get_tilled_variant(state.get_block()) else {
             return InteractionResult::Pass;
         };
 
-        if (context.hit_result.direction == Direction::Down
-            || !context
-                .world
-                .get_block_state(context.hit_result.block_pos.above())
-                .is_air())
+        if (hit_result.direction == Direction::Down
+            || !world.get_block_state(hit_result.block_pos.above()).is_air())
             && state.get_block() != &vanilla_blocks::ROOTED_DIRT
         {
             return InteractionResult::Pass;
         }
 
         let new_state = tilled_variant.default_state();
-        context.world.set_block(
-            context.hit_result.block_pos,
+        world.set_block(
+            hit_result.block_pos,
             new_state,
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
-            context.hit_result.block_pos,
-            &GameEventContext::new(Some(context.player), Some(new_state)),
+            hit_result.block_pos,
+            &GameEventContext::new(Some(player), Some(new_state)),
         );
 
         if state.get_block() == &vanilla_blocks::ROOTED_DIRT {
-            context.world.pop_resource_from_face(
-                context.hit_result.block_pos,
-                context.hit_result.direction,
+            world.pop_resource_from_face(
+                hit_result.block_pos,
+                hit_result.direction,
                 ItemStack::new(&vanilla_items::ITEMS.hanging_roots),
             );
         }
 
-        context.world.play_block_sound(
+        world.play_block_sound(
             &sound_events::ITEM_HOE_TILL,
-            context.hit_result.block_pos,
+            hit_result.block_pos,
             1.0,
             1.0,
-            Some(context.player.id()),
+            Some(player.id()),
         );
 
-        let has_infinite_materials = context.player.has_infinite_materials();
-        context
-            .inv
-            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+        let has_infinite_materials = player.has_infinite_materials();
+        inv.with_item(|item| item.hurt_and_break(1, has_infinite_materials));
 
         InteractionResult::Success
     }

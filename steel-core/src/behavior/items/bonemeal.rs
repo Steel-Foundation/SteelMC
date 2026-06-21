@@ -4,14 +4,19 @@ use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
+    items::item::BlockHitResult,
     vanilla_blocks,
 };
-use steel_utils::{BlockPos, Direction, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, Direction,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use crate::{
     behavior::{
-        BLOCK_BEHAVIORS, BlockStateBehaviorExt, InteractionResult, ItemBehavior, UseOnContext,
+        BLOCK_BEHAVIORS, BlockStateBehaviorExt, InteractionResult, InventoryAccess, ItemBehavior,
     },
+    player::Player,
     world::World,
 };
 
@@ -101,26 +106,30 @@ impl BoneMealItem {
 }
 
 impl ItemBehavior for BoneMealItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if Self::grow(context.world, context.hit_result.block_pos) {
-            context.inv.with_item(|item| item.shrink(1));
+    fn use_on(
+        &self,
+        _player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        if Self::grow(world, hit_result.block_pos) {
+            inv.with_item(|item| item.shrink(1));
             // TODO: particles
             return InteractionResult::Success;
         }
-        let state = context.world.get_block_state(context.hit_result.block_pos);
+        let state = world.get_block_state(hit_result.block_pos);
         let is_clicked_face_sturdy =
-            state.is_face_sturdy_at(context.hit_result.block_pos, context.hit_result.direction);
+            state.is_face_sturdy_at(hit_result.block_pos, hit_result.direction);
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
-                context.world,
-                context
-                    .hit_result
-                    .block_pos
-                    .relative(context.hit_result.direction),
-                context.hit_result.direction,
+                world,
+                hit_result.block_pos.relative(hit_result.direction),
+                hit_result.direction,
             )
         {
-            context.inv.with_item(|item| item.shrink(1));
+            inv.with_item(|item| item.shrink(1));
             return InteractionResult::Success;
         }
         InteractionResult::Pass

@@ -159,117 +159,45 @@ impl InventoryAccess {
     }
 }
 
-/// Context for using an item on a block.
-///
-/// Immutable fields (`player`, `hand`, `world`, `hit_result`) can be accessed
-/// freely while `inv` is mutably borrowed — the borrow checker tracks them as
-/// disjoint fields.
-pub struct UseOnContext<'a> {
-    /// The player using the item.
-    pub player: &'a Player,
-    /// Which hand the item is in.
-    pub hand: InteractionHand,
-    /// Information about where the block was hit.
-    pub hit_result: BlockHitResult,
-    /// The world where the interaction is happening.
-    pub world: &'a Arc<World>,
-    /// Mutable inventory access.
-    pub inv: InventoryAccess,
-}
+pub fn build_place_context<'a>(
+    player: &'a Player,
+    hit_result: BlockHitResult,
+    world: &'a Arc<World>,
+) -> Option<BlockPlaceContext<'a>> {
+    let clicked_pos = hit_result.block_pos;
+    let clicked_state = world.get_block_state(clicked_pos);
+    let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
+    let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
 
-impl<'a> UseOnContext<'a> {
-    /// Creates a new `UseOnContext`.
-    #[must_use]
-    pub const fn new(
-        player: &'a Player,
-        hand: InteractionHand,
-        hit_result: BlockHitResult,
-        world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
-    ) -> Self {
-        Self {
-            player,
-            hand,
-            hit_result,
-            world,
-            inv: InventoryAccess::new(inventory, hand),
-        }
+    let (place_pos, replace_clicked) = if clicked_replaceable {
+        (clicked_pos, true)
+    } else {
+        (hit_result.direction.relative(clicked_pos), false)
+    };
+
+    if !world.is_in_valid_bounds(place_pos) {
+        return None;
     }
 
-    /// Builds a [`BlockPlaceContext`] from this interaction context.
-    ///
-    /// Returns `None` if placement is invalid (out of bounds or non-replaceable target).
-    /// This is the common prefix of vanilla's `BlockItem.useOn`.
-    #[must_use]
-    pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
-        let clicked_pos = self.hit_result.block_pos;
-        let clicked_state = self.world.get_block_state(clicked_pos);
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
-
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
-        } else {
-            (self.hit_result.direction.relative(clicked_pos), false)
-        };
-
-        if !self.world.is_in_valid_bounds(place_pos) {
-            return None;
-        }
-
-        let existing_state = self.world.get_block_state(place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        if !existing_block.is_some_and(|b| b.config.replaceable) {
-            return None;
-        }
-
-        let (yaw, pitch) = self.player.rotation();
-
-        Some(BlockPlaceContext {
-            clicked_pos,
-            clicked_face: self.hit_result.direction,
-            click_location: self.hit_result.location,
-            inside: self.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
-            horizontal_direction: Direction::from_yaw(yaw),
-            rotation: yaw,
-            pitch,
-            is_secondary_use_active: self.player.is_secondary_use_active(),
-            world: self.world,
-        })
+    let existing_state = world.get_block_state(place_pos);
+    let existing_block = REGISTRY.blocks.by_state_id(existing_state);
+    if !existing_block.is_some_and(|b| b.config.replaceable) {
+        return None;
     }
-}
 
-/// Context for using an item (general usage).
-///
-/// Immutable fields (`player`, `hand`, `world`) can be accessed freely while
-/// `inv` is mutably borrowed.
-pub struct UseItemContext<'a> {
-    /// The player using the item.
-    pub player: &'a Player,
-    /// Which hand the item is in.
-    pub hand: InteractionHand,
-    /// The world where the interaction is happening.
-    pub world: &'a Arc<World>,
-    /// Mutable inventory access.
-    pub inv: InventoryAccess,
-}
+    let (yaw, pitch) = player.rotation();
 
-impl<'a> UseItemContext<'a> {
-    /// Creates a new `UseItemContext`.
-    #[must_use]
-    pub const fn new(
-        player: &'a Player,
-        hand: InteractionHand,
-        world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
-    ) -> Self {
-        Self {
-            player,
-            hand,
-            world,
-            inv: InventoryAccess::new(inventory, hand),
-        }
-    }
+    Some(BlockPlaceContext {
+        clicked_pos,
+        clicked_face: hit_result.direction,
+        click_location: hit_result.location,
+        inside: hit_result.inside,
+        relative_pos: place_pos,
+        replace_clicked,
+        horizontal_direction: Direction::from_yaw(yaw),
+        rotation: yaw,
+        pitch,
+        is_secondary_use_active: player.is_secondary_use_active(),
+        world,
+    })
 }

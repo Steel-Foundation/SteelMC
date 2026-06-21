@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::{
     REGISTRY,
@@ -6,6 +8,7 @@ use steel_registry::{
         properties::{BlockStateProperties, EnumProperty},
     },
     data_components::vanilla_components::BLOCKS_ATTACKS,
+    items::item::BlockHitResult,
     level_events::{PARTICLES_SCRAPE, PARTICLES_WAX_OFF},
     sound_events::{ITEM_AXE_SCRAPE, ITEM_AXE_STRIP, ITEM_AXE_WAX_OFF},
     vanilla_game_events,
@@ -17,11 +20,12 @@ use steel_utils::{
 
 use crate::{
     behavior::{
-        InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
+        InteractionResult, InventoryAccess, ItemBehavior, strippables::get_strippable_variant,
         waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
     },
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    player::Player,
+    world::{World, game_event_context::GameEventContext},
 };
 
 use super::copper_chest_events::emit_connected_chest_block_change;
@@ -33,21 +37,26 @@ const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
 pub struct AxeItem;
 
 impl ItemBehavior for AxeItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let has_block_item_intent = context.hand == InteractionHand::MainHand
-            && context
-                .inv
-                .with_inventory(|inv| inv.get_offhand_item().has(BLOCKS_ATTACKS))
-            && !context.player.is_secondary_use_active();
+    fn use_on(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let has_block_item_intent = hand == InteractionHand::MainHand
+            && inv.with_inventory(|inv| inv.get_offhand_item().has(BLOCKS_ATTACKS))
+            && !player.is_secondary_use_active();
 
         if has_block_item_intent {
             return InteractionResult::Pass;
         }
 
-        let old_block_state = context.world.get_block_state(context.hit_result.block_pos);
+        let old_block_state = world.get_block_state(hit_result.block_pos);
         let old_block = old_block_state.get_block();
 
-        let pos = context.hit_result.block_pos;
+        let pos = hit_result.block_pos;
 
         let (new_block_state, sound_event, level_event) =
             if let Some(new_block) = get_strippable_variant(old_block) {
@@ -73,37 +82,23 @@ impl ItemBehavior for AxeItem {
                 return InteractionResult::Pass;
             };
 
-        context
-            .world
-            .set_block(pos, new_block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+        world.set_block(pos, new_block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        context
-            .world
-            .play_block_sound(sound_event, pos, 1.0, 1.0, Some(context.player.id()));
+        world.play_block_sound(sound_event, pos, 1.0, 1.0, Some(player.id()));
 
         if let Some(event) = level_event {
-            context
-                .world
-                .level_event(event, pos, 0, Some(context.player.id()));
-            emit_connected_chest_block_change(
-                context.world,
-                pos,
-                old_block_state,
-                context.player,
-                Some(event),
-            );
+            world.level_event(event, pos, 0, Some(player.id()));
+            emit_connected_chest_block_change(world, pos, old_block_state, player, Some(event));
         }
 
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
             pos,
-            &GameEventContext::new(Some(context.player), Some(new_block_state)),
+            &GameEventContext::new(Some(player), Some(new_block_state)),
         );
 
-        let has_infinite_materials = context.player.has_infinite_materials();
-        context
-            .inv
-            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+        let has_infinite_materials = player.has_infinite_materials();
+        inv.with_item(|item| item.hurt_and_break(1, has_infinite_materials));
 
         InteractionResult::Success
     }

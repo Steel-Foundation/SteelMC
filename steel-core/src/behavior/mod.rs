@@ -66,10 +66,7 @@ pub use block::{
     EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
 };
 use block_behaviors::register_block_behaviors;
-pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, UseItemContext,
-    UseOnContext,
-};
+pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess};
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviors::register_item_behaviors;

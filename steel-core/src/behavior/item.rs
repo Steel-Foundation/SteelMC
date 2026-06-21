@@ -1,10 +1,16 @@
 //! Item behavior trait and registry.
 
+use std::sync::Arc;
+
 use steel_registry::items::ItemRef;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
+use steel_utils::types::InteractionHand;
 
 use crate::behavior::items::DefaultItemBehavior;
-use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
+use crate::world::World;
 
 /// Trait defining the behavior of an item.
 ///
@@ -22,12 +28,25 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called when this item is used on a block.
-    fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
+    fn use_on(
+        &self,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: BlockHitResult,
+        _world: &Arc<World>,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
         InteractionResult::Pass
     }
 
     /// Called when this item is used (e.g. right click in air).
-    fn use_item(&self, _context: &mut UseItemContext) -> InteractionResult {
+    fn use_item(
+        &self,
+        _player: &Player,
+        _hand: InteractionHand,
+        _world: &Arc<World>,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
         InteractionResult::Pass
     }
 }

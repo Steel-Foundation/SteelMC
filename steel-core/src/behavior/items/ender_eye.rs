@@ -1,15 +1,22 @@
 //! Ender eye item behavior implementation.
 
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
+use steel_utils::types::InteractionHand;
 use steel_utils::types::UpdateFlags;
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::ItemBehavior;
-use crate::behavior::context::{InteractionResult, UseOnContext};
+use crate::behavior::context::InteractionResult;
+use crate::player::Player;
+use crate::world::World;
 
 /// Behavior for the ender eye item.
 ///
@@ -19,11 +26,18 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 pub struct EnderEyeItem;
 
 impl ItemBehavior for EnderEyeItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+    fn use_on(
+        &self,
+        _player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
         // TODO: updateNeighborForOutputSignal, portal completion check
 
-        let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(clicked_pos);
+        let clicked_pos = hit_result.block_pos;
+        let clicked_state = world.get_block_state(clicked_pos);
 
         let Some(clicked_block) = REGISTRY.blocks.by_state_id(clicked_state) else {
             return InteractionResult::Pass;
@@ -40,19 +54,14 @@ impl ItemBehavior for EnderEyeItem {
 
         let new_state = clicked_state.set_value(&BlockStateProperties::EYE, true);
 
-        if !context
-            .world
-            .set_block(clicked_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-        {
+        if !world.set_block(clicked_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
             return InteractionResult::Pass;
         }
 
         // Play the end portal frame fill sound effect (no exclusion, all players hear it)
-        context
-            .world
-            .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
+        world.level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
-        context.inv.with_item(|item| item.shrink(1));
+        inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

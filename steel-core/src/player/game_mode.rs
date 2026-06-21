@@ -20,7 +20,6 @@ use text_components::TextComponent;
 
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, InventoryAccess,
-    UseOnContext,
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
@@ -124,20 +123,14 @@ pub fn use_item_on(
     if !is_empty {
         // TODO: Check item cooldowns
         // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
+        let mut inv = InventoryAccess::new(player.inventory.clone(), hand);
 
-        let mut context = UseOnContext::new(
-            player,
-            hand,
-            hit_result.clone(),
-            world,
-            player.inventory.clone(),
-        );
         let item_behavior = item_behaviors.get_behavior(item_ref);
-        let result = item_behavior.use_on(&mut context);
+        let result = item_behavior.use_on(player, hand, hit_result.clone(), world, &mut inv);
 
         // Restore count for creative mode (infinite materials)
         if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
+            inv.with_item(|item| {
                 if item.count < original_count {
                     item.count = original_count;
                 }
@@ -167,18 +160,16 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
 
     if !is_empty {
-        let mut context =
-            crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
-
+        let mut inv = InventoryAccess::new(player.inventory.clone(), hand);
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
-        let result = item_behavior.use_item(&mut context);
+        let result = item_behavior.use_item(player, hand, world, &mut inv);
 
         // Restore count for creative mode (infinite materials)
         if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
+            inv.with_item(|item| {
                 if item.count < original_count {
                     item.count = original_count;
                 }

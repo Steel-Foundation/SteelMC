@@ -1,16 +1,22 @@
 //! Flint and steel item behavior with portal ignition.
 
+use std::sync::Arc;
+
+use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::FireBlock;
-use crate::behavior::context::{InteractionResult, UseOnContext};
+use crate::behavior::context::InteractionResult;
 use crate::behavior::item::ItemBehavior;
+use crate::player::Player;
+use crate::world::World;
 use steel_macros::item_behavior;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
     sound_events, vanilla_game_events,
 };
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::entity::Entity;
@@ -21,54 +27,58 @@ use crate::world::game_event_context::GameEventContext;
 pub struct FlintAndSteelItem;
 
 impl ItemBehavior for FlintAndSteelItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let click_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(click_pos);
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let click_pos = hit_result.block_pos;
+        let clicked_state = world.get_block_state(click_pos);
         if try_light_block(
-            context,
+            player,
+            world,
             click_pos,
             clicked_state,
             &sound_events::ITEM_FLINTANDSTEEL_USE,
             flint_and_steel_pitch(),
         ) {
-            let has_infinite_materials = context.player.has_infinite_materials();
-            context
-                .inv
-                .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+            let has_infinite_materials = player.has_infinite_materials();
+            inv.with_item(|item| item.hurt_and_break(1, has_infinite_materials));
             return InteractionResult::Success;
         }
 
-        let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
+        let fire_pos = click_pos.relative(hit_result.direction);
+        let (yaw, _) = player.rotation();
         let forward_dir = Direction::from_yaw(yaw);
 
-        if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
+        if !FireBlock::can_be_placed_at(world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
         }
 
-        context.world.play_block_sound(
+        world.play_block_sound(
             &sound_events::ITEM_FLINTANDSTEEL_USE,
             fire_pos,
             1.0,
             rand::random::<f32>() * 0.4 + 0.8,
-            Some(context.player.id()),
+            Some(player.id()),
         );
 
-        context.world.set_block(
+        world.set_block(
             fire_pos,
-            FireBlock::get_state(context.world.as_ref(), fire_pos),
+            FireBlock::get_state(world.as_ref(), fire_pos),
             UpdateFlags::UPDATE_ALL,
         );
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             click_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(player), None),
         );
 
-        let has_infinite_materials = context.player.has_infinite_materials();
-        context
-            .inv
-            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+        let has_infinite_materials = player.has_infinite_materials();
+        inv.with_item(|item| item.hurt_and_break(1, has_infinite_materials));
 
         InteractionResult::Success
     }
@@ -79,55 +89,64 @@ impl ItemBehavior for FlintAndSteelItem {
 pub struct FireChargeItem;
 
 impl ItemBehavior for FireChargeItem {
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let click_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(click_pos);
+    fn use_on(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &Arc<World>,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let click_pos = hit_result.block_pos;
+        let clicked_state = world.get_block_state(click_pos);
         if try_light_block(
-            context,
+            player,
+            world,
             click_pos,
             clicked_state,
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.with_item(|item| item.shrink(1));
+            inv.with_item(|item| item.shrink(1));
             return InteractionResult::Success;
         }
 
-        let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
+        let fire_pos = click_pos.relative(hit_result.direction);
+        let (yaw, _) = player.rotation();
         let forward_dir = Direction::from_yaw(yaw);
 
-        if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
+        if !FireBlock::can_be_placed_at(world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
         }
 
-        context.world.play_block_sound(
+        world.play_block_sound(
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_pos,
             1.0,
             fire_charge_pitch(),
-            Some(context.player.id()),
+            Some(player.id()),
         );
 
-        context.world.set_block(
+        world.set_block(
             fire_pos,
-            FireBlock::get_state(context.world.as_ref(), fire_pos),
+            FireBlock::get_state(world.as_ref(), fire_pos),
             UpdateFlags::UPDATE_ALL,
         );
-        context.world.game_event(
+        world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             fire_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(player), None),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }
 }
 
 fn try_light_block(
-    context: &UseOnContext<'_>,
+    player: &Player,
+    world: &Arc<World>,
     pos: BlockPos,
     state: BlockStateId,
     sound: SoundEventRef,
@@ -137,18 +156,16 @@ fn try_light_block(
         return false;
     }
 
-    context
-        .world
-        .play_block_sound(sound, pos, 1.0, pitch, Some(context.player.id()));
-    context.world.set_block(
+    world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
+    world.set_block(
         pos,
         state.set_value(&BlockStateProperties::LIT, true),
         UpdateFlags::UPDATE_ALL_IMMEDIATE,
     );
-    context.world.game_event(
+    world.game_event(
         &vanilla_game_events::BLOCK_CHANGE,
         pos,
-        &GameEventContext::new(Some(context.player), None),
+        &GameEventContext::new(Some(player), None),
     );
 
     true
