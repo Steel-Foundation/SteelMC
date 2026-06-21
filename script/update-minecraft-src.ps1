@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$MinecraftSrcDir = [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $ScriptDir) "minecraft-src"))
+$RepoDir = [System.IO.Path]::GetFullPath((Split-Path -Parent $ScriptDir))
+$MinecraftSrcDir = Join-Path $RepoDir "minecraft-src"
 $VersionManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 
 try {
@@ -21,7 +22,7 @@ if (-not $LatestVer) {
 
 Write-Host "Using $LatestVer as minimum Minecraft release"
 
-$TempDir = Join-Path $ScriptDir ".gitcraft-tmp"
+$TempDir = Join-Path $RepoDir ".gitcraft-tmp"
 if (Test-Path $TempDir) {
     Remove-Item -Recurse -Force $TempDir
 }

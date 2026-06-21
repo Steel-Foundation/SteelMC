@@ -2,7 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MINECRAFT_SRC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/minecraft-src"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MINECRAFT_SRC_DIR="$REPO_DIR/minecraft-src"
 VERSION_MANIFEST_URL="https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 LATEST_VER="$(curl -fsSL "$VERSION_MANIFEST_URL" \
     | tr -d '[:space:]' \
@@ -17,7 +18,7 @@ fi
 echo "Using $LATEST_VER as minimum Minecraft release"
 
 # Create temp directory on same filesystem to avoid cross-device link errors
-TEMP_DIR="$SCRIPT_DIR/.gitcraft-tmp"
+TEMP_DIR="$REPO_DIR/.gitcraft-tmp"
 rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 echo "Cloning GitCraft into $TEMP_DIR..."
