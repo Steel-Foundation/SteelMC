@@ -576,6 +576,7 @@ impl ChunkMap {
             if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
                 let world = self.world_gen_context.world();
                 world.on_entity_chunk_loaded(pos);
+                world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
             }
             Some(chunk_holder)
         } else {

@@ -1556,6 +1556,10 @@ impl Entity for Player {
         &vanilla_entities::PLAYER
     }
 
+    fn is_always_ticking(&self) -> bool {
+        true
+    }
+
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();

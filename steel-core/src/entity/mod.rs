@@ -649,8 +649,8 @@ pub use living_base::{
     MobEffectSyncPacket,
 };
 pub use manager::{
-    AddEntityError, ChunkEntityLoadResult, EntityMoveError, EntityMoveUpdate, EntityOwnership,
-    WorldEntityManager,
+    AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
+    EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
 pub use movement_sync::{
@@ -781,6 +781,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
+
+    /// Returns whether this entity ignores chunk ticking visibility.
+    ///
+    /// Mirrors vanilla `Entity.isAlwaysTicking`.
+    fn is_always_ticking(&self) -> bool {
+        false
+    }
 
     /// Returns whether this entity should be broadcast to the given player.
     ///

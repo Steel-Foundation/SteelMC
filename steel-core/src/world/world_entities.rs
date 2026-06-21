@@ -30,13 +30,14 @@ impl World {
         self.attach_player_entity_callback(player);
 
         let entity: SharedEntity = player.clone();
-        if let Err(error) = self
+        let lifecycle = match self
             .entity_manager()
             .add_live_entity(entity.clone(), EntityOwnership::External)
         {
-            panic!("failed to register player entity: {error}");
-        }
-        self.add_entity_to_tracker(&entity);
+            Ok(lifecycle) => lifecycle,
+            Err(error) => panic!("failed to register player entity: {error}"),
+        };
+        self.apply_entity_lifecycle_changes(lifecycle);
     }
 
     fn unride_player_for_removal(&self, player: &Player, store_root_vehicle: bool) {
