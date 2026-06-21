@@ -1397,8 +1397,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
         if let Some(living) = self.as_living_entity() {
-            living.tick_living_air_supply();
-            living.tick_in_wall_damage();
+            living.tick_living_environmental_damage();
         }
         if let Some(mob) = self.as_mob() {
             mob.mob_base_tick();
@@ -4874,6 +4873,32 @@ pub trait LivingEntity: Entity {
         );
     }
 
+    /// Applies vanilla living environmental damage in `LivingEntity.baseTick` order.
+    fn tick_living_environmental_damage(&self) {
+        if !LivingEntity::is_alive(self) {
+            return;
+        }
+
+        if LivingEntity::is_in_wall(self) {
+            self.tick_in_wall_damage();
+        } else if self.as_player().is_some()
+            && let Some(world) = self.level()
+        {
+            let border = world.world_border_snapshot();
+            let position = self.position();
+            if let Some(damage) =
+                border.outside_damage_amount(position.x, position.z, self.bounding_box())
+            {
+                self.hurt(
+                    &DamageSource::environment(&vanilla_damage_types::OUTSIDE_BORDER),
+                    damage,
+                );
+            }
+        }
+
+        self.tick_living_air_supply();
+    }
+
     /// Returns vanilla `LivingEntity.isAffectedByFluids()`.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -5554,18 +5579,20 @@ pub trait LivingEntity: Entity {
             f64::from(input.vertical()),
             f64::from(input.forward()),
         );
-        if Entity::is_alive(self)
+        let result = if Entity::is_alive(self)
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
         {
-            return self.travel_ridden(controller, input);
-        }
+            self.travel_ridden(controller, input)
+        } else if self.can_simulate_movement() && self.is_effective_ai() {
+            self.travel(input)
+        } else {
+            None
+        };
 
-        if !self.can_simulate_movement() || !self.is_effective_ai() {
-            return None;
-        }
-
-        self.travel(input)
+        self.apply_effects_from_blocks();
+        self.tick_freezing();
+        result
     }
 
     /// Mirrors vanilla `LivingEntity.aiStep()`.
@@ -6431,6 +6458,7 @@ mod tests {
         living_base: LivingEntityBase,
         entity_data: SyncMutex<SyncedLivingEntityData>,
         health: SyncMutex<f32>,
+        damage_types: SyncMutex<Vec<Identifier>>,
         entity_type: EntityTypeRef,
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
@@ -6458,6 +6486,7 @@ mod tests {
                 living_base: LivingEntityBase::new(&vanilla_entities::PLAYER),
                 entity_data: SyncMutex::new(SyncedLivingEntityData::new()),
                 health: SyncMutex::new(20.0),
+                damage_types: SyncMutex::new(Vec::new()),
                 entity_type: &vanilla_entities::PLAYER,
                 affected_by_fluids,
                 can_stand_on_fluid: false,
@@ -6495,6 +6524,10 @@ mod tests {
         fn with_health(self, health: f32) -> Self {
             *self.health.lock() = health;
             self
+        }
+
+        fn damage_type_keys(&self) -> Vec<Identifier> {
+            self.damage_types.lock().clone()
         }
 
         fn with_eye_in_water(self) -> Self {
@@ -6535,6 +6568,9 @@ mod tests {
         }
 
         fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+            self.damage_types
+                .lock()
+                .push(source.damage_type.key.clone());
             LivingEntity::hurt_server(self, source, amount)
         }
 
@@ -7235,6 +7271,25 @@ mod tests {
     }
 
     #[test]
+    fn default_ai_step_ticks_freezing_after_travel() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
+        entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
+        for _ in 0..40 {
+            entity.advance_tick_count();
+        }
+
+        entity.default_ai_step();
+
+        assert_eq!(
+            entity.damage_type_keys(),
+            vec![vanilla_damage_types::FREEZE.key.clone()]
+        );
+        assert_f32_close(entity.get_health(), 19.0);
+    }
+
+    #[test]
     fn freezing_damage_hurts_extra_tagged_entity_types() {
         init_test_registry();
         let entity =
@@ -7568,6 +7623,25 @@ mod tests {
         entity.base_tick();
 
         assert_f32_close(entity.get_health(), 19.0);
+    }
+
+    #[test]
+    fn living_environmental_damage_applies_in_wall_before_drowning() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true)
+            .with_eye_in_water()
+            .with_in_wall_for_base_tick();
+
+        entity.set_air_supply(-19);
+        entity.tick_living_environmental_damage();
+
+        assert_eq!(
+            entity.damage_type_keys(),
+            vec![
+                vanilla_damage_types::IN_WALL.key.clone(),
+                vanilla_damage_types::DROWN.key.clone(),
+            ]
+        );
     }
 
     #[test]

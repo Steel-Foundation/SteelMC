@@ -534,8 +534,6 @@ impl Player {
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
-        let world = self.get_world();
-        self.apply_world_border_damage(&world);
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
@@ -562,8 +560,6 @@ impl Player {
             let world = self.get_world();
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
-            self.apply_effects_from_blocks();
-            self.tick_freezing();
             self.push_entities(&world);
 
             // TODO: Implement remaining player ticking logic here
@@ -770,25 +766,6 @@ impl Player {
 
         let threshold = (max_cramming - 1) as usize;
         pushable_count > threshold && non_passenger_count > threshold
-    }
-
-    fn apply_world_border_damage(&self, world: &World) {
-        if !world.tick_runs_normally() || self.get_health() <= 0.0 {
-            return;
-        }
-
-        let border = world.world_border_snapshot();
-        let position = self.position();
-        let Some(damage) =
-            border.outside_damage_amount(position.x, position.z, self.bounding_box())
-        else {
-            return;
-        };
-
-        self.hurt(
-            &DamageSource::environment(&vanilla_damage_types::OUTSIDE_BORDER),
-            damage,
-        );
     }
 
     /// Main entry point for dealing damage. Returns `true` if damage was applied.

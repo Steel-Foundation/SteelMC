@@ -680,10 +680,6 @@ impl LivingEntity for PigEntity {
     fn ai_step(&self) -> Option<MoveResult> {
         let result = self.default_ai_step();
 
-        if !self.is_removed() {
-            self.apply_effects_from_blocks();
-            self.tick_freezing();
-        }
         if !self.is_removed()
             && let Some(world) = self.level()
         {
