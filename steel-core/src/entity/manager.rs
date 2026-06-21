@@ -1189,7 +1189,7 @@ impl WorldEntityManager {
                 continue;
             }
 
-            let entity_chunk = self.live_entity_chunk(entity.id());
+            let entity_chunk = self.live_manager_owned_entity_chunk(entity.id());
             entity.check_despawn();
             if entity.is_removed() {
                 if let Some(chunk) = entity_chunk {
@@ -1215,11 +1215,12 @@ impl WorldEntityManager {
         self.state.read().tick_list.snapshot()
     }
 
-    fn live_entity_chunk(&self, entity_id: i32) -> Option<ChunkPos> {
+    fn live_manager_owned_entity_chunk(&self, entity_id: i32) -> Option<ChunkPos> {
         self.state
             .read()
             .live_by_id
             .get(&entity_id)
+            .filter(|entry| entry.ownership == EntityOwnership::ManagerOwned)
             .map(|entry| entry.chunk)
     }
 
@@ -1378,7 +1379,7 @@ impl WorldEntityManager {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
         entity.tick();
-        dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+        self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
     }
 
@@ -1389,7 +1390,7 @@ impl WorldEntityManager {
         dirty_chunks: &mut FxHashSet<ChunkPos>,
     ) {
         let mut post_tick = |entity: &SharedEntity| {
-            dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+            self.mark_dirty_after_tick(entity, dirty_chunks);
         };
         tick_vehicle_passengers_with_ticked_if(
             vehicle,
@@ -1397,6 +1398,12 @@ impl WorldEntityManager {
             &mut post_tick,
             &mut |entity| self.can_tick_entity_now(entity.id()),
         );
+    }
+
+    fn mark_dirty_after_tick(&self, entity: &SharedEntity, dirty_chunks: &mut FxHashSet<ChunkPos>) {
+        if self.live_manager_owned_entity_chunk(entity.id()).is_some() {
+            dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+        }
     }
 
     fn can_tick_entity_now(&self, entity_id: i32) -> bool {
@@ -2865,9 +2872,8 @@ mod tests {
     }
 
     #[test]
-    fn tick_entities_ticks_external_always_ticking_entities() {
+    fn tick_entities_ticks_external_always_ticking_entities_without_dirtying_chunks() {
         let manager = WorldEntityManager::new();
-        let chunk = ChunkPos::new(0, 0);
         let entity = ManagerTestEntity::shared_always_ticking(
             1,
             Uuid::from_u128(1),
@@ -2883,7 +2889,7 @@ mod tests {
 
         let dirty_chunks = manager.tick_entities(0, true);
 
-        assert!(dirty_chunks.contains(&chunk));
+        assert!(dirty_chunks.is_empty());
         assert_eq!(entity.tick_count(), 1);
     }
 
