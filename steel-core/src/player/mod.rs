@@ -64,14 +64,18 @@ use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
-use steel_registry::game_rules::GameRuleValue;
+use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
-    ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
+    ADVANCE_TIME, DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN,
+    KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{sound_events, vanilla_attributes, vanilla_entities, vanilla_particle_types};
+use steel_registry::{
+    sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
+    vanilla_particle_types,
+};
 use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
@@ -828,6 +832,20 @@ impl Player {
         }
 
         LivingEntity::hurt_server(self, source, amount)
+    }
+
+    fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef> {
+        if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_DROWNING) {
+            Some(&DROWNING_DAMAGE)
+        } else if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL) {
+            Some(&FALL_DAMAGE)
+        } else if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) {
+            Some(&FIRE_DAMAGE)
+        } else if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING) {
+            Some(&FREEZE_DAMAGE)
+        } else {
+            None
+        }
     }
 
     /// Applies damage after reductions.
@@ -1951,7 +1969,10 @@ impl LivingEntity for Player {
             return true;
         }
 
-        // TODO: apply drowningDamage, fallDamage, fireDamage, and freezeDamage gamerules.
+        if let Some(rule) = Self::disabled_damage_game_rule(source) {
+            return self.get_world().get_game_rule(rule) != GameRuleValue::Bool(true);
+        }
+
         !self.has_client_loaded()
     }
 
@@ -2102,6 +2123,12 @@ impl TextResolutor for Player {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_damage_types, vanilla_game_rules,
+    };
+
+    use crate::entity::damage::DamageSource;
+
     use super::Player;
 
     #[test]
@@ -2145,5 +2172,43 @@ mod tests {
     #[test]
     fn entity_cramming_disabled_when_gamerule_is_zero() {
         assert!(!Player::should_apply_entity_cramming_damage(0, 100, 100, 0));
+    }
+
+    #[test]
+    fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
+        init_test_registry();
+
+        let cases = [
+            (
+                &vanilla_damage_types::DROWN,
+                &vanilla_game_rules::DROWNING_DAMAGE,
+            ),
+            (
+                &vanilla_damage_types::FALL,
+                &vanilla_game_rules::FALL_DAMAGE,
+            ),
+            (
+                &vanilla_damage_types::LAVA,
+                &vanilla_game_rules::FIRE_DAMAGE,
+            ),
+            (
+                &vanilla_damage_types::FREEZE,
+                &vanilla_game_rules::FREEZE_DAMAGE,
+            ),
+        ];
+
+        for (damage_type, rule) in cases {
+            let source = DamageSource::environment(damage_type);
+            let mapped = Player::disabled_damage_game_rule(&source);
+            assert!(mapped.is_some_and(|mapped| std::ptr::eq(mapped, rule)));
+        }
+    }
+
+    #[test]
+    fn disabled_damage_game_rule_ignores_unrelated_damage() {
+        init_test_registry();
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+        assert!(Player::disabled_damage_game_rule(&source).is_none());
     }
 }
