@@ -532,7 +532,6 @@ impl Player {
         self.default_tick();
         let world = self.get_world();
         self.apply_world_border_damage(&world);
-        self.update_swimming();
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
@@ -1555,6 +1554,14 @@ impl Entity for Player {
 
     fn is_always_ticking(&self) -> bool {
         true
+    }
+
+    fn update_swimming(&self) {
+        if self.is_flying() {
+            self.set_shared_swimming(false);
+        } else {
+            self.default_update_swimming();
+        }
     }
 
     fn stop_riding(&self) {

@@ -19,7 +19,7 @@ use steel_registry::data_components::vanilla_components::GLIDER;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::{EntityAttachment, EntityDimensions, EntityTypeRef};
-use steel_registry::fluid::FluidState;
+use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::{
     DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
@@ -82,6 +82,31 @@ const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
 ];
 const LEASH_SCAN_SIZE: f64 = 32.0;
 const LEASH_SCAN_HALF_SIZE: f64 = LEASH_SCAN_SIZE / 2.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SwimmingEnvironment {
+    pub(crate) sprinting: bool,
+    pub(crate) passenger: bool,
+    pub(crate) in_water: bool,
+    pub(crate) under_water: bool,
+    pub(crate) block_fluid_is_water: bool,
+}
+
+#[must_use]
+pub(crate) const fn select_swimming_state(
+    currently_swimming: bool,
+    env: SwimmingEnvironment,
+) -> bool {
+    if env.passenger {
+        return false;
+    }
+
+    if currently_swimming {
+        env.sprinting && env.in_water
+    } else {
+        env.sprinting && env.under_water && env.block_fluid_is_water
+    }
+}
 
 fn horizontal_distance(vector: DVec3) -> f64 {
     vector.x.hypot(vector.z)
@@ -1078,6 +1103,13 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_vehicle()
     }
 
+    /// Returns vanilla `Entity.dismountsUnderwater`.
+    fn dismounts_underwater(&self) -> bool {
+        REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::DISMOUNTS_UNDERWATER)
+    }
+
     /// Returns whether `passenger` is a direct passenger of this entity.
     ///
     /// Mirrors vanilla `Entity.hasPassenger(Entity)`.
@@ -1317,6 +1349,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
         self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
+        self.update_swimming();
         self.base().reset_fall_distance_in_water();
         if self
             .base()
@@ -1330,6 +1363,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
+        if let Some(living) = self.as_living_entity() {
+            living.tick_living_air_supply();
+        }
         if let Some(mob) = self.as_mob() {
             mob.mob_base_tick();
             mob.tick_leash();
@@ -1890,6 +1926,35 @@ pub trait Entity: EntityEventSource + Send + Sync {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_swimming(swimming);
         }
+    }
+
+    /// Updates the vanilla swimming shared flag.
+    ///
+    /// Mirrors vanilla `Entity.updateSwimming`.
+    fn update_swimming(&self) {
+        self.default_update_swimming();
+    }
+
+    /// Shared body of vanilla `Entity.updateSwimming` for player overrides.
+    fn default_update_swimming(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let block_fluid = get_fluid_state(&world, self.block_position());
+        let swimming = select_swimming_state(
+            self.is_swimming(),
+            SwimmingEnvironment {
+                sprinting: self
+                    .as_living_entity()
+                    .is_some_and(LivingEntity::is_sprinting),
+                passenger: self.is_passenger(),
+                in_water: self.is_in_water(),
+                under_water: self.is_under_water(),
+                block_fluid_is_water: block_fluid.is_water(),
+            },
+        );
+        self.set_shared_swimming(swimming);
     }
 
     /// Sets the vanilla sprinting shared flag.
@@ -4517,6 +4582,116 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_mob_effects();
     }
 
+    /// Returns whether vanilla effects keep this entity from drowning.
+    fn has_water_breathing(&self) -> bool {
+        self.has_mob_effect(vanilla_mob_effects::WATER_BREATHING)
+            || self.has_mob_effect(vanilla_mob_effects::CONDUIT_POWER)
+            || self.has_mob_effect(vanilla_mob_effects::BREATH_OF_THE_NAUTILUS)
+    }
+
+    /// Returns whether active vanilla effects refill this entity's air supply.
+    fn should_effects_refill_air_supply(&self) -> bool {
+        !self.has_mob_effect(vanilla_mob_effects::BREATH_OF_THE_NAUTILUS)
+            || self.has_mob_effect(vanilla_mob_effects::WATER_BREATHING)
+            || self.has_mob_effect(vanilla_mob_effects::CONDUIT_POWER)
+    }
+
+    /// Returns vanilla `LivingEntity.canBreatheUnderwater`.
+    fn can_breathe_underwater(&self) -> bool {
+        self.entity_type().flags.can_breathe_underwater
+    }
+
+    /// Returns whether this entity can lose air and take drowning damage.
+    fn can_drown_in_water(&self) -> bool {
+        if self.can_breathe_underwater() || self.has_water_breathing() {
+            return false;
+        }
+
+        !self
+            .as_player()
+            .is_some_and(|player| player.abilities.lock().invulnerable)
+    }
+
+    /// Returns whether the entity's eye block is a bubble column.
+    fn is_eye_in_bubble_column(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+
+        world
+            .get_block_state(BlockPos::new(
+                self.position().x.floor() as i32,
+                self.get_eye_y().floor() as i32,
+                self.position().z.floor() as i32,
+            ))
+            .get_block()
+            == &vanilla_blocks::BUBBLE_COLUMN
+    }
+
+    /// Mirrors vanilla `LivingEntity.decreaseAirSupply`.
+    fn decrease_air_supply(&self, current_supply: i32) -> i32 {
+        let oxygen_bonus = self
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::OXYGEN_BONUS)
+            .unwrap_or(0.0);
+        if oxygen_bonus > 0.0
+            && self.base().random().lock().next_f64() >= 1.0 / (oxygen_bonus + 1.0)
+        {
+            current_supply
+        } else {
+            current_supply - 1
+        }
+    }
+
+    /// Mirrors vanilla `LivingEntity.increaseAirSupply`.
+    fn increase_air_supply(&self, current_supply: i32) -> i32 {
+        (current_supply + 4).min(self.max_air_supply())
+    }
+
+    /// Mirrors vanilla `LivingEntity.shouldTakeDrowningDamage`.
+    fn should_take_drowning_damage(&self) -> bool {
+        self.air_supply() <= -20
+    }
+
+    /// Ticks vanilla living air-supply and drowning behavior from `baseTick`.
+    fn tick_living_air_supply(&self) {
+        if !LivingEntity::is_alive(self) {
+            return;
+        }
+
+        let eye_in_water = self.is_eye_in_water() && !self.is_eye_in_bubble_column();
+        if eye_in_water {
+            if self.can_drown_in_water() {
+                self.set_air_supply(self.decrease_air_supply(self.air_supply()));
+                if self.should_take_drowning_damage() {
+                    self.set_air_supply(0);
+                    self.broadcast_entity_event(EntityStatus::DrownParticles);
+                    self.hurt(
+                        &DamageSource::environment(&vanilla_damage_types::DROWN),
+                        2.0,
+                    );
+                }
+            } else if self.air_supply() < self.max_air_supply()
+                && self.should_effects_refill_air_supply()
+            {
+                self.set_air_supply(self.increase_air_supply(self.air_supply()));
+            }
+
+            if self
+                .vehicle()
+                .is_some_and(|vehicle| vehicle.dismounts_underwater())
+            {
+                self.stop_riding();
+            }
+            return;
+        }
+
+        if self.air_supply() < self.max_air_supply() {
+            self.set_air_supply(self.increase_air_supply(self.air_supply()));
+        }
+    }
+
     /// Returns vanilla `LivingEntity.isAffectedByFluids()`.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -6039,6 +6214,17 @@ mod tests {
             self
         }
 
+        fn with_eye_in_water(self) -> Self {
+            let contact = self.base.fluid_contact();
+            self.base.set_fluid_contact(EntityFluidContact::from_parts(
+                contact.water_height(),
+                contact.lava_height(),
+                true,
+                contact.eye_in_lava(),
+            ));
+            self
+        }
+
         fn equip(&self, slot: EquipmentSlot, stack: ItemStack) {
             self.living_base.equipment().lock().set(slot, stack);
         }
@@ -6812,6 +6998,78 @@ mod tests {
         assert!(!entity.has_dolphins_grace());
         entity.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, true);
         assert!(entity.has_dolphins_grace());
+    }
+
+    #[test]
+    fn living_air_supply_decrements_while_eye_in_water() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
+
+        entity.set_air_supply(entity.max_air_supply());
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), entity.max_air_supply() - 1);
+    }
+
+    #[test]
+    fn living_air_supply_drowning_damage_resets_air() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
+
+        entity.set_air_supply(-19);
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), 0);
+        assert_f32_close(entity.get_health(), 18.0);
+    }
+
+    #[test]
+    fn water_breathing_refills_air_underwater() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
+
+        entity.set_air_supply(entity.max_air_supply() - 8);
+        entity.set_mob_effect_active(vanilla_mob_effects::WATER_BREATHING, true);
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), entity.max_air_supply() - 4);
+    }
+
+    #[test]
+    fn breath_of_the_nautilus_prevents_drowning_without_refilling_air() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
+
+        entity.set_air_supply(entity.max_air_supply() - 8);
+        entity.set_mob_effect_active(vanilla_mob_effects::BREATH_OF_THE_NAUTILUS, true);
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), entity.max_air_supply() - 8);
+        assert_f32_close(entity.get_health(), 20.0);
+    }
+
+    #[test]
+    fn entity_type_can_breathe_underwater_refills_air() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.5, 0.0, true)
+            .with_eye_in_water()
+            .with_entity_type(&vanilla_entities::ZOMBIE);
+
+        entity.set_air_supply(entity.max_air_supply() - 8);
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), entity.max_air_supply() - 4);
+    }
+
+    #[test]
+    fn living_air_supply_refills_out_of_water() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        entity.set_air_supply(entity.max_air_supply() - 8);
+        entity.tick_living_air_supply();
+
+        assert_eq!(entity.air_supply(), entity.max_air_supply() - 4);
     }
 
     #[test]
