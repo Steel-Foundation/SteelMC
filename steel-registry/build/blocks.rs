@@ -84,6 +84,18 @@ pub struct ShapeData {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct BooleanOverwrite {
+    pub offset: u16,
+    pub value: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct StateBooleanData {
+    pub default: bool,
+    pub overwrites: Vec<BooleanOverwrite>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Block {
     #[expect(dead_code)]
     pub id: u16,
@@ -98,6 +110,7 @@ pub struct Block {
     pub occlusion_shapes: ShapeData,
     pub interaction_shapes: ShapeData,
     pub visual_shapes: ShapeData,
+    pub suffocating: StateBooleanData,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -649,6 +662,18 @@ pub(crate) fn build() -> TokenStream {
         // Generate default state if block has properties
         let default_state = generate_default_state(block);
 
+        let suffocating_default = block.suffocating.default;
+        let suffocating_overwrites = block
+            .suffocating
+            .overwrites
+            .iter()
+            .map(|overwrite| {
+                let offset = overwrite.offset;
+                let value = overwrite.value;
+                quote! { StateBooleanOverwrite::new(#offset, #value) }
+            })
+            .collect::<Vec<_>>();
+
         // Shape function references (now using deduplicated function IDs)
         let collision_fn = Ident::new(
             &format!("shape_fn_{}", info.collision_fn_id),
@@ -715,6 +740,11 @@ pub(crate) fn build() -> TokenStream {
                 #occlusion_fn,
                 #interaction_fn,
                 #visual_fn,
+            ).with_suffocating(
+                StateBooleanData::new(
+                    #suffocating_default,
+                    &[#(#suffocating_overwrites),*],
+                ),
             ) #shape_offsets #default_state;
         });
     }
@@ -734,7 +764,7 @@ pub(crate) fn build() -> TokenStream {
             blocks::{
                 behavior::{BlockConfig, OffsetType, PushReaction},
                 shapes::ShapeOffsetFlags,
-                Block, offset, BlockRegistry,
+                Block, offset, BlockRegistry, StateBooleanData, StateBooleanOverwrite,
             },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::VoxelShape,
