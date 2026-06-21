@@ -2507,17 +2507,36 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .is_in_tag(self.entity_type(), &EntityTypeTag::FALL_DAMAGE_IMMUNE)
     }
 
-    /// Applies vanilla fall damage. Base entities only propagate to passengers.
+    /// Propagates vanilla fall-damage handling to passengers.
+    fn propagate_fall_to_passengers(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) {
+        for passenger in self.passengers() {
+            passenger.cause_fall_damage(fall_distance, damage_modifier, source);
+        }
+    }
+
+    /// Applies vanilla fall damage.
+    ///
+    /// Living entities use the shared `LivingEntity` damage path; base entities
+    /// only propagate to passengers and return `false`.
     fn cause_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
     ) -> bool {
-        for passenger in self.passengers() {
-            passenger.cause_fall_damage(fall_distance, damage_modifier, source);
+        if let Some(living) = self.as_living_entity() {
+            return living.cause_living_fall_damage(fall_distance, damage_modifier, source);
+        }
+        if self.is_fall_damage_immune() {
+            return false;
         }
 
+        self.propagate_fall_to_passengers(fall_distance, damage_modifier, source);
         false
     }
 
@@ -4575,6 +4594,82 @@ pub trait LivingEntity: Entity {
         if damage > 4 { big } else { small }
     }
 
+    /// Plays vanilla `LivingEntity.playBlockFallSound()`.
+    fn play_block_fall_sound(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let position = self.position();
+        let pos = BlockPos::new(
+            position.x.floor() as i32,
+            (position.y - f64::from(0.2_f32)).floor() as i32,
+            position.z.floor() as i32,
+        );
+        let state = world.get_block_state(pos);
+        if state.is_air() {
+            return;
+        }
+
+        let sound_type = state.get_block().config.sound_type;
+        self.play_sound(
+            sound_type.fall_sound,
+            sound_type.volume * 0.5,
+            sound_type.pitch * 0.75,
+        );
+    }
+
+    /// Mirrors vanilla `LivingEntity.causeFallDamage`.
+    fn cause_living_fall_damage(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        let effective_fall_distance =
+            if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
+                let effective_fall_distance = fall_distance.min(impact_pos.y - self.position().y);
+                if effective_fall_distance <= 0.0 {
+                    self.reset_current_impulse_context();
+                } else {
+                    self.try_reset_current_impulse_context();
+                }
+                effective_fall_distance
+            } else {
+                fall_distance
+            };
+
+        if self.is_fall_damage_immune() {
+            return false;
+        }
+
+        self.propagate_fall_to_passengers(effective_fall_distance, damage_modifier, source);
+
+        let attributes = self.attributes().lock();
+        let safe_fall_distance = attributes
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
+        let fall_damage_multiplier = attributes
+            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
+            .unwrap_or(vanilla_attributes::FALL_DAMAGE_MULTIPLIER.default_value);
+        drop(attributes);
+
+        let damage = LivingEntityBase::calculate_fall_damage(
+            effective_fall_distance,
+            damage_modifier,
+            safe_fall_distance,
+            fall_damage_multiplier,
+        );
+        if damage <= 0 {
+            return false;
+        }
+
+        self.reset_current_impulse_context();
+        self.play_sound(self.fall_damage_sound(damage), 1.0, 1.0);
+        self.play_block_fall_sound();
+        self.hurt(source, damage as f32);
+        true
+    }
+
     /// Gets the entity's armor value from the attribute system.
     fn get_armor_value(&self) -> i32 {
         self.attributes()
@@ -5966,6 +6061,35 @@ pub trait LivingEntity: Entity {
         self.living_base().apply_post_impulse_grace_time(ticks);
     }
 
+    /// Mirrors vanilla `LivingEntity.setIgnoreFallDamageFromCurrentImpulse`.
+    fn set_ignore_fall_damage_from_current_impulse(
+        &self,
+        ignore_fall_damage: bool,
+        new_impulse_impact_pos: DVec3,
+    ) {
+        self.living_base()
+            .set_ignore_fall_damage_from_current_impulse(
+                ignore_fall_damage,
+                new_impulse_impact_pos,
+            );
+    }
+
+    /// Returns vanilla `LivingEntity.isIgnoringFallDamageFromCurrentImpulse`.
+    fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
+        self.living_base()
+            .is_ignoring_fall_damage_from_current_impulse()
+    }
+
+    /// Mirrors vanilla `LivingEntity.tryResetCurrentImpulseContext`.
+    fn try_reset_current_impulse_context(&self) {
+        self.living_base().try_reset_current_impulse_context();
+    }
+
+    /// Mirrors vanilla `LivingEntity.resetCurrentImpulseContext`.
+    fn reset_current_impulse_context(&self) {
+        self.living_base().reset_current_impulse_context();
+    }
+
     /// Returns whether movement validation is inside post-impulse grace.
     fn is_in_post_impulse_grace_time(&self) -> bool {
         self.living_base().is_in_post_impulse_grace_time()
@@ -7246,6 +7370,55 @@ mod tests {
             entity.fall_damage_sound(5),
             &sound_events::ENTITY_GENERIC_BIG_FALL
         );
+    }
+
+    #[test]
+    fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
+        init_test_registry();
+        let entity =
+            LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::PIG);
+
+        assert!(entity.cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        ));
+
+        assert_f32_close(entity.get_health(), 15.0);
+    }
+
+    #[test]
+    fn living_fall_damage_caps_distance_from_current_impulse() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 4.0, 0.0));
+
+        assert!(entity.cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        ));
+
+        assert_f32_close(entity.get_health(), 19.0);
+        assert!(!entity.is_ignoring_fall_damage_from_current_impulse());
+    }
+
+    #[test]
+    fn living_fall_damage_resets_current_impulse_when_landing_above_impact() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+        entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, -1.0, 0.0));
+
+        assert!(!entity.cause_fall_damage(
+            8.0,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        ));
+
+        assert_f32_close(entity.get_health(), 20.0);
+        assert!(!entity.is_ignoring_fall_damage_from_current_impulse());
     }
 
     #[test]

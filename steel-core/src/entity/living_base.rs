@@ -7,6 +7,7 @@
 
 use std::{array, sync::Arc};
 
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
@@ -38,6 +39,7 @@ const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const AMBIENT_EFFECT_ALPHA: i32 = 38;
 const VISIBLE_EFFECT_ALPHA: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
+const POST_IMPULSE_GRACE_TICKS: i32 = 40;
 
 /// Runtime mob-effect state.
 ///
@@ -530,6 +532,7 @@ struct LivingEntityState {
     skip_drop_experience: bool,
     death_time: i32,
     speed: f32,
+    current_impulse_impact_pos: Option<DVec3>,
     current_impulse_context_reset_grace_time: i32,
     fall_flying: bool,
     fall_flying_ticks: i32,
@@ -564,6 +567,7 @@ impl LivingEntityState {
             skip_drop_experience: false,
             death_time: 0,
             speed,
+            current_impulse_impact_pos: None,
             current_impulse_context_reset_grace_time: 0,
             fall_flying: false,
             fall_flying_ticks: 0,
@@ -1071,6 +1075,50 @@ impl LivingEntityBase {
             state.current_impulse_context_reset_grace_time.max(ticks);
     }
 
+    /// Mirrors vanilla `LivingEntity.setIgnoreFallDamageFromCurrentImpulse`.
+    pub fn set_ignore_fall_damage_from_current_impulse(
+        &self,
+        ignore_fall_damage: bool,
+        new_impulse_impact_pos: DVec3,
+    ) {
+        let mut state = self.state.lock();
+        if ignore_fall_damage {
+            state.current_impulse_context_reset_grace_time = state
+                .current_impulse_context_reset_grace_time
+                .max(POST_IMPULSE_GRACE_TICKS);
+            state.current_impulse_impact_pos = Some(new_impulse_impact_pos);
+        } else {
+            state.current_impulse_context_reset_grace_time = 0;
+        }
+    }
+
+    /// Returns vanilla `LivingEntity.currentImpulseImpactPos`.
+    #[must_use]
+    pub fn current_impulse_impact_pos(&self) -> Option<DVec3> {
+        self.state.lock().current_impulse_impact_pos
+    }
+
+    /// Returns vanilla `LivingEntity.isIgnoringFallDamageFromCurrentImpulse`.
+    #[must_use]
+    pub fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
+        self.state.lock().current_impulse_impact_pos.is_some()
+    }
+
+    /// Mirrors vanilla `LivingEntity.tryResetCurrentImpulseContext`.
+    pub fn try_reset_current_impulse_context(&self) {
+        let mut state = self.state.lock();
+        if state.current_impulse_context_reset_grace_time == 0 {
+            state.current_impulse_impact_pos = None;
+        }
+    }
+
+    /// Mirrors vanilla `LivingEntity.resetCurrentImpulseContext`.
+    pub fn reset_current_impulse_context(&self) {
+        let mut state = self.state.lock();
+        state.current_impulse_context_reset_grace_time = 0;
+        state.current_impulse_impact_pos = None;
+    }
+
     /// Returns whether movement validation is inside post-impulse grace.
     #[must_use]
     pub fn is_in_post_impulse_grace_time(&self) -> bool {
@@ -1470,6 +1518,7 @@ fn living_is_dead(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use glam::DVec3;
     use steel_registry::{
         item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
         vanilla_damage_types, vanilla_entities, vanilla_entity_data::PlayerEntityData,
@@ -1482,7 +1531,7 @@ mod tests {
 
     use super::{
         ActiveMobEffect, DEFAULT_SWING_DURATION, LivingEntityBase, LivingTravelInput,
-        MobEffectInstance, MobEffectSyncChange,
+        MobEffectInstance, MobEffectSyncChange, POST_IMPULSE_GRACE_TICKS,
     };
 
     #[test]
@@ -1601,6 +1650,38 @@ mod tests {
 
         base.tick_post_impulse_grace_time();
         assert!(!base.is_in_post_impulse_grace_time());
+    }
+
+    #[test]
+    fn current_impulse_context_tracks_fall_damage_impact_position() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let impact_pos = DVec3::new(1.0, 72.0, -3.0);
+
+        base.set_ignore_fall_damage_from_current_impulse(true, impact_pos);
+
+        assert!(base.is_ignoring_fall_damage_from_current_impulse());
+        assert_eq!(base.current_impulse_impact_pos(), Some(impact_pos));
+        assert!(base.is_in_post_impulse_grace_time());
+    }
+
+    #[test]
+    fn current_impulse_context_resets_after_grace_window() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+        base.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 72.0, 0.0));
+        base.apply_post_impulse_grace_time(1);
+        base.try_reset_current_impulse_context();
+        assert!(base.is_ignoring_fall_damage_from_current_impulse());
+
+        for _ in 0..POST_IMPULSE_GRACE_TICKS {
+            base.tick_post_impulse_grace_time();
+        }
+        base.try_reset_current_impulse_context();
+
+        assert!(!base.is_ignoring_fall_damage_from_current_impulse());
+        assert_eq!(base.current_impulse_impact_pos(), None);
     }
 
     #[test]

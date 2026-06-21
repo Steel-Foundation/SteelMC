@@ -1771,30 +1771,7 @@ impl Entity for Player {
         }
 
         // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
-        if self.is_fall_damage_immune() {
-            return false;
-        }
-
-        let attributes = self.attributes().lock();
-        let safe_fall_distance = attributes
-            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
-            .unwrap_or(3.0);
-        let fall_damage_multiplier = attributes
-            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
-            .unwrap_or(1.0);
-        drop(attributes);
-
-        let damage = LivingEntityBase::calculate_fall_damage(
-            fall_distance,
-            damage_modifier,
-            safe_fall_distance,
-            fall_damage_multiplier,
-        );
-        if damage <= 0 {
-            return false;
-        }
-
-        self.hurt(source, damage as f32)
+        LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
