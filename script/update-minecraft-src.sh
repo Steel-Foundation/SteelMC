@@ -2,7 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MINECRAFT_SRC_DIR="$SCRIPT_DIR/minecraft-src"
+MINECRAFT_SRC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/minecraft-src"
 VERSION_MANIFEST_URL="https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 LATEST_VER="$(curl -fsSL "$VERSION_MANIFEST_URL" \
     | tr -d '[:space:]' \
@@ -22,9 +22,6 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 echo "Cloning GitCraft into $TEMP_DIR..."
 
-# Cleanup on exit
-trap "rm -rf $TEMP_DIR" EXIT
-
 # Clone GitCraft
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
@@ -42,5 +39,8 @@ GITCRAFT_ARGS=(
     "--only-stable"
 )
 ./gradlew run --args="${GITCRAFT_ARGS[*]}"
+
+# Clean up on success
+rm -rf "$TEMP_DIR"
 
 echo "Done! minecraft-src has been updated."
