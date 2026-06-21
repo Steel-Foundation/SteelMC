@@ -516,9 +516,6 @@ impl Player {
         self.tick_attack_strength();
         self.tick_spam_throttlers();
         self.tick_client_load_timeout();
-        if !self.is_passenger() {
-            self.advance_tick_count();
-        }
 
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {
@@ -1611,8 +1608,7 @@ impl Entity for Player {
     }
 
     fn tick(&self) {
-        // Player tick is handled separately by World::tick_game()
-        // This is here for Entity trait compliance
+        Player::tick(self);
     }
 
     fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {

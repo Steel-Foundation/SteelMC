@@ -231,8 +231,8 @@ pub struct WorldGameTickTimings {
     pub elapsed: Duration,
     /// Chunk map game tick timings.
     pub chunk_map: ChunkMapGameTickTimings,
-    /// Time spent ticking players.
-    pub player_tick: Duration,
+    /// Time spent ticking entities.
+    pub entity_tick: Duration,
 }
 
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
@@ -1398,28 +1398,15 @@ impl World {
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
-        let dirty_chunks = self
-            .entity_manager
-            .tick_entities(tick_count as i32, runs_normally);
-        for chunk in dirty_chunks {
-            self.mark_chunk_dirty(chunk);
-        }
-
-        let player_tick = {
-            let _span = tracing::trace_span!("player_tick").entered();
+        let entity_tick = {
+            let _span = tracing::trace_span!("entity_tick").entered();
             let start = Instant::now();
-            self.players.iter_players(|_uuid, player| {
-                player.tick();
-                if !player.is_passenger() {
-                    let dirty_chunks = self
-                        .entity_manager
-                        .tick_vehicle_passengers_for_root(player.as_ref());
-                    for chunk in dirty_chunks {
-                        self.mark_chunk_dirty(chunk);
-                    }
-                }
-                true
-            });
+            let dirty_chunks = self
+                .entity_manager
+                .tick_entities(tick_count as i32, runs_normally);
+            for chunk in dirty_chunks {
+                self.mark_chunk_dirty(chunk);
+            }
             start.elapsed()
         };
 
@@ -1515,7 +1502,7 @@ impl World {
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
-            player_tick,
+            entity_tick,
         }
     }
 

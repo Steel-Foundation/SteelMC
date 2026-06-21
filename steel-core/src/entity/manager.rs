@@ -149,9 +149,9 @@ pub struct EntityLifecycleChanges {
     pub tracking_started: Vec<SharedEntity>,
     /// Entities that stopped being tracked.
     pub tracking_stopped: Vec<SharedEntity>,
-    /// Entities that entered the manager-owned tick list.
+    /// Entities that entered the world entity tick list.
     pub ticking_started: Vec<SharedEntity>,
-    /// Entities that left the manager-owned tick list.
+    /// Entities that left the world entity tick list.
     pub ticking_stopped: Vec<SharedEntity>,
 }
 
@@ -542,7 +542,18 @@ impl WorldEntityManager {
         };
 
         if entry.ownership != EntityOwnership::ManagerOwned {
+            let restored_id = entry.entity.id();
             Self::insert_live_entry(state, entry);
+            let entity_to_tick = state.live_by_id.get(&restored_id).and_then(|entry| {
+                let visibility = Self::lifecycle_visibility_for(
+                    entry,
+                    Self::chunk_visibility(state, entry.chunk),
+                );
+                visibility.is_ticking().then(|| entry.entity.clone())
+            });
+            if let Some(entity) = entity_to_tick {
+                state.tick_list.add(&entity);
+            }
             return;
         }
 
@@ -796,8 +807,8 @@ impl WorldEntityManager {
             Self::lifecycle_visibility_for(current, Self::chunk_visibility(&state, old_chunk));
         let new_visibility =
             Self::lifecycle_visibility_for(current, Self::chunk_visibility(&state, new_chunk));
-        let old_ticking = Self::should_tick_entry(current, old_visibility);
-        let new_ticking = Self::should_tick_entry(current, new_visibility);
+        let old_ticking = old_visibility.is_ticking();
+        let new_ticking = new_visibility.is_ticking();
         let entity = current.entity.clone();
         if old_section == new_section && old_chunk == new_chunk {
             return Ok(EntityMoveUpdate {
@@ -1160,7 +1171,7 @@ impl WorldEntityManager {
         self.state.read().live_by_id.len()
     }
 
-    /// Ticks live manager-owned entities currently in the ticking visibility set.
+    /// Ticks live entities currently in the ticking visibility set.
     pub fn tick_entities(&self, _tick_count: i32, runs_normally: bool) -> FxHashSet<ChunkPos> {
         let mut dirty_chunks = FxHashSet::default();
         let mut ticked_entities = FxHashSet::default();
@@ -1200,18 +1211,6 @@ impl WorldEntityManager {
         dirty_chunks
     }
 
-    /// Ticks eligible passengers for an externally ticked root, such as a player.
-    pub(crate) fn tick_vehicle_passengers_for_root(
-        &self,
-        vehicle: &dyn Entity,
-    ) -> FxHashSet<ChunkPos> {
-        let mut dirty_chunks = FxHashSet::default();
-        let mut ticked_entities = FxHashSet::default();
-        ticked_entities.insert(vehicle.id());
-        self.tick_vehicle_passengers_with_ticked(vehicle, &mut ticked_entities, &mut dirty_chunks);
-        dirty_chunks
-    }
-
     fn ticking_entities_snapshot(&self) -> Vec<SharedEntity> {
         self.state.read().tick_list.snapshot()
     }
@@ -1236,17 +1235,13 @@ impl WorldEntityManager {
         entry: &EntityEntry,
         chunk_visibility: EntityVisibility,
     ) -> EntityVisibility {
-        if entry.ownership == EntityOwnership::External {
-            return EntityVisibility::Tracked;
-        }
         if entry.entity.is_always_ticking() {
             return EntityVisibility::Ticking;
         }
+        if entry.ownership == EntityOwnership::External {
+            return EntityVisibility::Tracked;
+        }
         chunk_visibility
-    }
-
-    fn should_tick_entry(entry: &EntityEntry, visibility: EntityVisibility) -> bool {
-        entry.ownership == EntityOwnership::ManagerOwned && visibility.is_ticking()
     }
 
     fn lifecycle_visibility_for(
@@ -1266,7 +1261,7 @@ impl WorldEntityManager {
         let visibility =
             Self::lifecycle_visibility_for(entry, Self::chunk_visibility(state, entry.chunk));
         let entity = entry.entity.clone();
-        let should_tick = Self::should_tick_entry(entry, visibility);
+        let should_tick = visibility.is_ticking();
 
         let mut lifecycle = EntityLifecycleChanges::default();
         if visibility.is_accessible() {
@@ -1411,7 +1406,10 @@ impl WorldEntityManager {
         };
 
         match entry.ownership {
-            EntityOwnership::External => true,
+            EntityOwnership::External => {
+                entry.entity.entity_type() == &vanilla_entities::PLAYER
+                    || state.tick_list.contains(entity_id)
+            }
             EntityOwnership::ManagerOwned => state.tick_list.contains(entity_id),
         }
     }
@@ -1561,6 +1559,7 @@ mod tests {
     struct ManagerTestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
+        always_ticking: bool,
     }
 
     impl ManagerTestEntity {
@@ -1583,6 +1582,21 @@ mod tests {
                     Weak::new(),
                 ),
                 entity_type,
+                always_ticking: false,
+            })
+        }
+
+        fn shared_always_ticking(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::with_uuid(
+                    id,
+                    uuid,
+                    position,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
+                entity_type: &vanilla_entities::ITEM,
+                always_ticking: true,
             })
         }
     }
@@ -1723,6 +1737,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
+        }
+
+        fn is_always_ticking(&self) -> bool {
+            self.always_ticking
         }
     }
 
@@ -2844,6 +2862,58 @@ mod tests {
         assert!(dirty_chunks.contains(&chunk));
         assert_eq!(manager_owned.tick_count(), 1);
         assert_eq!(external.tick_count(), 0);
+    }
+
+    #[test]
+    fn tick_entities_ticks_external_always_ticking_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        let entity = ManagerTestEntity::shared_always_ticking(
+            1,
+            Uuid::from_u128(1),
+            DVec3::new(1.0, 64.0, 1.0),
+        );
+
+        let changes = match manager.add_live_entity(entity.clone(), EntityOwnership::External) {
+            Ok(changes) => changes,
+            Err(error) => panic!("always-ticking external entity should register: {error}"),
+        };
+        assert_eq!(changes.tracking_started.len(), 1);
+        assert_eq!(changes.ticking_started.len(), 1);
+
+        let dirty_chunks = manager.tick_entities(0, true);
+
+        assert!(dirty_chunks.contains(&chunk));
+        assert_eq!(entity.tick_count(), 1);
+    }
+
+    #[test]
+    fn chunk_unload_retention_preserves_external_always_ticking_passenger() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = ManagerTestEntity::shared_always_ticking(
+            2,
+            Uuid::from_u128(2),
+            DVec3::new(1.0, 65.0, 1.0),
+        );
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+        assert!(
+            manager
+                .add_live_entity(vehicle, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::External)
+                .is_ok()
+        );
+
+        manager.begin_chunk_unload(chunk);
+
+        assert!(manager.can_tick_entity_now(passenger.id()));
     }
 
     #[test]

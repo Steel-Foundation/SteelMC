@@ -1428,7 +1428,7 @@ impl Server {
                 world = i,
                 elapsed = ?timings.elapsed,
                 tick_count,
-                player_tick = ?timings.player_tick,
+                entity_tick = ?timings.entity_tick,
                 broadcast_changes = ?cm.broadcast_changes,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
