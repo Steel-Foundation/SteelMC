@@ -8,7 +8,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::entity_behavior;
+use steel_macros::{entity_behavior, entity_impl};
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -355,6 +355,7 @@ impl PigEntity {
     }
 }
 
+#[entity_impl(capabilities(living, pathfinder_mob, mob, animal, item_steerable))]
 impl Entity for PigEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -384,26 +385,6 @@ impl Entity for PigEntity {
 
     fn check_despawn(&self) {
         Mob::check_mob_despawn(self);
-    }
-
-    fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-        Some(self)
-    }
-
-    fn as_pathfinder_mob(&self) -> Option<&dyn PathfinderMob> {
-        Some(self)
-    }
-
-    fn as_mob(&self) -> Option<&dyn Mob> {
-        Some(self)
-    }
-
-    fn as_animal(&self) -> Option<&dyn Animal> {
-        Some(self)
-    }
-
-    fn as_item_steerable(&self) -> Option<&dyn ItemSteerable> {
-        Some(self)
     }
 
     fn is_alive(&self) -> bool {

@@ -55,6 +55,7 @@ use enum_dispatch::enum_dispatch;
 use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
+use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CRespawn, CSetDefaultSpawnPosition,
     CSetHealth, CSetHeldSlot, CSetPassengers, CSetTime, ClientCommandAction, EquipmentSlotItem,
@@ -1476,6 +1477,7 @@ pub enum ResetReason {
     WorldChange,
 }
 
+#[entity_impl(capabilities(player, living))]
 impl Entity for Player {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -1556,14 +1558,6 @@ impl Entity for Player {
             &sound_events::ENTITY_PLAYER_SMALL_FALL,
             &sound_events::ENTITY_PLAYER_BIG_FALL,
         )
-    }
-
-    fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-        Some(self)
-    }
-
-    fn as_player(&self) -> Option<&Player> {
-        Some(self)
     }
 
     fn is_alive(&self) -> bool {

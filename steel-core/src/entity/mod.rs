@@ -829,6 +829,78 @@ impl<T: Entity> EntityEventSource for T {
     }
 }
 
+/// Explicit behavior capabilities exposed by a concrete entity implementation.
+///
+/// This mirrors vanilla `instanceof` branches without relying on `Any` or
+/// introducing a shared implementation hierarchy. Concrete entities should
+/// expose these through the `#[entity_impl(capabilities(...))]` macro so
+/// missing trait impls fail at compile time.
+pub struct EntityCapabilities<'a> {
+    player: Option<&'a Player>,
+    living: Option<&'a dyn LivingEntity>,
+    mob: Option<&'a dyn Mob>,
+    pathfinder_mob: Option<&'a dyn PathfinderMob>,
+    animal: Option<&'a dyn Animal>,
+    item_steerable: Option<&'a dyn ItemSteerable>,
+}
+
+impl<'a> EntityCapabilities<'a> {
+    /// Returns an entity capability set with no specialized behavior.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            player: None,
+            living: None,
+            mob: None,
+            pathfinder_mob: None,
+            animal: None,
+            item_steerable: None,
+        }
+    }
+
+    /// Exposes player-specific behavior for this entity.
+    #[must_use]
+    pub const fn with_player(mut self, player: &'a Player) -> Self {
+        self.player = Some(player);
+        self
+    }
+
+    /// Exposes living-entity behavior for this entity.
+    #[must_use]
+    pub const fn with_living(mut self, living: &'a dyn LivingEntity) -> Self {
+        self.living = Some(living);
+        self
+    }
+
+    /// Exposes mob behavior for this entity.
+    #[must_use]
+    pub const fn with_mob(mut self, mob: &'a dyn Mob) -> Self {
+        self.mob = Some(mob);
+        self
+    }
+
+    /// Exposes pathfinder-mob behavior for this entity.
+    #[must_use]
+    pub const fn with_pathfinder_mob(mut self, pathfinder_mob: &'a dyn PathfinderMob) -> Self {
+        self.pathfinder_mob = Some(pathfinder_mob);
+        self
+    }
+
+    /// Exposes animal behavior for this entity.
+    #[must_use]
+    pub const fn with_animal(mut self, animal: &'a dyn Animal) -> Self {
+        self.animal = Some(animal);
+        self
+    }
+
+    /// Exposes item-steerable behavior for this entity.
+    #[must_use]
+    pub const fn with_item_steerable(mut self, item_steerable: &'a dyn ItemSteerable) -> Self {
+        self.item_steerable = Some(item_steerable);
+        self
+    }
+}
+
 /// A trait for entities.
 ///
 /// This trait provides the core functionality for entities.
@@ -867,6 +939,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// broadcastable; players override this for spectator visibility rules.
     fn broadcast_to_player(&self, _player: &Player) -> bool {
         true
+    }
+
+    /// Returns specialized behavior capabilities exposed by this entity.
+    fn capabilities(&self) -> EntityCapabilities<'_> {
+        EntityCapabilities::none()
     }
 
     /// Gets the entity's unique network ID (session-local).
@@ -1845,7 +1922,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's frequent `instanceof LivingEntity` branches without
     /// requiring core code to downcast through `Any`.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-        None
+        self.capabilities().living
     }
 
     /// Returns this entity as a player when it is the concrete server player.
@@ -1853,7 +1930,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla player-only branches without requiring core code to
     /// downcast through `Any`.
     fn as_player(&self) -> Option<&Player> {
-        None
+        self.capabilities().player
     }
 
     /// Returns true for mobs with pathfinding navigation.
@@ -1866,7 +1943,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's frequent `instanceof PathfinderMob` branches without
     /// requiring core code to downcast through `Any`.
     fn as_pathfinder_mob(&self) -> Option<&dyn PathfinderMob> {
-        None
+        self.capabilities().pathfinder_mob
     }
 
     /// Returns true for entities that implement vanilla mob behavior.
@@ -1879,7 +1956,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's frequent `instanceof Mob` branches without requiring
     /// core code to downcast through `Any`.
     fn as_mob(&self) -> Option<&dyn Mob> {
-        None
+        self.capabilities().mob
     }
 
     /// Returns true for entities that implement vanilla animal behavior.
@@ -1892,7 +1969,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's frequent `instanceof Animal` branches without
     /// requiring core code to downcast through `Any`.
     fn as_animal(&self) -> Option<&dyn Animal> {
-        None
+        self.capabilities().animal
     }
 
     /// Returns true for entities that implement vanilla item-steered boosts.
@@ -1905,7 +1982,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla's `instanceof ItemSteerable` branches without requiring
     /// core code to downcast through `Any`.
     fn as_item_steerable(&self) -> Option<&dyn ItemSteerable> {
-        None
+        self.capabilities().item_steerable
     }
 
     /// Returns true when vanilla `ServerEntity` should force velocity sync for fall flying.
