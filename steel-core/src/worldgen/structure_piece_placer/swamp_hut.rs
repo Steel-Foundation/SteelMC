@@ -97,7 +97,7 @@ fn spawn_swamp_hut_mob(
     }
 
     let pos = placer.world_pos(2, 2, 5);
-    if !placer.clip().is_inside(pos) {
+    if !placer.clip().contains_blockpos(pos) {
         return;
     }
 

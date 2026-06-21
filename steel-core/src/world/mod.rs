@@ -32,7 +32,7 @@ use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{VoxelShape, is_face_full};
+use steel_registry::blocks::shapes::{OffsetVoxelShape, VoxelShape, is_offset_face_full};
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -362,6 +362,7 @@ impl World {
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
+                sea_level,
                 storage,
                 config.generator,
                 generation_pool,
@@ -614,7 +615,7 @@ impl World {
                 break;
             }
 
-            if is_face_full(state.get_collision_shape(), Direction::Up) {
+            if is_offset_face_full(state.get_collision_shape_at(pos), Direction::Up) {
                 return Some(BlockPos::new(x, y + 1, z));
             }
         }
@@ -648,12 +649,12 @@ impl World {
     ///
     /// Returns `true` if the position is clear, `false` if an entity would obstruct placement.
     #[must_use]
-    pub fn is_unobstructed(&self, collision_shape: VoxelShape, pos: BlockPos) -> bool {
+    pub fn is_unobstructed(&self, collision_shape: OffsetVoxelShape, pos: BlockPos) -> bool {
         if collision_shape.is_empty() {
             return true;
         }
 
-        for block_aabb in collision_shape {
+        for block_aabb in collision_shape.iter() {
             let world_aabb = block_aabb.at_block(pos);
             for entity in self.get_entities_in_aabb(&world_aabb) {
                 if entity.blocks_building() && entity.bounding_box().intersects(world_aabb) {
@@ -731,6 +732,11 @@ impl World {
     #[must_use]
     pub fn seed(&self) -> i64 {
         self.level_data.read().data().seed
+    }
+
+    /// Gets the current game time
+    pub fn game_time(&self) -> i64 {
+        self.level_data.read().game_time()
     }
 
     /// Returns this world's vanilla runtime random source.
@@ -1367,19 +1373,13 @@ impl World {
     fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
         let biome_zoom_seed = obfuscate_biome_seed(self.seed());
         let mut missing_chunk = false;
-        let biome_id = fuzzed_biome_at_block(
-            biome_zoom_seed,
-            pos.x(),
-            pos.y(),
-            pos.z(),
-            |quart_x, quart_y, quart_z| {
-                self.noise_biome_id(quart_x, quart_y, quart_z)
-                    .unwrap_or_else(|| {
-                        missing_chunk = true;
-                        0
-                    })
-            },
-        );
+        let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
+            self.noise_biome_id(quart.x, quart.y, quart.z)
+                .unwrap_or_else(|| {
+                    missing_chunk = true;
+                    0
+                })
+        });
 
         if missing_chunk {
             return None;
@@ -2009,7 +2009,7 @@ impl World {
         to: DVec3,
     ) -> (bool, Option<Direction>) {
         let state = self.get_block_state(block_pos);
-        let shape = state.get_outline_shape();
+        let shape = state.get_outline_shape_at(block_pos);
 
         match Self::clip_shape(block_pos, from, to, shape) {
             Some(hit) => (true, Some(hit.direction)),
@@ -2119,9 +2119,13 @@ impl World {
         fluid: ClipFluid,
     ) -> Option<ClipHitResult> {
         let state = self.get_block_state(pos);
-        let block_result =
-            Self::clip_shape(pos, from, to, self.clip_block_shape(state, block_shape))
-                .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
+        let block_result = Self::clip_shape(
+            pos,
+            from,
+            to,
+            self.clip_block_shape(state, pos, block_shape),
+        )
+        .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
         let fluid_result = self.clip_fluid_shape(pos, from, to, state, fluid);
 
         match (block_result, fluid_result) {
@@ -2146,7 +2150,8 @@ impl World {
         state: BlockStateId,
         block_hit: ClipHitResult,
     ) -> ClipHitResult {
-        let Some(override_hit) = Self::clip_shape(pos, from, to, state.get_interaction_shape())
+        let Some(override_hit) =
+            Self::clip_shape(pos, from, to, state.get_interaction_shape_at(pos))
         else {
             return block_hit;
         };
@@ -2162,13 +2167,20 @@ impl World {
         }
     }
 
-    fn clip_block_shape(&self, state: BlockStateId, shape: ClipBlockShape) -> VoxelShape {
+    fn clip_block_shape(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        shape: ClipBlockShape,
+    ) -> OffsetVoxelShape {
         match shape {
-            ClipBlockShape::Collider => state.get_collision_shape(),
-            ClipBlockShape::Outline => state.get_outline_shape(),
-            ClipBlockShape::Visual => state.get_visual_shape(),
+            ClipBlockShape::Collider => state.get_collision_shape_at(pos),
+            ClipBlockShape::Outline => state.get_outline_shape_at(pos),
+            ClipBlockShape::Visual => state.get_visual_shape_at(pos),
             ClipBlockShape::FallDamageResetting { entity_is_player } => {
-                self.fall_damage_resetting_shape(state, entity_is_player)
+                OffsetVoxelShape::without_offset(
+                    self.fall_damage_resetting_shape(state, entity_is_player),
+                )
             }
         }
     }
@@ -2241,7 +2253,7 @@ impl World {
         block_pos: BlockPos,
         from: DVec3,
         to: DVec3,
-        shape: VoxelShape,
+        shape: OffsetVoxelShape,
     ) -> Option<ClipHitResult> {
         if shape.is_empty() {
             return None;
@@ -2269,7 +2281,7 @@ impl World {
 
         let mut closest: Option<(f64, Direction)> = None;
 
-        for shape in shape {
+        for shape in shape.iter() {
             let world_min = DVec3::new(shape.min_x(), shape.min_y(), shape.min_z()) + block_vec;
             let world_max = DVec3::new(shape.max_x(), shape.max_y(), shape.max_z()) + block_vec;
 
@@ -2338,10 +2350,10 @@ impl World {
         })
     }
 
-    fn shape_contains_world_point(shape: VoxelShape, block_vec: DVec3, point: DVec3) -> bool {
+    fn shape_contains_world_point(shape: OffsetVoxelShape, block_vec: DVec3, point: DVec3) -> bool {
         shape
-            .into_iter()
-            .any(|aabb| Self::local_aabb_contains_world_point(*aabb, block_vec, point))
+            .iter()
+            .any(|aabb| Self::local_aabb_contains_world_point(aabb, block_vec, point))
     }
 
     fn local_aabb_contains_world_point(
@@ -2380,8 +2392,7 @@ impl World {
             Direction::West,
             Direction::East,
         ] {
-            let (x, y, z) = direction.offset();
-            let dot = vector.dot(DVec3::new(f64::from(x), f64::from(y), f64::from(z)));
+            let dot = vector.dot(direction.offset_vec().as_dvec3());
             if dot > highest_dot {
                 highest_dot = dot;
                 result = direction;
@@ -2882,7 +2893,7 @@ impl World {
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
 
-        let packet = CSound::new(sound, source, pos.x, pos.y, pos.z, volume, pitch, seed);
+        let packet = CSound::new(sound, source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -3377,6 +3388,10 @@ impl LevelReader for World {
         Self::get_block_state(self, pos)
     }
 
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        Self::get_block_entity(self, pos)
+    }
+
     fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
             15_u8.saturating_sub(sky_darkening)
@@ -3402,6 +3417,10 @@ impl LevelReader for Arc<World> {
         self.as_ref().get_block_state(pos)
     }
 
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.as_ref().get_block_entity(pos)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         self.as_ref().raw_brightness(pos, sky_darkening)
     }
@@ -3423,6 +3442,10 @@ impl ScheduledTickAccess for Arc<World> {
     fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool {
         self.as_ref().schedule_block_tick_default(pos, block, delay);
         true
+    }
+
+    fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        self.as_ref().has_scheduled_block_tick(pos, block)
     }
 
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
@@ -3474,7 +3497,7 @@ mod tests {
             BlockPos::ZERO,
             DVec3::new(-1.0, 0.5, 0.5),
             DVec3::new(1.0, 0.5, 0.5),
-            VoxelShape::from_boxes(SPLIT_BLOCK),
+            OffsetVoxelShape::without_offset(VoxelShape::from_boxes(SPLIT_BLOCK)),
         ) else {
             panic!("expected shape hit");
         };
@@ -3491,7 +3514,7 @@ mod tests {
             BlockPos::ZERO,
             DVec3::new(0.5, 0.5, 0.5),
             DVec3::new(2.5, 0.5, 0.5),
-            VoxelShape::FULL_BLOCK,
+            OffsetVoxelShape::without_offset(VoxelShape::FULL_BLOCK),
         ) else {
             panic!("expected inside shape hit");
         };

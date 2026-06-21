@@ -72,7 +72,7 @@ impl JigsawOrientation {
 
     /// Returns the front-facing direction offset as (dx, dy, dz).
     #[must_use]
-    pub const fn front(self) -> (i32, i32, i32) {
+    pub fn front(self) -> (i32, i32, i32) {
         self.front_direction().offset()
     }
 

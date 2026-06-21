@@ -490,7 +490,7 @@ fn place_castle_small_corridor_left_turn(
     placer.generate_box(0, 2, 4, 3, 5, 4, bricks, bricks, false);
     placer.generate_box(1, 3, 4, 1, 4, 4, we_fence, we_fence, false);
     placer.generate_box(3, 3, 4, 3, 4, 4, we_fence, we_fence, false);
-    if *is_needing_chest && placer.clip().is_inside(placer.world_pos(3, 2, 3)) {
+    if *is_needing_chest && placer.clip().contains_blockpos(placer.world_pos(3, 2, 3)) {
         *is_needing_chest = false;
         let _ = placer.create_chest(random, 3, 2, 3, NETHER_BRIDGE_LOOT);
     }
@@ -532,7 +532,7 @@ fn place_castle_small_corridor_right_turn(
     placer.generate_box(1, 2, 4, 4, 5, 4, bricks, bricks, false);
     placer.generate_box(1, 3, 4, 1, 4, 4, we_fence, we_fence, false);
     placer.generate_box(3, 3, 4, 3, 4, 4, we_fence, we_fence, false);
-    if *is_needing_chest && placer.clip().is_inside(placer.world_pos(1, 2, 3)) {
+    if *is_needing_chest && placer.clip().contains_blockpos(placer.world_pos(1, 2, 3)) {
         *is_needing_chest = false;
         let _ = placer.create_chest(random, 1, 2, 3, NETHER_BRIDGE_LOOT);
     }
@@ -713,7 +713,7 @@ fn place_monster_throne(
     placer.place_block(fence(FENCE_EAST), 2, 8, 8);
     placer.place_block(we_fence, 3, 8, 8);
     placer.place_block(fence(FENCE_WEST), 4, 8, 8);
-    if !*has_placed_spawner && placer.clip().is_inside(placer.world_pos(3, 5, 5)) {
+    if !*has_placed_spawner && placer.clip().contains_blockpos(placer.world_pos(3, 5, 5)) {
         *has_placed_spawner = true;
         let _ = placer.create_spawner(3, 5, 5, BLAZE_ENTITY);
     }

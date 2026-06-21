@@ -10,8 +10,8 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use steel_math::trig;
 use steel_registry::carver::CaveCarverConfiguration;
-use steel_utils::ChunkPos;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
+use steel_utils::{BlockPos, ChunkPos};
 use steel_worldgen::density::DimensionNoises;
 
 use crate::worldgen::carver::{
@@ -110,7 +110,7 @@ struct TunnelParams {
 impl<N, F> CarveRun<'_, '_, N, F>
 where
     N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
+    F: FnMut(BlockPos) -> u16,
 {
     /// Runs one cave-carver pass rooted in `source_pos`. `random` must have
     /// been seeded by the caller via

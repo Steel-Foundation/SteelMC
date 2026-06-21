@@ -23,6 +23,8 @@ pub enum ChunkTicketKind {
     SpawnSearch,
     /// Candidate chunks loaded by structure location queries.
     StructureLocate,
+    /// Chunks loaded by startup pregeneration.
+    Pregen,
     /// Generic command-owned chunk request.
     Command,
 }

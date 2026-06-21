@@ -203,7 +203,7 @@ impl FeatureDecorationRunner {
         for y_offset in 0..tree_height {
             let y = origin.y() + y_offset;
             if y_offset >= lean_height && lean_steps > 0 {
-                let (dx, _, dz) = lean_direction.offset();
+                let (dx, dz) = lean_direction.offset_xz();
                 trunk_x += dx;
                 trunk_z += dz;
                 lean_steps -= 1;
@@ -234,7 +234,7 @@ impl FeatureDecorationRunner {
             while branch_y_offset < tree_height && branch_steps > 0 {
                 if branch_y_offset >= 1 {
                     let y = origin.y() + branch_y_offset;
-                    let (dx, _, dz) = branch_direction.offset();
+                    let (dx, dz) = branch_direction.offset_xz();
                     trunk_x += dx;
                     trunk_z += dz;
                     let pos = BlockPos::new(trunk_x, y, trunk_z);
@@ -513,7 +513,7 @@ impl FeatureDecorationRunner {
         while branch_placement_index < tree_height && branch_steps > 0 {
             if branch_placement_index >= 1 {
                 let placement_height = current_height + branch_placement_index;
-                let (dx, _, dz) = branch_dir.offset();
+                let (dx, dz) = branch_dir.offset_xz();
                 log_x += dx;
                 log_z += dz;
                 height_along_branch = placement_height;
@@ -773,7 +773,7 @@ impl FeatureDecorationRunner {
 
         for y_offset in 0..tree_height {
             if y_offset >= lean_height && lean_steps > 0 {
-                let (dx, _, dz) = lean_direction.offset();
+                let (dx, dz) = lean_direction.offset_xz();
                 trunk_x += dx;
                 trunk_z += dz;
                 lean_steps -= 1;

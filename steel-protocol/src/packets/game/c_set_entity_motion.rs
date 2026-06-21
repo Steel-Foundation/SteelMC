@@ -2,6 +2,7 @@
 
 use std::io::{Result, Write};
 
+use glam::DVec3;
 use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_SET_ENTITY_MOTION;
 use steel_utils::{codec::VarInt, serial::WriteTo};
@@ -21,30 +22,21 @@ use super::write_lp_vec3;
 pub struct CSetEntityMotion {
     /// The entity ID whose velocity is being updated.
     pub entity_id: i32,
-    /// X velocity (blocks/tick).
-    pub velocity_x: f64,
-    /// Y velocity (blocks/tick).
-    pub velocity_y: f64,
-    /// Z velocity (blocks/tick).
-    pub velocity_z: f64,
+    /// The entity velocity (blocks/tick).
+    pub vel: DVec3,
 }
 
 impl CSetEntityMotion {
     /// Creates a new set entity motion packet.
     #[must_use]
-    pub fn new(entity_id: i32, velocity_x: f64, velocity_y: f64, velocity_z: f64) -> Self {
-        Self {
-            entity_id,
-            velocity_x,
-            velocity_y,
-            velocity_z,
-        }
+    pub fn new(entity_id: i32, vel: DVec3) -> Self {
+        Self { entity_id, vel }
     }
 }
 
 impl WriteTo for CSetEntityMotion {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         VarInt(self.entity_id).write(writer)?;
-        write_lp_vec3(writer, self.velocity_x, self.velocity_y, self.velocity_z)
+        write_lp_vec3(writer, self.vel)
     }
 }

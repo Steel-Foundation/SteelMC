@@ -1,3 +1,4 @@
+use glam::DVec3;
 use steel_utils::{BlockLocalAabb, axis::Axis};
 
 /// Vanilla shape boolean operation.
@@ -164,6 +165,81 @@ impl IntoIterator for VoxelShape {
     }
 }
 
+/// A voxel shape plus the block-local offset from vanilla `BlockState.getOffset(pos)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OffsetVoxelShape {
+    shape: VoxelShape,
+    offset: DVec3,
+}
+
+impl OffsetVoxelShape {
+    #[must_use]
+    pub const fn new(shape: VoxelShape, offset: DVec3) -> Self {
+        Self { shape, offset }
+    }
+
+    #[must_use]
+    pub const fn without_offset(shape: VoxelShape) -> Self {
+        Self {
+            shape,
+            offset: DVec3::ZERO,
+        }
+    }
+
+    #[must_use]
+    pub const fn shape(self) -> VoxelShape {
+        self.shape
+    }
+
+    #[must_use]
+    pub const fn offset(self) -> DVec3 {
+        self.offset
+    }
+
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.shape.is_empty()
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = BlockLocalAabb> {
+        self.shape
+            .into_iter()
+            .map(move |aabb| aabb.translate(self.offset))
+    }
+
+    #[must_use]
+    pub fn min(self, axis: Axis) -> f64 {
+        self.shape.min(axis) + axis_offset(self.offset, axis)
+    }
+
+    #[must_use]
+    pub fn max(self, axis: Axis) -> f64 {
+        self.shape.max(axis) + axis_offset(self.offset, axis)
+    }
+
+    #[must_use]
+    pub fn bounds(self) -> Option<BlockLocalAabb> {
+        self.shape
+            .bounds()
+            .map(|bounds| bounds.translate(self.offset))
+    }
+
+    #[must_use]
+    pub fn has_large_collision_shape(self) -> bool {
+        [Axis::X, Axis::Y, Axis::Z]
+            .into_iter()
+            .any(|axis| self.min(axis) < 0.0 || self.max(axis) > 1.0)
+    }
+}
+
+fn axis_offset(offset: DVec3, axis: Axis) -> f64 {
+    match axis {
+        Axis::X => offset.x,
+        Axis::Y => offset.y,
+        Axis::Z => offset.z,
+    }
+}
+
 /// An ID referencing a registered VoxelShape in the ShapeRegistry.
 ///
 /// Use this to refer to shapes in a compact way. The actual shape data
@@ -317,6 +393,63 @@ impl BlockShapes {
     );
 }
 
+/// Shape channel names used by vanilla block-state shape queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeChannel {
+    Collision,
+    Support,
+    Outline,
+    Occlusion,
+    Interaction,
+    Visual,
+}
+
+/// Records which extracted shape channels already include `BlockState.getOffset(pos)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShapeOffsetFlags {
+    collision: bool,
+    support: bool,
+    outline: bool,
+    occlusion: bool,
+    interaction: bool,
+    visual: bool,
+}
+
+impl ShapeOffsetFlags {
+    pub const NONE: Self = Self::new(false, false, false, false, false, false);
+
+    #[must_use]
+    pub const fn new(
+        collision: bool,
+        support: bool,
+        outline: bool,
+        occlusion: bool,
+        interaction: bool,
+        visual: bool,
+    ) -> Self {
+        Self {
+            collision,
+            support,
+            outline,
+            occlusion,
+            interaction,
+            visual,
+        }
+    }
+
+    #[must_use]
+    pub const fn uses_offset(self, channel: ShapeChannel) -> bool {
+        match channel {
+            ShapeChannel::Collision => self.collision,
+            ShapeChannel::Support => self.support,
+            ShapeChannel::Outline => self.outline,
+            ShapeChannel::Occlusion => self.occlusion,
+            ShapeChannel::Interaction => self.interaction,
+            ShapeChannel::Visual => self.visual,
+        }
+    }
+}
+
 use super::properties::Direction;
 
 /// Returns the overall bounding box of a voxel shape (union of all AABBs).
@@ -337,6 +470,69 @@ pub fn bounding_box(shape: VoxelShape) -> BlockLocalAabb {
 #[must_use]
 pub fn is_shape_full_block(shape: VoxelShape) -> bool {
     !join_is_not_empty(VoxelShape::FULL_BLOCK, shape, BooleanOp::NotSame)
+}
+
+#[must_use]
+pub fn is_offset_shape_full_block(shape: OffsetVoxelShape) -> bool {
+    if shape.offset == DVec3::ZERO {
+        return is_shape_full_block(shape.shape);
+    }
+
+    if shape.is_empty()
+        || shape.min(Axis::X) > VOXEL_EPSILON
+        || shape.max(Axis::X) < 1.0 - VOXEL_EPSILON
+        || shape.min(Axis::Y) > VOXEL_EPSILON
+        || shape.max(Axis::Y) < 1.0 - VOXEL_EPSILON
+        || shape.min(Axis::Z) > VOXEL_EPSILON
+        || shape.max(Axis::Z) < 1.0 - VOXEL_EPSILON
+    {
+        return false;
+    }
+
+    let mut x_edges = vec![0.0, 1.0];
+    let mut y_edges = vec![0.0, 1.0];
+    let mut z_edges = vec![0.0, 1.0];
+    for aabb in shape.iter() {
+        if aabb.is_empty() {
+            continue;
+        }
+        if aabb.max_x() > VOXEL_EPSILON && aabb.min_x() < 1.0 - VOXEL_EPSILON {
+            x_edges.push(aabb.min_x().clamp(0.0, 1.0));
+            x_edges.push(aabb.max_x().clamp(0.0, 1.0));
+        }
+        if aabb.max_y() > VOXEL_EPSILON && aabb.min_y() < 1.0 - VOXEL_EPSILON {
+            y_edges.push(aabb.min_y().clamp(0.0, 1.0));
+            y_edges.push(aabb.max_y().clamp(0.0, 1.0));
+        }
+        if aabb.max_z() > VOXEL_EPSILON && aabb.min_z() < 1.0 - VOXEL_EPSILON {
+            z_edges.push(aabb.min_z().clamp(0.0, 1.0));
+            z_edges.push(aabb.max_z().clamp(0.0, 1.0));
+        }
+    }
+    sort_and_dedup_voxel_edges(&mut x_edges);
+    sort_and_dedup_voxel_edges(&mut y_edges);
+    sort_and_dedup_voxel_edges(&mut z_edges);
+
+    for x in x_edges.windows(2) {
+        if x[1] - x[0] <= VOXEL_EPSILON {
+            continue;
+        }
+        for y in y_edges.windows(2) {
+            if y[1] - y[0] <= VOXEL_EPSILON {
+                continue;
+            }
+            for z in z_edges.windows(2) {
+                if z[1] - z[0] <= VOXEL_EPSILON {
+                    continue;
+                }
+                if !offset_shape_fills_cell(shape, x[0], x[1], y[0], y[1], z[0], z[1]) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
 }
 
 /// Returns true if applying `op` to two voxel shapes produces any filled space.
@@ -501,6 +697,26 @@ fn shape_fills_cell(
     })
 }
 
+fn offset_shape_fills_cell(
+    shape: OffsetVoxelShape,
+    min_x: f64,
+    max_x: f64,
+    min_y: f64,
+    max_y: f64,
+    min_z: f64,
+    max_z: f64,
+) -> bool {
+    shape.iter().any(|aabb| {
+        !aabb.is_empty()
+            && aabb.min_x() <= min_x + VOXEL_EPSILON
+            && aabb.max_x() >= max_x - VOXEL_EPSILON
+            && aabb.min_y() <= min_y + VOXEL_EPSILON
+            && aabb.max_y() >= max_y - VOXEL_EPSILON
+            && aabb.min_z() <= min_z + VOXEL_EPSILON
+            && aabb.max_z() >= max_z - VOXEL_EPSILON
+    })
+}
+
 /// Support type for `is_face_sturdy` checks.
 ///
 /// Determines what kind of support a block face provides for other blocks.
@@ -535,6 +751,11 @@ pub fn is_face_full(shape: VoxelShape, direction: Direction) -> bool {
     face_rectangles_cover(shape, direction, 0.0, 1.0, 0.0, 1.0)
 }
 
+#[must_use]
+pub fn is_offset_face_full(shape: OffsetVoxelShape, direction: Direction) -> bool {
+    offset_face_rectangles_cover(shape, direction, 0.0, 1.0, 0.0, 1.0)
+}
+
 /// Checks if a shape provides center support on a face.
 ///
 /// The center area is a 12x12 pixel region (0.125 to 0.875 on each axis).
@@ -562,6 +783,40 @@ pub fn is_face_center_supported(shape: VoxelShape, direction: Direction) -> bool
             CENTER_SUPPORT_Y_MAX,
         ),
         Direction::West | Direction::East => face_rectangles_cover(
+            shape,
+            direction,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
+    }
+}
+
+#[must_use]
+pub fn is_offset_face_center_supported(shape: OffsetVoxelShape, direction: Direction) -> bool {
+    if shape.is_empty() {
+        return false;
+    }
+
+    match direction {
+        Direction::Down | Direction::Up => offset_face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
+        Direction::North | Direction::South => offset_face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+        ),
+        Direction::West | Direction::East => offset_face_rectangles_cover(
             shape,
             direction,
             0.0,
@@ -608,6 +863,39 @@ pub fn is_face_rigid_supported(shape: VoxelShape, direction: Direction) -> bool 
     }
 }
 
+#[must_use]
+pub fn is_offset_face_rigid_supported(shape: OffsetVoxelShape, direction: Direction) -> bool {
+    if shape.is_empty() {
+        return false;
+    }
+
+    match direction {
+        Direction::Down | Direction::Up => {
+            offset_face_rectangles_cover(shape, direction, 0.0, RIGID_BORDER, 0.0, 1.0)
+                && offset_face_rectangles_cover(shape, direction, 1.0 - RIGID_BORDER, 1.0, 0.0, 1.0)
+                && offset_face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    0.0,
+                    RIGID_BORDER,
+                )
+                && offset_face_rectangles_cover(
+                    shape,
+                    direction,
+                    RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0 - RIGID_BORDER,
+                    1.0,
+                )
+        }
+        Direction::North | Direction::South | Direction::West | Direction::East => {
+            is_offset_face_full(shape, direction)
+        }
+    }
+}
+
 /// Checks if a shape is sturdy on a face for the given support type.
 #[must_use]
 pub fn is_face_sturdy(shape: VoxelShape, direction: Direction, support_type: SupportType) -> bool {
@@ -615,6 +903,19 @@ pub fn is_face_sturdy(shape: VoxelShape, direction: Direction, support_type: Sup
         SupportType::Full => is_face_full(shape, direction),
         SupportType::Center => is_face_center_supported(shape, direction),
         SupportType::Rigid => is_face_rigid_supported(shape, direction),
+    }
+}
+
+#[must_use]
+pub fn is_offset_face_sturdy(
+    shape: OffsetVoxelShape,
+    direction: Direction,
+    support_type: SupportType,
+) -> bool {
+    match support_type {
+        SupportType::Full => is_offset_face_full(shape, direction),
+        SupportType::Center => is_offset_face_center_supported(shape, direction),
+        SupportType::Rigid => is_offset_face_rigid_supported(shape, direction),
     }
 }
 
@@ -656,6 +957,59 @@ fn face_rectangles_cover(
         });
     }
 
+    face_rects_cover_target(
+        rects,
+        target_min_a,
+        target_max_a,
+        target_min_b,
+        target_max_b,
+    )
+}
+
+fn offset_face_rectangles_cover(
+    shape: OffsetVoxelShape,
+    direction: Direction,
+    target_min_a: f64,
+    target_max_a: f64,
+    target_min_b: f64,
+    target_max_b: f64,
+) -> bool {
+    let mut rects = Vec::new();
+    for aabb in shape.iter() {
+        let Some(rect) = face_rect_for_aabb(aabb, direction) else {
+            continue;
+        };
+        if rect.max_a <= target_min_a
+            || rect.min_a >= target_max_a
+            || rect.max_b <= target_min_b
+            || rect.min_b >= target_max_b
+        {
+            continue;
+        }
+        rects.push(FaceRect {
+            min_a: rect.min_a.max(target_min_a),
+            max_a: rect.max_a.min(target_max_a),
+            min_b: rect.min_b.max(target_min_b),
+            max_b: rect.max_b.min(target_max_b),
+        });
+    }
+
+    face_rects_cover_target(
+        rects,
+        target_min_a,
+        target_max_a,
+        target_min_b,
+        target_max_b,
+    )
+}
+
+fn face_rects_cover_target(
+    rects: Vec<FaceRect>,
+    target_min_a: f64,
+    target_max_a: f64,
+    target_min_b: f64,
+    target_max_b: f64,
+) -> bool {
     if rects.is_empty() {
         return false;
     }
@@ -773,6 +1127,11 @@ mod tests {
     const SPLIT_FULL_BLOCK: &[BlockLocalAabb] = &[
         BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0),
         BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const Z_GAPPED_BLOCK_WITH_OFFSET: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, -0.1, 1.0, 1.0, 0.15),
+        BlockLocalAabb::new(0.0, 0.0, 0.65, 1.0, 1.0, 0.9),
     ];
 
     const LOWER_HALF_BLOCK: &[BlockLocalAabb] =
@@ -908,6 +1267,25 @@ mod tests {
     }
 
     #[test]
+    fn offset_shape_full_block_rejects_shifted_full_block() {
+        assert!(is_offset_shape_full_block(
+            OffsetVoxelShape::without_offset(VoxelShape::FULL_BLOCK)
+        ));
+        assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
+            VoxelShape::FULL_BLOCK,
+            DVec3::new(0.25, 0.0, 0.0)
+        )));
+    }
+
+    #[test]
+    fn offset_shape_full_block_rejects_z_gap_after_offset() {
+        assert!(!is_offset_shape_full_block(OffsetVoxelShape::new(
+            VoxelShape::from_boxes(Z_GAPPED_BLOCK_WITH_OFFSET),
+            DVec3::new(0.0, 0.0, 0.1)
+        )));
+    }
+
+    #[test]
     fn zero_volume_boxes_are_empty() {
         assert!(VoxelShape::from_boxes(ZERO_VOLUME_BOX).is_empty());
         assert!(!join_is_not_empty(
@@ -936,6 +1314,14 @@ mod tests {
     fn face_full_rejects_union_with_gap() {
         assert!(!is_face_full(
             VoxelShape::from_boxes(GAPPED_TOP_FACE),
+            Direction::Up
+        ));
+    }
+
+    #[test]
+    fn offset_face_full_rejects_shifted_top_face() {
+        assert!(!is_offset_face_full(
+            OffsetVoxelShape::new(VoxelShape::FULL_BLOCK, DVec3::new(0.25, 0.0, 0.0)),
             Direction::Up
         ));
     }

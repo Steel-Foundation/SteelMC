@@ -11,6 +11,7 @@
 # Config
 /config
 /.tmp
+/.logs
 /world
 /saves
 /players
@@ -19,6 +20,8 @@
 CLAUDE.md
 .env
 /minecraft-src
+.agents
+skills-lock.json
 
 # Package
 profile.json.gz

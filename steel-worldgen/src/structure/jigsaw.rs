@@ -4,6 +4,7 @@
 
 use std::{cmp::Reverse, mem};
 
+use glam::IVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
@@ -27,7 +28,7 @@ pub struct PlacedPiece {
     /// Template location (Single/LegacySingle).
     pub template_location: Option<Identifier>,
     /// World-space origin.
-    pub position: (i32, i32, i32),
+    pub position: IVec3,
     /// Rotation.
     pub rotation: Rotation,
     /// Template-sized BB (used for beardifier + world save).
@@ -51,7 +52,7 @@ pub struct JigsawPieceData {
     /// Selected pool element.
     pub pool_element: PoolElement,
     /// World-space template origin.
-    pub position: (i32, i32, i32),
+    pub position: IVec3,
     /// Template rotation.
     pub rotation: Rotation,
     /// Liquid handling mode for block placement.
@@ -61,12 +62,8 @@ pub struct JigsawPieceData {
 /// Junction between two jigsaw pieces (terrain adaptation).
 #[derive(Debug, Clone)]
 pub struct JigsawJunction {
-    /// World X.
-    pub source_x: i32,
-    /// Ground-adjusted Y.
-    pub source_ground_y: i32,
-    /// World Z.
-    pub source_z: i32,
+    /// World-space source position.
+    pub source_pos: IVec3,
     /// Y delta between source and target.
     pub delta_y: i32,
     /// Destination projection.
@@ -247,7 +244,7 @@ fn get_shuffled_jigsaws<'a>(
     let Some(location) = element_location(element) else {
         // Feature/Empty elements: synthetic jigsaw at origin facing down
         let mut jigsaws = vec![TransformedJigsaw {
-            pos: (0, 0, 0),
+            pos: IVec3::ZERO,
             orientation: JigsawOrientation::DownSouth,
             name: &SYNTHETIC_BOTTOM_JIGSAW,
             target: &SYNTHETIC_EMPTY_POOL,
@@ -278,7 +275,7 @@ fn get_cached_shuffled_jigsaws<'a>(
 ) -> Vec<TransformedJigsaw<'a>> {
     let Some(location) = element_location(element) else {
         let mut jigsaws = vec![TransformedJigsaw {
-            pos: (0, 0, 0),
+            pos: IVec3::ZERO,
             orientation: JigsawOrientation::DownSouth,
             name: &SYNTHETIC_BOTTOM_JIGSAW,
             target: &SYNTHETIC_EMPTY_POOL,
@@ -345,12 +342,10 @@ fn transform_template_jigsaws(
         .jigsaws
         .iter()
         .map(|j| {
-            // Transform position by rotation (pivot = 0,0,0)
-            let (tx, ty, tz) = rotation.transform_pos(j.pos[0], j.pos[1], j.pos[2], 0, 0);
-            // Rotate orientation
+            let pos = rotation.transform_pos(IVec3::from(j.pos), IVec3::ZERO);
             let orientation = j.orientation.rotate(rotation);
             TransformedJigsaw {
-                pos: (tx, ty, tz),
+                pos,
                 orientation,
                 name: &j.name,
                 target: &j.target,
@@ -371,7 +366,7 @@ struct CachedTemplateJigsaws<'a> {
 /// A jigsaw block with its position transformed by rotation.
 #[derive(Clone, Copy)]
 struct TransformedJigsaw<'a> {
-    pos: (i32, i32, i32),
+    pos: IVec3,
     orientation: JigsawOrientation,
     name: &'a Identifier,
     target: &'a Identifier,
@@ -407,17 +402,12 @@ fn can_attach(source: &TransformedJigsaw, target: &TransformedJigsaw) -> bool {
     let source_front = source.orientation.front_direction();
     let target_front = target.orientation.front_direction();
 
-    // Fronts must be opposite
     if source_front != target_front.opposite() {
         return false;
     }
-
-    // Names must match: source.target == target.name
     if source.target != target.name {
         return false;
     }
-
-    // Joint compatibility: if aligned, tops must match
     if source.joint == JointType::Aligned {
         let source_top = source.orientation.top_direction();
         let target_top = target.orientation.top_direction();
@@ -425,7 +415,6 @@ fn can_attach(source: &TransformedJigsaw, target: &TransformedJigsaw) -> bool {
             return false;
         }
     }
-
     true
 }
 
@@ -438,30 +427,27 @@ fn can_attach(source: &TransformedJigsaw, target: &TransformedJigsaw) -> bool {
 fn element_bounding_box(
     element: &PoolElement,
     templates: &FxHashMap<Identifier, TemplateData>,
-    pos_x: i32,
-    pos_y: i32,
-    pos_z: i32,
+    pos: IVec3,
     rotation: Rotation,
 ) -> Option<BoundingBox> {
     match element {
-        PoolElement::Feature { .. } => {
-            Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
-        }
+        PoolElement::Feature { .. } => Some(BoundingBox::new(pos, pos)),
         PoolElement::List { elements, .. } => {
-            // Vanilla: encapsulating BB of all non-empty sub-elements
             let mut result: Option<BoundingBox> = None;
             for sub in elements {
-                if let Some(sub_bb) =
-                    element_bounding_box(sub, templates, pos_x, pos_y, pos_z, rotation)
-                {
+                if let Some(sub_bb) = element_bounding_box(sub, templates, pos, rotation) {
                     result = Some(match result {
                         Some(prev) => BoundingBox::new(
-                            prev.min_x.min(sub_bb.min_x),
-                            prev.min_y.min(sub_bb.min_y),
-                            prev.min_z.min(sub_bb.min_z),
-                            prev.max_x.max(sub_bb.max_x),
-                            prev.max_y.max(sub_bb.max_y),
-                            prev.max_z.max(sub_bb.max_z),
+                            IVec3::new(
+                                prev.min_x().min(sub_bb.min_x()),
+                                prev.min_y().min(sub_bb.min_y()),
+                                prev.min_z().min(sub_bb.min_z()),
+                            ),
+                            IVec3::new(
+                                prev.max_x().max(sub_bb.max_x()),
+                                prev.max_y().max(sub_bb.max_y()),
+                                prev.max_z().max(sub_bb.max_z()),
+                            ),
                         ),
                         None => sub_bb,
                     });
@@ -472,14 +458,8 @@ fn element_bounding_box(
         _ => {
             let location = element_location(element)?;
             let template = templates.get(location)?;
-            Some(rotation.get_bounding_box(
-                pos_x,
-                pos_y,
-                pos_z,
-                template.size[0],
-                template.size[1],
-                template.size[2],
-            ))
+            let size = IVec3::from(template.size);
+            Some(rotation.get_bounding_box(pos, size))
         }
     }
 }
@@ -513,8 +493,6 @@ fn append_shuffled_templates_cached<'a>(
 fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -> &'a PoolElement {
     let expanded = expand_pool_weights(pool);
     if expanded.is_empty() {
-        // `PoolElement::Empty` is a unit variant with no interior mutability,
-        // so `&'static` sharing is sound.
         static EMPTY: PoolElement = PoolElement::Empty;
         return &EMPTY;
     }
@@ -533,16 +511,16 @@ struct FreeSpace {
 
 impl FreeSpace {
     fn collides(&self, candidate: &BoundingBox) -> bool {
-        if candidate.min_x < self.constraint.min_x
-            || candidate.max_x > self.constraint.max_x
-            || candidate.min_y < self.constraint.min_y
-            || candidate.max_y > self.constraint.max_y
-            || candidate.min_z < self.constraint.min_z
-            || candidate.max_z > self.constraint.max_z
+        if candidate.min_x() < self.constraint.min_x()
+            || candidate.max_x() > self.constraint.max_x()
+            || candidate.min_y() < self.constraint.min_y()
+            || candidate.max_y() > self.constraint.max_y()
+            || candidate.min_z() < self.constraint.min_z()
+            || candidate.max_z() > self.constraint.max_z()
         {
             return true;
         }
-        self.occupied.iter().any(|p| candidate.intersects(p))
+        self.occupied.iter().any(|p| candidate.intersects(*p))
     }
 }
 
@@ -551,18 +529,15 @@ pub struct AssemblyResult {
     /// The placed pieces.
     pub pieces: Vec<PlacedPiece>,
     /// The biome check position (centerX, centerY, centerZ from the `GenerationStub`).
-    pub biome_check_pos: (i32, i32, i32),
+    pub biome_check_pos: IVec3,
 }
 
-/// Center-piece state produced before vanilla runs the `GenerationStub` piece builder.
 struct StartedAssembly {
     pieces: Vec<PlacedPiece>,
-    biome_check_pos: (i32, i32, i32),
+    biome_check_pos: IVec3,
 }
 
 /// Vanilla's `JigsawPlacement.addPieces` before the lazy `GenerationStub` child builder.
-/// This must stop after the center piece so invalid start biomes do not assemble
-/// full village/trial/ancient-city trees.
 #[expect(
     clippy::too_many_arguments,
     reason = "matches vanilla's addPieces call surface"
@@ -593,60 +568,47 @@ fn start_assembly(
         return None;
     }
 
-    let (anchor_offset_x, anchor_offset_y, anchor_offset_z) =
-        if let Some(ref jigsaw_name) = config.start_jigsaw_name {
-            let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
-            let j = jigsaws.iter().find(|j| j.name == jigsaw_name)?;
-            (j.pos.0, j.pos.1, j.pos.2)
-        } else {
-            (0, 0, 0)
-        };
-
-    // Move piece so anchor aligns with start position.
-    let adjusted_x = start_x - anchor_offset_x;
-    let adjusted_y = start_y - anchor_offset_y;
-    let adjusted_z = start_z - anchor_offset_z;
-
-    let center_bb = element_bounding_box(
-        center_element,
-        templates,
-        adjusted_x,
-        adjusted_y,
-        adjusted_z,
-        center_rotation,
-    )?;
-
-    let bottom_y = if config.project_start_to_heightmap.is_some() {
-        let mid_x = java_center(center_bb.min_x, center_bb.max_x);
-        let mid_z = java_center(center_bb.min_z, center_bb.max_z);
-        start_y + get_height(mid_x, mid_z)
+    let anchor_offset = if let Some(ref jigsaw_name) = config.start_jigsaw_name {
+        let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
+        let j = jigsaws.iter().find(|j| j.name == jigsaw_name)?;
+        j.pos
     } else {
-        adjusted_y
+        IVec3::ZERO
     };
 
-    // Move center piece to projected height.
-    let ground_level_delta = center_element.projection().ground_level_delta();
-    let dy = bottom_y - (center_bb.min_y + ground_level_delta);
-    let center_bb = BoundingBox::new(
-        center_bb.min_x,
-        center_bb.min_y + dy,
-        center_bb.min_z,
-        center_bb.max_x,
-        center_bb.max_y + dy,
-        center_bb.max_z,
+    let adjusted = IVec3::new(
+        start_x - anchor_offset.x,
+        start_y - anchor_offset.y,
+        start_z - anchor_offset.z,
     );
-    let adjusted_y = adjusted_y + dy;
 
-    // Dimension padding. Vanilla's `getMaxY()` is inclusive (= minY + height - 1).
+    let center_bb = element_bounding_box(center_element, templates, adjusted, center_rotation)?;
+
+    let bottom_y = if config.project_start_to_heightmap.is_some() {
+        let mid_x = java_center(center_bb.min_x(), center_bb.max_x());
+        let mid_z = java_center(center_bb.min_z(), center_bb.max_z());
+        start_y + get_height(mid_x, mid_z)
+    } else {
+        adjusted.y
+    };
+
+    let ground_level_delta = center_element.projection().ground_level_delta();
+    let dy = bottom_y - (center_bb.min_y() + ground_level_delta);
+    let center_bb = BoundingBox::new(
+        IVec3::new(center_bb.min_x(), center_bb.min_y() + dy, center_bb.min_z()),
+        IVec3::new(center_bb.max_x(), center_bb.max_y() + dy, center_bb.max_z()),
+    );
+    let adjusted_y = adjusted.y + dy;
+
     let padding = &config.dimension_padding;
-    if center_bb.min_y < min_y + padding.bottom || center_bb.max_y > max_y - 1 - padding.top {
+    if center_bb.min_y() < min_y + padding.bottom || center_bb.max_y() > max_y - 1 - padding.top {
         return None;
     }
 
     let pieces = vec![PlacedPiece {
         element: center_element.clone(),
         template_location: element_location(center_element).cloned(),
-        position: (adjusted_x, adjusted_y, adjusted_z),
+        position: IVec3::new(adjusted.x, adjusted_y, adjusted.z),
         rotation: center_rotation,
         bounding_box: center_bb,
         assembly_bb: center_bb,
@@ -656,11 +618,10 @@ fn start_assembly(
         junctions: Vec::new(),
     }];
 
-    // GenerationStub center.
-    let center_stub_x = java_center(center_bb.min_x, center_bb.max_x);
-    let center_stub_z = java_center(center_bb.min_z, center_bb.max_z);
-    let center_stub_y = bottom_y + anchor_offset_y;
-    let biome_check_pos = (center_stub_x, center_stub_y, center_stub_z);
+    let center_stub_x = java_center(center_bb.min_x(), center_bb.max_x());
+    let center_stub_z = java_center(center_bb.min_z(), center_bb.max_z());
+    let center_stub_y = bottom_y + anchor_offset.y;
+    let biome_check_pos = IVec3::new(center_stub_x, center_stub_y, center_stub_z);
 
     Some(StartedAssembly {
         pieces,
@@ -699,29 +660,30 @@ fn finish_assembly<'a>(
         };
     };
     let center_bb = center_piece.assembly_bb;
-    let (center_stub_x, center_stub_y, center_stub_z) = biome_check_pos;
+    let center_stub_x = biome_check_pos.x;
+    let center_stub_y = biome_check_pos.y;
+    let center_stub_z = biome_check_pos.z;
 
-    // Vanilla centers the constraint on `(centerX, centerY, centerZ)`, NOT on BB
-    // corners. Uses `+1` on the max side for AABB, but integer-BB collision with
-    // `[center - maxDist, center + maxDist]` is equivalent.
     let max_dist = config.max_distance_from_center;
     let constraint_bb = BoundingBox::new(
-        center_stub_x - max_dist,
-        (center_stub_y - max_dist).max(min_y + config.dimension_padding.bottom),
-        center_stub_z - max_dist,
-        center_stub_x + max_dist,
-        (center_stub_y + max_dist).min(max_y - 1 - config.dimension_padding.top),
-        center_stub_z + max_dist,
+        IVec3::new(
+            center_stub_x - max_dist,
+            (center_stub_y - max_dist).max(min_y + config.dimension_padding.bottom),
+            center_stub_z - max_dist,
+        ),
+        IVec3::new(
+            center_stub_x + max_dist,
+            (center_stub_y + max_dist).min(max_y - 1 - config.dimension_padding.top),
+            center_stub_z + max_dist,
+        ),
     );
 
-    // Index 0 = global collision context.
     let mut free_spaces: Vec<FreeSpace> = vec![FreeSpace {
         constraint: constraint_bb,
         occupied: vec![center_bb],
     }];
     let mut jigsaw_cache = JigsawTransformCache::default();
     let mut pool_template_cache = PoolTemplateCache::default();
-    // (piece_index, depth, placement_priority, context_idx)
     let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
 
     try_placing_children(
@@ -742,7 +704,6 @@ fn finish_assembly<'a>(
     );
 
     while !queue.is_empty() {
-        // Stable sort keeps insertion order within equal priorities.
         queue.sort_by_key(|entry| Reverse(entry.2));
         let (piece_idx, depth, _priority, context_idx) = queue.remove(0);
         try_placing_children(
@@ -845,8 +806,11 @@ impl Structure for JigsawStructure {
             return None;
         }
 
-        let (bx, by, bz) = started.biome_check_pos;
-        let biome = ctx.biome_at(bx, by, bz);
+        let biome = ctx.biome_at(
+            started.biome_check_pos.x,
+            started.biome_check_pos.y,
+            started.biome_check_pos.z,
+        );
         if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
@@ -871,12 +835,7 @@ impl Structure for JigsawStructure {
             .into_iter()
             .map(|piece| StructurePiece {
                 piece_type: Identifier::new_static("minecraft", "jigsaw"),
-                // Vanilla's `JigsawPlacement.tryPlacingChildren` mutates
-                // `targetBB` in place via the expansion hack, then stores it on
-                // `PoolElementStructurePiece`.
                 bounding_box: piece.assembly_bb,
-                // Vanilla's `PoolElementStructurePiece` constructor hardcodes
-                // `genDepth = 0` for every jigsaw piece.
                 gen_depth: 0,
                 orientation: None,
                 payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
@@ -892,7 +851,11 @@ impl Structure for JigsawStructure {
             .collect();
 
         Some(GenerationStub {
-            position: assembly.biome_check_pos,
+            position: (
+                assembly.biome_check_pos.x,
+                assembly.biome_check_pos.y,
+                assembly.biome_check_pos.z,
+            ),
             pieces,
         })
     }
@@ -937,10 +900,9 @@ fn try_placing_children<'a>(
         if jigsaws.is_empty() {
             return;
         }
+        let origin = source_piece.position;
         for jigsaw in &mut jigsaws {
-            jigsaw.pos.0 += source_piece.position.0;
-            jigsaw.pos.1 += source_piece.position.1;
-            jigsaw.pos.2 += source_piece.position.2;
+            jigsaw.pos += origin;
         }
         (
             jigsaws,
@@ -949,31 +911,20 @@ fn try_placing_children<'a>(
             source_piece.ground_level_delta,
         )
     };
-    let source_box_y = source_bb.min_y;
+    let source_box_y = source_bb.min_y();
     let source_rigid = source_projection == Projection::Rigid;
 
-    // Vanilla's sourceFree: tracks free space inside source piece for internal
-    // placements. Lazily initialized on first internal placement (matching
-    // vanilla's `MutableObject<VoxelShape>` that starts null).
     let mut internal_ctx_idx: Option<usize> = None;
     let mut candidates: Vec<&PoolElement> = Vec::new();
 
-    // For each source jigsaw, try to place one child
     'source_jigsaw: for source_jigsaw in &source_jigsaws {
         candidates.clear();
         let front = source_jigsaw.orientation.front_direction();
-        let (fdx, fdy, fdz) = front.offset();
-        let source_jigsaw_pos = source_jigsaw.pos;
-        let target_jigsaw_world = (
-            source_jigsaw_pos.0 + fdx,
-            source_jigsaw_pos.1 + fdy,
-            source_jigsaw_pos.2 + fdz,
-        );
+        let foff = front.offset_vec();
+        let target_jigsaw_world = source_jigsaw.pos + foff;
 
-        let source_jigsaw_local_y = source_jigsaw_pos.1 - source_box_y;
+        let source_jigsaw_local_y = source_jigsaw.pos.y - source_box_y;
 
-        // Resolve target pool — vanilla always resolves fallback from the pool,
-        // even if the main pool is empty
         let pool_key = alias_map
             .get(source_jigsaw.pool)
             .unwrap_or(source_jigsaw.pool);
@@ -983,11 +934,10 @@ fn try_placing_children<'a>(
             .and_then(|p| pools.get(&p.fallback))
             .filter(|p| !p.elements.is_empty());
 
-        // Determine whether target attaches inside source
         let attach_inside = source_bb.contains_xyz(
-            target_jigsaw_world.0,
-            target_jigsaw_world.1,
-            target_jigsaw_world.2,
+            target_jigsaw_world.x,
+            target_jigsaw_world.y,
+            target_jigsaw_world.z,
         );
 
         if depth != config.max_depth
@@ -1000,11 +950,8 @@ fn try_placing_children<'a>(
         }
 
         let placement_priority = source_jigsaw.placement_priority;
-
-        // Track source jigsaw base height (lazy, for terrain matching)
         let mut source_jigsaw_base_height: Option<i32> = None;
 
-        // Try each candidate
         for &candidate_element in &candidates {
             if candidate_element.is_empty() {
                 break;
@@ -1013,7 +960,6 @@ fn try_placing_children<'a>(
             let candidate_projection = candidate_element.projection();
             let candidate_rigid = candidate_projection == Projection::Rigid;
 
-            // Try each rotation
             let rotations = Rotation::get_shuffled(rng);
             for candidate_rotation in rotations {
                 let fallback_jigsaws;
@@ -1043,35 +989,23 @@ fn try_placing_children<'a>(
                         )
                     };
 
-                // Expansion hack: compute max child pool size for Y expansion.
-                // Vanilla: getBoundingBox(manager, ZERO, rotation) uses default
-                // StructurePlaceSettings with pivot=ZERO and mirror=NONE.
-                // Jigsaw positions are also transformed with pivot=ZERO.
                 let expand_to = if config.use_expansion_hack {
                     let hack_data =
                         element_location(candidate_element).and_then(|loc| templates.get(loc));
                     if let Some(template_data) = hack_data {
-                        let hack_box = candidate_rotation.get_bounding_box(
-                            0,
-                            0,
-                            0,
-                            template_data.size[0],
-                            template_data.size[1],
-                            template_data.size[2],
-                        );
-                        if hack_box.max_y - hack_box.min_y < 16 {
+                        let hack_box = candidate_rotation
+                            .get_bounding_box(IVec3::ZERO, IVec3::from(template_data.size));
+                        if hack_box.max_y() - hack_box.min_y() < 16 {
                             template_data
                                 .jigsaws
                                 .iter()
                                 .map(|j| {
-                                    let (rx, ry, rz) = candidate_rotation
-                                        .transform_pos(j.pos[0], j.pos[1], j.pos[2], 0, 0);
+                                    let pos = candidate_rotation
+                                        .transform_pos(IVec3::from(j.pos), IVec3::ZERO);
                                     let front =
                                         j.orientation.rotate(candidate_rotation).front_direction();
-                                    let front_off = front.offset();
-                                    let front_pos =
-                                        (rx + front_off.0, ry + front_off.1, rz + front_off.2);
-                                    if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2)
+                                    let front_pos = pos + front.offset_vec();
+                                    if !hack_box.contains_xyz(front_pos.x, front_pos.y, front_pos.z)
                                     {
                                         return 0;
                                     }
@@ -1099,7 +1033,6 @@ fn try_placing_children<'a>(
 
                 let mut candidate_bb_at_origin: Option<BoundingBox> = None;
 
-                // Try each target jigsaw
                 for target_jigsaw_idx in candidate_jigsaw_order {
                     let target_jigsaw = candidate_jigsaws[target_jigsaw_idx];
                     if !can_attach(source_jigsaw, &target_jigsaw) {
@@ -1108,74 +1041,66 @@ fn try_placing_children<'a>(
 
                     let target_jigsaw_local = target_jigsaw.pos;
 
-                    // Compute raw target position
-                    let raw_target_x = target_jigsaw_world.0 - target_jigsaw_local.0;
-                    let raw_target_z = target_jigsaw_world.2 - target_jigsaw_local.2;
+                    let raw_target = IVec3::new(
+                        target_jigsaw_world.x - target_jigsaw_local.x,
+                        0,
+                        target_jigsaw_world.z - target_jigsaw_local.z,
+                    );
 
-                    // Compute raw bounding box at that position
                     let raw_bb = if let Some(bb) = candidate_bb_at_origin {
-                        bb.moved(raw_target_x, 0, raw_target_z)
+                        bb.translate(IVec3::new(raw_target.x, 0, raw_target.z))
                     } else {
                         let Some(bb) = element_bounding_box(
                             candidate_element,
                             templates,
-                            0,
-                            0,
-                            0,
+                            IVec3::ZERO,
                             candidate_rotation,
                         ) else {
                             continue;
                         };
                         candidate_bb_at_origin = Some(bb);
-                        bb.moved(raw_target_x, 0, raw_target_z)
+                        bb.translate(IVec3::new(raw_target.x, 0, raw_target.z))
                     };
 
-                    let target_jigsaw_local_y = target_jigsaw_local.1;
-
-                    // Compute Y position
-                    let delta_y = source_jigsaw_local_y - target_jigsaw_local_y + fdy;
+                    let target_jigsaw_local_y = target_jigsaw_local.y;
+                    let delta_y = source_jigsaw_local_y - target_jigsaw_local_y + foff.y;
 
                     let target_box_y = if source_rigid && candidate_rigid {
                         source_box_y + delta_y
                     } else {
                         let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2)
+                            get_height(source_jigsaw.pos.x, source_jigsaw.pos.z)
                         });
                         base_height - target_jigsaw_local_y
                     };
 
-                    let y_offset = target_box_y - raw_bb.min_y;
+                    let y_offset = target_box_y - raw_bb.min_y();
                     let candidate_bb = BoundingBox::new(
-                        raw_bb.min_x,
-                        raw_bb.min_y + y_offset,
-                        raw_bb.min_z,
-                        raw_bb.max_x,
-                        raw_bb.max_y + y_offset,
-                        raw_bb.max_z,
+                        IVec3::new(raw_bb.min_x(), raw_bb.min_y() + y_offset, raw_bb.min_z()),
+                        IVec3::new(raw_bb.max_x(), raw_bb.max_y() + y_offset, raw_bb.max_z()),
                     );
-                    let target_position = (raw_target_x, raw_bb.min_y + y_offset, raw_target_z);
+                    let target_position =
+                        IVec3::new(raw_target.x, raw_bb.min_y() + y_offset, raw_target.z);
 
-                    // Apply expansion hack: expand BB vertically to reserve space
-                    // for potential children during assembly. The expanded BB is used
-                    // for collision and is_inside checks; the original BB is stored
-                    // in the piece for beardifier and world save.
                     let expanded_bb = if expand_to > 0 {
-                        let new_size = (expand_to + 1).max(candidate_bb.max_y - candidate_bb.min_y);
+                        let new_size =
+                            (expand_to + 1).max(candidate_bb.max_y() - candidate_bb.min_y());
                         BoundingBox::new(
-                            candidate_bb.min_x,
-                            candidate_bb.min_y,
-                            candidate_bb.min_z,
-                            candidate_bb.max_x,
-                            candidate_bb.min_y + new_size,
-                            candidate_bb.max_z,
+                            IVec3::new(
+                                candidate_bb.min_x(),
+                                candidate_bb.min_y(),
+                                candidate_bb.min_z(),
+                            ),
+                            IVec3::new(
+                                candidate_bb.max_x(),
+                                candidate_bb.min_y() + new_size,
+                                candidate_bb.max_z(),
+                            ),
                         )
                     } else {
                         candidate_bb
                     };
 
-                    // Collision check — vanilla tracks free space hierarchically:
-                    // internal children use sourceFree (this piece's internal space),
-                    // external children use contextFree (parent's context).
                     let effective_ctx = if attach_inside {
                         *internal_ctx_idx.get_or_insert_with(|| {
                             free_spaces.push(FreeSpace {
@@ -1192,41 +1117,36 @@ fn try_placing_children<'a>(
                         continue;
                     }
 
-                    // Success! Place this piece — subtract from the collision domain.
                     free_spaces[effective_ctx].occupied.push(expanded_bb);
 
-                    // Compute ground level delta
                     let target_ground_level_delta = if candidate_rigid {
                         source_ground_level_delta - delta_y
                     } else {
                         candidate_projection.ground_level_delta()
                     };
 
-                    // Compute junction Y
                     let junction_y = if source_rigid {
                         source_box_y + source_jigsaw_local_y
                     } else if candidate_rigid {
                         target_box_y + target_jigsaw_local_y
                     } else {
                         let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2)
+                            get_height(source_jigsaw.pos.x, source_jigsaw.pos.z)
                         });
                         base_height + delta_y / 2
                     };
 
-                    // Add junction to source piece
                     pieces[source_idx].junctions.push(JigsawJunction {
-                        source_x: target_jigsaw_world.0,
-                        source_ground_y: junction_y - source_jigsaw_local_y
-                            + source_ground_level_delta,
-                        source_z: target_jigsaw_world.2,
+                        source_pos: IVec3::new(
+                            target_jigsaw_world.x,
+                            junction_y - source_jigsaw_local_y + source_ground_level_delta,
+                            target_jigsaw_world.z,
+                        ),
                         delta_y,
                         dest_projection: candidate_projection,
                     });
 
                     let new_piece_idx = pieces.len();
-
-                    // Create target piece
                     let mut target_piece = PlacedPiece {
                         element: candidate_element.clone(),
                         template_location: element_location(candidate_element).cloned(),
@@ -1240,26 +1160,22 @@ fn try_placing_children<'a>(
                         junctions: Vec::new(),
                     };
 
-                    // Add junction to target piece
                     target_piece.junctions.push(JigsawJunction {
-                        source_x: source_jigsaw_pos.0,
-                        source_ground_y: junction_y - target_jigsaw_local_y
-                            + target_ground_level_delta,
-                        source_z: source_jigsaw_pos.2,
+                        source_pos: IVec3::new(
+                            source_jigsaw.pos.x,
+                            junction_y - target_jigsaw_local_y + target_ground_level_delta,
+                            source_jigsaw.pos.z,
+                        ),
                         delta_y: -delta_y,
                         dest_projection: source_projection,
                     });
 
                     pieces.push(target_piece);
 
-                    // Queue for further expansion if within depth limit.
-                    // The child inherits the effective collision context:
-                    // internal children get sourceFree, external get contextFree.
                     if depth < config.max_depth {
                         queue.push((new_piece_idx, depth + 1, placement_priority, effective_ctx));
                     }
 
-                    // Break to next source jigsaw (one target per jigsaw)
                     continue 'source_jigsaw;
                 }
             }

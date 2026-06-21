@@ -79,22 +79,22 @@ impl BlockBehavior for WallBlock {
         // i.e. the opposite of the direction toward the neighbor.
         let north = connects_to(
             north_state,
-            north_state.is_face_sturdy(Direction::South),
+            north_state.is_face_sturdy_at(pos, Direction::South),
             Direction::South,
         );
         let east = connects_to(
             east_state,
-            east_state.is_face_sturdy(Direction::West),
+            east_state.is_face_sturdy_at(pos, Direction::West),
             Direction::West,
         );
         let south = connects_to(
             south_state,
-            south_state.is_face_sturdy(Direction::North),
+            south_state.is_face_sturdy_at(pos, Direction::North),
             Direction::North,
         );
         let west = connects_to(
             west_state,
-            west_state.is_face_sturdy(Direction::East),
+            west_state.is_face_sturdy_at(pos, Direction::East),
             Direction::East,
         );
 

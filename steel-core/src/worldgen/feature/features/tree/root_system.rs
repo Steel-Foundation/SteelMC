@@ -41,6 +41,12 @@ impl FeatureDecorationRunner {
     ) -> bool {
         for y in 0..config.root_column_max_height {
             *tree_pos = tree_pos.above();
+            if region.height_at(HeightmapType::WorldSurfaceWg, tree_pos.x(), tree_pos.z())
+                < tree_pos.y()
+            {
+                return false;
+            }
+
             if !Self::test_block_predicate(
                 region,
                 registry,
@@ -95,6 +101,22 @@ impl FeatureDecorationRunner {
                 config.allowed_vertical_water_for_tree,
             ) {
                 return false;
+            }
+        }
+
+        if config.level_test_distance > 0 {
+            for direction in [
+                Direction::South,
+                Direction::West,
+                Direction::North,
+                Direction::East,
+            ] {
+                let corner_pos = pos.relative_n(direction, config.level_test_distance);
+                let below = region.block_state(corner_pos.below_n(config.max_level_deviation));
+                let above = region.block_state(corner_pos.above_n(config.max_level_deviation));
+                if below.is_air() || !above.is_air() {
+                    return false;
+                }
             }
         }
 
@@ -155,10 +177,7 @@ impl FeatureDecorationRunner {
             );
 
             let state = region.block_state(pos);
-            if registry
-                .blocks
-                .is_in_tag(state.get_block(), &config.root_replaceable)
-            {
+            if Self::block_matches_holder_set(state.get_block(), &config.root_replaceable) {
                 let replacement = Self::sample_block_state_provider(
                     region,
                     registry,
@@ -202,11 +221,12 @@ impl FeatureDecorationRunner {
                 pos,
             );
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            if behavior.can_survive(state, region, pos)
-                && region
-                    .block_state(pos.above())
-                    .is_face_sturdy(Direction::Down)
-            {
+            if behavior.can_survive(state, region, pos) && {
+                let above_pos = pos.above();
+                region
+                    .block_state(above_pos)
+                    .is_face_sturdy_at(above_pos, Direction::Down)
+            } {
                 let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
             }
         }

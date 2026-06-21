@@ -2,13 +2,11 @@
 //!
 //! Handles authentication with Mojang's session servers for online mode.
 
-use reqwest::StatusCode;
+use reqwest::{StatusCode, Url};
 use steel_core::player::GameProfile;
 use thiserror::Error;
 
-const MOJANG_AUTH_URL: &str =
-    "https://sessionserver.mojang.com/session/minecraft/hasJoined?username=";
-const SERVER_ID_ARG: &str = "&serverId=";
+const DEFAULT_AUTH_SERVER: &str = "https://sessionserver.mojang.com/session/minecraft/hasJoined";
 
 /// An error that can occur during Mojang authentication.
 #[derive(Error, Debug)]
@@ -31,6 +29,9 @@ pub enum AuthError {
     /// Failed to parse JSON into Game Profile.
     #[error("Failed to parse JSON into Game Profile")]
     FailedParse,
+    /// Authentication server URL is invalid.
+    #[error("Invalid authentication server URL")]
+    InvalidAuthServer(String),
     /// An unknown status code was returned.
     #[error("Unknown Status Code {0}")]
     UnknownStatusCode(StatusCode),
@@ -58,22 +59,18 @@ pub enum TextureError {
 
 const MAX_RETRIES: u32 = 3;
 
-/// Authenticates a player with Mojang's servers.
+/// Authenticates a player with the configured session server.
 pub async fn mojang_authenticate(
     username: &str,
     server_hash: &str,
+    auth_server: Option<&str>,
 ) -> Result<GameProfile, AuthError> {
-    let cap = MOJANG_AUTH_URL.len() + SERVER_ID_ARG.len() + username.len() + server_hash.len();
-    let mut auth_url = String::with_capacity(cap);
-    auth_url += MOJANG_AUTH_URL;
-    auth_url += username;
-    auth_url += SERVER_ID_ARG;
-    auth_url += server_hash;
+    let auth_url = build_auth_url(auth_server, username, server_hash)?;
 
     let mut last_error = AuthError::FailedResponse;
 
     for _ in 0..MAX_RETRIES {
-        let Ok(response) = reqwest::get(&auth_url).await else {
+        let Ok(response) = reqwest::get(auth_url.clone()).await else {
             last_error = AuthError::FailedResponse;
             continue;
         };
@@ -90,6 +87,20 @@ pub async fn mojang_authenticate(
     log::warn!("Player {username} auth failed");
 
     Err(last_error)
+}
+
+fn build_auth_url(
+    auth_server: Option<&str>,
+    username: &str,
+    server_hash: &str,
+) -> Result<Url, AuthError> {
+    let endpoint = auth_server.unwrap_or(DEFAULT_AUTH_SERVER);
+    let mut url =
+        Url::parse(endpoint).map_err(|_| AuthError::InvalidAuthServer(endpoint.to_string()))?;
+    url.query_pairs_mut()
+        .append_pair("username", username)
+        .append_pair("serverId", server_hash);
+    Ok(url)
 }
 
 /// Converts a signed bytes big endian to a hex string.
@@ -200,6 +211,31 @@ mod tests {
         assert_eq!(
             signed_bytes_be_to_hex(&sha1::Sha1::digest(b"simon")),
             "88e16a1019277b15d58faf0541e11910eb756f6"
+        );
+    }
+
+    #[test]
+    fn auth_url_defaults_to_mojang_session_server() {
+        let url = build_auth_url(None, "Steve", "abc123").expect("auth URL builds");
+
+        assert_eq!(
+            url.as_str(),
+            "https://sessionserver.mojang.com/session/minecraft/hasJoined?username=Steve&serverId=abc123"
+        );
+    }
+
+    #[test]
+    fn auth_url_uses_configured_endpoint() {
+        let url = build_auth_url(
+            Some("https://auth.example.com/session/minecraft/hasJoined"),
+            "Steve",
+            "abc123",
+        )
+        .expect("auth URL builds");
+
+        assert_eq!(
+            url.as_str(),
+            "https://auth.example.com/session/minecraft/hasJoined?username=Steve&serverId=abc123"
         );
     }
 }

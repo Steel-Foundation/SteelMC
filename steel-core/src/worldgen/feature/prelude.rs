@@ -7,14 +7,14 @@ pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
-    properties::DripstoneThickness, properties::WallSide, shapes,
+    properties::SpeleothemThickness, properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
     AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,
     BasaltColumnsConfiguration, BendingTrunkPlacer, BlobFoliagePlacer, BlockBlobConfiguration,
-    BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate, BlockRefList, BlockStateData,
-    BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer, ConfiguredFeatureKind,
-    ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
+    BlockColumnConfiguration, BlockHolderSet, BlockPileConfiguration, BlockPredicate,
+    BlockStateData, BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer,
+    ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
     DripstoneClusterConfiguration, DualNoiseProvider, EndGatewayConfiguration, EndSpike,
     EndSpikeConfiguration, FallenTreeConfiguration, FeatureHeightmap, FeatureNoiseParameters,
     FeatureSize, FluidStateData, FoliagePlacer, FossilConfiguration, GeodeBlockSettings,
@@ -25,10 +25,10 @@ pub(super) use steel_registry::feature::{
     PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
     PlacementModifier, PointedDripstoneConfiguration, RandomSpreadFoliagePlacer, RootPlacer,
     RootSystemConfiguration, RuleTest, SculkPatchConfiguration, SeaPickleConfiguration,
-    SeagrassConfiguration, SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration,
-    TreeConfiguration, TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
-    UnderwaterMagmaConfiguration, UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration,
-    VerticalSurface,
+    SeagrassConfiguration, SimpleBlockConfiguration, SpeleothemClusterConfiguration,
+    SpeleothemConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    TreeDecorator, TrunkPlacer, TwistingVinesConfiguration, UnderwaterMagmaConfiguration,
+    UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration, VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{
@@ -41,7 +41,7 @@ pub(super) use steel_utils::random::{
 };
 pub(super) use steel_utils::types::UpdateFlags;
 pub(super) use steel_utils::value_providers::IntProvider;
-pub(super) use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, SectionPos};
+pub(super) use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, Rotation, SectionPos};
 pub(super) use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 
 pub(super) use crate::behavior::BLOCK_BEHAVIORS;

@@ -1,0 +1,11 @@
+services:
+  steel:
+    image: ${STEEL_IMAGE:-ghcr.io/steel-foundation/steelmc:nightly}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 25565:25565
+    volumes:
+      - ./config:/config
+      - ./saves:/saves

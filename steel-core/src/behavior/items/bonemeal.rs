@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
-    blocks::{block_state_ext::BlockStateExt, shapes::is_shape_full_block},
+    blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
     vanilla_blocks,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
@@ -66,7 +66,11 @@ impl BoneMealItem {
                     rng.random_range(0i32..3) - 1,
                 );
 
-                if is_shape_full_block(world.get_block_state(new_pos).get_collision_shape()) {
+                if is_offset_shape_full_block(
+                    world
+                        .get_block_state(new_pos)
+                        .get_collision_shape_at(new_pos),
+                ) {
                     continue 'outer;
                 }
             }
@@ -104,7 +108,8 @@ impl ItemBehavior for BoneMealItem {
             return InteractionResult::Success;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
-        let is_clicked_face_sturdy = state.is_face_sturdy(context.hit_result.direction);
+        let is_clicked_face_sturdy =
+            state.is_face_sturdy_at(context.hit_result.block_pos, context.hit_result.direction);
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
                 context.world,

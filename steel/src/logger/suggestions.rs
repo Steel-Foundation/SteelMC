@@ -1,9 +1,9 @@
 use crate::{
     SERVER,
-    logger::{Move, output::Output},
+    logger::{Move, output::Output, terminal_height},
 };
 use crossterm::{
-    cursor::{MoveRight, MoveUp, RestorePosition, SavePosition},
+    cursor::{RestorePosition, SavePosition},
     style::{
         Color::{DarkGrey, Yellow},
         ResetColor, SetForegroundColor,
@@ -34,7 +34,7 @@ impl Completer {
 /// Modify suggestions
 impl Completer {
     pub fn update(&mut self, out: &mut Output, pos: usize) {
-        let char_start = if out.text.is_empty() {
+        let char_start = if pos == 0 {
             0
         } else {
             let (start, size) = out.char_pos(pos.saturating_sub(1));
@@ -63,16 +63,19 @@ impl Completer {
             self.selected = 0;
             self.error = true;
         } else {
+            self.selected = self.selected.min(self.suggestions.len() - 1);
             self.error = false;
         }
     }
     pub fn rewrite(&mut self, out: &mut Output, dir: Move) -> Result<()> {
-        // Goes to the end
-        out.cursor_to(out.get_current_pos(), out.get_end())?;
-        // Clears
+        out.cursor_to_relative(out.pos)?;
+        if out.is_at_end() {
+            write!(out, "{}", Clear(ClearType::UntilNewLine))?;
+        }
+        write!(out, "{SavePosition}\r\n")?;
         write!(out, "{}", Clear(ClearType::FromCursorDown))?;
         if self.suggestions.is_empty() {
-            out.cursor_to(out.get_end(), out.get_current_pos())?;
+            write!(out, "{RestorePosition}")?;
             out.flush()?;
             return Ok(());
         }
@@ -84,21 +87,23 @@ impl Completer {
             Move::Down => self.selected = (self.selected + 1) % len,
             Move::None => (),
         }
+
         // Updates the screen width
         let width = (super::terminal_width() / 20).max(1);
-        let grid_size = width * 3;
-        let start = (self.selected / grid_size) * grid_size;
-        let mut height = 0u16;
-        'outer: for w in 0..width {
-            for h in 0..3 {
-                let pos = start + w * 3 + h;
+        let completion_height = 3.min(terminal_height().saturating_sub(4));
+        let grid_size = width * completion_height;
+        if grid_size == 0 {
+            write!(out, "{RestorePosition}")?;
+            out.flush()?;
+            return Ok(());
+        }
+        let start = (self.selected.checked_div(grid_size).unwrap_or(0)) * grid_size;
+        for h in 0..completion_height {
+            write!(out, "\r")?;
+            for w in 0..width {
+                let pos = start + w * completion_height + h;
                 if pos >= self.suggestions.len() {
-                    break 'outer;
-                }
-
-                writeln!(out, "\r")?;
-                if w != 0 {
-                    write!(out, "{}", MoveRight(w as u16 * 20))?;
+                    break;
                 }
 
                 let color = if pos == self.selected {
@@ -118,17 +123,12 @@ impl Completer {
                     },
                     ResetColor
                 )?;
-                height += 1;
             }
-            write!(out, "{}", MoveUp(3))?;
-            height = 0;
+            if h + 1 < completion_height {
+                writeln!(out)?;
+            }
         }
-        let y = height + out.get_end().1 as u16;
-        let x = out.get_current_pos().0;
-        if y != 0 {
-            write!(out, "{}", MoveUp(y))?;
-        }
-        write!(out, "\r{}", MoveRight(x as u16))?;
+        write!(out, "{RestorePosition}")?;
 
         let char_pos = if out.is_at_start() {
             0

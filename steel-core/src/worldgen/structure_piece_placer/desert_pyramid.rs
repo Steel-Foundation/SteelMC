@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use glam::IVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{Registry, vanilla_blocks};
@@ -83,10 +84,10 @@ impl StructurePiecePlacer {
         let Some(structure_box) = StructureStart::compute_bounding_box(pieces, 0) else {
             return;
         };
-        let center = structure_box.get_center();
+        let center = structure_box.center();
         let mut seed_random = LegacyRandom::from_seed(region.seed() as u64);
         let splitter = seed_random.next_positional();
-        let mut positional_random = splitter.at(center.x(), center.y(), center.z());
+        let mut positional_random = splitter.at(center.x, center.y, center.z);
         Self::shuffle_block_positions(&mut unique_sand_placements, &mut positional_random);
         let mut suspicious_sand_to_place = unique_sand_placements
             .len()
@@ -96,7 +97,7 @@ impl StructurePiecePlacer {
             if suspicious_sand_to_place > 0 {
                 suspicious_sand_to_place -= 1;
                 Self::place_desert_pyramid_suspicious_sand(region, clip, pos);
-            } else if clip.is_inside(pos) {
+            } else if clip.contains_blockpos(pos) {
                 let _ = region.set_block_state(
                     pos,
                     vanilla_blocks::SAND.default_state(),
@@ -111,7 +112,7 @@ impl StructurePiecePlacer {
         clip: BoundingBox,
         pos: BlockPos,
     ) {
-        if !clip.is_inside(pos) {
+        if !clip.contains_blockpos(pos) {
             return;
         }
         let state = vanilla_blocks::SUSPICIOUS_SAND.default_state();
@@ -155,8 +156,8 @@ impl DesertPyramidPlacer<'_, '_> {
 
         let mut lowest_ground_height = self.region.max_y_exclusive() + 1;
         let mut found_position_within_bounding_box = false;
-        for z in self.bounding_box.min_z..=self.bounding_box.max_z {
-            for x in self.bounding_box.min_x..=self.bounding_box.max_x {
+        for z in self.bounding_box.min_z()..=self.bounding_box.max_z() {
+            for x in self.bounding_box.min_x()..=self.bounding_box.max_x() {
                 lowest_ground_height = lowest_ground_height.min(self.region.height_at(
                     HeightmapType::MotionBlockingNoLeaves,
                     x,
@@ -171,9 +172,8 @@ impl DesertPyramidPlacer<'_, '_> {
         }
 
         self.data.height_position = Some(lowest_ground_height);
-        let dy = lowest_ground_height - self.bounding_box.min_y + offset;
-        self.bounding_box.min_y += dy;
-        self.bounding_box.max_y += dy;
+        let dy = lowest_ground_height - self.bounding_box.min_y() + offset;
+        *self.bounding_box = self.bounding_box.translate(IVec3::new(0, dy, 0));
         true
     }
 
@@ -417,7 +417,7 @@ impl DesertPyramidPlacer<'_, '_> {
         for direction in HORIZONTAL_PLANE {
             let chest_index = direction_2d_data_value(direction);
             if !self.data.has_placed_chest[chest_index] {
-                let (dx, _, dz) = direction.offset();
+                let (dx, dz) = direction.offset_xz();
                 let chest_pos = self.world_pos(10 + dx * 2, -11, 10 + dz * 2);
                 self.data.has_placed_chest[chest_index] = StructurePiecePlacer::create_loot_chest(
                     self.region,
@@ -601,7 +601,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn fill_column_down(&mut self, state: BlockStateId, x: i32, start_y: i32, z: i32) {
         let mut pos = self.world_pos(x, start_y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -617,7 +617,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn place_block(&mut self, state: BlockStateId, x: i32, y: i32, z: i32) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -632,7 +632,7 @@ impl DesertPyramidPlacer<'_, '_> {
 
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let pos = self.world_pos(x, y, z);
-        if self.clip.is_inside(pos) {
+        if self.clip.contains_blockpos(pos) {
             self.region.block_state(pos)
         } else {
             vanilla_blocks::AIR.default_state()
@@ -688,16 +688,20 @@ impl DesertPyramidPlacer<'_, '_> {
 
     const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min_y
+            y + self.bounding_box.min_y()
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
             None | Some(Direction::Up | Direction::Down) => (x, z),
-            Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
-            Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
-            Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
-            Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
+            Some(Direction::North) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.max_z() - z)
+            }
+            Some(Direction::South) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.min_z() + z)
+            }
+            Some(Direction::West) => (self.bounding_box.max_x() - z, self.bounding_box.min_z() + x),
+            Some(Direction::East) => (self.bounding_box.min_x() + z, self.bounding_box.min_z() + x),
         };
         BlockPos::new(world_x, world_y, world_z)
     }

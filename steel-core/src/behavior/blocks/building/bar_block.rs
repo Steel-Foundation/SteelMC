@@ -131,7 +131,8 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
     if excluded {
         return false;
     }
-    if !excluded && neighbor_state.is_face_sturdy(direction)
+    //TODO(jonas) fix pos
+    if !excluded && neighbor_state.is_face_sturdy_at(BlockPos::new(0,0,0), direction)
         || neighbor_block.has_tag(&BlockTag::BARS)
         || neighbor_block.has_tag(&BlockTag::WALLS)
         || neighbor_block.has_tag(&BlockTag::C_GLASS_PANES)
@@ -148,7 +149,9 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
         Direction::Up => Direction::Down,
         Direction::Down => Direction::Up,
     };
-    neighbor_state.is_face_sturdy(opposite)
+    // neighbor_state.is_face_sturdy_at(pos, opposite)
+    //TODO(Jonas fix)
+    true
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.

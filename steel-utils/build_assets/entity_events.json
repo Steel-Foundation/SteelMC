@@ -246,5 +246,9 @@
   {
     "name": "ravager_roared",
     "value": 69
+  },
+  {
+    "name": "tnt_prime",
+    "value": 70
   }
 ]

@@ -16,6 +16,7 @@ struct LargeDripstone {
 struct WindOffsetter {
     origin_y: i32,
     wind_speed: Option<(f64, f64)>,
+    max_offset: i32,
 }
 
 impl FeatureDecorationRunner {
@@ -34,7 +35,12 @@ impl FeatureDecorationRunner {
             origin,
             config.floor_to_ceiling_search_range,
             Self::is_empty_or_water,
-            |state| Self::is_dripstone_base(state) || state.get_block() == &vanilla_blocks::LAVA,
+            |state| {
+                let block = state.get_block();
+                block == &vanilla_blocks::DRIPSTONE_BLOCK
+                    || Self::block_matches_holder_set(block, &config.replaceable_blocks)
+                    || block == &vanilla_blocks::LAVA
+            },
         ) else {
             return false;
         };
@@ -71,7 +77,7 @@ impl FeatureDecorationRunner {
         );
         let wind =
             if stalactite.is_suitable_for_wind(config) && stalagmite.is_suitable_for_wind(config) {
-                WindOffsetter::new(origin.y(), random, config.wind_speed)
+                WindOffsetter::new(origin.y(), random, config.wind_speed, 16 - radius)
             } else {
                 WindOffsetter::no_wind()
             };
@@ -274,7 +280,12 @@ impl LargeDripstone {
 }
 
 impl WindOffsetter {
-    fn new(origin_y: i32, random: &mut WorldgenRandom, wind_speed_range: FloatProvider) -> Self {
+    fn new(
+        origin_y: i32,
+        random: &mut WorldgenRandom,
+        wind_speed_range: FloatProvider,
+        max_offset: i32,
+    ) -> Self {
         let speed = wind_speed_range.sample(random);
         let direction = FeatureDecorationRunner::random_f32_between(random, 0.0, PI);
         Self {
@@ -283,6 +294,7 @@ impl WindOffsetter {
                 f64::from(trig::cos(f64::from(direction)) * speed),
                 f64::from(trig::sin(f64::from(direction)) * speed),
             )),
+            max_offset,
         }
     }
 
@@ -290,6 +302,7 @@ impl WindOffsetter {
         Self {
             origin_y: 0,
             wind_speed: None,
+            max_offset: 0,
         }
     }
 
@@ -300,9 +313,9 @@ impl WindOffsetter {
 
         let dy = self.origin_y - pos.y();
         pos.offset(
-            floor(wind_x * f64::from(dy)),
+            floor(wind_x * f64::from(dy)).clamp(-self.max_offset, self.max_offset),
             0,
-            floor(wind_z * f64::from(dy)),
+            floor(wind_z * f64::from(dy)).clamp(-self.max_offset, self.max_offset),
         )
     }
 }

@@ -132,7 +132,13 @@ impl JavaTcpClient {
 
             let server_hash = signed_bytes_be_to_hex(server_hash);
 
-            match mojang_authenticate(&profile.name, &server_hash).await {
+            match mojang_authenticate(
+                &profile.name,
+                &server_hash,
+                self.server.config.auth_server.as_deref(),
+            )
+            .await
+            {
                 Ok(new_profile) => *profile = new_profile,
                 Err(error) => {
                     self.kick(match error {
@@ -142,6 +148,14 @@ impl JavaTcpClient {
                         AuthError::UnverifiedUsername => TextComponent::translated(
                             translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME.msg(),
                         ),
+                        AuthError::InvalidAuthServer(auth_server) => {
+                            log::error!(
+                                "Invalid authentication server URL configured: {auth_server}"
+                            );
+                            TextComponent::translated(
+                                translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
+                            )
+                        }
                         e => e.to_string().into(),
                     })
                     .await;
@@ -177,9 +191,8 @@ impl JavaTcpClient {
         }
 
         self.send_bare_packet_now(CLoginFinished::new(
-            profile.id,
-            &profile.name,
-            &profile.properties,
+            profile.into(),
+            self.connection_session.session_id(),
         ))
         .await;
 

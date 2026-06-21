@@ -1,3 +1,4 @@
+use glam::IVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -287,8 +288,7 @@ impl ChunkGenerator for FlatChunkGenerator {
         }
     }
 
-    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
-    }
+    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(IVec3) -> u16) {}
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 

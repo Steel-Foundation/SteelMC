@@ -2,6 +2,7 @@
 //!
 //! The client must respond with `SAcceptTeleportation` containing the same teleport ID.
 
+use glam::DVec3;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_PLAYER_POSITION;
 
@@ -80,18 +81,10 @@ pub struct CPlayerPosition {
     /// Unique teleport ID that must be echoed back by the client.
     #[write(as = VarInt)]
     pub teleport_id: i32,
-    /// Target X position
-    pub x: f64,
-    /// Target Y position
-    pub y: f64,
-    /// Target Z position
-    pub z: f64,
-    /// Target velocity X (delta movement)
-    pub velocity_x: f64,
-    /// Target velocity Y (delta movement)
-    pub velocity_y: f64,
-    /// Target velocity Z (delta movement)
-    pub velocity_z: f64,
+    /// Target position
+    pub pos: DVec3,
+    /// Target velocity (delta movement)
+    pub vel: DVec3,
     /// Target yaw (Y rotation)
     pub yaw: f32,
     /// Target pitch (X rotation)
@@ -103,15 +96,11 @@ pub struct CPlayerPosition {
 impl CPlayerPosition {
     /// Creates a new absolute teleport packet.
     #[must_use]
-    pub fn absolute(teleport_id: i32, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> Self {
+    pub fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
         Self {
             teleport_id,
-            x,
-            y,
-            z,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
-            velocity_z: 0.0,
+            pos,
+            vel: DVec3::ZERO,
             yaw,
             pitch,
             relatives: RelativeMovement::NONE,
@@ -120,15 +109,11 @@ impl CPlayerPosition {
 
     /// Creates a teleport packet with relative rotation (keeps current rotation).
     #[must_use]
-    pub fn with_relative_rotation(teleport_id: i32, x: f64, y: f64, z: f64) -> Self {
+    pub fn with_relative_rotation(teleport_id: i32, pos: DVec3) -> Self {
         Self {
             teleport_id,
-            x,
-            y,
-            z,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
-            velocity_z: 0.0,
+            pos,
+            vel: DVec3::ZERO,
             yaw: 0.0,
             pitch: 0.0,
             relatives: RelativeMovement::ALL_ROTATION,
