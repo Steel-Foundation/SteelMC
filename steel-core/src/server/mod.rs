@@ -1432,6 +1432,7 @@ impl Server {
                 broadcast_changes = ?cm.broadcast_changes,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
+                tick_block_entities = ?cm.tick_block_entities,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
                 "Game tick slow"

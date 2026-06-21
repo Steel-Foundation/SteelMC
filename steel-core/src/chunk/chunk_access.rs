@@ -703,8 +703,7 @@ impl ChunkAccess {
 
     /// Ticks the chunk if it's a full chunk.
     ///
-    /// Drains ready scheduled ticks into the provided vecs, then processes
-    /// block entities, entities, and random ticks.
+    /// Drains ready scheduled ticks into the provided vecs, then processes random ticks.
     pub fn tick(
         &self,
         random_tick_speed: u32,
@@ -719,6 +718,31 @@ impl ChunkAccess {
                 ready_block_ticks,
                 ready_fluid_ticks,
             );
+        }
+    }
+
+    /// Drains ready scheduled ticks if this is a full chunk.
+    pub fn drain_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        if let Self::Full(chunk) = self {
+            chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        }
+    }
+
+    /// Ticks random blocks if this is a full chunk.
+    pub fn tick_random_blocks(&self, random_tick_speed: u32) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_random_blocks(random_tick_speed);
+        }
+    }
+
+    /// Ticks block entities if this is a full chunk.
+    pub fn tick_block_entities(&self) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_block_entities();
         }
     }
 }

@@ -70,7 +70,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN,
-    KEEP_INVENTORY, MAX_ENTITY_CRAMMING, SHOW_DEATH_MESSAGES,
+    KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
@@ -560,7 +560,6 @@ impl Player {
             let world = self.get_world();
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
-            self.push_entities(&world);
 
             // TODO: Implement remaining player ticking logic here
             // - Managing game mode specific logic
@@ -583,7 +582,6 @@ impl Player {
             return;
         }
 
-        self.refresh_dirty_attributes();
         self.tick_living_state();
 
         self.broadcast_inventory_changes();
@@ -705,67 +703,6 @@ impl Player {
     /// Handles the end of a client tick.
     pub fn handle_client_tick_end(&self) {
         self.movement.lock().finish_client_tick();
-    }
-
-    fn push_entities(&self, world: &Arc<World>) {
-        if !world.tick_runs_normally() {
-            return;
-        }
-
-        let pusher = self as &dyn Entity;
-        let pushable_entities = world.get_pushable_entities(pusher, &self.bounding_box());
-        if pushable_entities.is_empty() {
-            return;
-        }
-
-        self.apply_entity_cramming_damage(world, &pushable_entities);
-
-        for entity in pushable_entities {
-            entity.push_entity(pusher);
-        }
-    }
-
-    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
-        let max_cramming = world
-            .get_game_rule(&MAX_ENTITY_CRAMMING)
-            .as_int()
-            .unwrap_or(24);
-
-        if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
-            return;
-        }
-
-        let random_roll = self.base.random().lock().next_i32_bounded(4);
-        let non_passenger_count = pushable_entities
-            .iter()
-            .filter(|entity| !entity.is_passenger())
-            .count();
-
-        if Self::should_apply_entity_cramming_damage(
-            max_cramming,
-            pushable_entities.len(),
-            non_passenger_count,
-            random_roll,
-        ) {
-            self.hurt(
-                &DamageSource::environment(&vanilla_damage_types::CRAMMING),
-                6.0,
-            );
-        }
-    }
-
-    const fn should_apply_entity_cramming_damage(
-        max_cramming: i32,
-        pushable_count: usize,
-        non_passenger_count: usize,
-        random_roll: i32,
-    ) -> bool {
-        if max_cramming <= 0 || random_roll != 0 {
-            return false;
-        }
-
-        let threshold = (max_cramming - 1) as usize;
-        pushable_count > threshold && non_passenger_count > threshold
     }
 
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
@@ -2109,23 +2046,6 @@ mod tests {
 
         assert!(input.death_processed);
         assert!(!Player::should_process_respawn(input.health));
-    }
-
-    #[test]
-    fn entity_cramming_requires_random_zero_and_threshold_overflow() {
-        assert!(Player::should_apply_entity_cramming_damage(24, 24, 24, 0));
-        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 24, 1));
-        assert!(!Player::should_apply_entity_cramming_damage(24, 23, 24, 0));
-    }
-
-    #[test]
-    fn entity_cramming_counts_only_non_passengers_for_damage() {
-        assert!(!Player::should_apply_entity_cramming_damage(24, 24, 23, 0));
-    }
-
-    #[test]
-    fn entity_cramming_disabled_when_gamerule_is_zero() {
-        assert!(!Player::should_apply_entity_cramming_damage(0, 100, 100, 0));
     }
 
     #[test]

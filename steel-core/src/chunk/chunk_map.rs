@@ -52,6 +52,8 @@ pub struct ChunkMapGameTickTimings {
     pub collect_tickable: Duration,
     /// Time spent ticking chunks (random ticks, etc.).
     pub tick_chunks: Duration,
+    /// Time spent ticking block entities.
+    pub tick_block_entities: Duration,
     /// Number of chunks that were ticked.
     pub tickable_count: usize,
     /// Total number of loaded chunks.
@@ -652,7 +654,6 @@ impl ChunkMap {
             timings.total_chunks = total_chunks;
             timings.tickable_count = tickable_chunks.len();
 
-            let mut tickable_full_chunks = Vec::with_capacity(tickable_chunks.len());
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
@@ -663,20 +664,21 @@ impl ChunkMap {
                 let start = Instant::now();
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        tickable_full_chunks.push(holder.get_pos());
-                        chunk_guard.tick(
-                            random_tick_speed,
-                            tick_count as i32,
+                        chunk_guard.drain_ready_scheduled_ticks(
                             &mut ready_block_ticks,
                             &mut ready_fluid_ticks,
                         );
                     }
                 }
+                Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+                for holder in &tickable_chunks {
+                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                        chunk_guard.tick_random_blocks(random_tick_speed);
+                    }
+                }
                 timings.tick_chunks = start.elapsed();
             }
         }
-
-        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
 
         {
             let _span = tracing::trace_span!("broadcast_changes").entered();
@@ -686,6 +688,25 @@ impl ChunkMap {
         }
 
         timings
+    }
+
+    /// Ticks block entities in tickable full chunks.
+    pub fn tick_block_entities(&self, timings: &mut ChunkMapGameTickTimings, runs_normally: bool) {
+        if !runs_normally {
+            return;
+        }
+
+        let _span = tracing::trace_span!("block_entities").entered();
+        let start = Instant::now();
+        self.chunks.iter_sync(|_, holder| {
+            if is_ticked(holder.simulation_level())
+                && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
+            {
+                chunk_guard.tick_block_entities();
+            }
+            true
+        });
+        timings.tick_block_entities = start.elapsed();
     }
 
     /// Scheduling tick: processes tickets, creates holders, schedules generation,

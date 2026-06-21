@@ -5225,6 +5225,7 @@ pub trait LivingEntity: Entity {
         self.living_base()
             .tick_fall_flying_state(self.is_fall_flying());
         self.update_swing_time();
+        self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
@@ -5585,6 +5586,12 @@ pub trait LivingEntity: Entity {
 
         if self.is_fall_flying() {
             self.update_fall_flying();
+        }
+
+        if self.has_mob_effect(vanilla_mob_effects::SLOW_FALLING)
+            || self.has_mob_effect(vanilla_mob_effects::LEVITATION)
+        {
+            self.reset_fall_distance();
         }
 
         let input = self.travel_input();
@@ -7993,6 +8000,25 @@ mod tests {
             entity.travel_input(),
             LivingTravelInput::new(0.98, 0.5, -0.98)
         );
+    }
+
+    #[test]
+    fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
+        init_test_registry();
+
+        let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
+        slow_falling.set_fall_distance(7.0);
+        slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
+        slow_falling.default_ai_step();
+
+        assert_f64_close(slow_falling.fall_distance(), 0.0);
+
+        let levitating = LivingFluidTestEntity::new(0.0, 0.0, true);
+        levitating.set_fall_distance(7.0);
+        levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
+        levitating.default_ai_step();
+
+        assert_f64_close(levitating.fall_distance(), 0.0);
     }
 
     #[test]

@@ -1394,7 +1394,7 @@ impl World {
 
         let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
-        let chunk_map_timings =
+        let mut chunk_map_timings =
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
@@ -1409,6 +1409,9 @@ impl World {
             }
             start.elapsed()
         };
+
+        self.chunk_map
+            .tick_block_entities(&mut chunk_map_timings, runs_normally);
 
         {
             let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
