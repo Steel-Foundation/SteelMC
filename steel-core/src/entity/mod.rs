@@ -50,7 +50,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
     EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
 };
-use crate::entity::attribute::AttributeMap;
+use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{
@@ -82,6 +82,7 @@ const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
 ];
 const LEASH_SCAN_SIZE: f64 = 32.0;
 const LEASH_SCAN_HALF_SIZE: f64 = LEASH_SCAN_SIZE / 2.0;
+const SPEED_MODIFIER_POWDER_SNOW_ID: Identifier = Identifier::vanilla_static("powder_snow");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SwimmingEnvironment {
@@ -2286,6 +2287,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_fully_frozen(self.ticks_required_to_freeze())
     }
 
+    /// Returns vanilla `Entity.getPercentFrozen`.
+    fn percent_frozen(&self) -> f32 {
+        let ticks_required = self.ticks_required_to_freeze();
+        self.ticks_frozen().min(ticks_required) as f32 / ticks_required as f32
+    }
+
     /// Clears accumulated freezing.
     fn clear_freeze(&self) {
         self.base().clear_freeze();
@@ -4161,7 +4168,14 @@ pub trait LivingEntity: Entity {
         }
 
         // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
-        // TODO: apply freezing extra damage and helmet damage once those equipment hooks exist.
+        if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
+            && REGISTRY
+                .entity_types
+                .is_in_tag(self.entity_type(), &EntityTypeTag::FREEZE_HURTS_EXTRA_TYPES)
+        {
+            damage *= 5.0;
+        }
+        // TODO: apply helmet damage once those equipment hooks exist.
         if !damage.is_finite() {
             damage = f32::MAX;
         }
@@ -4928,6 +4942,59 @@ pub trait LivingEntity: Entity {
         }
 
         self.default_can_freeze()
+    }
+
+    /// Returns whether vanilla `tryAddFrost` sees a non-air block below.
+    fn is_on_non_air_block_for_frost(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let Some(pos) = self.on_pos_legacy() else {
+            return false;
+        };
+
+        world.get_block_state(pos).get_block() != &vanilla_blocks::AIR
+    }
+
+    /// Mirrors vanilla `LivingEntity.removeFrost`.
+    fn remove_frost(&self) {
+        self.attributes().lock().remove_modifier(
+            vanilla_attributes::MOVEMENT_SPEED,
+            &SPEED_MODIFIER_POWDER_SNOW_ID,
+        );
+    }
+
+    /// Mirrors vanilla `LivingEntity.tryAddFrost`.
+    fn try_add_frost(&self) {
+        if !self.is_on_non_air_block_for_frost() || self.ticks_frozen() <= 0 {
+            return;
+        }
+
+        self.attributes().lock().add_modifier(
+            vanilla_attributes::MOVEMENT_SPEED,
+            AttributeModifier {
+                id: SPEED_MODIFIER_POWDER_SNOW_ID,
+                amount: f64::from(-0.05_f32 * self.percent_frozen()),
+                operation: AttributeModifierOperation::AddValue,
+            },
+            false,
+        );
+    }
+
+    /// Ticks vanilla `LivingEntity.aiStep` freezing effects.
+    fn tick_freezing(&self) {
+        if !self.is_in_powder_snow() || !self.can_freeze() {
+            self.set_ticks_frozen((self.ticks_frozen() - 2).max(0));
+        }
+
+        self.remove_frost();
+        self.try_add_frost();
+        if self.tick_count() % 40 == 0 && self.is_fully_frozen() && self.can_freeze() {
+            self.hurt(
+                &DamageSource::environment(&vanilla_damage_types::FREEZE),
+                1.0,
+            );
+        }
     }
 
     /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
@@ -5977,9 +6044,11 @@ mod tests {
     use crate::inventory::equipment::EquipmentSlot;
 
     use super::{
-        DAMAGE_KNOCKBACK_POWER, DEFAULT_SWING_DURATION, Entity, EntityBase, EntityFluidContact,
-        EntityLevelCallback, EntityMoveError, EntitySyncedData, EntityVerticalMovementStateUpdate,
-        LivingEntity, LivingEntityBase, LivingTravelInput, RemovalReason, SharedEntity,
+        AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
+        DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
+        EntityFluidContact, EntityLevelCallback, EntityMoveError, EntitySyncedData,
+        EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
+        LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
         closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
         fall_flying_free_fall_interval, get_input_vector, should_apply_resolved_movement,
         start_riding_entities, transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
@@ -6166,6 +6235,7 @@ mod tests {
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
         vehicle: bool,
+        on_non_air_block_for_frost: bool,
     }
 
     impl LivingFluidTestEntity {
@@ -6191,6 +6261,7 @@ mod tests {
                 affected_by_fluids,
                 can_stand_on_fluid: false,
                 vehicle: false,
+                on_non_air_block_for_frost: false,
             }
         }
 
@@ -6206,6 +6277,11 @@ mod tests {
 
         const fn with_vehicle(mut self) -> Self {
             self.vehicle = true;
+            self
+        }
+
+        const fn with_non_air_frost_block(mut self) -> Self {
+            self.on_non_air_block_for_frost = true;
             self
         }
 
@@ -6285,6 +6361,10 @@ mod tests {
 
         fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
             self.can_stand_on_fluid
+        }
+
+        fn is_on_non_air_block_for_frost(&self) -> bool {
+            self.on_non_air_block_for_frost
         }
     }
 
@@ -6807,6 +6887,104 @@ mod tests {
         );
 
         assert!(entity.default_living_can_freeze());
+    }
+
+    #[test]
+    fn living_freezing_decays_when_not_in_powder_snow() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_ticks_frozen(10);
+
+        entity.tick_freezing();
+
+        assert_eq!(entity.ticks_frozen(), 8);
+    }
+
+    #[test]
+    fn living_freezing_keeps_ticks_while_in_powder_snow() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_ticks_frozen(10);
+        entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
+
+        entity.tick_freezing();
+
+        assert_eq!(entity.ticks_frozen(), 11);
+    }
+
+    #[test]
+    fn living_freezing_adds_powder_snow_speed_modifier() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_non_air_frost_block();
+        entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE / 2);
+        entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
+        let base_speed = entity
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED);
+
+        entity.tick_freezing();
+
+        let attributes = entity.attributes().lock();
+        assert!(attributes.has_modifier(
+            vanilla_attributes::MOVEMENT_SPEED,
+            &SPEED_MODIFIER_POWDER_SNOW_ID,
+        ));
+        assert_f64_close(
+            attributes.required_value(vanilla_attributes::MOVEMENT_SPEED),
+            base_speed - f64::from(0.05_f32 * entity.percent_frozen()),
+        );
+    }
+
+    #[test]
+    fn living_freezing_removes_stale_powder_snow_speed_modifier() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.attributes().lock().add_modifier(
+            vanilla_attributes::MOVEMENT_SPEED,
+            AttributeModifier {
+                id: SPEED_MODIFIER_POWDER_SNOW_ID,
+                amount: -0.05,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            false,
+        );
+
+        entity.tick_freezing();
+
+        assert!(!entity.attributes().lock().has_modifier(
+            vanilla_attributes::MOVEMENT_SPEED,
+            &SPEED_MODIFIER_POWDER_SNOW_ID,
+        ));
+    }
+
+    #[test]
+    fn living_freezing_damages_fully_frozen_entities_on_frequency() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
+        entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
+        for _ in 0..40 {
+            entity.advance_tick_count();
+        }
+
+        entity.tick_freezing();
+
+        assert_f32_close(entity.get_health(), 19.0);
+    }
+
+    #[test]
+    fn freezing_damage_hurts_extra_tagged_entity_types() {
+        init_test_registry();
+        let entity =
+            LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::BLAZE);
+
+        assert!(entity.hurt(
+            &DamageSource::environment(&vanilla_damage_types::FREEZE),
+            1.0,
+        ));
+
+        assert_f32_close(entity.get_health(), 15.0);
     }
 
     #[test]

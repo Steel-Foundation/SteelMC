@@ -682,6 +682,7 @@ impl LivingEntity for PigEntity {
 
         if !self.is_removed() {
             self.apply_effects_from_blocks();
+            self.tick_freezing();
         }
         if !self.is_removed()
             && let Some(world) = self.level()

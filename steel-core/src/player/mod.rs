@@ -559,6 +559,7 @@ impl Player {
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
             self.apply_effects_from_blocks();
+            self.tick_freezing();
             self.push_entities(&world);
 
             // TODO: Implement remaining player ticking logic here
