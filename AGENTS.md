@@ -55,8 +55,10 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Suppress clippy lints with `#[expect(clippy::lint_name, reason = "...")]`. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained.
 
 **GENERATED CODE** — Never modify generated files directly:
+- Generated Rust under these `src/generated/` paths is intentionally ignored/untracked. Commit the build script, extractor output, or source asset that produces it, not the generated Rust output.
 - `steel-registry/src/generated/` → modify `steel-registry/build/`
 - `steel-core/src/behavior/generated/` → modify `steel-core/build/`
+- `steel-core/src/entity/generated/` → modify `steel-core/build/`
 - `steel-worldgen/src/generated/` → modify `steel-worldgen/build/`
 - `steel-utils/src/generated/` → modify `steel-utils/build/`
 - Block/item behavior registration is generated from `#[block_behavior]` / `#[item_behavior]`; add annotated structs under `steel-core/src/behavior/`, not manual generated registration.
