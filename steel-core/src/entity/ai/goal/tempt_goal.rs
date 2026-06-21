@@ -71,7 +71,7 @@ impl TemptGoal {
         self.can_scare
     }
 
-    fn targeting_conditions(range: f64) -> TargetingConditions {
+    const fn targeting_conditions(range: f64) -> TargetingConditions {
         TargetingConditions::for_non_combat()
             .ignore_line_of_sight()
             .range(range)

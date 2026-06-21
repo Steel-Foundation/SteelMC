@@ -788,7 +788,7 @@ impl EntityTracker {
 fn leash_holder_id(entity: &dyn Entity) -> Option<i32> {
     entity
         .as_mob()
-        .and_then(|mob| mob.leash_holder())
+        .and_then(super::mob::Mob::leash_holder)
         .map(|holder| holder.id())
 }
 
@@ -1241,9 +1241,15 @@ mod tests {
         ));
         let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
 
-        assert_eq!(pairing.spawn_packet.position.x, 4.0);
-        assert_eq!(pairing.spawn_packet.position.y, 65.0);
-        assert_eq!(pairing.spawn_packet.position.z, -9.0);
+        assert_eq!(pairing.spawn_packet.position.x.to_bits(), 4.0_f64.to_bits());
+        assert_eq!(
+            pairing.spawn_packet.position.y.to_bits(),
+            65.0_f64.to_bits()
+        );
+        assert_eq!(
+            pairing.spawn_packet.position.z.to_bits(),
+            (-9.0_f64).to_bits()
+        );
     }
 
     #[test]

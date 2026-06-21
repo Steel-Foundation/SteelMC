@@ -29,7 +29,7 @@ impl ItemBasedSteering {
     }
 
     /// Mirrors vanilla `ItemBasedSteering.onSynced`.
-    pub fn on_synced(&mut self) {
+    pub const fn on_synced(&mut self) {
         self.boosting = true;
         self.boost_time = 0;
     }
@@ -46,7 +46,7 @@ impl ItemBasedSteering {
     }
 
     /// Mirrors vanilla `ItemBasedSteering.tickBoost`.
-    pub fn tick_boost(&mut self, boost_time_total: i32) {
+    pub const fn tick_boost(&mut self, boost_time_total: i32) {
         if !self.boosting {
             return;
         }

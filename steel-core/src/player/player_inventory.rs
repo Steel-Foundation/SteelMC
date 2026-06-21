@@ -613,7 +613,7 @@ impl PlayerInventory {
         }
     }
 
-    fn get_equipment_slot_item_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
+    const fn get_equipment_slot_item_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
         match slot {
             EquipmentSlot::MainHand => {
                 self.mark_main_hand_dirty();

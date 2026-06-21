@@ -344,11 +344,10 @@ impl ExperienceOrbEntity {
     fn apply_friction_and_bounce(&self, world: &Arc<World>, fall_speed: f64) {
         let friction = if self.on_ground() {
             self.block_pos_below_that_affects_movement()
-                .map(|block_pos| {
+                .map_or(AIR_FRICTION, |block_pos| {
                     f64::from(world.get_block_state(block_pos).get_block().config.friction)
                         * AIR_FRICTION
                 })
-                .unwrap_or(AIR_FRICTION)
         } else {
             AIR_FRICTION
         };

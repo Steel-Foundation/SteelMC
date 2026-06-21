@@ -73,19 +73,22 @@ impl MoveToBlockGoal {
     }
 
     #[must_use]
-    pub(crate) fn with_vertical_search_start(mut self, vertical_search_start: i32) -> Self {
+    pub(crate) const fn with_vertical_search_start(mut self, vertical_search_start: i32) -> Self {
         self.vertical_search_start = vertical_search_start;
         self
     }
 
     #[must_use]
-    pub(crate) fn with_accepted_distance(mut self, accepted_distance: f64) -> Self {
+    pub(crate) const fn with_accepted_distance(mut self, accepted_distance: f64) -> Self {
         self.accepted_distance = accepted_distance;
         self
     }
 
     #[must_use]
-    pub(crate) fn with_recalculate_path_interval(mut self, recalculate_path_interval: i32) -> Self {
+    pub(crate) const fn with_recalculate_path_interval(
+        mut self,
+        recalculate_path_interval: i32,
+    ) -> Self {
         self.recalculate_path_interval = recalculate_path_interval;
         self
     }
@@ -109,7 +112,7 @@ impl MoveToBlockGoal {
         self.reached_target
     }
 
-    fn next_start_tick(&self, mob: &dyn PathfinderMob) -> i32 {
+    fn next_start_tick(mob: &dyn PathfinderMob) -> i32 {
         reduced_tick_delay(INTERVAL_TICKS + mob.base().random().lock().next_i32_bounded(200))
     }
 
@@ -124,7 +127,7 @@ impl MoveToBlockGoal {
         (self.move_to_target)(self.block_pos)
     }
 
-    fn should_recalculate_path(&self) -> bool {
+    const fn should_recalculate_path(&self) -> bool {
         self.try_ticks % self.recalculate_path_interval == 0
     }
 
@@ -159,7 +162,7 @@ impl Goal for MoveToBlockGoal {
             return false;
         }
 
-        self.next_start_tick = self.next_start_tick(mob);
+        self.next_start_tick = Self::next_start_tick(mob);
         let Some(world) = mob.level() else {
             return false;
         };
@@ -188,8 +191,10 @@ impl Goal for MoveToBlockGoal {
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
         let move_to_target = self.move_to_target();
-        if !block_pos_closer_to_center_than(move_to_target, mob.position(), self.accepted_distance)
-        {
+        if block_pos_closer_to_center_than(move_to_target, mob.position(), self.accepted_distance) {
+            self.reached_target = true;
+            self.try_ticks -= 1;
+        } else {
             self.reached_target = false;
             self.try_ticks += 1;
             if self.should_recalculate_path() {
@@ -198,9 +203,6 @@ impl Goal for MoveToBlockGoal {
                     self.speed_modifier,
                 );
             }
-        } else {
-            self.reached_target = true;
-            self.try_ticks -= 1;
         }
     }
 }

@@ -467,7 +467,7 @@ mod tests {
             self
         }
 
-        const fn as_panic_goal(mut self) -> Self {
+        const fn with_panic_goal(mut self) -> Self {
             self.panic_goal = true;
             self
         }
@@ -596,7 +596,7 @@ mod tests {
         mob.mob_base()
             .goal_selector()
             .lock()
-            .add_goal(1, StaticGoal::new(GoalControls::MOVE).as_panic_goal());
+            .add_goal(1, StaticGoal::new(GoalControls::MOVE).with_panic_goal());
 
         assert!(!mob.is_panicking());
 

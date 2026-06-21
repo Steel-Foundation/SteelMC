@@ -2925,34 +2925,34 @@ mod tests {
     #[test]
     fn tick_entities_uses_start_of_tick_snapshot_for_added_entities() {
         let manager = Arc::new(WorldEntityManager::new());
-        let spawner_chunk = ChunkPos::new(0, 0);
-        let spawned_chunk = ChunkPos::new(1, 0);
-        load_chunk(&manager, spawner_chunk);
-        load_chunk(&manager, spawned_chunk);
+        let initial_chunk = ChunkPos::new(0, 0);
+        let late_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, initial_chunk);
+        load_chunk(&manager, late_chunk);
 
-        let spawned = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
-        let spawner = AddDuringTickTestEntity::shared(
+        let late_entity = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        let adder = AddDuringTickTestEntity::shared(
             1,
             Uuid::from_u128(1),
             DVec3::new(1.0, 64.0, 1.0),
             Arc::clone(&manager),
-            spawned.clone(),
+            late_entity.clone(),
         );
         assert!(
             manager
-                .add_live_entity(spawner.clone(), EntityOwnership::ManagerOwned)
+                .add_live_entity(adder.clone(), EntityOwnership::ManagerOwned)
                 .is_ok()
         );
 
         manager.tick_entities(0, true);
 
-        assert_eq!(spawner.tick_count(), 1);
-        assert_eq!(spawned.tick_count(), 0);
+        assert_eq!(adder.tick_count(), 1);
+        assert_eq!(late_entity.tick_count(), 0);
 
         manager.tick_entities(1, true);
 
-        assert_eq!(spawner.tick_count(), 2);
-        assert_eq!(spawned.tick_count(), 1);
+        assert_eq!(adder.tick_count(), 2);
+        assert_eq!(late_entity.tick_count(), 1);
     }
 
     #[test]

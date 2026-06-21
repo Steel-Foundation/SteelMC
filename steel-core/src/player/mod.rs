@@ -2074,7 +2074,7 @@ mod tests {
         for (damage_type, rule) in cases {
             let source = DamageSource::environment(damage_type);
             let mapped = Player::disabled_damage_game_rule(&source);
-            assert!(mapped.is_some_and(|mapped| std::ptr::eq(mapped, rule)));
+            assert!(mapped.is_some_and(|mapped| mapped.key == rule.key));
         }
     }
 

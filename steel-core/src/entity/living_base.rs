@@ -1717,23 +1717,23 @@ mod tests {
         base.set_y_body_rot(30.0);
         base.set_y_head_rot(45.0);
         let rotation = base.rotation_state();
-        assert_eq!(rotation.y_body_rot(), 30.0);
-        assert_eq!(rotation.y_body_rot_o(), 0.0);
-        assert_eq!(rotation.y_head_rot(), 45.0);
-        assert_eq!(rotation.y_head_rot_o(), 0.0);
+        assert_eq!(rotation.y_body_rot().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(rotation.y_body_rot_o().to_bits(), 0.0_f32.to_bits());
+        assert_eq!(rotation.y_head_rot().to_bits(), 45.0_f32.to_bits());
+        assert_eq!(rotation.y_head_rot_o().to_bits(), 0.0_f32.to_bits());
 
         base.advance_rotation_for_base_tick();
         let rotation = base.rotation_state();
-        assert_eq!(rotation.y_body_rot_o(), 30.0);
-        assert_eq!(rotation.y_head_rot_o(), 45.0);
+        assert_eq!(rotation.y_body_rot_o().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(rotation.y_head_rot_o().to_bits(), 45.0_f32.to_bits());
 
         base.set_y_body_rot(60.0);
         base.set_y_head_rot(75.0);
         let rotation = base.rotation_state();
-        assert_eq!(rotation.y_body_rot(), 60.0);
-        assert_eq!(rotation.y_body_rot_o(), 30.0);
-        assert_eq!(rotation.y_head_rot(), 75.0);
-        assert_eq!(rotation.y_head_rot_o(), 45.0);
+        assert_eq!(rotation.y_body_rot().to_bits(), 60.0_f32.to_bits());
+        assert_eq!(rotation.y_body_rot_o().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(rotation.y_head_rot().to_bits(), 75.0_f32.to_bits());
+        assert_eq!(rotation.y_head_rot_o().to_bits(), 45.0_f32.to_bits());
     }
 
     #[test]

@@ -38,7 +38,7 @@ impl TargetGoalBase {
         }
     }
 
-    pub(super) fn set_unseen_memory_ticks(&mut self, unseen_memory_ticks: i32) {
+    pub(super) const fn set_unseen_memory_ticks(&mut self, unseen_memory_ticks: i32) {
         self.unseen_memory_ticks = unseen_memory_ticks;
     }
 
@@ -70,7 +70,7 @@ impl TargetGoalBase {
         mob.set_target(Some(&target))
     }
 
-    pub(super) fn start(&mut self) {
+    pub(super) const fn start(&mut self) {
         self.reach_cache = ReachCache::Empty;
         self.reach_cache_time = 0;
         self.unseen_ticks = 0;

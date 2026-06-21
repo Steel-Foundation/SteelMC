@@ -716,8 +716,8 @@ mod tests {
             120.0,
         );
 
-        assert_eq!(respawn_data.yaw, -179.0);
-        assert_eq!(respawn_data.pitch, 90.0);
+        assert_eq!(respawn_data.yaw.to_bits(), (-179.0_f32).to_bits());
+        assert_eq!(respawn_data.pitch.to_bits(), 90.0_f32.to_bits());
     }
 
     #[test]
@@ -738,8 +738,8 @@ mod tests {
             Identifier::vanilla_static("the_nether")
         );
         assert_eq!(deserialized.pos(), BlockPos::new(-4, 70, 8));
-        assert_eq!(deserialized.yaw, 179.0);
-        assert_eq!(deserialized.pitch, -90.0);
+        assert_eq!(deserialized.yaw.to_bits(), 179.0_f32.to_bits());
+        assert_eq!(deserialized.pitch.to_bits(), (-90.0_f32).to_bits());
     }
 
     #[test]
@@ -756,7 +756,7 @@ mod tests {
             Identifier::vanilla_static("overworld")
         );
         assert_eq!(respawn_data.pos(), BlockPos::new(10, 65, -3));
-        assert_eq!(respawn_data.yaw, -90.0);
-        assert_eq!(respawn_data.pitch, 0.0);
+        assert_eq!(respawn_data.yaw.to_bits(), (-90.0_f32).to_bits());
+        assert_eq!(respawn_data.pitch.to_bits(), 0.0_f32.to_bits());
     }
 }

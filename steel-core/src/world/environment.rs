@@ -1,7 +1,7 @@
 use std::str::FromStr as _;
 
 use steel_registry::dimension_type::DimensionTypeRef;
-use steel_registry::timeline::{KeyframeValue, Track};
+use steel_registry::timeline::{Ease, KeyframeValue, TimelineRef, Track};
 use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
 use steel_utils::Identifier;
 
@@ -63,11 +63,7 @@ fn apply_timeline_sky_light_level(
     })
 }
 
-fn apply_timeline_sky_light_level_track(
-    value: f32,
-    timeline: steel_registry::timeline::TimelineRef,
-    day_time: i64,
-) -> f32 {
+fn apply_timeline_sky_light_level_track(value: f32, timeline: TimelineRef, day_time: i64) -> f32 {
     let Some(track) = timeline
         .tracks
         .iter()
@@ -157,15 +153,15 @@ fn interpolate_float_segment(
     }
 
     let alpha = (sample_ticks - from_ticks) as f32 / (to_ticks - from_ticks) as f32;
-    let eased_alpha = match track.ease {
-        None => alpha,
-        Some(steel_registry::timeline::Ease::Named("constant")) => 0.0,
-        _ => alpha,
+    let eased_alpha = if matches!(track.ease, Some(Ease::Named("constant"))) {
+        0.0
+    } else {
+        alpha
     };
     Some(from + eased_alpha * (to - from))
 }
 
-fn keyframe_float_value(value: &KeyframeValue) -> Option<f32> {
+const fn keyframe_float_value(value: &KeyframeValue) -> Option<f32> {
     match value {
         KeyframeValue::Float(value) => Some(*value),
         _ => None,

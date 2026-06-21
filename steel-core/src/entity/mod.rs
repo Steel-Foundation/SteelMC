@@ -3,7 +3,7 @@
 use std::sync::{Arc, LazyLock, Weak};
 
 use glam::DVec3;
-use rand::SeedableRng as _;
+use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -128,11 +128,11 @@ fn horizontal_distance(vector: DVec3) -> f64 {
     vector.x.hypot(vector.z)
 }
 
-fn world_aabb_center(aabb: WorldAabb) -> DVec3 {
+const fn world_aabb_center(aabb: WorldAabb) -> DVec3 {
     DVec3::new(
-        (aabb.min_x() + aabb.max_x()) / 2.0,
-        (aabb.min_y() + aabb.max_y()) / 2.0,
-        (aabb.min_z() + aabb.max_z()) / 2.0,
+        f64::midpoint(aabb.min_x(), aabb.max_x()),
+        f64::midpoint(aabb.min_y(), aabb.max_y()),
+        f64::midpoint(aabb.min_z(), aabb.max_z()),
     )
 }
 
@@ -1646,8 +1646,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         }
 
         if let Some(world) = self.level() {
-            let sound_source =
-                player.map_or_else(|| self.sound_source(), |player| player.sound_source());
+            let sound_source = player.map_or_else(|| self.sound_source(), Entity::sound_source);
             world.play_sound(
                 &sound_events::ITEM_SHEARS_SNIP,
                 sound_source,
@@ -1742,9 +1741,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let Some(mob) = self.as_mob() else {
             return InteractionResult::Pass;
         };
-        let is_alive = self
-            .as_living_entity()
-            .is_none_or(|living| LivingEntity::is_alive(living));
+        let is_alive = self.as_living_entity().is_none_or(LivingEntity::is_alive);
         if !is_alive {
             return InteractionResult::Pass;
         }
@@ -4559,7 +4556,7 @@ pub trait LivingEntity: Entity {
                 &mut rng,
             )
         } else {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
+            let mut rng = StdRng::seed_from_u64(seed as u64);
             death_loot_items_with_rng(
                 self,
                 loot_table,
@@ -6302,9 +6299,9 @@ fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         flags: EntityRefFlags {
             is_on_fire: entity.is_on_fire(),
             is_sneaking: entity.is_crouching(),
-            is_sprinting: living_entity.is_some_and(|entity| entity.is_sprinting()),
+            is_sprinting: living_entity.is_some_and(LivingEntity::is_sprinting),
             is_swimming: entity.is_swimming(),
-            is_baby: living_entity.is_some_and(|entity| entity.is_baby()),
+            is_baby: living_entity.is_some_and(LivingEntity::is_baby),
         },
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
@@ -7058,8 +7055,8 @@ mod tests {
         init_behaviors();
         let pos = BlockPos::ZERO;
         let level = EmptyTestLevel;
-        let inside_box = WorldAabb::new(0.1, 0.5, 0.1, 0.9, 0.500001, 0.9);
-        let outside_box = WorldAabb::new(1.1, 0.5, 0.1, 1.9, 0.500001, 0.9);
+        let inside_box = WorldAabb::new(0.1, 0.5, 0.1, 0.9, 0.500_001, 0.9);
+        let outside_box = WorldAabb::new(1.1, 0.5, 0.1, 1.9, 0.500_001, 0.9);
 
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let glass = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::GLASS);

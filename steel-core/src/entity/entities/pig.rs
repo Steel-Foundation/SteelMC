@@ -348,7 +348,7 @@ impl PigEntity {
 
     /// Returns whether the stack is vanilla pig food.
     #[must_use]
-    pub fn is_food(&self, item_stack: &ItemStack) -> bool {
+    pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
             .items
             .is_in_tag(item_stack.item(), &ItemTag::PIG_FOOD)
@@ -637,7 +637,7 @@ impl Animal for PigEntity {
     }
 
     fn is_food(&self, item_stack: &ItemStack) -> bool {
-        PigEntity::is_food(self, item_stack)
+        PigEntity::is_food(item_stack)
     }
 
     fn play_eating_sound(&self) {
@@ -664,10 +664,7 @@ impl Animal for PigEntity {
         };
 
         if !offspring.set_breed_variant_key(variant_key) {
-            log::error!(
-                "pig offspring could not inherit breeding variant {}",
-                variant_key
-            );
+            log::error!("pig offspring could not inherit breeding variant {variant_key}");
         }
     }
 }
@@ -746,7 +743,7 @@ impl Mob for PigEntity {
             let item_stack = inventory.get_item_in_hand(hand);
             item_stack.copy_with_count(item_stack.count())
         };
-        let has_food = PigEntity::is_food(self, &item_stack);
+        let has_food = PigEntity::is_food(&item_stack);
 
         if !has_food && self.is_saddled() && !self.is_vehicle() && !player.is_secondary_use_active()
         {
@@ -988,8 +985,8 @@ mod tests {
 
         assert_eq!(pig.rotation(), (90.0, 60.0));
         assert_eq!(pig.base().old_rotation(), (90.0, -12.0));
-        assert_eq!(pig.y_body_rot(), 90.0);
-        assert_eq!(pig.y_head_rot(), 90.0);
+        assert_eq!(pig.y_body_rot().to_bits(), 90.0_f32.to_bits());
+        assert_eq!(pig.y_head_rot().to_bits(), 90.0_f32.to_bits());
     }
 
     #[test]
@@ -1482,7 +1479,7 @@ mod tests {
         assert_eq!(drop_chances.float("head"), None);
         assert_eq!(nbt.int("home_radius"), Some(7));
         assert_eq!(
-            nbt.int_array("home_pos").map(|value| value.to_vec()),
+            nbt.int_array("home_pos").map(<[i32]>::to_vec),
             Some(vec![11, 64, -3])
         );
         assert_eq!(
@@ -1494,7 +1491,7 @@ mod tests {
             panic!("live leash holder should save as a UUID compound");
         };
         assert_eq!(
-            leash.int_array("UUID").map(|value| value.to_vec()),
+            leash.int_array("UUID").map(<[i32]>::to_vec),
             Some(leash_holder.uuid().to_int_array().to_vec())
         );
         assert_eq!(nbt.byte("NoAI"), Some(1));
@@ -1595,7 +1592,7 @@ mod tests {
         pig.save_additional(&mut nbt);
 
         assert_eq!(
-            nbt.int_array("leash").map(|value| value.to_vec()),
+            nbt.int_array("leash").map(<[i32]>::to_vec),
             Some(vec![4, 65, -9])
         );
     }
@@ -1617,7 +1614,7 @@ mod tests {
         pig.save_additional(&mut nbt);
 
         assert_eq!(
-            nbt.int_array("leash").map(|value| value.to_vec()),
+            nbt.int_array("leash").map(<[i32]>::to_vec),
             Some(vec![4, 65, -9])
         );
     }
@@ -1765,10 +1762,8 @@ mod tests {
     fn pig_uses_vanilla_pig_food_tag() {
         init_test_registry();
 
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-
-        assert!(pig.is_food(&ItemStack::new(&ITEMS.carrot)));
-        assert!(!pig.is_food(&ItemStack::new(&ITEMS.stone)));
+        assert!(PigEntity::is_food(&ItemStack::new(&ITEMS.carrot)));
+        assert!(!PigEntity::is_food(&ItemStack::new(&ITEMS.stone)));
     }
 
     #[test]
@@ -1785,7 +1780,7 @@ mod tests {
 
         assert_eq!(nbt.int("InLove"), Some(123));
         assert_eq!(
-            nbt.int_array("LoveCause").map(|value| value.to_vec()),
+            nbt.int_array("LoveCause").map(<[i32]>::to_vec),
             Some(love_cause.to_int_array().to_vec())
         );
     }

@@ -32,7 +32,7 @@ impl PanicGoal {
         self.is_running
     }
 
-    fn should_panic(&self, mob: &dyn PathfinderMob) -> bool {
+    fn should_panic(mob: &dyn PathfinderMob) -> bool {
         mob.last_damage_source()
             .is_some_and(|source| source.is(&vanilla_damage_type_tags::DamageTypeTag::PANIC_CAUSES))
     }
@@ -57,7 +57,7 @@ impl Goal for PanicGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        if !self.should_panic(mob) {
+        if !Self::should_panic(mob) {
             return false;
         }
 
@@ -137,21 +137,20 @@ mod tests {
     #[test]
     fn panic_goal_uses_vanilla_panic_damage_tag() {
         init_test_registry();
-        let goal = PanicGoal::new(1.25);
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.should_panic(&pig));
+        assert!(!PanicGoal::should_panic(&pig));
 
         assert!(pig.hurt_server(
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
-        assert!(!goal.should_panic(&pig));
+        assert!(!PanicGoal::should_panic(&pig));
 
         assert!(pig.hurt_server(
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0
         ));
-        assert!(goal.should_panic(&pig));
+        assert!(PanicGoal::should_panic(&pig));
     }
 }

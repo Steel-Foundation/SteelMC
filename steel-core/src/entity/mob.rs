@@ -87,11 +87,11 @@ impl DropChances {
     };
 
     #[must_use]
-    fn by_equipment(self, slot: EquipmentSlot) -> f32 {
+    const fn by_equipment(self, slot: EquipmentSlot) -> f32 {
         self.by_equipment[slot.index()]
     }
 
-    fn set_guaranteed_drop(&mut self, slot: EquipmentSlot) {
+    const fn set_guaranteed_drop(&mut self, slot: EquipmentSlot) {
         self.by_equipment[slot.index()] = PRESERVE_ITEM_DROP_CHANCE;
     }
 
@@ -292,9 +292,9 @@ fn leash_dimensions(entity: &dyn Entity) -> DVec3 {
 fn leash_bounding_box_center(entity: &dyn Entity) -> DVec3 {
     let bounding_box = entity.bounding_box();
     DVec3::new(
-        (bounding_box.min_x() + bounding_box.max_x()) / 2.0,
-        (bounding_box.min_y() + bounding_box.max_y()) / 2.0,
-        (bounding_box.min_z() + bounding_box.max_z()) / 2.0,
+        f64::midpoint(bounding_box.min_x(), bounding_box.max_x()),
+        f64::midpoint(bounding_box.min_y(), bounding_box.max_y()),
+        f64::midpoint(bounding_box.min_z(), bounding_box.max_z()),
     )
 }
 
@@ -418,9 +418,7 @@ impl MobBase {
             *target = None;
             return None;
         };
-        let Some(living_target) = upgraded.as_living_entity() else {
-            return None;
-        };
+        let living_target = upgraded.as_living_entity()?;
         if !is_valid(living_target) {
             return None;
         }
@@ -1164,10 +1162,10 @@ pub trait Mob: LivingEntity {
     }
 
     fn remove_leash(&self) {
-        if self.leash_holder().is_some() {
-            if let Some(holder) = self.remove_leash_state() {
-                holder.notify_leashee_removed(self.as_entity_event_source());
-            }
+        if self.leash_holder().is_some()
+            && let Some(holder) = self.remove_leash_state()
+        {
+            holder.notify_leashee_removed(self.as_entity_event_source());
         }
     }
 
@@ -2839,8 +2837,8 @@ mod tests {
         Mob::tick_look_control(&mob);
 
         assert_eq!(mob.rotation(), (0.0, 0.0));
-        assert_eq!(mob.y_body_rot(), 0.0);
-        assert_eq!(mob.y_head_rot(), -10.0);
+        assert_eq!(mob.y_body_rot().to_bits(), 0.0_f32.to_bits());
+        assert_eq!(mob.y_head_rot().to_bits(), (-10.0_f32).to_bits());
     }
 
     #[test]
@@ -2853,8 +2851,8 @@ mod tests {
         Mob::tick_look_control(&mob);
 
         assert_eq!(mob.rotation(), (0.0, 0.0));
-        assert_eq!(mob.y_body_rot(), 90.0);
-        assert_eq!(mob.y_head_rot(), 10.0);
+        assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
+        assert_eq!(mob.y_head_rot().to_bits(), 10.0_f32.to_bits());
     }
 
     #[test]
@@ -2868,8 +2866,8 @@ mod tests {
 
         Mob::tick_body_rotation_control(&mob);
 
-        assert_eq!(mob.y_body_rot(), 90.0);
-        assert_eq!(mob.y_head_rot(), 165.0);
+        assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
+        assert_eq!(mob.y_head_rot().to_bits(), 165.0_f32.to_bits());
     }
 
     #[test]

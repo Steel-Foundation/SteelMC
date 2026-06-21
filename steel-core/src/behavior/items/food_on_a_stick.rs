@@ -30,16 +30,16 @@ impl FoodOnAStickItem {
 impl ItemBehavior for FoodOnAStickItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         let Some(vehicle) = context.player.root_vehicle() else {
-            return self.pass_without_boost();
+            return Self::pass_without_boost();
         };
         if vehicle.entity_type() != self.can_interact_with {
-            return self.pass_without_boost();
+            return Self::pass_without_boost();
         }
         let Some(steerable) = vehicle.as_item_steerable() else {
-            return self.pass_without_boost();
+            return Self::pass_without_boost();
         };
         if !steerable.boost() {
-            return self.pass_without_boost();
+            return Self::pass_without_boost();
         }
 
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -57,7 +57,7 @@ impl ItemBehavior for FoodOnAStickItem {
 }
 
 impl FoodOnAStickItem {
-    fn pass_without_boost(&self) -> InteractionResult {
+    const fn pass_without_boost() -> InteractionResult {
         // TODO: Award Stats.ITEM_USED once the stat foundation exists.
         InteractionResult::Pass
     }
