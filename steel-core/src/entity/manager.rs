@@ -1003,36 +1003,34 @@ impl WorldEntityManager {
         let mut dirty_chunks = self.check_despawn_for_live_entities(runs_normally);
         let mut ticked_entities = FxHashSet::default();
         let tickable_chunk_set = tickable_chunks.iter().copied().collect::<FxHashSet<_>>();
-        for chunk in tickable_chunks {
-            let entities = self.manager_owned_entities_in_chunk(*chunk);
-            for entity in entities {
-                if !self.is_live_manager_owned_in_chunk(entity.id(), *chunk) {
-                    continue;
-                }
-
-                if entity.is_removed() {
-                    continue;
-                }
-
-                if Self::is_entity_frozen_by_tick_rate(entity.as_ref(), runs_normally) {
-                    continue;
-                }
-
-                if Self::is_valid_passenger_or_stop_riding(&entity) {
-                    continue;
-                }
-
-                if !ticked_entities.insert(entity.id()) {
-                    continue;
-                }
-
-                self.tick_non_passenger(
-                    &entity,
-                    &mut ticked_entities,
-                    &tickable_chunk_set,
-                    &mut dirty_chunks,
-                );
+        let tick_candidates = self.manager_owned_entities_in_chunks(tickable_chunks);
+        for entity in tick_candidates {
+            if !self.can_tick_entity_now(entity.id(), &tickable_chunk_set) {
+                continue;
             }
+
+            if entity.is_removed() {
+                continue;
+            }
+
+            if Self::is_entity_frozen_by_tick_rate(entity.as_ref(), runs_normally) {
+                continue;
+            }
+
+            if Self::is_valid_passenger_or_stop_riding(&entity) {
+                continue;
+            }
+
+            if !ticked_entities.insert(entity.id()) {
+                continue;
+            }
+
+            self.tick_non_passenger(
+                &entity,
+                &mut ticked_entities,
+                &tickable_chunk_set,
+                &mut dirty_chunks,
+            );
         }
         dirty_chunks
     }
@@ -1055,20 +1053,21 @@ impl WorldEntityManager {
         dirty_chunks
     }
 
-    fn manager_owned_entities_in_chunk(&self, chunk: ChunkPos) -> Vec<SharedEntity> {
+    fn manager_owned_entities_in_chunks(&self, chunks: &[ChunkPos]) -> Vec<SharedEntity> {
         let state = self.state.read();
-        state
-            .by_chunk
-            .get(&chunk)
-            .map(|entity_ids| {
-                entity_ids
-                    .iter()
-                    .filter_map(|id| state.live_by_id.get(id))
-                    .filter(|entry| entry.ownership == EntityOwnership::ManagerOwned)
-                    .map(|entry| entry.entity.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        let mut entities = Vec::new();
+        for chunk in chunks {
+            if let Some(entity_ids) = state.by_chunk.get(chunk) {
+                entities.extend(
+                    entity_ids
+                        .iter()
+                        .filter_map(|id| state.live_by_id.get(id))
+                        .filter(|entry| entry.ownership == EntityOwnership::ManagerOwned)
+                        .map(|entry| entry.entity.clone()),
+                );
+            }
+        }
+        entities
     }
 
     fn live_manager_owned_entities(&self) -> Vec<(SharedEntity, ChunkPos)> {
@@ -1102,13 +1101,6 @@ impl WorldEntityManager {
         !runs_normally
             && entity.entity_type() != &vanilla_entities::PLAYER
             && entity.count_player_passengers() == 0
-    }
-
-    fn is_live_manager_owned_in_chunk(&self, entity_id: i32, chunk: ChunkPos) -> bool {
-        let state = self.state.read();
-        state.live_by_id.get(&entity_id).is_some_and(|entry| {
-            entry.ownership == EntityOwnership::ManagerOwned && entry.chunk == chunk
-        })
     }
 
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {
@@ -1333,6 +1325,7 @@ mod tests {
 
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::vanilla_entities;
+    use steel_utils::locks::SyncMutex;
     use uuid::Uuid;
 
     use crate::entity::{Entity, EntityBase};
@@ -1411,6 +1404,57 @@ mod tests {
                 panic!("moving tick test entity failed to move during tick: {error}");
             }
             self.set_rotation(self.tick_rotation);
+        }
+    }
+
+    struct AddDuringTickTestEntity {
+        base: EntityBase,
+        manager: Arc<WorldEntityManager>,
+        entity_to_add: SyncMutex<Option<SharedEntity>>,
+    }
+
+    impl AddDuringTickTestEntity {
+        fn shared(
+            id: i32,
+            uuid: Uuid,
+            position: DVec3,
+            manager: Arc<WorldEntityManager>,
+            entity_to_add: SharedEntity,
+        ) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::with_uuid(
+                    id,
+                    uuid,
+                    position,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
+                manager,
+                entity_to_add: SyncMutex::new(Some(entity_to_add)),
+            })
+        }
+    }
+
+    impl Entity for AddDuringTickTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn tick(&self) {
+            self.default_tick();
+            let Some(entity) = self.entity_to_add.lock().take() else {
+                return;
+            };
+            if let Err(error) = self
+                .manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+            {
+                panic!("add-during-tick test entity failed to add live entity: {error}");
+            }
         }
     }
 
@@ -2496,6 +2540,39 @@ mod tests {
         assert!(dirty_chunks.contains(&chunk));
         assert_eq!(manager_owned.tick_count(), 1);
         assert_eq!(external.tick_count(), 0);
+    }
+
+    #[test]
+    fn tick_entities_uses_start_of_tick_snapshot_for_added_entities() {
+        let manager = Arc::new(WorldEntityManager::new());
+        let spawner_chunk = ChunkPos::new(0, 0);
+        let spawned_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, spawner_chunk);
+        load_chunk(&manager, spawned_chunk);
+
+        let spawned = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        let spawner = AddDuringTickTestEntity::shared(
+            1,
+            Uuid::from_u128(1),
+            DVec3::new(1.0, 64.0, 1.0),
+            Arc::clone(&manager),
+            spawned.clone(),
+        );
+        assert!(
+            manager
+                .add_live_entity(spawner.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        manager.tick_entities(0, &[spawner_chunk, spawned_chunk], true);
+
+        assert_eq!(spawner.tick_count(), 1);
+        assert_eq!(spawned.tick_count(), 0);
+
+        manager.tick_entities(1, &[spawner_chunk, spawned_chunk], true);
+
+        assert_eq!(spawner.tick_count(), 2);
+        assert_eq!(spawned.tick_count(), 1);
     }
 
     #[test]
