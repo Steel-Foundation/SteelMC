@@ -484,6 +484,10 @@ impl DataComponentMap {
 
 /// Entry in a component patch.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "component patches keep set values inline to avoid changing shared item component storage semantics"
+)]
 pub enum ComponentPatchEntry {
     /// Component is set to this value
     Set(ComponentData),

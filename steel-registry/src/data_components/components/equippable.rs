@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use crate::{
     REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt, entity_type::EntityTypeRef,
-    equipment::EquipmentSlot, sound_event::SoundEventRef, sound_events,
+    equipment::EquipmentSlot, sound_event::SoundEventHolder, sound_events,
 };
 use steel_utils::{
     Identifier,
@@ -38,7 +38,7 @@ impl EquippableAllowedEntities {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Equippable {
     pub slot: EquipmentSlot,
-    pub equip_sound: SoundEventRef,
+    pub equip_sound: SoundEventHolder,
     pub asset_id: Option<Identifier>,
     pub camera_overlay: Option<Identifier>,
     pub allowed_entities: Option<EquippableAllowedEntities>,
@@ -47,7 +47,7 @@ pub struct Equippable {
     pub damage_on_hurt: bool,
     pub equip_on_interact: bool,
     pub can_be_sheared: bool,
-    pub shearing_sound: SoundEventRef,
+    pub shearing_sound: SoundEventHolder,
 }
 
 impl Equippable {
@@ -63,7 +63,7 @@ impl Equippable {
 impl WriteTo for Equippable {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         VarInt(self.slot.id()).write(writer)?;
-        write_sound_event_holder(writer, self.equip_sound)?;
+        self.equip_sound.write(writer)?;
         self.asset_id.write(writer)?;
         self.camera_overlay.write(writer)?;
         write_allowed_entities(writer, &self.allowed_entities)?;
@@ -72,7 +72,7 @@ impl WriteTo for Equippable {
         self.damage_on_hurt.write(writer)?;
         self.equip_on_interact.write(writer)?;
         self.can_be_sheared.write(writer)?;
-        write_sound_event_holder(writer, self.shearing_sound)?;
+        self.shearing_sound.write(writer)?;
         Ok(())
     }
 }
@@ -80,11 +80,9 @@ impl WriteTo for Equippable {
 impl ReadFrom for Equippable {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let slot_id = VarInt::read(data)?.0;
-        let slot = EquipmentSlot::by_id(slot_id)
-            .ok_or_else(|| Error::other(format!("Unknown equipment slot id: {slot_id}")))?;
         Ok(Self {
-            slot,
-            equip_sound: read_sound_event_holder(data)?,
+            slot: EquipmentSlot::by_id(slot_id),
+            equip_sound: SoundEventHolder::read(data)?,
             asset_id: Option::<Identifier>::read(data)?,
             camera_overlay: Option::<Identifier>::read(data)?,
             allowed_entities: read_allowed_entities(data)?,
@@ -93,7 +91,7 @@ impl ReadFrom for Equippable {
             damage_on_hurt: bool::read(data)?,
             equip_on_interact: bool::read(data)?,
             can_be_sheared: bool::read(data)?,
-            shearing_sound: read_sound_event_holder(data)?,
+            shearing_sound: SoundEventHolder::read(data)?,
         })
     }
 }
@@ -102,12 +100,8 @@ impl HashComponent for Equippable {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
         let mut entries = Vec::new();
         push_hash_entry(&mut entries, "slot", self.slot.name());
-        if self.equip_sound != &sound_events::ITEM_ARMOR_EQUIP_GENERIC {
-            push_hash_entry(
-                &mut entries,
-                "equip_sound",
-                &self.equip_sound.key.to_string(),
-            );
+        if self.equip_sound != SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_GENERIC) {
+            push_hash_entry(&mut entries, "equip_sound", &self.equip_sound);
         }
         if let Some(asset_id) = &self.asset_id {
             push_hash_entry(&mut entries, "asset_id", &asset_id.to_string());
@@ -133,12 +127,8 @@ impl HashComponent for Equippable {
         if self.can_be_sheared {
             push_hash_entry(&mut entries, "can_be_sheared", &self.can_be_sheared);
         }
-        if self.shearing_sound != &sound_events::ITEM_SHEARS_SNIP {
-            push_hash_entry(
-                &mut entries,
-                "shearing_sound",
-                &self.shearing_sound.key.to_string(),
-            );
+        if self.shearing_sound != SoundEventHolder::registry(&sound_events::ITEM_SHEARS_SNIP) {
+            push_hash_entry(&mut entries, "shearing_sound", &self.shearing_sound);
         }
 
         sort_map_entries(&mut entries);
@@ -164,37 +154,6 @@ impl HashComponent for EquippableAllowedEntities {
             }
         }
     }
-}
-
-fn write_sound_event_holder(writer: &mut impl Write, sound: SoundEventRef) -> Result<()> {
-    let id = sound
-        .try_id()
-        .ok_or_else(|| Error::other(format!("Unknown sound event: {}", sound.key)))?;
-    let id = i32::try_from(id)
-        .map_err(|_| Error::other(format!("Sound event id out of protocol range: {id}")))?;
-    VarInt(id + 1).write(writer)
-}
-
-fn read_sound_event_holder(data: &mut Cursor<&[u8]>) -> Result<SoundEventRef> {
-    let holder_id = VarInt::read(data)?.0;
-    if holder_id == 0 {
-        let sound_id = Identifier::read(data)?;
-        let _fixed_range = Option::<f32>::read(data)?;
-        return REGISTRY
-            .sound_events
-            .by_key(&sound_id)
-            .ok_or_else(|| Error::other(format!("Unknown direct sound event: {sound_id}")));
-    }
-    if holder_id < 0 {
-        return Err(Error::other(format!(
-            "Negative sound event holder id: {holder_id}"
-        )));
-    }
-
-    REGISTRY
-        .sound_events
-        .by_id((holder_id - 1) as usize)
-        .ok_or_else(|| Error::other(format!("Unknown sound event holder id: {holder_id}")))
 }
 
 fn write_allowed_entities(
@@ -285,7 +244,7 @@ impl simdnbt::ToNbtTag for Equippable {
 
         let mut compound = NbtCompound::new();
         compound.insert("slot", self.slot.name());
-        compound.insert("equip_sound", self.equip_sound.key.to_string());
+        compound.insert("equip_sound", self.equip_sound.to_nbt_tag());
         if let Some(asset_id) = self.asset_id {
             compound.insert("asset_id", asset_id.to_string());
         }
@@ -297,7 +256,7 @@ impl simdnbt::ToNbtTag for Equippable {
         compound.insert("damage_on_hurt", i8::from(self.damage_on_hurt));
         compound.insert("equip_on_interact", i8::from(self.equip_on_interact));
         compound.insert("can_be_sheared", i8::from(self.can_be_sheared));
-        compound.insert("shearing_sound", self.shearing_sound.key.to_string());
+        compound.insert("shearing_sound", self.shearing_sound.to_nbt_tag());
         if let Some(allowed_entities) = self.allowed_entities {
             match allowed_entities {
                 EquippableAllowedEntities::Tag(tag) => {
@@ -334,8 +293,8 @@ impl simdnbt::FromNbtTag for Equippable {
         let slot = EquipmentSlot::by_name(&slot_str)?;
         let equip_sound = compound
             .get("equip_sound")
-            .and_then(parse_sound_event_nbt)
-            .unwrap_or(&sound_events::ITEM_ARMOR_EQUIP_GENERIC);
+            .and_then(SoundEventHolder::from_nbt_tag)
+            .unwrap_or_else(|| SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_GENERIC));
         let asset_id = compound.get("asset_id").and_then(parse_identifier_nbt);
         let camera_overlay = compound
             .get("camera_overlay")
@@ -370,8 +329,8 @@ impl simdnbt::FromNbtTag for Equippable {
             .unwrap_or(false);
         let shearing_sound = compound
             .get("shearing_sound")
-            .and_then(parse_sound_event_nbt)
-            .unwrap_or(&sound_events::ITEM_SHEARS_SNIP);
+            .and_then(SoundEventHolder::from_nbt_tag)
+            .unwrap_or_else(|| SoundEventHolder::registry(&sound_events::ITEM_SHEARS_SNIP));
 
         Some(Self {
             slot,
@@ -391,12 +350,6 @@ impl simdnbt::FromNbtTag for Equippable {
 
 fn parse_identifier_nbt(tag: simdnbt::borrow::NbtTag) -> Option<Identifier> {
     Identifier::from_str(&tag.string()?.to_str()).ok()
-}
-
-fn parse_sound_event_nbt(tag: simdnbt::borrow::NbtTag) -> Option<SoundEventRef> {
-    let value = tag.string()?.to_str();
-    let id = Identifier::from_str(&value).ok()?;
-    REGISTRY.sound_events.by_key(&id)
 }
 
 fn parse_allowed_entities_nbt(tag: simdnbt::borrow::NbtTag) -> Option<EquippableAllowedEntities> {
@@ -434,6 +387,7 @@ mod tests {
     use super::{Equippable, EquippableAllowedEntities};
     use crate::data_components::ComponentData;
     use crate::item_stack::ItemStack;
+    use crate::sound_event::SoundEventHolder;
     use crate::sound_events;
     use crate::test_support::init_test_registry;
     use crate::vanilla_entities::{LLAMA, PIG, PLAYER, WOLF};
@@ -475,7 +429,7 @@ mod tests {
         assert!(!helmet_equippable.can_be_sheared);
         assert_eq!(
             helmet_equippable.equip_sound,
-            &sound_events::ITEM_ARMOR_EQUIP_DIAMOND
+            SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_DIAMOND)
         );
         assert_eq!(
             helmet_equippable.asset_id.as_ref(),
@@ -492,7 +446,7 @@ mod tests {
         assert!(saddle_equippable.can_be_sheared);
         assert_eq!(
             saddle_equippable.shearing_sound,
-            &sound_events::ITEM_SADDLE_UNEQUIP
+            SoundEventHolder::registry(&sound_events::ITEM_SADDLE_UNEQUIP)
         );
         assert_eq!(
             saddle_equippable.asset_id.as_ref(),
@@ -512,7 +466,7 @@ mod tests {
         assert!(carpet_equippable.can_be_sheared);
         assert_eq!(
             carpet_equippable.shearing_sound,
-            &sound_events::ITEM_LLAMA_CARPET_UNEQUIP
+            SoundEventHolder::registry(&sound_events::ITEM_LLAMA_CARPET_UNEQUIP)
         );
         assert!(carpet_equippable.can_be_equipped_by(&LLAMA));
         assert!(!carpet_equippable.can_be_equipped_by(&PIG));

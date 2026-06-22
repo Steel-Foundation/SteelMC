@@ -109,17 +109,16 @@ impl EquipmentSlot {
 
     /// Returns the equipment slot with the given vanilla protocol ID.
     #[must_use]
-    pub const fn by_id(id: i32) -> Option<Self> {
+    pub const fn by_id(id: i32) -> Self {
         match id {
-            0 => Some(EquipmentSlot::MainHand),
-            1 => Some(EquipmentSlot::Feet),
-            2 => Some(EquipmentSlot::Legs),
-            3 => Some(EquipmentSlot::Chest),
-            4 => Some(EquipmentSlot::Head),
-            5 => Some(EquipmentSlot::OffHand),
-            6 => Some(EquipmentSlot::Body),
-            7 => Some(EquipmentSlot::Saddle),
-            _ => None,
+            1 => EquipmentSlot::Feet,
+            2 => EquipmentSlot::Legs,
+            3 => EquipmentSlot::Chest,
+            4 => EquipmentSlot::Head,
+            5 => EquipmentSlot::OffHand,
+            6 => EquipmentSlot::Body,
+            7 => EquipmentSlot::Saddle,
+            _ => EquipmentSlot::MainHand,
         }
     }
 
@@ -203,20 +202,19 @@ impl EquipmentSlotGroup {
     }
 
     #[must_use]
-    pub const fn by_id(id: i32) -> Option<Self> {
+    pub const fn by_id(id: i32) -> Self {
         match id {
-            0 => Some(Self::Any),
-            1 => Some(Self::MainHand),
-            2 => Some(Self::OffHand),
-            3 => Some(Self::Hand),
-            4 => Some(Self::Feet),
-            5 => Some(Self::Legs),
-            6 => Some(Self::Chest),
-            7 => Some(Self::Head),
-            8 => Some(Self::Armor),
-            9 => Some(Self::Body),
-            10 => Some(Self::Saddle),
-            _ => None,
+            1 => Self::MainHand,
+            2 => Self::OffHand,
+            3 => Self::Hand,
+            4 => Self::Feet,
+            5 => Self::Legs,
+            6 => Self::Chest,
+            7 => Self::Head,
+            8 => Self::Armor,
+            9 => Self::Body,
+            10 => Self::Saddle,
+            _ => Self::Any,
         }
     }
 
@@ -311,10 +309,10 @@ mod tests {
 
         for (slot, id) in slots {
             assert_eq!(slot.id(), id);
-            assert_eq!(EquipmentSlot::by_id(id), Some(slot));
+            assert_eq!(EquipmentSlot::by_id(id), slot);
         }
-        assert_eq!(EquipmentSlot::by_id(-1), None);
-        assert_eq!(EquipmentSlot::by_id(8), None);
+        assert_eq!(EquipmentSlot::by_id(-1), EquipmentSlot::MainHand);
+        assert_eq!(EquipmentSlot::by_id(8), EquipmentSlot::MainHand);
     }
 
     #[test]

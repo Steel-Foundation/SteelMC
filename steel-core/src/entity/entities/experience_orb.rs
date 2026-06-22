@@ -18,8 +18,8 @@ use steel_utils::{BlockPos, ChunkPos, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, RemovalReason,
-    SharedEntity, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityCapabilities, EntitySyncedData,
+    ExperienceOrbMergeEntity, LivingEntity, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -216,17 +216,12 @@ impl ExperienceOrbEntity {
         );
         let merge_id = world.random().lock().next_i32_bounded(ORB_GROUPS_PER_AREA);
         for entity in world.get_entities_in_aabb(&search_box) {
-            let Some(orb) = entity.as_experience_orb() else {
+            let Some(orb) = entity.as_experience_orb_merge_entity() else {
                 continue;
             };
-            if !orb.can_merge_id(merge_id, value) {
-                continue;
+            if orb.try_absorb_awarded_experience_orb(merge_id, value) {
+                return true;
             }
-
-            let mut state = orb.state.lock();
-            state.count += 1;
-            state.age = 0;
-            return true;
         }
         false
     }
@@ -237,13 +232,10 @@ impl ExperienceOrbEntity {
             if entity.id() == self.id() {
                 continue;
             }
-            let Some(orb) = entity.as_experience_orb() else {
+            let Some(orb) = entity.as_experience_orb_merge_entity() else {
                 continue;
             };
-            if !orb.can_merge_id(self.id(), self.value()) {
-                continue;
-            }
-            self.merge(&orb);
+            self.try_absorb_experience_orb(orb, self.id(), self.value());
             if self.is_removed() {
                 return;
             }
@@ -252,19 +244,6 @@ impl ExperienceOrbEntity {
 
     fn can_merge_id(&self, id: i32, value: i32) -> bool {
         !self.is_removed() && (self.id() - id) % ORB_GROUPS_PER_AREA == 0 && self.value() == value
-    }
-
-    fn merge(&self, other: &ExperienceOrbEntity) {
-        let (other_count, other_age) = {
-            let state = other.state.lock();
-            (state.count, state.age)
-        };
-        {
-            let mut state = self.state.lock();
-            state.count += other_count;
-            state.age = state.age.min(other_age);
-        }
-        other.set_removed(RemovalReason::Discarded);
     }
 
     fn set_underwater_movement(&self) {
@@ -495,8 +474,8 @@ impl Entity for ExperienceOrbEntity {
         Some(&self.entity_data)
     }
 
-    fn as_experience_orb(self: Arc<Self>) -> Option<Arc<ExperienceOrbEntity>> {
-        Some(self)
+    fn capabilities(&self) -> EntityCapabilities<'_> {
+        EntityCapabilities::none().with_experience_orb_merge_entity(self)
     }
 
     fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
@@ -543,6 +522,46 @@ impl Entity for ExperienceOrbEntity {
     }
 }
 
+impl ExperienceOrbMergeEntity for ExperienceOrbEntity {
+    fn can_merge_experience_orb(&self, merge_id: i32, value: i32) -> bool {
+        self.can_merge_id(merge_id, value)
+    }
+
+    fn try_absorb_awarded_experience_orb(&self, merge_id: i32, value: i32) -> bool {
+        if !self.can_merge_experience_orb(merge_id, value) {
+            return false;
+        }
+
+        let mut state = self.state.lock();
+        state.count += 1;
+        state.age = 0;
+        true
+    }
+
+    fn try_absorb_experience_orb(
+        &self,
+        other: &dyn ExperienceOrbMergeEntity,
+        merge_id: i32,
+        value: i32,
+    ) -> bool {
+        if !other.can_merge_experience_orb(merge_id, value) {
+            return false;
+        }
+
+        let (other_count, other_age) = other.experience_orb_merge_state();
+        let mut state = self.state.lock();
+        state.count += other_count;
+        state.age = state.age.min(other_age);
+        other.set_removed(RemovalReason::Discarded);
+        true
+    }
+
+    fn experience_orb_merge_state(&self) -> (i32, i32) {
+        let state = self.state.lock();
+        (state.count, state.age)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -582,6 +601,39 @@ mod tests {
         assert!(orb.can_merge_id(1, 7));
         assert!(!orb.can_merge_id(2, 7));
         assert!(!orb.can_merge_id(1, 3));
+    }
+
+    #[test]
+    fn experience_orb_merge_capability_absorbs_existing_group() {
+        init_test_registry();
+
+        let target = ExperienceOrbEntity::new(
+            &vanilla_entities::EXPERIENCE_ORB,
+            41,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+        target.set_value(7);
+        target.set_age(50);
+
+        let other = ExperienceOrbEntity::new(
+            &vanilla_entities::EXPERIENCE_ORB,
+            81,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+        other.set_value(7);
+        other.set_age(12);
+        other.state.lock().count = 3;
+
+        let Some(other_merge) = other.as_experience_orb_merge_entity() else {
+            panic!("experience orb should expose merge capability");
+        };
+        assert!(target.try_absorb_experience_orb(other_merge, target.id(), target.value()));
+
+        assert_eq!(target.count(), 4);
+        assert_eq!(target.age(), 12);
+        assert!(other.is_removed());
     }
 
     #[test]

@@ -176,9 +176,7 @@ impl ReadFrom for ItemAttributeModifierEntry {
         let amount = f64::read(data)?;
         let operation = AttributeModifierOperation::read(data)?;
         let slot_id = VarInt::read(data)?.0;
-        let slot = EquipmentSlotGroup::by_id(slot_id).ok_or_else(|| {
-            std::io::Error::other(format!("Unknown equipment slot group id: {slot_id}"))
-        })?;
+        let slot = EquipmentSlotGroup::by_id(slot_id);
         let display = ItemAttributeModifierDisplay::read(data)?;
 
         Ok(Self {
@@ -206,12 +204,9 @@ impl ReadFrom for ItemAttributeModifierDisplay {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let display_id = VarInt::read(data)?.0;
         match display_id {
-            0 => Ok(Self::Default),
             1 => Ok(Self::Hidden),
             2 => Ok(Self::OverrideText(Box::new(TextComponent::read(data)?))),
-            _ => Err(std::io::Error::other(format!(
-                "Unknown attribute modifier display id: {display_id}"
-            ))),
+            _ => Ok(Self::Default),
         }
     }
 }
@@ -358,7 +353,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use crate::attribute::AttributeModifierOperation;
-    use crate::equipment::EquipmentSlot;
+    use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
     use crate::item_stack::ItemStack;
     use crate::{
         RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items::ITEMS,
@@ -422,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_attribute_modifier_slot_group_id() {
+    fn unknown_attribute_modifier_slot_group_id_falls_back_to_any() {
         init_test_registry();
 
         let mut bytes = Vec::new();
@@ -442,25 +437,17 @@ mod tests {
             .write(&mut bytes)
             .unwrap();
 
-        let error = ItemAttributeModifierEntry::read(&mut Cursor::new(bytes.as_slice()))
-            .expect_err("unknown slot group id should be rejected");
+        let entry = ItemAttributeModifierEntry::read(&mut Cursor::new(bytes.as_slice()))
+            .expect("unknown slot group id should fall back to any");
 
-        assert!(
-            error
-                .to_string()
-                .contains("Unknown equipment slot group id")
-        );
+        assert_eq!(entry.slot, EquipmentSlotGroup::Any);
     }
 
     #[test]
-    fn rejects_unknown_attribute_modifier_display_id() {
-        let error = ItemAttributeModifierDisplay::read(&mut Cursor::new(&[99][..]))
-            .expect_err("unknown display id should be rejected");
+    fn unknown_attribute_modifier_display_id_falls_back_to_default() {
+        let display = ItemAttributeModifierDisplay::read(&mut Cursor::new(&[99][..]))
+            .expect("unknown display id should fall back to default");
 
-        assert!(
-            error
-                .to_string()
-                .contains("Unknown attribute modifier display id")
-        );
+        assert_eq!(display, ItemAttributeModifierDisplay::Default);
     }
 }

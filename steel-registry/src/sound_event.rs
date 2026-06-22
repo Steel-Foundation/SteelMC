@@ -55,6 +55,14 @@ impl SoundEventHolder {
     pub const fn registry(sound: SoundEventRef) -> Self {
         Self::Registry(sound)
     }
+
+    #[must_use]
+    pub const fn registry_ref(&self) -> Option<SoundEventRef> {
+        match self {
+            Self::Registry(sound) => Some(*sound),
+            Self::Direct { .. } => None,
+        }
+    }
 }
 
 impl WriteTo for SoundEventHolder {

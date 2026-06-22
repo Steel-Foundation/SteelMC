@@ -2,6 +2,7 @@ use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::CSetEntityMotion;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{level_events, sound_events, vanilla_damage_types};
 
 use crate::behavior::ItemBehavior;
@@ -35,10 +36,7 @@ impl MaceItem {
         attacker.position()
     }
 
-    fn smash_sound(
-        target: &dyn LivingEntity,
-        attacker: &dyn LivingEntity,
-    ) -> steel_registry::sound_event::SoundEventRef {
+    fn smash_sound(target: &dyn LivingEntity, attacker: &dyn LivingEntity) -> SoundEventRef {
         if !target.on_ground() {
             return &sound_events::ITEM_MACE_SMASH_AIR;
         }

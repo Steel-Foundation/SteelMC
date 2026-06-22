@@ -117,15 +117,50 @@ fn entity_type_ref_token(s: &str) -> Option<TokenStream> {
     Some(quote! { &vanilla_entities::#ident })
 }
 
-fn sound_event_ref_token(value: &Value, field: &str, default: &str) -> TokenStream {
-    let sound = value
-        .get(field)
-        .and_then(|value| value.as_str())
-        .unwrap_or(default);
+fn registry_sound_event_holder_token(sound: &str, field: &str) -> TokenStream {
     let id = Identifier::from_str(sound).unwrap_or_else(|error| {
         panic!("invalid sound event id {sound:?} in equippable field {field}: {error}")
     });
-    generate_sound_event_ref(&id)
+    let sound = generate_sound_event_ref(&id);
+    quote! { crate::sound_event::SoundEventHolder::registry(#sound) }
+}
+
+fn sound_event_holder_token(value: &Value, field: &str, default: &str) -> TokenStream {
+    let Some(value) = value.get(field) else {
+        return registry_sound_event_holder_token(default, field);
+    };
+
+    if let Some(sound) = value.as_str() {
+        return registry_sound_event_holder_token(sound, field);
+    }
+
+    let Some(sound) = value.as_object() else {
+        panic!("equippable field {field} must be a sound id string or direct sound object");
+    };
+    let sound_id_value = sound
+        .get("sound_id")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("direct equippable sound field {field} missing sound_id"));
+    Identifier::from_str(sound_id_value).unwrap_or_else(|error| {
+        panic!("invalid direct equippable sound id {sound_id_value:?} in field {field}: {error}")
+    });
+    let sound_id = identifier_token(sound_id_value);
+    let fixed_range = sound.get("range").map_or_else(
+        || quote! { None },
+        |range| {
+            let range = range.as_f64().unwrap_or_else(|| {
+                panic!("direct equippable sound field {field} range must be a number")
+            }) as f32;
+            quote! { Some(#range) }
+        },
+    );
+
+    quote! {
+        crate::sound_event::SoundEventHolder::Direct {
+            sound_id: #sound_id,
+            fixed_range: #fixed_range,
+        }
+    }
 }
 
 fn damage_type_ref_token(value: &str) -> TokenStream {
@@ -549,7 +584,7 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         _ => continue,
                     };
                     let allowed_entities = generate_allowed_entities(value);
-                    let equip_sound = sound_event_ref_token(
+                    let equip_sound = sound_event_holder_token(
                         value,
                         "equip_sound",
                         "minecraft:item.armor.equip_generic",
@@ -576,7 +611,7 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         .get("can_be_sheared")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    let shearing_sound = sound_event_ref_token(
+                    let shearing_sound = sound_event_holder_token(
                         value,
                         "shearing_sound",
                         "minecraft:item.shears.snip",

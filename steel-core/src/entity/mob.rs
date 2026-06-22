@@ -26,7 +26,7 @@ use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, ChunkPos, Identifier, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, InteractionResult};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
     BodyRotationInput, MobControls, MoveControlOperation, rotate_if_necessary, rotate_towards,
@@ -208,7 +208,7 @@ impl LeashData {
     fn from_entity(holder: &SharedEntity) -> Self {
         let attachment = holder.as_leash_fence_knot().map_or_else(
             || LeashAttachment::Entity(holder.uuid()),
-            |knot| LeashAttachment::FenceKnot(knot.block_pos()),
+            |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
         );
         Self {
             attachment,
@@ -233,7 +233,7 @@ impl LeashData {
         self.holder().map_or(self.attachment, |holder| {
             holder.as_leash_fence_knot().map_or_else(
                 || LeashAttachment::Entity(holder.uuid()),
-                |knot| LeashAttachment::FenceKnot(knot.block_pos()),
+                |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
             )
         })
     }
@@ -241,7 +241,7 @@ impl LeashData {
     fn set_holder(&mut self, holder: &SharedEntity) {
         self.attachment = holder.as_leash_fence_knot().map_or_else(
             || LeashAttachment::Entity(holder.uuid()),
-            |knot| LeashAttachment::FenceKnot(knot.block_pos()),
+            |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
         );
         self.holder = Some(Arc::downgrade(holder));
         self.angular_momentum = 0.0;
@@ -1335,6 +1335,9 @@ pub trait Mob: LivingEntity {
     /// Handles vanilla `Mob.doHurtTarget`.
     #[must_use]
     fn do_hurt_target(&self, target: &SharedEntity) -> bool {
+        let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
+            return false;
+        };
         LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
         let weapon_item = {
             let mut main_hand = ItemStack::empty();
@@ -1347,16 +1350,18 @@ pub trait Mob: LivingEntity {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = self.mob_attack_damage_source();
+        let damage_source = self.mob_attack_damage_source(&weapon_item, attacker);
         let enchantment_context = EnchantmentDamageContext::new(
             target.entity_type(),
             Some(self.entity_type()),
             Some(self.entity_type()),
             &damage_source,
         );
-        let damage =
+        let mut damage =
             enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
-        // TODO: Apply item attack damage bonuses once item combat behavior exposes them.
+        damage += ITEM_BEHAVIORS
+            .get_behavior(weapon_item.item())
+            .get_attack_damage_bonus(attacker, target.as_ref(), damage, &damage_source);
 
         let old_movement = target.velocity();
         let was_hurt = target.hurt(&damage_source, damage);
@@ -1366,7 +1371,18 @@ pub trait Mob: LivingEntity {
                 self.get_attack_knockback(target.as_ref(), &weapon_item, &damage_source),
                 old_movement,
             );
-            // TODO: Run ItemStack.hurtEnemy once weapon durability hooks exist.
+            self.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
+                if stack.is_empty() {
+                    return;
+                }
+                if let Some(living_target) = target.as_living_entity() {
+                    ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
+                        stack,
+                        living_target,
+                        attacker,
+                    );
+                }
+            });
             let post_attack_context = EnchantmentPostAttackContext::new(
                 target.as_ref(),
                 Some(self.as_entity_event_source()),
@@ -1388,9 +1404,15 @@ pub trait Mob: LivingEntity {
     }
 
     /// Returns the damage source used by vanilla `DamageSources.mobAttack`.
-    fn mob_attack_damage_source(&self) -> DamageSource {
-        // TODO: Use the held item's DAMAGE_TYPE component once it has typed component data.
-        DamageSource::environment(&vanilla_damage_types::MOB_ATTACK)
+    fn mob_attack_damage_source(
+        &self,
+        weapon_item: &ItemStack,
+        attacker: &dyn LivingEntity,
+    ) -> DamageSource {
+        ITEM_BEHAVIORS
+            .get_behavior(weapon_item.item())
+            .get_item_damage_source(attacker)
+            .unwrap_or_else(|| DamageSource::environment(&vanilla_damage_types::MOB_ATTACK))
             .with_causing_entity(self.id())
             .with_direct_entity(self.id())
             .with_source_position(self.position())

@@ -1021,7 +1021,7 @@ mod tests {
         );
         assert!(navigation.is_done());
         assert!(navigation.path().is_none());
-        assert_eq!(navigation.target_pos(), None);
+        assert_eq!(navigation.target_pos(), Some(BlockPos::new(0, 64, 0)));
     }
 
     #[test]

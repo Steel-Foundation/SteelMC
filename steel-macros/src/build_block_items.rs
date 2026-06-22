@@ -1,6 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Fields, ImplItem, ItemImpl, ItemStruct, meta::parser, parse::Parser, parse2};
+use syn::{
+    Fields, ImplItem, ItemImpl, ItemStruct,
+    meta::{ParseNestedMeta, parser},
+    parse::Parser,
+    parse2,
+};
 
 const KNOWN_ENTITY_CLASSES: &[&str] = &[
     "entity",
@@ -139,7 +144,7 @@ impl EntityClass {
         })
     }
 
-    fn capabilities(self) -> &'static [&'static str] {
+    const fn capabilities(self) -> &'static [&'static str] {
         match self {
             Self::Entity => &[],
             Self::Player => &["player", "living"],
@@ -150,7 +155,7 @@ impl EntityClass {
         }
     }
 
-    fn requirements(self) -> &'static [&'static str] {
+    const fn requirements(self) -> &'static [&'static str] {
         match self {
             Self::AgeableMob => &["ageable_mob"],
             _ => &[],
@@ -210,10 +215,7 @@ fn push_unique(capabilities: &mut Vec<String>, capability: &str) {
     }
 }
 
-fn parse_single_nested_ident(
-    meta: syn::meta::ParseNestedMeta<'_>,
-    context: &str,
-) -> syn::Result<String> {
+fn parse_single_nested_ident(meta: ParseNestedMeta<'_>, context: &str) -> syn::Result<String> {
     let mut parsed = None;
     meta.parse_nested_meta(|nested| {
         if parsed.is_some() {

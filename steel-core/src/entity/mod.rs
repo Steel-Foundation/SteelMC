@@ -61,7 +61,7 @@ use crate::world::game_event_context::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
-use entities::{ExperienceOrbEntity, ItemEntity, LeashFenceKnotEntity};
+use entities::ExperienceOrbEntity;
 
 /// Global counter for allocating unique entity IDs.
 ///
@@ -829,6 +829,56 @@ impl<T: Entity> EntityEventSource for T {
     }
 }
 
+/// Behavior required for vanilla dropped-item merging.
+pub trait ItemMergeEntity: Entity {
+    /// Returns whether this dropped item can merge with nearby dropped items.
+    fn is_mergeable_item_entity(&self) -> bool;
+
+    /// Attempts to merge this dropped item with another mergeable dropped item.
+    fn try_merge_item_entity(&self, other: &dyn ItemMergeEntity);
+
+    /// Returns the item stack used by merge comparisons.
+    fn item_merge_stack(&self) -> ItemStack;
+
+    /// Returns the vanilla target owner used by merge comparisons.
+    fn item_merge_owner(&self) -> Option<Uuid>;
+
+    /// Returns pickup delay and age used when combining item entities.
+    fn item_merge_timing(&self) -> (i32, i32);
+
+    /// Applies the merged destination stack and combined timing.
+    fn apply_item_merge_destination(&self, stack: ItemStack, pickup_delay: i32, age: i32);
+
+    /// Applies the merged source remainder, or removes the source when empty.
+    fn apply_item_merge_source(&self, stack: ItemStack);
+}
+
+/// Behavior required for vanilla experience-orb grouping and merging.
+pub trait ExperienceOrbMergeEntity: Entity {
+    /// Returns whether this orb group can merge with the given vanilla merge key.
+    fn can_merge_experience_orb(&self, merge_id: i32, value: i32) -> bool;
+
+    /// Tries to absorb a freshly awarded orb value into this orb group.
+    fn try_absorb_awarded_experience_orb(&self, merge_id: i32, value: i32) -> bool;
+
+    /// Tries to merge `other` into this orb group.
+    fn try_absorb_experience_orb(
+        &self,
+        other: &dyn ExperienceOrbMergeEntity,
+        merge_id: i32,
+        value: i32,
+    ) -> bool;
+
+    /// Returns merge count and age for another orb group to absorb.
+    fn experience_orb_merge_state(&self) -> (i32, i32);
+}
+
+/// Behavior for leash holders that save as a fence-knot block position.
+pub trait LeashFenceKnot: Entity {
+    /// Returns the fence block this leash knot is attached to.
+    fn leash_fence_pos(&self) -> BlockPos;
+}
+
 /// Explicit behavior capabilities exposed by a concrete entity implementation.
 ///
 /// This mirrors vanilla `instanceof` branches without relying on `Any` or
@@ -842,6 +892,9 @@ pub struct EntityCapabilities<'a> {
     pathfinder_mob: Option<&'a dyn PathfinderMob>,
     animal: Option<&'a dyn Animal>,
     item_steerable: Option<&'a dyn ItemSteerable>,
+    item_merge_entity: Option<&'a dyn ItemMergeEntity>,
+    experience_orb_merge_entity: Option<&'a dyn ExperienceOrbMergeEntity>,
+    leash_fence_knot: Option<&'a dyn LeashFenceKnot>,
 }
 
 impl<'a> EntityCapabilities<'a> {
@@ -855,6 +908,9 @@ impl<'a> EntityCapabilities<'a> {
             pathfinder_mob: None,
             animal: None,
             item_steerable: None,
+            item_merge_entity: None,
+            experience_orb_merge_entity: None,
+            leash_fence_knot: None,
         }
     }
 
@@ -897,6 +953,33 @@ impl<'a> EntityCapabilities<'a> {
     #[must_use]
     pub const fn with_item_steerable(mut self, item_steerable: &'a dyn ItemSteerable) -> Self {
         self.item_steerable = Some(item_steerable);
+        self
+    }
+
+    /// Exposes dropped-item merge behavior for this entity.
+    #[must_use]
+    pub const fn with_item_merge_entity(
+        mut self,
+        item_merge_entity: &'a dyn ItemMergeEntity,
+    ) -> Self {
+        self.item_merge_entity = Some(item_merge_entity);
+        self
+    }
+
+    /// Exposes experience-orb merge behavior for this entity.
+    #[must_use]
+    pub const fn with_experience_orb_merge_entity(
+        mut self,
+        experience_orb_merge_entity: &'a dyn ExperienceOrbMergeEntity,
+    ) -> Self {
+        self.experience_orb_merge_entity = Some(experience_orb_merge_entity);
+        self
+    }
+
+    /// Exposes leash fence-knot behavior for this entity.
+    #[must_use]
+    pub const fn with_leash_fence_knot(mut self, leash_fence_knot: &'a dyn LeashFenceKnot) -> Self {
+        self.leash_fence_knot = Some(leash_fence_knot);
         self
     }
 }
@@ -1635,21 +1718,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().set_level_callback(callback);
     }
 
-    /// Gets the entity as an `ItemEntity` if it is one.
-    fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
-        None
-    }
-
-    /// Gets the entity as an `ExperienceOrbEntity` if it is one.
-    fn as_experience_orb(self: Arc<Self>) -> Option<Arc<ExperienceOrbEntity>> {
-        None
-    }
-
-    /// Returns this entity as a leash fence knot when it has that behavior.
-    fn as_leash_fence_knot(&self) -> Option<&LeashFenceKnotEntity> {
-        None
-    }
-
     /// Called by leashables while this entity is their live leash holder.
     fn notify_leash_holder(&self, _leashable: &dyn Entity) {}
 
@@ -1772,7 +1840,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
                     continue;
                 }
 
-                let shearing_sound = equippable.shearing_sound;
+                let shearing_sound = equippable.shearing_sound.registry_ref();
                 (equipment.take(slot), shearing_sound)
             };
             let (item_stack, shearing_sound) = sheared;
@@ -1795,7 +1863,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
                     &GameEventContext::new(Some(player), None),
                 );
             }
-            self.play_sound(shearing_sound, 1.0, 1.0);
+            if let Some(shearing_sound) = shearing_sound {
+                self.play_sound(shearing_sound, 1.0, 1.0);
+            }
 
             let dimensions = self.base().dimensions();
             let spawn_offset = dimensions
@@ -1994,6 +2064,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// core code to downcast through `Any`.
     fn as_item_steerable(&self) -> Option<&dyn ItemSteerable> {
         self.capabilities().item_steerable
+    }
+
+    /// Returns dropped-item merge behavior when this entity exposes it.
+    fn as_item_merge_entity(&self) -> Option<&dyn ItemMergeEntity> {
+        self.capabilities().item_merge_entity
+    }
+
+    /// Returns experience-orb merge behavior when this entity exposes it.
+    fn as_experience_orb_merge_entity(&self) -> Option<&dyn ExperienceOrbMergeEntity> {
+        self.capabilities().experience_orb_merge_entity
+    }
+
+    /// Returns leash fence-knot behavior when this entity exposes it.
+    fn as_leash_fence_knot(&self) -> Option<&dyn LeashFenceKnot> {
+        self.capabilities().leash_fence_knot
     }
 
     /// Returns true when vanilla `ServerEntity` should force velocity sync for fall flying.
@@ -5127,7 +5212,9 @@ pub trait LivingEntity: Entity {
     /// Returns the equip sound Steel can currently resolve for this entity.
     fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
         let equippable = stack.get_equippable()?;
-        (slot == equippable.slot).then_some(equippable.equip_sound)
+        (slot == equippable.slot)
+            .then(|| equippable.equip_sound.registry_ref())
+            .flatten()
     }
 
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.

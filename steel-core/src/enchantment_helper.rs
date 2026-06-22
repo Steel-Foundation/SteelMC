@@ -497,7 +497,6 @@ fn post_piercing_entity_effect_is_supported(effect: &EnchantmentEntityEffect) ->
         EnchantmentEntityEffect::ChangeItemDamage { .. }
         | EnchantmentEntityEffect::ApplyExhaustion { .. }
         | EnchantmentEntityEffect::Ignite { .. } => true,
-        EnchantmentEntityEffect::DamageEntity { .. } => false,
         EnchantmentEntityEffect::PlaySound { sounds, .. } => !sounds.is_empty(),
         EnchantmentEntityEffect::ApplyImpulse { direction, .. } => {
             direction.x == 0.0 && direction.y == 0.0
@@ -505,7 +504,8 @@ fn post_piercing_entity_effect_is_supported(effect: &EnchantmentEntityEffect) ->
         EnchantmentEntityEffect::ApplyMobEffect { to_apply, .. } => {
             matches!(to_apply, MobEffectSelection::Single(_))
         }
-        EnchantmentEntityEffect::Unsupported { .. } => false,
+        EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
 }
 
@@ -639,8 +639,8 @@ fn requirements_state(
         EnchantmentEffectRequirements::DamageSourceProperties(predicate) => Some(
             damage_source_predicate_matches(predicate, context.damage_source),
         ),
-        EnchantmentEffectRequirements::RandomChance { .. } => None,
-        EnchantmentEffectRequirements::Unsupported { .. } => None,
+        EnchantmentEffectRequirements::RandomChance { .. }
+        | EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
 

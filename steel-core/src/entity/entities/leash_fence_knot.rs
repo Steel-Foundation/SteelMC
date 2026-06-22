@@ -13,8 +13,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, WorldAabb};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
-    next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, LeashFenceKnot,
+    RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::world::World;
 
@@ -117,7 +117,7 @@ impl LeashFenceKnotEntity {
             .get_entities_in_aabb_matching(&search_box, |entity| {
                 entity
                     .as_leash_fence_knot()
-                    .is_some_and(|knot| knot.block_pos() == pos)
+                    .is_some_and(|knot| knot.leash_fence_pos() == pos)
             })
             .into_iter()
             .next()
@@ -200,8 +200,8 @@ impl Entity for LeashFenceKnotEntity {
         )
     }
 
-    fn as_leash_fence_knot(&self) -> Option<&LeashFenceKnotEntity> {
-        Some(self)
+    fn capabilities(&self) -> EntityCapabilities<'_> {
+        EntityCapabilities::none().with_leash_fence_knot(self)
     }
 
     fn notify_leashee_removed(&self, _leashable: &dyn Entity) {
@@ -223,6 +223,12 @@ impl Entity for LeashFenceKnotEntity {
 
     fn is_pickable(&self) -> bool {
         true
+    }
+}
+
+impl LeashFenceKnot for LeashFenceKnotEntity {
+    fn leash_fence_pos(&self) -> BlockPos {
+        self.block_pos()
     }
 }
 

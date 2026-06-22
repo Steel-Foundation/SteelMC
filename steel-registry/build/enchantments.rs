@@ -1,7 +1,7 @@
 use std::fs;
 
 use crate::generator_functions::generate_sound_event_ref;
-use heck::ToShoutySnakeCase;
+use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use serde::{Deserialize, de};
@@ -1656,6 +1656,271 @@ fn generate_sound_event_refs(sounds: &[Identifier]) -> TokenStream {
     quote! { &[#(#sounds),*] }
 }
 
+#[derive(Clone, Copy)]
+enum NbtNumberHint {
+    Infer,
+    Float,
+    Double,
+}
+
+#[derive(Clone, Copy)]
+enum NbtValueHint {
+    Infer,
+    Float,
+    Double,
+    LevelBasedValue,
+    FloatProvider,
+    DoubleBounds,
+    MovementPredicate,
+}
+
+impl NbtValueHint {
+    const fn number_hint(self) -> NbtNumberHint {
+        match self {
+            Self::Float | Self::LevelBasedValue | Self::FloatProvider => NbtNumberHint::Float,
+            Self::Double | Self::DoubleBounds => NbtNumberHint::Double,
+            Self::Infer | Self::MovementPredicate => NbtNumberHint::Infer,
+        }
+    }
+}
+
+fn generate_nbt_number(number: &serde_json::Number, hint: NbtNumberHint) -> TokenStream {
+    match hint {
+        NbtNumberHint::Float => {
+            let Some(value) = number.as_f64() else {
+                panic!("unsupported enchantment effect NBT float: {number}");
+            };
+            let value = Literal::f32_unsuffixed(value as f32);
+            return quote! { NbtTag::Float(#value) };
+        }
+        NbtNumberHint::Double => {
+            let Some(value) = number.as_f64() else {
+                panic!("unsupported enchantment effect NBT double: {number}");
+            };
+            let value = Literal::f64_unsuffixed(value);
+            return quote! { NbtTag::Double(#value) };
+        }
+        NbtNumberHint::Infer => {}
+    }
+
+    if let Some(value) = number.as_i64() {
+        if let Ok(value) = i32::try_from(value) {
+            let value = Literal::i32_unsuffixed(value);
+            return quote! { NbtTag::Int(#value) };
+        }
+
+        let value = Literal::i64_unsuffixed(value);
+        return quote! { NbtTag::Long(#value) };
+    }
+
+    if let Some(value) = number.as_u64() {
+        if let Ok(value) = i32::try_from(value) {
+            let value = Literal::i32_unsuffixed(value);
+            return quote! { NbtTag::Int(#value) };
+        }
+        if let Ok(value) = i64::try_from(value) {
+            let value = Literal::i64_unsuffixed(value);
+            return quote! { NbtTag::Long(#value) };
+        }
+
+        panic!("enchantment effect NBT integer out of i64 range: {value}");
+    }
+
+    let Some(value) = number.as_f64() else {
+        panic!("unsupported enchantment effect NBT number: {number}");
+    };
+    let value = Literal::f32_unsuffixed(value as f32);
+    quote! { NbtTag::Float(#value) }
+}
+
+fn generate_nbt_compound(
+    value: &serde_json::Value,
+    context: &str,
+    hint: NbtValueHint,
+) -> TokenStream {
+    let Some(object) = value.as_object() else {
+        panic!("enchantment effect NBT {context} must be an object");
+    };
+    let object_type = object.get("type").and_then(serde_json::Value::as_str);
+    let entries = object.iter().map(|(key, value)| {
+        let value_hint = nbt_child_value_hint(hint, object_type, key);
+        let value = generate_nbt_tag(value, value_hint);
+        quote! {
+            compound.insert(#key, #value);
+        }
+    });
+
+    quote! {{
+        let mut compound = NbtCompound::new();
+        #(#entries)*
+        compound
+    }}
+}
+
+fn nbt_child_value_hint(
+    parent: NbtValueHint,
+    object_type: Option<&str>,
+    key: &str,
+) -> NbtValueHint {
+    match parent {
+        NbtValueHint::LevelBasedValue => match key {
+            "value" | "base" | "power" | "numerator" | "denominator" | "fallback" => {
+                NbtValueHint::LevelBasedValue
+            }
+            "min" | "max" | "added" | "per_level_above_first" | "values" => NbtValueHint::Float,
+            _ => NbtValueHint::Infer,
+        },
+        NbtValueHint::FloatProvider => match key {
+            "value" | "min" | "max" | "min_inclusive" | "max_exclusive" | "mean" | "deviation"
+            | "plateau" | "constant" | "scale" => NbtValueHint::Float,
+            _ => NbtValueHint::Infer,
+        },
+        NbtValueHint::DoubleBounds => match key {
+            "min" | "max" => NbtValueHint::Double,
+            _ => NbtValueHint::Infer,
+        },
+        NbtValueHint::MovementPredicate => match key {
+            "x" | "y" | "z" | "speed" | "horizontal_speed" | "vertical_speed" | "fall_distance" => {
+                NbtValueHint::DoubleBounds
+            }
+            _ => NbtValueHint::Infer,
+        },
+        NbtValueHint::Infer | NbtValueHint::Float | NbtValueHint::Double => {
+            nbt_object_child_hint(object_type, key)
+        }
+    }
+}
+
+fn nbt_object_child_hint(object_type: Option<&str>, key: &str) -> NbtValueHint {
+    match object_type {
+        Some("minecraft:apply_impulse") => match key {
+            "direction" | "coordinate_scale" => NbtValueHint::Double,
+            "magnitude" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:explode") => match key {
+            "offset" => NbtValueHint::Double,
+            "radius" | "knockback_multiplier" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:change_item_damage") | Some("minecraft:apply_exhaustion") => match key {
+            "amount" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:damage_entity") => match key {
+            "min_damage" | "max_damage" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:ignite") => match key {
+            "duration" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:apply_mob_effect") => match key {
+            "min_duration" | "max_duration" | "min_amplifier" | "max_amplifier" => {
+                NbtValueHint::LevelBasedValue
+            }
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:add") | Some("minecraft:set") => match key {
+            "value" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:multiply") => match key {
+            "factor" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:remove_binomial") => match key {
+            "chance" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:play_sound") => match key {
+            "volume" | "pitch" => NbtValueHint::FloatProvider,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:spawn_particles") => match key {
+            "speed" => NbtValueHint::FloatProvider,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:replace_disk") => match key {
+            "radius" | "height" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:clamped") => match key {
+            "value" => NbtValueHint::LevelBasedValue,
+            "min" | "max" => NbtValueHint::Float,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:exponent") => match key {
+            "base" | "power" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:fraction") => match key {
+            "numerator" | "denominator" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:levels_squared") => match key {
+            "added" => NbtValueHint::Float,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:linear") => match key {
+            "base" | "per_level_above_first" => NbtValueHint::Float,
+            _ => NbtValueHint::Infer,
+        },
+        Some("minecraft:lookup") => match key {
+            "values" => NbtValueHint::Float,
+            "fallback" => NbtValueHint::LevelBasedValue,
+            _ => NbtValueHint::Infer,
+        },
+        _ => match key {
+            "minecraft:movement" | "movement" => NbtValueHint::MovementPredicate,
+            "offset" | "scale" | "movement_scale" if is_float_provider_object(object_type) => {
+                NbtValueHint::FloatProvider
+            }
+            _ => NbtValueHint::Infer,
+        },
+    }
+}
+
+fn is_float_provider_object(object_type: Option<&str>) -> bool {
+    matches!(
+        object_type,
+        Some(
+            "minecraft:constant"
+                | "minecraft:uniform"
+                | "minecraft:clamped_normal"
+                | "minecraft:trapezoid"
+                | "minecraft:in_bounding_box"
+                | "minecraft:entity_position"
+        )
+    )
+}
+
+fn generate_nbt_tag(value: &serde_json::Value, hint: NbtValueHint) -> TokenStream {
+    match value {
+        serde_json::Value::Null => {
+            panic!("enchantment effect NBT cannot contain null values");
+        }
+        serde_json::Value::Bool(value) => {
+            let value = i8::from(*value);
+            quote! { NbtTag::Byte(#value) }
+        }
+        serde_json::Value::Number(number) => generate_nbt_number(number, hint.number_hint()),
+        serde_json::Value::String(value) => quote! { NbtTag::String(#value.into()) },
+        serde_json::Value::Array(values) => {
+            if values.is_empty() {
+                return quote! { NbtTag::List(NbtList::Empty) };
+            }
+
+            let values = values.iter().map(|value| generate_nbt_tag(value, hint));
+            quote! { NbtTag::List(NbtList::from(vec![#(#values),*])) }
+        }
+        serde_json::Value::Object(_) => {
+            let value = generate_nbt_compound(value, "compound", hint);
+            quote! { NbtTag::Compound(#value) }
+        }
+    }
+}
+
 fn generate_enchantment_effects(
     name: &str,
     effects: &EnchantmentEffectsJson,
@@ -1870,10 +2135,16 @@ pub(crate) fn build() -> TokenStream {
             .to_string();
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
-        let ench: EnchantmentJson = serde_json::from_str(&content)
+        let raw_enchantment: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse raw enchantment {name}: {e}"));
+        let effects_nbt = raw_enchantment
+            .get("effects")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        let ench: EnchantmentJson = serde_json::from_value(raw_enchantment)
             .unwrap_or_else(|e| panic!("Failed to parse {name}: {e}"));
 
-        enchantments.push((name, ench));
+        enchantments.push((name, ench, effects_nbt));
     }
 
     enchantments.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1897,6 +2168,7 @@ pub(crate) fn build() -> TokenStream {
         use crate::equipment::EquipmentSlotGroup;
         use crate::vanilla_attributes;
         use crate::vanilla_mob_effects;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         use steel_utils::Identifier;
         use steel_utils::types::GameType;
     });
@@ -1905,8 +2177,12 @@ pub(crate) fn build() -> TokenStream {
     let mut value_statics = TokenStream::new();
     let mut value_static_counter = 0;
 
-    for (name, ench) in &enchantments {
+    for (name, ench, effects_nbt) in &enchantments {
         let const_ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+        let effects_nbt_fn_ident = Ident::new(
+            &format!("{}_effects_nbt", name.to_snake_case()),
+            Span::call_site(),
+        );
 
         let max_level = Literal::u32_unsuffixed(ench.max_level);
         let min_cost_base = Literal::i32_unsuffixed(ench.min_cost.base);
@@ -1939,8 +2215,13 @@ pub(crate) fn build() -> TokenStream {
             &mut value_statics,
             &mut value_static_counter,
         );
+        let effects_nbt = generate_nbt_compound(effects_nbt, "effects", NbtValueHint::Infer);
 
         stream.extend(quote! {
+            fn #effects_nbt_fn_ident() -> NbtCompound {
+                #effects_nbt
+            }
+
             pub static #const_ident: Enchantment = Enchantment {
                 key: Identifier::vanilla_static(#name),
                 max_level: #max_level,
@@ -1952,6 +2233,7 @@ pub(crate) fn build() -> TokenStream {
                 supported_items: #supported_items,
                 primary_items: #primary_items,
                 exclusive_set: #exclusive_set,
+                effects_nbt: #effects_nbt_fn_ident,
                 effects: #effects,
             };
         });
