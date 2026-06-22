@@ -1403,16 +1403,22 @@ pub trait Mob: LivingEntity {
         was_hurt
     }
 
-    /// Returns the damage source used by vanilla `DamageSources.mobAttack`.
+    /// Returns the damage source used by vanilla `ItemStack.getDamageSource`.
     fn mob_attack_damage_source(
         &self,
         weapon_item: &ItemStack,
         attacker: &dyn LivingEntity,
     ) -> DamageSource {
-        ITEM_BEHAVIORS
-            .get_behavior(weapon_item.item())
-            .get_item_damage_source(attacker)
-            .unwrap_or_else(|| DamageSource::environment(&vanilla_damage_types::MOB_ATTACK))
+        let damage_source = if let Some(damage_type) = weapon_item.get_damage_type() {
+            DamageSource::environment(damage_type)
+        } else {
+            ITEM_BEHAVIORS
+                .get_behavior(weapon_item.item())
+                .get_item_damage_source(attacker)
+                .unwrap_or_else(|| DamageSource::environment(&vanilla_damage_types::MOB_ATTACK))
+        };
+
+        damage_source
             .with_causing_entity(self.id())
             .with_direct_entity(self.id())
             .with_source_position(self.position())
@@ -2272,7 +2278,9 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::item_stack::ItemStack;
     use steel_registry::vanilla_entities;
+    use steel_registry::vanilla_items::ITEMS;
     use steel_registry::{
         REGISTRY, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
         vanilla_damage_types,
@@ -2283,6 +2291,7 @@ mod tests {
     use super::{
         can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
     };
+    use crate::behavior::init_behaviors;
     use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
     use crate::entity::ai::goal::GoalControl;
     use crate::entity::ai::node::Node;
@@ -2634,6 +2643,18 @@ mod tests {
     }
 
     #[test]
+    fn mob_attack_damage_source_uses_item_damage_type_component() {
+        let mob = DespawnTestMob::new(None, false);
+        let spear = ItemStack::new(&ITEMS.wooden_spear);
+
+        let source = mob.mob_attack_damage_source(&spear, &mob);
+
+        assert_eq!(source.damage_type.key, vanilla_damage_types::SPEAR.key);
+        assert_eq!(source.causing_entity_id, Some(mob.id()));
+        assert_eq!(source.direct_entity_id, Some(mob.id()));
+    }
+
+    #[test]
     fn mob_target_stores_living_target_weakly() {
         let mob = DespawnTestMob::new(None, false);
         let target: SharedEntity =
@@ -2818,6 +2839,9 @@ mod tests {
 
     #[test]
     fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
+        init_test_registry();
+        init_behaviors();
+
         let mob = DespawnTestMob::with_entity_type(
             1,
             DVec3::ZERO,
@@ -2847,6 +2871,9 @@ mod tests {
 
     #[test]
     fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
+        init_test_registry();
+        init_behaviors();
+
         let mob = DespawnTestMob::with_entity_type(
             1,
             DVec3::ZERO,

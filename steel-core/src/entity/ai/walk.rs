@@ -1097,7 +1097,7 @@ impl WalkPathEvaluator {
             return PathType::Cocoa;
         }
 
-        if block == &vanilla_blocks::WITHER_ROSE || block == &vanilla_blocks::POINTED_DRIPSTONE {
+        if block == &vanilla_blocks::WITHER_ROSE || block.has_tag(&BlockTag::SPELEOTHEMS) {
             return PathType::DamageCautious;
         }
 
@@ -1266,12 +1266,20 @@ mod tests {
         let honey = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::HONEY_BLOCK);
+        let pointed_dripstone = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::POINTED_DRIPSTONE);
+        let sulfur_spike = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SULFUR_SPIKE);
 
         assert_eq!(classify(air), PathType::Open);
         assert_eq!(classify(water), PathType::Water);
         assert_eq!(classify(lava), PathType::Lava);
         assert_eq!(classify(cactus), PathType::Damaging);
         assert_eq!(classify(honey), PathType::StickyHoney);
+        assert_eq!(classify(pointed_dripstone), PathType::DamageCautious);
+        assert_eq!(classify(sulfur_spike), PathType::DamageCautious);
     }
 
     #[test]

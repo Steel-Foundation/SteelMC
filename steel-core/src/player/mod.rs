@@ -1449,6 +1449,14 @@ impl Player {
         }
     }
 
+    pub(crate) fn send_restored_vehicle_mount_sync(&self, vehicle: &dyn Entity) {
+        self.send_active_effects_for_vehicle(vehicle);
+        self.send_packet(CSetPassengers::new(
+            vehicle.id(),
+            Self::passenger_ids_for_packet(vehicle),
+        ));
+    }
+
     fn remove_active_effects_for_vehicle(&self, vehicle: &dyn Entity) {
         let Some(living_vehicle) = vehicle.as_living_entity() else {
             return;

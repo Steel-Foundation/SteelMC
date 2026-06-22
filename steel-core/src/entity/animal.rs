@@ -234,7 +234,7 @@ pub trait Animal: AgeableMob {
             Mob::use_player_item(self, player, hand);
             self.set_in_love(Some(player));
             self.play_eating_sound();
-            return InteractionResult::Success;
+            return InteractionResult::SuccessServer;
         }
 
         if self.can_age_up() {
