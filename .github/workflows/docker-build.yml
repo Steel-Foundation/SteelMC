@@ -146,4 +146,5 @@ jobs:
           docker buildx imagetools create \
             "${tag_args[@]}" \
             --annotation "index:org.opencontainers.image.description=${IMAGE_DESCRIPTION}" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             "${source_args[@]}"
