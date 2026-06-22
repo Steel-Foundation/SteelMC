@@ -227,10 +227,6 @@ impl PathNavigation {
 
     pub fn stop(&mut self) {
         self.path = None;
-        self.direct_target = None;
-        self.target_pos = None;
-        self.speed_modifier = 0.0;
-        self.has_delayed_recomputation = false;
         self.done = true;
     }
 
@@ -1231,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_clears_delayed_recompute_request() {
+    fn stop_keeps_delayed_recompute_state() {
         let path = Path::new(vec![Node::new(2, 64, 0)], BlockPos::new(2, 64, 0), true);
         let mut navigation = PathNavigation::new();
 
@@ -1247,9 +1243,25 @@ mod tests {
 
         navigation.stop();
 
+        assert!(navigation.has_delayed_recomputation());
+        assert_eq!(navigation.target_pos(), Some(BlockPos::new(2, 64, 0)));
+        assert_eq!(navigation.speed_modifier().to_bits(), 1.0_f64.to_bits());
+        let Some(request) = navigation.take_delayed_recompute_request(21, true) else {
+            panic!("stopped navigation should keep enough state to recompute the target");
+        };
+        assert_eq!(request.target_pos, BlockPos::new(2, 64, 0));
+
+        navigation.complete_recompute_path(
+            Some(Path::new(
+                vec![Node::new(1, 64, 0), Node::new(2, 64, 0)],
+                BlockPos::new(2, 64, 0),
+                true,
+            )),
+            request.game_time,
+        );
+        assert!(!navigation.is_done());
         assert!(!navigation.has_delayed_recomputation());
-        assert_eq!(navigation.target_pos(), None);
-        assert_eq!(navigation.take_delayed_recompute_request(21, true), None);
+        assert!(navigation.path().is_some());
     }
 
     #[test]

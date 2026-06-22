@@ -327,4 +327,78 @@ mod tests {
         );
         assert!(effects[0].requirements.is_some());
     }
+
+    #[test]
+    fn thorns_post_attack_preserves_random_damage_and_item_damage_effects() {
+        assert!(
+            vanilla_enchantments::THORNS
+                .effects
+                .has(EnchantmentEffectComponent::PostAttack)
+        );
+
+        let effects = vanilla_enchantments::THORNS.effects.post_attack;
+        assert!(effects.iter().any(|effect| {
+            effect
+                .requirements
+                .is_some_and(requirements_contain_random_chance)
+        }));
+        assert!(
+            effects
+                .iter()
+                .any(|effect| entity_effect_contains_damage_entity(&effect.effect))
+        );
+        assert!(
+            effects
+                .iter()
+                .any(|effect| entity_effect_contains_change_item_damage(&effect.effect))
+        );
+    }
+
+    fn requirements_contain_random_chance(requirements: &EnchantmentEffectRequirements) -> bool {
+        match requirements {
+            EnchantmentEffectRequirements::AllOf(children)
+            | EnchantmentEffectRequirements::AnyOf(children) => children
+                .iter()
+                .any(|child| requirements_contain_random_chance(child)),
+            EnchantmentEffectRequirements::Inverted(child) => {
+                requirements_contain_random_chance(child)
+            }
+            EnchantmentEffectRequirements::RandomChance { .. } => true,
+            EnchantmentEffectRequirements::EntityProperties { .. }
+            | EnchantmentEffectRequirements::DamageSourceProperties(_)
+            | EnchantmentEffectRequirements::Unsupported { .. } => false,
+        }
+    }
+
+    fn entity_effect_contains_damage_entity(effect: &EnchantmentEntityEffect) -> bool {
+        match effect {
+            EnchantmentEntityEffect::AllOf(children) => children
+                .iter()
+                .any(|child| entity_effect_contains_damage_entity(child)),
+            EnchantmentEntityEffect::DamageEntity { .. } => true,
+            EnchantmentEntityEffect::ChangeItemDamage { .. }
+            | EnchantmentEntityEffect::ApplyExhaustion { .. }
+            | EnchantmentEntityEffect::ApplyImpulse { .. }
+            | EnchantmentEntityEffect::PlaySound { .. }
+            | EnchantmentEntityEffect::Ignite { .. }
+            | EnchantmentEntityEffect::ApplyMobEffect { .. }
+            | EnchantmentEntityEffect::Unsupported { .. } => false,
+        }
+    }
+
+    fn entity_effect_contains_change_item_damage(effect: &EnchantmentEntityEffect) -> bool {
+        match effect {
+            EnchantmentEntityEffect::AllOf(children) => children
+                .iter()
+                .any(|child| entity_effect_contains_change_item_damage(child)),
+            EnchantmentEntityEffect::ChangeItemDamage { .. } => true,
+            EnchantmentEntityEffect::ApplyExhaustion { .. }
+            | EnchantmentEntityEffect::ApplyImpulse { .. }
+            | EnchantmentEntityEffect::PlaySound { .. }
+            | EnchantmentEntityEffect::DamageEntity { .. }
+            | EnchantmentEntityEffect::Ignite { .. }
+            | EnchantmentEntityEffect::ApplyMobEffect { .. }
+            | EnchantmentEntityEffect::Unsupported { .. } => false,
+        }
+    }
 }

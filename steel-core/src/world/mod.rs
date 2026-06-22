@@ -3720,6 +3720,14 @@ impl World {
         self.entity_manager.get_by_id(id)
     }
 
+    /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.
+    ///
+    /// Returns `None` if the entity is not live or is hidden in an inaccessible chunk.
+    #[must_use]
+    pub fn get_accessible_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
+        self.entity_manager.get_accessible_by_id(id)
+    }
+
     /// Gets an entity by its UUID.
     ///
     /// Returns `None` if the entity is not live in the world.

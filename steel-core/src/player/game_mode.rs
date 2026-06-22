@@ -29,8 +29,8 @@ use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, InventoryAccess,
-    UseOnContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockHitResult, ITEM_BEHAVIORS, InteractionResult,
+    InventoryAccess, UseOnContext,
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
@@ -41,15 +41,19 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::menu::Menu;
+use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
+use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
+use steel_utils::axis::Axis;
 
 const CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT: f64 = 0.5;
 const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;
 const ATTACK_RANGE_BUFFER: f64 = 3.0;
 const ENTITY_INTERACTION_RANGE_BUFFER: f64 = 3.0;
+const FLIGHT_DISABLE_RANGE: f64 = 1.0;
 
 /// Handles using an item on a block.
 ///
@@ -857,7 +861,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let Some(target) = world.get_entity_by_id(packet.entity_id) else {
+        let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
             return;
         };
 
@@ -934,7 +938,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let target = world.get_entity_by_id(packet.entity_id);
+        let target = world.get_accessible_entity_by_id(packet.entity_id);
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {
             return;
@@ -972,7 +976,17 @@ impl Player {
         }
 
         // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
-        self.abilities.lock().update_for_game_mode(gamemode);
+        let flying_after_update = {
+            let mut abilities = self.abilities.lock();
+            abilities.update_for_game_mode(gamemode);
+            abilities.flying
+        };
+        if flying_after_update
+            && gamemode != GameType::Spectator
+            && self.is_in_range_of_ground_for_flight_disable()
+        {
+            self.set_flying(false);
+        }
         self.send_abilities();
 
         self.send_packet(CGameEvent {
@@ -984,6 +998,10 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.get_world().broadcast_to_all(update_packet);
 
+        if gamemode == GameType::Creative {
+            self.reset_current_impulse_context();
+        }
+
         self.send_message(
             &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
                 .message([get_gamemode_translation(gamemode)])
@@ -991,6 +1009,37 @@ impl Player {
         );
 
         true
+    }
+
+    fn is_in_range_of_ground_for_flight_disable(&self) -> bool {
+        let world = self.get_world();
+        let collision_world = WorldCollisionProvider::for_entity(&world, self);
+        let bounding_box = self.bounding_box();
+        let collision_context =
+            BlockCollisionContext::entity(self.position().y, self.is_descending())
+                .with_fall_distance(self.fall_distance())
+                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow());
+
+        if collision_world.has_collision_with_context(&bounding_box, collision_context) {
+            return false;
+        }
+
+        let below = WorldAabb::new(
+            bounding_box.min_x(),
+            bounding_box.min_y() - FLIGHT_DISABLE_RANGE,
+            bounding_box.min_z(),
+            bounding_box.max_x(),
+            bounding_box.min_y(),
+            bounding_box.max_z(),
+        );
+        let colliders = collision_world.get_collisions_with_context(&below, collision_context);
+        if colliders.is_empty() {
+            return false;
+        }
+
+        let available_space_below =
+            -shapes::collide(Axis::Y, &bounding_box, &colliders, -FLIGHT_DISABLE_RANGE);
+        available_space_below < FLIGHT_DISABLE_RANGE
     }
 
     /// Sends the current world difficulty to the client.
@@ -1171,7 +1220,7 @@ impl Player {
         };
 
         let world = self.get_world();
-        let Some(target) = world.entity_manager().get_by_id(entity_id) else {
+        let Some(target) = world.get_accessible_entity_by_id(entity_id) else {
             return;
         };
 

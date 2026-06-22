@@ -3,7 +3,7 @@ use steel_utils::random::Random as _;
 
 use super::reduced_tick_delay;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{LivingEntity, Mob, PathfinderMob, SharedEntity};
 
 const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
 
@@ -54,7 +54,7 @@ impl TargetGoalBase {
             return false;
         };
 
-        if !mob.can_attack(target_living) || mob.is_allied_to(target_living) {
+        if !Mob::can_attack(mob, target_living) || mob.is_allied_to(target_living) {
             return false;
         }
 

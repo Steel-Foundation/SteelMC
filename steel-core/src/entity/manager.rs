@@ -605,7 +605,7 @@ impl WorldEntityManager {
         let entry = Self::checked_live_entry(entity, ownership)?;
         let entity_id = entry.entity.id();
         let mut state = self.state.write();
-        Self::validate_live_entries(&state, slice::from_ref(&entry), ownership)?;
+        Self::validate_live_entries(&state, slice::from_ref(&entry), ownership, true)?;
         Self::insert_live_entry(&mut state, entry);
         Ok(Self::apply_entity_lifecycle_after_insert(
             &mut state, entity_id,
@@ -648,7 +648,7 @@ impl WorldEntityManager {
         }
 
         let mut state = self.state.write();
-        Self::validate_live_entries(&state, &entries, ownership)?;
+        Self::validate_live_entries(&state, &entries, ownership, false)?;
         let entity_ids = entries
             .iter()
             .map(|entry| entry.entity.id())
@@ -682,6 +682,7 @@ impl WorldEntityManager {
         state: &ManagerState,
         entries: &[EntityEntry],
         ownership: EntityOwnership,
+        require_loaded_chunks: bool,
     ) -> Result<(), AddEntityError> {
         for entry in entries {
             let entity_id = entry.entity.id();
@@ -695,7 +696,8 @@ impl WorldEntityManager {
                     uuid: entry.uuid,
                 });
             }
-            if ownership == EntityOwnership::ManagerOwned
+            if require_loaded_chunks
+                && ownership == EntityOwnership::ManagerOwned
                 && !state.chunk_visibility.contains_key(&entry.chunk)
             {
                 return Err(AddEntityError::ChunkNotLoaded {
@@ -917,6 +919,14 @@ impl WorldEntityManager {
             .live_by_id
             .get(&entity_id)
             .map(|entry| entry.entity.clone())
+    }
+
+    #[must_use]
+    /// Gets a live entity by session network ID if it is visible to vanilla gameplay lookups.
+    pub fn get_accessible_by_id(&self, entity_id: i32) -> Option<SharedEntity> {
+        let state = self.state.read();
+        let entry = state.live_by_id.get(&entity_id)?;
+        Self::is_accessible(&state, entry).then(|| entry.entity.clone())
     }
 
     #[must_use]
@@ -2277,6 +2287,8 @@ mod tests {
         assert!(Arc::ptr_eq(&passenger, &unload.tracking_stopped[0]));
         assert!(manager.get_by_id(vehicle.id()).is_some());
         assert!(manager.get_by_id(passenger.id()).is_some());
+        assert!(manager.get_accessible_by_id(vehicle.id()).is_some());
+        assert!(manager.get_accessible_by_id(passenger.id()).is_none());
         assert_eq!(manager.live_entities_in_chunk(passenger_chunk).len(), 1);
         assert!(manager.get_entities_in_aabb(&passenger_aabb).is_empty());
         assert!(
@@ -2296,6 +2308,31 @@ mod tests {
         assert_eq!(changes.tracking_started.len(), 1);
         assert!(Arc::ptr_eq(&passenger, &changes.tracking_started[0]));
         assert_eq!(manager.get_entities_in_aabb(&passenger_aabb).len(), 1);
+    }
+
+    #[test]
+    fn loaded_entity_tree_can_restore_passenger_in_hidden_chunk() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger = entity(2, 2, DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        let changes = manager
+            .add_live_entity_tree(
+                &[vehicle.clone(), passenger.clone()],
+                EntityOwnership::ManagerOwned,
+            )
+            .expect("persisted tree should restore even when passenger chunk is hidden");
+
+        assert_eq!(changes.tracking_started.len(), 1);
+        assert!(Arc::ptr_eq(&vehicle, &changes.tracking_started[0]));
+        assert!(manager.get_by_id(passenger.id()).is_some());
+        assert!(manager.get_accessible_by_id(passenger.id()).is_none());
+        assert_eq!(manager.live_entities_in_chunk(passenger_chunk).len(), 1);
     }
 
     #[test]

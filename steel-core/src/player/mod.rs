@@ -421,12 +421,12 @@ impl Player {
 
     /// Returns the player's previous game mode.
     #[must_use]
-    pub fn previous_game_mode(&self) -> GameType {
+    pub fn previous_game_mode(&self) -> Option<GameType> {
         self.game_modes.lock().previous()
     }
 
     /// Restores current and previous game mode from persistent player data.
-    pub(crate) fn restore_game_modes(&self, current: GameType, previous: GameType) {
+    pub(crate) fn restore_game_modes(&self, current: GameType, previous: Option<GameType>) {
         self.game_modes.lock().set_pair(current, previous);
     }
 
@@ -1275,7 +1275,7 @@ impl Player {
                 dimension_name: new_world.key.clone(),
                 hashed_seed: new_world.obfuscated_seed(),
                 gamemode: self.game_mode() as u8,
-                previous_gamemode: self.previous_game_mode() as i8,
+                previous_gamemode: nullable_game_mode_id(self.previous_game_mode()),
                 is_debug: false,
                 is_flat: new_world.is_flat,
                 has_death_location: false,
@@ -1462,6 +1462,10 @@ impl Player {
             );
         }
     }
+}
+
+fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
+    game_mode.map_or(-1, |game_mode| game_mode as i8)
 }
 
 /// Why the player is being reset and spawned into a world.
@@ -2011,10 +2015,11 @@ mod tests {
     use steel_registry::{
         test_support::init_test_registry, vanilla_damage_types, vanilla_game_rules,
     };
+    use steel_utils::types::GameType;
 
     use crate::entity::damage::DamageSource;
 
-    use super::Player;
+    use super::{Player, nullable_game_mode_id};
 
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
@@ -2078,5 +2083,11 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
         assert!(Player::disabled_damage_game_rule(&source).is_none());
+    }
+
+    #[test]
+    fn nullable_game_mode_id_matches_vanilla_encoding() {
+        assert_eq!(nullable_game_mode_id(None), -1);
+        assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
     }
 }

@@ -76,7 +76,7 @@ struct PreparedSpawn {
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
     player.base().set_position_local(spawn.position);
     player.set_rotation(spawn.rotation);
-    player.restore_game_modes(world.default_gamemode, world.default_gamemode);
+    player.restore_game_modes(world.default_gamemode, None);
     player
         .abilities
         .lock()
@@ -809,7 +809,7 @@ impl Server {
                 dimension: world.key.clone(),
                 seed: hashed_seed,
                 game_type: player.game_mode(),
-                previous_game_type: Some(player.previous_game_mode()),
+                previous_game_type: player.previous_game_mode(),
                 is_debug: false,
                 is_flat: world.is_flat,
                 last_death_location: None,

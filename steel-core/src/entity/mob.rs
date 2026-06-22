@@ -17,7 +17,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
     REGISTRY, RegistryExt, sound_events, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
-    vanilla_game_events, vanilla_items,
+    vanilla_entities, vanilla_game_events, vanilla_items,
 };
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -566,7 +566,12 @@ pub trait Mob: LivingEntity {
             return false;
         }
 
-        self.can_attack(target)
+        Mob::can_attack(self, target)
+    }
+
+    /// Returns vanilla `Mob.canAttack`.
+    fn can_attack(&self, target: &dyn LivingEntity) -> bool {
+        target.entity_type() != &vanilla_entities::GHAST && LivingEntity::can_attack(self, target)
     }
 
     fn base_experience_reward_mob(&self) -> i32 {
@@ -2736,6 +2741,27 @@ mod tests {
             &too_far,
             BlockPos::new(0, 64, 0)
         ));
+    }
+
+    #[test]
+    fn mob_can_attack_excludes_ghasts() {
+        let mob = DespawnTestMob::with_entity_type(
+            1,
+            DVec3::ZERO,
+            &vanilla_entities::ZOMBIE,
+            None,
+            false,
+        );
+        let ghast = DespawnTestMob::with_entity_type(
+            2,
+            DVec3::new(1.0, 0.0, 0.0),
+            &vanilla_entities::GHAST,
+            None,
+            false,
+        );
+
+        assert!(LivingEntity::can_attack(&mob, &ghast));
+        assert!(!Mob::can_attack(&mob, &ghast));
     }
 
     #[test]

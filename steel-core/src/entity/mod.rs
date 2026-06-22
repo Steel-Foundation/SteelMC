@@ -1088,6 +1088,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns whether this entity is a marker armor stand.
+    fn is_marker_armor_stand(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this entity is a tameable animal owned by `owner`.
+    fn is_tame_owned_by(&self, _owner: &dyn LivingEntity) -> bool {
+        false
+    }
+
     /// Returns true for vanilla players whose abilities have `flying` set.
     fn is_flying_player(&self) -> bool {
         false
@@ -6262,6 +6272,11 @@ pub trait LivingEntity: Entity {
     fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
         self.living_base()
             .is_ignoring_fall_damage_from_current_impulse()
+    }
+
+    /// Returns vanilla `LivingEntity.currentImpulseImpactPos`.
+    fn current_impulse_impact_pos(&self) -> Option<DVec3> {
+        self.living_base().current_impulse_impact_pos()
     }
 
     /// Mirrors vanilla `LivingEntity.tryResetCurrentImpulseContext`.

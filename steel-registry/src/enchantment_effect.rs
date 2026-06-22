@@ -1,4 +1,5 @@
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
+use crate::damage_type::DamageTypeRef;
 use crate::mob_effect::MobEffectRef;
 use crate::sound_event::SoundEventRef;
 use glam::DVec3;
@@ -253,7 +254,7 @@ pub struct DamageSourcePredicate {
 }
 
 /// Vanilla loot condition subset used by generated enchantment effects.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum EnchantmentEffectRequirements {
     AllOf(&'static [&'static EnchantmentEffectRequirements]),
     AnyOf(&'static [&'static EnchantmentEffectRequirements]),
@@ -263,6 +264,9 @@ pub enum EnchantmentEffectRequirements {
         predicate: EntityPredicate,
     },
     DamageSourceProperties(DamageSourcePredicate),
+    RandomChance {
+        chance: &'static LevelBasedValue,
+    },
     Unsupported {
         condition: Identifier,
     },
@@ -281,7 +285,7 @@ impl<T> ConditionalEnchantmentEffect<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct ConditionalDamageImmunityEffect {
     pub requirements: Option<&'static EnchantmentEffectRequirements>,
 }
@@ -324,6 +328,11 @@ pub enum EnchantmentEntityEffect {
         sounds: &'static [SoundEventRef],
         volume: f32,
         pitch: f32,
+    },
+    DamageEntity {
+        min_damage: &'static LevelBasedValue,
+        max_damage: &'static LevelBasedValue,
+        damage_type: DamageTypeRef,
     },
     Ignite {
         duration: &'static LevelBasedValue,

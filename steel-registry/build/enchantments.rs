@@ -213,6 +213,11 @@ enum EntityEffectJson {
         volume: f32,
         pitch: f32,
     },
+    DamageEntity {
+        min_damage: LevelBasedValueJson,
+        max_damage: LevelBasedValueJson,
+        damage_type: Identifier,
+    },
     Ignite {
         duration: LevelBasedValueJson,
     },
@@ -254,6 +259,9 @@ enum RequirementsJson {
         predicate: EntityPredicateJson,
     },
     DamageSourceProperties(DamageSourcePredicateJson),
+    RandomChance {
+        chance: LevelBasedValueJson,
+    },
     Unsupported {
         condition: Identifier,
     },
@@ -432,6 +440,16 @@ fn identifier_token(identifier: &Identifier) -> TokenStream {
     quote! { Identifier::new_static(#namespace, #path) }
 }
 
+fn damage_type_ref_token(identifier: &Identifier) -> TokenStream {
+    assert_eq!(
+        identifier.namespace.as_ref(),
+        "minecraft",
+        "vanilla enchantment damage_type references must use the minecraft namespace: {identifier}"
+    );
+    let ident = Ident::new(&identifier.path.to_ascii_uppercase(), Span::call_site());
+    quote! { &crate::vanilla_damage_types::#ident }
+}
+
 fn parse_identifier(raw: &str) -> Result<Identifier, String> {
     raw.parse::<Identifier>()
         .map_err(|error| format!("invalid identifier {raw}: {error}"))
@@ -479,6 +497,17 @@ fn parse_enchantment_target(raw: &str) -> Result<EnchantmentTargetJson, String> 
 fn parse_level_based_value_json(value: &serde_json::Value) -> Result<LevelBasedValueJson, String> {
     serde_json::from_value(value.to_owned())
         .map_err(|error| format!("invalid level-based value: {error}"))
+}
+
+fn parse_random_chance_value(value: &serde_json::Value) -> Result<LevelBasedValueJson, String> {
+    let Some(object) = value.as_object() else {
+        return parse_level_based_value_json(value);
+    };
+    if object.get("type").and_then(serde_json::Value::as_str) != Some("minecraft:enchantment_level")
+    {
+        return parse_level_based_value_json(value);
+    }
+    parse_level_based_value_json(object_field(object, "amount")?)
 }
 
 fn parse_mob_effect_selection_json(
@@ -547,6 +576,21 @@ fn parse_entity_effect_json(value: &serde_json::Value) -> Result<EntityEffectJso
                 direction: parse_vec3_json(object_field(object, "direction")?)?,
                 coordinate_scale: parse_vec3_json(object_field(object, "coordinate_scale")?)?,
                 magnitude: parse_level_based_value_json(object_field(object, "magnitude")?)?,
+            })
+        }
+        "minecraft:damage_entity" => {
+            for key in object.keys() {
+                if !matches!(
+                    key.as_str(),
+                    "type" | "min_damage" | "max_damage" | "damage_type"
+                ) {
+                    return Err(format!("unsupported damage_entity effect field `{key}`"));
+                }
+            }
+            Ok(EntityEffectJson::DamageEntity {
+                min_damage: parse_level_based_value_json(object_field(object, "min_damage")?)?,
+                max_damage: parse_level_based_value_json(object_field(object, "max_damage")?)?,
+                damage_type: parse_identifier(&string_field(object, "damage_type")?)?,
             })
         }
         "minecraft:play_sound" => {
@@ -938,6 +982,18 @@ fn parse_requirements_json(value: &serde_json::Value) -> Result<RequirementsJson
             let predicate = parse_damage_source_predicate_json(object_field(object, "predicate")?)?;
             Ok(RequirementsJson::DamageSourceProperties(predicate))
         }
+        "minecraft:random_chance" => {
+            for key in object.keys() {
+                if key != "condition" && key != "chance" {
+                    return Err(format!(
+                        "unsupported random_chance requirement field `{key}`"
+                    ));
+                }
+            }
+            Ok(RequirementsJson::RandomChance {
+                chance: parse_random_chance_value(object_field(object, "chance")?)?,
+            })
+        }
         _ => Ok(RequirementsJson::Unsupported {
             condition: parse_identifier(&condition)?,
         }),
@@ -1286,6 +1342,22 @@ fn generate_entity_effect(
                 }
             }
         }
+        EntityEffectJson::DamageEntity {
+            min_damage,
+            max_damage,
+            damage_type,
+        } => {
+            let min_damage = generate_level_based_value_ref(prefix, min_damage, statics, counter);
+            let max_damage = generate_level_based_value_ref(prefix, max_damage, statics, counter);
+            let damage_type = damage_type_ref_token(damage_type);
+            quote! {
+                EnchantmentEntityEffect::DamageEntity {
+                    min_damage: #min_damage,
+                    max_damage: #max_damage,
+                    damage_type: #damage_type,
+                }
+            }
+        }
         EntityEffectJson::Ignite { duration } => {
             let duration = generate_level_based_value_ref(prefix, duration, statics, counter);
             quote! { EnchantmentEntityEffect::Ignite { duration: #duration } }
@@ -1379,6 +1451,10 @@ fn generate_requirements_value(
         RequirementsJson::DamageSourceProperties(predicate) => {
             let predicate = damage_source_predicate_token(predicate);
             quote! { EnchantmentEffectRequirements::DamageSourceProperties(#predicate) }
+        }
+        RequirementsJson::RandomChance { chance } => {
+            let chance = generate_level_based_value_ref(prefix, chance, statics, counter);
+            quote! { EnchantmentEffectRequirements::RandomChance { chance: #chance } }
         }
         RequirementsJson::Unsupported { condition } => {
             let condition = identifier_token(condition);
