@@ -74,8 +74,10 @@ pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
 pub mod enchantment;
+pub mod enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
+pub mod equipment;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
@@ -456,11 +458,6 @@ impl RegistryLock {
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)
     }
-
-    #[cfg(test)]
-    pub(crate) fn get_or_init(&self, f: impl FnOnce() -> Registry) -> &Registry {
-        self.0.get_or_init(f)
-    }
 }
 
 impl Deref for RegistryLock {
@@ -492,7 +489,7 @@ pub mod test_support {
 }
 
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
-pub trait RegistryEntry: 'static {
+pub trait RegistryEntry: PartialEq + 'static {
     fn key(&self) -> &Identifier;
     fn try_id(&self) -> Option<usize>;
 

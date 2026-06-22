@@ -10,7 +10,6 @@
 
 use std::{mem, sync::Arc};
 
-use steel_registry::data_components::vanilla_components::EquippableSlot;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::SyncMutex;
 
@@ -18,6 +17,7 @@ use crate::inventory::{
     SyncPlayerInv,
     container::Container,
     crafting::{CraftingContainer, ResultContainer},
+    equipment::{EquipmentSlot, EquipmentSlotType},
     lock::{ContainerLockGuard, ContainerRef},
     menu::{Menu, MenuBehavior},
     recipe_manager,
@@ -102,10 +102,10 @@ impl InventoryMenu {
         // Maps to inventory slots 39, 38, 37, 36
         // Order matches Java's SLOT_IDS: HEAD, CHEST, LEGS, FEET
         for (offset, slot_type) in [
-            (39, EquippableSlot::Head),
-            (38, EquippableSlot::Chest),
-            (37, EquippableSlot::Legs),
-            (36, EquippableSlot::Feet),
+            (39, EquipmentSlot::Head),
+            (38, EquipmentSlot::Chest),
+            (37, EquipmentSlot::Legs),
+            (36, EquipmentSlot::Feet),
         ] {
             menu_slots.push(SlotType::Armor(ArmorSlot::new(
                 inventory.clone(),
@@ -299,14 +299,14 @@ impl Menu for InventoryMenu {
 
             // Try to move to armor slot if it's armor
             if let Some(eq_slot) = equippable_slot {
-                if eq_slot.is_humanoid_armor() {
+                if eq_slot.slot_type() == EquipmentSlotType::HumanoidArmor {
                     // Calculate the target armor slot index based on the equipment slot
                     // Java: 8 - eqSlot.getIndex() where HEAD=0, CHEST=1, LEGS=2, FEET=3
                     let armor_slot_index = match eq_slot {
-                        EquippableSlot::Head => slots::ARMOR_SLOT_START, // 5
-                        EquippableSlot::Chest => slots::ARMOR_SLOT_START + 1, // 6
-                        EquippableSlot::Legs => slots::ARMOR_SLOT_START + 2, // 7
-                        EquippableSlot::Feet => slots::ARMOR_SLOT_START + 3, // 8
+                        EquipmentSlot::Head => slots::ARMOR_SLOT_START, // 5
+                        EquipmentSlot::Chest => slots::ARMOR_SLOT_START + 1, // 6
+                        EquipmentSlot::Legs => slots::ARMOR_SLOT_START + 2, // 7
+                        EquipmentSlot::Feet => slots::ARMOR_SLOT_START + 3, // 8
                         _ => unreachable!(),
                     };
 
@@ -323,7 +323,7 @@ impl Menu for InventoryMenu {
                             false,
                         )
                     }
-                } else if eq_slot == EquippableSlot::Offhand {
+                } else if eq_slot == EquipmentSlot::OffHand {
                     // Try to move to offhand slot if empty
                     if self.behavior.slots[slots::OFFHAND_SLOT].has_item(guard) {
                         self.move_between_inventory_and_hotbar(guard, slot_index, &mut stack_mut)

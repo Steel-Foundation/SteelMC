@@ -35,7 +35,11 @@ pub use vanilla_serializers::register_vanilla_entity_data_serializers;
 
 use std::{io, str::FromStr};
 
-use steel_utils::{BlockStateId, Identifier, codec::VarInt, serial::WriteTo};
+use steel_utils::{
+    BlockStateId, Identifier,
+    codec::VarInt,
+    serial::{ReadFrom, WriteTo},
+};
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -180,6 +184,19 @@ pub enum HumanoidArm {
     Left = 0,
     #[default]
     Right = 1,
+}
+
+impl ReadFrom for HumanoidArm {
+    fn read(data: &mut std::io::Cursor<&[u8]>) -> io::Result<Self> {
+        match VarInt::read(data)?.0 {
+            0 => Ok(Self::Left),
+            1 => Ok(Self::Right),
+            value => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid humanoid arm id {value}"),
+            )),
+        }
+    }
 }
 
 /// Villager profession, type, and level data.

@@ -1,6 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_LOGIN;
-use steel_utils::{BlockPos, Identifier, types::GameType};
+use steel_utils::{GlobalPos, Identifier, types::GameType};
 
 #[derive(Clone, Debug, WriteTo)]
 pub struct CommonPlayerSpawnInfo {
@@ -14,7 +14,7 @@ pub struct CommonPlayerSpawnInfo {
     pub previous_game_type: Option<GameType>,
     pub is_debug: bool,
     pub is_flat: bool,
-    pub last_death_location: Option<(Identifier, BlockPos)>,
+    pub last_death_location: Option<GlobalPos>,
     #[write(as = VarInt)]
     pub portal_cooldown: i32,
     #[write(as = VarInt)]

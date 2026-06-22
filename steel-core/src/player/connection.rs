@@ -156,6 +156,7 @@ impl Player {
             self.send_packet(CSetChunkCacheRadius {
                 radius: i32::from(new_view_distance),
             });
+            self.get_world().chunk_map.update_player_status(self);
         }
     }
 

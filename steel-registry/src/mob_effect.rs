@@ -1,3 +1,6 @@
+use std::hash::{Hash, Hasher};
+
+use crate::attribute::{AttributeModifierOperation, AttributeRef};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -8,11 +11,36 @@ pub enum MobEffectCategory {
     Neutral,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
+pub struct MobEffectAttributeModifier {
+    pub attribute: AttributeRef,
+    pub id: Identifier,
+    pub amount: f64,
+    pub operation: AttributeModifierOperation,
+}
+
+#[derive(Debug)]
 pub struct MobEffect {
     pub key: Identifier,
     pub category: MobEffectCategory,
     pub color: i32,
+    pub attribute_modifiers: &'static [MobEffectAttributeModifier],
+}
+
+impl MobEffect {
+    /// Returns the VarInt payload used by vanilla mob-effect holder-registry packets.
+    #[must_use]
+    pub fn packet_holder_id(&self) -> i32 {
+        let id = crate::RegistryEntry::id(self);
+        debug_assert!(id <= i32::MAX as usize);
+        id as i32
+    }
+}
+
+impl Hash for MobEffect {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+    }
 }
 
 pub type MobEffectRef = &'static MobEffect;

@@ -21,8 +21,9 @@ use std::time::Duration;
 pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
-use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status};
+use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
 use crate::chunk_saver::ChunkStorage;
+use crate::entity::EntityVisibility;
 use crate::world::World;
 use crate::worldgen::WorldGenContext;
 use crate::{
@@ -189,6 +190,22 @@ impl ChunkHolder {
     pub fn set_simulation_level(&self, level: Option<ChunkTicketLevel>) {
         self.simulation_level
             .store(optional_ticket_level_raw(level), Ordering::Relaxed);
+    }
+
+    pub(crate) fn entity_visibility(&self) -> EntityVisibility {
+        if self.try_chunk(ChunkStatus::Full).is_none() {
+            return EntityVisibility::Hidden;
+        }
+
+        if !self.load_level().is_some_and(is_full) {
+            return EntityVisibility::Hidden;
+        }
+
+        if is_ticked(self.simulation_level()) {
+            EntityVisibility::Ticking
+        } else {
+            EntityVisibility::Tracked
+        }
     }
 
     /// Updates the highest allowed generation status based on the ticket level.
@@ -613,6 +630,9 @@ impl ChunkHolder {
 
         holder.insert_chunk(loaded.chunk, loaded_status);
         context.world().on_entity_chunk_loaded(holder.pos);
+        context
+            .world()
+            .update_entity_chunk_visibility(holder.pos, holder.entity_visibility());
         if !loaded.pending_entities.is_empty() {
             context.world().register_loaded_chunk_entities(
                 holder.pos,
@@ -722,6 +742,7 @@ impl ChunkHolder {
             }
         });
         if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
+            world.update_entity_chunk_visibility(pos, self.entity_visibility());
             world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
         }
     }

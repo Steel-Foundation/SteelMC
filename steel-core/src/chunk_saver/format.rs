@@ -53,7 +53,9 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v15: Added procedural structure-piece payload persistence.
 /// v16: Added entity fall distance persistence.
 /// v17: Added entity `NoGravity` persistence.
-pub const FORMAT_VERSION: u16 = 17;
+/// v18: Added entity `Invulnerable` persistence.
+/// v19: Added shared entity save-data persistence.
+pub const FORMAT_VERSION: u16 = 19;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -428,6 +430,24 @@ pub struct PersistentEntity {
     pub on_ground: bool,
     /// Shared vanilla `NoGravity` flag.
     pub no_gravity: bool,
+    /// Shared vanilla `Invulnerable` flag.
+    pub invulnerable: bool,
+    /// Synchronized vanilla `Air` value.
+    pub air_supply: i32,
+    /// Vanilla dimension-change portal cooldown.
+    pub portal_cooldown: i32,
+    /// Optional vanilla custom name stored as a root compound containing `CustomName`.
+    pub custom_name_nbt: Vec<u8>,
+    /// Synchronized vanilla custom-name visibility flag.
+    pub custom_name_visible: bool,
+    /// Synchronized vanilla silent flag.
+    pub silent: bool,
+    /// Server-owned vanilla glowing tag.
+    pub glowing: bool,
+    /// Vanilla scoreboard tags.
+    pub tags: Vec<String>,
+    /// Vanilla custom data compound.
+    pub custom_data_nbt: Vec<u8>,
     /// Type-specific NBT data from `save_additional`.
     pub nbt_data: Vec<u8>,
     /// Direct passengers nested under this entity.

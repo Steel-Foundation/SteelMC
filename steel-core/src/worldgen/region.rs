@@ -1232,6 +1232,18 @@ impl LevelReader for WorldGenRegion<'_> {
         sky_light.max(self.block_light_at(pos))
     }
 
+    fn can_see_sky(&self, pos: BlockPos) -> bool {
+        if !self.context.world().dimension_type.has_skylight {
+            return false;
+        }
+
+        self.height_at(HeightmapType::MotionBlocking, pos.x(), pos.z()) <= pos.y()
+    }
+
+    fn ambient_light(&self) -> f32 {
+        self.context.world().dimension_type.ambient_light
+    }
+
     fn min_y(&self) -> i32 {
         WorldGenRegion::min_y(self)
     }

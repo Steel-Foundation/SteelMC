@@ -525,7 +525,8 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         direction: Direction,
     ) {
-        let entity = Arc::new(ItemFrameEntity::new(
+        let entity = Arc::new(ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
             next_entity_id(),
             pos,
             direction,

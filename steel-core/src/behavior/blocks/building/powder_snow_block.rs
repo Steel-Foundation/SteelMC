@@ -13,6 +13,7 @@ use crate::{
         BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
         EntityFallOnContext,
     },
+    entity::ai::path::PathComputationType,
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
     world::{LevelReader, World},
 };
@@ -60,6 +61,14 @@ impl PowderSnowBlock {
 impl BlockBehavior for PowderSnowBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        true
     }
 
     fn fall_on(

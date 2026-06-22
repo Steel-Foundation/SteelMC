@@ -219,6 +219,8 @@ crate::impl_registry_ext!(
     carvers_by_key
 );
 
+crate::impl_registry_entry_eq!(ConfiguredCarver);
+
 impl crate::RegistryEntry for ConfiguredCarver {
     fn key(&self) -> &Identifier {
         &self.key

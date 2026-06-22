@@ -394,12 +394,148 @@ impl BlockPos {
     pub const fn max(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
+
+    /// Returns positions in vanilla `BlockPos.withinManhattan` order.
+    #[must_use]
+    pub const fn within_manhattan(
+        self,
+        reach_x: i32,
+        reach_y: i32,
+        reach_z: i32,
+    ) -> BlockPosWithinManhattan {
+        BlockPosWithinManhattan {
+            origin: self,
+            reach_x,
+            reach_y,
+            reach_z,
+            max_depth: reach_x + reach_y + reach_z,
+            current_depth: 0,
+            max_x: 0,
+            max_y: 0,
+            x: 0,
+            y: 0,
+            pending_z_mirror: None,
+            done: false,
+        }
+    }
+
+    /// Returns vanilla `BlockPos.findClosestMatch`.
+    #[must_use]
+    pub fn find_closest_match(
+        self,
+        horizontal_search_radius: i32,
+        vertical_search_radius: i32,
+        mut predicate: impl FnMut(BlockPos) -> bool,
+    ) -> Option<BlockPos> {
+        self.within_manhattan(
+            horizontal_search_radius,
+            vertical_search_radius,
+            horizontal_search_radius,
+        )
+        .find(|pos| predicate(*pos))
+    }
+}
+
+/// Iterator returned by [`BlockPos::within_manhattan`].
+#[derive(Debug, Clone)]
+pub struct BlockPosWithinManhattan {
+    origin: BlockPos,
+    reach_x: i32,
+    reach_y: i32,
+    reach_z: i32,
+    max_depth: i32,
+    current_depth: i32,
+    max_x: i32,
+    max_y: i32,
+    x: i32,
+    y: i32,
+    pending_z_mirror: Option<BlockPos>,
+    done: bool,
+}
+
+impl Iterator for BlockPosWithinManhattan {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(pos) = self.pending_z_mirror.take() {
+            return Some(pos);
+        }
+        if self.done {
+            return None;
+        }
+
+        loop {
+            if self.y > self.max_y {
+                self.x += 1;
+                if self.x > self.max_x {
+                    self.current_depth += 1;
+                    if self.current_depth > self.max_depth {
+                        self.done = true;
+                        return None;
+                    }
+
+                    self.max_x = self.reach_x.min(self.current_depth);
+                    self.x = -self.max_x;
+                }
+
+                self.max_y = self.reach_y.min(self.current_depth - self.x.abs());
+                self.y = -self.max_y;
+            }
+
+            let x = self.x;
+            let y = self.y;
+            let z = self.current_depth - x.abs() - y.abs();
+            self.y += 1;
+            if z > self.reach_z {
+                continue;
+            }
+
+            let pos = self.origin.offset(x, y, z);
+            if z != 0 {
+                self.pending_z_mirror = Some(self.origin.offset(x, y, -z));
+            }
+            return Some(pos);
+        }
+    }
 }
 
 impl ReadFrom for BlockPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let packed = <i64 as ReadFrom>::read(data)?;
         Ok(PackedBlockPos::from_raw(packed).into())
+    }
+}
+
+/// A position tied to a dimension key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GlobalPos {
+    /// Dimension containing the block position.
+    pub dimension: Identifier,
+    /// Block position within the dimension.
+    pub pos: BlockPos,
+}
+
+impl GlobalPos {
+    /// Creates a new global position.
+    #[must_use]
+    pub const fn new(dimension: Identifier, pos: BlockPos) -> Self {
+        Self { dimension, pos }
+    }
+}
+
+impl ReadFrom for GlobalPos {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self {
+            dimension: <Identifier as ReadFrom>::read(data)?,
+            pos: BlockPos::read(data)?,
+        })
+    }
+}
+
+impl WriteTo for GlobalPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.dimension.write(writer)?;
+        self.pos.write(writer)
     }
 }
 
@@ -1281,6 +1417,37 @@ mod tests {
         let encoded = PackedBlockPos::from(pos);
         let decoded = encoded.to_block_pos();
         assert_eq!(pos, decoded, "Position 0, -61, -2 failed roundtrip");
+    }
+
+    #[test]
+    fn block_pos_within_manhattan_starts_in_vanilla_order() {
+        let positions: Vec<_> = BlockPos::new(10, 20, 30)
+            .within_manhattan(1, 1, 1)
+            .take(7)
+            .collect();
+
+        assert_eq!(
+            positions,
+            [
+                BlockPos::new(10, 20, 30),
+                BlockPos::new(9, 20, 30),
+                BlockPos::new(10, 19, 30),
+                BlockPos::new(10, 20, 31),
+                BlockPos::new(10, 20, 29),
+                BlockPos::new(10, 21, 30),
+                BlockPos::new(11, 20, 30),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_pos_find_closest_match_uses_vanilla_order() {
+        let origin = BlockPos::new(10, 20, 30);
+
+        let found =
+            origin.find_closest_match(1, 1, |pos| pos == origin.south() || pos == origin.west());
+
+        assert_eq!(found, Some(origin.west()));
     }
 
     #[test]

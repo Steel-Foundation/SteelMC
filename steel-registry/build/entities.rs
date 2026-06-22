@@ -19,6 +19,7 @@ struct EntityTypeEntry {
     update_interval: i32,
     fire_immune: bool,
     summonable: bool,
+    allowed_in_peaceful: bool,
     can_spawn_far_from_player: bool,
     class_hierarchy: Vec<ClassHierarchyEntry>,
     #[serde(default = "default_can_serialize")]
@@ -153,6 +154,7 @@ pub(crate) fn build() -> TokenStream {
         let mob_category = mob_category_variant(&entity_type.mob_category);
         let fire_immune = entity_type.fire_immune;
         let summonable = entity_type.summonable;
+        let allowed_in_peaceful = entity_type.allowed_in_peaceful;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
         let can_serialize = entity_type.can_serialize;
         let is_abstract_boat = entity_type
@@ -213,6 +215,7 @@ pub(crate) fn build() -> TokenStream {
                 mob_category: #mob_category,
                 fire_immune: #fire_immune,
                 summonable: #summonable,
+                allowed_in_peaceful: #allowed_in_peaceful,
                 can_spawn_far_from_player: #can_spawn_far,
                 can_serialize: #can_serialize,
                 is_abstract_boat: #is_abstract_boat,

@@ -728,7 +728,11 @@ impl Player {
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        let world = self.get_world();
         self.try_set_position(pos)?;
+        if world.entity_manager().get_by_id(self.id()).is_some() {
+            world.chunk_map.update_player_status(self);
+        }
         self.set_velocity(DVec3::ZERO);
 
         let new_id = {
