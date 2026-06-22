@@ -2,8 +2,8 @@
 //!
 use core::iter;
 
-pub use steel_protocol::packets::game::AttributeModifierOperation;
 use steel_protocol::packets::game::{AttributeModifierData, AttributeSnapshot};
+pub use steel_registry::attribute::AttributeModifierOperation;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
@@ -134,6 +134,12 @@ impl AttributeInstance {
         self.persistent.push(persistent);
         self.recalculate();
         true
+    }
+
+    /// Returns whether a modifier with the given ID exists.
+    #[must_use]
+    pub fn has_modifier(&self, id: &Identifier) -> bool {
+        self.modifiers.iter().any(|modifier| modifier.id == *id)
     }
 
     /// Adds or replaces a modifier. Returns `true` if the value actually changed.
@@ -338,6 +344,13 @@ impl AttributeMap {
     pub fn get_instance(&self, attribute: AttributeRef) -> Option<&AttributeInstance> {
         let id = attribute.try_id()?;
         self.instances.get(id)?.as_ref()
+    }
+
+    /// Returns whether an attribute has a modifier with the given ID.
+    #[must_use]
+    pub fn has_modifier(&self, attribute: AttributeRef, modifier_id: &Identifier) -> bool {
+        self.get_instance(attribute)
+            .is_some_and(|instance| instance.has_modifier(modifier_id))
     }
 
     /// Sets the base value of an attribute

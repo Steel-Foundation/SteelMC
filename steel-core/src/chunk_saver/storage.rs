@@ -7,14 +7,15 @@ use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
 use crate::entity::{
-    ENTITIES, Entity, EntityBase, EntityFireFreezeState, EntityLoadRequest, RemovalReason,
-    SharedEntity,
+    ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
+    MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
+use simdnbt::ToNbtTag;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
@@ -33,6 +34,7 @@ use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_bio
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
+use text_components::TextComponent;
 
 use steel_worldgen::structure::desert_pyramid::DesertPyramidPieceData;
 use steel_worldgen::structure::fortress::FortressPieceData;
@@ -53,6 +55,9 @@ use steel_worldgen::structure::{
     StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
     TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
+
+const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
+const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
 /// -1 = none, 0 = south, 1 = west, 2 = north, 3 = east.
@@ -772,6 +777,108 @@ impl ChunkStorage {
         Self::entity_to_persistent(entity, &mut visited)
     }
 
+    fn custom_name_to_persistent(custom_name: Option<&TextComponent>) -> Vec<u8> {
+        let Some(custom_name) = custom_name else {
+            return Vec::new();
+        };
+
+        let mut root = NbtCompound::new();
+        root.insert("CustomName", custom_name.to_nbt_tag());
+        let mut bytes = Vec::new();
+        root.write(&mut bytes);
+        bytes
+    }
+
+    fn custom_name_from_persistent(bytes: &[u8], uuid: uuid::Uuid) -> Option<TextComponent> {
+        if bytes.is_empty() {
+            return None;
+        }
+
+        let Ok(root) = read_borrowed_compound(&mut Cursor::new(bytes)) else {
+            tracing::warn!(
+                ?uuid,
+                "Failed to parse entity custom name NBT, defaulting to no custom name"
+            );
+            return None;
+        };
+        let root = simdnbt::borrow::NbtCompound::from(&root);
+        let tag = root.get("CustomName")?;
+        let custom_name = TextComponent::from_nbt(&tag.to_owned());
+        if custom_name.is_none() {
+            tracing::warn!(
+                ?uuid,
+                "Failed to decode entity custom name, defaulting to no custom name"
+            );
+            return None;
+        }
+        custom_name
+    }
+
+    fn compound_to_persistent(compound: &NbtCompound) -> Vec<u8> {
+        if compound.is_empty() {
+            return Vec::new();
+        }
+
+        let mut bytes = Vec::new();
+        compound.write(&mut bytes);
+        bytes
+    }
+
+    fn compound_from_persistent(bytes: &[u8], uuid: uuid::Uuid) -> NbtCompound {
+        if bytes.is_empty() {
+            return NbtCompound::new();
+        }
+
+        let Ok(compound) = read_borrowed_compound(&mut Cursor::new(bytes)) else {
+            tracing::warn!(
+                ?uuid,
+                "Failed to parse entity custom data NBT, defaulting to empty custom data"
+            );
+            return NbtCompound::new();
+        };
+        simdnbt::borrow::NbtCompound::from(&compound).to_owned()
+    }
+
+    fn save_data_from_persistent(
+        persistent: &PersistentEntity,
+        uuid: uuid::Uuid,
+    ) -> EntityBaseSaveData {
+        EntityBaseSaveData {
+            air_supply: persistent.air_supply,
+            portal_cooldown: persistent.portal_cooldown,
+            no_gravity: persistent.no_gravity,
+            invulnerable: persistent.invulnerable,
+            custom_name: Self::custom_name_from_persistent(&persistent.custom_name_nbt, uuid),
+            custom_name_visible: persistent.custom_name_visible,
+            silent: persistent.silent,
+            glowing: persistent.glowing,
+            tags: persistent
+                .tags
+                .iter()
+                .take(MAX_ENTITY_TAGS)
+                .cloned()
+                .collect(),
+            custom_data: Self::compound_from_persistent(&persistent.custom_data_nbt, uuid),
+        }
+    }
+
+    fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
+        DVec3::new(
+            pos.x.clamp(
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ),
+            pos.y.clamp(
+                -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+                ENTITY_LOAD_MAX_VERTICAL_POSITION,
+            ),
+            pos.z.clamp(
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ),
+        )
+    }
+
     fn entity_to_persistent(
         entity: &SharedEntity,
         visited: &mut FxHashSet<i32>,
@@ -799,6 +906,7 @@ impl ChunkStorage {
         let vel = entity.velocity();
         let (yaw, pitch) = entity.rotation();
         let fire_freeze = entity.fire_freeze_state();
+        let save_data = entity.base().save_data();
 
         if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
@@ -833,7 +941,16 @@ impl ChunkStorage {
             was_in_powder_snow: fire_freeze.was_in_powder_snow(),
             has_visual_fire: fire_freeze.has_visual_fire(),
             on_ground: entity.on_ground(),
-            no_gravity: entity.is_no_gravity(),
+            no_gravity: save_data.no_gravity,
+            invulnerable: save_data.invulnerable,
+            air_supply: save_data.air_supply,
+            portal_cooldown: save_data.portal_cooldown,
+            custom_name_nbt: Self::custom_name_to_persistent(save_data.custom_name.as_ref()),
+            custom_name_visible: save_data.custom_name_visible,
+            silent: save_data.silent,
+            glowing: save_data.glowing,
+            tags: save_data.tags.iter().cloned().collect(),
+            custom_data_nbt: Self::compound_to_persistent(&save_data.custom_data),
             nbt_data: nbt_bytes,
             passengers,
         })
@@ -1207,7 +1324,7 @@ impl ChunkStorage {
         use uuid::Uuid;
 
         // Reconstruct base fields
-        let pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
+        let stored_pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
         let mut velocity = DVec3::new(
             persistent.motion[0],
             persistent.motion[1],
@@ -1217,14 +1334,24 @@ impl ChunkStorage {
         let uuid = Uuid::from_bytes(persistent.uuid);
 
         // Validate position is finite
-        if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+        if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
                 ?uuid,
                 "Entity has non-finite position {:?}, skipping load",
-                pos
+                stored_pos
             );
             return None;
         }
+
+        if !rotation.0.is_finite() || !rotation.1.is_finite() {
+            tracing::warn!(
+                ?uuid,
+                "Entity has non-finite rotation {rotation:?}, skipping load"
+            );
+            return None;
+        }
+
+        let pos = Self::clamp_loaded_entity_position(stored_pos);
 
         // Validate position is within expected chunk (sanity check)
         let expected_chunk = ChunkPos::from_entity_pos(pos);
@@ -1250,11 +1377,12 @@ impl ChunkStorage {
 
         // Look up entity type
         let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
+        let save_data = Self::save_data_from_persistent(persistent, uuid);
 
         // Parse NBT from bytes (or use empty compound data)
         let nbt_bytes = if persistent.nbt_data.is_empty() {
-            // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
-            &[0x0a, 0x00, 0x00, 0x00][..]
+            // Empty compound body for `simdnbt::borrow::read_compound`.
+            &[0x00][..]
         } else {
             &persistent.nbt_data[..]
         };
@@ -1280,7 +1408,7 @@ impl ChunkStorage {
                     persistent.has_visual_fire,
                 ),
                 on_ground: persistent.on_ground,
-                no_gravity: persistent.no_gravity,
+                save_data,
                 world: Weak::clone(level),
             },
             &nbt,
@@ -2598,9 +2726,9 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use crate::entity::{
-        Entity, SharedEntity,
+        DEFAULT_MAX_AIR_SUPPLY, Entity, SharedEntity,
         entities::{EndCrystalEntity, RawEntity},
-        init_entities, next_entity_id,
+        init_test_entities, next_entity_id,
     };
     use glam::DVec3;
     use rustc_hash::FxHashMap;
@@ -2611,15 +2739,15 @@ mod tests {
     use steel_utils::BoundingBox;
     use steel_utils::types::UpdateFlags;
     use steel_worldgen::structure::StructureReferenceSet;
+    use text_components::TextComponent;
 
     static RUNTIME_REGISTRIES: Once = Once::new();
 
     fn init_runtime_registries() {
-        init_test_registry();
         RUNTIME_REGISTRIES.call_once(|| {
+            init_test_entities();
             init_behaviors();
             init_block_entities();
-            init_entities();
         });
     }
 
@@ -2638,6 +2766,35 @@ mod tests {
 
     fn single_empty_section() -> Sections {
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice())
+    }
+
+    fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
+        PersistentEntity {
+            entity_type: vanilla_entities::END_CRYSTAL.key.clone(),
+            uuid: [9; 16],
+            pos: [pos.x, pos.y, pos.z],
+            motion: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0],
+            fall_distance: 0.0,
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
+            on_ground: false,
+            no_gravity: false,
+            invulnerable: false,
+            air_supply: DEFAULT_MAX_AIR_SUPPLY,
+            portal_cooldown: 0,
+            custom_name_nbt: Vec::new(),
+            custom_name_visible: false,
+            silent: false,
+            glowing: false,
+            tags: Vec::new(),
+            custom_data_nbt: Vec::new(),
+            nbt_data: Vec::new(),
+            passengers: Vec::new(),
+        }
     }
 
     #[test]
@@ -2748,6 +2905,47 @@ mod tests {
     }
 
     #[test]
+    fn persistent_entity_load_clamps_position_like_vanilla() {
+        init_runtime_registries();
+
+        let persistent =
+            test_persistent_end_crystal(DVec3::new(100_000_000.0, -100_000_000.0, -100_000_000.0));
+        let Some(entity) = ChunkStorage::persistent_to_entity_at_level(
+            &persistent,
+            ChunkPos::new(0, 0),
+            &Weak::new(),
+        ) else {
+            panic!("entity should load with clamped position");
+        };
+
+        assert_eq!(
+            entity.position(),
+            DVec3::new(
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            )
+        );
+    }
+
+    #[test]
+    fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
+        init_runtime_registries();
+
+        let mut persistent = test_persistent_end_crystal(DVec3::new(1.0, 2.0, 3.0));
+        persistent.rotation = [f32::NAN, 0.0];
+
+        assert!(
+            ChunkStorage::persistent_to_entity_at_level(
+                &persistent,
+                ChunkPos::new(0, 0),
+                &Weak::new(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
         init_runtime_registries();
 
@@ -2792,6 +2990,7 @@ mod tests {
         let entity_pos = DVec3::new(5.5, 6.0, 7.5);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let crystal = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             entity_pos,
             Weak::new(),
@@ -2800,6 +2999,16 @@ mod tests {
         crystal.set_invulnerable(true);
         crystal.set_fall_distance(3.75);
         crystal.set_no_gravity(true);
+        crystal.set_air_supply(120);
+        crystal.set_portal_cooldown(9);
+        crystal.set_custom_name(Some(TextComponent::plain("End Test")));
+        crystal.set_custom_name_visible(true);
+        crystal.set_silent(true);
+        crystal.set_glowing_tag(true);
+        assert!(crystal.add_tag("steel:test".to_owned()));
+        let mut custom_data = NbtCompound::new();
+        custom_data.insert("marker", "roundtrip");
+        crystal.set_custom_data(custom_data);
         proto.add_entity(crystal);
 
         let chunk = ChunkAccess::Proto(proto);
@@ -2809,6 +3018,18 @@ mod tests {
         assert_eq!(prepared.persistent.entities.len(), 1);
         assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f64::EPSILON);
         assert!(prepared.persistent.entities[0].no_gravity);
+        assert!(prepared.persistent.entities[0].invulnerable);
+        assert_eq!(prepared.persistent.entities[0].air_supply, 120);
+        assert_eq!(prepared.persistent.entities[0].portal_cooldown, 9);
+        assert!(prepared.persistent.entities[0].custom_name_visible);
+        assert!(prepared.persistent.entities[0].silent);
+        assert!(prepared.persistent.entities[0].glowing);
+        assert_eq!(
+            prepared.persistent.entities[0].tags,
+            vec!["steel:test".to_owned()]
+        );
+        assert!(!prepared.persistent.entities[0].custom_name_nbt.is_empty());
+        assert!(!prepared.persistent.entities[0].custom_data_nbt.is_empty());
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,
@@ -2826,6 +3047,28 @@ mod tests {
 
         let promoted = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
         assert_eq!(promoted.pending_entities.len(), 1);
+        assert!(promoted.pending_entities[0].is_no_gravity());
+        assert!(promoted.pending_entities[0].is_invulnerable());
+        assert_eq!(promoted.pending_entities[0].air_supply(), 120);
+        assert_eq!(promoted.pending_entities[0].portal_cooldown(), 9);
+        assert_eq!(
+            promoted.pending_entities[0].custom_name(),
+            Some(TextComponent::plain("End Test"))
+        );
+        assert!(promoted.pending_entities[0].is_custom_name_visible());
+        assert!(promoted.pending_entities[0].is_silent());
+        assert!(promoted.pending_entities[0].has_glowing_tag());
+        assert_eq!(
+            promoted.pending_entities[0].tags(),
+            vec!["steel:test".to_owned()]
+        );
+        assert_eq!(
+            promoted.pending_entities[0]
+                .custom_data()
+                .string("marker")
+                .map(ToString::to_string),
+            Some("roundtrip".to_owned())
+        );
     }
 
     #[test]
@@ -2836,6 +3079,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
@@ -2859,6 +3103,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
@@ -2893,11 +3138,13 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
         ));
         let passenger: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 8.0, 7.5),
             Weak::new(),
@@ -2955,6 +3202,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),

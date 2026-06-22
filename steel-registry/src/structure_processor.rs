@@ -84,6 +84,8 @@ crate::impl_registry_ext!(
     lists_by_key
 );
 
+crate::impl_registry_entry_eq!(StructureProcessorList);
+
 impl crate::RegistryEntry for StructureProcessorList {
     fn key(&self) -> &Identifier {
         &self.key

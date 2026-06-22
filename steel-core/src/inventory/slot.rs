@@ -9,14 +9,14 @@
 use std::{mem, sync::Arc};
 
 use enum_dispatch::enum_dispatch;
-use steel_registry::data_components::vanilla_components::EquippableSlot;
+use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_enchantments::BINDING_CURSE;
 use steel_utils::locks::SyncMutex;
 
 use crate::inventory::SyncPlayerInv;
 use crate::inventory::container::Container;
 use crate::inventory::crafting::{CraftingContainer, ResultContainer};
+use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
 use crate::inventory::recipe_manager;
 use crate::player::Player;
@@ -266,12 +266,12 @@ pub struct ArmorSlot {
     container: SyncPlayerInv,
     index: usize,
     /// The equipment slot this armor slot accepts.
-    slot: EquippableSlot,
+    slot: EquipmentSlot,
 }
 
 impl ArmorSlot {
     /// Creates a new armor slot.
-    pub const fn new(container: SyncPlayerInv, index: usize, slot: EquippableSlot) -> Self {
+    pub const fn new(container: SyncPlayerInv, index: usize, slot: EquipmentSlot) -> Self {
         Self {
             container,
             index,
@@ -281,7 +281,7 @@ impl ArmorSlot {
 
     /// Returns the equipment slot this armor slot accepts.
     #[must_use]
-    pub const fn equipment_slot(&self) -> EquippableSlot {
+    pub const fn equipment_slot(&self) -> EquipmentSlot {
         self.slot
     }
 
@@ -330,12 +330,12 @@ impl Slot for ArmorSlot {
         stack.is_equippable_in_slot(self.slot)
     }
 
-    /// Prevents picking up armor with Curse of Binding unless in creative mode.
+    /// Prevents picking up armor with `prevent_armor_change` unless in creative mode.
     fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
         let item = self.get_item(guard);
         if !item.is_empty()
             && !player.has_infinite_materials()
-            && item.get_enchantment_level(&BINDING_CURSE.key) > 0
+            && item.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
         {
             return false;
         }

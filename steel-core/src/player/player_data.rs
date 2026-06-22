@@ -3,6 +3,7 @@
 //! This module defines the data format for saving and loading player state.
 
 use steel_registry::item_stack::ItemStack;
+use steel_utils::types::GameType;
 
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
@@ -14,7 +15,7 @@ use super::{Player, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 3;
+pub const PLAYER_DATA_VERSION: i32 = 4;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -58,8 +59,8 @@ pub struct PersistentPlayerData {
     /// Current game mode (0=survival, 1=creative, 2=adventure, 3=spectator).
     pub game_mode: i32,
 
-    /// Previous game mode of the player
-    pub prev_game_mode: i32,
+    /// Previous game mode of the player, or `None` if vanilla has not recorded one yet.
+    pub prev_game_mode: Option<i32>,
 
     /// Player abilities (flight, invulnerability, etc.).
     pub abilities: PersistentAbilities,
@@ -195,7 +196,9 @@ impl PersistentPlayerData {
             has_visual_fire: fire_freeze.has_visual_fire(),
             health: player.get_health(),
             game_mode: player.game_mode() as i32,
-            prev_game_mode: player.previous_game_mode() as i32,
+            prev_game_mode: player
+                .previous_game_mode()
+                .map(|game_mode| game_mode as i32),
             abilities: PersistentAbilities {
                 invulnerable: abilities.invulnerable,
                 flying: abilities.flying,
@@ -329,7 +332,10 @@ impl PersistentPlayerData {
         player.set_health(self.health);
 
         // Game mode
-        player.restore_game_modes(self.game_mode.into(), self.prev_game_mode.into());
+        player.restore_game_modes(
+            self.game_mode.into(),
+            self.prev_game_mode.map(GameType::from),
+        );
 
         // Abilities
         *player.abilities.lock() = self.abilities.clone().into();

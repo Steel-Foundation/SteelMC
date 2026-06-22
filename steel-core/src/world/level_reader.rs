@@ -10,6 +10,8 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::SharedBlockEntity;
 
+const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
+
 /// Read-only level access needed by block behavior and worldgen predicates.
 pub trait LevelReader {
     /// Gets the block state at a position.
@@ -27,6 +29,16 @@ pub trait LevelReader {
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
 
+    /// Returns vanilla `BlockAndLightGetter.canSeeSky`.
+    fn can_see_sky(&self, pos: BlockPos) -> bool {
+        self.raw_brightness(pos, 0) >= 15
+    }
+
+    /// Returns this dimension's vanilla ambient light factor.
+    fn ambient_light(&self) -> f32 {
+        0.0
+    }
+
     /// Returns the minimum build height.
     fn min_y(&self) -> i32;
 
@@ -41,6 +53,31 @@ pub trait LevelReader {
     /// Checks if a Y coordinate is outside build height.
     fn is_outside_build_height(&self, y: i32) -> bool {
         y < self.min_y() || y >= self.max_y_exclusive()
+    }
+
+    /// Returns vanilla `LevelReader.getMaxLocalRawBrightness`.
+    fn max_local_raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        if pos.x() < -VANILLA_HORIZONTAL_LIMIT
+            || pos.z() < -VANILLA_HORIZONTAL_LIMIT
+            || pos.x() >= VANILLA_HORIZONTAL_LIMIT
+            || pos.z() >= VANILLA_HORIZONTAL_LIMIT
+        {
+            return 15;
+        }
+
+        self.raw_brightness(pos, sky_darkening)
+    }
+
+    /// Returns vanilla `LevelReader.getLightLevelDependentMagicValue`.
+    fn light_level_dependent_magic_value(&self, pos: BlockPos) -> f32 {
+        let value = f32::from(self.max_local_raw_brightness(pos, 0)) / 15.0;
+        let curved_value = value / value.mul_add(-3.0, 4.0);
+        curved_value + self.ambient_light() * (1.0 - curved_value)
+    }
+
+    /// Returns vanilla `LevelReader.getPathfindingCostFromLightLevels`.
+    fn pathfinding_cost_from_light_levels(&self, pos: BlockPos) -> f32 {
+        self.light_level_dependent_magic_value(pos) - 0.5
     }
 }
 
@@ -67,4 +104,104 @@ pub trait ScheduledTickAccess: LevelReader {
 
     /// Schedules a fluid tick using vanilla's default priority.
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestLevel {
+        raw_brightness: u8,
+        ambient_light: f32,
+    }
+
+    impl LevelReader for TestLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            BlockStateId(0)
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            self.raw_brightness
+        }
+
+        fn ambient_light(&self) -> f32 {
+            self.ambient_light
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    fn assert_f32_close(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 0.000_001,
+            "left={left}, right={right}"
+        );
+    }
+
+    #[test]
+    fn pathfinding_cost_uses_vanilla_curved_light_value() {
+        let level = TestLevel {
+            raw_brightness: 6,
+            ambient_light: 0.0,
+        };
+
+        assert_f32_close(
+            level.pathfinding_cost_from_light_levels(BlockPos::ZERO),
+            -0.357_142_87,
+        );
+    }
+
+    #[test]
+    fn pathfinding_cost_lerps_toward_full_light_with_ambient_light() {
+        let level = TestLevel {
+            raw_brightness: 6,
+            ambient_light: 0.2,
+        };
+
+        assert_f32_close(
+            level.pathfinding_cost_from_light_levels(BlockPos::ZERO),
+            -0.185_714_3,
+        );
+    }
+
+    #[test]
+    fn max_local_raw_brightness_matches_vanilla_horizontal_limit() {
+        let level = TestLevel {
+            raw_brightness: 0,
+            ambient_light: 0.0,
+        };
+
+        assert_eq!(
+            level.max_local_raw_brightness(BlockPos::new(29_999_999, 64, 0), 0),
+            0
+        );
+        assert_eq!(
+            level.max_local_raw_brightness(BlockPos::new(30_000_000, 64, 0), 0),
+            15
+        );
+    }
+
+    #[test]
+    fn can_see_sky_uses_vanilla_sky_light_threshold() {
+        assert!(
+            TestLevel {
+                raw_brightness: 15,
+                ambient_light: 0.0,
+            }
+            .can_see_sky(BlockPos::ZERO)
+        );
+        assert!(
+            !TestLevel {
+                raw_brightness: 14,
+                ambient_light: 0.0,
+            }
+            .can_see_sky(BlockPos::ZERO)
+        );
+    }
 }

@@ -78,6 +78,7 @@ pub(crate) fn parse_object_behavior(
 
 const KNOWN_REGISTRIES: &[&str] = &[
     "vanilla_blocks",
+    "vanilla_entities",
     "vanilla_items",
     "vanilla_fluids",
     "sound_events",
@@ -238,9 +239,12 @@ pub(crate) fn generate_arg(
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
                 let const_ident = to_block_ident(name);
-                // vanilla_blocks statics are owned `Block` values; constructors
-                // expect `BlockRef = &'static Block`, so auto-borrow here.
-                if module == "vanilla_blocks" || module == "sound_events" {
+                // These generated statics are owned registry values; constructors
+                // expect typed registry refs, so auto-borrow here.
+                if module == "vanilla_blocks"
+                    || module == "vanilla_entities"
+                    || module == "sound_events"
+                {
                     quote! { &#module_ident::#const_ident }
                 } else {
                     quote! { #module_ident::#const_ident }
@@ -293,11 +297,16 @@ pub(crate) fn scan_object_behaviors(
 ) -> HashMap<String, DiscoveredObject> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let pattern = format!("{manifest_dir}/src/behavior/{folder}/**/*.rs");
+    scan_object_behaviors_with_pattern(&pattern, attribute_name)
+}
+
+pub(crate) fn scan_object_behaviors_with_pattern(
+    pattern: &str,
+    attribute_name: &str,
+) -> HashMap<String, DiscoveredObject> {
     let mut discovered: HashMap<String, DiscoveredObject> = HashMap::new();
 
-    for entry in
-        glob::glob(&pattern).unwrap_or_else(|_| panic!("Failed to glob {folder} behavior sources"))
-    {
+    for entry in glob::glob(pattern).unwrap_or_else(|_| panic!("Failed to glob {pattern}")) {
         let path = entry.expect("Failed to read glob entry");
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));

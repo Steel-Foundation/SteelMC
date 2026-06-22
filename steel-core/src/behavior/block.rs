@@ -6,7 +6,9 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::blocks::shapes::{BooleanOp, ShapeChannel, VoxelShape, join_unoptimized_boxes};
+use steel_registry::blocks::shapes::{
+    BooleanOp, ShapeChannel, VoxelShape, is_shape_full_block, join_unoptimized_boxes,
+};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -18,11 +20,12 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
-use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::block_entity::SharedBlockEntity;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
@@ -668,6 +671,46 @@ pub trait BlockBehavior: Send + Sync {
         reason = "default trait implementation ignores all params"
     )]
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        false
+    }
+
+    /// Returns whether this block state is pathfindable for the supplied vanilla path computation.
+    ///
+    /// Vanilla baseline for `BlockBehaviour.isPathfindable`.
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        match computation_type {
+            PathComputationType::Land | PathComputationType::Air => {
+                !is_shape_full_block(state.get_static_collision_shape())
+            }
+            PathComputationType::Water => is_water_fluid(state.get_fluid_state().fluid_id),
+        }
+    }
+
+    /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
+    ///
+    /// Despite the vanilla name, this returns true for any door block type that
+    /// can be opened by hand.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn is_wooden_door(&self, state: BlockStateId) -> bool {
+        false
+    }
+
+    /// Mirrors vanilla `DoorBlock.setOpen` for AI door goals.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn set_door_open(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source_entity: Option<&dyn Entity>,
+        open: bool,
+    ) -> bool {
         false
     }
 

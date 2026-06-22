@@ -4,17 +4,20 @@
 //! Entities embed this struct and delegate common `Entity` trait methods to it.
 
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
+    mem,
     sync::{Arc, Weak},
 };
 
 use glam::DVec3;
+use simdnbt::owned::NbtCompound;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
@@ -33,6 +36,10 @@ const MOVEMENT_TRACE_LIMIT: usize = 100;
 const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
 /// Default vanilla `Entity.getTicksRequiredToFreeze` value.
 pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
+/// Default vanilla `Entity.getMaxAirSupply` value.
+pub const DEFAULT_MAX_AIR_SUPPLY: i32 = 300;
+/// Vanilla scoreboard tag limit for a single entity.
+pub const MAX_ENTITY_TAGS: usize = 1024;
 const FIRE_IGNITE_TICKS: i32 = 8 * 20;
 const LAVA_IGNITE_TICKS: i32 = 15 * 20;
 
@@ -137,6 +144,11 @@ impl EntityMovementTrace {
 
     fn remove_latest_recording(&mut self) {
         self.movement_this_tick.pop_back();
+    }
+
+    fn reset(&mut self) {
+        self.movement_this_tick.clear();
+        self.final_movements_this_tick.clear();
     }
 
     fn take_for_block_effects(
@@ -618,6 +630,7 @@ pub struct EntityBaseState {
     last_known_speed: DVec3,
     velocity: DVec3,
     rotation: (f32, f32),
+    old_rotation: (f32, f32),
     pose: EntityPose,
     dimensions: EntityDimensions,
     bounding_box: WorldAabb,
@@ -625,7 +638,6 @@ pub struct EntityBaseState {
     ground_contact: EntityGroundContact,
     movement_progress: EntityMovementProgress,
     fire_freeze: EntityFireFreezeState,
-    no_gravity: bool,
     in_block_state: Option<BlockStateId>,
     fluid_contact: EntityFluidContact,
     was_eye_in_water: bool,
@@ -634,6 +646,7 @@ pub struct EntityBaseState {
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
     needs_velocity_sync: bool,
+    hurt_marked: bool,
 }
 
 impl EntityBaseState {
@@ -649,6 +662,7 @@ impl EntityBaseState {
             last_known_speed: DVec3::ZERO,
             velocity: DVec3::ZERO,
             rotation: (0.0, 0.0),
+            old_rotation: (0.0, 0.0),
             pose: EntityPose::Standing,
             dimensions,
             bounding_box: Self::make_bounding_box(position, dimensions),
@@ -656,7 +670,6 @@ impl EntityBaseState {
             ground_contact: EntityGroundContact::airborne(),
             movement_progress: EntityMovementProgress::new(),
             fire_freeze: EntityFireFreezeState::new(),
-            no_gravity: false,
             in_block_state: None,
             fluid_contact: EntityFluidContact::default(),
             was_eye_in_water: false,
@@ -665,6 +678,7 @@ impl EntityBaseState {
             stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
             needs_velocity_sync: false,
+            hurt_marked: false,
         }
     }
 
@@ -715,7 +729,9 @@ impl EntityBaseState {
     /// Sets rotation on this state snapshot.
     #[must_use]
     pub fn with_rotation(mut self, rotation: (f32, f32)) -> Self {
-        self.rotation = normalize_rotation(rotation);
+        let rotation = normalize_rotation(rotation);
+        self.rotation = rotation;
+        self.old_rotation = rotation;
         self
     }
 
@@ -730,13 +746,6 @@ impl EntityBaseState {
     #[must_use]
     pub const fn with_fire_freeze_state(mut self, fire_freeze: EntityFireFreezeState) -> Self {
         self.fire_freeze = fire_freeze;
-        self
-    }
-
-    /// Sets the shared vanilla `NoGravity` flag on this construction snapshot.
-    #[must_use]
-    pub const fn with_no_gravity(mut self, no_gravity: bool) -> Self {
-        self.no_gravity = no_gravity;
         self
     }
 
@@ -766,6 +775,64 @@ impl EntityBaseState {
     }
 }
 
+/// Shared vanilla entity save data that is not part of the movement snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityBaseSaveData {
+    /// Synchronized vanilla `Air`/air supply value.
+    pub air_supply: i32,
+    /// Vanilla dimension-change portal cooldown.
+    pub portal_cooldown: i32,
+    /// Shared vanilla `NoGravity` flag.
+    pub no_gravity: bool,
+    /// Shared vanilla `Invulnerable` flag.
+    pub invulnerable: bool,
+    /// Optional synchronized vanilla custom name.
+    pub custom_name: Option<TextComponent>,
+    /// Synchronized vanilla custom-name visibility flag.
+    pub custom_name_visible: bool,
+    /// Synchronized vanilla silent flag.
+    pub silent: bool,
+    /// Server-owned vanilla glowing tag, projected into the shared flags byte.
+    pub glowing: bool,
+    /// Vanilla scoreboard tags.
+    pub tags: BTreeSet<String>,
+    /// Vanilla custom data component payload.
+    pub custom_data: NbtCompound,
+}
+
+impl EntityBaseSaveData {
+    /// Creates default vanilla base save data.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            air_supply: DEFAULT_MAX_AIR_SUPPLY,
+            portal_cooldown: 0,
+            no_gravity: false,
+            invulnerable: false,
+            custom_name: None,
+            custom_name_visible: false,
+            silent: false,
+            glowing: false,
+            tags: BTreeSet::new(),
+            custom_data: NbtCompound::new(),
+        }
+    }
+
+    /// Adds a scoreboard tag, respecting vanilla's per-entity tag limit.
+    pub fn add_tag(&mut self, tag: String) -> bool {
+        if self.tags.len() >= MAX_ENTITY_TAGS && !self.tags.contains(&tag) {
+            return false;
+        }
+        self.tags.insert(tag)
+    }
+}
+
+impl Default for EntityBaseSaveData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Base fields restored from persistent entity data.
 ///
 /// Vanilla loads these fields through `Entity.load` before type-specific
@@ -789,8 +856,8 @@ pub struct EntityBaseLoad {
     pub fire_freeze: EntityFireFreezeState,
     /// Restored ground-contact flag.
     pub on_ground: bool,
-    /// Restored shared vanilla `NoGravity` flag.
-    pub no_gravity: bool,
+    /// Restored shared vanilla save data.
+    pub save_data: EntityBaseSaveData,
     /// World reference for the loaded entity.
     pub world: Weak<World>,
 }
@@ -910,6 +977,8 @@ pub struct EntityBase {
     world: SyncMutex<Weak<World>>,
     /// Current vanilla movement state.
     state: SyncMutex<EntityBaseState>,
+    /// Shared vanilla save data outside the movement snapshot.
+    save_data: SyncMutex<EntityBaseSaveData>,
     /// Per-tick movement segments used by vanilla block-contact effects.
     movement_trace: SyncMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
@@ -973,6 +1042,7 @@ impl EntityBase {
             uuid,
             world: SyncMutex::new(world),
             state: SyncMutex::new(state),
+            save_data: SyncMutex::new(EntityBaseSaveData::new()),
             movement_trace: SyncMutex::new(EntityMovementTrace::default()),
             lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             relationships: SyncMutex::new(EntityRelationshipState::default()),
@@ -984,7 +1054,7 @@ impl EntityBase {
     /// Creates a base from persistent vanilla entity fields.
     #[must_use]
     pub fn from_load(load: EntityBaseLoad, dimensions: EntityDimensions) -> Self {
-        Self::with_uuid_and_state(
+        let base = Self::with_uuid_and_state(
             load.id,
             load.uuid,
             EntityBaseState::new(load.position, dimensions)
@@ -992,10 +1062,11 @@ impl EntityBase {
                 .with_rotation(load.rotation)
                 .with_fall_distance(load.fall_distance)
                 .with_fire_freeze_state(load.fire_freeze)
-                .with_no_gravity(load.no_gravity)
                 .with_on_ground(load.on_ground),
             load.world,
-        )
+        );
+        base.replace_save_data(load.save_data);
+        base
     }
 
     /// Gets the entity's unique network ID.
@@ -1082,6 +1153,12 @@ impl EntityBase {
         self.state.lock().rotation
     }
 
+    /// Gets vanilla `yRotO`/`xRotO` as (yaw, pitch) in degrees.
+    #[inline]
+    pub fn old_rotation(&self) -> (f32, f32) {
+        self.state.lock().old_rotation
+    }
+
     /// Returns true if the entity is touching the ground.
     #[inline]
     pub fn on_ground(&self) -> bool {
@@ -1110,6 +1187,16 @@ impl EntityBase {
     #[inline]
     pub fn fire_freeze_state(&self) -> EntityFireFreezeState {
         self.state.lock().fire_freeze
+    }
+
+    /// Returns a snapshot of shared vanilla save data.
+    pub fn save_data(&self) -> EntityBaseSaveData {
+        self.save_data.lock().clone()
+    }
+
+    /// Replaces shared vanilla save data.
+    pub fn replace_save_data(&self, save_data: EntityBaseSaveData) {
+        *self.save_data.lock() = save_data;
     }
 
     /// Returns vanilla `Entity.getInBlockState`, cached until base tick or block-position change.
@@ -1181,16 +1268,80 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
-    /// Returns the shared vanilla `NoGravity` state stored on the base snapshot.
+    /// Returns the synchronized vanilla `Air` value.
+    #[inline]
+    pub fn air_supply(&self) -> i32 {
+        self.save_data.lock().air_supply
+    }
+
+    /// Returns the vanilla portal cooldown in ticks.
+    #[inline]
+    pub fn portal_cooldown(&self) -> i32 {
+        self.save_data.lock().portal_cooldown
+    }
+
+    /// Returns whether the entity is on vanilla portal cooldown.
+    #[inline]
+    pub fn is_on_portal_cooldown(&self) -> bool {
+        self.portal_cooldown() > 0
+    }
+
+    /// Returns the shared vanilla `NoGravity` flag.
     #[inline]
     pub fn no_gravity(&self) -> bool {
-        self.state.lock().no_gravity
+        self.save_data.lock().no_gravity
+    }
+
+    /// Returns the shared vanilla `Invulnerable` flag.
+    #[inline]
+    pub fn invulnerable(&self) -> bool {
+        self.save_data.lock().invulnerable
+    }
+
+    /// Returns the optional vanilla custom name.
+    #[inline]
+    pub fn custom_name(&self) -> Option<TextComponent> {
+        self.save_data.lock().custom_name.clone()
+    }
+
+    /// Returns the vanilla custom-name visibility flag.
+    #[inline]
+    pub fn custom_name_visible(&self) -> bool {
+        self.save_data.lock().custom_name_visible
+    }
+
+    /// Returns the synchronized vanilla silent flag.
+    #[inline]
+    pub fn silent(&self) -> bool {
+        self.save_data.lock().silent
+    }
+
+    /// Returns the server-owned vanilla glowing tag flag.
+    #[inline]
+    pub fn glowing(&self) -> bool {
+        self.save_data.lock().glowing
+    }
+
+    /// Returns a sorted snapshot of vanilla scoreboard tags.
+    pub fn tags(&self) -> Vec<String> {
+        self.save_data.lock().tags.iter().cloned().collect()
+    }
+
+    /// Returns a snapshot of vanilla custom data.
+    pub fn custom_data(&self) -> NbtCompound {
+        self.save_data.lock().custom_data.clone()
     }
 
     /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
     #[inline]
     pub fn needs_velocity_sync(&self) -> bool {
         self.state.lock().needs_velocity_sync
+    }
+
+    /// Returns true when vanilla hurt-marked velocity sync is pending.
+    #[inline]
+    pub fn hurt_marked(&self) -> bool {
+        self.state.lock().hurt_marked
     }
 
     /// Gets the world this entity is in.
@@ -1244,6 +1395,16 @@ impl EntityBase {
     /// Restores a persisted passenger relationship without applying gameplay boarding rules.
     pub(crate) fn restore_passenger_relationship(vehicle: &SharedEntity, passenger: &SharedEntity) {
         passenger.base().stop_riding_relationship();
+        Self::add_passenger_relationship(vehicle, passenger);
+    }
+
+    /// Starts a gameplay passenger relationship after vanilla boarding rules pass.
+    pub(crate) fn start_riding_relationship(vehicle: &SharedEntity, passenger: &SharedEntity) {
+        passenger.base().stop_riding_relationship();
+        Self::add_passenger_relationship(vehicle, passenger);
+    }
+
+    fn add_passenger_relationship(vehicle: &SharedEntity, passenger: &SharedEntity) {
         if vehicle.base().has_passenger_id(passenger.id()) {
             return;
         }
@@ -1269,8 +1430,10 @@ impl EntityBase {
     /// Advances the base-tick movement and relationship state Steel currently implements.
     pub fn advance_base_tick_state(&self) {
         self.clear_in_block_state_for_base_tick();
+        self.set_old_rotation_to_current();
         self.compute_known_speed();
         self.decrement_boarding_cooldown();
+        self.process_portal_cooldown();
     }
 
     /// Clears vanilla `inBlockState` at the start of base tick.
@@ -1294,6 +1457,49 @@ impl EntityBase {
         if relationships.boarding_cooldown > 0 {
             relationships.boarding_cooldown -= 1;
         }
+    }
+
+    fn process_portal_cooldown(&self) {
+        let mut save_data = self.save_data.lock();
+        if save_data.portal_cooldown > 0 {
+            save_data.portal_cooldown -= 1;
+        }
+    }
+
+    /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
+    pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
+        {
+            let mut state = self.state.lock();
+            let position = state.position;
+            state.old_position = position;
+            state.last_known_position = None;
+            state.last_known_speed = DVec3::ZERO;
+            state.velocity = DVec3::ZERO;
+            state.old_rotation = state.rotation;
+            state.pose = EntityPose::Standing;
+            state.dimensions = dimensions;
+            state.bounding_box = EntityBaseState::make_bounding_box(position, dimensions);
+            state.movement_flags = EntityMovementFlags::new();
+            state.ground_contact = EntityGroundContact::airborne();
+            state.movement_progress = EntityMovementProgress::new();
+            state.fire_freeze = EntityFireFreezeState::new();
+            state.in_block_state = None;
+            state.fluid_contact = EntityFluidContact::default();
+            state.was_eye_in_water = false;
+            state.piston_movement = EntityPistonMovement::new();
+            state.fall_distance = 0.0;
+            state.stuck_speed_multiplier = DVec3::ZERO;
+            state.no_physics = false;
+            state.needs_velocity_sync = false;
+            state.hurt_marked = false;
+        }
+
+        self.movement_trace.lock().reset();
+
+        let mut save_data = self.save_data.lock();
+        let tags = mem::take(&mut save_data.tags);
+        *save_data = EntityBaseSaveData::new();
+        save_data.tags = tags;
     }
 
     /// Updates the world reference used by this entity.
@@ -1471,6 +1677,23 @@ impl EntityBase {
         self.state.lock().old_position = old_position;
     }
 
+    /// Sets vanilla `yRotO`/`xRotO` to the current rotation.
+    pub fn set_old_rotation_to_current(&self) {
+        let mut state = self.state.lock();
+        state.old_rotation = state.rotation;
+    }
+
+    /// Sets vanilla `yRotO` to the current yaw without changing `xRotO`.
+    pub fn set_old_yaw_to_current(&self) {
+        let mut state = self.state.lock();
+        state.old_rotation.0 = state.rotation.0;
+    }
+
+    /// Sets vanilla `yRotO`/`xRotO` explicitly.
+    pub fn set_old_rotation(&self, old_rotation: (f32, f32)) {
+        self.state.lock().old_rotation = normalize_rotation(old_rotation);
+    }
+
     /// Records a movement segment for vanilla block-contact effects.
     pub fn record_movement_this_tick(&self, movement: EntityMovement) {
         self.movement_trace.lock().record(movement);
@@ -1580,9 +1803,59 @@ impl EntityBase {
         self.state.lock().no_physics = no_physics;
     }
 
-    /// Sets the shared vanilla `NoGravity` state stored on the base snapshot.
+    /// Sets the synchronized vanilla `Air` value.
+    pub fn set_air_supply(&self, air_supply: i32) {
+        self.save_data.lock().air_supply = air_supply;
+    }
+
+    /// Sets the vanilla portal cooldown in ticks.
+    pub fn set_portal_cooldown(&self, portal_cooldown: i32) {
+        self.save_data.lock().portal_cooldown = portal_cooldown;
+    }
+
+    /// Sets the shared vanilla `NoGravity` flag.
     pub fn set_no_gravity(&self, no_gravity: bool) {
-        self.state.lock().no_gravity = no_gravity;
+        self.save_data.lock().no_gravity = no_gravity;
+    }
+
+    /// Sets the shared vanilla `Invulnerable` flag.
+    pub fn set_invulnerable(&self, invulnerable: bool) {
+        self.save_data.lock().invulnerable = invulnerable;
+    }
+
+    /// Sets the optional vanilla custom name.
+    pub fn set_custom_name(&self, custom_name: Option<TextComponent>) {
+        self.save_data.lock().custom_name = custom_name;
+    }
+
+    /// Sets the vanilla custom-name visibility flag.
+    pub fn set_custom_name_visible(&self, visible: bool) {
+        self.save_data.lock().custom_name_visible = visible;
+    }
+
+    /// Sets the synchronized vanilla silent flag.
+    pub fn set_silent(&self, silent: bool) {
+        self.save_data.lock().silent = silent;
+    }
+
+    /// Sets the server-owned vanilla glowing tag flag.
+    pub fn set_glowing(&self, glowing: bool) {
+        self.save_data.lock().glowing = glowing;
+    }
+
+    /// Adds a vanilla scoreboard tag.
+    pub fn add_tag(&self, tag: String) -> bool {
+        self.save_data.lock().add_tag(tag)
+    }
+
+    /// Removes a vanilla scoreboard tag.
+    pub fn remove_tag(&self, tag: &str) -> bool {
+        self.save_data.lock().tags.remove(tag)
+    }
+
+    /// Replaces vanilla custom data.
+    pub fn set_custom_data(&self, custom_data: NbtCompound) {
+        self.save_data.lock().custom_data = custom_data;
     }
 
     /// Marks velocity for vanilla `ServerEntity` synchronization.
@@ -1593,6 +1866,16 @@ impl EntityBase {
     /// Clears the vanilla velocity sync marker after send processing.
     pub fn clear_velocity_sync(&self) {
         self.state.lock().needs_velocity_sync = false;
+    }
+
+    /// Marks this entity as hurt for vanilla self-inclusive motion sync.
+    pub fn mark_hurt(&self) {
+        self.state.lock().hurt_marked = true;
+    }
+
+    /// Clears the vanilla hurt-marked motion sync flag.
+    pub fn clear_hurt_mark(&self) {
+        self.state.lock().hurt_marked = false;
     }
 
     /// Sets accumulated vanilla fall distance.
@@ -1940,18 +2223,22 @@ impl EntityBase {
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState, EntityFireFreezeState,
-        EntityFluidContact, EntityMoveError, EntityMovement, EntityMovementEmission,
-        EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
-        EntityVerticalMovementStateUpdate,
+        DEFAULT_MAX_AIR_SUPPLY, DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState,
+        EntityFireFreezeState, EntityFluidContact, EntityMoveError, EntityMovement,
+        EntityMovementEmission, EntityMovementFlags, EntityMovementProgress,
+        EntityPhysicsStateInput, EntityPistonMovement, EntityVerticalMovementStateUpdate,
+        MAX_ENTITY_TAGS,
     };
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{entity_type::EntityDimensions, entity_type::EntityTypeRef};
+    use steel_registry::{
+        entity_type::EntityDimensions, entity_type::EntityTypeRef, test_support::init_test_registry,
+    };
     use steel_registry::{vanilla_damage_types, vanilla_entities};
     use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
+    use text_components::TextComponent;
     use uuid::Uuid;
 
     use crate::entity::damage::DamageSource;
@@ -2473,6 +2760,72 @@ mod tests {
     }
 
     #[test]
+    fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
+        let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
+        let base = EntityBase::new(1, DVec3::new(1.0, 64.0, 1.0), dimensions, Weak::new());
+
+        base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
+        base.set_no_physics(true);
+        base.set_air_supply(12);
+        base.set_portal_cooldown(9);
+        base.set_no_gravity(true);
+        base.set_invulnerable(true);
+        base.set_custom_name(Some(TextComponent::plain("stale")));
+        base.set_custom_name_visible(true);
+        base.set_silent(true);
+        base.set_glowing(true);
+        base.add_tag("keep".to_owned());
+        base.set_remaining_fire_ticks(80);
+        base.set_ticks_frozen(40);
+        base.set_visual_fire(true);
+        base.set_fall_distance(7.0);
+        base.set_fluid_contact(EntityFluidContact::from_parts(0.25, 0.5, true, true));
+        base.make_stuck_in_block(DVec3::splat(0.2));
+        base.mark_velocity_sync();
+        base.mark_hurt();
+        base.record_movement_this_tick(EntityMovement::new(
+            DVec3::new(1.0, 64.0, 1.0),
+            DVec3::new(2.0, 64.0, 1.0),
+        ));
+        base.set_position_local(DVec3::new(2.0, 64.0, 1.0));
+        assert!(!base.take_movements_for_block_effects().is_empty());
+        base.record_movement_this_tick(EntityMovement::new(
+            DVec3::new(2.0, 64.0, 1.0),
+            DVec3::new(3.0, 64.0, 1.0),
+        ));
+        base.set_position_local(DVec3::new(3.0, 64.0, 1.0));
+
+        let reset_dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
+        base.reset_for_player_respawn(reset_dimensions);
+
+        let reset_position = DVec3::new(3.0, 64.0, 1.0);
+        assert_vec3_close(base.velocity(), DVec3::ZERO);
+        assert!(!base.no_physics());
+        assert_eq!(base.air_supply(), DEFAULT_MAX_AIR_SUPPLY);
+        assert_eq!(base.portal_cooldown(), 0);
+        assert!(!base.no_gravity());
+        assert!(!base.invulnerable());
+        assert_eq!(base.custom_name(), None);
+        assert!(!base.custom_name_visible());
+        assert!(!base.silent());
+        assert!(!base.glowing());
+        assert!(base.save_data().tags.contains("keep"));
+        assert_eq!(base.remaining_fire_ticks(), 0);
+        assert_eq!(base.ticks_frozen(), 0);
+        assert!(!base.has_visual_fire());
+        assert_eq!(base.fall_distance().to_bits(), 0.0_f64.to_bits());
+        assert_eq!(base.fluid_contact(), EntityFluidContact::default());
+        assert!(!base.needs_velocity_sync());
+        assert!(!base.hurt_marked());
+        assert_eq!(base.dimensions(), reset_dimensions);
+        assert!(base.last_movements_for_block_effects().is_empty());
+        assert_eq!(
+            base.take_movements_for_block_effects(),
+            vec![EntityMovement::new(reset_position, reset_position)]
+        );
+    }
+
+    #[test]
     fn fire_freeze_state_round_trips_through_base_load() {
         let load = super::EntityBaseLoad {
             id: 1,
@@ -2483,7 +2836,11 @@ mod tests {
             fall_distance: 0.0,
             fire_freeze: EntityFireFreezeState::from_parts(12, 34, true, false, true),
             on_ground: false,
-            no_gravity: true,
+            save_data: super::EntityBaseSaveData {
+                no_gravity: true,
+                invulnerable: true,
+                ..super::EntityBaseSaveData::new()
+            },
             world: Weak::<World>::new(),
         };
 
@@ -2495,6 +2852,7 @@ mod tests {
         assert!(state.is_in_powder_snow());
         assert!(state.has_visual_fire());
         assert!(base.no_gravity());
+        assert!(base.invulnerable());
     }
 
     #[test]
@@ -2569,6 +2927,7 @@ mod tests {
 
     #[test]
     fn base_fall_damage_propagates_to_passengers() {
+        init_test_registry();
         let vehicle = raw_entity(1);
         let passenger = FallDamageTestEntity::new(2);
         let passenger_entity: SharedEntity = passenger.clone();
@@ -2678,6 +3037,41 @@ mod tests {
     }
 
     #[test]
+    fn with_rotation_initializes_old_rotation_to_current_rotation() {
+        let state = EntityBaseState::new(DVec3::ZERO, EntityDimensions::new(0.25, 0.25, 0.125))
+            .with_rotation((450.0, 120.0));
+
+        assert_f32_close(state.rotation.0, 90.0);
+        assert_f32_close(state.rotation.1, 90.0);
+        assert_eq!(state.old_rotation, state.rotation);
+    }
+
+    #[test]
+    fn old_rotation_is_base_tick_snapshot_state() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_rotation((30.0, 40.0));
+        assert_eq!(base.old_rotation(), (0.0, 0.0));
+
+        base.advance_base_tick_state();
+        assert_eq!(base.old_rotation(), (30.0, 40.0));
+
+        base.set_rotation((60.0, 70.0));
+        assert_eq!(base.old_rotation(), (30.0, 40.0));
+
+        base.set_old_yaw_to_current();
+        assert_eq!(base.old_rotation(), (60.0, 40.0));
+
+        base.set_old_rotation((450.0, 120.0));
+        assert_eq!(base.old_rotation(), (90.0, 90.0));
+    }
+
+    #[test]
     #[should_panic(expected = "entity position must be finite")]
     fn set_position_rejects_non_finite_values() {
         let base = EntityBase::new(
@@ -2750,6 +3144,44 @@ mod tests {
         assert_eq!(base.boarding_cooldown(), 0);
         base.advance_base_tick_state();
         assert_eq!(base.boarding_cooldown(), 0);
+    }
+
+    #[test]
+    fn base_tick_state_decrements_portal_cooldown() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_portal_cooldown(2);
+        base.advance_base_tick_state();
+        assert_eq!(base.portal_cooldown(), 1);
+        base.advance_base_tick_state();
+        assert_eq!(base.portal_cooldown(), 0);
+        base.advance_base_tick_state();
+        assert_eq!(base.portal_cooldown(), 0);
+    }
+
+    #[test]
+    fn entity_tags_respect_vanilla_limit() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        for index in 0..MAX_ENTITY_TAGS {
+            assert!(base.add_tag(format!("tag_{index}")));
+        }
+
+        assert!(!base.add_tag("overflow".to_owned()));
+        assert_eq!(base.tags().len(), MAX_ENTITY_TAGS);
+        assert!(base.remove_tag("tag_0"));
+        assert!(base.add_tag("replacement".to_owned()));
+        assert!(base.tags().iter().any(|tag| tag == "replacement"));
     }
 
     #[test]
