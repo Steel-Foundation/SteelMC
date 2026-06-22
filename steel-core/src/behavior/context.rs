@@ -21,6 +21,10 @@ pub use steel_registry::items::item::BlockHitResult;
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
+    /// The interaction succeeded and the server should broadcast the swing.
+    SuccessServer,
+    /// The interaction consumed the action without swinging.
+    Consume,
     /// The interaction failed and consumed the action.
     Fail,
     /// The interaction did not apply; try the next handler.
@@ -34,7 +38,19 @@ impl InteractionResult {
     /// Pass and `TryEmptyHandInteraction` do not consume the action.
     #[must_use]
     pub const fn consumes_action(self) -> bool {
-        matches!(self, InteractionResult::Success | InteractionResult::Fail)
+        matches!(
+            self,
+            InteractionResult::Success
+                | InteractionResult::SuccessServer
+                | InteractionResult::Consume
+                | InteractionResult::Fail
+        )
+    }
+
+    /// Returns true when vanilla requests the server to broadcast the swing.
+    #[must_use]
+    pub const fn should_swing_server(self) -> bool {
+        matches!(self, InteractionResult::SuccessServer)
     }
 }
 

@@ -3,7 +3,7 @@
 use std::sync::Weak;
 
 use glam::DVec3;
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::locks::SyncMutex;
@@ -78,9 +78,12 @@ impl Entity for RawEntity {
         // TODO: Replace raw entity ticking with full vanilla behavior for this entity type.
     }
 
-    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
-        *self.data.lock() = nbt_view.to_owned();
+    fn attackable(&self) -> bool {
+        false
+    }
+
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        *self.data.lock() = nbt.to_owned();
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

@@ -25,7 +25,7 @@ use steel_utils::{
 };
 
 use super::component_data::{Component, ComponentData, ComponentDataDiscriminant};
-use super::components::ItemEnchantments;
+use super::components::{ItemAttributeModifiers, ItemEnchantments};
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
     TOOLTIP_DISPLAY,
@@ -383,7 +383,10 @@ impl DataComponentMap {
             ComponentData::Enchantments(ItemEnchantments::empty()),
         );
         map.insert(REPAIR_COST.key.clone(), ComponentData::I32(0));
-        map.insert(ATTRIBUTE_MODIFIERS.key.clone(), ComponentData::Todo);
+        map.insert(
+            ATTRIBUTE_MODIFIERS.key.clone(),
+            ComponentData::AttributeModifiers(ItemAttributeModifiers::empty()),
+        );
         map.insert(RARITY.key.clone(), ComponentData::Todo);
         map.insert(BREAK_SOUND.key.clone(), ComponentData::Todo);
         map.insert(TOOLTIP_DISPLAY.key.clone(), ComponentData::Todo);
@@ -481,6 +484,10 @@ impl DataComponentMap {
 
 /// Entry in a component patch.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "component patches keep set values inline to avoid changing shared item component storage semantics"
+)]
 pub enum ComponentPatchEntry {
     /// Component is set to this value
     Set(ComponentData),

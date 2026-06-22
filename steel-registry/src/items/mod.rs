@@ -84,15 +84,6 @@ impl Item {
 
 pub type ItemRef = &'static Item;
 
-impl PartialEq for ItemRef {
-    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(*self, *other)
-    }
-}
-
-impl Eq for ItemRef {}
-
 pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
@@ -142,6 +133,8 @@ impl ItemRegistry {
 
 crate::impl_registry_ext!(ItemRegistry, Item, items_by_id, items_by_key);
 crate::impl_tagged_registry!(ItemRegistry, items_by_key, "item");
+
+crate::impl_registry_entry_eq!(Item);
 
 impl crate::RegistryEntry for Item {
     fn key(&self) -> &Identifier {

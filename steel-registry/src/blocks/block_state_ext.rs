@@ -58,6 +58,8 @@ pub trait BlockStateExt {
     /// This matches vanilla's cached `BlockState.isSolidRender()`, based on the
     /// occlusion shape rather than collision shape.
     fn is_solid_render(&self) -> bool;
+    /// Returns vanilla `BlockState.isSuffocating`.
+    fn is_suffocating(&self) -> bool;
     /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
     /// Returns true if this block state contains fluid — either a liquid block or a waterlogged block.
@@ -199,6 +201,10 @@ impl BlockStateExt for BlockStateId {
             && blocks::shapes::is_shape_full_block(self.get_occlusion_shape())
     }
 
+    fn is_suffocating(&self) -> bool {
+        REGISTRY.blocks.is_suffocating(*self)
+    }
+
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
     }
@@ -272,6 +278,23 @@ mod tests {
             .blocks
             .get_default_state_id(&vanilla_blocks::COBWEB);
         assert!(!cobweb.blocks_motion());
+    }
+
+    #[test]
+    fn suffocating_uses_extracted_vanilla_state_predicate() {
+        init_test_registry();
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        assert!(stone.is_suffocating());
+
+        let glass = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::GLASS);
+        assert!(glass.blocks_motion());
+        assert!(!glass.is_suffocating());
+
+        let farmland = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::FARMLAND);
+        assert!(farmland.is_suffocating());
     }
 
     #[test]

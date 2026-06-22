@@ -36,11 +36,15 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
 };
+use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::{ENTITIES, EntityFireFreezeState, EntityLoadRequest};
+use crate::entity::{
+    DEFAULT_MAX_AIR_SUPPLY, ENTITIES, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
+    MAX_ENTITY_TAGS,
+};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
@@ -77,8 +81,9 @@ struct StructureEntityInfo {
     rotation: (f32, f32),
     velocity: DVec3,
     fall_distance: f64,
+    fire_freeze: EntityFireFreezeState,
     on_ground: bool,
-    no_gravity: bool,
+    save_data: EntityBaseSaveData,
     nbt: NbtCompound,
 }
 
@@ -346,8 +351,36 @@ impl StructureTemplate {
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
             let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
+            let fire_freeze = EntityFireFreezeState::from_parts(
+                Self::read_optional_int(&entity_nbt, "Fire").unwrap_or(0),
+                Self::read_optional_int(&entity_nbt, "TicksFrozen").unwrap_or(0),
+                false,
+                false,
+                entity_nbt
+                    .byte("HasVisualFire")
+                    .is_some_and(|value| value != 0),
+            );
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
-            let no_gravity = entity_nbt.byte("NoGravity").is_some_and(|value| value != 0);
+            let save_data = EntityBaseSaveData {
+                air_supply: Self::read_optional_int(&entity_nbt, "Air")
+                    .unwrap_or(DEFAULT_MAX_AIR_SUPPLY),
+                portal_cooldown: Self::read_optional_int(&entity_nbt, "PortalCooldown")
+                    .unwrap_or(0),
+                no_gravity: entity_nbt.byte("NoGravity").is_some_and(|value| value != 0),
+                invulnerable: entity_nbt
+                    .byte("Invulnerable")
+                    .is_some_and(|value| value != 0),
+                custom_name: Self::read_custom_name(&entity_nbt),
+                custom_name_visible: entity_nbt
+                    .byte("CustomNameVisible")
+                    .is_some_and(|value| value != 0),
+                silent: entity_nbt.byte("Silent").is_some_and(|value| value != 0),
+                glowing: entity_nbt.byte("Glowing").is_some_and(|value| value != 0),
+                tags: Self::read_entity_tags(&entity_nbt),
+                custom_data: entity_nbt
+                    .compound("data")
+                    .map_or_else(NbtCompound::new, |compound| compound.to_owned()),
+            };
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);
 
@@ -358,8 +391,9 @@ impl StructureTemplate {
                 rotation,
                 velocity,
                 fall_distance,
+                fire_freeze,
                 on_ground,
-                no_gravity,
+                save_data,
                 nbt,
             });
         }
@@ -387,6 +421,29 @@ impl StructureTemplate {
         DVec3::new(values[0], values[1], values[2])
     }
 
+    fn read_optional_int(nbt: &BorrowedNbtCompound<'_, '_>, field: &str) -> Option<i32> {
+        nbt.int(field)
+            .or_else(|| nbt.short(field).map(i32::from))
+            .or_else(|| nbt.byte(field).map(i32::from))
+    }
+
+    fn read_custom_name(nbt: &BorrowedNbtCompound<'_, '_>) -> Option<TextComponent> {
+        let tag = nbt.get("CustomName")?;
+        TextComponent::from_nbt(&tag.to_owned())
+    }
+
+    fn read_entity_tags(nbt: &BorrowedNbtCompound<'_, '_>) -> BTreeSet<String> {
+        nbt.list("Tags")
+            .and_then(|list| list.strings())
+            .map(|tags| {
+                tags.iter()
+                    .take(MAX_ENTITY_TAGS)
+                    .map(|tag| tag.to_str().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn strip_entity_base_fields(nbt: &mut NbtCompound) {
         for field in [
             "id",
@@ -395,8 +452,20 @@ impl StructureTemplate {
             "Rotation",
             "UUID",
             "fall_distance",
+            "Fire",
+            "Air",
             "OnGround",
             "NoGravity",
+            "Invulnerable",
+            "PortalCooldown",
+            "CustomName",
+            "CustomNameVisible",
+            "Silent",
+            "Glowing",
+            "TicksFrozen",
+            "HasVisualFire",
+            "Tags",
+            "data",
         ] {
             let _ = nbt.remove(field);
         }
@@ -819,9 +888,9 @@ impl StructureTemplate {
                     velocity: entity.velocity,
                     rotation,
                     fall_distance: entity.fall_distance,
-                    fire_freeze: EntityFireFreezeState::new(),
+                    fire_freeze: entity.fire_freeze,
                     on_ground: entity.on_ground,
-                    no_gravity: entity.no_gravity,
+                    save_data: entity.save_data.clone(),
                     world: region.weak_world(),
                 },
                 &nbt,

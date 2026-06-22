@@ -18,6 +18,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -209,8 +210,11 @@ impl BlockBehavior for CactusBlock {
         );
     }
 
-    // TODO: Implement when pathfinding is supported
-    // fn is_pathfindable(&self, _state: BlockStateId, _path_type: PathComputationType) -> bool {
-    //     false // Mobs should avoid walking into cactus
-    // }
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
 }

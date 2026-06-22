@@ -9,6 +9,7 @@ use super::EquipmentSlot;
 /// Equipment storage for entities (armor, hands, etc.)
 pub struct EntityEquipment {
     slots: [ItemStack; 8],
+    dirty_slots: [bool; 8],
 }
 
 impl Default for EntityEquipment {
@@ -32,6 +33,7 @@ impl EntityEquipment {
                 ItemStack::empty(),
                 ItemStack::empty(),
             ],
+            dirty_slots: [false; 8],
         }
     }
 
@@ -43,17 +45,26 @@ impl EntityEquipment {
 
     /// Gets a mutable reference to the item in a slot.
     pub const fn get_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
+        self.mark_dirty(slot);
         &mut self.slots[slot.index()]
     }
 
     /// Takes the item from a slot, leaving an empty stack in its place.
     pub fn take(&mut self, slot: EquipmentSlot) -> ItemStack {
-        mem::take(&mut self.slots[slot.index()])
+        let old = mem::take(&mut self.slots[slot.index()]);
+        if !old.is_empty() {
+            self.mark_dirty(slot);
+        }
+        old
     }
 
     /// Sets the item in a slot, returning the old item.
-    pub const fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
-        mem::replace(&mut self.slots[slot.index()], stack)
+    pub fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
+        let old = mem::replace(&mut self.slots[slot.index()], stack);
+        if old != self.slots[slot.index()] {
+            self.mark_dirty(slot);
+        }
+        old
     }
 
     /// Checks if a specific slot is empty.
@@ -70,8 +81,41 @@ impl EntityEquipment {
 
     /// Clears all slots, replacing them with empty stacks.
     pub fn clear(&mut self) {
-        for slot in &mut self.slots {
-            *slot = ItemStack::empty();
+        for slot in EquipmentSlot::ALL {
+            if !self.slots[slot.index()].is_empty() {
+                self.slots[slot.index()] = ItemStack::empty();
+                self.mark_dirty(slot);
+            }
         }
+    }
+
+    /// Returns non-empty equipment slots for initial spawn synchronization.
+    #[must_use]
+    pub fn non_empty_items(&self) -> Vec<(EquipmentSlot, ItemStack)> {
+        EquipmentSlot::ALL
+            .into_iter()
+            .filter_map(|slot| {
+                let item = self.get_ref(slot);
+                (!item.is_empty()).then(|| (slot, item.clone()))
+            })
+            .collect()
+    }
+
+    /// Drains equipment slots that changed since the last sync.
+    pub fn drain_dirty_items(&mut self) -> Vec<(EquipmentSlot, ItemStack)> {
+        let mut dirty_items = Vec::new();
+        for slot in EquipmentSlot::ALL {
+            let index = slot.index();
+            if !self.dirty_slots[index] {
+                continue;
+            }
+            self.dirty_slots[index] = false;
+            dirty_items.push((slot, self.slots[index].clone()));
+        }
+        dirty_items
+    }
+
+    const fn mark_dirty(&mut self, slot: EquipmentSlot) {
+        self.dirty_slots[slot.index()] = true;
     }
 }

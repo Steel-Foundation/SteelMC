@@ -1,5 +1,9 @@
-use steel_registry::{entity_data::DataValue, vanilla_entity_data::VanillaEntityData};
+use steel_registry::{
+    entity_data::{DataValue, EntityPose},
+    vanilla_entity_data::VanillaEntityData,
+};
 use steel_utils::locks::SyncMutex;
+use text_components::TextComponent;
 
 use crate::entity::EntitySharedFlags;
 
@@ -14,14 +18,32 @@ pub trait EntitySyncedData: Send + Sync {
     /// Returns the shared vanilla `NoGravity` flag.
     fn is_no_gravity(&self) -> bool;
 
+    /// Sets synchronized vanilla air supply.
+    fn set_air_supply(&self, air_supply: i32);
+
+    /// Sets synchronized vanilla custom name.
+    fn set_custom_name(&self, custom_name: Option<TextComponent>);
+
+    /// Sets synchronized vanilla custom-name visibility.
+    fn set_custom_name_visible(&self, visible: bool);
+
+    /// Sets synchronized vanilla silent flag.
+    fn set_silent(&self, silent: bool);
+
     /// Sets the shared vanilla `NoGravity` flag.
     fn set_no_gravity(&self, no_gravity: bool);
+
+    /// Sets synchronized vanilla pose.
+    fn set_pose(&self, pose: EntityPose);
 
     /// Returns the shared vanilla shift-key-down flag.
     fn is_shift_key_down(&self) -> bool;
 
     /// Returns the shared vanilla swimming flag.
     fn is_swimming(&self) -> bool;
+
+    /// Returns the shared vanilla invisible flag.
+    fn is_base_invisible_flag(&self) -> bool;
 
     /// Sets the shared vanilla shift-key-down flag.
     fn set_shift_key_down(&self, shift_key_down: bool);
@@ -37,6 +59,12 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Sets the shared vanilla on-fire flag.
     fn set_base_on_fire_flag(&self, on_fire: bool);
+
+    /// Sets the shared vanilla invisible flag.
+    fn set_base_invisible_flag(&self, invisible: bool);
+
+    /// Sets the shared vanilla glowing flag.
+    fn set_base_glowing_flag(&self, glowing: bool);
 
     /// Sets synchronized vanilla frozen ticks.
     fn set_base_ticks_frozen(&self, ticks_frozen: i32);
@@ -58,10 +86,40 @@ where
         *VanillaEntityData::base(&*self.lock()).no_gravity.get()
     }
 
+    fn set_air_supply(&self, air_supply: i32) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .air_supply
+            .set(air_supply);
+    }
+
+    fn set_custom_name(&self, custom_name: Option<TextComponent>) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .custom_name
+            .set(custom_name.map(Box::new));
+    }
+
+    fn set_custom_name_visible(&self, visible: bool) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .custom_name_visible
+            .set(visible);
+    }
+
+    fn set_silent(&self, silent: bool) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .silent
+            .set(silent);
+    }
+
     fn set_no_gravity(&self, no_gravity: bool) {
         VanillaEntityData::base_mut(&mut *self.lock())
             .no_gravity
             .set(no_gravity);
+    }
+
+    fn set_pose(&self, pose: EntityPose) {
+        VanillaEntityData::base_mut(&mut *self.lock())
+            .pose
+            .set(pose);
     }
 
     fn is_shift_key_down(&self) -> bool {
@@ -76,6 +134,13 @@ where
             *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
         )
         .contains(EntitySharedFlags::SWIMMING)
+    }
+
+    fn is_base_invisible_flag(&self) -> bool {
+        EntitySharedFlags::from_metadata_byte(
+            *VanillaEntityData::base(&*self.lock()).shared_flags.get(),
+        )
+        .contains(EntitySharedFlags::INVISIBLE)
     }
 
     fn set_shift_key_down(&self, shift_key_down: bool) {
@@ -96,6 +161,14 @@ where
 
     fn set_base_on_fire_flag(&self, on_fire: bool) {
         self.set_shared_flag(EntitySharedFlags::ON_FIRE, on_fire);
+    }
+
+    fn set_base_invisible_flag(&self, invisible: bool) {
+        self.set_shared_flag(EntitySharedFlags::INVISIBLE, invisible);
+    }
+
+    fn set_base_glowing_flag(&self, glowing: bool) {
+        self.set_shared_flag(EntitySharedFlags::GLOWING, glowing);
     }
 
     fn set_base_ticks_frozen(&self, ticks_frozen: i32) {
@@ -125,6 +198,7 @@ where
 #[cfg(test)]
 mod tests {
     use steel_registry::{entity_data::EntityData, vanilla_entity_data::ItemEntityData};
+    use text_components::TextComponent;
 
     use super::*;
 
@@ -173,6 +247,16 @@ mod tests {
     }
 
     #[test]
+    fn synced_data_reads_invisible_from_generated_base_layer() {
+        let data = SyncMutex::new(ItemEntityData::new());
+        assert!(!EntitySyncedData::is_base_invisible_flag(&data));
+
+        EntitySyncedData::set_base_invisible_flag(&data, true);
+
+        assert!(EntitySyncedData::is_base_invisible_flag(&data));
+    }
+
+    #[test]
     fn synced_data_writes_individual_shared_flags_without_stomping() {
         let data = SyncMutex::new(ItemEntityData::new());
 
@@ -210,5 +294,39 @@ mod tests {
         assert!(matches!(values[1].value, EntityData::Int(12)));
 
         assert!(EntitySyncedData::pack_dirty(&data).is_none());
+    }
+
+    #[test]
+    fn synced_data_writes_shared_save_base_layer() {
+        let data = SyncMutex::new(ItemEntityData::new());
+
+        data.set_air_supply(42);
+        data.set_custom_name(Some(TextComponent::plain("Steel")));
+        data.set_custom_name_visible(true);
+        data.set_silent(true);
+        data.set_base_glowing_flag(true);
+
+        let values =
+            EntitySyncedData::pack_dirty(&data).expect("expected dirty shared save metadata");
+
+        assert_eq!(values.len(), 5);
+        assert_eq!(values[0].index, 0);
+        assert!(matches!(
+            values[0].value,
+            EntityData::Byte(value)
+                if EntitySharedFlags::from_metadata_byte(value)
+                    .contains(EntitySharedFlags::GLOWING)
+        ));
+        assert_eq!(values[1].index, 1);
+        assert!(matches!(values[1].value, EntityData::Int(42)));
+        assert_eq!(values[2].index, 2);
+        assert!(matches!(
+            values[2].value,
+            EntityData::OptionalComponent(Some(_))
+        ));
+        assert_eq!(values[3].index, 3);
+        assert!(matches!(values[3].value, EntityData::Boolean(true)));
+        assert_eq!(values[4].index, 4);
+        assert!(matches!(values[4].value, EntityData::Boolean(true)));
     }
 }

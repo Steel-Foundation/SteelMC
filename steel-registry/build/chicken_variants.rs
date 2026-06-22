@@ -1,5 +1,7 @@
-use crate::generator_functions::{generate_identifier, generate_option, read_variants_from_dir};
-use crate::shared_structs::{BiomeCondition, SpawnConditionEntry};
+use crate::generator_functions::{
+    generate_identifier, generate_spawn_condition_entry, read_variants_from_dir,
+};
+use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -19,30 +21,6 @@ fn generate_chicken_model_type(model: &str) -> TokenStream {
     match model {
         "cold" => quote! { ChickenModelType::Cold },
         _ => quote! { ChickenModelType::Normal },
-    }
-}
-
-fn generate_biome_condition(condition: &BiomeCondition) -> TokenStream {
-    let condition_type = condition.condition_type.as_str();
-    let biomes = condition.biomes.as_str();
-
-    quote! {
-        BiomeCondition {
-            condition_type: #condition_type,
-            biomes: #biomes,
-        }
-    }
-}
-
-fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
-    let priority = entry.priority;
-    let condition = generate_option(&entry.condition, generate_biome_condition);
-
-    quote! {
-        SpawnConditionEntry {
-            priority: #priority,
-            condition: #condition,
-        }
     }
 }
 
