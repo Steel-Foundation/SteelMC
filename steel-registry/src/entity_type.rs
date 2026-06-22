@@ -15,6 +15,27 @@ pub enum MobCategory {
     Misc,
 }
 
+impl MobCategory {
+    #[must_use]
+    pub const fn despawn_distance(self) -> i32 {
+        match self {
+            Self::WaterAmbient => 64,
+            Self::Monster
+            | Self::Creature
+            | Self::Ambient
+            | Self::Axolotls
+            | Self::UndergroundWaterCreature
+            | Self::WaterCreature
+            | Self::Misc => 128,
+        }
+    }
+
+    #[must_use]
+    pub const fn no_despawn_distance(self) -> i32 {
+        32
+    }
+}
+
 /// Vanilla attachment point kind used by `EntityDimensions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntityAttachment {
@@ -109,6 +130,17 @@ impl EntityAttachments {
             },
         );
         rotate_attachment_point(point, yaw_degrees)
+    }
+
+    #[must_use]
+    pub fn get_average(self, attachment: EntityAttachment, dimensions: EntityDimensions) -> DVec3 {
+        let Some(points) = self.points(attachment) else {
+            return fallback_point(attachment, dimensions);
+        };
+
+        points.iter().fold(DVec3::ZERO, |sum, point| {
+            sum + point.scaled(self.scale_x, self.scale_y, self.scale_z)
+        }) / points.len() as f64
     }
 
     fn points(self, attachment: EntityAttachment) -> Option<&'static [EntityAttachmentPoint]> {
@@ -233,6 +265,8 @@ pub struct EntityType {
     pub fire_immune: bool,
     /// Whether this entity can be summoned via commands.
     pub summonable: bool,
+    /// Whether this entity type is allowed to exist in Peaceful difficulty.
+    pub allowed_in_peaceful: bool,
     /// Whether this entity can spawn far from players.
     pub can_spawn_far_from_player: bool,
     /// Whether this entity type can be serialized to disk.
@@ -252,13 +286,6 @@ pub struct EntityType {
 }
 
 pub type EntityTypeRef = &'static EntityType;
-
-impl PartialEq for EntityTypeRef {
-    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(*self, *other)
-    }
-}
 
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
@@ -371,6 +398,29 @@ mod tests {
                 .attachments
                 .get_clamped(EntityAttachment::WardenChest, 0, 0.0, dimensions),
             glam::DVec3::new(0.0, 0.9, 0.0),
+        );
+    }
+
+    #[test]
+    fn attachment_average_uses_unrotated_scaled_points() {
+        const PASSENGERS: [EntityAttachmentPoint; 2] = [
+            EntityAttachmentPoint::new(0.0, 0.5, 0.0),
+            EntityAttachmentPoint::new(1.0, 0.75, -0.5),
+        ];
+        const ZERO: [EntityAttachmentPoint; 1] = [EntityAttachmentPoint::new(0.0, 0.0, 0.0)];
+        let dimensions = EntityDimensions::new_with_attachments(
+            1.0,
+            2.0,
+            1.7,
+            EntityAttachments::new(&PASSENGERS, &ZERO, &ZERO, &ZERO),
+        )
+        .scale(2.0);
+
+        assert_vec3_close(
+            dimensions
+                .attachments
+                .get_average(EntityAttachment::Passenger, dimensions),
+            glam::DVec3::new(1.0, 1.25, -0.5),
         );
     }
 

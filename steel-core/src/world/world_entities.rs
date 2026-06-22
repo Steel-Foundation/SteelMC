@@ -30,13 +30,14 @@ impl World {
         self.attach_player_entity_callback(player);
 
         let entity: SharedEntity = player.clone();
-        if let Err(error) = self
+        let lifecycle = match self
             .entity_manager()
             .add_live_entity(entity.clone(), EntityOwnership::External)
         {
-            panic!("failed to register player entity: {error}");
-        }
-        self.add_entity_to_tracker(&entity);
+            Ok(lifecycle) => lifecycle,
+            Err(error) => panic!("failed to register player entity: {error}"),
+        };
+        self.apply_entity_lifecycle_changes(lifecycle);
     }
 
     fn unride_player_for_removal(&self, player: &Player, store_root_vehicle: bool) {
@@ -74,8 +75,7 @@ impl World {
 
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
         let entity_id = player.id();
-        self.entity_tracker
-            .remove(entity_id, |id| self.players.get_by_entity_id(id));
+        self.remove_entity_from_tracker(entity_id);
 
         self.entity_manager()
             .remove_live_entity(entity_id, RemovalReason::ChangedWorld);
@@ -85,6 +85,20 @@ impl World {
     pub(crate) fn register_respawned_player_entity(self: &Arc<Self>, player: &Arc<Player>) {
         self.register_player_entity(player);
         self.chunk_map.update_player_status(player);
+    }
+
+    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<Player>) -> bool {
+        if !self.players.insert(player.clone()) {
+            player.connection.close();
+            return false;
+        }
+
+        self.register_respawned_player_entity(&player);
+        player.send_packet(CGameEvent {
+            event: GameEventType::LevelChunksLoadStart,
+            data: 0.0,
+        });
+        true
     }
 
     /// Removes a player from the world.

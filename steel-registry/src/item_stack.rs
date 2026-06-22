@@ -12,14 +12,19 @@ use steel_utils::{
 
 use crate::{
     REGISTRY, RegistryEntry, RegistryExt,
+    damage_type::DamageTypeRef,
     data_components::{
         Component, ComponentData, ComponentPatchEntry, DataComponentMap, DataComponentPatch,
         DataComponentType,
         vanilla_components::{
-            DAMAGE, ENCHANTMENTS, EQUIPPABLE, Equippable, EquippableSlot, ItemEnchantments,
-            MAX_DAMAGE, MAX_STACK_SIZE, TOOL, Tool, UNBREAKABLE,
+            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, DAMAGE, DAMAGE_TYPE, ENCHANTMENTS,
+            EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments, MAX_DAMAGE,
+            MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON, PiercingWeapon, TOOL, Tool,
+            UNBREAKABLE, WEAPON, Weapon,
         },
     },
+    enchantment_effect::EnchantmentEffectComponent,
+    equipment::EquipmentSlot,
     items::ItemRef,
     vanilla_items::ITEMS,
 };
@@ -290,15 +295,21 @@ impl ItemStack {
         self.get(EQUIPPABLE)
     }
 
+    /// Returns the item attribute modifiers component.
+    #[must_use]
+    pub fn get_attribute_modifiers(&self) -> Option<&ItemAttributeModifiers> {
+        self.get(ATTRIBUTE_MODIFIERS)
+    }
+
     /// Returns the equipment slot this item can be equipped to, if any.
     #[must_use]
-    pub fn get_equippable_slot(&self) -> Option<EquippableSlot> {
+    pub fn get_equippable_slot(&self) -> Option<EquipmentSlot> {
         self.get_equippable().map(|e| e.slot)
     }
 
     /// Returns true if this item can be equipped in the given slot.
     #[must_use]
-    pub fn is_equippable_in_slot(&self, slot: EquippableSlot) -> bool {
+    pub fn is_equippable_in_slot(&self, slot: EquipmentSlot) -> bool {
         self.get_equippable_slot() == Some(slot)
     }
 
@@ -355,6 +366,42 @@ impl ItemStack {
         self.get(TOOL)
     }
 
+    /// Gets the Weapon component if present.
+    #[must_use]
+    pub fn get_weapon(&self) -> Option<&Weapon> {
+        self.get(WEAPON)
+    }
+
+    /// Gets the AttackRange component if present.
+    #[must_use]
+    pub fn get_attack_range(&self) -> Option<&AttackRange> {
+        self.get(ATTACK_RANGE)
+    }
+
+    /// Returns vanilla `DataComponents.MINIMUM_ATTACK_CHARGE`, defaulting to 0.
+    #[must_use]
+    pub fn minimum_attack_charge(&self) -> f32 {
+        self.get(MINIMUM_ATTACK_CHARGE).copied().unwrap_or(0.0)
+    }
+
+    /// Gets the vanilla damage type component if present.
+    #[must_use]
+    pub fn get_damage_type(&self) -> Option<DamageTypeRef> {
+        self.get(DAMAGE_TYPE).map(|component| component.damage_type)
+    }
+
+    /// Returns whether this item has the vanilla piercing weapon component.
+    #[must_use]
+    pub fn is_piercing_weapon(&self) -> bool {
+        self.has(PIERCING_WEAPON)
+    }
+
+    /// Gets the PiercingWeapon component if present.
+    #[must_use]
+    pub fn get_piercing_weapon(&self) -> Option<&PiercingWeapon> {
+        self.get(PIERCING_WEAPON)
+    }
+
     /// Returns the mining speed for the given block state ID.
     /// If no Tool component is present, returns 1.0 (hand speed).
     #[must_use]
@@ -400,6 +447,67 @@ impl ItemStack {
     #[must_use]
     pub fn get_enchantments(&self) -> Option<&ItemEnchantments> {
         self.get(ENCHANTMENTS)
+    }
+
+    #[must_use]
+    pub fn has_enchantment_effect(&self, component: EnchantmentEffectComponent) -> bool {
+        let Some(enchantments) = self.get_enchantments() else {
+            return false;
+        };
+
+        for (key, level) in enchantments.iter() {
+            if *level == 0 {
+                continue;
+            }
+            let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+                continue;
+            };
+            if enchantment.effects.has(component) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[must_use]
+    pub fn apply_unconditional_enchantment_value_effects(
+        &self,
+        component: EnchantmentEffectComponent,
+        input: f32,
+    ) -> f32 {
+        let Some(enchantments) = self.get_enchantments() else {
+            return input;
+        };
+
+        let mut value = input;
+        for (key, level) in enchantments.iter() {
+            if *level == 0 {
+                continue;
+            }
+            let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+                continue;
+            };
+            let level = *level as i32;
+
+            for effect in enchantment.effects.value_effects(component) {
+                if !effect.is_unconditional() {
+                    continue;
+                }
+                if let Some(updated) = effect.effect.process_without_random(level, value) {
+                    value = updated;
+                }
+            }
+
+            let Some(effect) = enchantment.effects.single_value_effect(component) else {
+                continue;
+            };
+            if let Some(updated) = effect.process_without_random(level, value) {
+                value = updated;
+            }
+        }
+
+        value
     }
 
     /// Sets the damage/durability as a fraction (0.0 = broken, 1.0 = full).
@@ -479,11 +587,10 @@ impl ItemStack {
     }
 
     /// Applies furnace smelting to convert this item (e.g., raw iron -> iron ingot).
-    pub fn apply_furnace_smelt(&mut self) {
-        // TODO: Implement smelting recipe lookup
-        // 1. Look up this item in smelting recipes
-        // 2. If found, replace self.item with the result item
-        // Note: This changes the item type, not just components
+    pub fn apply_furnace_smelt(&mut self, use_input_count: bool) {
+        if let Some(result) = REGISTRY.recipes.find_smelting_result(self, use_input_count) {
+            *self = result;
+        }
     }
 
     /// Creates an exploration map pointing to a structure.

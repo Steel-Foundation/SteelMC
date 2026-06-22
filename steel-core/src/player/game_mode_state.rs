@@ -4,7 +4,7 @@ use steel_utils::types::GameType;
 #[derive(Debug, Clone, Copy)]
 pub(super) struct PlayerGameModeState {
     current: GameType,
-    previous: GameType,
+    previous: Option<GameType>,
 }
 
 impl PlayerGameModeState {
@@ -12,7 +12,7 @@ impl PlayerGameModeState {
     pub(super) const fn new(initial: GameType) -> Self {
         Self {
             current: initial,
-            previous: initial,
+            previous: None,
         }
     }
 
@@ -22,11 +22,11 @@ impl PlayerGameModeState {
     }
 
     #[must_use]
-    pub(super) const fn previous(self) -> GameType {
+    pub(super) const fn previous(self) -> Option<GameType> {
         self.previous
     }
 
-    pub(super) const fn set_pair(&mut self, current: GameType, previous: GameType) {
+    pub(super) const fn set_pair(&mut self, current: GameType, previous: Option<GameType>) {
         self.current = current;
         self.previous = previous;
     }
@@ -36,7 +36,7 @@ impl PlayerGameModeState {
             return false;
         }
 
-        self.previous = self.current;
+        self.previous = Some(self.current);
         self.current = game_mode;
         true
     }
@@ -55,7 +55,7 @@ mod tests {
         assert!(state.change_current(GameType::Creative));
 
         assert_eq!(state.current(), GameType::Creative);
-        assert_eq!(state.previous(), GameType::Survival);
+        assert_eq!(state.previous(), Some(GameType::Survival));
     }
 
     #[test]
@@ -66,16 +66,24 @@ mod tests {
         assert!(!state.change_current(GameType::Creative));
 
         assert_eq!(state.current(), GameType::Creative);
-        assert_eq!(state.previous(), GameType::Survival);
+        assert_eq!(state.previous(), Some(GameType::Survival));
     }
 
     #[test]
     fn persistent_restore_sets_current_and_previous() {
         let mut state = PlayerGameModeState::new(GameType::Survival);
 
-        state.set_pair(GameType::Adventure, GameType::Creative);
+        state.set_pair(GameType::Adventure, Some(GameType::Creative));
 
         assert_eq!(state.current(), GameType::Adventure);
-        assert_eq!(state.previous(), GameType::Creative);
+        assert_eq!(state.previous(), Some(GameType::Creative));
+    }
+
+    #[test]
+    fn initial_state_has_no_previous_mode() {
+        let state = PlayerGameModeState::new(GameType::Survival);
+
+        assert_eq!(state.current(), GameType::Survival);
+        assert_eq!(state.previous(), None);
     }
 }

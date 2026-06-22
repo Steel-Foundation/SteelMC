@@ -83,6 +83,8 @@ crate::impl_registry_ext!(
     features_by_key
 );
 
+crate::impl_registry_entry_eq!(ConfiguredFeature);
+
 impl crate::RegistryEntry for ConfiguredFeature {
     fn key(&self) -> &Identifier {
         &self.key
@@ -160,6 +162,8 @@ crate::impl_registry_ext!(
     features_by_id,
     features_by_key
 );
+
+crate::impl_registry_entry_eq!(PlacedFeature);
 
 impl crate::RegistryEntry for PlacedFeature {
     fn key(&self) -> &Identifier {
