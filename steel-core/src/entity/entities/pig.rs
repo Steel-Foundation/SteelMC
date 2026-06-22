@@ -10,7 +10,9 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::{entity_behavior, entity_impl};
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
-use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::entity_type::{
+    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
+};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::pig_sound_variant::{PigAge, PigSoundVariantRef};
 use steel_registry::pig_variant::PigVariantRef;
@@ -33,7 +35,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
     LivingEntityBase, Mob, MobBase, MobEffectSyncChange, PathfinderMob, SharedEntity,
     SpawnGroupData,
@@ -42,6 +44,15 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
+
+const PIG_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
+    [EntityAttachmentPoint::new(0.0, 0.5, 0.0)];
+const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
+    0.45,
+    0.45,
+    0.40625,
+    EntityAttachments::new(&PIG_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
+);
 
 /// Vanilla pig entity.
 #[entity_behavior(class = "Pig")]
@@ -363,6 +374,17 @@ impl Entity for PigEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        let scale = LivingEntity::get_scale(self);
+        if self.is_baby() {
+            PIG_BABY_DIMENSIONS.scale(scale)
+        } else if self.entity_type.fixed {
+            self.entity_type.dimensions
+        } else {
+            self.entity_type.dimensions.scale(scale)
+        }
     }
 
     fn tick(&self) {
@@ -766,6 +788,7 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtTag;
+    use steel_registry::entity_type::EntityAttachment;
     use steel_registry::test_support::init_test_registry;
     use steel_registry::{
         vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items::ITEMS,
@@ -1375,8 +1398,17 @@ mod tests {
         assert_eq!(pig.base().dimensions(), adult_dimensions);
 
         pig.set_age(-1);
-        let baby_dimensions = adult_dimensions.scale(0.5);
+        let baby_dimensions = PIG_BABY_DIMENSIONS;
         assert_eq!(pig.base().dimensions(), baby_dimensions);
+        assert_eq!(baby_dimensions.eye_height.to_bits(), 0.40625_f32.to_bits());
+        assert_eq!(
+            baby_dimensions
+                .attachments
+                .get_clamped(EntityAttachment::Passenger, 0, 0.0, baby_dimensions)
+                .y
+                .to_bits(),
+            0.5_f64.to_bits()
+        );
         assert_eq!(
             pig.bounding_box().width().to_bits(),
             f64::from(baby_dimensions.width).to_bits()

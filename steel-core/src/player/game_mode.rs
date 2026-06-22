@@ -1333,6 +1333,10 @@ impl Player {
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
     pub fn handle_player_action(&self, packet: SPlayerAction) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
         let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
@@ -1409,6 +1413,10 @@ impl Player {
 
     /// Handles the use of an item.
     pub fn handle_use_item(&self, packet: SUseItem) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
         log::info!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
             self.gameprofile.name,

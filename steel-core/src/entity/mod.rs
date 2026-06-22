@@ -681,6 +681,8 @@ mod callback;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/entities.rs"]
 mod generated_entities;
 mod inside_block_effects;
@@ -1206,6 +1208,17 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla `Entity.getVehicle`.
     fn vehicle(&self) -> Option<SharedEntity> {
         self.base().vehicle()
+    }
+
+    /// Returns the vehicle this entity directly controls, if any.
+    ///
+    /// Mirrors vanilla `Entity.getControlledVehicle`.
+    fn controlled_vehicle(&self) -> Option<SharedEntity> {
+        let vehicle = self.vehicle()?;
+        let controlled_by_self = vehicle
+            .controlling_passenger()
+            .is_some_and(|passenger| passenger.id() == self.id());
+        controlled_by_self.then_some(vehicle)
     }
 
     /// Returns whether this entity is riding another entity.
@@ -8570,6 +8583,29 @@ mod tests {
 
         assert_vec3_close(vehicle.known_movement(), DVec3::new(4.0, 0.0, 4.0));
         assert_vec3_close(vehicle.known_speed(), DVec3::new(2.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
+        init_test_registry();
+
+        let passenger =
+            KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
+        let vehicle = ControlledVehicleTestEntity::shared(2, Some(Arc::clone(&passenger)));
+        let root_vehicle = ControlledVehicleTestEntity::shared(3, None);
+
+        assert!(start_riding_entities(&passenger, &vehicle));
+        assert!(start_riding_entities(&vehicle, &root_vehicle));
+
+        let Some(controlled_vehicle) = passenger.controlled_vehicle() else {
+            panic!("passenger should directly control the middle vehicle");
+        };
+        let Some(root) = passenger.root_vehicle() else {
+            panic!("passenger should have a root vehicle");
+        };
+
+        assert_eq!(controlled_vehicle.id(), vehicle.id());
+        assert_eq!(root.id(), root_vehicle.id());
     }
 
     #[test]

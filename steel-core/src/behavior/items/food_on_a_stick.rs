@@ -29,7 +29,7 @@ impl FoodOnAStickItem {
 
 impl ItemBehavior for FoodOnAStickItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        let Some(vehicle) = context.player.root_vehicle() else {
+        let Some(vehicle) = context.player.controlled_vehicle() else {
             return Self::pass_without_boost();
         };
         if vehicle.entity_type() != self.can_interact_with {
