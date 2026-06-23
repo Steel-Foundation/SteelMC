@@ -2,8 +2,12 @@ name: live_forever
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   save:
