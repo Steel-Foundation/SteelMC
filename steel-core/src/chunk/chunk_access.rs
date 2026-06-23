@@ -9,8 +9,8 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
-    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkSkyLightSources,
-    proto_chunk::ProtoChunk, section::Sections,
+    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkLightData,
+    light::ChunkSkyLightSources, proto_chunk::ProtoChunk, section::Sections,
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -440,6 +440,24 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.sky_light_sources.read(),
             Self::Proto(proto) => proto.sky_light_sources.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard for this chunk's committed light data.
+    pub fn light(&self) -> RwLockReadGuard<'_, ChunkLightData> {
+        match self {
+            Self::Full(chunk) => chunk.light.read(),
+            Self::Proto(proto) => proto.light.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a write guard for this chunk's committed light data.
+    pub fn light_mut(&self) -> RwLockWriteGuard<'_, ChunkLightData> {
+        match self {
+            Self::Full(chunk) => chunk.light.write(),
+            Self::Proto(proto) => proto.light.write(),
             Self::Unloaded => unreachable!(),
         }
     }

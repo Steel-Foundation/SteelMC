@@ -118,7 +118,8 @@ pub use storage::{
     LightSectionData,
 };
 pub use workset::{
-    LightChunkReadCache, LightSectionReadCache, LightWorkset, LightWorksetSetupError,
+    LightChunkReadCache, LightLayerEdit, LightSectionReadCache, LightWorkset,
+    LightWorksetSetupError,
 };
 
 #[cfg(test)]
