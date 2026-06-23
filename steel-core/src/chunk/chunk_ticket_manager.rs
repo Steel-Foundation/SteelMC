@@ -10,7 +10,7 @@ use steel_utils::ChunkPos;
 use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
 /// The maximum view distance for players.
-pub const MAX_VIEW_DISTANCE: u8 = 32;
+pub const MAX_VIEW_DISTANCE: u8 = 127;
 const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .get_step_to(ChunkStatus::Full)
     .accumulated_dependencies

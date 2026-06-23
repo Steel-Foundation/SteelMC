@@ -56,6 +56,8 @@ pub struct RuntimeConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Optional worker count for the Rayon chunk generation pool.
+    pub chunk_generation_threads: Option<usize>,
 }
 
 impl RuntimeConfig {

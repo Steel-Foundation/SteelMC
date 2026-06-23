@@ -1314,6 +1314,7 @@ mod tests {
         let cactus = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::CACTUS);
+        let cocoa = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::COCOA);
         let powder_snow = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::POWDER_SNOW);
@@ -1329,6 +1330,9 @@ mod tests {
         assert!(water.is_pathfindable(PathComputationType::Land));
         assert!(!lava.is_pathfindable(PathComputationType::Land));
         assert!(!cactus.is_pathfindable(PathComputationType::Land));
+        assert!(!cocoa.is_pathfindable(PathComputationType::Land));
+        assert!(!cocoa.is_pathfindable(PathComputationType::Air));
+        assert!(!cocoa.is_pathfindable(PathComputationType::Water));
         assert!(powder_snow.is_pathfindable(PathComputationType::Land));
         assert!(shallow_snow.is_pathfindable(PathComputationType::Land));
         assert!(!deep_snow.is_pathfindable(PathComputationType::Land));

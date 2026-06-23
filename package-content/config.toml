@@ -5,7 +5,9 @@
 server_port = 25565
 # Maximum number of players allowed on the server
 max_players = 20
-# Maximum view distance in chunks
+# Allow view_distance above vanilla's 32-chunk cap, up to 127.
+allow_extended_view_distance = false
+# Maximum view distance in chunks. Normally 1-32; 1-127 when allow_extended_view_distance is true.
 view_distance = 10
 # Maximum simulation distance in chunks
 simulation_distance = 10
@@ -19,6 +21,7 @@ encryption = true
 allow_flight = false
 # Message of the day displayed in server lists
 motd = "A Steel Server"
+
 # Whether to use a custom favicon for the server
 use_favicon = true
 # Path to the favicon file (PNG format, 64x64 pixels)
@@ -29,6 +32,15 @@ enforce_secure_chat = false
 chat_spam_threshold_seconds = 10
 # Vanilla command spam threshold window in seconds
 command_spam_threshold_seconds = 10
+
+# Optional worker counts for server thread pools. 0 or omitted uses each pool's automatic default.
+[server.threads]
+# Worker threads for the primary Tokio runtime.
+main_runtime = 0
+# Worker threads for the chunk Tokio runtime.
+chunk_runtime = 0
+# Worker threads for the Rayon chunk generation pool.
+chunk_generation = 0
 
 # Compression settings
 [server.compression]

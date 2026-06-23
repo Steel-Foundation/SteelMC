@@ -61,6 +61,7 @@ pub mod waxables;
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
+pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
     EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,

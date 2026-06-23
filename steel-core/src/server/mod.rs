@@ -37,8 +37,10 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     mem,
+    num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
+    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
@@ -66,6 +68,39 @@ const CHUNK_SENDING_TPS: u64 = 20;
 
 /// Tick rate for the chunk scheduling loop.
 const CHUNK_SCHEDULING_TPS: u64 = 20;
+
+fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
+    cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn available_worker_threads() -> usize {
+    thread::available_parallelism().map_or(4, NonZero::get)
+}
+
+fn cap_positive_thread_count(
+    configured_threads: Option<usize>,
+    available_threads: usize,
+) -> Option<usize> {
+    let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
+    Some(configured_threads.min(available_threads.max(1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cap_positive_thread_count;
+
+    #[test]
+    fn positive_thread_count_is_capped_to_available_threads() {
+        assert_eq!(cap_positive_thread_count(Some(16), 8), Some(8));
+        assert_eq!(cap_positive_thread_count(Some(4), 8), Some(4));
+    }
+
+    #[test]
+    fn zero_thread_count_keeps_pool_default() {
+        assert_eq!(cap_positive_thread_count(Some(0), 8), None);
+        assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+}
 
 #[derive(Clone, Copy)]
 struct PreparedSpawn {
@@ -395,6 +430,11 @@ impl Server {
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            if let Some(chunk_generation_threads) =
+                configured_chunk_generation_threads(config.chunk_generation_threads)
+            {
+                builder = builder.num_threads(chunk_generation_threads);
+            }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
                 builder = builder.stack_size(8 * 1024 * 1024);

@@ -584,7 +584,7 @@ impl MansionGrid {
         }
 
         let mut potential_dirs: Vec<Direction> = Vec::new();
-        for dir in Direction::horizontal_dirs() {
+        for dir in Direction::HORIZONTAL {
             let (ox, oz) = dir.offset_xz();
             if third.get(rex + ox, rey + oz) == 0 {
                 potential_dirs.push(dir);
@@ -909,7 +909,7 @@ fn generate_mansion_pieces(
 
                 let mut door_dirs: Vec<Direction> = Vec::new();
                 if (room_data & ROOM_DOOR_FLAG) != 0 {
-                    for dir in Direction::horizontal_dirs() {
+                    for dir in Direction::HORIZONTAL {
                         let (ox, oz) = dir.offset_xz();
                         if grid.get(x + ox, y + oz) == 1 {
                             door_dirs.push(dir);

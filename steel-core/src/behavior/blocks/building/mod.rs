@@ -12,8 +12,10 @@ mod rotated_pillar_block;
 mod scaffolding_block;
 mod slab_block;
 mod slime_block;
+mod sponge_block;
 mod stair_block;
 mod weathering_block;
+mod wet_sponge_block;
 
 pub use bed_block::BedBlock;
 pub use campfire_block::CampfireBlock;
@@ -29,5 +31,7 @@ pub use rotated_pillar_block::RotatedPillarBlock;
 pub use scaffolding_block::ScaffoldingBlock;
 pub use slab_block::{SlabBlock, WeatheringCopperSlabBlock};
 pub use slime_block::SlimeBlock;
+pub use sponge_block::SpongeBlock;
 pub use stair_block::{StairBlock, WeatheringCopperStairBlock};
 pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};
+pub use wet_sponge_block::WetSpongeBlock;
