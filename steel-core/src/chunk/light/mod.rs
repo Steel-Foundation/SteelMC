@@ -1,7 +1,7 @@
 //! Light storage primitives used by chunk and world lighting.
 
 use steel_registry::blocks::{block_state_ext::BlockStateExt, shapes::VoxelShape};
-use steel_utils::{BlockStateId, Direction};
+use steel_utils::{BlockStateId, Direction, SectionPos};
 
 use crate::physics::shapes::{face_shape_occludes, merged_face_occludes};
 
@@ -31,6 +31,15 @@ pub enum LightLayer {
     Sky,
     /// Block light emitted by blocks.
     Block,
+}
+
+/// Real chunk-section emptiness transition that must be applied before block checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LightSectionEmptinessChange {
+    /// World section whose real block-section emptiness changed.
+    pub section_pos: SectionPos,
+    /// New emptiness value for the real block section.
+    pub empty: bool,
 }
 
 /// Returns whether vanilla must re-check lighting after a block-state change.
@@ -313,6 +322,30 @@ mod tests {
 
         assert_eq!(light.get_light_value(LightLayer::Block, pos), 12);
         assert_eq!(light.get_light_value(LightLayer::Sky, pos), 15);
+    }
+
+    #[test]
+    fn sections_collect_block_light_sources_in_scalable_lux_order() {
+        init_light_tests();
+
+        let torch = vanilla_blocks::TORCH.default_state();
+        let lantern = vanilla_blocks::SEA_LANTERN.default_state();
+        let mut lower = ChunkSection::new_empty();
+        lower.set_block_state(3, 4, 5, torch);
+        lower.set_block_state(1, 0, 0, lantern);
+        let mut upper = ChunkSection::new_empty();
+        upper.set_block_state(15, 15, 15, lantern);
+        let sections =
+            Sections::from_owned(vec![lower, ChunkSection::new_empty(), upper].into_boxed_slice());
+
+        assert_eq!(
+            sections.block_light_sources(ChunkPos::new(2, -3), -16),
+            vec![
+                BlockPos::new(33, -16, -48),
+                BlockPos::new(35, -12, -43),
+                BlockPos::new(47, 31, -33),
+            ]
+        );
     }
 
     #[test]

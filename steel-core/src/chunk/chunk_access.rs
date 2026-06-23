@@ -444,6 +444,16 @@ impl ChunkAccess {
         }
     }
 
+    /// Returns block-light source positions in ScalableLux section/local-index order.
+    #[must_use]
+    pub fn block_light_sources(&self) -> Vec<BlockPos> {
+        match self {
+            Self::Full(chunk) => chunk.sections.block_light_sources(chunk.pos, chunk.min_y()),
+            Self::Proto(proto) => proto.sections.block_light_sources(proto.pos, proto.min_y()),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns a read guard for this chunk's committed light data.
     pub fn light(&self) -> RwLockReadGuard<'_, ChunkLightData> {
         match self {

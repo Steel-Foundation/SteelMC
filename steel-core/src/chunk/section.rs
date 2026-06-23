@@ -4,7 +4,7 @@ use std::{fmt::Debug, io::Cursor, sync::LazyLock};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
 use steel_registry::{REGISTRY, RegistryEntry};
-use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
@@ -184,6 +184,26 @@ impl Sections {
             .collect()
     }
 
+    /// Returns block-light source positions in ScalableLux section/local-index order.
+    #[must_use]
+    pub fn block_light_sources(&self, chunk_pos: ChunkPos, min_y: i32) -> Vec<BlockPos> {
+        let mut sources = Vec::new();
+        let chunk_min_x = chunk_pos.0.x * BlockPalette::SIZE as i32;
+        let chunk_min_z = chunk_pos.0.y * BlockPalette::SIZE as i32;
+
+        for (section_index, section) in self.sections.iter().enumerate() {
+            let section_min_y = min_y + (section_index * BlockPalette::SIZE) as i32;
+            section.read().append_block_light_sources(
+                chunk_min_x,
+                section_min_y,
+                chunk_min_z,
+                &mut sources,
+            );
+        }
+
+        sources
+    }
+
     /// Writes multiple blocks in one column, holding each section's write guard
     /// across all writes to that section. Most efficient when blocks are grouped
     /// by section (e.g. descending `relative_y` from a top-to-bottom scan).
@@ -337,6 +357,41 @@ impl ChunkSection {
     #[must_use]
     pub const fn is_randomly_ticking(&self) -> bool {
         self.ticking_block_count > 0
+    }
+
+    /// Returns true if this section's palette may contain block-light sources.
+    #[must_use]
+    pub fn maybe_has_block_light_sources(&self) -> bool {
+        !self.is_empty()
+            && self
+                .states
+                .maybe_has(|state| state.get_light_emission() > 0)
+    }
+
+    /// Appends block-light source positions in ScalableLux local-index order.
+    pub fn append_block_light_sources(
+        &self,
+        chunk_min_x: i32,
+        section_min_y: i32,
+        chunk_min_z: i32,
+        sources: &mut Vec<BlockPos>,
+    ) {
+        if !self.maybe_has_block_light_sources() {
+            return;
+        }
+
+        for local_index in 0..BlockPalette::VOLUME {
+            let state = self.states.get_at_index(local_index);
+            if state.get_light_emission() == 0 {
+                continue;
+            }
+
+            sources.push(BlockPos::new(
+                chunk_min_x + (local_index & 15) as i32,
+                section_min_y + (local_index >> 8) as i32,
+                chunk_min_z + ((local_index >> 4) & 15) as i32,
+            ));
+        }
     }
 
     /// Returns the number of non-air blocks in this section.
