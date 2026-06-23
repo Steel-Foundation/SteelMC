@@ -31,12 +31,14 @@ Current `worldgen/light2` state:
   shape-occlusion flags from `steel-registry/build_assets/blocks.json`.
 - `InitializeLight` fills `ChunkSkyLightSources` from the current chunk
   sections.
+- ScalableLux cache-window math, typed queue metadata, workset admission, section
+  read caches, and scoped light edits are implemented as light-engine internals.
 - `steel-core/src/worldgen/stages/light.rs::generate` is still a no-op.
 - `LevelChunk::extract_light_data` still emits the legacy all-`0xff`
   placeholder until fresh/loaded lighting writes committed chunk-owned light
   data.
-- Light worksets, fresh/loaded propagation, dynamic queued block-change
-  lighting, and packet broadcast integration are still pending.
+- Fresh/loaded propagation, dynamic queued block-change lighting, and packet
+  broadcast integration are still pending.
 - Propagation layer order is old-light/ScalableLux order: sky before block.
 
 Old Steel files to treat as the Steel reference implementation:
@@ -397,7 +399,8 @@ Recommended implementation sequence:
    chunk-owned storage with unit tests.
 2. [x] Reintroduce persistence conversion and loaded-sky normalization.
 3. [x] Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
-4. [ ] Add light worksets and fresh/loaded worldgen lighting.
+4. [ ] Add fresh/loaded worldgen lighting on top of the implemented workset/edit
+   foundation.
 5. [ ] Add queued dynamic block-change lighting and packet broadcast integration.
 6. [ ] Optimize the internal propagation queue/cache only after parity tests are in
    place.
