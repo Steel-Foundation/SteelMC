@@ -9,7 +9,8 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
-    heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
+    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkSkyLightSources,
+    proto_chunk::ProtoChunk, section::Sections,
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -421,6 +422,24 @@ impl ChunkAccess {
                 );
             }
             Self::Full(_) => panic!("prime_final_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Fills this chunk's vanilla skylight-source cache from current sections.
+    pub fn initialize_light_sources(&self) {
+        match self {
+            Self::Full(chunk) => chunk.initialize_light_sources(),
+            Self::Proto(proto) => proto.initialize_light_sources(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard for this chunk's skylight-source cache.
+    pub fn sky_light_sources(&self) -> RwLockReadGuard<'_, ChunkSkyLightSources> {
+        match self {
+            Self::Full(chunk) => chunk.sky_light_sources.read(),
+            Self::Proto(proto) => proto.sky_light_sources.read(),
             Self::Unloaded => unreachable!(),
         }
     }
@@ -860,6 +879,26 @@ mod tests {
     }
 
     #[test]
+    fn initialize_light_sources_reads_direct_generation_writes() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(0, 4, 0, stone);
+        chunk.initialize_light_sources();
+
+        assert_eq!(chunk.sky_light_sources().get_lowest_source_y(0, 0), 5);
+    }
+
+    #[test]
     fn full_chunk_heightmap_type_maps_worldgen_types_to_final_types() {
         assert_eq!(
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::WorldSurfaceWg),
@@ -973,6 +1012,7 @@ mod tests {
 
         proto.set_block_state(BlockPos::new(3, 5, 7), stone, UpdateFlags::UPDATE_NONE);
 
+        assert_eq!(proto.sky_light_sources.read().get_lowest_source_y(3, 7), 6);
         let light = proto.light.read();
         assert_eq!(light.block.emptiness_map(), Some(&[false][..]));
         assert_eq!(light.sky.emptiness_map(), Some(&[false][..]));
@@ -997,5 +1037,29 @@ mod tests {
         ));
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
+    }
+
+    #[test]
+    fn full_block_change_updates_sky_light_sources() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        chunk.set_block_state(BlockPos::new(0, 4, 0), stone, UpdateFlags::UPDATE_CLIENTS);
+
+        assert_eq!(chunk.sky_light_sources().get_lowest_source_y(0, 0), 5);
     }
 }

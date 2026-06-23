@@ -26,7 +26,7 @@ use steel_utils::locks::SyncMutex;
 use crate::block_entity::{BlockEntityStorage, BlockEntityTickAction, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
-    light::ChunkLightData,
+    light::{ChunkLightData, ChunkSkyLightSources, has_different_light_properties},
     proto_chunk::ProtoChunk,
     section::Sections,
 };
@@ -76,6 +76,8 @@ pub struct LevelChunk {
     pub structure_references: SyncRwLock<StructureReferenceMap>,
     /// Vanilla proto postprocessing offsets carried through promotion and drained once.
     postprocessing: SyncMutex<Box<[Vec<u16>]>>,
+    /// Vanilla skylight source edge cache for this chunk.
+    pub sky_light_sources: SyncRwLock<ChunkSkyLightSources>,
     /// Chunk-owned light sections and section emptiness maps.
     pub light: SyncRwLock<ChunkLightData>,
 }
@@ -226,6 +228,7 @@ impl LevelChunk {
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
         let block_entities = proto_chunk.block_entities;
         let pending_entities = proto_chunk.entities.get_all();
+        let sky_light_sources = proto_chunk.sky_light_sources.into_inner();
         let mut light = proto_chunk.light.into_inner();
         if let Err(error) = light.refresh_emptiness_maps_from_sections(&proto_chunk.sections) {
             panic!("invalid proto chunk light emptiness map length: {error:?}");
@@ -247,6 +250,7 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
+            sky_light_sources: SyncRwLock::new(sky_light_sources),
             light: SyncRwLock::new(light),
         };
         LevelChunkPromotion {
@@ -297,6 +301,11 @@ impl LevelChunk {
         if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
             panic!("invalid loaded chunk light emptiness map length: {error:?}");
         }
+        let sky_light_sources = {
+            let mut sources = ChunkSkyLightSources::for_valid_world_height(min_y, height);
+            sources.fill_from_sections(&sections);
+            sources
+        };
 
         Self::populate_poi(&level, &sections, pos, min_y);
 
@@ -314,6 +323,7 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(empty_postprocessing(height)),
+            sky_light_sources: SyncRwLock::new(sky_light_sources),
             light: SyncRwLock::new(light),
         }
     }
@@ -333,6 +343,14 @@ impl LevelChunk {
     #[must_use]
     pub fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Fills the vanilla skylight-source cache from current section contents.
+    pub fn initialize_light_sources(&self) {
+        self.refresh_light_emptiness_maps();
+        self.sky_light_sources
+            .write()
+            .fill_from_sections(&self.sections);
     }
 
     /// Drains the vanilla proto postprocessing offsets carried through promotion.
@@ -639,9 +657,12 @@ impl LevelChunk {
         let new_block = state.get_block();
 
         // Dynamic propagation is wired after the light work queue exists; this
-        // keeps chunk-owned section metadata coherent for that engine.
+        // keeps chunk-owned metadata coherent for that engine.
         if was_empty != is_empty {
             self.update_light_section_emptiness(y, is_empty);
+        }
+        if has_different_light_properties(old_state, state) {
+            self.update_sky_light_sources(local_x, y, local_z);
         }
 
         // Re-read the block to verify it wasn't changed concurrently
@@ -718,6 +739,20 @@ impl LevelChunk {
     fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
         let section_y = SectionPos::block_to_section_coord(y);
         self.light.write().set_section_empty(section_y, is_empty);
+    }
+
+    fn update_sky_light_sources(&self, local_x: usize, y: i32, local_z: usize) {
+        let chunk_min_x = self.pos.0.x * 16;
+        let chunk_min_z = self.pos.0.y * 16;
+        self.sky_light_sources
+            .write()
+            .update(local_x, y, local_z, |scan_x, scan_y, scan_z| {
+                self.get_block_state(BlockPos::new(
+                    chunk_min_x + scan_x as i32,
+                    scan_y,
+                    chunk_min_z + scan_z as i32,
+                ))
+            });
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {

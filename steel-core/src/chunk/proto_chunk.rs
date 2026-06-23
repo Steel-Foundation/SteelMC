@@ -24,7 +24,7 @@ use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::ChunkStatus,
     heightmap::{HeightmapType, ProtoHeightmaps},
-    light::ChunkLightData,
+    light::{ChunkLightData, ChunkSkyLightSources, has_different_light_properties},
     section::Sections,
 };
 use crate::entity::{EntityStorage, SharedEntity};
@@ -84,6 +84,8 @@ pub struct ProtoChunk {
     pub block_ticks: SyncMutex<BlockTickList>,
     /// Scheduled fluid ticks queued while this chunk is still a proto chunk.
     pub fluid_ticks: SyncMutex<FluidTickList>,
+    /// Vanilla skylight source edge cache for this chunk.
+    pub sky_light_sources: SyncRwLock<ChunkSkyLightSources>,
     /// Chunk-owned light sections and section emptiness maps.
     pub light: SyncRwLock<ChunkLightData>,
     // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
@@ -123,6 +125,9 @@ impl ProtoChunk {
             postprocessing: SyncRwLock::new(empty_postprocessing(height)),
             block_ticks: SyncMutex::new(BlockTickList::new()),
             fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            sky_light_sources: SyncRwLock::new(ChunkSkyLightSources::for_valid_world_height(
+                min_y, height,
+            )),
             light: SyncRwLock::new(ChunkLightData::for_valid_world_height(min_y, height)),
         }
     }
@@ -152,7 +157,7 @@ impl ProtoChunk {
             panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
         }
 
-        Self {
+        let chunk = Self {
             sections,
             pos,
             dirty: AtomicBool::new(false),
@@ -170,8 +175,17 @@ impl ProtoChunk {
             postprocessing: SyncRwLock::new(postprocessing_from_disk(height, postprocessing)),
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),
+            sky_light_sources: SyncRwLock::new(ChunkSkyLightSources::for_valid_world_height(
+                min_y, height,
+            )),
             light: SyncRwLock::new(light),
+        };
+
+        if status >= ChunkStatus::InitializeLight {
+            chunk.initialize_light_sources();
         }
+
+        chunk
     }
 
     /// Returns the minimum Y coordinate of the world.
@@ -263,6 +277,17 @@ impl ProtoChunk {
     #[must_use]
     pub fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Fills the vanilla skylight-source cache from current section contents.
+    pub fn initialize_light_sources(&self) {
+        for section in &self.sections.sections {
+            section.write().recalculate_counts();
+        }
+        self.refresh_light_emptiness_maps();
+        self.sky_light_sources
+            .write()
+            .fill_from_sections(&self.sections);
     }
 
     /// Gets a block entity at the given position.
@@ -391,10 +416,16 @@ impl ProtoChunk {
             return None;
         }
 
-        // Dynamic propagation is wired after the light work queue exists; this
-        // keeps chunk-owned section metadata coherent for that engine.
-        if self.status() >= ChunkStatus::InitializeLight && was_empty != is_empty {
-            self.update_light_section_emptiness(y, is_empty);
+        if self.status() >= ChunkStatus::InitializeLight {
+            // Dynamic propagation is wired after the light work queue exists;
+            // this keeps chunk-owned metadata coherent for that engine.
+            if was_empty != is_empty {
+                self.update_light_section_emptiness(y, is_empty);
+            }
+
+            if has_different_light_properties(old_state, state) {
+                self.update_sky_light_sources(local_x, y, local_z);
+            }
         }
 
         self.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
@@ -407,6 +438,20 @@ impl ProtoChunk {
     fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
         let section_y = SectionPos::block_to_section_coord(y);
         self.light.write().set_section_empty(section_y, is_empty);
+    }
+
+    fn update_sky_light_sources(&self, local_x: usize, y: i32, local_z: usize) {
+        let chunk_min_x = self.pos.0.x * 16;
+        let chunk_min_z = self.pos.0.y * 16;
+        self.sky_light_sources
+            .write()
+            .update(local_x, y, local_z, |scan_x, scan_y, scan_z| {
+                self.get_block_state(BlockPos::new(
+                    chunk_min_x + scan_x as i32,
+                    scan_y,
+                    chunk_min_z + scan_z as i32,
+                ))
+            });
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {

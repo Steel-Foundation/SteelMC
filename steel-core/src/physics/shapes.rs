@@ -209,6 +209,34 @@ pub fn merged_offset_face_occludes(
     coverage_count == 256
 }
 
+/// Checks whether two face occlusion shapes fully cover a block face.
+#[must_use]
+pub fn face_shape_occludes(
+    shape1: VoxelShape,
+    shape1_face: Direction,
+    shape2: VoxelShape,
+    shape2_face: Direction,
+) -> bool {
+    if is_shape_full_block(shape1) || is_shape_full_block(shape2) {
+        return true;
+    }
+
+    if shape1.is_empty() && shape2.is_empty() {
+        return false;
+    }
+
+    let mut grid = [false; 256];
+    let mut coverage_count = 0;
+
+    coverage_count += project_shape_onto_grid(shape1, shape1_face, &mut grid);
+    if coverage_count == 256 {
+        return true;
+    }
+
+    coverage_count += project_shape_onto_grid(shape2, shape2_face, &mut grid);
+    coverage_count == 256
+}
+
 fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool; 256]) -> usize {
     let mut added_coverage = 0;
 
