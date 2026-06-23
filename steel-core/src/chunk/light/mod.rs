@@ -101,6 +101,7 @@ mod packet;
 mod section_storage;
 mod sky_sources;
 mod storage;
+mod workset;
 
 pub use cache::{
     CachedLightBlock, CachedLightChunk, CachedLightSection, LIGHT_CACHE_CHUNK_SLOTS,
@@ -115,6 +116,9 @@ pub use sky_sources::ChunkSkyLightSources;
 pub use storage::{
     ChunkLightData, ChunkLightEmptinessMapLengthError, ChunkLightLayerStorage, LightSection,
     LightSectionData,
+};
+pub use workset::{
+    LightChunkReadCache, LightSectionReadCache, LightWorkset, LightWorksetSetupError,
 };
 
 #[cfg(test)]
