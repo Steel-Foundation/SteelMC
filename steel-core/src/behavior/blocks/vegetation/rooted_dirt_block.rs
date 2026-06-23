@@ -43,7 +43,8 @@ impl Bonemealable for RootedDirtBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        world.get_block_state(pos.below()).is_air()
+        let below_pos = pos.below();
+        !world.is_outside_build_height(below_pos.y()) && world.get_block_state(below_pos).is_air()
     }
 
     fn perform_bonemeal(
@@ -58,5 +59,70 @@ impl Bonemealable for RootedDirtBlock {
             vanilla_blocks::HANGING_ROOTS.default_state(),
             UpdateFlags::UPDATE_ALL,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+
+    struct RootedDirtLevel {
+        min_y: i32,
+        height: i32,
+        below: BlockStateId,
+    }
+
+    impl RootedDirtLevel {
+        fn new(min_y: i32, height: i32, below: BlockStateId) -> Self {
+            Self {
+                min_y,
+                height,
+                below,
+            }
+        }
+    }
+
+    impl LevelReader for RootedDirtLevel {
+        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+            if pos == BlockPos::ZERO.below() {
+                self.below
+            } else {
+                vanilla_blocks::AIR.default_state()
+            }
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            0
+        }
+
+        fn min_y(&self) -> i32 {
+            self.min_y
+        }
+
+        fn height(&self) -> i32 {
+            self.height
+        }
+    }
+
+    #[test]
+    fn rooted_dirt_bonemeal_rejects_bottom_build_height() {
+        init_test_registry();
+        let behavior = RootedDirtBlock::new(&vanilla_blocks::ROOTED_DIRT);
+        let state = vanilla_blocks::ROOTED_DIRT.default_state();
+        let level = RootedDirtLevel::new(0, 1, vanilla_blocks::AIR.default_state());
+
+        assert!(!behavior.is_valid_bonemeal_target(state, &level, BlockPos::ZERO));
+    }
+
+    #[test]
+    fn rooted_dirt_bonemeal_accepts_in_bounds_air_below() {
+        init_test_registry();
+        let behavior = RootedDirtBlock::new(&vanilla_blocks::ROOTED_DIRT);
+        let state = vanilla_blocks::ROOTED_DIRT.default_state();
+        let level = RootedDirtLevel::new(-1, 2, vanilla_blocks::AIR.default_state());
+
+        assert!(behavior.is_valid_bonemeal_target(state, &level, BlockPos::ZERO));
     }
 }
