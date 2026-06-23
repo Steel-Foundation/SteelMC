@@ -14,10 +14,10 @@ use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entities;
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
-use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
+use steel_registry::{vanilla_damage_types, vanilla_items};
+use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
 use crate::behavior::InventoryAccess;
@@ -36,6 +36,46 @@ use steel_registry::vanilla_fluids;
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
     pub sound: Option<SoundEventRef>,
+}
+
+#[must_use]
+pub(crate) fn drained_waterlogged_state(state: BlockStateId) -> Option<BlockStateId> {
+    (state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true))
+        .then(|| state.set_value(&BlockStateProperties::WATERLOGGED, false))
+}
+
+pub(crate) fn pickup_waterlogged_block(
+    behavior: &dyn BlockBehavior,
+    world: &Arc<World>,
+    pos: BlockPos,
+    state: BlockStateId,
+    player: Option<&Player>,
+) -> Option<PickupResult> {
+    let new_state = drained_waterlogged_state(state)?;
+    if !can_pick_up_drained_waterlogged_state(state, player) {
+        return None;
+    }
+
+    world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+
+    if !behavior.can_survive(new_state, world, pos) {
+        world.destroy_block(pos, true);
+    }
+
+    Some(PickupResult {
+        filled_bucket: &vanilla_items::ITEMS.water_bucket,
+        sound: Some(&sound_events::ITEM_BUCKET_FILL),
+    })
+}
+
+fn can_pick_up_drained_waterlogged_state(state: BlockStateId, player: Option<&Player>) -> bool {
+    // Vanilla BarrierBlock only delegates to SimpleWaterloggedBlock for creative players;
+    // sponge passes no user and therefore must not drain it.
+    if state.get_block() != &vanilla_blocks::BARRIER {
+        return true;
+    }
+
+    player.is_some_and(|player| player.game_mode() == GameType::Creative)
 }
 
 const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
@@ -1217,7 +1257,58 @@ impl Default for BlockBehaviorRegistry {
 mod tests {
     use super::*;
 
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
+    use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::sound_events;
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_blocks;
+
+    #[test]
+    fn drained_waterlogged_state_clears_waterlogged_property() {
+        init_test_registry();
+        let state = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        let drained = drained_waterlogged_state(state);
+
+        assert_eq!(
+            drained,
+            Some(state.set_value(&BlockStateProperties::WATERLOGGED, false))
+        );
+    }
+
+    #[test]
+    fn drained_waterlogged_state_ignores_dry_or_non_waterloggable_blocks() {
+        init_test_registry();
+        let dry_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let stone = vanilla_blocks::STONE.default_state();
+
+        assert_eq!(drained_waterlogged_state(dry_slab), None);
+        assert_eq!(drained_waterlogged_state(stone), None);
+    }
+
+    #[test]
+    fn waterlogged_barrier_pickup_requires_player_context() {
+        init_test_registry();
+        let waterlogged_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let waterlogged_barrier = vanilla_blocks::BARRIER
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        assert!(can_pick_up_drained_waterlogged_state(
+            waterlogged_slab,
+            None
+        ));
+        assert!(!can_pick_up_drained_waterlogged_state(
+            waterlogged_barrier,
+            None
+        ));
+    }
 
     #[test]
     fn fall_on_facts_use_vanilla_width_squared_height_formula() {

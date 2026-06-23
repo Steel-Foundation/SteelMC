@@ -11,7 +11,10 @@ use steel_utils::{
     types::{TraversalNodeStatus, UpdateFlags},
 };
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
+    pickup_waterlogged_block,
+};
 use crate::world::World;
 
 const MAX_DEPTH: i32 = 6;
@@ -90,6 +93,10 @@ impl SpongeBlock {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         if behavior.pickup_block(world, pos, state, None).is_some() {
+            return true;
+        }
+
+        if pickup_waterlogged_block(behavior, world, pos, state, None).is_some() {
             return true;
         }
 
