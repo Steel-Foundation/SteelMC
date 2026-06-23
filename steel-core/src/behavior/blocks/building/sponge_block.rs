@@ -19,14 +19,6 @@ use crate::world::World;
 
 const MAX_DEPTH: i32 = 6;
 const MAX_COUNT: i32 = 64;
-const ALL_DIRECTIONS: [Direction; 6] = [
-    Direction::Down,
-    Direction::Up,
-    Direction::North,
-    Direction::South,
-    Direction::West,
-    Direction::East,
-];
 
 #[block_behavior]
 /// Sponge behavior
@@ -67,7 +59,7 @@ impl SpongeBlock {
             MAX_DEPTH,
             MAX_COUNT + 1,
             |pos, consumer| {
-                for direction in ALL_DIRECTIONS {
+                for direction in Direction::ALL {
                     consumer(pos.relative(direction));
                 }
             },
