@@ -407,7 +407,7 @@ define_pyramid! {
         },
         Light => {
             requirements: [(InitializeLight, 1)],
-            task: ChunkStatusTasks::load_light,
+            task: ChunkStatusTasks::light,
         },
         Spawn => {
             requirements: [(Biomes, 1)],
@@ -450,7 +450,7 @@ define_pyramid! {
         },
         Light => {
             requirements: [(InitializeLight, 1)],
-            task: ChunkStatusTasks::light,
+            task: ChunkStatusTasks::load_light,
         },
         Spawn => {
             task: noop_task,
