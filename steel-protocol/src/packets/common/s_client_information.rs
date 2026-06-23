@@ -1,16 +1,11 @@
 use steel_macros::{ReadFrom, ServerPacket};
+pub use steel_registry::entity_data::HumanoidArm;
 
 #[derive(ReadFrom, Clone, Debug)]
 pub enum ChatVisibility {
     Full = 0,
     System = 1,
     Hidden = 2,
-}
-
-#[derive(ReadFrom, Clone, Debug)]
-pub enum HumanoidArm {
-    Left = 0,
-    Right = 1,
 }
 
 #[derive(ReadFrom, Clone, Debug)]

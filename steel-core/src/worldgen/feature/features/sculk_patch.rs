@@ -1056,7 +1056,7 @@ impl FeatureDecorationRunner {
         state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    const fn sculk_vein_spread_pos(
+    fn sculk_vein_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,

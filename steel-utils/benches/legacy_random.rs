@@ -136,6 +136,26 @@ fn bench_sequential_generation(c: &mut Criterion) {
     });
 }
 
+fn bench_consume_count_262(c: &mut Criterion) {
+    c.bench_function("legacy_random consume_count(262)", |b| {
+        b.iter(|| {
+            let mut rng = LegacyRandom::from_seed(black_box(0));
+            rng.consume_count(black_box(262));
+            black_box(rng.next_i32());
+        });
+    });
+}
+
+fn bench_consume_count_17292(c: &mut Criterion) {
+    c.bench_function("legacy_random consume_count(17292)", |b| {
+        b.iter(|| {
+            let mut rng = LegacyRandom::from_seed(black_box(0));
+            rng.consume_count(black_box(17292));
+            black_box(rng.next_i32());
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_from_seed,
@@ -152,5 +172,7 @@ criterion_group!(
     bench_split_u64,
     bench_split_string,
     bench_sequential_generation,
+    bench_consume_count_262,
+    bench_consume_count_17292,
 );
 criterion_main!(benches);

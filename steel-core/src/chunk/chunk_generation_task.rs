@@ -217,7 +217,6 @@ impl ChunkGenerationTask {
             &self.chunk_map,
             &self.cache,
             self.thread_pool.clone(),
-            self.cancel_token.clone(),
         ) {
             self.neighbor_ready.lock().push(future);
         } else {

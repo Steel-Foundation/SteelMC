@@ -17,7 +17,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::blocks::vegetation::vegetation_block::{
-    vegetation_can_survive, vegetation_update_shape,
+    survival_update_shape, vegetation_can_survive,
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector};
@@ -259,7 +259,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         _neighbor_pos: steel_utils::BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        vegetation_update_shape(self, state, world, pos)
+        survival_update_shape(self, state, world, pos)
     }
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {

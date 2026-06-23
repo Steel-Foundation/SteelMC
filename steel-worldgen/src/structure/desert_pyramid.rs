@@ -112,6 +112,7 @@ impl Structure for DesertPyramidStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glam::IVec3;
     use steel_utils::BoundingBox;
 
     #[test]
@@ -126,7 +127,7 @@ mod tests {
         assert_eq!(piece.orientation, Some(Direction::East));
         assert_eq!(
             piece.bounding_box,
-            BoundingBox::new(32, 64, -48, 52, 78, -28)
+            BoundingBox::new(IVec3::new(32, 64, -48), IVec3::new(52, 78, -28))
         );
         let StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(data)) =
             piece.payload

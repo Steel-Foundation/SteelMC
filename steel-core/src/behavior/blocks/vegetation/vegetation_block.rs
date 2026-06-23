@@ -32,11 +32,11 @@ pub fn vegetation_can_survive<H: Vegetation>(
     hooks.may_place_on(state_below, world, pos.below())
 }
 
-/// Shared update-shape logic for vegetation.
+/// Shared update-shape logic for blocks that break when they can no longer survive.
 ///
 /// Important: this calls the final `BlockBehavior::can_survive`,
 /// not `vegetation_can_survive`, so leaf blocks can override survival.
-pub fn vegetation_update_shape<B: BlockBehavior>(
+pub fn survival_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
     world: &dyn ScheduledTickAccess,
@@ -91,7 +91,7 @@ pub fn double_plant_update_shape<B: BlockBehavior>(
             return vanilla_blocks::AIR.default_state();
         }
 
-        vegetation_update_shape(block, state, world, pos)
+        survival_update_shape(block, state, world, pos)
     } else {
         vanilla_blocks::AIR.default_state()
     }

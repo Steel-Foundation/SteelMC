@@ -5,6 +5,7 @@ pub(super) struct PlayerLifecycleState {
     pending_client_loaded: bool,
     client_loaded_timeout: i32,
     domain_switching: bool,
+    pending_respawn: bool,
 }
 
 const CLIENT_LOADED_TIMEOUT_TICKS: i32 = 60;
@@ -16,6 +17,7 @@ impl Default for PlayerLifecycleState {
             pending_client_loaded: false,
             client_loaded_timeout: CLIENT_LOADED_TIMEOUT_TICKS,
             domain_switching: false,
+            pending_respawn: false,
         }
     }
 }
@@ -89,6 +91,24 @@ impl PlayerLifecycleState {
     pub(super) const fn finish_domain_switch(&mut self) {
         self.domain_switching = false;
     }
+
+    pub(super) const fn begin_respawn(&mut self) -> bool {
+        if self.pending_respawn {
+            return false;
+        }
+
+        self.pending_respawn = true;
+        true
+    }
+
+    pub(super) const fn finish_respawn(&mut self) {
+        self.pending_respawn = false;
+    }
+
+    #[cfg(test)]
+    pub(super) const fn respawn_pending(self) -> bool {
+        self.pending_respawn
+    }
 }
 
 #[cfg(test)]
@@ -104,6 +124,20 @@ mod tests {
 
         state.finish_domain_switch();
         assert!(state.begin_domain_switch());
+    }
+
+    #[test]
+    fn respawn_starts_once_until_finished() {
+        let mut state = PlayerLifecycleState::default();
+
+        assert!(!state.respawn_pending());
+        assert!(state.begin_respawn());
+        assert!(state.respawn_pending());
+        assert!(!state.begin_respawn());
+
+        state.finish_respawn();
+        assert!(!state.respawn_pending());
+        assert!(state.begin_respawn());
     }
 
     #[test]

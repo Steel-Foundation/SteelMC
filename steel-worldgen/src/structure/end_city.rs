@@ -1,6 +1,7 @@
 //! End city. Vanilla's `EndCityPieces`: recursive template-based piece generation
 //! (base → towers → bridges → house towers/ships/fat towers), depth ≤ 8.
 
+use glam::IVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::template_pool::TemplateData;
@@ -23,7 +24,7 @@ pub struct EndCityPiece {
     /// Template name relative to `minecraft:end_city/`.
     pub template_name: String,
     /// World-space template-origin.
-    pub template_position: (i32, i32, i32),
+    pub template_position: IVec3,
     /// Piece rotation.
     pub rotation: Rotation,
     /// Gen-depth tag; overwritten when the parent's `recursiveChildren` finishes.
@@ -34,22 +35,17 @@ pub struct EndCityPiece {
 
 type Templates = FxHashMap<Identifier, TemplateData>;
 
-fn template_size(templates: &Templates, name: &str) -> Option<[i32; 3]> {
+fn template_size(templates: &Templates, name: &str) -> Option<IVec3> {
     let id = Identifier::new("minecraft", format!("end_city/{name}"));
-    templates.get(&id).map(|t| t.size)
+    templates.get(&id).map(|t| IVec3::from(t.size))
 }
 
 fn piece_bb(templates: &Templates, piece: &EndCityPiece) -> BoundingBox {
     let size = template_size(templates, &piece.template_name)
         .unwrap_or_else(|| panic!("missing end_city template: {}", piece.template_name));
-    piece.rotation.get_bounding_box(
-        piece.template_position.0,
-        piece.template_position.1,
-        piece.template_position.2,
-        size[0],
-        size[1],
-        size[2],
-    )
+    piece
+        .rotation
+        .get_bounding_box(piece.template_position, size)
 }
 
 /// Vanilla's `addPiece`. With pivot=ZERO and mirror=NONE,
@@ -57,21 +53,15 @@ fn piece_bb(templates: &Templates, piece: &EndCityPiece) -> BoundingBox {
 /// added to the parent's template position.
 fn add_piece(
     parent: &EndCityPiece,
-    offset: (i32, i32, i32),
+    offset: IVec3,
     template_name: &str,
     rotation: Rotation,
     overwrite: bool,
 ) -> EndCityPiece {
-    let (rx, ry, rz) = parent
-        .rotation
-        .transform_pos(offset.0, offset.1, offset.2, 0, 0);
+    let rotated = parent.rotation.transform_pos(offset, IVec3::ZERO);
     EndCityPiece {
         template_name: template_name.to_string(),
-        template_position: (
-            parent.template_position.0 + rx,
-            parent.template_position.1 + ry,
-            parent.template_position.2 + rz,
-        ),
+        template_position: parent.template_position + rotated,
         rotation,
         gen_depth: 0,
         overwrite,
@@ -101,7 +91,7 @@ fn recursive_children(
     kind: SectionKind,
     gen_depth: i32,
     parent: &EndCityPiece,
-    offset: (i32, i32, i32),
+    offset: IVec3,
     pieces: &mut Vec<EndCityPiece>,
     shared: &mut SharedState,
     rng: &mut LegacyRandom,
@@ -142,7 +132,7 @@ fn recursive_children(
         if pieces
             .iter()
             .filter(|e| e.gen_depth != parent_tag)
-            .any(|e| piece_bb(templates, e).intersects(&child_bb))
+            .any(|e| piece_bb(templates, e).intersects(child_bb))
         {
             return false;
         }
@@ -155,7 +145,7 @@ fn generate_house_tower(
     templates: &Templates,
     gen_depth: i32,
     parent: &EndCityPiece,
-    offset: (i32, i32, i32),
+    offset: IVec3,
     pieces: &mut Vec<EndCityPiece>,
     shared: &mut SharedState,
     rng: &mut LegacyRandom,
@@ -168,21 +158,21 @@ fn generate_house_tower(
     pieces.push(last.clone());
     let num_floors = rng.next_i32_bounded(3);
 
-    let mut push = |last: &mut EndCityPiece, off, name, overwrite| {
+    let mut push = |last: &mut EndCityPiece, off: IVec3, name, overwrite| {
         let p = add_piece(last, off, name, rotation, overwrite);
         pieces.push(p.clone());
         *last = p;
     };
 
     if num_floors == 0 {
-        push(&mut last, (-1, 4, -1), "base_roof", true);
+        push(&mut last, IVec3::new(-1, 4, -1), "base_roof", true);
     } else {
-        push(&mut last, (-1, 0, -1), "second_floor_2", false);
+        push(&mut last, IVec3::new(-1, 0, -1), "second_floor_2", false);
         if num_floors == 1 {
-            push(&mut last, (-1, 8, -1), "second_roof", false);
+            push(&mut last, IVec3::new(-1, 8, -1), "second_roof", false);
         } else if num_floors == 2 {
-            push(&mut last, (-1, 4, -1), "third_floor_2", false);
-            push(&mut last, (-1, 8, -1), "third_roof", true);
+            push(&mut last, IVec3::new(-1, 4, -1), "third_floor_2", false);
+            push(&mut last, IVec3::new(-1, 8, -1), "third_roof", true);
         }
         if num_floors >= 1 {
             recursive_children(
@@ -190,7 +180,7 @@ fn generate_house_tower(
                 SectionKind::Tower,
                 gen_depth + 1,
                 &last,
-                (0, 0, 0),
+                IVec3::ZERO,
                 pieces,
                 shared,
                 rng,
@@ -200,18 +190,18 @@ fn generate_house_tower(
     true
 }
 
-const TOWER_BRIDGES: [(Rotation, (i32, i32, i32)); 4] = [
-    (Rotation::None, (1, -1, 0)),
-    (Rotation::Clockwise90, (6, -1, 1)),
-    (Rotation::CounterClockwise90, (0, -1, 5)),
-    (Rotation::Clockwise180, (5, -1, 6)),
+const TOWER_BRIDGES: [(Rotation, IVec3); 4] = [
+    (Rotation::None, IVec3::new(1, -1, 0)),
+    (Rotation::Clockwise90, IVec3::new(6, -1, 1)),
+    (Rotation::CounterClockwise90, IVec3::new(0, -1, 5)),
+    (Rotation::Clockwise180, IVec3::new(5, -1, 6)),
 ];
 
-const FAT_TOWER_BRIDGES: [(Rotation, (i32, i32, i32)); 4] = [
-    (Rotation::None, (4, -1, 0)),
-    (Rotation::Clockwise90, (12, -1, 4)),
-    (Rotation::CounterClockwise90, (0, -1, 8)),
-    (Rotation::Clockwise180, (8, -1, 12)),
+const FAT_TOWER_BRIDGES: [(Rotation, IVec3); 4] = [
+    (Rotation::None, IVec3::new(4, -1, 0)),
+    (Rotation::Clockwise90, IVec3::new(12, -1, 4)),
+    (Rotation::CounterClockwise90, IVec3::new(0, -1, 8)),
+    (Rotation::Clockwise180, IVec3::new(8, -1, 12)),
 ];
 
 fn generate_tower(
@@ -225,9 +215,15 @@ fn generate_tower(
     let rotation = parent.rotation;
     let x_off = 3 + rng.next_i32_bounded(2);
     let z_off = 3 + rng.next_i32_bounded(2);
-    let mut last = add_piece(parent, (x_off, -3, z_off), "tower_base", rotation, true);
+    let mut last = add_piece(
+        parent,
+        IVec3::new(x_off, -3, z_off),
+        "tower_base",
+        rotation,
+        true,
+    );
     pieces.push(last.clone());
-    let p = add_piece(&last, (0, 7, 0), "tower_piece", rotation, true);
+    let p = add_piece(&last, IVec3::new(0, 7, 0), "tower_piece", rotation, true);
     pieces.push(p.clone());
     last = p;
 
@@ -235,7 +231,7 @@ fn generate_tower(
         (rng.next_i32_bounded(3) == 0).then(|| last.clone());
     let tower_height = 1 + rng.next_i32_bounded(3);
     for i in 0..tower_height {
-        let p = add_piece(&last, (0, 4, 0), "tower_piece", rotation, true);
+        let p = add_piece(&last, IVec3::new(0, 4, 0), "tower_piece", rotation, true);
         pieces.push(p.clone());
         last = p;
         if i < tower_height - 1 && rng.next_bool() {
@@ -254,27 +250,39 @@ fn generate_tower(
                     SectionKind::TowerBridge,
                     gen_depth + 1,
                     &bridge_start,
-                    (0, 0, 0),
+                    IVec3::ZERO,
                     pieces,
                     shared,
                     rng,
                 );
             }
         }
-        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation, true));
+        pieces.push(add_piece(
+            &last,
+            IVec3::new(-1, 4, -1),
+            "tower_top",
+            rotation,
+            true,
+        ));
     } else if gen_depth != 7 {
         return recursive_children(
             templates,
             SectionKind::FatTower,
             gen_depth + 1,
             &last,
-            (0, 0, 0),
+            IVec3::ZERO,
             pieces,
             shared,
             rng,
         );
     } else {
-        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation, true));
+        pieces.push(add_piece(
+            &last,
+            IVec3::new(-1, 4, -1),
+            "tower_top",
+            rotation,
+            true,
+        ));
     }
     true
 }
@@ -292,7 +300,7 @@ fn generate_tower_bridge(
 
     // Vanilla's setGenDepth(-1) marks the first/last bridge_piece as a "different
     // batch" to sub-recursion collision checks; childTag later overwrites it.
-    let mut first = add_piece(parent, (0, 0, -4), "bridge_piece", rotation, true);
+    let mut first = add_piece(parent, IVec3::new(0, 0, -4), "bridge_piece", rotation, true);
     first.gen_depth = -1;
     pieces.push(first.clone());
 
@@ -300,7 +308,13 @@ fn generate_tower_bridge(
     let mut last = first;
     for _ in 0..bridge_length {
         if rng.next_bool() {
-            let p = add_piece(&last, (0, next_y, -4), "bridge_piece", rotation, true);
+            let p = add_piece(
+                &last,
+                IVec3::new(0, next_y, -4),
+                "bridge_piece",
+                rotation,
+                true,
+            );
             pieces.push(p.clone());
             last = p;
             next_y = 0;
@@ -310,7 +324,7 @@ fn generate_tower_bridge(
             } else {
                 ("bridge_gentle_stairs", -8)
             };
-            let p = add_piece(&last, (0, next_y, dz), name, rotation, true);
+            let p = add_piece(&last, IVec3::new(0, next_y, dz), name, rotation, true);
             pieces.push(p.clone());
             last = p;
             next_y = 4;
@@ -322,7 +336,7 @@ fn generate_tower_bridge(
         let ship_z = -70 + rng.next_i32_bounded(10);
         pieces.push(add_piece(
             &last,
-            (ship_x, next_y, ship_z),
+            IVec3::new(ship_x, next_y, ship_z),
             "ship",
             rotation,
             true,
@@ -333,7 +347,7 @@ fn generate_tower_bridge(
         SectionKind::HouseTower,
         gen_depth + 1,
         &last,
-        (-3, next_y + 1, -11),
+        IVec3::new(-3, next_y + 1, -11),
         pieces,
         shared,
         rng,
@@ -342,7 +356,7 @@ fn generate_tower_bridge(
     }
 
     let end_rot = rotation.then(Rotation::Clockwise180);
-    let mut end = add_piece(&last, (4, next_y, 0), "bridge_end", end_rot, true);
+    let mut end = add_piece(&last, IVec3::new(4, next_y, 0), "bridge_end", end_rot, true);
     end.gen_depth = -1;
     pieces.push(end);
     true
@@ -357,9 +371,21 @@ fn generate_fat_tower(
     rng: &mut LegacyRandom,
 ) -> bool {
     let rotation = parent.rotation;
-    let mut last = add_piece(parent, (-3, 4, -3), "fat_tower_base", rotation, true);
+    let mut last = add_piece(
+        parent,
+        IVec3::new(-3, 4, -3),
+        "fat_tower_base",
+        rotation,
+        true,
+    );
     pieces.push(last.clone());
-    let p = add_piece(&last, (0, 4, 0), "fat_tower_middle", rotation, true);
+    let p = add_piece(
+        &last,
+        IVec3::new(0, 4, 0),
+        "fat_tower_middle",
+        rotation,
+        true,
+    );
     pieces.push(p.clone());
     last = p;
 
@@ -369,7 +395,13 @@ fn generate_fat_tower(
         if rng.next_i32_bounded(3) == 0 {
             break;
         }
-        let p = add_piece(&last, (0, 8, 0), "fat_tower_middle", rotation, true);
+        let p = add_piece(
+            &last,
+            IVec3::new(0, 8, 0),
+            "fat_tower_middle",
+            rotation,
+            true,
+        );
         pieces.push(p.clone());
         last = p;
 
@@ -383,7 +415,7 @@ fn generate_fat_tower(
                     SectionKind::TowerBridge,
                     gen_depth + 1,
                     &bridge_start,
-                    (0, 0, 0),
+                    IVec3::ZERO,
                     pieces,
                     shared,
                     rng,
@@ -393,7 +425,7 @@ fn generate_fat_tower(
     }
     pieces.push(add_piece(
         &last,
-        (-2, 8, -2),
+        IVec3::new(-2, 8, -2),
         "fat_tower_top",
         rotation,
         true,
@@ -404,7 +436,7 @@ fn generate_fat_tower(
 /// Entry point. Mirrors vanilla's `EndCityPieces.startHouseTower`.
 pub fn start_house_tower(
     templates: &Templates,
-    origin: (i32, i32, i32),
+    origin: IVec3,
     rotation: Rotation,
     rng: &mut LegacyRandom,
 ) -> Vec<EndCityPiece> {
@@ -424,9 +456,9 @@ pub fn start_house_tower(
     pieces.push(last.clone());
 
     for (off, name, overwrite) in [
-        ((-1, 0, -1), "second_floor_1", false),
-        ((-1, 4, -1), "third_floor_1", false),
-        ((-1, 8, -1), "third_roof", true),
+        (IVec3::new(-1, 0, -1), "second_floor_1", false),
+        (IVec3::new(-1, 4, -1), "third_floor_1", false),
+        (IVec3::new(-1, 8, -1), "third_roof", true),
     ] {
         let p = add_piece(&last, off, name, rotation, overwrite);
         pieces.push(p.clone());
@@ -438,7 +470,7 @@ pub fn start_house_tower(
         SectionKind::Tower,
         1,
         &last,
-        (0, 0, 0),
+        IVec3::ZERO,
         &mut pieces,
         &mut shared,
         rng,
@@ -448,17 +480,14 @@ pub fn start_house_tower(
 
 fn make_end_city_structure_piece(templates: &Templates, piece: EndCityPiece) -> StructurePiece {
     let template_id = Identifier::new("minecraft", format!("end_city/{}", piece.template_name));
-    let size = templates.get(&template_id).map_or([1, 1, 1], |t| t.size);
+    let size = templates
+        .get(&template_id)
+        .map_or(IVec3::ONE, |t| IVec3::from(t.size));
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "ecp"),
-        bounding_box: piece.rotation.get_bounding_box(
-            piece.template_position.0,
-            piece.template_position.1,
-            piece.template_position.2,
-            size[0],
-            size[1],
-            size[2],
-        ),
+        bounding_box: piece
+            .rotation
+            .get_bounding_box(piece.template_position, size),
         gen_depth: piece.gen_depth,
         orientation: Some(Direction::North),
         payload: StructurePiecePayload::Template(TemplatePieceData {
@@ -466,7 +495,7 @@ fn make_end_city_structure_piece(templates: &Templates, piece: EndCityPiece) -> 
             template_position: piece.template_position,
             rotation: piece.rotation,
             mirror: StructureMirror::None,
-            rotation_pivot: (0, 0, 0),
+            rotation_pivot: IVec3::ZERO,
             block_ignore: if piece.overwrite {
                 StructureBlockIgnore::StructureBlock
             } else {
@@ -498,19 +527,19 @@ impl Structure for EndCityStructure {
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let rotation = Rotation::get_random(rng);
-        let (off_x, off_z) = match rotation {
-            Rotation::None => (5, 5),
-            Rotation::Clockwise90 => (-5, 5),
-            Rotation::Clockwise180 => (-5, -5),
-            Rotation::CounterClockwise90 => (5, -5),
+        let off_xz = match rotation {
+            Rotation::None => IVec3::new(5, 0, 5),
+            Rotation::Clockwise90 => IVec3::new(-5, 0, 5),
+            Rotation::Clockwise180 => IVec3::new(-5, 0, -5),
+            Rotation::CounterClockwise90 => IVec3::new(5, 0, -5),
         };
         let (bx, bz) = (ctx.chunk_min_x() + 7, ctx.chunk_min_z() + 7);
         // End uses `base_height_full`: `preliminary_surface_level = 0` makes the
         // capped variant miss islands at Y≥50.
         let h0 = ctx.base_height_full(bx, bz, false) - 1;
-        let h1 = ctx.base_height_full(bx, bz + off_z, false) - 1;
-        let h2 = ctx.base_height_full(bx + off_x, bz, false) - 1;
-        let h3 = ctx.base_height_full(bx + off_x, bz + off_z, false) - 1;
+        let h1 = ctx.base_height_full(bx, bz + off_xz.z, false) - 1;
+        let h2 = ctx.base_height_full(bx + off_xz.x, bz, false) - 1;
+        let h3 = ctx.base_height_full(bx + off_xz.x, bz + off_xz.z, false) - 1;
         let lowest = h0.min(h1).min(h2).min(h3);
         if lowest < 60 {
             return None;
@@ -521,9 +550,10 @@ impl Structure for EndCityStructure {
             return None;
         }
 
+        let origin = IVec3::new(bx, lowest, bz);
         Some(GenerationStub {
-            position: (bx, lowest, bz),
-            pieces: start_house_tower(ctx.templates(), (bx, lowest, bz), rotation, rng)
+            position: (origin.x, origin.y, origin.z),
+            pieces: start_house_tower(ctx.templates(), origin, rotation, rng)
                 .into_iter()
                 .map(|p| make_end_city_structure_piece(ctx.templates(), p))
                 .collect(),
@@ -535,12 +565,12 @@ impl Structure for EndCityStructure {
 mod tests {
     use super::*;
 
-    fn single_template(name: &str, size: [i32; 3]) -> Templates {
+    fn single_template(name: &str, size: IVec3) -> Templates {
         let mut templates = FxHashMap::default();
         templates.insert(
             Identifier::new("minecraft", format!("end_city/{name}")),
             TemplateData {
-                size,
+                size: size.into(),
                 jigsaws: Vec::new(),
             },
         );
@@ -549,12 +579,12 @@ mod tests {
 
     #[test]
     fn end_city_piece_uses_template_payload_and_overwrite_processor() {
-        let templates = single_template("third_roof", [6, 7, 8]);
+        let templates = single_template("third_roof", IVec3::new(6, 7, 8));
         let runtime_piece = make_end_city_structure_piece(
             &templates,
             EndCityPiece {
                 template_name: "third_roof".to_owned(),
-                template_position: (10, 70, 20),
+                template_position: IVec3::new(10, 70, 20),
                 rotation: Rotation::Clockwise90,
                 gen_depth: 4,
                 overwrite: true,
@@ -570,7 +600,7 @@ mod tests {
             data.template_id,
             Identifier::vanilla_static("end_city/third_roof")
         );
-        assert_eq!(data.template_position, (10, 70, 20));
+        assert_eq!(data.template_position, (10, 70, 20).into());
         assert_eq!(data.rotation, Rotation::Clockwise90);
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureBlock);
         assert_eq!(data.processors, TemplateProcessorList::Empty);
@@ -581,7 +611,7 @@ mod tests {
             &templates,
             EndCityPiece {
                 template_name: "third_roof".to_owned(),
-                template_position: (10, 70, 20),
+                template_position: IVec3::new(10, 70, 20),
                 rotation: Rotation::Clockwise90,
                 gen_depth: 4,
                 overwrite: false,

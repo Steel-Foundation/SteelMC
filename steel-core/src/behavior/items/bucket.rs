@@ -8,6 +8,7 @@
 use crate::behavior::context::InteractionResult;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
+    pickup_waterlogged_block,
 };
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::ContainerId;
@@ -141,23 +142,21 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         return InteractionResult::Success;
     }
 
-    // TODO: Remove fallback once all waterloggable blocks implement pickup_block
-    if hit_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
-        let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
-        context
-            .world
-            .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL);
-
-        // Vanilla parity: destroy blocks that can't survive without water.
-        if !block_behavior.can_survive(new_state, context.world, hit_pos) {
-            context.player.get_world().destroy_block(hit_pos, true);
+    // TODO: Remove fallback once all waterloggable blocks implement pickup_block.
+    if let Some(result) = pickup_waterlogged_block(
+        block_behavior,
+        context.world,
+        hit_pos,
+        hit_state,
+        Some(context.player),
+    ) {
+        if let Some(sound) = result.sound {
+            context
+                .world
+                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
         }
 
-        context
-            .world
-            .play_block_sound(&sound_events::ITEM_BUCKET_FILL, hit_pos, 1.0, 1.0, None);
-
-        consume_bucket(context, &vanilla_items::ITEMS.water_bucket);
+        consume_bucket(context, result.filled_bucket);
 
         return InteractionResult::Success;
     }

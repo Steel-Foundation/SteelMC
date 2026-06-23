@@ -315,6 +315,8 @@ impl Default for BiomeRegistry {
 crate::impl_registry_ext!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key);
 crate::impl_tagged_registry!(BiomeRegistry, biomes_by_key, "biome");
 
+crate::impl_registry_entry_eq!(Biome);
+
 impl crate::RegistryEntry for Biome {
     fn key(&self) -> &Identifier {
         &self.key

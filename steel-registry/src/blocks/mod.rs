@@ -17,11 +17,50 @@ use steel_utils::{BlockPos, BlockStateId};
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
 
+#[derive(Debug, Clone, Copy)]
+pub struct StateBooleanOverwrite {
+    pub offset: u16,
+    pub value: bool,
+}
+
+impl StateBooleanOverwrite {
+    pub const fn new(offset: u16, value: bool) -> Self {
+        Self { offset, value }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StateBooleanData {
+    pub default: bool,
+    pub overwrites: &'static [StateBooleanOverwrite],
+}
+
+impl StateBooleanData {
+    pub const TRUE: Self = Self::new(true, &[]);
+    pub const FALSE: Self = Self::new(false, &[]);
+
+    pub const fn new(default: bool, overwrites: &'static [StateBooleanOverwrite]) -> Self {
+        Self {
+            default,
+            overwrites,
+        }
+    }
+
+    pub fn value(self, offset: u16) -> bool {
+        self.overwrites
+            .iter()
+            .find(|overwrite| overwrite.offset == offset)
+            .map_or(self.default, |overwrite| overwrite.value)
+    }
+}
+
 pub struct Block {
     pub key: Identifier,
     pub config: BlockConfig,
     pub properties: &'static [&'static dyn DynProperty],
     pub default_state_offset: u16,
+    /// Vanilla `BlockState.isSuffocating` values indexed by block-local state offset.
+    pub suffocating: StateBooleanData,
     /// Function to get collision shape for a state offset
     pub collision_shape: ShapeFn,
     /// Function to get block support shape for a state offset
@@ -72,6 +111,7 @@ impl Block {
             config,
             properties,
             default_state_offset: 0,
+            suffocating: StateBooleanData::TRUE,
             collision_shape: full_block_shape,
             support_shape: full_block_shape,
             outline_shape: full_block_shape,
@@ -99,6 +139,12 @@ impl Block {
         self.occlusion_shape = occlusion;
         self.interaction_shape = interaction;
         self.visual_shape = visual;
+        self
+    }
+
+    /// Sets the extracted vanilla `BlockState.isSuffocating` values for this block.
+    pub const fn with_suffocating(mut self, suffocating: StateBooleanData) -> Self {
+        self.suffocating = suffocating;
         self
     }
 
@@ -199,15 +245,6 @@ impl Block {
 }
 
 pub type BlockRef = &'static Block;
-
-impl PartialEq for BlockRef {
-    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(*self, *other)
-    }
-}
-
-impl Eq for BlockRef {}
 
 // The central registry for all blocks.
 pub struct BlockRegistry {
@@ -552,6 +589,8 @@ impl BlockRegistry {
 
 crate::impl_registry_ext!(BlockRegistry, Block, blocks_by_id, blocks_by_key);
 
+crate::impl_registry_entry_eq!(Block);
+
 impl crate::RegistryEntry for Block {
     fn key(&self) -> &Identifier {
         &self.key
@@ -618,6 +657,15 @@ impl BlockRegistry {
     #[must_use]
     pub fn get_static_collision_shape(&self, state_id: BlockStateId) -> shapes::VoxelShape {
         self.static_shape_for_state(state_id, Block::get_collision_shape)
+    }
+
+    /// Returns vanilla `BlockState.isSuffocating`.
+    #[must_use]
+    pub fn is_suffocating(&self, state_id: BlockStateId) -> bool {
+        let Some((block, offset)) = self.block_and_state_offset(state_id) else {
+            return false;
+        };
+        block.suffocating.value(offset)
     }
 
     #[must_use]

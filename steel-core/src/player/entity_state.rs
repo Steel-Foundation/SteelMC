@@ -4,13 +4,11 @@
 
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityAttachmentPoint, EntityAttachments, EntityDimensions};
-use steel_registry::fluid::FluidStateExt as _;
 use steel_utils::WorldAabb;
 use steel_utils::types::GameType;
 
 use crate::behavior::BlockCollisionContext;
 use crate::entity::{Entity, EntitySyncedData, LivingEntity};
-use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
@@ -44,28 +42,6 @@ const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions =
 const PLAYER_SWIMMING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 0.6, 0.4);
 const PLAYER_SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 1.62);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SwimmingEnvironment {
-    sprinting: bool,
-    passenger: bool,
-    in_water: bool,
-    under_water: bool,
-    block_fluid_is_water: bool,
-}
-
-#[must_use]
-const fn select_swimming_state(currently_swimming: bool, env: SwimmingEnvironment) -> bool {
-    if env.passenger {
-        return false;
-    }
-
-    if currently_swimming {
-        env.sprinting && env.in_water
-    } else {
-        env.sprinting && env.under_water && env.block_fluid_is_water
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PoseFit {
@@ -108,7 +84,7 @@ impl Player {
     #[must_use]
     fn bounding_box_for_pose(&self, pose: EntityPose) -> WorldAabb {
         let position = self.base.position();
-        let dimensions = Self::dimensions_for_pose(pose);
+        let dimensions = <Self as Entity>::dimensions_for_pose(self, pose);
         WorldAabb::entity_box(
             position.x,
             position.y,
@@ -157,27 +133,6 @@ impl Player {
             .is_some_and(EntitySyncedData::is_swimming)
             && !self.is_flying()
             && self.game_mode() != GameType::Spectator
-    }
-
-    fn set_swimming(&self, swimming: bool) {
-        self.set_shared_swimming(swimming);
-    }
-
-    /// Updates the vanilla swimming shared flag.
-    pub(super) fn update_swimming(&self) {
-        let world = self.get_world();
-        let block_fluid = get_fluid_state(&world, self.block_position());
-        let swimming = select_swimming_state(
-            self.is_swimming(),
-            SwimmingEnvironment {
-                sprinting: self.is_sprinting(),
-                passenger: self.is_passenger(),
-                in_water: self.is_in_water(),
-                under_water: self.is_under_water(),
-                block_fluid_is_water: block_fluid.is_water(),
-            },
-        );
-        self.set_swimming(swimming);
     }
 
     /// Returns true if the player is currently fall flying (elytra).
@@ -244,8 +199,10 @@ impl Player {
             return;
         };
 
-        self.base
-            .set_pose_and_dimensions(actual_pose, Self::dimensions_for_pose(actual_pose));
+        self.base.set_pose_and_dimensions(
+            actual_pose,
+            <Self as Entity>::dimensions_for_pose(self, actual_pose),
+        );
         self.entity_data.lock().base_mut().pose.set(actual_pose);
     }
 }
@@ -253,6 +210,8 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use steel_registry::entity_type::EntityAttachment;
+
+    use crate::entity::{SwimmingEnvironment, select_swimming_state};
 
     use super::*;
 

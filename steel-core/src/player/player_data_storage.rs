@@ -25,7 +25,7 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 3;
+const PLAYER_STORAGE_VERSION: u16 = 6;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -65,7 +65,7 @@ struct PlayerDataFile {
     has_visual_fire: bool,
     health: f32,
     game_mode: i32,
-    prev_game_mode: i32,
+    prev_game_mode: Option<i32>,
     abilities: AbilitiesFile,
     inventory: Vec<SlotFile>,
     selected_slot: i32,
@@ -529,6 +529,7 @@ fn decode_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
 
     fn sample_player_file(data_version: i32) -> PlayerDataFile {
         PlayerDataFile {
@@ -545,7 +546,7 @@ mod tests {
             has_visual_fire: false,
             health: 20.0,
             game_mode: 2,
-            prev_game_mode: 0,
+            prev_game_mode: Some(0),
             abilities: AbilitiesFile {
                 invulnerable: false,
                 flying: false,
@@ -585,6 +586,15 @@ mod tests {
             has_visual_fire: false,
             on_ground: true,
             no_gravity: false,
+            invulnerable: false,
+            air_supply: DEFAULT_MAX_AIR_SUPPLY,
+            portal_cooldown: 0,
+            custom_name_nbt: Vec::new(),
+            custom_name_visible: false,
+            silent: false,
+            glowing: false,
+            tags: Vec::new(),
+            custom_data_nbt: Vec::new(),
             nbt_data: Vec::new(),
             passengers: Vec::new(),
         }
@@ -605,6 +615,20 @@ mod tests {
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
         assert_eq!(decoded.experience_level, 7);
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_absent_previous_game_mode() {
+        let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.prev_game_mode = None;
+
+        let encoded = encode_player_file(&file).expect("player file should encode");
+        let decoded = decode_player_file(&encoded).expect("player file should decode");
+        let persistent = decoded
+            .into_persistent()
+            .expect("player file should convert");
+
+        assert_eq!(persistent.prev_game_mode, None);
     }
 
     #[test]

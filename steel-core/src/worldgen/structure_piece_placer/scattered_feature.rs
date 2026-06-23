@@ -1,5 +1,6 @@
 use std::sync::Weak;
 
+use glam::IVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
@@ -52,9 +53,9 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let mut total = 0;
         let mut count = 0;
-        for z in self.bounding_box.min_z..=self.bounding_box.max_z {
-            for x in self.bounding_box.min_x..=self.bounding_box.max_x {
-                if self.clip.is_inside(BlockPos::new(x, 64, z)) {
+        for z in self.bounding_box.min_z()..=self.bounding_box.max_z() {
+            for x in self.bounding_box.min_x()..=self.bounding_box.max_x() {
+                if self.clip.contains_blockpos(BlockPos::new(x, 64, z)) {
                     total += self
                         .region
                         .height_at(HeightmapType::MotionBlockingNoLeaves, x, z);
@@ -69,9 +70,8 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
         let adjusted = total / count;
         *height_position = Some(adjusted);
-        let dy = adjusted - self.bounding_box.min_y + offset;
-        self.bounding_box.min_y += dy;
-        self.bounding_box.max_y += dy;
+        let dy = adjusted - self.bounding_box.min_y() + offset;
+        *self.bounding_box = self.bounding_box.translate(IVec3::new(0, dy, 0));
         true
     }
 
@@ -159,7 +159,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) fn fill_column_down(&mut self, state: BlockStateId, x: i32, start_y: i32, z: i32) {
         let mut pos = self.world_pos(x, start_y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -175,7 +175,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) fn place_block(&mut self, state: BlockStateId, x: i32, y: i32, z: i32) {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return;
         }
 
@@ -216,7 +216,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         loot_table: &'static str,
     ) -> bool {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos)
+        if !self.clip.contains_blockpos(pos)
             || self.region.block_state(pos).get_block() == &vanilla_blocks::DISPENSER
         {
             return false;
@@ -255,7 +255,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         entity_id: &'static str,
     ) -> bool {
         let pos = self.world_pos(x, y, z);
-        if !self.clip.is_inside(pos) {
+        if !self.clip.contains_blockpos(pos) {
             return false;
         }
 
@@ -271,16 +271,20 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     pub(super) const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
-            y + self.bounding_box.min_y
+            y + self.bounding_box.min_y()
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
             None | Some(Direction::Up | Direction::Down) => (x, z),
-            Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
-            Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
-            Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
-            Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
+            Some(Direction::North) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.max_z() - z)
+            }
+            Some(Direction::South) => {
+                (self.bounding_box.min_x() + x, self.bounding_box.min_z() + z)
+            }
+            Some(Direction::West) => (self.bounding_box.max_x() - z, self.bounding_box.min_z() + x),
+            Some(Direction::East) => (self.bounding_box.min_x() + z, self.bounding_box.min_z() + x),
         };
         BlockPos::new(world_x, world_y, world_z)
     }
@@ -289,7 +293,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         self.clip
     }
 
-    pub(super) fn sea_level(&self) -> i32 {
+    pub(super) const fn sea_level(&self) -> i32 {
         self.region.sea_level()
     }
 
@@ -318,7 +322,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
 
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let pos = self.world_pos(x, y, z);
-        if self.clip.is_inside(pos) {
+        if self.clip.contains_blockpos(pos) {
             self.region.block_state(pos)
         } else {
             vanilla_blocks::AIR.default_state()

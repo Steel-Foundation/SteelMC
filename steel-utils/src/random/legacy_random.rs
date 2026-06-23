@@ -3,11 +3,18 @@ use crate::random::{
     get_seed, name_hash::NameHash,
 };
 
+/// LCG multiplier (matches `java.util.Random`).
+const LCG_A: u64 = 0x0005_DEEC_E66D;
+/// LCG additive constant (matches `java.util.Random`).
+const LCG_C: u64 = 0xB;
+/// 48-bit state mask.
+const LCG_MASK: u64 = 0xFFFF_FFFF_FFFF;
+
 /// Legacy Minecraft random number generator based on a Linear Congruential Generator (LCG).
 /// This implementation mirrors Java's `java.util.Random` which Minecraft originally used.
 pub struct LegacyRandom {
     seed: i64,
-    next_gaussian: Option<f64>,
+    next_gaussian: f64,
 }
 
 /// A positional random number generator factory for the legacy Minecraft LCG algorithm.
@@ -23,8 +30,8 @@ impl LegacyRandom {
     #[must_use]
     pub const fn from_seed(seed: u64) -> Self {
         Self {
-            seed: (seed as i64 ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF,
-            next_gaussian: None,
+            seed: (seed as i64 ^ LCG_A as i64) & LCG_MASK as i64,
+            next_gaussian: f64::NAN,
         }
     }
 
@@ -37,7 +44,7 @@ impl LegacyRandom {
     /// Re-seeds this generator, matching Java's `Random.setSeed`.
     pub const fn set_seed(&mut self, seed: i64) {
         self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;
-        self.next_gaussian = None;
+        self.next_gaussian = f64::NAN;
     }
 
     /// Matches vanilla's `WorldgenRandom.setLargeFeatureSeed`.
@@ -66,20 +73,56 @@ impl LegacyRandom {
     }
 
     const fn next_random(&mut self) -> i64 {
-        let l = self.seed;
-        let m = l.wrapping_mul(0x0005_DEEC_E66D).wrapping_add(0xB) & 0xFFFF_FFFF_FFFF;
-        self.seed = m;
-        m
+        let l = self.seed as u64;
+        let m = (l.wrapping_mul(LCG_A).wrapping_add(LCG_C)) & LCG_MASK;
+        self.seed = m as i64;
+        m as i64
+    }
+
+    /// Advance the LCG by `count` steps in O(log count) time.
+    ///
+    /// Equivalent to calling `next_random()` `count` times and discarding the
+    /// results. Each LCG step is the affine map `T(s) = LCG_A · s + LCG_C` (mod 2^48).
+    /// Composing two such maps `(A₂, C₂) ∘ (A₁, C₁)` yields `(A₂·A₁, A₂·C₁ + C₂)`,
+    /// so binary exponentiation over the composition computes `T^count` in
+    /// O(log count) without ever evaluating individual steps.
+    ///
+    /// `const fn` so the compiler can fold the entire skip when `count` is a
+    /// compile-time constant (as in `EndIslands::new` where it's literally 17292).
+    const fn skip(&mut self, count: u64) {
+        // Accumulator starts as the identity transform (s ↦ s); base is one step.
+        let mut acc_a: u64 = 1;
+        let mut acc_c: u64 = 0;
+        let mut base_a: u64 = LCG_A;
+        let mut base_c: u64 = LCG_C;
+        let mut k = count;
+        while k > 0 {
+            if k & 1 == 1 {
+                // acc ← base ∘ acc
+                acc_c = base_a.wrapping_mul(acc_c).wrapping_add(base_c) & LCG_MASK;
+                acc_a = base_a.wrapping_mul(acc_a) & LCG_MASK;
+            }
+            // base ← base ∘ base
+            base_c = base_a.wrapping_mul(base_c).wrapping_add(base_c) & LCG_MASK;
+            base_a = base_a.wrapping_mul(base_a) & LCG_MASK;
+            k >>= 1;
+        }
+        let s = self.seed as u64;
+        self.seed = (acc_a.wrapping_mul(s).wrapping_add(acc_c) & LCG_MASK) as i64;
     }
 }
 
 impl MarsagliaPolarGaussian for LegacyRandom {
     fn stored_next_gaussian(&self) -> Option<f64> {
-        self.next_gaussian
+        if self.next_gaussian.is_nan() {
+            None
+        } else {
+            Some(self.next_gaussian)
+        }
     }
 
     fn set_stored_next_gaussian(&mut self, value: Option<f64>) {
-        self.next_gaussian = value;
+        self.next_gaussian = value.unwrap_or(f64::NAN);
     }
 }
 
@@ -137,6 +180,12 @@ impl Random for LegacyRandom {
 
     fn next_positional(&mut self) -> RandomSplitter {
         RandomSplitter::Legacy(LegacyRandomSplitter::new(self.next_i64()))
+    }
+
+    fn consume_count(&mut self, count: i32) {
+        if count > 0 {
+            self.skip(count as u64);
+        }
     }
 }
 
@@ -366,6 +415,37 @@ mod test {
         for value in values {
             assert_eq!(rand.triangle(100_f64, 50_f64), value);
         }
+    }
+
+    #[test]
+    fn consume_count_matches_naive_loop() {
+        const COUNTS: &[i32] = &[0, 1, 2, 7, 31, 32, 33, 100, 262, 1023, 1024, 17292, 100_000];
+        const SEEDS: &[u64] = &[0, 1, 0xDEAD_BEEF, 0x1234_5678_9ABC_DEF0];
+
+        for &seed in SEEDS {
+            for &count in COUNTS {
+                let mut fast = LegacyRandom::from_seed(seed);
+                let mut slow = LegacyRandom::from_seed(seed);
+                fast.consume_count(count);
+                for _ in 0..count {
+                    slow.next_i32();
+                }
+                assert_eq!(
+                    fast.next_i64(),
+                    slow.next_i64(),
+                    "mismatch at seed={seed:#x} count={count}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consume_count_negative_is_noop() {
+        let mut a = LegacyRandom::from_seed(42);
+        let mut b = LegacyRandom::from_seed(42);
+        a.consume_count(-1);
+        a.consume_count(i32::MIN);
+        assert_eq!(a.next_i64(), b.next_i64());
     }
 
     #[test]

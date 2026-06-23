@@ -11,7 +11,6 @@ use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::
 use tokio::sync::{oneshot, watch};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "slow_chunk_gen")]
 use std::time::Duration;
@@ -22,8 +21,9 @@ use std::time::Duration;
 pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
-use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status};
+use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
 use crate::chunk_saver::ChunkStorage;
+use crate::entity::EntityVisibility;
 use crate::world::World;
 use crate::worldgen::WorldGenContext;
 use crate::{
@@ -190,6 +190,22 @@ impl ChunkHolder {
     pub fn set_simulation_level(&self, level: Option<ChunkTicketLevel>) {
         self.simulation_level
             .store(optional_ticket_level_raw(level), Ordering::Relaxed);
+    }
+
+    pub(crate) fn entity_visibility(&self) -> EntityVisibility {
+        if self.try_chunk(ChunkStatus::Full).is_none() {
+            return EntityVisibility::Hidden;
+        }
+
+        if !self.load_level().is_some_and(is_full) {
+            return EntityVisibility::Hidden;
+        }
+
+        if is_ticked(self.simulation_level()) {
+            EntityVisibility::Ticking
+        } else {
+            EntityVisibility::Tracked
+        }
     }
 
     /// Updates the highest allowed generation status based on the ticket level.
@@ -394,8 +410,11 @@ impl ChunkHolder {
 
     /// Applies a step to the chunk.
     ///
-    /// The `cancel_token` is from the owning generation task — dependency wait
-    /// futures are raced against it so they bail out when the task is cancelled.
+    /// Cancellation is handled structurally by the owning generation task: its
+    /// `run` loop races the whole `join_all` of dependency-wait futures against
+    /// its cancel token and drops them on cancellation, so the returned futures
+    /// don't each re-check it. A failed dependency surfaces as
+    /// `await_chunk_status` returning `None`.
     ///
     /// # Panics
     /// Panics if the target status is not Empty and has no parent, or if the
@@ -406,7 +425,6 @@ impl ChunkHolder {
         chunk_map: &Arc<ChunkMap>,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         thread_pool: Arc<rayon::ThreadPool>,
-        cancel_token: CancellationToken,
     ) -> Option<NeighborReady> {
         let target_status = step.target_status;
 
@@ -415,12 +433,16 @@ impl ChunkHolder {
         }
 
         if !self.acquire_status_bump(target_status) {
+            // Another task is already generating this chunk to `target_status`;
+            // just wait for it. Parent cancellation is handled by the owning
+            // task's run loop dropping this future; a failed dependency returns
+            // `None` from `await_chunk_status`.
             let self_clone = self.clone();
             return Some(Box::pin(async move {
-                tokio::select! {
-                    () = cancel_token.cancelled() => None,
-                    result = self_clone.await_chunk_status(target_status) => result.map(|_| ()),
-                }
+                self_clone
+                    .await_chunk_status(target_status)
+                    .await
+                    .map(|_| ())
             }));
         }
 
@@ -608,6 +630,9 @@ impl ChunkHolder {
 
         holder.insert_chunk(loaded.chunk, loaded_status);
         context.world().on_entity_chunk_loaded(holder.pos);
+        context
+            .world()
+            .update_entity_chunk_visibility(holder.pos, holder.entity_visibility());
         if !loaded.pending_entities.is_empty() {
             context.world().register_loaded_chunk_entities(
                 holder.pos,
@@ -717,6 +742,7 @@ impl ChunkHolder {
             }
         });
         if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
+            world.update_entity_chunk_visibility(pos, self.entity_visibility());
             world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
         }
     }

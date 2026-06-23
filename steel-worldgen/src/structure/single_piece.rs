@@ -1,5 +1,6 @@
 //! Single-piece buried treasure structure start generation.
 
+use glam::IVec3;
 use steel_registry::structure::StructureData;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};
@@ -15,7 +16,7 @@ pub struct BuriedTreasureStructure;
 const fn buried_treasure_piece(x: i32, z: i32) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "btp"),
-        bounding_box: BoundingBox::new(x, 90, z, x, 90, z),
+        bounding_box: BoundingBox::new(IVec3::new(x, 90, z), IVec3::new(x, 90, z)),
         gen_depth: 0,
         orientation: None,
         payload: StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure),
@@ -57,7 +58,7 @@ mod tests {
         assert_eq!(piece.piece_type, Identifier::new_static("minecraft", "btp"));
         assert_eq!(
             piece.bounding_box,
-            BoundingBox::new(25, 90, -39, 25, 90, -39)
+            BoundingBox::new(IVec3::new(25, 90, -39), IVec3::new(25, 90, -39))
         );
         assert_eq!(piece.gen_depth, 0);
         assert_eq!(piece.orientation, None);

@@ -36,14 +36,6 @@ impl Fluid {
 
 pub type FluidRef = &'static Fluid;
 
-impl PartialEq for FluidRef {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
-    }
-}
-
-impl Eq for FluidRef {}
-
 /// A fluid state instance with amount and falling properties.
 ///
 /// This is computed on-demand from block states rather than stored.
