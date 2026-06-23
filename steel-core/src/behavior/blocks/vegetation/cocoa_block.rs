@@ -19,6 +19,7 @@ use crate::{
     behavior::{
         BlockBehavior, blocks::vegetation::bonemealable::Bonemealable, context::BlockPlaceContext,
     },
+    entity::ai::path::PathComputationType,
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
@@ -27,7 +28,6 @@ const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_2;
 const FACING_PROPERTY: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
 /// Cocoa Block behavior
-// TODO: Implement vanilla isPathfindable()
 #[block_behavior]
 pub struct CocoaBlock {
     block: BlockRef,
@@ -53,7 +53,7 @@ impl BlockBehavior for CocoaBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing: Direction = state.get_value(&FACING_PROPERTY);
         let support = world.get_block_state(pos.relative(facing));
-        support.get_block().has_tag(&BlockTag::JUNGLE_LOGS)
+        support.get_block().has_tag(&BlockTag::SUPPORTS_COCOA)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -93,6 +93,14 @@ impl BlockBehavior for CocoaBlock {
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
         Self::age(state) < MAX_AGE
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
