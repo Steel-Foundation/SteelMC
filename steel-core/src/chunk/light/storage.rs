@@ -317,6 +317,25 @@ impl ChunkLightLayerStorage {
         Some(previous)
     }
 
+    /// Applies ScalableLux's loaded-sky-data normalization.
+    pub(crate) fn fill_loaded_missing_sky_sections_below_data_with_zero(&mut self) {
+        if self.layer != LightLayer::Sky {
+            return;
+        }
+
+        let mut below_loaded_data = false;
+        for section in self.sections.iter_mut().rev() {
+            if section.is_present() {
+                below_loaded_data = true;
+                continue;
+            }
+
+            if below_loaded_data {
+                *section = LightSection::visible(LightSectionData::homogeneous(0));
+            }
+        }
+    }
+
     /// Returns the visible light value for one block position.
     #[must_use]
     pub fn get_light_value(&self, block_pos: BlockPos) -> u8 {

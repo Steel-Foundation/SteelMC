@@ -759,6 +759,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::heightmap::ChunkHeightmaps;
+    use crate::chunk::light::ChunkLightData;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
@@ -889,6 +890,7 @@ mod tests {
             ChunkHeightmaps::new(0, 16),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
         ));
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
 
@@ -915,6 +917,7 @@ mod tests {
             ChunkHeightmaps::new(0, 16),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
         ));
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -958,6 +961,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             Weak::new(),
+            ChunkLightData::for_valid_world_height(0, 16),
         );
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
 
@@ -989,6 +993,7 @@ mod tests {
             ChunkHeightmaps::new(0, 16),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
         ));
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));

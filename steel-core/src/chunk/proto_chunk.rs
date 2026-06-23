@@ -146,8 +146,8 @@ impl ProtoChunk {
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
         level: Weak<World>,
+        mut light: ChunkLightData,
     ) -> Self {
-        let mut light = ChunkLightData::for_valid_world_height(min_y, height);
         if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
             panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
         }
