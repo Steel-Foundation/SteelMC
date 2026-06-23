@@ -9,7 +9,6 @@ use rand::Rng;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
-use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -31,7 +30,7 @@ impl HangingMossBlock {
     }
     /// Finds the tip (bottom-most block) of a hanging moss chain.
     /// Returns the position of the lowest hanging moss block in the chain.
-    fn get_tip(world: &dyn LevelReader, pos: BlockPos) -> BlockPos {
+    fn get_tip(&self, world: &dyn LevelReader, pos: BlockPos) -> BlockPos {
         let mut forward_pos = pos;
         let mut forward_state;
 
@@ -39,7 +38,7 @@ impl HangingMossBlock {
             forward_pos = forward_pos.below();
             forward_state = world.get_block_state(forward_pos);
 
-            if forward_state.get_block() != &vanilla_blocks::PALE_HANGING_MOSS {
+            if forward_state.get_block() != self.block {
                 break;
             }
         }
@@ -96,7 +95,7 @@ impl Bonemealable for HangingMossBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        let grow_pos = HangingMossBlock::get_tip(world, pos).below();
+        let grow_pos = self.get_tip(world, pos).below();
         HangingMossBlock::can_grow_into(world.get_block_state(grow_pos))
             && !world.is_outside_build_height(grow_pos.y())
     }
@@ -118,7 +117,7 @@ impl Bonemealable for HangingMossBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let tip_pos = HangingMossBlock::get_tip(world, pos).below();
+        let tip_pos = self.get_tip(world, pos).below();
         if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
             world.set_block(
                 tip_pos,
