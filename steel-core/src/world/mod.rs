@@ -11,7 +11,9 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
-use crate::chunk::light::{LightSectionEmptinessChange, has_different_light_properties};
+use crate::chunk::light::{
+    LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
+};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
@@ -1040,6 +1042,30 @@ impl World {
 
         self.chunk_map
             .queue_light_change(pos, light_properties_changed, empty_section_change);
+    }
+
+    fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
+        if layer == LightLayer::Sky && !self.dimension_type.has_skylight {
+            return 0;
+        }
+        if !self.is_in_valid_bounds_horizontal(pos) {
+            return self.default_light_value(layer);
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Light, |chunk| {
+                let light = chunk.light();
+                light.get_light_value(layer, pos)
+            })
+            .unwrap_or_else(|| self.default_light_value(layer))
+    }
+
+    const fn default_light_value(&self, layer: LightLayer) -> u8 {
+        match layer {
+            LightLayer::Sky if self.dimension_type.has_skylight => MAX_LIGHT_LEVEL,
+            LightLayer::Sky | LightLayer::Block => 0,
+        }
     }
 
     /// Returns whether every block state in the vanilla AABB block range is air.
@@ -3940,15 +3966,19 @@ impl LevelReader for World {
         Self::get_block_entity(self, pos)
     }
 
-    fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
+    fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
-            15_u8.saturating_sub(sky_darkening)
+            self.light_value_at(LightLayer::Sky, pos)
+                .saturating_sub(sky_darkening)
         } else {
             0
         };
 
-        // TODO: Include block light once Steel has a live light engine.
-        sky_light
+        if sky_light == MAX_LIGHT_LEVEL {
+            return MAX_LIGHT_LEVEL;
+        }
+
+        sky_light.max(self.light_value_at(LightLayer::Block, pos))
     }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {
