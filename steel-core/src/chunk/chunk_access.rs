@@ -184,12 +184,16 @@ impl ChunkAccess {
                 chunk
                     .sections
                     .set_relative_block(relative_x, relative_y, relative_z, value);
+                chunk.refresh_light_emptiness_maps();
                 chunk.dirty.store(true, Ordering::Release);
             }
             Self::Proto(proto_chunk) => {
                 proto_chunk
                     .sections
                     .set_relative_block(relative_x, relative_y, relative_z, value);
+                if proto_chunk.status() >= ChunkStatus::InitializeLight {
+                    proto_chunk.refresh_light_emptiness_maps();
+                }
                 proto_chunk.dirty.store(true, Ordering::Release);
             }
             Self::Unloaded => unreachable!(),
@@ -750,6 +754,7 @@ impl ChunkAccess {
 #[cfg(test)]
 mod tests {
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::types::UpdateFlags;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -893,6 +898,80 @@ mod tests {
             panic!("test chunk should remain full");
         };
         let _ = level_chunk.extract_chunk_data();
+    }
+
+    #[test]
+    fn full_chunk_light_emptiness_map_tracks_public_relative_writes() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+
+        let ChunkAccess::Full(level_chunk) = &chunk else {
+            panic!("test chunk should remain full");
+        };
+        {
+            let light = level_chunk.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+        }
+
+        chunk.set_relative_block(3, 5, 7, stone);
+        {
+            let light = level_chunk.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[false][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[false][..]));
+        }
+
+        chunk.set_relative_block(3, 5, 7, air);
+        let light = level_chunk.light.read();
+        assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+        assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+    }
+
+    #[test]
+    fn loaded_proto_light_emptiness_map_tracks_set_block_state_after_initialize_light() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            ChunkStatus::InitializeLight,
+            0,
+            16,
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            None,
+            Vec::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        {
+            let light = proto.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+        }
+
+        proto.set_block_state(BlockPos::new(3, 5, 7), stone, UpdateFlags::UPDATE_NONE);
+
+        let light = proto.light.read();
+        assert_eq!(light.block.emptiness_map(), Some(&[false][..]));
+        assert_eq!(light.sky.emptiness_map(), Some(&[false][..]));
     }
 
     #[test]

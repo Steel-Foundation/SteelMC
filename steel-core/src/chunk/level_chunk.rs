@@ -26,6 +26,7 @@ use steel_utils::locks::SyncMutex;
 use crate::block_entity::{BlockEntityStorage, BlockEntityTickAction, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
+    light::ChunkLightData,
     proto_chunk::ProtoChunk,
     section::Sections,
 };
@@ -75,6 +76,8 @@ pub struct LevelChunk {
     pub structure_references: SyncRwLock<StructureReferenceMap>,
     /// Vanilla proto postprocessing offsets carried through promotion and drained once.
     postprocessing: SyncMutex<Box<[Vec<u16>]>>,
+    /// Chunk-owned light sections and section emptiness maps.
+    pub light: SyncRwLock<ChunkLightData>,
 }
 
 /// Result of promoting a proto chunk to a full chunk.
@@ -223,6 +226,10 @@ impl LevelChunk {
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
         let block_entities = proto_chunk.block_entities;
         let pending_entities = proto_chunk.entities.get_all();
+        let mut light = proto_chunk.light.into_inner();
+        if let Err(error) = light.refresh_emptiness_maps_from_sections(&proto_chunk.sections) {
+            panic!("invalid proto chunk light emptiness map length: {error:?}");
+        }
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -240,6 +247,7 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
+            light: SyncRwLock::new(light),
         };
         LevelChunkPromotion {
             chunk,
@@ -284,6 +292,10 @@ impl LevelChunk {
         for section in &sections.sections {
             section.write().recalculate_counts();
         }
+        let mut light = ChunkLightData::for_valid_world_height(min_y, height);
+        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
+            panic!("invalid loaded chunk light emptiness map length: {error:?}");
+        }
 
         Self::populate_poi(&level, &sections, pos, min_y);
 
@@ -301,6 +313,7 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(empty_postprocessing(height)),
+            light: SyncRwLock::new(light),
         }
     }
 
@@ -596,9 +609,13 @@ impl LevelChunk {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        let old_state = section
-            .write()
-            .set_block_state(local_x, local_y, local_z, state);
+        let (old_state, was_empty, is_empty) = {
+            let mut section_guard = section.write();
+            let was_empty = section_guard.is_empty();
+            let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+            let is_empty = section_guard.is_empty();
+            (old_state, was_empty, is_empty)
+        };
 
         if old_state == state {
             return None;
@@ -620,19 +637,11 @@ impl LevelChunk {
         let old_block = old_state.get_block();
         let new_block = state.get_block();
 
-        // TODO: Light updates
-        // In vanilla, light engine is notified when section emptiness changes:
-        // let is_empty = section.read().states.has_only_air();
-        // if was_empty != is_empty {
-        //     level.chunk_source.light_engine.update_section_status(pos, is_empty);
-        //     level.chunk_source.on_section_emptiness_changed(chunk_pos.x, section_y, chunk_pos.z, is_empty);
-        // }
-        //
-        // And when light properties change:
-        // if LightEngine::has_different_light_properties(old_state, state) {
-        //     self.sky_light_sources.update(self, local_x, y, local_z);
-        //     level.chunk_source.light_engine.check_block(pos);
-        // }
+        // Dynamic propagation is wired after the light work queue exists; this
+        // keeps chunk-owned section metadata coherent for that engine.
+        if was_empty != is_empty {
+            self.update_light_section_emptiness(y, is_empty);
+        }
 
         // Re-read the block to verify it wasn't changed concurrently
         let current_block = section
@@ -703,6 +712,21 @@ impl LevelChunk {
 
         self.mark_unsaved();
         Some(old_state)
+    }
+
+    fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
+        let section_y = SectionPos::block_to_section_coord(y);
+        self.light.write().set_section_empty(section_y, is_empty);
+    }
+
+    pub(crate) fn refresh_light_emptiness_maps(&self) {
+        if let Err(error) = self
+            .light
+            .write()
+            .refresh_emptiness_maps_from_sections(&self.sections)
+        {
+            panic!("invalid chunk light emptiness map length: {error:?}");
+        }
     }
 
     /// Gets a block state at the given position.

@@ -14,7 +14,7 @@ use steel_registry::{
     vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos,
+    BlockPos, BlockStateId, ChunkPos, SectionPos,
     locks::{SyncMutex, SyncRwLock},
     types::UpdateFlags,
 };
@@ -24,6 +24,7 @@ use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::ChunkStatus,
     heightmap::{HeightmapType, ProtoHeightmaps},
+    light::ChunkLightData,
     section::Sections,
 };
 use crate::entity::{EntityStorage, SharedEntity};
@@ -83,6 +84,8 @@ pub struct ProtoChunk {
     pub block_ticks: SyncMutex<BlockTickList>,
     /// Scheduled fluid ticks queued while this chunk is still a proto chunk.
     pub fluid_ticks: SyncMutex<FluidTickList>,
+    /// Chunk-owned light sections and section emptiness maps.
+    pub light: SyncRwLock<ChunkLightData>,
     // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
     // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
     // and carvers share one instance; we currently rebuild per stage. Blocked
@@ -120,6 +123,7 @@ impl ProtoChunk {
             postprocessing: SyncRwLock::new(empty_postprocessing(height)),
             block_ticks: SyncMutex::new(BlockTickList::new()),
             fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            light: SyncRwLock::new(ChunkLightData::for_valid_world_height(min_y, height)),
         }
     }
 
@@ -143,6 +147,11 @@ impl ProtoChunk {
         fluid_ticks: FluidTickList,
         level: Weak<World>,
     ) -> Self {
+        let mut light = ChunkLightData::for_valid_world_height(min_y, height);
+        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
+            panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
+        }
+
         Self {
             sections,
             pos,
@@ -161,6 +170,7 @@ impl ProtoChunk {
             postprocessing: SyncRwLock::new(postprocessing_from_disk(height, postprocessing)),
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),
+            light: SyncRwLock::new(light),
         }
     }
 
@@ -369,12 +379,22 @@ impl ProtoChunk {
 
         let section_index = self.get_section_index(y);
         let section = &self.sections.sections[section_index];
-        let mut section_guard = section.write();
-        let old_state = section_guard.states.set(local_x, local_y, local_z, state);
-        drop(section_guard);
+        let (old_state, was_empty, is_empty) = {
+            let mut section_guard = section.write();
+            let was_empty = section_guard.is_empty();
+            let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+            let is_empty = section_guard.is_empty();
+            (old_state, was_empty, is_empty)
+        };
 
         if old_state == state {
             return None;
+        }
+
+        // Dynamic propagation is wired after the light work queue exists; this
+        // keeps chunk-owned section metadata coherent for that engine.
+        if self.status() >= ChunkStatus::InitializeLight && was_empty != is_empty {
+            self.update_light_section_emptiness(y, is_empty);
         }
 
         self.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
@@ -382,6 +402,21 @@ impl ProtoChunk {
         self.update_block_entity_lifecycle(pos, old_state, state, flags);
         self.mark_unsaved();
         Some(old_state)
+    }
+
+    fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
+        let section_y = SectionPos::block_to_section_coord(y);
+        self.light.write().set_section_empty(section_y, is_empty);
+    }
+
+    pub(crate) fn refresh_light_emptiness_maps(&self) {
+        if let Err(error) = self
+            .light
+            .write()
+            .refresh_emptiness_maps_from_sections(&self.sections)
+        {
+            panic!("invalid proto chunk light emptiness map length: {error:?}");
+        }
     }
 
     /// Applies the heightmap side effect for an optimized direct section write.
