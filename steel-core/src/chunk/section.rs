@@ -175,6 +175,15 @@ impl Sections {
         }
     }
 
+    /// Returns whether each real chunk section contains no non-air blocks.
+    #[must_use]
+    pub fn section_emptiness_map(&self) -> Box<[bool]> {
+        self.sections
+            .iter()
+            .map(|section| section.read().is_empty())
+            .collect()
+    }
+
     /// Writes multiple blocks in one column, holding each section's write guard
     /// across all writes to that section. Most efficient when blocks are grouped
     /// by section (e.g. descending `relative_y` from a top-to-bottom scan).
