@@ -427,6 +427,16 @@ impl LightLayerEdit<'_> {
             .is_some_and(|section| !matches!(section.section, LightSection::Missing))
     }
 
+    /// Returns whether a cached section has an edited missing section.
+    #[must_use]
+    pub fn is_section_missing(&self, section_pos: SectionPos) -> bool {
+        let Some(section_slot) = self.layout.section_slot(section_pos) else {
+            return false;
+        };
+        self.section_edit(section_slot)
+            .is_some_and(|section| matches!(section.section, LightSection::Missing))
+    }
+
     /// Returns whether a cached section was admitted into the edit cache.
     #[must_use]
     pub fn has_cached_section(&self, section_pos: SectionPos) -> bool {
@@ -1258,9 +1268,11 @@ mod tests {
                 assert_eq!(light_edit.layer(), LightLayer::Block);
                 assert_eq!(light_edit.get(cached_block), 0);
                 assert!(!light_edit.set(cached_block, 12));
+                assert!(light_edit.is_section_missing(SectionPos::new(0, 0, 0)));
 
                 assert!(light_edit.set_section_non_missing(SectionPos::new(0, 0, 0)));
                 assert!(light_edit.has_non_missing_section(SectionPos::new(0, 0, 0)));
+                assert!(!light_edit.is_section_missing(SectionPos::new(0, 0, 0)));
                 assert!(light_edit.has_non_missing(cached_block));
                 assert!(!light_edit.has_light_data_section(SectionPos::new(0, 0, 0)));
                 assert!(light_edit.set(cached_block, 12));

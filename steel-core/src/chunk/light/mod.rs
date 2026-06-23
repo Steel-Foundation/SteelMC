@@ -110,6 +110,7 @@ mod packet;
 mod propagation;
 mod queue;
 mod section_storage;
+mod sky_propagation;
 mod sky_sources;
 mod storage;
 mod workset;
@@ -134,6 +135,13 @@ pub use queue::{
     PackedLightPropagationQueues, PackedLightQueueEntry, QueuedLightUpdate,
 };
 pub use section_storage::{LightSectionRange, LightSectionRangeError};
+pub use sky_propagation::{
+    SkyLightChunkEdgeChecks, SkyLightPropagationContext, SkyLightPropagationContextError,
+    SkyLightUpdateResult, check_sky_light_chunk_edges, force_load_sky_light_chunk,
+    load_sky_light_chunk, propagate_sky_light_changes,
+    propagate_sky_light_changes_with_empty_sections, propagate_sky_light_chunk,
+    propagate_sky_light_chunk_without_edge_checks,
+};
 pub use sky_sources::ChunkSkyLightSources;
 pub use storage::{
     ChunkLightData, ChunkLightEmptinessMapLengthError, ChunkLightLayerStorage, LightSection,
