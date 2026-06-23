@@ -349,6 +349,7 @@ fn collect_collisions_with_context(
 ) -> Vec<WorldAabb> {
     let mut collisions = Vec::with_capacity(entity_collisions.len());
     collisions.extend_from_slice(entity_collisions);
+    collisions.extend(world.get_world_border_collisions(aabb));
     collisions.extend(world.get_block_collisions_with_context(aabb, context));
     collisions
 }
@@ -638,6 +639,28 @@ mod tests {
         }
     }
 
+    struct BorderWorld {
+        boxes: Vec<WorldAabb>,
+    }
+
+    impl CollisionWorld for BorderWorld {
+        fn get_block_state(&self, _pos: BlockPos) -> steel_utils::BlockStateId {
+            REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
+        }
+
+        fn get_block_collisions(&self, _aabb: &WorldAabb) -> Vec<WorldAabb> {
+            Vec::new()
+        }
+
+        fn get_world_border_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+            self.boxes
+                .iter()
+                .copied()
+                .filter(|collision| collision.intersects(*aabb))
+                .collect()
+        }
+    }
+
     fn player_state(position: DVec3) -> EntityPhysicsState {
         EntityPhysicsState::with_dimensions(position, vanilla_entities::PLAYER.dimensions, 0.6)
     }
@@ -809,6 +832,36 @@ mod tests {
         assert!(
             result.actual_movement.x > 0.39 && result.actual_movement.x < 0.41,
             "entity collision should clip movement at the other entity's box: {:?}",
+            result.actual_movement
+        );
+        assert!(result.horizontal_collision);
+        assert!(result.x_collision);
+    }
+
+    #[test]
+    fn test_world_border_collision_clips_horizontal_movement() {
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0));
+        let world = BorderWorld {
+            boxes: vec![WorldAabb::new(
+                1.0,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::INFINITY,
+            )],
+        };
+
+        let result = move_entity(
+            &state,
+            DVec3::new(2.0, 0.0, 0.0),
+            MoverType::SelfMovement,
+            &world,
+        );
+
+        assert!(
+            result.actual_movement.x > 0.69 && result.actual_movement.x < 0.71,
+            "world border should clip movement at its outside shape: {:?}",
             result.actual_movement
         );
         assert!(result.horizontal_collision);

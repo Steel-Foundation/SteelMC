@@ -208,7 +208,10 @@ fn add_collisions_along_travel(
     Some(iterations)
 }
 
-fn for_each_block_in_aabb(aabb: WorldAabb, mut visitor: impl FnMut(BlockPos) -> bool) -> bool {
+pub(super) fn for_each_block_in_aabb(
+    aabb: WorldAabb,
+    mut visitor: impl FnMut(BlockPos) -> bool,
+) -> bool {
     let min_x = aabb.min(Axis::X).floor() as i32;
     let min_y = aabb.min(Axis::Y).floor() as i32;
     let min_z = aabb.min(Axis::Z).floor() as i32;

@@ -24,6 +24,7 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehavior, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
 use crate::world::{ScheduledTickAccess, World};
@@ -112,6 +113,14 @@ impl BlockBehavior for LiquidBlock {
     fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
         let level = state.get_value(&BlockStateProperties::LEVEL);
         FluidState::from_block_level(self.fluid, level)
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        !is_lava_fluid(self.fluid)
     }
 
     /// Called when the block is placed.

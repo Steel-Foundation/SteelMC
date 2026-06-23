@@ -157,6 +157,26 @@ pub fn item_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
     build_block_items::item_behavior(attr.into(), item.into()).into()
 }
 
+/// Marks a struct as an entity implementation for auto-registration.
+///
+/// The build script scans source files for this attribute and generates
+/// `register_entity_factories()` from `classes.json`.
+///
+/// Use `#[json_arg(...)]` on fields to describe extra constructor arguments.
+/// These attributes are stripped before compilation.
+#[proc_macro_attribute]
+pub fn entity_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
+    build_block_items::entity_behavior(attr.into(), item.into()).into()
+}
+
+/// Adds explicit capability exposure to an `impl Entity` block.
+///
+/// Use this instead of hand-writing `as_living_entity`, `as_mob`, etc.
+#[proc_macro_attribute]
+pub fn entity_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    build_block_items::entity_impl(attr.into(), item.into()).into()
+}
+
 /// Derives the `ReadFrom` trait for a struct.
 ///
 /// # Panics

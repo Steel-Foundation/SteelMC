@@ -10,12 +10,52 @@ use std::{
 };
 
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use steel_registry::REGISTRY;
 use steel_registry::game_rules::{GameRuleValue, GameRuleValues};
 use steel_utils::types::Difficulty;
-use steel_utils::{BlockPos, Identifier};
+use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
+
+/// Persistent world border data stored with Steel level data.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorldBorderData {
+    /// Border center X coordinate.
+    pub center_x: f64,
+    /// Border center Z coordinate.
+    pub center_z: f64,
+    /// Damage dealt per block outside the safe zone.
+    pub damage_per_block: f64,
+    /// Distance outside the border before damage starts.
+    pub safe_zone: f64,
+    /// Client warning distance in blocks.
+    pub warning_blocks: i32,
+    /// Client warning time in seconds.
+    pub warning_time: i32,
+    /// Current border size.
+    pub size: f64,
+    /// Remaining lerp time in ticks.
+    pub lerp_time: i64,
+    /// Target size for a moving border.
+    pub lerp_target: f64,
+}
+
+impl Default for WorldBorderData {
+    fn default() -> Self {
+        Self {
+            center_x: 0.0,
+            center_z: 0.0,
+            damage_per_block: 0.2,
+            safe_zone: 5.0,
+            warning_blocks: 5,
+            warning_time: 300,
+            size: f64::from(5.999_997E7_f32),
+            lerp_time: 0,
+            lerp_target: 0.0,
+        }
+    }
+}
 
 /// Persistent level data that gets saved to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,8 +68,14 @@ pub struct LevelData {
     pub day_time: i64,
     /// World spawn point.
     pub spawn: SpawnPoint,
+    /// Vanilla global respawn data for this domain, stored on the domain default world.
+    #[serde(default)]
+    pub respawn: Option<RespawnData>,
     /// Weather state.
     pub weather: WeatherState,
+    /// Persistent world border state.
+    #[serde(default)]
+    pub world_border: WorldBorderData,
     /// World difficulty.
     #[serde(default)]
     pub difficulty: Difficulty,
@@ -130,6 +176,100 @@ impl Default for SpawnPoint {
     }
 }
 
+/// Vanilla default respawn data.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RespawnData {
+    /// Dimension and block position of the default respawn.
+    pub global_pos: GlobalPos,
+    /// Spawn yaw, wrapped with vanilla `Mth.wrapDegrees`.
+    pub yaw: f32,
+    /// Spawn pitch, clamped to vanilla's player pitch range.
+    pub pitch: f32,
+}
+
+impl RespawnData {
+    /// Creates respawn data for the given global position.
+    #[must_use]
+    pub fn new(global_pos: GlobalPos, yaw: f32, pitch: f32) -> Self {
+        Self {
+            global_pos,
+            yaw: wrap_degrees(yaw),
+            pitch: pitch.clamp(-90.0, 90.0),
+        }
+    }
+
+    /// Creates respawn data for a dimension and block position.
+    #[must_use]
+    pub fn of(dimension: Identifier, pos: BlockPos, yaw: f32, pitch: f32) -> Self {
+        Self::new(GlobalPos::new(dimension, pos), yaw, pitch)
+    }
+
+    /// Returns the respawn dimension.
+    #[must_use]
+    pub const fn dimension(&self) -> &Identifier {
+        &self.global_pos.dimension
+    }
+
+    /// Returns the respawn block position.
+    #[must_use]
+    pub const fn pos(&self) -> BlockPos {
+        self.global_pos.pos
+    }
+}
+
+fn wrap_degrees(mut degrees: f32) -> f32 {
+    degrees %= 360.0;
+    if degrees >= 180.0 {
+        degrees -= 360.0;
+    }
+    if degrees < -180.0 {
+        degrees += 360.0;
+    }
+    degrees
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializedRespawnData {
+    dimension: Identifier,
+    x: i32,
+    y: i32,
+    z: i32,
+    yaw: f32,
+    pitch: f32,
+}
+
+impl Serialize for RespawnData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SerializedRespawnData {
+            dimension: self.global_pos.dimension.clone(),
+            x: self.global_pos.pos.x(),
+            y: self.global_pos.pos.y(),
+            z: self.global_pos.pos.z(),
+            yaw: self.yaw,
+            pitch: self.pitch,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RespawnData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let data = SerializedRespawnData::deserialize(deserializer)?;
+        Ok(Self::of(
+            data.dimension,
+            BlockPos::new(data.x, data.y, data.z),
+            data.yaw,
+            data.pitch,
+        ))
+    }
+}
+
 /// Weather state.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WeatherState {
@@ -166,7 +306,9 @@ impl LevelData {
             game_time: 0,
             day_time: 0,
             spawn: SpawnPoint::default(),
+            respawn: None,
             weather: WeatherState::default(),
+            world_border: WorldBorderData::default(),
             difficulty,
             difficulty_locked: false,
             game_rules: FxHashMap::default(),
@@ -230,6 +372,19 @@ impl LevelData {
         self.spawn.x = pos.x();
         self.spawn.y = pos.y();
         self.spawn.z = pos.z();
+    }
+
+    /// Returns saved respawn data, or the legacy local spawn as a compatibility default.
+    #[must_use]
+    pub fn respawn_data_or_local(&self, dimension: &Identifier) -> RespawnData {
+        self.respawn.clone().unwrap_or_else(|| {
+            RespawnData::of(dimension.clone(), self.spawn_pos(), self.spawn.angle, 0.0)
+        })
+    }
+
+    /// Sets the saved respawn data.
+    pub fn set_respawn_data(&mut self, respawn_data: RespawnData) {
+        self.respawn = Some(respawn_data);
     }
 }
 
@@ -550,5 +705,58 @@ mod tests {
         assert!(message.contains("world generation settings do not match"));
         assert!(message.contains("minecraft:the_nether"));
         assert!(message.contains("minecraft:overworld"));
+    }
+
+    #[test]
+    fn respawn_data_wraps_yaw_and_clamps_pitch() {
+        let respawn_data = RespawnData::of(
+            Identifier::vanilla_static("overworld"),
+            BlockPos::new(1, 2, 3),
+            181.0,
+            120.0,
+        );
+
+        assert_eq!(respawn_data.yaw.to_bits(), (-179.0_f32).to_bits());
+        assert_eq!(respawn_data.pitch.to_bits(), 90.0_f32.to_bits());
+    }
+
+    #[test]
+    fn respawn_data_round_trips_through_toml() {
+        let respawn_data = RespawnData::of(
+            Identifier::vanilla_static("the_nether"),
+            BlockPos::new(-4, 70, 8),
+            -181.0,
+            -120.0,
+        );
+
+        let serialized = toml::to_string(&respawn_data).expect("respawn data should serialize");
+        let deserialized: RespawnData =
+            toml::from_str(&serialized).expect("respawn data should deserialize");
+
+        assert_eq!(
+            deserialized.global_pos.dimension,
+            Identifier::vanilla_static("the_nether")
+        );
+        assert_eq!(deserialized.pos(), BlockPos::new(-4, 70, 8));
+        assert_eq!(deserialized.yaw.to_bits(), 179.0_f32.to_bits());
+        assert_eq!(deserialized.pitch.to_bits(), (-90.0_f32).to_bits());
+    }
+
+    #[test]
+    fn level_data_uses_legacy_spawn_as_respawn_default() {
+        init_test_registry();
+        let mut data = LevelData::new_with_seed(1);
+        data.set_spawn_pos(BlockPos::new(10, 65, -3));
+        data.spawn.angle = 270.0;
+
+        let respawn_data = data.respawn_data_or_local(&Identifier::vanilla_static("overworld"));
+
+        assert_eq!(
+            respawn_data.global_pos.dimension,
+            Identifier::vanilla_static("overworld")
+        );
+        assert_eq!(respawn_data.pos(), BlockPos::new(10, 65, -3));
+        assert_eq!(respawn_data.yaw.to_bits(), (-90.0_f32).to_bits());
+        assert_eq!(respawn_data.pitch.to_bits(), 0.0_f32.to_bits());
     }
 }

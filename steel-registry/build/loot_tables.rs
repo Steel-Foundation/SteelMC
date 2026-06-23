@@ -221,6 +221,7 @@ enum PredicateJson {
 
 /// Damage source predicate for damage_source_properties condition.
 #[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 struct DamageSourcePredicateJson {
     #[serde(default)]
     tags: Option<Vec<DamageTagPredicateJson>>,
@@ -263,11 +264,11 @@ struct BlockPredicateJson {
 /// Entity predicate - can have many fields
 #[derive(Deserialize, Debug, Clone)]
 struct EntityPredicateJson {
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", alias = "minecraft:entity_type", default)]
     entity_type: Option<String>,
-    #[serde(default)]
+    #[serde(alias = "minecraft:flags", default)]
     flags: Option<EntityFlagsJson>,
-    #[serde(default)]
+    #[serde(alias = "minecraft:equipment", default)]
     equipment: Option<EntityEquipmentJson>,
 }
 
@@ -385,6 +386,9 @@ struct LootFunctionJson {
     // set_components (keep as raw value since it's complex NBT)
     #[serde(default)]
     components: Option<serde_json::Value>,
+    // furnace_smelt
+    #[serde(default)]
+    use_input_count: Option<bool>,
     // exploration_map
     #[serde(default)]
     destination: Option<String>,
@@ -565,9 +569,11 @@ fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> TokenStream {
         && let Some(first) = enchants.first()
         && let Some(enchant_name) = &first.enchantments
     {
-        let enchant_name = enchant_name
-            .strip_prefix("minecraft:")
-            .unwrap_or(enchant_name);
+        let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
+            enchant_name
+                .strip_prefix("minecraft:")
+                .unwrap_or(enchant_name),
+        );
         let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
 
         return quote! {
@@ -662,9 +668,11 @@ fn generate_equipment_slot_predicate(slot: &Option<EquipmentSlotJson>) -> TokenS
                 && let Some(first) = enchants.first()
                 && let Some(enchant_name) = &first.enchantments
             {
-                let enchant_name = enchant_name
-                    .strip_prefix("minecraft:")
-                    .unwrap_or(enchant_name);
+                let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
+                    enchant_name
+                        .strip_prefix("minecraft:")
+                        .unwrap_or(enchant_name),
+                );
                 let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
                 return quote! {
                     Some(ToolPredicate::HasEnchantment {
@@ -1253,7 +1261,8 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
             quote! { LootFunction::SetComponents { components: #components_str } }
         }
         "minecraft:furnace_smelt" => {
-            quote! { LootFunction::FurnaceSmelt }
+            let use_input_count = function.use_input_count.unwrap_or(true);
+            quote! { LootFunction::FurnaceSmelt { use_input_count: #use_input_count } }
         }
         "minecraft:exploration_map" => {
             let destination = function

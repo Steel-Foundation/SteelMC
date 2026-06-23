@@ -10,7 +10,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
-            vegetation_block::{vegetation_can_survive, vegetation_update_shape},
+            vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
     },
     world::{LevelReader, ScheduledTickAccess},
@@ -52,7 +52,7 @@ impl BlockBehavior for NetherSproutsBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        vegetation_update_shape(self, state, world, pos)
+        survival_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

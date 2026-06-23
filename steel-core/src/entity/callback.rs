@@ -234,9 +234,7 @@ impl EntityLevelCallback for EntityChunkCallback {
 
         if update.section_changed() {
             if update.became_inaccessible() {
-                world.entity_tracker().remove(self.entity_id, |player_id| {
-                    world.players.get_by_entity_id(player_id)
-                });
+                world.remove_entity_from_tracker(self.entity_id);
             } else if update.became_accessible() {
                 if let Some(entity) = world.entity_manager().get_by_id(self.entity_id) {
                     world.add_entity_to_tracker(&entity);
@@ -267,8 +265,6 @@ impl EntityLevelCallback for EntityChunkCallback {
             world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
         }
 
-        world.entity_tracker().remove(self.entity_id, |player_id| {
-            world.players.get_by_entity_id(player_id)
-        });
+        world.remove_entity_from_tracker(self.entity_id);
     }
 }

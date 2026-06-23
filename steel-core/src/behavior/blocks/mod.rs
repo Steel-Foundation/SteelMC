@@ -14,11 +14,11 @@ mod utils;
 pub mod vegetation;
 
 pub use building::{
-    BedBlock, CampfireBlock, DoorBlock, FenceBlock, FenceGateBlock, HayBlock, HoneyBlock,
-    IronBarsBlock, LavaCauldronBlock, MagmaBlock, PotentSulfurBlock, PowderSnowBlock,
-    RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, StairBlock, WallBlock,
-    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
-    WeatheringCopperFullBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
+    BedBlock, CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock,
+    MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock,
+    SlabBlock, SlimeBlock, SpongeBlock, StairBlock, WeatherState, WeatheringCopper,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperSlabBlock,
+    WeatheringCopperStairBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
@@ -32,9 +32,10 @@ pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBloc
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
-    CactusFlowerBlock, CarrotBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock,
-    NetherWartBlock, PitcherCropBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock,
-    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerCropBlock,
+    CactusFlowerBlock, CarrotBlock, CocoaBlock, CropBlock, DoublePlantBlock, FlowerBlock,
+    NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock, RootedDirtBlock,
+    SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
+    TallSeagrassBlock, TorchflowerCropBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,

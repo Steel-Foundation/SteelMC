@@ -213,11 +213,7 @@ impl ChunkSender {
         let mut candidates: Vec<ChunkPos> = self.pending_chunks.iter().copied().collect();
 
         // Sort by distance to player
-        candidates.sort_by_key(|pos| {
-            let dx = pos.0.x - player_chunk_pos.0.x;
-            let dz = pos.0.y - player_chunk_pos.0.y;
-            dx * dx + dz * dz
-        });
+        candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
 
@@ -237,6 +233,12 @@ impl ChunkSender {
             }
         }
         chunks_to_send
+    }
+
+    fn chunk_distance_squared(pos: ChunkPos, player_chunk_pos: ChunkPos) -> u64 {
+        let dx = u64::from(pos.0.x.abs_diff(player_chunk_pos.0.x));
+        let dz = u64::from(pos.0.y.abs_diff(player_chunk_pos.0.y));
+        dx.saturating_mul(dx).saturating_add(dz.saturating_mul(dz))
     }
 
     /// Handles the acknowledgement of a chunk batch from the client.
@@ -320,5 +322,37 @@ mod tests {
             sender.max_unacknowledged_batches,
             MAX_UNACKNOWLEDGED_BATCHES
         );
+    }
+
+    #[test]
+    fn chunk_distance_squared_handles_far_chunk_coordinates() {
+        let distance = ChunkSender::chunk_distance_squared(
+            ChunkPos::new(1_250_000, -1_250_000),
+            ChunkPos::new(0, 0),
+        );
+
+        assert_eq!(distance, 3_125_000_000_000);
+    }
+
+    #[test]
+    fn chunk_distance_squared_handles_valid_world_extremes() {
+        let max = ChunkPos::MAX_COORDINATE_VALUE;
+        let delta = u64::from(max.abs_diff(-max));
+        let expected = delta * delta * 2;
+
+        let distance =
+            ChunkSender::chunk_distance_squared(ChunkPos::new(max, max), ChunkPos::new(-max, -max));
+
+        assert_eq!(distance, expected);
+    }
+
+    #[test]
+    fn chunk_distance_squared_saturates_for_invalid_i32_extremes() {
+        let distance = ChunkSender::chunk_distance_squared(
+            ChunkPos::new(i32::MIN, i32::MIN),
+            ChunkPos::new(i32::MAX, i32::MAX),
+        );
+
+        assert_eq!(distance, u64::MAX);
     }
 }

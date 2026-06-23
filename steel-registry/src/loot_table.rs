@@ -1,3 +1,4 @@
+pub use crate::equipment::EquipmentSlotGroup;
 use crate::{
     REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
     item_stack::ItemStack,
@@ -19,42 +20,6 @@ pub enum LootContextEntity {
     KillerPlayer,
     /// The entity interacting with a block/entity.
     Interacting,
-}
-
-/// Equipment/attribute slot group for enchantments and attributes.
-///
-/// Vanilla's `EquipmentSlotGroup` — a grouping/predicate over concrete `EquipmentSlot` values.
-/// `Hand` matches both main/offhand, `Armor` matches all armor slots, `Any` matches everything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EquipmentSlotGroup {
-    Any,
-    MainHand,
-    OffHand,
-    Hand,
-    Head,
-    Chest,
-    Legs,
-    Feet,
-    Armor,
-    Body,
-}
-
-impl EquipmentSlotGroup {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Any => "any",
-            Self::MainHand => "mainhand",
-            Self::OffHand => "offhand",
-            Self::Hand => "hand",
-            Self::Head => "head",
-            Self::Chest => "chest",
-            Self::Legs => "legs",
-            Self::Feet => "feet",
-            Self::Armor => "armor",
-            Self::Body => "body",
-        }
-    }
 }
 
 /// Dye/banner color.
@@ -758,14 +723,13 @@ impl LootCondition {
             LootCondition::AnyOf(conditions) => conditions.iter().any(|c| c.test(ctx)),
             LootCondition::AllOf(conditions) => conditions.iter().all(|c| c.test(ctx)),
             LootCondition::KilledByPlayer => ctx.killed_by_player,
-            LootCondition::EntityProperties { .. } => {
-                // TODO: Implement when entity data is available in context
-                true
+            LootCondition::EntityProperties { entity, predicate } => {
+                let Some(entity) = ctx.get_entity(*entity) else {
+                    return false;
+                };
+                predicate.test(entity, ctx)
             }
-            LootCondition::DamageSourceProperties { .. } => {
-                // TODO: Implement when damage source data is available in context
-                true
-            }
+            LootCondition::DamageSourceProperties { predicate } => predicate.test(ctx),
             LootCondition::LocationCheck { .. } => {
                 // TODO: Implement when world position data is available in context
                 true
@@ -820,10 +784,7 @@ impl ToolPredicate {
             ToolPredicate::HasEnchantment {
                 enchantment,
                 min_level,
-            } => {
-                // Check if tool has the enchantment at the required level
-                tool.get_enchantment_level(enchantment) >= *min_level
-            }
+            } => tool_enchantment_matches(tool, enchantment, *min_level),
             ToolPredicate::Tag(tag) => {
                 // Check if the tool's item is in the specified tag
                 REGISTRY.items.is_in_tag(tool.item, tag)
@@ -831,6 +792,173 @@ impl ToolPredicate {
             ToolPredicate::Any => true,
         }
     }
+}
+
+fn tool_enchantment_matches(
+    tool: &ItemStack,
+    enchantment_or_tag: &Identifier,
+    min_level: i32,
+) -> bool {
+    if tool.get_enchantment_level(enchantment_or_tag) >= min_level {
+        return true;
+    }
+
+    let Some(enchantments) = tool.get_enchantments() else {
+        return false;
+    };
+
+    for (key, level) in enchantments.iter() {
+        if *level < min_level as u32 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        if REGISTRY
+            .enchantments
+            .is_in_tag(enchantment, enchantment_or_tag)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+impl EntityPredicate {
+    fn test<R: rand::Rng>(&self, entity: EntityRef<'_>, ctx: &LootContext<'_, R>) -> bool {
+        if let Some(entity_type) = &self.entity_type
+            && entity.entity_type != Some(entity_type)
+        {
+            return false;
+        }
+
+        if let Some(flags) = &self.flags
+            && !flags.test(entity.flags)
+        {
+            return false;
+        }
+
+        if let Some(equipment) = &self.equipment
+            && !equipment.test(entity.equipment, ctx)
+        {
+            return false;
+        }
+
+        true
+    }
+}
+
+impl EntityFlags {
+    fn test(&self, flags: EntityRefFlags) -> bool {
+        self.is_on_fire
+            .is_none_or(|expected| expected == flags.is_on_fire)
+            && self
+                .is_sneaking
+                .is_none_or(|expected| expected == flags.is_sneaking)
+            && self
+                .is_sprinting
+                .is_none_or(|expected| expected == flags.is_sprinting)
+            && self
+                .is_swimming
+                .is_none_or(|expected| expected == flags.is_swimming)
+            && self
+                .is_baby
+                .is_none_or(|expected| expected == flags.is_baby)
+    }
+}
+
+impl EntityEquipment {
+    fn test<R: rand::Rng>(
+        &self,
+        equipment: Option<&EntityEquipmentRef<'_>>,
+        ctx: &LootContext<'_, R>,
+    ) -> bool {
+        let has_predicate = self.mainhand.is_some()
+            || self.offhand.is_some()
+            || self.head.is_some()
+            || self.chest.is_some()
+            || self.legs.is_some()
+            || self.feet.is_some();
+        if !has_predicate {
+            return true;
+        }
+
+        let Some(equipment) = equipment else {
+            return false;
+        };
+
+        slot_predicate_matches(&self.mainhand, equipment.mainhand, ctx)
+            && slot_predicate_matches(&self.offhand, equipment.offhand, ctx)
+            && slot_predicate_matches(&self.head, equipment.head, ctx)
+            && slot_predicate_matches(&self.chest, equipment.chest, ctx)
+            && slot_predicate_matches(&self.legs, equipment.legs, ctx)
+            && slot_predicate_matches(&self.feet, equipment.feet, ctx)
+    }
+}
+
+fn slot_predicate_matches<R: rand::Rng>(
+    predicate: &Option<ToolPredicate>,
+    item_stack: Option<&ItemStack>,
+    ctx: &LootContext<'_, R>,
+) -> bool {
+    let Some(predicate) = predicate else {
+        return true;
+    };
+    let Some(item_stack) = item_stack else {
+        return false;
+    };
+    predicate.test(item_stack, ctx)
+}
+
+impl DamageSourcePredicate {
+    fn test<R: rand::Rng>(&self, ctx: &LootContext<'_, R>) -> bool {
+        let Some(damage_source) = ctx.damage_source else {
+            return false;
+        };
+
+        for tag in self.tags {
+            if damage_source_has_tag(damage_source, &tag.id) != tag.expected {
+                return false;
+            }
+        }
+
+        if let Some(expected) = self.is_direct
+            && damage_source.is_direct != expected
+        {
+            return false;
+        }
+
+        if let Some(predicate) = &self.source_entity {
+            let Some(entity) = ctx.killer_entity else {
+                return false;
+            };
+            if !predicate.test(entity, ctx) {
+                return false;
+            }
+        }
+
+        if let Some(predicate) = &self.direct_entity {
+            let Some(entity) = ctx.direct_killer_entity else {
+                return false;
+            };
+            if !predicate.test(entity, ctx) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+fn damage_source_has_tag(damage_source: DamageSourceInfo<'_>, tag: &Identifier) -> bool {
+    if let Some(damage_type) = damage_source.damage_type
+        && let Some(damage_type) = REGISTRY.damage_types.by_key(damage_type)
+    {
+        return REGISTRY.damage_types.is_in_tag(damage_type, tag);
+    }
+
+    damage_source.tags.iter().any(|candidate| candidate == tag)
 }
 
 /// Options for selecting enchantments - either a tag reference or explicit list.
@@ -893,7 +1021,7 @@ pub enum LootFunction {
     /// Set custom NBT data on the item (merges with existing custom_data).
     SetCustomData { tag: &'static str },
     /// Smelt the item (convert raw to cooked, ore to ingot, etc.).
-    FurnaceSmelt,
+    FurnaceSmelt { use_input_count: bool },
     /// Create an exploration map pointing to a structure.
     ExplorationMap {
         destination: Identifier,
@@ -1675,9 +1803,8 @@ impl LootFunction {
             LootFunction::SetCustomData { tag } => {
                 item.set_custom_data(tag);
             }
-            LootFunction::FurnaceSmelt => {
-                // TODO: Implement smelting recipe lookup
-                item.apply_furnace_smelt();
+            LootFunction::FurnaceSmelt { use_input_count } => {
+                item.apply_furnace_smelt(*use_input_count);
             }
             LootFunction::ExplorationMap {
                 destination,
@@ -1893,7 +2020,7 @@ crate::impl_registry!(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Registry, vanilla_blocks, vanilla_items, vanilla_loot_tables};
+    use crate::{test_support::init_test_registry, vanilla_loot_tables};
 
     use super::*;
     use rand::SeedableRng;
@@ -1903,14 +2030,7 @@ mod tests {
     }
 
     fn init_test_registries() {
-        REGISTRY.get_or_init(|| {
-            let mut registry = Registry::new_empty();
-            vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
-            vanilla_items::register_items(&mut registry.items);
-            vanilla_blocks::register_blocks(&mut registry.blocks);
-            registry.freeze();
-            registry
-        });
+        init_test_registry();
     }
 
     #[test]
@@ -1969,6 +2089,52 @@ mod tests {
         assert_eq!(items[0].count, 1);
         // Without silk touch, stone drops cobblestone
         assert_eq!(items[0].item.key, Identifier::vanilla_static("cobblestone"));
+    }
+
+    #[test]
+    fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
+        init_test_registries();
+        let mut rng = test_rng();
+        let pig_key = Identifier::vanilla_static("pig");
+        let pig = EntityRef {
+            entity_type: Some(&pig_key),
+            flags: EntityRefFlags::default(),
+            equipment: None,
+            custom_name: None,
+        };
+
+        let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
+        let items = vanilla_loot_tables::ENTITIES_PIG.get_random_items(&mut ctx);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].item.key, Identifier::vanilla_static("porkchop"));
+        assert!((1..=3).contains(&items[0].count));
+    }
+
+    #[test]
+    fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
+        init_test_registries();
+        let mut rng = test_rng();
+        let pig_key = Identifier::vanilla_static("pig");
+        let pig = EntityRef {
+            entity_type: Some(&pig_key),
+            flags: EntityRefFlags {
+                is_on_fire: true,
+                ..EntityRefFlags::default()
+            },
+            equipment: None,
+            custom_name: None,
+        };
+
+        let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
+        let items = vanilla_loot_tables::ENTITIES_PIG.get_random_items(&mut ctx);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].item.key,
+            Identifier::vanilla_static("cooked_porkchop")
+        );
+        assert!((1..=3).contains(&items[0].count));
     }
 
     #[test]

@@ -1,4 +1,9 @@
-use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
+use steel_utils::random::Random;
+
+use crate::biome::BiomeRef;
+use crate::shared_structs::{
+    SpawnConditionEntry, insert_spawn_conditions, pick_spawn_conditioned_entry,
+};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -57,6 +62,20 @@ impl PigVariantRegistry {
             allows_registering: true,
         }
     }
+
+    #[must_use]
+    pub fn select_spawn_variant(
+        &self,
+        biome: BiomeRef,
+        random: &mut impl Random,
+    ) -> Option<PigVariantRef> {
+        pick_spawn_conditioned_entry(
+            self.iter().map(|(_, variant)| variant),
+            |variant| variant.spawn_conditions,
+            biome,
+            random,
+        )
+    }
 }
 
 crate::impl_standard_methods!(
@@ -74,3 +93,42 @@ crate::impl_registry!(
     pig_variants_by_key,
     pig_variants
 );
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::random::legacy_random::LegacyRandom;
+
+    use crate::{REGISTRY, test_support::init_test_registry, vanilla_biomes, vanilla_pig_variants};
+
+    #[test]
+    fn select_spawn_variant_uses_highest_matching_biome_priority() {
+        init_test_registry();
+
+        let mut random = LegacyRandom::from_seed(0);
+        assert_eq!(
+            REGISTRY
+                .pig_variants
+                .select_spawn_variant(&vanilla_biomes::DESERT, &mut random)
+                .map(|variant| &variant.key),
+            Some(&vanilla_pig_variants::WARM.key)
+        );
+
+        let mut random = LegacyRandom::from_seed(0);
+        assert_eq!(
+            REGISTRY
+                .pig_variants
+                .select_spawn_variant(&vanilla_biomes::SNOWY_PLAINS, &mut random)
+                .map(|variant| &variant.key),
+            Some(&vanilla_pig_variants::COLD.key)
+        );
+
+        let mut random = LegacyRandom::from_seed(0);
+        assert_eq!(
+            REGISTRY
+                .pig_variants
+                .select_spawn_variant(&vanilla_biomes::PLAINS, &mut random)
+                .map(|variant| &variant.key),
+            Some(&vanilla_pig_variants::TEMPERATE.key)
+        );
+    }
+}

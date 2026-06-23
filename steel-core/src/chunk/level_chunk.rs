@@ -86,12 +86,10 @@ pub struct LevelChunkPromotion {
 }
 
 impl LevelChunk {
-    /// Ticks this chunk, processing random block ticks and block entity ticks.
+    /// Ticks this chunk, processing scheduled and random block ticks.
     ///
     /// For each section that contains randomly-ticking blocks, selects
     /// `random_tick_speed` random blocks and calls their `random_tick` behavior.
-    /// Also ticks all ticking block entities in this chunk.
-    ///
     /// # Arguments
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick.
     ///   This is controlled by the `randomTickSpeed` game rule.
@@ -106,13 +104,22 @@ impl LevelChunk {
         ready_block_ticks: &mut Vec<BlockTick>,
         ready_fluid_ticks: &mut Vec<FluidTick>,
     ) {
-        // Drain ready scheduled ticks (decrement delays, collect those at 0)
+        self.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        self.tick_random_blocks(random_tick_speed);
+    }
+
+    /// Drains ready scheduled block and fluid ticks into the provided buffers.
+    pub fn drain_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
         ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
         ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
+    }
 
-        // Tick block entities regardless of random tick speed
-        self.tick_block_entities();
-
+    /// Runs vanilla random block ticks for this chunk.
+    pub fn tick_random_blocks(&self, random_tick_speed: u32) {
         if random_tick_speed == 0 {
             return;
         }
