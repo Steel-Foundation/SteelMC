@@ -37,7 +37,7 @@ Current `worldgen/light2` state:
   data.
 - Light worksets, fresh/loaded propagation, dynamic queued block-change
   lighting, and packet broadcast integration are still pending.
-- Layer order remains an explicit open decision before implementing propagation.
+- Propagation layer order is old-light/ScalableLux order: sky before block.
 
 Old Steel files to treat as the Steel reference implementation:
 
@@ -239,10 +239,10 @@ This is a verified fork, not a point to infer from memory:
 - Old Steel `worldgen/light` and ScalableLux execute sky before block for fresh
   chunk lighting and queued dynamic changes.
 
-The rewrite must choose one order deliberately. If old-light is the executable
-reference, keep sky-before-block and cover it with parity tests. If the goal is
-a direct vanilla light-engine port instead, switch to block-before-sky and
-revalidate chunk-generation and dynamic-update output.
+The rewrite uses old-light/ScalableLux `sky -> block` order because old-light
+is the executable reference for this branch. This intentionally differs from
+vanilla `LevelLightEngine.runLightUpdates` ordering and must be covered by
+fresh-generation and dynamic-update parity tests.
 
 ### Locking and Worksets
 
@@ -465,5 +465,6 @@ Recommended high-level parity harness:
 - Naming: prefer `Missing`, `Visible`, `Internal`, `Homogeneous`, and `Packed`
   over `Null`, `Uninitialized`, `Initialized`, `Hidden`, `Nibble`, or `SWMR` in
   public Steel APIs.
-- Layer order: choose old-light/ScalableLux sky-before-block or vanilla
-  block-before-sky explicitly before implementing dynamic propagation.
+- Layer order: use old-light/ScalableLux sky-before-block for fresh lighting and
+  dynamic propagation. Revisit only with parity data and an explicit decision to
+  target direct vanilla `LevelLightEngine` behavior instead.
