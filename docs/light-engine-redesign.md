@@ -22,11 +22,22 @@ Reference priority:
    Starlight-derived cache, queue, and nibble-state design that old Steel ported.
 4. The current `worldgen/light2` branch, which is the implementation target.
 
-At this branch point, `worldgen/light2` does not yet contain the old light
-module. `steel-core/src/worldgen/stages/light.rs` is a no-op, and
-`LevelChunk::extract_light_data` still emits all-`0xff` sky and block light for
-every padded light section. The rest of this document describes the target and
-old-reference behavior, not the current implementation.
+Current `worldgen/light2` state:
+
+- Chunk-owned light storage, packed `DataLayer` conversion, packet conversion,
+  world light reads, persistence, loaded-sky normalization, and sky-source
+  ownership are implemented.
+- `steel-registry` compiles extracted per-state light emission, dampening, and
+  shape-occlusion flags from `steel-registry/build_assets/blocks.json`.
+- `InitializeLight` fills `ChunkSkyLightSources` from the current chunk
+  sections.
+- `steel-core/src/worldgen/stages/light.rs::generate` is still a no-op.
+- `LevelChunk::extract_light_data` still emits the legacy all-`0xff`
+  placeholder until fresh/loaded lighting writes committed chunk-owned light
+  data.
+- Light worksets, fresh/loaded propagation, dynamic queued block-change
+  lighting, and packet broadcast integration are still pending.
+- Layer order remains an explicit open decision before implementing propagation.
 
 Old Steel files to treat as the Steel reference implementation:
 
@@ -382,13 +393,13 @@ Edit/commit invariants:
 
 Recommended implementation sequence:
 
-1. Reintroduce `DataLayer`, light-section range, packet conversion, and
+1. [x] Reintroduce `DataLayer`, light-section range, packet conversion, and
    chunk-owned storage with unit tests.
-2. Reintroduce persistence conversion and loaded-sky normalization.
-3. Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
-4. Add light worksets and fresh/loaded worldgen lighting.
-5. Add queued dynamic block-change lighting and packet broadcast integration.
-6. Optimize the internal propagation queue/cache only after parity tests are in
+2. [x] Reintroduce persistence conversion and loaded-sky normalization.
+3. [x] Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
+4. [ ] Add light worksets and fresh/loaded worldgen lighting.
+5. [ ] Add queued dynamic block-change lighting and packet broadcast integration.
+6. [ ] Optimize the internal propagation queue/cache only after parity tests are in
    place.
 
 ## Subtle Improvements Allowed
@@ -434,16 +445,16 @@ Recommended high-level parity harness:
 - Run the same seeds/dimensions on the redesigned branch.
 - Compare both section update sets and final visible packet data.
 
-## Open Decisions
+## Decisions And Open Questions
 
-- Hidden/internal persistence: keep old-light behavior for now. Persist non-zero
+- Hidden/internal persistence: current implementation keeps old-light behavior.
+  Persist non-zero
   internal sections and omit all-zero internal sections until parity data proves
   hidden data can become purely transient.
-- Chunk-owned storage shape: prefer a dense array over the padded light-section
-  range for the first Rust-native implementation. It matches old-light chunk
-  ownership and keeps packet index conversion simple. Revisit sparse storage
-  only if direct vanilla `DataLayerStorageMap` ownership becomes the chosen
-  architecture.
+- Chunk-owned storage shape: current implementation uses dense arrays over the
+  padded light-section range. It matches old-light chunk ownership and keeps
+  packet index conversion simple. Revisit sparse storage only if direct vanilla
+  `DataLayerStorageMap` ownership becomes the chosen architecture.
 - Queue encoding: keep ScalableLux packed queue encoding only inside
   propagation/edit internals while old-light parity is the reference. Do not
   make it part of chunk storage. It can be replaced after parity tests prove
