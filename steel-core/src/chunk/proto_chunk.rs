@@ -24,7 +24,10 @@ use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::ChunkStatus,
     heightmap::{HeightmapType, ProtoHeightmaps},
-    light::{ChunkLightData, ChunkSkyLightSources, has_different_light_properties},
+    light::{
+        ChunkLightData, ChunkSkyLightSources, LightSectionEmptinessChange,
+        has_different_light_properties,
+    },
     section::Sections,
 };
 use crate::entity::{EntityStorage, SharedEntity};
@@ -417,14 +420,34 @@ impl ProtoChunk {
         }
 
         if self.status() >= ChunkStatus::InitializeLight {
-            // Dynamic propagation is wired after the light work queue exists;
-            // this keeps chunk-owned metadata coherent for that engine.
-            if was_empty != is_empty {
+            let empty_section_change = if was_empty != is_empty {
                 self.update_light_section_emptiness(y, is_empty);
-            }
+                Some(LightSectionEmptinessChange {
+                    section_pos: SectionPos::new(
+                        self.pos.0.x,
+                        SectionPos::block_to_section_coord(y),
+                        self.pos.0.y,
+                    ),
+                    empty: is_empty,
+                })
+            } else {
+                None
+            };
 
-            if has_different_light_properties(old_state, state) {
+            let light_properties_changed = has_different_light_properties(old_state, state);
+            if light_properties_changed {
                 self.update_sky_light_sources(local_x, y, local_z);
+            }
+            if self.status() >= ChunkStatus::Light
+                && (light_properties_changed || empty_section_change.is_some())
+                && let Some(level) = self.level.upgrade()
+            {
+                level.queue_light_change_after_block_set(
+                    pos,
+                    old_state,
+                    state,
+                    empty_section_change,
+                );
             }
         }
 

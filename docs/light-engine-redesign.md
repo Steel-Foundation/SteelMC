@@ -41,7 +41,7 @@ Current `worldgen/light2` state:
   players are implemented.
 - `LevelChunk::extract_light_data` reads chunk-owned light data for initial
   chunk packets and respects dimensions without skylight.
-- Dynamic queued block-change lighting is still pending.
+- Dynamic queued block-change lighting drains before block/light broadcasts.
 - Propagation layer order is old-light/ScalableLux order: sky before block.
 
 Old Steel files to treat as the Steel reference implementation:
@@ -404,7 +404,7 @@ Recommended implementation sequence:
 3. [x] Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
 4. [x] Add fresh/loaded worldgen lighting on top of the implemented workset/edit
    foundation.
-5. [ ] Add queued dynamic block-change lighting.
+5. [x] Add queued dynamic block-change lighting.
 6. [ ] Optimize the internal propagation queue/cache only after parity tests are in
    place.
 

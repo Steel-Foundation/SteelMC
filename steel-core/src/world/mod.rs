@@ -11,6 +11,7 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::light::{LightSectionEmptinessChange, has_different_light_properties};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
@@ -1023,6 +1024,22 @@ impl World {
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    pub(crate) fn queue_light_change_after_block_set(
+        &self,
+        pos: BlockPos,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+        empty_section_change: Option<LightSectionEmptinessChange>,
+    ) {
+        let light_properties_changed = has_different_light_properties(old_state, new_state);
+        if !light_properties_changed && empty_section_change.is_none() {
+            return;
+        }
+
+        self.chunk_map
+            .queue_light_change(pos, light_properties_changed, empty_section_change);
     }
 
     /// Returns whether every block state in the vanilla AABB block range is air.

@@ -1,5 +1,5 @@
 use rayon::ThreadPool;
-use rustc_hash::{FxBuildHasher, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{
     io, mem,
     sync::{
@@ -29,7 +29,12 @@ use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
 };
-use crate::chunk::light::{LightLayer, build_chunk_light_update_packet_for_sections};
+use crate::chunk::light::{
+    LightCacheLayout, LightCacheSetupRadius, LightLayer, LightSectionEmptinessChange,
+    LightSectionRange, LightWorkset, build_chunk_light_update_packet_for_sections,
+    propagate_block_light_changes_with_empty_sections,
+    propagate_sky_light_changes_with_empty_sections,
+};
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -78,6 +83,76 @@ pub struct ChunkMapSchedulingTimings {
     pub process_unloads: Duration,
 }
 
+#[derive(Debug, Default)]
+struct PendingLightUpdates {
+    chunks: FxHashMap<ChunkPos, PendingChunkLightUpdates>,
+    queued_chunks: Vec<ChunkPos>,
+}
+
+impl PendingLightUpdates {
+    fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
+
+    fn queue_change(
+        &mut self,
+        chunk_pos: ChunkPos,
+        pos: BlockPos,
+        check_block: bool,
+        empty_section_change: Option<LightSectionEmptinessChange>,
+    ) {
+        if !self.chunks.contains_key(&chunk_pos) {
+            self.queued_chunks.push(chunk_pos);
+        }
+
+        let task = self.chunks.entry(chunk_pos).or_default();
+        if check_block {
+            task.changed_positions.insert(pos);
+        }
+        if let Some(change) = empty_section_change {
+            task.changed_sections
+                .insert(change.section_pos, change.empty);
+        }
+    }
+
+    fn drain(&mut self) -> Vec<(ChunkPos, PendingChunkLightUpdates)> {
+        let mut chunks = mem::take(&mut self.chunks);
+        let queued_chunks = mem::take(&mut self.queued_chunks);
+        queued_chunks
+            .into_iter()
+            .filter_map(|chunk_pos| chunks.remove(&chunk_pos).map(|task| (chunk_pos, task)))
+            .collect()
+    }
+}
+
+#[derive(Debug, Default)]
+struct PendingChunkLightUpdates {
+    changed_positions: FxHashSet<BlockPos>,
+    changed_sections: FxHashMap<SectionPos, bool>,
+}
+
+impl PendingChunkLightUpdates {
+    fn is_empty(&self) -> bool {
+        self.changed_positions.is_empty() && self.changed_sections.is_empty()
+    }
+
+    fn empty_section_changes(&self) -> Vec<LightSectionEmptinessChange> {
+        let mut changes = self
+            .changed_sections
+            .iter()
+            .map(|(&section_pos, &empty)| LightSectionEmptinessChange { section_pos, empty })
+            .collect::<Vec<_>>();
+        changes.sort_by(|left, right| {
+            left.section_pos
+                .x()
+                .cmp(&right.section_pos.x())
+                .then_with(|| left.section_pos.z().cmp(&right.section_pos.z()))
+                .then_with(|| right.section_pos.y().cmp(&left.section_pos.y()))
+        });
+        changes
+    }
+}
+
 /// A map of chunks managing their state, loading, and generation.
 pub struct ChunkMap {
     /// Map of active chunks.
@@ -102,6 +177,8 @@ pub struct ChunkMap {
     pub storage: Arc<ChunkStorage>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
+    /// Coalesced block and section changes waiting for one light pass.
+    pending_light_updates: SyncMutex<PendingLightUpdates>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
     last_tickable_len: AtomicUsize,
     /// Number of top-level generation tasks currently running.
@@ -190,6 +267,7 @@ impl ChunkMap {
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
+            pending_light_updates: SyncMutex::new(PendingLightUpdates::default()),
             last_tickable_len: AtomicUsize::new(0),
             running_generation_tasks: AtomicUsize::new(0),
             generation_refill_notify: Notify::new(),
@@ -346,8 +424,123 @@ impl ChunkMap {
         }
     }
 
+    /// Queues a block or section light change for the next light propagation drain.
+    pub fn queue_light_change(
+        &self,
+        pos: BlockPos,
+        check_block: bool,
+        empty_section_change: Option<LightSectionEmptinessChange>,
+    ) {
+        if !check_block && empty_section_change.is_none() {
+            return;
+        }
+
+        let chunk_pos = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.0.x),
+            SectionPos::block_to_section_coord(pos.0.z),
+        );
+        if !self.can_accept_queued_light_change(chunk_pos) {
+            return;
+        }
+
+        let mut pending = self.pending_light_updates.lock();
+        pending.queue_change(chunk_pos, pos, check_block, empty_section_change);
+    }
+
+    /// Drains all queued light updates and runs one scoped propagation per changed chunk.
+    pub fn propagate_queued_light_changes(&self) {
+        let tasks = {
+            let mut pending = self.pending_light_updates.lock();
+            if pending.is_empty() {
+                return;
+            }
+            pending.drain()
+        };
+
+        for (center, task) in tasks {
+            if task.is_empty() {
+                continue;
+            }
+            self.propagate_queued_light_change(center, task);
+        }
+    }
+
+    fn can_accept_queued_light_change(&self, center: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&center, |_, holder| {
+                holder.try_chunk(ChunkStatus::Light).is_some()
+            })
+            .unwrap_or(false)
+    }
+
+    fn propagate_queued_light_change(&self, center: ChunkPos, task: PendingChunkLightUpdates) {
+        let Some(workset) = self.light_workset_for_change(center) else {
+            log::warn!("Failed to set up light workset for queued light update at {center:?}");
+            return;
+        };
+
+        let empty_sections = task.empty_section_changes();
+        let positions = task.changed_positions.into_iter().collect::<Vec<_>>();
+        let world = self.world_gen_context.world();
+
+        if world.dimension_type.has_skylight {
+            let Ok(result) = propagate_sky_light_changes_with_empty_sections(
+                &workset,
+                positions.iter().copied(),
+                empty_sections.iter().copied(),
+            ) else {
+                log::warn!("Failed to propagate queued sky-light change for {center:?}");
+                return;
+            };
+
+            for section_pos in result.updated_sections {
+                self.light_changed(LightLayer::Sky, section_pos);
+            }
+        }
+
+        let Ok(result) =
+            propagate_block_light_changes_with_empty_sections(&workset, positions, empty_sections)
+        else {
+            log::warn!("Failed to propagate queued block-light change for {center:?}");
+            return;
+        };
+
+        for section_pos in result.updated_sections {
+            self.light_changed(LightLayer::Block, section_pos);
+        }
+    }
+
+    fn light_workset_for_change(&self, center: ChunkPos) -> Option<LightWorkset> {
+        let Ok(range) = LightSectionRange::from_world_height(
+            self.world_gen_context.min_y(),
+            self.world_gen_context.height(),
+        ) else {
+            return None;
+        };
+
+        let layout = LightCacheLayout::new(center, range);
+        LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Full,
+            true,
+            |chunk_pos| {
+                let holder = self
+                    .chunks
+                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))?;
+                if holder.try_chunk(ChunkStatus::Light).is_none() {
+                    return None;
+                }
+                Some(holder)
+            },
+            |_| true,
+        )
+        .ok()
+    }
+
     /// Broadcasts all pending block and light changes to nearby players.
     pub fn broadcast_changed_chunks(&self) {
+        self.propagate_queued_light_changes();
+
         let holders = {
             let mut guard = self.chunks_to_broadcast.lock();
             if guard.is_empty() {
@@ -1265,5 +1458,76 @@ mod tests {
         );
 
         assert!(stronger_load < weaker_load);
+    }
+
+    #[test]
+    fn pending_light_updates_coalesce_changes_by_chunk_in_queue_order() {
+        let center = ChunkPos::new(0, 0);
+        let east = ChunkPos::new(1, 0);
+        let center_block = BlockPos::new(1, 2, 3);
+        let center_section = SectionPos::new(0, 0, 0);
+        let east_block = BlockPos::new(16, 4, 5);
+        let mut pending = PendingLightUpdates::default();
+
+        pending.queue_change(center, center_block, true, None);
+        pending.queue_change(
+            center,
+            center_block,
+            false,
+            Some(LightSectionEmptinessChange {
+                section_pos: center_section,
+                empty: false,
+            }),
+        );
+        pending.queue_change(east, east_block, true, None);
+
+        let drained = pending.drain();
+
+        assert!(pending.is_empty());
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].0, center);
+        assert_eq!(drained[1].0, east);
+        assert!(drained[0].1.changed_positions.contains(&center_block));
+        assert_eq!(
+            drained[0].1.changed_sections.get(&center_section),
+            Some(&false)
+        );
+        assert!(drained[1].1.changed_positions.contains(&east_block));
+    }
+
+    #[test]
+    fn pending_chunk_light_updates_sort_empty_section_changes_deterministically() {
+        let mut task = PendingChunkLightUpdates::default();
+        task.changed_sections.insert(SectionPos::new(0, 1, 0), true);
+        task.changed_sections
+            .insert(SectionPos::new(0, 3, 0), false);
+        task.changed_sections
+            .insert(SectionPos::new(0, 2, -1), true);
+        task.changed_sections
+            .insert(SectionPos::new(-1, 0, 0), false);
+
+        let changes = task.empty_section_changes();
+
+        assert_eq!(
+            changes,
+            vec![
+                LightSectionEmptinessChange {
+                    section_pos: SectionPos::new(-1, 0, 0),
+                    empty: false,
+                },
+                LightSectionEmptinessChange {
+                    section_pos: SectionPos::new(0, 2, -1),
+                    empty: true,
+                },
+                LightSectionEmptinessChange {
+                    section_pos: SectionPos::new(0, 3, 0),
+                    empty: false,
+                },
+                LightSectionEmptinessChange {
+                    section_pos: SectionPos::new(0, 1, 0),
+                    empty: true,
+                },
+            ]
+        );
     }
 }
