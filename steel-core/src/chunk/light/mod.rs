@@ -107,6 +107,7 @@ pub fn light_face_occludes(
 mod cache;
 mod data_layer;
 mod packet;
+mod propagation;
 mod queue;
 mod section_storage;
 mod sky_sources;
@@ -121,6 +122,12 @@ pub use cache::{
 };
 pub use data_layer::{DataLayer, DataLayerLengthError};
 pub use packet::{build_chunk_light_update_packet, build_chunk_light_update_packet_for_sections};
+pub use propagation::{
+    BlockLightChunkEdgeChecks, BlockLightPropagationContext, BlockLightPropagationContextError,
+    BlockLightUpdateResult, check_block_light_chunk_edges, force_load_block_light_chunk,
+    load_block_light_chunk, propagate_block_light_changes,
+    propagate_block_light_changes_with_empty_sections, propagate_block_light_chunk,
+};
 pub use queue::{
     LightAxisDirection, LightDirectionSet, LightDirectionSetIter, LightPropagationQueue,
     LightPropagationQueues, LightQueueEntry, LightQueueFlags, PackedLightPropagationQueue,
