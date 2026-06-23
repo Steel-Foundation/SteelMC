@@ -33,12 +33,16 @@ Current `worldgen/light2` state:
   sections.
 - ScalableLux cache-window math, typed queue metadata, workset admission, section
   read caches, and scoped light edits are implemented as light-engine internals.
-- `steel-core/src/worldgen/stages/light.rs::generate` is still a no-op.
+- Deterministic block light source scanning, block-light propagation, sky-light
+  propagation, fresh worldgen lighting, and loaded light validation are
+  implemented.
+- The loading pyramid uses a separate `load_light` task for already-lit chunks.
+- `CLightUpdate` and full-chunk light-section broadcast queuing for tracked
+  players are implemented.
 - `LevelChunk::extract_light_data` still emits the legacy all-`0xff`
-  placeholder until fresh/loaded lighting writes committed chunk-owned light
-  data.
-- Fresh/loaded propagation, dynamic queued block-change lighting, and packet
-  broadcast integration are still pending.
+  placeholder for initial chunk packets; switching initial chunk packet light to
+  chunk-owned conversion is still pending.
+- Dynamic queued block-change lighting is still pending.
 - Propagation layer order is old-light/ScalableLux order: sky before block.
 
 Old Steel files to treat as the Steel reference implementation:
@@ -399,9 +403,10 @@ Recommended implementation sequence:
    chunk-owned storage with unit tests.
 2. [x] Reintroduce persistence conversion and loaded-sky normalization.
 3. [x] Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
-4. [ ] Add fresh/loaded worldgen lighting on top of the implemented workset/edit
+4. [x] Add fresh/loaded worldgen lighting on top of the implemented workset/edit
    foundation.
-5. [ ] Add queued dynamic block-change lighting and packet broadcast integration.
+5. [ ] Add queued dynamic block-change lighting and finish initial chunk packet
+   integration.
 6. [ ] Optimize the internal propagation queue/cache only after parity tests are in
    place.
 

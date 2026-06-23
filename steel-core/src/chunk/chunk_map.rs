@@ -10,7 +10,7 @@ use std::{
 };
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    BlockChange, CBlockUpdate, CSectionBlocksUpdate, CSetChunkCenter,
+    BlockChange, CBlockUpdate, CLightUpdate, CSectionBlocksUpdate, CSetChunkCenter,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -29,6 +29,7 @@ use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
 };
+use crate::chunk::light::{LightLayer, build_chunk_light_update_packet_for_sections};
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -334,10 +335,18 @@ impl ChunkMap {
         }
     }
 
-    /// Broadcasts all pending block changes to nearby players.
-    ///
-    /// # Panics
-    /// Panics if a section has exactly one change (should never happen).
+    /// Records a light-section change at the given position.
+    pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) {
+        let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
+
+        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h))
+            && holder.light_changed(layer, section_pos)
+        {
+            self.chunks_to_broadcast.lock().push(holder);
+        }
+    }
+
+    /// Broadcasts all pending block and light changes to nearby players.
     pub fn broadcast_changed_chunks(&self) {
         let holders = {
             let mut guard = self.chunks_to_broadcast.lock();
@@ -348,15 +357,21 @@ impl ChunkMap {
         };
 
         let world = self.world_gen_context.world();
+        let has_skylight = world.dimension_type.has_skylight;
 
         for holder in holders {
             let chunk_pos = holder.get_pos();
             let min_y = holder.min_y();
 
+            holder.clear_broadcast_queued();
+
+            let light_changes = holder.take_changed_light_sections();
             // Take all pending changes from this chunk holder
             let changes_by_section = holder.take_changed_blocks();
+            let has_publishable_light_changes =
+                !light_changes.block.is_empty() || (has_skylight && !light_changes.sky.is_empty());
 
-            if changes_by_section.is_empty() {
+            if !has_publishable_light_changes && changes_by_section.is_empty() {
                 continue;
             }
 
@@ -366,6 +381,46 @@ impl ChunkMap {
                 continue;
             }
 
+            if has_publishable_light_changes
+                && let Some(chunk) = holder.try_chunk(ChunkStatus::Full)
+            {
+                let light_data = {
+                    let light = chunk.light();
+                    let sky_sections = if has_skylight {
+                        light_changes.sky.as_slice()
+                    } else {
+                        &[]
+                    };
+                    build_chunk_light_update_packet_for_sections(
+                        chunk_pos,
+                        &light,
+                        has_skylight,
+                        sky_sections,
+                        &light_changes.block,
+                    )
+                };
+                let light_packet = CLightUpdate {
+                    x: chunk_pos.0.x,
+                    z: chunk_pos.0.y,
+                    light_data,
+                };
+
+                let Ok(encoded) = EncodedPacket::from_bare(
+                    light_packet,
+                    world.compression,
+                    ConnectionProtocol::Play,
+                ) else {
+                    log::warn!("Failed to encode light update packet");
+                    continue;
+                };
+
+                for entity_id in &tracking_players {
+                    if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                        player.connection.send_encoded(encoded.clone());
+                    }
+                }
+            }
+
             // For each section with changes, send appropriate packet
             for (section_index, changed_positions) in changes_by_section {
                 let section_y = min_y / 16 + section_index as i32;
@@ -373,7 +428,9 @@ impl ChunkMap {
 
                 if changed_positions.len() == 1 {
                     // Single block change - use CBlockUpdate
-                    let packed = *changed_positions.iter().next().expect("len == 1");
+                    let Some(&packed) = changed_positions.iter().next() else {
+                        continue;
+                    };
                     let block_pos = section_pos.relative_to_block_pos(packed);
                     let block_state = world.get_block_state(block_pos);
 

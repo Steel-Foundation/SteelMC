@@ -22,6 +22,7 @@ pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
 use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
+use crate::chunk::light::{LightLayer, LightSectionRange};
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::EntityVisibility;
 use crate::world::World;
@@ -79,6 +80,29 @@ impl ChunkGuard {
     }
 }
 
+#[derive(Debug, Default)]
+struct ChangedLightSectionSets {
+    sky: FxHashSet<SectionPos>,
+    block: FxHashSet<SectionPos>,
+}
+
+/// Pending light sections to send to players tracking a chunk.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ChangedLightSections {
+    /// Changed sky-light sections.
+    pub sky: Vec<SectionPos>,
+    /// Changed block-light sections.
+    pub block: Vec<SectionPos>,
+}
+
+impl ChangedLightSections {
+    /// Returns true when no light sections changed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.sky.is_empty() && self.block.is_empty()
+    }
+}
+
 /// Holds a chunk in a watch channel, allowing for concurrent access and state tracking.
 ///
 /// NOTICE: It is very important to keep data and `chunk_result` in sync.
@@ -109,9 +133,13 @@ pub struct ChunkHolder {
     height: i32,
     /// Whether any sections have pending block changes.
     has_changed_sections: AtomicBool,
+    /// Whether this holder is already queued for the next broadcast flush.
+    queued_for_broadcast: AtomicBool,
     /// Per-section sets of changed block positions.
     /// Index is `(block_y - min_y) / 16`.
     changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
+    /// Changed light sections grouped by light layer.
+    changed_light_sections: SyncMutex<ChangedLightSectionSets>,
 }
 
 impl ChunkHolder {
@@ -162,7 +190,9 @@ impl ChunkHolder {
             min_y,
             height,
             has_changed_sections: AtomicBool::new(false),
+            queued_for_broadcast: AtomicBool::new(false),
             changed_blocks_per_section,
+            changed_light_sections: SyncMutex::new(ChangedLightSectionSets::default()),
         }
     }
 
@@ -219,23 +249,80 @@ impl ChunkHolder {
     /// Records a block change at the given position.
     /// Returns `true` if this is the first change (chunk should be added to broadcast list).
     pub fn block_changed(&self, pos: BlockPos) -> bool {
+        if pos.0.y < self.min_y || pos.0.y >= self.min_y + self.height {
+            return false;
+        }
+
         let section_index = ((pos.0.y - self.min_y) / 16) as usize;
         if section_index >= self.changed_blocks_per_section.len() {
             return false;
         }
 
-        let had_changes = self.has_changed_sections.swap(true, Ordering::AcqRel);
         let packed = SectionPos::section_relative_pos(pos);
         self.changed_blocks_per_section[section_index]
             .lock()
             .insert(packed);
+        self.has_changed_sections.store(true, Ordering::Release);
 
-        !had_changes
+        !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
     }
 
-    /// Returns whether there are pending block changes to broadcast.
+    /// Records a light-section change for a full chunk and marks loaded chunks dirty.
+    ///
+    /// Returns `true` if this is the first pending broadcast change for the chunk holder.
+    pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) -> bool {
+        if section_pos.x() != self.pos.0.x || section_pos.z() != self.pos.0.y {
+            return false;
+        }
+
+        let Ok(range) = LightSectionRange::from_world_height(self.min_y, self.height) else {
+            return false;
+        };
+        if range.section_index(section_pos.y()).is_none() {
+            return false;
+        }
+
+        let ready_for_packet = {
+            let chunk = self.data.read();
+            match &*chunk {
+                ChunkAccess::Full(_) => {
+                    chunk.mark_dirty();
+                    true
+                }
+                ChunkAccess::Proto(_) => {
+                    chunk.mark_dirty();
+                    false
+                }
+                ChunkAccess::Unloaded => false,
+            }
+        };
+        if !ready_for_packet {
+            return false;
+        }
+
+        let inserted = {
+            let mut guard = self.changed_light_sections.lock();
+            match layer {
+                LightLayer::Sky => guard.sky.insert(section_pos),
+                LightLayer::Block => guard.block.insert(section_pos),
+            }
+        };
+
+        if !inserted {
+            return false;
+        }
+
+        !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
+    }
+
+    /// Returns whether there are pending changes to broadcast.
     pub fn has_changes_to_broadcast(&self) -> bool {
-        self.has_changed_sections.load(Ordering::Acquire)
+        self.queued_for_broadcast.load(Ordering::Acquire)
+    }
+
+    /// Allows later changes to enqueue this holder for a future broadcast.
+    pub fn clear_broadcast_queued(&self) {
+        self.queued_for_broadcast.store(false, Ordering::Release);
     }
 
     /// Takes all pending block changes, grouped by section index.
@@ -253,6 +340,15 @@ impl ChunkHolder {
             }
         }
         result
+    }
+
+    /// Takes all pending light-section changes.
+    pub fn take_changed_light_sections(&self) -> ChangedLightSections {
+        let mut guard = self.changed_light_sections.lock();
+        ChangedLightSections {
+            sky: guard.sky.drain().collect(),
+            block: guard.block.drain().collect(),
+        }
     }
 
     /// Returns the number of sections in this chunk.
