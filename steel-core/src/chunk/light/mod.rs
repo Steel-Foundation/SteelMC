@@ -95,12 +95,19 @@ pub fn light_face_occludes(
     face_shape_occludes(from_shape, direction, to_shape, direction.opposite())
 }
 
+mod cache;
 mod data_layer;
 mod packet;
 mod section_storage;
 mod sky_sources;
 mod storage;
 
+pub use cache::{
+    CachedLightBlock, CachedLightChunk, CachedLightSection, LIGHT_CACHE_CHUNK_SLOTS,
+    LIGHT_CACHE_DIAMETER, LIGHT_CACHE_RADIUS, LIGHT_CACHE_SECTION_RADIUS, LightCacheChunkScope,
+    LightCacheLayout, LightCacheSetupChunks, LightCacheSetupRadius, LightChunkSectionSlots,
+    LightChunkSlotArray, LightSectionSlotArray, LightUpdateNotificationCache, PackedLightBlockPos,
+};
 pub use data_layer::{DataLayer, DataLayerLengthError};
 pub use packet::{build_chunk_light_update_packet, build_chunk_light_update_packet_for_sections};
 pub use section_storage::{LightSectionRange, LightSectionRangeError};
