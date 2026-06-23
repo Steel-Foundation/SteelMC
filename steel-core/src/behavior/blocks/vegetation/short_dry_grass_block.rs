@@ -12,7 +12,7 @@ use crate::behavior::{
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{
-    BlockRef, default_surviving_state, survives_on_tag, vegetation_block::vegetation_update_shape,
+    BlockRef, default_surviving_state, survives_on_tag, vegetation_block::survival_update_shape,
 };
 
 /// Vanilla `ShortDryGrassBlock` survival
@@ -39,7 +39,7 @@ impl BlockBehavior for ShortDryGrassBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        vegetation_update_shape(self, state, world, pos)
+        survival_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

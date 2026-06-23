@@ -63,6 +63,8 @@ pub enum BonemealAction {
 
 impl BonemealAction {
     /// Returns the particle position for this bonemeal action.
+    // TODO: Rooted dirt is a GROWER in vanilla but overrides getParticlePos to pos.below().
+    // Add a per-block particle-position hook before wiring bonemeal particles.
     #[expect(dead_code, reason = "used later for spawning the particles")]
     const fn particle_pos(&self, pos: BlockPos) -> BlockPos {
         match self {

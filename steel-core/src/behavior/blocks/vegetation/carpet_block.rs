@@ -3,7 +3,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::blocks::vegetation::vegetation_block::vegetation_update_shape;
+use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -33,8 +33,8 @@ impl BlockBehavior for CarpetBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // idk if this is good cause the name is vegetation_update_shape but carpet is not vegetation lol
-        vegetation_update_shape(self, state, world, pos)
+        // Vanilla `CarpetBlock.updateShape`: break when support is removed.
+        survival_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
