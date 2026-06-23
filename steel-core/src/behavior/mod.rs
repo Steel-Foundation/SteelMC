@@ -84,6 +84,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
+use crate::entity::ai::path::PathComputationType;
 use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
@@ -117,6 +118,9 @@ pub trait BlockStateBehaviorExt {
     ///
     /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
     fn get_fluid_state(&self) -> FluidState;
+
+    /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
+    fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 }
 
 impl BlockStateBehaviorExt for BlockStateId {
@@ -124,6 +128,12 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.get_fluid_state(*self)
+    }
+
+    fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.is_pathfindable(*self, computation_type)
     }
 }
 

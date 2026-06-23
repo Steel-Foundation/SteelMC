@@ -34,6 +34,8 @@ pub struct RuntimeConfig {
     pub simulation_distance: u8,
     /// Whether the server is in online mode.
     pub online_mode: bool,
+    /// Optional authentication endpoint for online-mode `hasJoined` checks.
+    pub auth_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
@@ -46,6 +48,10 @@ pub struct RuntimeConfig {
     pub favicon: String,
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
+    /// Vanilla chat spam threshold window in seconds
+    pub chat_spam_threshold_seconds: i32,
+    /// Vanilla command spam threshold window in seconds
+    pub command_spam_threshold_seconds: i32,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.

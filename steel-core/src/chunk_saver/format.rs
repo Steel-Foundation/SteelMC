@@ -28,6 +28,7 @@
 //! Block data uses power-of-2 bit packing (1, 2, 4, 8, 16 bits) to avoid entries
 //! spanning u64 boundaries.
 
+use glam::IVec3;
 use steel_utils::{BoundingBox, Identifier, PackedChunkPos};
 use wincode::{SchemaRead, SchemaWrite};
 
@@ -52,7 +53,9 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v15: Added procedural structure-piece payload persistence.
 /// v16: Added entity fall distance persistence.
 /// v17: Added entity `NoGravity` persistence.
-pub const FORMAT_VERSION: u16 = 17;
+/// v18: Added entity `Invulnerable` persistence.
+/// v19: Added shared entity save-data persistence.
+pub const FORMAT_VERSION: u16 = 19;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -427,6 +430,24 @@ pub struct PersistentEntity {
     pub on_ground: bool,
     /// Shared vanilla `NoGravity` flag.
     pub no_gravity: bool,
+    /// Shared vanilla `Invulnerable` flag.
+    pub invulnerable: bool,
+    /// Synchronized vanilla `Air` value.
+    pub air_supply: i32,
+    /// Vanilla dimension-change portal cooldown.
+    pub portal_cooldown: i32,
+    /// Optional vanilla custom name stored as a root compound containing `CustomName`.
+    pub custom_name_nbt: Vec<u8>,
+    /// Synchronized vanilla custom-name visibility flag.
+    pub custom_name_visible: bool,
+    /// Synchronized vanilla silent flag.
+    pub silent: bool,
+    /// Server-owned vanilla glowing tag.
+    pub glowing: bool,
+    /// Vanilla scoreboard tags.
+    pub tags: Vec<String>,
+    /// Vanilla custom data compound.
+    pub custom_data_nbt: Vec<u8>,
     /// Type-specific NBT data from `save_additional`.
     pub nbt_data: Vec<u8>,
     /// Direct passengers nested under this entity.
@@ -473,6 +494,47 @@ pub struct PersistentStructureStart {
     pub pieces: Vec<PersistentStructurePiece>,
 }
 
+/// A structure bounding box stored as six scalar coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SchemaWrite, SchemaRead)]
+pub struct PersistentBoundingBox {
+    /// Minimum X coordinate.
+    pub min_x: i32,
+    /// Minimum Y coordinate.
+    pub min_y: i32,
+    /// Minimum Z coordinate.
+    pub min_z: i32,
+    /// Maximum X coordinate.
+    pub max_x: i32,
+    /// Maximum Y coordinate.
+    pub max_y: i32,
+    /// Maximum Z coordinate.
+    pub max_z: i32,
+}
+
+impl PersistentBoundingBox {
+    /// Converts a runtime bounding box to its persistent representation.
+    #[must_use]
+    pub const fn from_bounding_box(bounding_box: BoundingBox) -> Self {
+        Self {
+            min_x: bounding_box.min_x(),
+            min_y: bounding_box.min_y(),
+            min_z: bounding_box.min_z(),
+            max_x: bounding_box.max_x(),
+            max_y: bounding_box.max_y(),
+            max_z: bounding_box.max_z(),
+        }
+    }
+
+    /// Converts this persistent representation to a runtime bounding box.
+    #[must_use]
+    pub const fn to_bounding_box(self) -> BoundingBox {
+        BoundingBox::new(
+            IVec3::new(self.min_x, self.min_y, self.min_z),
+            IVec3::new(self.max_x, self.max_y, self.max_z),
+        )
+    }
+}
+
 /// A structure piece stored with a chunk.
 ///
 /// Common fields are stored directly; type-specific placement data is in
@@ -482,7 +544,7 @@ pub struct PersistentStructurePiece {
     /// Piece type identifier (e.g., "minecraft:jigsaw").
     pub piece_type: Identifier,
     /// Bounding box of this piece in world coordinates.
-    pub bounding_box: BoundingBox,
+    pub bounding_box: PersistentBoundingBox,
     /// Generation depth in the piece tree.
     pub gen_depth: i32,
     /// 2D direction orientation (-1 = none, 0-3 = south/west/north/east).
@@ -814,7 +876,7 @@ pub enum PersistentMineshaftPieceKind {
     /// Start room.
     Room {
         /// Child entrance boxes.
-        child_entrance_boxes: Vec<BoundingBox>,
+        child_entrance_boxes: Vec<PersistentBoundingBox>,
     },
     /// Horizontal corridor.
     Corridor {
@@ -860,7 +922,7 @@ pub struct PersistentOceanMonumentPieceData {
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentOceanMonumentChildPiece {
     /// World-space child bounding box after building-relative offset.
-    pub bounding_box: BoundingBox,
+    pub bounding_box: PersistentBoundingBox,
     /// Child piece variant and variant-specific placement state.
     pub kind: PersistentOceanMonumentChildPieceKind,
 }

@@ -8,9 +8,15 @@ use text_components::TextComponent;
 use super::component_data::ComponentData;
 use super::registry::DataComponentRegistry;
 pub use super::registry::DataComponentType;
+pub use crate::attribute::AttributeModifierOperation;
+pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
-pub use super::components::{Equippable, EquippableSlot, ItemEnchantments, Tool, ToolRule};
+pub use super::components::{
+    AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
+    ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
+    ItemEnchantments, PiercingWeapon, Tool, ToolRule, Weapon,
+};
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("max_stack_size"));
@@ -35,6 +41,12 @@ pub const UNBREAKABLE: DataComponentType<()> =
 
 pub const TOOL: DataComponentType<Tool> =
     DataComponentType::new(Identifier::vanilla_static("tool"));
+
+pub const WEAPON: DataComponentType<Weapon> =
+    DataComponentType::new(Identifier::vanilla_static("weapon"));
+
+pub const ATTACK_RANGE: DataComponentType<AttackRange> =
+    DataComponentType::new(Identifier::vanilla_static("attack_range"));
 
 pub const EQUIPPABLE: DataComponentType<Equippable> =
     DataComponentType::new(Identifier::vanilla_static("equippable"));
@@ -63,10 +75,10 @@ pub const CUSTOM_DATA: DataComponentType<()> =
 pub const USE_EFFECTS: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("use_effects"));
 
-pub const MINIMUM_ATTACK_CHARGE: DataComponentType<()> =
+pub const MINIMUM_ATTACK_CHARGE: DataComponentType<f32> =
     DataComponentType::new(Identifier::vanilla_static("minimum_attack_charge"));
 
-pub const DAMAGE_TYPE: DataComponentType<()> =
+pub const DAMAGE_TYPE: DataComponentType<DamageTypeComponent> =
     DataComponentType::new(Identifier::vanilla_static("damage_type"));
 
 pub const ITEM_MODEL: DataComponentType<()> =
@@ -86,7 +98,7 @@ pub const CAN_PLACE_ON: DataComponentType<()> =
 pub const CAN_BREAK: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("can_break"));
 
-pub const ATTRIBUTE_MODIFIERS: DataComponentType<()> =
+pub const ATTRIBUTE_MODIFIERS: DataComponentType<ItemAttributeModifiers> =
     DataComponentType::new(Identifier::vanilla_static("attribute_modifiers"));
 
 pub const CUSTOM_MODEL_DATA: DataComponentType<()> =
@@ -115,12 +127,6 @@ pub const USE_COOLDOWN: DataComponentType<()> =
 pub const DAMAGE_RESISTANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("damage_resistant"));
 
-pub const WEAPON: DataComponentType<()> =
-    DataComponentType::new(Identifier::vanilla_static("weapon"));
-
-pub const ATTACK_RANGE: DataComponentType<()> =
-    DataComponentType::new(Identifier::vanilla_static("attack_range"));
-
 pub const ENCHANTABLE: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("enchantable"));
 
@@ -133,7 +139,7 @@ pub const DEATH_PROTECTION: DataComponentType<()> =
 pub const BLOCKS_ATTACKS: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("blocks_attacks"));
 
-pub const PIERCING_WEAPON: DataComponentType<()> =
+pub const PIERCING_WEAPON: DataComponentType<PiercingWeapon> =
     DataComponentType::new(Identifier::vanilla_static("piercing_weapon"));
 
 pub const KINETIC_WEAPON: DataComponentType<()> =
@@ -243,6 +249,9 @@ pub const BLOCK_STATE: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("block_state"));
 
 pub const BEES: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("bees"));
+
+pub const SULFUR_CUBE_CONTENT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
 
 pub const LOCK: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("lock"));
 
@@ -430,9 +439,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 6: custom_name
     registry.register(CUSTOM_NAME, ComponentDataDiscriminant::TextComponent);
     // 7: minimum_attack_charge
-    register_stub!(registry, MINIMUM_ATTACK_CHARGE.key.clone());
+    registry.register(MINIMUM_ATTACK_CHARGE, ComponentDataDiscriminant::Float);
     // 8: damage_type
-    register_stub!(registry, DAMAGE_TYPE.key.clone());
+    registry.register(DAMAGE_TYPE, ComponentDataDiscriminant::DamageType);
     // 9: item_name
     registry.register(ITEM_NAME, ComponentDataDiscriminant::TextComponent);
     // 10: item_model
@@ -448,7 +457,10 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 15: can_break
     register_stub!(registry, CAN_BREAK.key.clone());
     // 16: attribute_modifiers
-    register_stub!(registry, ATTRIBUTE_MODIFIERS.key.clone());
+    registry.register(
+        ATTRIBUTE_MODIFIERS,
+        ComponentDataDiscriminant::AttributeModifiers,
+    );
     // 17: custom_model_data
     register_stub!(registry, CUSTOM_MODEL_DATA.key.clone());
     // 18: tooltip_display
@@ -479,9 +491,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 28: tool
     registry.register(TOOL, ComponentDataDiscriminant::Tool);
     // 29: weapon
-    register_stub!(registry, WEAPON.key.clone());
+    registry.register(WEAPON, ComponentDataDiscriminant::Weapon);
     // 30: attack_range
-    register_stub!(registry, ATTACK_RANGE.key.clone());
+    registry.register(ATTACK_RANGE, ComponentDataDiscriminant::AttackRange);
     // 31: enchantable
     register_stub!(registry, ENCHANTABLE.key.clone());
     // 32: equippable
@@ -497,7 +509,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 37: blocks_attacks
     register_stub!(registry, BLOCKS_ATTACKS.key.clone());
     // 38: piercing_weapon
-    register_stub!(registry, PIERCING_WEAPON.key.clone());
+    registry.register(PIERCING_WEAPON, ComponentDataDiscriminant::PiercingWeapon);
     // 39: kinetic_weapon
     register_stub!(registry, KINETIC_WEAPON.key.clone());
     // 40: swing_animation
@@ -576,68 +588,88 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     register_stub!(registry, BLOCK_STATE.key.clone());
     // 77: bees
     register_stub!(registry, BEES.key.clone());
-    // 78: lock
+    // 78: sulfur_cube_content
+    register_stub!(registry, SULFUR_CUBE_CONTENT.key.clone());
+    // 79: lock
     register_stub!(registry, LOCK.key.clone());
-    // 79: container_loot
+    // 80: container_loot
     register_stub!(registry, CONTAINER_LOOT.key.clone());
-    // 80: break_sound
+    // 81: break_sound
     register_stub!(registry, BREAK_SOUND.key.clone());
-    // 81: villager/variant
+    // 82: villager/variant
     register_stub!(registry, VILLAGER_VARIANT.key.clone());
-    // 82: wolf/variant
+    // 83: wolf/variant
     register_stub!(registry, WOLF_VARIANT.key.clone());
-    // 83: wolf/sound_variant
+    // 84: wolf/sound_variant
     register_stub!(registry, WOLF_SOUND_VARIANT.key.clone());
-    // 84: wolf/collar
+    // 85: wolf/collar
     register_stub!(registry, WOLF_COLLAR.key.clone());
-    // 85: fox/variant
+    // 86: fox/variant
     register_stub!(registry, FOX_VARIANT.key.clone());
-    // 86: salmon/size
+    // 87: salmon/size
     register_stub!(registry, SALMON_SIZE.key.clone());
-    // 87: parrot/variant
+    // 88: parrot/variant
     register_stub!(registry, PARROT_VARIANT.key.clone());
-    // 88: tropical_fish/pattern
+    // 89: tropical_fish/pattern
     register_stub!(registry, TROPICAL_FISH_PATTERN.key.clone());
-    // 89: tropical_fish/base_color
+    // 90: tropical_fish/base_color
     register_stub!(registry, TROPICAL_FISH_BASE_COLOR.key.clone());
-    // 90: tropical_fish/pattern_color
+    // 91: tropical_fish/pattern_color
     register_stub!(registry, TROPICAL_FISH_PATTERN_COLOR.key.clone());
-    // 91: mooshroom/variant
+    // 92: mooshroom/variant
     register_stub!(registry, MOOSHROOM_VARIANT.key.clone());
-    // 92: rabbit/variant
+    // 93: rabbit/variant
     register_stub!(registry, RABBIT_VARIANT.key.clone());
-    // 93: pig/variant
+    // 94: pig/variant
     register_stub!(registry, PIG_VARIANT.key.clone());
-    // 94: pig/sound_variant
+    // 95: pig/sound_variant
     register_stub!(registry, PIG_SOUND_VARIANT.key.clone());
-    // 95: cow/variant
+    // 96: cow/variant
     register_stub!(registry, COW_VARIANT.key.clone());
-    // 96: cow/sound_variant
+    // 97: cow/sound_variant
     register_stub!(registry, COW_SOUND_VARIANT.key.clone());
-    // 97: chicken/variant
+    // 98: chicken/variant
     register_stub!(registry, CHICKEN_VARIANT.key.clone());
-    // 98: chicken/sound_variant
+    // 99: chicken/sound_variant
     register_stub!(registry, CHICKEN_SOUND_VARIANT.key.clone());
-    // 99: zombie_nautilus/variant
+    // 100: zombie_nautilus/variant
     register_stub!(registry, ZOMBIE_NAUTILUS_VARIANT.key.clone());
-    // 100: frog/variant
+    // 101: frog/variant
     register_stub!(registry, FROG_VARIANT.key.clone());
-    // 101: horse/variant
+    // 102: horse/variant
     register_stub!(registry, HORSE_VARIANT.key.clone());
-    // 102: painting/variant
+    // 103: painting/variant
     register_stub!(registry, PAINTING_VARIANT.key.clone());
-    // 103: llama/variant
+    // 104: llama/variant
     register_stub!(registry, LLAMA_VARIANT.key.clone());
-    // 104: axolotl/variant
+    // 105: axolotl/variant
     register_stub!(registry, AXOLOTL_VARIANT.key.clone());
-    // 105: cat/variant
+    // 106: cat/variant
     register_stub!(registry, CAT_VARIANT.key.clone());
-    // 106: cat/sound_variant
+    // 107: cat/sound_variant
     register_stub!(registry, CAT_SOUND_VARIANT.key.clone());
-    // 107: cat/collar
+    // 108: cat/collar
     register_stub!(registry, CAT_COLLAR.key.clone());
-    // 108: sheep/color
+    // 109: sheep/color
     register_stub!(registry, SHEEP_COLOR.key.clone());
-    // 109: shulker/color
+    // 110: shulker/color
     register_stub!(registry, SHULKER_COLOR.key.clone());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sulfur_cube_content_keeps_vanilla_26_2_component_order() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        assert_eq!(registry.get_key_by_id(77), Some(&BEES.key));
+        assert_eq!(registry.get_key_by_id(78), Some(&SULFUR_CUBE_CONTENT.key));
+        assert_eq!(registry.get_key_by_id(79), Some(&LOCK.key));
+        assert_eq!(registry.get_key_by_id(80), Some(&CONTAINER_LOOT.key));
+        assert_eq!(registry.get_key_by_id(81), Some(&BREAK_SOUND.key));
+        assert_eq!(registry.get_key_by_id(82), Some(&VILLAGER_VARIANT.key));
+    }
 }

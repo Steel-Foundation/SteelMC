@@ -25,7 +25,7 @@ pub struct PackedEntityRotation {
 impl PackedEntityRotation {
     /// Packs yaw and pitch using vanilla's angle-byte representation.
     #[must_use]
-    pub fn from_degrees(rotation: (f32, f32)) -> Self {
+    pub const fn from_degrees(rotation: (f32, f32)) -> Self {
         Self {
             yaw: to_angle_byte(rotation.0),
             pitch: to_angle_byte(rotation.1),
@@ -55,7 +55,7 @@ pub struct EntityRotationSyncState {
 impl EntityRotationSyncState {
     /// Creates rotation sync state for values already known to tracking clients.
     #[must_use]
-    pub fn new(body_rotation: (f32, f32), head_yaw: f32) -> Self {
+    pub const fn new(body_rotation: (f32, f32), head_yaw: f32) -> Self {
         Self {
             last_body_rotation: PackedEntityRotation::from_degrees(body_rotation),
             last_head_yaw: to_angle_byte(head_yaw),
@@ -80,12 +80,12 @@ impl EntityRotationSyncState {
     }
 
     /// Marks a body rotation as sent because a full position sync includes it.
-    pub fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
+    pub const fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
         self.last_body_rotation = PackedEntityRotation::from_degrees(rotation);
     }
 
     /// Records a head-rotation packet if the packed yaw changed.
-    pub fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
+    pub const fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
         let packed = to_angle_byte(head_yaw);
         if packed == self.last_head_yaw {
             return None;
@@ -249,12 +249,8 @@ impl EntityPositionSyncSnapshot {
     const fn full_sync_packet(self) -> CEntityPositionSync {
         CEntityPositionSync {
             entity_id: self.entity_id,
-            x: self.position.x,
-            y: self.position.y,
-            z: self.position.z,
-            velocity_x: self.velocity.x,
-            velocity_y: self.velocity.y,
-            velocity_z: self.velocity.z,
+            pos: self.position,
+            vel: self.velocity,
             yaw: self.rotation.0,
             pitch: self.rotation.1,
             on_ground: self.on_ground,
@@ -283,7 +279,7 @@ impl EntityPositionSyncDecision {
 
     /// Builds the protocol packet for a position-and-rotation entity update.
     #[must_use]
-    pub fn into_position_rot_packet(
+    pub const fn into_position_rot_packet(
         self,
         snapshot: EntityPositionSyncSnapshot,
     ) -> EntityPositionRotSyncPacket {
@@ -443,12 +439,7 @@ impl EntityVelocitySyncState {
         }
 
         self.last_sent_velocity = current_velocity;
-        Some(CSetEntityMotion::new(
-            entity_id,
-            current_velocity.x,
-            current_velocity.y,
-            current_velocity.z,
-        ))
+        Some(CSetEntityMotion::new(entity_id, current_velocity))
     }
 }
 
@@ -542,7 +533,7 @@ impl ServerEntityMovementSyncResult {
 impl ServerEntityMovementSyncState {
     /// Creates movement sync state for a newly tracked entity.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         position: DVec3,
         velocity: DVec3,
         on_ground: bool,
@@ -715,7 +706,12 @@ impl ServerEntityMovementSyncState {
 impl EntityMovementSyncState {
     /// Creates movement sync state for values already known to tracking clients.
     #[must_use]
-    pub fn new(position: DVec3, on_ground: bool, body_rotation: (f32, f32), head_yaw: f32) -> Self {
+    pub const fn new(
+        position: DVec3,
+        on_ground: bool,
+        body_rotation: (f32, f32),
+        head_yaw: f32,
+    ) -> Self {
         Self {
             position: EntityPositionSyncState::new(position, on_ground),
             rotation: EntityRotationSyncState::new(body_rotation, head_yaw),
@@ -816,12 +812,12 @@ impl EntityMovementSyncState {
     }
 
     /// Marks body rotation as sent because a full position sync includes it.
-    pub fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
+    pub const fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
         self.rotation.mark_body_rotation_sent(rotation);
     }
 
     /// Records a head-rotation packet when the packed yaw changed.
-    pub fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
+    pub const fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
         self.rotation.record_head_yaw(head_yaw)
     }
 }
@@ -923,9 +919,9 @@ mod tests {
             .expect("velocity should sync");
 
         assert_eq!(packet.entity_id, 12);
-        assert_eq!(packet.velocity_x.to_bits(), 0.001_f64.to_bits());
-        assert_eq!(packet.velocity_y.to_bits(), 0.0_f64.to_bits());
-        assert_eq!(packet.velocity_z.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.vel.x.to_bits(), 0.001_f64.to_bits());
+        assert_eq!(packet.vel.y.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.vel.z.to_bits(), 0.0_f64.to_bits());
         assert_eq!(state.last_sent_velocity(), DVec3::new(0.001, 0.0, 0.0));
     }
 
@@ -950,9 +946,9 @@ mod tests {
             .expect("stationary transition should sync");
 
         assert_eq!(packet.entity_id, 12);
-        assert_eq!(packet.velocity_x.to_bits(), 0.0_f64.to_bits());
-        assert_eq!(packet.velocity_y.to_bits(), 0.0_f64.to_bits());
-        assert_eq!(packet.velocity_z.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.vel.x.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.vel.y.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(packet.vel.z.to_bits(), 0.0_f64.to_bits());
         assert_eq!(state.last_sent_velocity(), DVec3::ZERO);
     }
 
@@ -1303,12 +1299,12 @@ mod tests {
             panic!("expected full packet");
         };
         assert_eq!(packet.entity_id, 12);
-        assert_eq!(packet.x.to_bits(), 10.0_f64.to_bits());
-        assert_eq!(packet.y.to_bits(), 20.0_f64.to_bits());
-        assert_eq!(packet.z.to_bits(), 30.0_f64.to_bits());
-        assert_eq!(packet.velocity_x.to_bits(), 1.0_f64.to_bits());
-        assert_eq!(packet.velocity_y.to_bits(), 2.0_f64.to_bits());
-        assert_eq!(packet.velocity_z.to_bits(), 3.0_f64.to_bits());
+        assert_eq!(packet.pos.x.to_bits(), 10.0_f64.to_bits());
+        assert_eq!(packet.pos.y.to_bits(), 20.0_f64.to_bits());
+        assert_eq!(packet.pos.z.to_bits(), 30.0_f64.to_bits());
+        assert_eq!(packet.vel.x.to_bits(), 1.0_f64.to_bits());
+        assert_eq!(packet.vel.y.to_bits(), 2.0_f64.to_bits());
+        assert_eq!(packet.vel.z.to_bits(), 3.0_f64.to_bits());
         assert_eq!(packet.yaw.to_bits(), 90.0_f32.to_bits());
         assert_eq!(packet.pitch.to_bits(), 45.0_f32.to_bits());
         assert!(packet.on_ground);

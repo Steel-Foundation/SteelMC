@@ -1,7 +1,6 @@
 use crate::SERVER;
 use crate::logger::history::History;
-use crate::logger::output::Output;
-use crate::logger::{CommandLogger, LogState, Move};
+use crate::logger::{CommandLogger, LogState, Move, terminal_width};
 use crossterm::{
     clipboard::CopyToClipboard,
     cursor::SetCursorStyle::{BlinkingBar, BlinkingBlock, DefaultUserShape},
@@ -16,6 +15,7 @@ use std::{
     sync::Arc,
 };
 use steel_core::command::sender::CommandSender;
+use tokio::sync::RwLockWriteGuard;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::spawn_blocking;
 
@@ -23,6 +23,7 @@ enum ExtendedKey {
     Generic(KeyEvent),
     Ctrl(char),
     String(String),
+    Resize,
 }
 
 impl CommandLogger {
@@ -49,19 +50,25 @@ impl CommandLogger {
                     let event = read().expect("Event bug; Cannot read event.");
                     // On Windows, crossterm sends both Press and Release events.
                     // Only handle Press events to avoid duplicate input.
-                    if let Event::Key(key) = event {
-                        if key.kind != KeyEventKind::Press {
-                            continue;
-                        }
-                        if let KeyCode::Char(char) = key.code {
-                            if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                tx.send(ExtendedKey::Ctrl(char)).ok();
-                            } else {
-                                write!(string, "{char}").ok();
+                    match event {
+                        Event::Key(key) => {
+                            if key.kind != KeyEventKind::Press {
+                                continue;
                             }
-                            continue;
+                            if let KeyCode::Char(char) = key.code {
+                                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    tx.send(ExtendedKey::Ctrl(char)).ok();
+                                    continue;
+                                }
+                                write!(string, "{char}").ok();
+                            } else {
+                                tx.send(ExtendedKey::Generic(key)).ok();
+                            }
                         }
-                        tx.send(ExtendedKey::Generic(key)).ok();
+                        Event::Resize(..) => {
+                            tx.send(ExtendedKey::Resize).ok();
+                        }
+                        _ => (),
                     }
                 }
                 if !string.is_empty() {
@@ -77,6 +84,7 @@ impl CommandLogger {
         reason = "splitting the key-dispatch match would hurt readability"
     )]
     async fn input_key(self: Arc<Self>, mut rx: UnboundedReceiver<ExtendedKey>) -> Result<()> {
+        let mut sent = false;
         loop {
             tokio::select! {
                 Some(key) = rx.recv() => {
@@ -85,21 +93,7 @@ impl CommandLogger {
                     match key {
                         ExtendedKey::Generic(key) => match key.code {
                             KeyCode::Enter => {
-                                if state.out.is_empty() {
-                                    continue;
-                                }
-                                let message = state.out.text.clone();
-                                state.history.push(&state.out);
-                                state.reset()?;
-                                drop(lock);
-                                steel_utils::console!("{}", message);
-                                if let Some(server) = SERVER.get() {
-                                    server.command_dispatcher.read().handle_command(
-                                        CommandSender::Console,
-                                        message,
-                                        server,
-                                    );
-                                }
+                                send_state(lock);
                                 continue;
                             }
                             KeyCode::Tab => {
@@ -135,9 +129,6 @@ impl CommandLogger {
                                     if !state.selection.is_active() {
                                         state.selection.start_at(state.out.pos);
                                     }
-                                    let from = state.out.get_current_pos();
-                                    let to = Output::get_pos(state.out.pos - 1);
-                                    state.out.cursor_to(from, to)?;
                                     state.out.pos -= 1;
                                     let new_pos = state.out.pos;
                                     state.selection.extend(new_pos);
@@ -156,10 +147,11 @@ impl CommandLogger {
                                 }
                                 if !state.out.is_at_start() {
                                     let pos = state.out.pos - 1;
-                                    let to = Output::get_pos(pos);
-                                    state.out.cursor_to(state.out.get_current_pos(), to)?;
                                     state.out.pos -= 1;
+                                    state.out.cursor_to_relative(pos)?;
                                     state.completion.update(&mut state.out, pos);
+                                    state.rewrite_input(state.out.length, pos)?;
+                                    continue;
                                 }
                             }
                             KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -167,9 +159,6 @@ impl CommandLogger {
                                     if !state.selection.is_active() {
                                         state.selection.start_at(state.out.pos);
                                     }
-                                    let from = state.out.get_current_pos();
-                                    let to = Output::get_pos(state.out.pos + 1);
-                                    state.out.cursor_to(from, to)?;
                                     state.out.pos += 1;
                                     let new_pos = state.out.pos;
                                     state.selection.extend(new_pos);
@@ -187,10 +176,11 @@ impl CommandLogger {
                                 }
                                 if !state.out.is_at_end() {
                                     let pos = state.out.pos + 1;
-                                    let to = Output::get_pos(pos);
-                                    state.out.cursor_to(state.out.get_current_pos(), to)?;
                                     state.out.pos += 1;
+                                    state.out.cursor_to_relative(pos)?;
                                     state.completion.update(&mut state.out, pos);
+                                    state.rewrite_input(state.out.length, pos)?;
+                                    continue;
                                 }
                             }
                             KeyCode::Up => {
@@ -226,10 +216,11 @@ impl CommandLogger {
                                     continue;
                                 }
                                 if !state.out.is_at_end() {
-                                    state.out.cursor_to(state.out.get_current_pos(), state.out.get_end())?;
                                     state.out.pos = state.out.length;
-                                    let pos = state.out.length;
-                                    state.completion.update(&mut state.out, pos);
+                                    let length = state.out.length;
+                                    state.completion.update(&mut state.out, length);
+                                    state.rewrite_input(length, length)?;
+                                    continue;
                                 }
                             }
                             KeyCode::Home if key.modifiers.contains(KeyModifiers::SHIFT) =>{
@@ -255,9 +246,10 @@ impl CommandLogger {
                                     continue;
                                 }
                                 if !state.out.is_at_start() {
-                                    state.out.cursor_to(state.out.get_current_pos(), Output::START_POS)?;
                                     state.out.pos = 0;
                                     state.completion.update(&mut state.out, 0);
+                                    state.rewrite_input(state.out.length, 0)?;
+                                    continue;
                                 }
                             }
                             KeyCode::Insert => {
@@ -314,10 +306,18 @@ impl CommandLogger {
                                     next(state)?;
                                     continue;
                                 }
+                                'j' => {
+                                    sent = true;
+                                    continue;
+                                }
                                 _ => continue,
                             }
                         }
-                        ExtendedKey::String(string) => {
+                        ExtendedKey::String(mut string) => {
+                            if string.contains('\n') {
+                                string = string.replace('\n', "");
+                                sent = true;
+                            }
                             if string.chars().any(char::is_whitespace) {
                                 state.completion.selected = 0;
                             }
@@ -332,7 +332,16 @@ impl CommandLogger {
                             } else {
                                 state.push(string)?;
                             }
+
+                            if sent {
+                                send_state(lock);
+                                sent = false;
+                            }
+
                             continue;
+                        }
+                        ExtendedKey::Resize => {
+                            state.rewrite_current_input()?;
                         }
                     }
                     if state.completion.enabled {
@@ -343,11 +352,7 @@ impl CommandLogger {
                 () = self.cancel_token.cancelled() => {
                     let mut state = self.input.write().await;
                     state.completion.enabled = false;
-                    if !state.out.is_at_end() {
-                        let from = state.out.get_current_pos();
-                        let to = state.out.get_end();
-                        state.out.cursor_to(from, to)?;
-                    }
+                    state.out.cursor_to(terminal_width())?;
                     write!(state.out, "{}{DefaultUserShape}", Clear(ClearType::FromCursorDown))?;
                     state.history.save().await?;
                     state.out.flush()?;
@@ -357,6 +362,23 @@ impl CommandLogger {
             }
         }
         Ok(())
+    }
+}
+
+fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
+    if lock.out.is_empty() || lock.out.text.chars().all(char::is_whitespace) {
+        return;
+    }
+    let message = lock.out.text.clone();
+    lock.history.push(message.clone());
+    lock.reset().ok();
+    drop(lock);
+    steel_utils::console!("{}", message);
+    if let Some(server) = SERVER.get() {
+        server
+            .command_dispatcher
+            .read()
+            .handle_command(CommandSender::Console, message, server);
     }
 }
 

@@ -207,7 +207,21 @@ impl ChunkAccess {
         relative_z: usize,
         value: BlockStateId,
     ) {
-        self.set_relative_block(relative_x, relative_y, relative_z, value);
+        match self {
+            Self::Full(chunk) => {
+                chunk
+                    .sections
+                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Proto(proto_chunk) => {
+                proto_chunk
+                    .sections
+                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                proto_chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Unloaded => unreachable!(),
+        }
         let y = self.min_y() + relative_y as i32;
         self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
     }
@@ -239,6 +253,51 @@ impl ChunkAccess {
             }
             Self::Proto(proto) => {
                 proto.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Applies heightmap maintenance after direct section writes in one column.
+    pub(crate) fn update_heightmaps_after_direct_column_writes(
+        &self,
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        if relative_writes.is_empty() {
+            return;
+        }
+
+        match self {
+            Self::Full(chunk) => {
+                let min_y = chunk.min_y();
+                let sections = &chunk.sections;
+                let get_block = |lx: usize, scan_y: i32, lz: usize| {
+                    let scan_section_index = ((scan_y - min_y) / 16) as usize;
+                    let scan_local_y = ((scan_y - min_y) % 16) as usize;
+                    sections.sections[scan_section_index]
+                        .read()
+                        .states
+                        .get(lx, scan_local_y, lz)
+                };
+                let mut heightmaps = chunk.heightmaps.write();
+                for &(relative_y, state) in relative_writes {
+                    heightmaps.update(
+                        local_x,
+                        min_y + relative_y as i32,
+                        local_z,
+                        state,
+                        get_block,
+                    );
+                }
+            }
+            Self::Proto(proto) => {
+                proto.update_status_heightmaps_after_column_block_changes(
+                    local_x,
+                    local_z,
+                    relative_writes,
+                );
             }
             Self::Unloaded => unreachable!(),
         }
@@ -644,8 +703,7 @@ impl ChunkAccess {
 
     /// Ticks the chunk if it's a full chunk.
     ///
-    /// Drains ready scheduled ticks into the provided vecs, then processes
-    /// block entities, entities, and random ticks.
+    /// Drains ready scheduled ticks into the provided vecs, then processes random ticks.
     pub fn tick(
         &self,
         random_tick_speed: u32,
@@ -660,6 +718,31 @@ impl ChunkAccess {
                 ready_block_ticks,
                 ready_fluid_ticks,
             );
+        }
+    }
+
+    /// Drains ready scheduled ticks if this is a full chunk.
+    pub fn drain_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        if let Self::Full(chunk) = self {
+            chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        }
+    }
+
+    /// Ticks random blocks if this is a full chunk.
+    pub fn tick_random_blocks(&self, random_tick_speed: u32) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_random_blocks(random_tick_speed);
+        }
+    }
+
+    /// Ticks block entities if this is a full chunk.
+    pub fn tick_block_entities(&self) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_block_entities();
         }
     }
 }
@@ -678,6 +761,7 @@ mod tests {
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
         init_test_registry();
+        init_behaviors();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -729,6 +813,47 @@ mod tests {
     }
 
     #[test]
+    fn batched_generation_column_writes_update_proto_heightmaps() {
+        init_test_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk
+            .sections()
+            .write_column_blocks(3, 7, &[(5, stone), (8, stone)]);
+        chunk.mark_dirty();
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(5, stone), (8, stone)]);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("batched generation writes should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 9);
+        drop(heightmaps);
+
+        chunk.sections().write_column_blocks(3, 7, &[(8, air)]);
+        chunk.mark_dirty();
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(8, air)]);
+
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("OceanFloorWg should remain present");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 6);
+    }
+
+    #[test]
     fn full_chunk_heightmap_type_maps_worldgen_types_to_final_types() {
         assert_eq!(
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::WorldSurfaceWg),
@@ -742,6 +867,32 @@ mod tests {
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
             HeightmapType::MotionBlocking
         );
+    }
+
+    #[test]
+    fn public_relative_write_keeps_full_chunk_serializable() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        chunk.set_relative_block(3, 5, 7, stone);
+
+        let ChunkAccess::Full(level_chunk) = &chunk else {
+            panic!("test chunk should remain full");
+        };
+        let _ = level_chunk.extract_chunk_data();
     }
 
     #[test]

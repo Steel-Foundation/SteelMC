@@ -97,7 +97,7 @@ fn teleport_to_pos(
 
     let targets = current_players(targets, ctx)?;
     for player in &targets {
-        teleport_player(player, pos.x, pos.y, pos.z, rotation.0, rotation.1)?;
+        teleport_player(player, pos, rotation.0, rotation.1)?;
     }
 
     if let [target] = targets.as_slice() {
@@ -141,7 +141,7 @@ fn teleport_to_player(
 
     let targets = current_players(targets, ctx)?;
     for player in &targets {
-        teleport_player(player, pos.x, pos.y, pos.z, yaw, pitch)?;
+        teleport_player(player, pos, yaw, pitch)?;
     }
 
     if let [target] = targets.as_slice() {
@@ -197,15 +197,8 @@ fn no_player_found() -> CommandError {
     CommandError::CommandFailed(Box::new(TextComponent::const_plain("No player was found")))
 }
 
-fn teleport_player(
-    player: &Player,
-    x: f64,
-    y: f64,
-    z: f64,
-    yaw: f32,
-    pitch: f32,
-) -> Result<(), CommandError> {
-    player.teleport(x, y, z, yaw, pitch).map_err(|error| {
+fn teleport_player(player: &Player, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), CommandError> {
+    player.teleport(pos, yaw, pitch).map_err(|error| {
         CommandError::CommandFailed(Box::new(TextComponent::plain(format!(
             "Failed to teleport {}: {error}",
             player.gameprofile.name

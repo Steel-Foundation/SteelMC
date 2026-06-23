@@ -18,6 +18,7 @@ use steel_registry::dimension_type::DimensionTypeRef;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
 use tokio::sync::Notify;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
@@ -26,7 +27,7 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, is_full, is_ticked,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::{
@@ -42,15 +43,6 @@ use crate::{entity::Entity, player::Player};
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 
-/// Whether a scheduling tick should enforce the generation task cap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GenerationTaskCap {
-    /// Normal server ticking path.
-    RespectMaxCap,
-    /// Startup/manual path only; drains all pending generation tasks.
-    IgnoreMaxCap,
-}
-
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
 pub struct ChunkMapGameTickTimings {
@@ -60,6 +52,8 @@ pub struct ChunkMapGameTickTimings {
     pub collect_tickable: Duration,
     /// Time spent ticking chunks (random ticks, etc.).
     pub tick_chunks: Duration,
+    /// Time spent ticking block entities.
+    pub tick_block_entities: Duration,
     /// Number of chunks that were ticked.
     pub tickable_count: usize,
     /// Total number of loaded chunks.
@@ -172,7 +166,8 @@ impl ChunkMap {
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        _dimension_type: DimensionTypeRef,
+        dimension_type: DimensionTypeRef,
+        sea_level: i32,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
@@ -183,7 +178,13 @@ impl ChunkMap {
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
-            world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
+            world_gen_context: Arc::new(WorldGenContext::new(
+                generator,
+                world,
+                dimension_type.min_y,
+                dimension_type.height,
+                sea_level,
+            )),
             generation_pool,
             chunk_runtime,
             storage,
@@ -211,7 +212,7 @@ impl ChunkMap {
                     tokio::select! {
                         () = chunk_map.generation_refill_cancel_token.cancelled() => break,
                         () = chunk_map.generation_refill_notify.notified() => {
-                            chunk_map.run_generation_tasks_b(GenerationTaskCap::RespectMaxCap);
+                            chunk_map.run_generation_tasks_b();
                         }
                     }
                 }
@@ -236,7 +237,7 @@ impl ChunkMap {
         if self.generation_refill_started.load(Ordering::Acquire) {
             self.notify_generation_refill();
         } else {
-            self.run_generation_tasks_b(GenerationTaskCap::RespectMaxCap);
+            self.run_generation_tasks_b();
         }
     }
 
@@ -266,9 +267,6 @@ impl ChunkMap {
     }
 
     /// Loads full chunks in a square radius, runs `f`, then removes the temporary ticket.
-    ///
-    /// This bypasses the generation task cap while waiting, so it should only
-    /// be used outside normally ticking server situations.
     pub async fn with_full_chunks_in_radius<F, R>(
         self: &Arc<Self>,
         center: ChunkPos,
@@ -281,37 +279,43 @@ impl ChunkMap {
         let ticket = ChunkTicket::full_chunks(radius);
 
         self.chunk_tickets.lock().add_ticket(center, ticket);
-        // This helper is used before the normal scheduling loop is driving
-        // generation, so it drains queued startup work immediately.
-        self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
-
-        let mut holders = Vec::new();
         let radius = i32::from(radius);
-        for dz in -radius..=radius {
-            for dx in -radius..=radius {
-                let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
-                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
-                    self.chunk_tickets.lock().remove_ticket(center, ticket);
-                    self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
-                    return None;
-                };
-                holders.push(holder);
-            }
-        }
 
-        for holder in holders {
-            if holder.await_chunk(ChunkStatus::Full).await.is_none() {
+        loop {
+            self.tick_scheduling();
+            if self.full_square_is_ready(center, radius) {
+                break;
+            }
+
+            if self.cancel_token.is_cancelled() {
                 self.chunk_tickets.lock().remove_ticket(center, ticket);
-                self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
+                self.tick_scheduling();
                 return None;
             }
+
+            sleep(Duration::from_millis(10)).await;
         }
 
         let result = f();
         self.chunk_tickets.lock().remove_ticket(center, ticket);
-        self.tick_scheduling(GenerationTaskCap::IgnoreMaxCap);
+        self.tick_scheduling();
 
         Some(result)
+    }
+
+    fn full_square_is_ready(&self, center: ChunkPos, radius: i32) -> bool {
+        for dz in -radius..=radius {
+            for dx in -radius..=radius {
+                let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                    return false;
+                };
+                if holder.try_chunk(ChunkStatus::Full).is_none() {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     /// Records a block change at the given position.
@@ -465,10 +469,8 @@ impl ChunkMap {
 
     /// Runs queued generation tasks.
     #[instrument(level = "trace", skip(self))]
-    pub fn run_generation_tasks_b(&self, generation_task_cap: GenerationTaskCap) {
-        if generation_task_cap == GenerationTaskCap::RespectMaxCap
-            && self.generation_refill_stopped.load(Ordering::Acquire)
-        {
+    pub fn run_generation_tasks_b(&self) {
+        if self.generation_refill_stopped.load(Ordering::Acquire) {
             return;
         }
 
@@ -484,33 +486,27 @@ impl ChunkMap {
 
         let running_tasks = self.running_generation_tasks.load(Ordering::Acquire);
         let max_running_tasks = self.max_running_generation_tasks();
-        let task_count = match generation_task_cap {
-            GenerationTaskCap::RespectMaxCap => {
-                let available_slots = max_running_tasks.saturating_sub(running_tasks);
-                if available_slots == 0 {
-                    tracing::trace!(
-                        pending = pending.len(),
-                        running_tasks,
-                        max_running_tasks,
-                        "Generation task cap reached"
-                    );
-                    return;
-                }
+        let available_slots = max_running_tasks.saturating_sub(running_tasks);
+        if available_slots == 0 {
+            tracing::trace!(
+                pending = pending.len(),
+                running_tasks,
+                max_running_tasks,
+                "Generation task cap reached"
+            );
+            return;
+        }
 
-                let task_count = pending.len().min(available_slots);
-                if task_count < pending.len() {
-                    pending.sort_by_cached_key(|task| Self::generation_task_priority(task));
-                }
-                task_count
-            }
-            GenerationTaskCap::IgnoreMaxCap => pending.len(),
-        };
+        let task_count = pending.len().min(available_slots);
+        if task_count < pending.len() {
+            pending.sort_by_cached_key(|task| Self::generation_task_priority(task));
+        }
+
         tracing::trace!(
             task_count,
             pending = pending.len(),
             running_tasks,
             max_running_tasks,
-            ?generation_task_cap,
             "Running generation tasks"
         );
         let tasks = pending.drain(..task_count).collect::<Vec<_>>();
@@ -582,6 +578,7 @@ impl ChunkMap {
             if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
                 let world = self.world_gen_context.world();
                 world.on_entity_chunk_loaded(pos);
+                world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
             }
             Some(chunk_holder)
         } else {
@@ -626,13 +623,6 @@ impl ChunkMap {
         let mut ready_block_ticks = Vec::new();
         let mut ready_fluid_ticks = Vec::new();
 
-        {
-            let _span = tracing::trace_span!("broadcast_changes").entered();
-            let start = Instant::now();
-            self.broadcast_changed_chunks();
-            timings.broadcast_changes = start.elapsed();
-        }
-
         if tick_count.is_multiple_of(100) {
             tracing::debug!(
                 chunks = self.chunks.len(),
@@ -664,7 +654,6 @@ impl ChunkMap {
             timings.total_chunks = total_chunks;
             timings.tickable_count = tickable_chunks.len();
 
-            let mut tickable_full_chunks = Vec::with_capacity(tickable_chunks.len());
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
@@ -675,22 +664,49 @@ impl ChunkMap {
                 let start = Instant::now();
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        tickable_full_chunks.push(holder.get_pos());
-                        chunk_guard.tick(
-                            random_tick_speed,
-                            tick_count as i32,
+                        chunk_guard.drain_ready_scheduled_ticks(
                             &mut ready_block_ticks,
                             &mut ready_fluid_ticks,
                         );
+                    }
+                }
+                Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+                for holder in &tickable_chunks {
+                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                        chunk_guard.tick_random_blocks(random_tick_speed);
                     }
                 }
                 timings.tick_chunks = start.elapsed();
             }
         }
 
-        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+        {
+            let _span = tracing::trace_span!("broadcast_changes").entered();
+            let start = Instant::now();
+            self.broadcast_changed_chunks();
+            timings.broadcast_changes = start.elapsed();
+        }
 
         timings
+    }
+
+    /// Ticks block entities in tickable full chunks.
+    pub fn tick_block_entities(&self, timings: &mut ChunkMapGameTickTimings, runs_normally: bool) {
+        if !runs_normally {
+            return;
+        }
+
+        let _span = tracing::trace_span!("block_entities").entered();
+        let start = Instant::now();
+        self.chunks.iter_sync(|_, holder| {
+            if is_ticked(holder.simulation_level())
+                && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
+            {
+                chunk_guard.tick_block_entities();
+            }
+            true
+        });
+        timings.tick_block_entities = start.elapsed();
     }
 
     /// Scheduling tick: processes tickets, creates holders, schedules generation,
@@ -698,10 +714,7 @@ impl ChunkMap {
     ///
     /// Runs on its own independent tick loop, separate from the game tick.
     #[instrument(level = "trace", skip(self), name = "chunk_map_scheduling_tick")]
-    pub fn tick_scheduling(
-        self: &Arc<Self>,
-        generation_task_cap: GenerationTaskCap,
-    ) -> ChunkMapSchedulingTimings {
+    pub fn tick_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
         let mut timings = ChunkMapSchedulingTimings::default();
 
         // Only hold the ticket lock for run_all_updates — holder creation and
@@ -739,9 +752,11 @@ impl ChunkMap {
             let start = Instant::now();
             let scheduled_count = holders_to_schedule
                 .iter()
-                .filter(|(holder, level)| {
-                    level.is_some_and(is_full)
-                        && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
+                .filter_map(|(holder, level)| {
+                    let status = generation_status(*level)?;
+                    holder
+                        .schedule_chunk_generation_task_b(status, self)
+                        .then_some(())
                 })
                 .count();
             timings.schedule_generation = start.elapsed();
@@ -751,10 +766,7 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("run_generation").entered();
             let start = Instant::now();
-            match generation_task_cap {
-                GenerationTaskCap::RespectMaxCap => self.run_or_notify_generation_refill(),
-                GenerationTaskCap::IgnoreMaxCap => self.run_generation_tasks_b(generation_task_cap),
-            }
+            self.run_or_notify_generation_refill();
             timings.run_generation = start.elapsed();
         }
 

@@ -10,7 +10,7 @@ use std::{
 };
 
 use steel_core::server::Server;
-use steel_login::JavaTcpClient;
+use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
@@ -18,8 +18,6 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub mod config;
 /// A module for logging utilities.
 pub mod logger;
-/// Spawn chunk generation with optional terminal progress display.
-pub mod spawn_progress;
 
 /// Static access to the server
 pub static SERVER: OnceLock<Arc<Server>> = OnceLock::new();
@@ -34,6 +32,8 @@ pub struct SteelServer {
     pub client_id: u64,
     /// The shared server state.
     pub server: Arc<Server>,
+    /// Session id UUID state
+    pub connection_session: Arc<ServerConnectionSession>,
 }
 
 /// Startup error for expected operational failures.
@@ -98,6 +98,7 @@ impl SteelServer {
             cancel_token,
             client_id: 0,
             server: Arc::new(server),
+            connection_session: Arc::new(ServerConnectionSession::default()),
         })
     }
 
@@ -123,7 +124,15 @@ impl SteelServer {
                     if let Err(e) = connection.set_nodelay(true) {
                         log::warn!("Failed to set TCP_NODELAY: {e}");
                     }
-                    let (java_client, sender_recv, net_reader) = JavaTcpClient::new(connection, address, self.client_id, self.cancel_token.child_token(), self.server.clone(), task_tracker.clone());
+                    let (java_client, sender_recv, net_reader) = JavaTcpClient::new(
+                        connection,
+                        address,
+                        self.client_id,
+                        self.cancel_token.child_token(),
+                        self.server.clone(),
+                        self.connection_session.clone(),
+                        task_tracker.clone(),
+                    );
                     self.client_id = self.client_id.wrapping_add(1);
                     log::info!("Accepted connection from Java Edition: {address} (id {})", self.client_id);
 

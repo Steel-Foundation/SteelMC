@@ -74,8 +74,10 @@ pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
 pub mod enchantment;
+pub mod enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
+pub mod equipment;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
@@ -456,11 +458,6 @@ impl RegistryLock {
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)
     }
-
-    #[cfg(test)]
-    pub(crate) fn get_or_init(&self, f: impl FnOnce() -> Registry) -> &Registry {
-        self.0.get_or_init(f)
-    }
 }
 
 impl Deref for RegistryLock {
@@ -492,7 +489,7 @@ pub mod test_support {
 }
 
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
-pub trait RegistryEntry: 'static {
+pub trait RegistryEntry: PartialEq + 'static {
     fn key(&self) -> &Identifier;
     fn try_id(&self) -> Option<usize>;
 
@@ -884,6 +881,11 @@ impl Registry {
                 }
                 self.validate_placed_feature_ref(&config.default);
             }
+            ConfiguredFeatureKind::WeightedRandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(&feature.data);
+                }
+            }
             ConfiguredFeatureKind::RootSystem(config) => {
                 self.validate_placed_feature_ref(&config.feature);
             }
@@ -904,6 +906,11 @@ impl Registry {
                 );
             }
             ConfiguredFeatureKind::SimpleRandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(feature);
+                }
+            }
+            ConfiguredFeatureKind::Sequence(config) => {
                 for feature in &config.features {
                     self.validate_placed_feature_ref(feature);
                 }
@@ -1081,6 +1088,7 @@ mod tests {
     fn vanilla_static_entity_data_registries_initialize_in_vanilla_order() {
         let registry = Registry::new_vanilla();
         let entity_effect = Identifier::vanilla_static("entity_effect");
+        let dust = Identifier::vanilla_static("dust");
         let plains = Identifier::vanilla_static("plains");
         let none = Identifier::vanilla_static("none");
         let tabby = Identifier::vanilla_static("tabby");
@@ -1090,6 +1098,10 @@ mod tests {
 
         assert_eq!(
             registry.particle_types.by_id(21).map(|entry| &entry.key),
+            Some(&dust)
+        );
+        assert_eq!(
+            registry.particle_types.by_id(28).map(|entry| &entry.key),
             Some(&entity_effect)
         );
         assert_eq!(
@@ -1128,6 +1140,7 @@ mod tests {
     fn vanilla_game_events_initialize_in_vanilla_order() {
         let registry = Registry::new_vanilla();
         let block_activate = Identifier::vanilla_static("block_activate");
+        let unequip = Identifier::vanilla_static("unequip");
         let resonate_1 = Identifier::vanilla_static("resonate_1");
         let resonate_10 = Identifier::vanilla_static("resonate_10");
 
@@ -1137,10 +1150,14 @@ mod tests {
         );
         assert_eq!(
             registry.game_events.by_id(45).map(|event| &event.key),
+            Some(&unequip)
+        );
+        assert_eq!(
+            registry.game_events.by_id(46).map(|event| &event.key),
             Some(&resonate_1)
         );
         assert_eq!(
-            registry.game_events.by_id(54).map(|event| &event.key),
+            registry.game_events.by_id(55).map(|event| &event.key),
             Some(&resonate_10)
         );
     }

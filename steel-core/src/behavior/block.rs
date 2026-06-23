@@ -6,7 +6,9 @@ use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_unoptimized_boxes};
+use steel_registry::blocks::shapes::{
+    BooleanOp, ShapeChannel, VoxelShape, is_shape_full_block, join_unoptimized_boxes,
+};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -18,11 +20,12 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
-use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::block_entity::SharedBlockEntity;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
@@ -85,6 +88,19 @@ impl BlockCollisionContext {
             is_falling_block: false,
             descending,
             placement: true,
+        }
+    }
+
+    /// Collision context for vanilla `CollisionContext.positionContext(y)`.
+    #[must_use]
+    pub const fn position_context(y: f64) -> Self {
+        Self {
+            entity_bottom: Some(y),
+            fall_distance: 0.0,
+            can_walk_on_powder_snow: false,
+            is_falling_block: false,
+            descending: false,
+            placement: false,
         }
     }
 
@@ -336,7 +352,7 @@ pub(crate) fn push_entities_up(
     for entity in world.get_entities_in_aabb(&query_box) {
         let offset = collide(
             Axis::Y,
-            &entity.bounding_box().move_by(0.0, 1.0, 0.0),
+            &entity.bounding_box().translate(DVec3::ZERO.with_y(1.0)),
             &added_collision,
             -1.0,
         );
@@ -658,6 +674,46 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Returns whether this block state is pathfindable for the supplied vanilla path computation.
+    ///
+    /// Vanilla baseline for `BlockBehaviour.isPathfindable`.
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        match computation_type {
+            PathComputationType::Land | PathComputationType::Air => {
+                !is_shape_full_block(state.get_static_collision_shape())
+            }
+            PathComputationType::Water => is_water_fluid(state.get_fluid_state().fluid_id),
+        }
+    }
+
+    /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
+    ///
+    /// Despite the vanilla name, this returns true for any door block type that
+    /// can be opened by hand.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn is_wooden_door(&self, state: BlockStateId) -> bool {
+        false
+    }
+
+    /// Mirrors vanilla `DoorBlock.setOpen` for AI door goals.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn set_door_open(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source_entity: Option<&dyn Entity>,
+        open: bool,
+    ) -> bool {
+        false
+    }
+
     /// Returns this block state's collision shape for the supplied collision context.
     ///
     /// Vanilla baseline for `BlockState.getCollisionShape(BlockGetter, BlockPos, CollisionContext)`.
@@ -672,7 +728,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: BlockCollisionContext,
     ) -> VoxelShape {
-        state.get_collision_shape()
+        state.get_static_collision_shape()
     }
 
     /// Returns this block state's collision shape for the supplied collision context.
@@ -687,6 +743,32 @@ pub trait BlockBehavior: Send + Sync {
         context: BlockCollisionContext,
     ) -> VoxelShape {
         self.default_get_collision_shape(state, world, pos, context)
+    }
+
+    /// Returns a block-local translation for this block state's collision shape.
+    ///
+    /// Vanilla baseline for `BlockState.getOffset(BlockPos)` where
+    /// `getCollisionShape` delegates to the offset outline shape.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores world and collision context"
+    )]
+    fn get_collision_shape_offset(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> DVec3 {
+        if state
+            .get_block()
+            .shape_offsets
+            .uses_offset(ShapeChannel::Collision)
+        {
+            return state.get_offset(pos);
+        }
+
+        DVec3::ZERO
     }
 
     /// Returns this block state's shape used by vanilla entity-inside effects.

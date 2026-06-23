@@ -501,7 +501,7 @@ struct PendingOreSectionKey {
 
 struct PendingOreSection {
     key: PendingOreSectionKey,
-    positions: SmallVec<[PackedSectionBlockPos; 128]>,
+    positions: SmallVec<[PackedSectionBlockPos; 256]>,
 }
 
 struct ResolvedOreTargets {

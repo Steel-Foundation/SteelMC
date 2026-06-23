@@ -9,6 +9,10 @@ check-file = false
 flate = "flate"
 strat = "strat"
 axe = "axe"
+BlockBehaviour = "BlockBehaviour"
+behaviour = "behaviour"
+interruptable = "interruptable"
+neighbour = "neighbour"
 # Vanilla stronghold piece-type IDs (shs, shsd, shrc, ...).
 shs = "shs"
 

@@ -3,6 +3,7 @@
 
 use std::sync::LazyLock;
 
+use glam::IVec3;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::structure::{
     LiquidSettingsData, RuinedPortalPlacementData, RuinedPortalSetupData, StructureConfigData,
@@ -95,13 +96,13 @@ pub struct PortalResult {
     /// Selected template id.
     pub template_id: Identifier,
     /// Template size in blocks.
-    pub template_size: [i32; 3],
+    pub template_size: IVec3,
     /// Template rotation.
     pub rotation: Rotation,
     /// Template mirror.
     pub mirror: StructureMirror,
     /// Template rotation pivot in local coordinates.
-    pub rotation_pivot: (i32, i32, i32),
+    pub rotation_pivot: IVec3,
     /// Vertical placement selected by the setup.
     pub vertical_placement: RuinedPortalPlacementData,
     /// Ruined portal properties before the cold biome adjustment.
@@ -131,7 +132,6 @@ pub fn find_generation_point(
     let base_x = chunk_x * 16;
     let base_z = chunk_z * 16;
 
-    // Weighted selection via nextFloat.
     let setup = if setups.len() > 1 {
         let total: f32 = setups.iter().map(|s| s.weight).sum();
         let mut pick = rng.next_f32();
@@ -148,8 +148,6 @@ pub fn find_generation_point(
         &setups[0]
     };
 
-    // Vanilla `sample(rng, p)` short-circuits at 0.0/1.0; we keep the guard so
-    // out-of-range values added later don't unexpectedly draw RNG.
     let air_pocket = if setup.air_pocket_probability <= 0.0 {
         false
     } else if setup.air_pocket_probability >= 1.0 {
@@ -158,7 +156,6 @@ pub fn find_generation_point(
         rng.next_f32() < setup.air_pocket_probability
     };
 
-    // 5% giant, 95% regular.
     let template_id = if rng.next_f32() < 0.05 {
         let index = rng.next_i32_bounded(GIANT_PORTAL_TEMPLATES.len() as i32) as usize;
         Identifier::vanilla_static(GIANT_PORTAL_TEMPLATES[index])
@@ -166,8 +163,8 @@ pub fn find_generation_point(
         let index = rng.next_i32_bounded(PORTAL_TEMPLATES.len() as i32) as usize;
         Identifier::vanilla_static(PORTAL_TEMPLATES[index])
     };
-    let template_size = templates(&template_id)?;
-    let [sx, sy, sz] = template_size;
+    let template_size_arr = templates(&template_id)?;
+    let [sx, sy, sz] = template_size_arr;
 
     let rotation = Rotation::get_random(rng);
     let mirror = if rng.next_f32() < 0.5 {
@@ -179,16 +176,14 @@ pub fn find_generation_point(
     let pivot_x = sx / 2;
     let pivot_z = sz / 2;
     let bb = rotation.get_bounding_box_full(
-        (base_x, 0, base_z),
-        (sx, sy, sz),
-        pivot_x,
-        pivot_z,
+        IVec3::new(base_x, 0, base_z),
+        IVec3::new(sx, sy, sz),
+        IVec3::new(pivot_x, 0, pivot_z),
         mirror_front_back,
     );
-    // Vanilla's `BoundingBox.getCenter()` = min + (max - min + 1) / 2, which
-    // differs from (min + max) / 2 for even spans due to integer rounding.
-    let bb_center_x = bb.min_x + (bb.max_x - bb.min_x + 1) / 2;
-    let bb_center_z = bb.min_z + (bb.max_z - bb.min_z + 1) / 2;
+
+    let bb_center_x = bb.min_x() + (bb.max_x() - bb.min_x() + 1) / 2;
+    let bb_center_z = bb.min_z() + (bb.max_z() - bb.min_z() + 1) / 2;
     let ocean_floor = matches!(setup.placement, RuinedPortalPlacementData::OnOceanFloor);
     let surface_y = match terrain(TerrainQuery::SurfaceHeight {
         x: bb_center_x,
@@ -232,12 +227,11 @@ pub fn find_generation_point(
         }
     };
 
-    // findSuitableY: scan down, break when ≥3 of 4 corners are opaque.
     let corners = [
-        (bb.min_x, bb.min_z),
-        (bb.max_x, bb.min_z),
-        (bb.min_x, bb.max_z),
-        (bb.max_x, bb.max_z),
+        (bb.min_x(), bb.min_z()),
+        (bb.max_x(), bb.min_z()),
+        (bb.min_x(), bb.max_z()),
+        (bb.max_x(), bb.max_z()),
     ];
     let mut projected_y = new_y;
     'scan: while projected_y > min_y_threshold {
@@ -264,17 +258,16 @@ pub fn find_generation_point(
     Some(PortalResult {
         biome_check_pos: (base_x, projected_y, base_z),
         bounding_box: rotation.get_bounding_box_full(
-            (base_x, projected_y, base_z),
-            (sx, sy, sz),
-            pivot_x,
-            pivot_z,
+            IVec3::new(base_x, projected_y, base_z),
+            IVec3::new(sx, sy, sz),
+            IVec3::new(pivot_x, 0, pivot_z),
             mirror_front_back,
         ),
         template_id,
-        template_size,
+        template_size: IVec3::new(sx, sy, sz),
         rotation,
         mirror,
-        rotation_pivot: (pivot_x, 0, pivot_z),
+        rotation_pivot: IVec3::new(pivot_x, 0, pivot_z),
         vertical_placement: setup.placement,
         properties: RuinedPortalProperties {
             cold: false,
@@ -294,22 +287,17 @@ pub fn find_generation_point(
 )]
 fn make_ruined_portal_piece(
     template_id: Identifier,
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
     mirror: StructureMirror,
-    rotation_pivot: (i32, i32, i32),
-    size: [i32; 3],
+    rotation_pivot: IVec3,
+    size: IVec3,
     vertical_placement: RuinedPortalPlacementData,
     properties: RuinedPortalProperties,
 ) -> StructurePiece {
     let mirror_front_back = mirror == StructureMirror::FrontBack;
-    let bounding_box = rotation.get_bounding_box_full(
-        position,
-        (size[0], size[1], size[2]),
-        rotation_pivot.0,
-        rotation_pivot.2,
-        mirror_front_back,
-    );
+    let bounding_box =
+        rotation.get_bounding_box_full(position, size, rotation_pivot, mirror_front_back);
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "rupo"),
         bounding_box,
@@ -451,7 +439,11 @@ impl Structure for RuinedPortalStructure {
             position: result.biome_check_pos,
             pieces: vec![make_ruined_portal_piece(
                 result.template_id,
-                result.biome_check_pos,
+                IVec3::new(
+                    result.biome_check_pos.0,
+                    result.biome_check_pos.1,
+                    result.biome_check_pos.2,
+                ),
                 result.rotation,
                 result.mirror,
                 result.rotation_pivot,
@@ -469,8 +461,8 @@ mod tests {
 
     #[test]
     fn ruined_portal_piece_uses_template_payload_with_processors_and_postprocess() {
-        let position = (64, 72, -32);
-        let size = [11, 17, 16];
+        let position = IVec3::new(64, 72, -32);
+        let size = IVec3::new(11, 17, 16);
         let properties = RuinedPortalProperties {
             cold: true,
             mossiness: 0.8,
@@ -485,7 +477,7 @@ mod tests {
             position,
             Rotation::Clockwise90,
             StructureMirror::FrontBack,
-            (size[0] / 2, 0, size[2] / 2),
+            IVec3::new(size.x / 2, 0, size.z / 2),
             size,
             RuinedPortalPlacementData::OnOceanFloor,
             properties,
@@ -501,9 +493,8 @@ mod tests {
             piece.bounding_box,
             Rotation::Clockwise90.get_bounding_box_full(
                 position,
-                (size[0], size[1], size[2]),
-                size[0] / 2,
-                size[2] / 2,
+                size,
+                IVec3::new(size.x / 2, 0, size.z / 2),
                 true,
             ),
         );
@@ -518,7 +509,7 @@ mod tests {
         assert_eq!(data.template_position, position);
         assert_eq!(data.rotation, Rotation::Clockwise90);
         assert_eq!(data.mirror, StructureMirror::FrontBack);
-        assert_eq!(data.rotation_pivot, (size[0] / 2, 0, size[2] / 2));
+        assert_eq!(data.rotation_pivot, IVec3::new(size.x / 2, 0, size.z / 2));
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(

@@ -94,6 +94,13 @@ impl<'a> SurfaceRuleContext<'a> {
             .get(noise_index, self.system, self.block_x, self.block_z)
     }
 
+    /// Returns an uncached surface condition noise value sampled at this block.
+    #[must_use]
+    pub fn condition_noise_3d(&self, noise_index: usize) -> f64 {
+        self.system
+            .condition_noise_3d(noise_index, self.block_x, self.block_y, self.block_z)
+    }
+
     /// Returns a pre-resolved block state emitted by the generated surface rule.
     #[must_use]
     pub const fn block_state(&self, block_state_index: usize) -> BlockStateId {
@@ -196,6 +203,10 @@ pub trait SurfaceNoiseProvider {
     /// Sample a surface condition noise at (x, z). The noise is identified by
     /// its index in the dimension's `surface_noise_ids()` list.
     fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64;
+
+    /// Sample a surface condition noise at (x, y, z). The noise is identified by
+    /// its index in the dimension's `surface_noise_ids()` list.
+    fn condition_noise_3d(&self, noise_index: usize, x: i32, y: i32, z: i32) -> f64;
 
     /// Get the badlands clay band block at position (x, y, z).
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId;

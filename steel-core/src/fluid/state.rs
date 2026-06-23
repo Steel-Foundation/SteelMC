@@ -219,7 +219,7 @@ where
         }
 
         if distance != 0.0 {
-            let (dx, _, dz) = direction.offset();
+            let (dx, dz) = direction.offset_xz();
             flow.x += f64::from(dx) * f64::from(distance);
             flow.z += f64::from(dz) * f64::from(distance);
         }
@@ -277,7 +277,7 @@ where
     if direction == Direction::Up {
         return true;
     }
-    state.get_block() != &vanilla_blocks::ICE && state.is_face_sturdy(direction)
+    state.get_block() != &vanilla_blocks::ICE && state.is_face_sturdy_at(pos, direction)
 }
 
 #[cfg(test)]

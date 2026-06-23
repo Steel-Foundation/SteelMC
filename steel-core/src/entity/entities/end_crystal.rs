@@ -3,10 +3,10 @@
 use std::sync::Weak;
 
 use glam::DVec3;
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 
@@ -18,48 +18,31 @@ use crate::world::World;
 /// Steel currently implements the synchronized data and saved fields used by generated
 /// End spikes. Portal handling, dragon fight callbacks, and explosion behavior are still
 /// intentionally left to the broader entity/combat foundations.
+#[entity_behavior(class = "EndCrystal")]
 pub struct EndCrystalEntity {
     base: EntityBase,
+    entity_type: EntityTypeRef,
     entity_data: SyncMutex<EndCrystalEntityData>,
-    state: SyncMutex<EndCrystalState>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct EndCrystalState {
-    invulnerable: bool,
-}
-
-impl EndCrystalState {
-    const fn new() -> Self {
-        Self {
-            invulnerable: false,
-        }
-    }
 }
 
 impl EndCrystalEntity {
     /// Creates a new End Crystal entity.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
-            base: EntityBase::new(
-                id,
-                position,
-                vanilla_entities::END_CRYSTAL.dimensions,
-                world,
-            ),
+            base: EntityBase::new(id, position, entity_type.dimensions, world),
+            entity_type,
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
-            state: SyncMutex::new(EndCrystalState::new()),
         }
     }
 
     /// Creates an End Crystal entity from saved data.
     #[must_use]
-    pub fn from_saved(load: EntityBaseLoad) -> Self {
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self {
-            base: EntityBase::from_load(load, vanilla_entities::END_CRYSTAL.dimensions),
+            base: EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
-            state: SyncMutex::new(EndCrystalState::new()),
         }
     }
 
@@ -83,17 +66,6 @@ impl EndCrystalEntity {
     #[must_use]
     pub fn shows_bottom(&self) -> bool {
         *self.entity_data.lock().show_bottom.get()
-    }
-
-    /// Sets the vanilla invulnerable flag.
-    pub fn set_invulnerable(&self, invulnerable: bool) {
-        self.state.lock().invulnerable = invulnerable;
-    }
-
-    /// Returns the vanilla invulnerable flag.
-    #[must_use]
-    pub fn is_invulnerable(&self) -> bool {
-        self.state.lock().invulnerable
     }
 
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
@@ -124,7 +96,7 @@ impl Entity for EndCrystalEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::END_CRYSTAL
+        self.entity_type
     }
 
     fn tick(&self) {
@@ -152,13 +124,9 @@ impl Entity for EndCrystalEntity {
         }
 
         nbt.insert("ShowBottom", Self::nbt_bool(self.shows_bottom()));
-        // TODO: Move `Invulnerable` into shared entity save data once `EntityBase` owns it.
-        nbt.insert("Invulnerable", Self::nbt_bool(self.is_invulnerable()));
     }
 
-    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
-
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         if let Some(target) = nbt.int_array("beam_target")
             && target.len() == 3
         {
@@ -168,49 +136,47 @@ impl Entity for EndCrystalEntity {
         if let Some(show_bottom) = nbt.byte("ShowBottom") {
             self.set_show_bottom(show_bottom != 0);
         }
-
-        if let Some(invulnerable) = nbt.byte("Invulnerable") {
-            self.set_invulnerable(invulnerable != 0);
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use steel_registry::vanilla_entities;
 
     #[test]
-    fn end_crystal_saves_invulnerable_state() {
-        let crystal = EndCrystalEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+    fn end_crystal_does_not_duplicate_shared_invulnerable_state() {
+        let crystal = EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
+            1,
+            DVec3::new(1.5, 2.5, 3.5),
+            Weak::new(),
+        );
         crystal.set_invulnerable(true);
 
         let mut nbt = NbtCompound::new();
         crystal.save_additional(&mut nbt);
 
-        assert_eq!(nbt.byte("Invulnerable"), Some(1));
-
-        let loaded = EndCrystalEntity::new(2, DVec3::new(4.5, 5.5, 6.5), Weak::new());
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed =
-            read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
-        loaded.load_additional(&borrowed);
-        assert!(loaded.is_invulnerable());
+        assert_eq!(nbt.byte("Invulnerable"), None);
     }
 
     #[test]
     fn end_crystal_is_pickable_like_vanilla() {
-        let crystal = EndCrystalEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+        let crystal = EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
+            1,
+            DVec3::new(1.5, 2.5, 3.5),
+            Weak::new(),
+        );
 
         assert!(crystal.is_pickable());
     }
 
     #[test]
     fn end_crystal_blocks_building_like_vanilla() {
-        let crystal = EndCrystalEntity::new(1, DVec3::ZERO, Weak::new());
+        let crystal =
+            EndCrystalEntity::new(&vanilla_entities::END_CRYSTAL, 1, DVec3::ZERO, Weak::new());
 
         assert!(crystal.blocks_building());
     }

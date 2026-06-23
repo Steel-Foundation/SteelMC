@@ -734,6 +734,16 @@ mod tests {
     }
 
     #[test]
+    fn non_full_ticket_level_maps_to_generation_status() {
+        let ticket_level = ticket_level_for_status(ChunkStatus::StructureStarts);
+
+        assert!(!ticket_level.is_full());
+        assert!(generation_status(Some(ticket_level)).is_some_and(|status| {
+            status >= ChunkStatus::StructureStarts && status != ChunkStatus::Full
+        }));
+    }
+
+    #[test]
     fn ticket_level_for_status_creates_required_dependency_holders() {
         for index in 0..=ChunkStatus::Full.get_index() {
             let status = ChunkStatus::from_index(index).expect("index is in status range");

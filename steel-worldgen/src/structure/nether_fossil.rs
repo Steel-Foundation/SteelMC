@@ -2,6 +2,7 @@
 //! the base-noise column down until we find air over solid. Fails if the walk
 //! reaches sea level.
 
+use glam::IVec3;
 use steel_registry::structure::{
     HeightProviderData, LiquidSettingsData, StructureConfigData, StructureData, VerticalAnchorData,
 };
@@ -26,11 +27,11 @@ pub struct FossilResult {
     /// Template path relative to `minecraft:` (e.g. `"nether_fossils/fossil_3"`).
     pub template_name: String,
     /// World-space solid-block position.
-    pub position: (i32, i32, i32),
+    pub position: IVec3,
     /// Piece rotation.
     pub rotation: Rotation,
     /// Position used for the biome check.
-    pub biome_check_pos: (i32, i32, i32),
+    pub biome_check_pos: IVec3,
 }
 
 const fn resolve_vertical_anchor(
@@ -93,23 +94,21 @@ where
     let fossil_idx = rng.next_i32_bounded(FOSSIL_COUNT) + 1;
     Some(FossilResult {
         template_name: format!("nether_fossils/fossil_{fossil_idx}"),
-        position: (block_x, y, block_z),
+        position: IVec3::new(block_x, y, block_z),
         rotation,
-        biome_check_pos: (block_x, y, block_z),
+        biome_check_pos: IVec3::new(block_x, y, block_z),
     })
 }
 
-const fn make_nether_fossil_piece(
+fn make_nether_fossil_piece(
     template_id: Identifier,
-    position: (i32, i32, i32),
+    position: IVec3,
     rotation: Rotation,
-    size: [i32; 3],
+    size: IVec3,
 ) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "nefos"),
-        bounding_box: rotation.get_bounding_box(
-            position.0, position.1, position.2, size[0], size[1], size[2],
-        ),
+        bounding_box: rotation.get_bounding_box(position, size),
         gen_depth: 0,
         orientation: Some(Direction::North),
         payload: StructurePiecePayload::Template(TemplatePieceData {
@@ -117,7 +116,7 @@ const fn make_nether_fossil_piece(
             template_position: position,
             rotation,
             mirror: StructureMirror::None,
-            rotation_pivot: (0, 0, 0),
+            rotation_pivot: IVec3::ZERO,
             block_ignore: StructureBlockIgnore::StructureAndAir,
             late_block_ignore: StructureBlockIgnore::None,
             processors: TemplateProcessorList::Empty,
@@ -160,8 +159,11 @@ impl Structure for NetherFossilStructure {
             |x, z, start_y, min_solid_y| ctx.solid_block_below_air(x, z, start_y, min_solid_y),
         )?;
 
-        let (bx, by, bz) = result.biome_check_pos;
-        let biome = ctx.biome_at(bx, by, bz);
+        let biome = ctx.biome_at(
+            result.biome_check_pos.x,
+            result.biome_check_pos.y,
+            result.biome_check_pos.z,
+        );
         if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
@@ -169,12 +171,12 @@ impl Structure for NetherFossilStructure {
         let template_id = Identifier::vanilla(result.template_name);
         let tmpl_size = ctx.templates().get(&template_id)?.size;
         Some(GenerationStub {
-            position: result.position,
+            position: (result.position.x, result.position.y, result.position.z),
             pieces: vec![make_nether_fossil_piece(
                 template_id,
                 result.position,
                 result.rotation,
-                tmpl_size,
+                IVec3::from(tmpl_size),
             )],
         })
     }
@@ -186,8 +188,8 @@ mod tests {
 
     #[test]
     fn nether_fossil_piece_uses_full_template_payload() {
-        let position = (10, 45, -20);
-        let size = [7, 5, 9];
+        let position = IVec3::new(10, 45, -20);
+        let size = IVec3::new(7, 5, 9);
         let piece = make_nether_fossil_piece(
             Identifier::vanilla_static("nether_fossils/fossil_1"),
             position,
@@ -203,9 +205,7 @@ mod tests {
         assert_eq!(piece.orientation, Some(Direction::North));
         assert_eq!(
             piece.bounding_box,
-            Rotation::Clockwise90.get_bounding_box(
-                position.0, position.1, position.2, size[0], size[1], size[2],
-            ),
+            Rotation::Clockwise90.get_bounding_box(position, size),
         );
 
         let StructurePiecePayload::Template(data) = piece.payload else {
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(data.template_position, position);
         assert_eq!(data.rotation, Rotation::Clockwise90);
         assert_eq!(data.mirror, StructureMirror::None);
-        assert_eq!(data.rotation_pivot, (0, 0, 0));
+        assert_eq!(data.rotation_pivot, IVec3::ZERO);
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(data.processors, TemplateProcessorList::Empty);

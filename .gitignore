@@ -3,6 +3,7 @@
 /steel-registry/src/generated
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
+/steel-core/src/entity/generated
 /steel-worldgen/src/generated
 /steel-utils/build_assets/builtin_datapacks
 /steel-utils/build_assets/.asset-extract.lock
@@ -11,6 +12,7 @@
 # Config
 /config
 /.tmp
+/.logs
 /world
 /saves
 /players
@@ -19,6 +21,8 @@
 CLAUDE.md
 .env
 /minecraft-src
+.agents
+skills-lock.json
 
 # Package
 profile.json.gz

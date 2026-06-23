@@ -30,6 +30,7 @@ use crate::{
         InventoryAccess,
     },
     entity::Entity,
+    entity::ai::path::PathComputationType,
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
@@ -98,14 +99,14 @@ impl DoorBlock {
         let right_above_pos = right_direction.relative(above_pos);
         let right_above_state = context.world.get_block_state(right_above_pos);
 
-        let solid_block_balance = i32::from(shapes::is_shape_full_block(
-            right_state.get_collision_shape(),
-        )) + i32::from(shapes::is_shape_full_block(
-            right_above_state.get_collision_shape(),
-        )) - i32::from(shapes::is_shape_full_block(
-            left_state.get_collision_shape(),
-        )) - i32::from(shapes::is_shape_full_block(
-            left_above_state.get_collision_shape(),
+        let solid_block_balance = i32::from(shapes::is_offset_shape_full_block(
+            right_state.get_collision_shape_at(right_pos),
+        )) + i32::from(shapes::is_offset_shape_full_block(
+            right_above_state.get_collision_shape_at(right_above_pos),
+        )) - i32::from(shapes::is_offset_shape_full_block(
+            left_state.get_collision_shape_at(left_pos),
+        )) - i32::from(shapes::is_offset_shape_full_block(
+            left_above_state.get_collision_shape_at(left_above_pos),
         ));
 
         let door_left = Self::is_lower_door(left_state);
@@ -113,7 +114,7 @@ impl DoorBlock {
 
         if (!door_left || door_right) && solid_block_balance <= 0 {
             if (!door_right || door_left) && solid_block_balance >= 0 {
-                let (step_x, _, step_z) = place_direction.offset();
+                let (step_x, step_z) = place_direction.offset_xz();
                 let click_x = context.click_location.x - f64::from(pos.x());
                 let click_z = context.click_location.z - f64::from(pos.z());
 
@@ -248,12 +249,53 @@ impl BlockBehavior for DoorBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let below_state = world.get_block_state(pos.below());
+        let below_pos = pos.below();
+        let below_state = world.get_block_state(below_pos);
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
-            below_state.is_face_sturdy(Direction::Up)
+            below_state.is_face_sturdy_at(below_pos, Direction::Up)
         } else {
             below_state.get_block() == self.block
         }
+    }
+
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        match computation_type {
+            PathComputationType::Land | PathComputationType::Air => {
+                state.get_value(&BlockStateProperties::OPEN)
+            }
+            PathComputationType::Water => false,
+        }
+    }
+
+    fn is_wooden_door(&self, state: BlockStateId) -> bool {
+        self.can_open_by_hand && Self::is_door(state)
+    }
+
+    fn set_door_open(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source_entity: Option<&dyn Entity>,
+        open: bool,
+    ) -> bool {
+        if !Self::is_door(state) || state.get_value(&BlockStateProperties::OPEN) == open {
+            return false;
+        }
+
+        let new_state = state.set_value(&BlockStateProperties::OPEN, open);
+        if !world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS) {
+            return false;
+        }
+
+        self.play_sound(world, pos, open, source_entity.map(Entity::id));
+        let event = if open {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::new(source_entity, None));
+        true
     }
 
     fn set_placed_by(
@@ -419,6 +461,26 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         self.door().can_survive(state, world, pos)
     }
 
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        self.door().is_pathfindable(state, computation_type)
+    }
+
+    fn is_wooden_door(&self, state: BlockStateId) -> bool {
+        self.door().is_wooden_door(state)
+    }
+
+    fn set_door_open(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source_entity: Option<&dyn Entity>,
+        open: bool,
+    ) -> bool {
+        self.door()
+            .set_door_open(state, world, pos, source_entity, open)
+    }
+
     fn set_placed_by(
         &self,
         state: BlockStateId,
@@ -579,5 +641,26 @@ mod tests {
             updated.get_value(&BlockStateProperties::DOOR_HINGE),
             DoorHingeSide::Left
         );
+    }
+
+    #[test]
+    fn door_wooden_query_uses_can_open_by_hand_like_vanilla() {
+        init_test_registry();
+        let oak = DoorBlock::new(
+            &vanilla_blocks::OAK_DOOR,
+            true,
+            &sound_events::BLOCK_WOODEN_DOOR_OPEN,
+            &sound_events::BLOCK_WOODEN_DOOR_CLOSE,
+        );
+        let iron = DoorBlock::new(
+            &vanilla_blocks::IRON_DOOR,
+            false,
+            &sound_events::BLOCK_IRON_DOOR_OPEN,
+            &sound_events::BLOCK_IRON_DOOR_CLOSE,
+        );
+
+        assert!(oak.is_wooden_door(vanilla_blocks::OAK_DOOR.default_state()));
+        assert!(!iron.is_wooden_door(vanilla_blocks::IRON_DOOR.default_state()));
+        assert!(!oak.is_wooden_door(vanilla_blocks::STONE.default_state()));
     }
 }

@@ -3,7 +3,9 @@
 //! Implements vanilla's `Shapes` class methods for AABB-list based collision.
 
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{VoxelShape, is_shape_full_block};
+use steel_registry::blocks::shapes::{
+    OffsetVoxelShape, VoxelShape, is_offset_shape_full_block, is_shape_full_block,
+};
 use steel_utils::{BlockLocalAabb, BlockPos, WorldAabb, axis::Axis};
 
 const COLLISION_EPSILON: f64 = 1.0e-7;
@@ -177,10 +179,92 @@ pub fn merged_face_occludes(shape1: VoxelShape, shape2: VoxelShape, direction: D
     coverage_count == 256
 }
 
+/// Checks if two position-offset voxel shapes fully occlude the face between them.
+///
+/// This is the offset-aware form used by block states whose collision shape
+/// depends on `BlockState.getOffset(level, pos)`.
+#[must_use]
+pub fn merged_offset_face_occludes(
+    shape1: OffsetVoxelShape,
+    shape2: OffsetVoxelShape,
+    direction: Direction,
+) -> bool {
+    if is_offset_shape_full_block(shape1) || is_offset_shape_full_block(shape2) {
+        return true;
+    }
+
+    if shape1.is_empty() && shape2.is_empty() {
+        return false;
+    }
+
+    let mut grid = [false; 256];
+    let mut coverage_count = 0;
+
+    coverage_count += project_offset_shape_onto_grid(shape1, direction, &mut grid);
+    if coverage_count == 256 {
+        return true;
+    }
+
+    coverage_count += project_offset_shape_onto_grid(shape2, direction.opposite(), &mut grid);
+    coverage_count == 256
+}
+
 fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool; 256]) -> usize {
     let mut added_coverage = 0;
 
     for aabb in shape {
+        let touches_face = match face {
+            Direction::Down => aabb.min_y() <= 1.0e-5,
+            Direction::Up => aabb.max_y() >= 1.0 - 1.0e-5,
+            Direction::North => aabb.min_z() <= 1.0e-5,
+            Direction::South => aabb.max_z() >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min_x() <= 1.0e-5,
+            Direction::East => aabb.max_x() >= 1.0 - 1.0e-5,
+        };
+
+        if !touches_face {
+            continue;
+        }
+
+        let (min_u, max_u, min_v, max_v) = match face {
+            Direction::Down | Direction::Up => {
+                (aabb.min_x(), aabb.max_x(), aabb.min_z(), aabb.max_z())
+            }
+            Direction::North | Direction::South => {
+                (aabb.min_x(), aabb.max_x(), aabb.min_y(), aabb.max_y())
+            }
+            Direction::West | Direction::East => {
+                (aabb.min_z(), aabb.max_z(), aabb.min_y(), aabb.max_y())
+            }
+        };
+
+        let u_start = ((min_u * 16.0).round() as i32).clamp(0, 16) as usize;
+        let u_end = ((max_u * 16.0).round() as i32).clamp(0, 16) as usize;
+        let v_start = ((min_v * 16.0).round() as i32).clamp(0, 16) as usize;
+        let v_end = ((max_v * 16.0).round() as i32).clamp(0, 16) as usize;
+
+        for u in u_start..u_end {
+            for v in v_start..v_end {
+                let idx = u * 16 + v;
+                if !grid[idx] {
+                    grid[idx] = true;
+                    added_coverage += 1;
+                }
+            }
+        }
+    }
+
+    added_coverage
+}
+
+fn project_offset_shape_onto_grid(
+    shape: OffsetVoxelShape,
+    face: Direction,
+    grid: &mut [bool; 256],
+) -> usize {
+    let mut added_coverage = 0;
+
+    for aabb in shape.iter() {
         let touches_face = match face {
             Direction::Down => aabb.min_y() <= 1.0e-5,
             Direction::Up => aabb.max_y() >= 1.0 - 1.0e-5,
@@ -316,5 +400,18 @@ mod tests {
         assert_eq!(result.max_x(), 11.0);
         assert_eq!(result.max_y(), 64.5);
         assert_eq!(result.max_z(), -4.0);
+    }
+
+    #[test]
+    fn merged_offset_face_occludes_respects_shape_offset() {
+        let shifted_up =
+            OffsetVoxelShape::new(VoxelShape::FULL_BLOCK, glam::DVec3::new(0.0, 0.25, 0.0));
+        let empty = OffsetVoxelShape::without_offset(VoxelShape::EMPTY);
+
+        assert!(!merged_offset_face_occludes(
+            shifted_up,
+            empty,
+            Direction::Down
+        ));
     }
 }

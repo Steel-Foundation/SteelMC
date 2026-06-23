@@ -3,6 +3,7 @@
 //! Special biome check: every biome in a 29-block (3D) radius around
 //! `(chunkMinX+9, seaLevel, chunkMinZ+9)` must be in `#required_ocean_monument_surrounding`.
 
+use glam::IVec3;
 use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -282,7 +283,7 @@ fn generate_child_pieces(
 
     let offset = world_pos(building_box, Some(orientation), 9, 0, 22);
     for child in &mut child_pieces {
-        child.bounding_box = child.bounding_box.moved(offset.x(), offset.y(), offset.z());
+        child.bounding_box = child.bounding_box.translate(offset.0);
     }
 
     let left_wing = BoundingBox::from_corners(
@@ -861,14 +862,18 @@ fn make_room_bounding_box(
     );
 
     match orientation {
-        Direction::North => {
-            bounding_box.moved(room_x * 8, room_y * 4, -(room_z + room_depth) * 8 + 1)
-        }
-        Direction::South => bounding_box.moved(room_x * 8, room_y * 4, room_z * 8),
-        Direction::West => {
-            bounding_box.moved(-(room_z + room_depth) * 8 + 1, room_y * 4, room_x * 8)
-        }
-        Direction::East => bounding_box.moved(room_z * 8, room_y * 4, room_x * 8),
+        Direction::North => bounding_box.translate(IVec3::new(
+            room_x * 8,
+            room_y * 4,
+            -(room_z + room_depth) * 8 + 1,
+        )),
+        Direction::South => bounding_box.translate(IVec3::new(room_x * 8, room_y * 4, room_z * 8)),
+        Direction::West => bounding_box.translate(IVec3::new(
+            -(room_z + room_depth) * 8 + 1,
+            room_y * 4,
+            room_x * 8,
+        )),
+        Direction::East => bounding_box.translate(IVec3::new(room_z * 8, room_y * 4, room_x * 8)),
         Direction::Down | Direction::Up => panic!("ocean monument room has vertical orientation"),
     }
 }
@@ -881,16 +886,16 @@ const fn world_pos(
     z: i32,
 ) -> BlockPos {
     let world_y = if orientation.is_some() {
-        y + bounding_box.min_y
+        y + bounding_box.min_y()
     } else {
         y
     };
     let (world_x, world_z) = match orientation {
         None | Some(Direction::Up | Direction::Down) => (x, z),
-        Some(Direction::North) => (bounding_box.min_x + x, bounding_box.max_z - z),
-        Some(Direction::South) => (bounding_box.min_x + x, bounding_box.min_z + z),
-        Some(Direction::West) => (bounding_box.max_x - z, bounding_box.min_z + x),
-        Some(Direction::East) => (bounding_box.min_x + z, bounding_box.min_z + x),
+        Some(Direction::North) => (bounding_box.min_x() + x, bounding_box.max_z() - z),
+        Some(Direction::South) => (bounding_box.min_x() + x, bounding_box.min_z() + z),
+        Some(Direction::West) => (bounding_box.max_x() - z, bounding_box.min_z() + x),
+        Some(Direction::East) => (bounding_box.min_x() + z, bounding_box.min_z() + x),
     };
     BlockPos::new(world_x, world_y, world_z)
 }
@@ -939,6 +944,8 @@ fn vanilla_shuffle<T>(items: &mut [T], rng: &mut LegacyRandom) {
 
 #[cfg(test)]
 mod tests {
+    use glam::IVec3;
+
     use super::*;
 
     #[test]
@@ -949,7 +956,10 @@ mod tests {
         assert_eq!(piece.piece_type, Identifier::new_static("minecraft", "omb"));
         assert_eq!(piece.gen_depth, 0);
         assert_eq!(piece.orientation, Some(Direction::West));
-        assert_eq!(piece.bounding_box, BoundingBox::new(16, 39, 32, 73, 61, 89));
+        assert_eq!(
+            piece.bounding_box,
+            BoundingBox::new(IVec3::new(16, 39, 32), IVec3::new(73, 61, 89))
+        );
         let StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(data)) =
             piece.payload
         else {

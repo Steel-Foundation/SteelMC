@@ -397,7 +397,7 @@ fn place_chest_corridor(
     }
 
     let chest_pos = placer.world_pos(3, 2, 3);
-    if !*has_placed_chest && placer.clip().is_inside(chest_pos) {
+    if !*has_placed_chest && placer.clip().contains_blockpos(chest_pos) {
         *has_placed_chest = true;
         let _ = placer.create_chest(random, 3, 2, 3, STRONGHOLD_CORRIDOR_LOOT);
     }
@@ -710,7 +710,7 @@ fn place_portal_room(
     }
 
     let spawner_pos = placer.world_pos(5, 3, 6);
-    if !*has_placed_spawner && placer.clip().is_inside(spawner_pos) {
+    if !*has_placed_spawner && placer.clip().contains_blockpos(spawner_pos) {
         *has_placed_spawner = true;
         let _ = placer.create_spawner(5, 3, 6, SILVERFISH_ENTITY);
     }

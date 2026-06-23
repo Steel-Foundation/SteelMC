@@ -21,6 +21,10 @@ pub use steel_registry::items::item::BlockHitResult;
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
+    /// The interaction succeeded and the server should broadcast the swing.
+    SuccessServer,
+    /// The interaction consumed the action without swinging.
+    Consume,
     /// The interaction failed and consumed the action.
     Fail,
     /// The interaction did not apply; try the next handler.
@@ -34,7 +38,19 @@ impl InteractionResult {
     /// Pass and `TryEmptyHandInteraction` do not consume the action.
     #[must_use]
     pub const fn consumes_action(self) -> bool {
-        matches!(self, InteractionResult::Success | InteractionResult::Fail)
+        matches!(
+            self,
+            InteractionResult::Success
+                | InteractionResult::SuccessServer
+                | InteractionResult::Consume
+                | InteractionResult::Fail
+        )
+    }
+
+    /// Returns true when vanilla requests the server to broadcast the swing.
+    #[must_use]
+    pub const fn should_swing_server(self) -> bool {
+        matches!(self, InteractionResult::SuccessServer)
     }
 }
 
@@ -58,6 +74,8 @@ pub struct BlockPlaceContext<'a> {
     pub rotation: f32,
     /// The player's pitch (vertical look angle).
     pub pitch: f32,
+    /// Whether the player is using the secondary action, normally sneaking.
+    pub is_secondary_use_active: bool,
     /// The world where the block is being placed.
     pub world: &'a Arc<World>,
 }
@@ -72,6 +90,18 @@ impl BlockPlaceContext<'_> {
     #[must_use]
     pub fn get_nearest_looking_direction(&self) -> Direction {
         self.get_nearest_looking_directions()[0]
+    }
+
+    /// Returns the vertical direction the player is looking toward.
+    ///
+    /// Based on Java's `BlockPlaceContext.getNearestLookingVerticalDirection()`.
+    #[must_use]
+    pub const fn get_nearest_looking_vertical_direction(&self) -> Direction {
+        if self.pitch < 0.0 {
+            Direction::Up
+        } else {
+            Direction::Down
+        }
     }
 
     /// Returns all 6 directions ordered by how closely the player is looking at them.
@@ -221,6 +251,7 @@ impl<'a> UseOnContext<'a> {
             horizontal_direction: Direction::from_yaw(yaw),
             rotation: yaw,
             pitch,
+            is_secondary_use_active: self.player.is_secondary_use_active(),
             world: self.world,
         })
     }

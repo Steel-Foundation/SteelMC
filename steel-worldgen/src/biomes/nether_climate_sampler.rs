@@ -58,6 +58,20 @@ impl NetherClimateSampler {
         }
     }
 
+    /// Pre-populate a column cache's flat-noise grid for a chunk's quart columns.
+    ///
+    /// Mirrors [`OverworldClimateSampler::init_column_grid`]: lets the biome
+    /// stage reuse vanilla's `NoiseChunk.FlatCache` grid instead of recomputing
+    /// flat (xz-only) climate noise for every quart cell.
+    pub fn init_column_grid(
+        &self,
+        cache: &mut NetherColumnCache,
+        chunk_block_x: i32,
+        chunk_block_z: i32,
+    ) {
+        cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
+    }
+
     /// Sample climate at a quart position.
     ///
     /// The `cache` holds column-level (xz-only) precomputed values.

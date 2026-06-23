@@ -165468,6 +165468,35 @@
         "z": 88,
         "starts": [
           {
+            "structure": "minecraft:nether_fossil",
+            "chunk_x": -94,
+            "chunk_z": 88,
+            "references": 0,
+            "bounding_box": {
+              "min_x": -1504,
+              "min_y": 65,
+              "min_z": 1405,
+              "max_x": -1476,
+              "max_y": 89,
+              "max_z": 1433
+            },
+            "pieces": [
+              {
+                "type": "minecraft:nefos",
+                "gen_depth": 0,
+                "orientation": 2,
+                "bounding_box": {
+                  "min_x": -1492,
+                  "min_y": 77,
+                  "min_z": 1417,
+                  "max_x": -1488,
+                  "max_y": 77,
+                  "max_z": 1421
+                }
+              }
+            ]
+          },
+          {
             "structure": "minecraft:fortress",
             "chunk_x": -94,
             "chunk_z": 88,
@@ -167195,35 +167224,6 @@
                   "max_x": -1424,
                   "max_y": 71,
                   "max_z": 1498
-                }
-              }
-            ]
-          },
-          {
-            "structure": "minecraft:nether_fossil",
-            "chunk_x": -94,
-            "chunk_z": 88,
-            "references": 0,
-            "bounding_box": {
-              "min_x": -1504,
-              "min_y": 65,
-              "min_z": 1405,
-              "max_x": -1476,
-              "max_y": 89,
-              "max_z": 1433
-            },
-            "pieces": [
-              {
-                "type": "minecraft:nefos",
-                "gen_depth": 0,
-                "orientation": 2,
-                "bounding_box": {
-                  "min_x": -1492,
-                  "min_y": 77,
-                  "min_z": 1417,
-                  "max_x": -1488,
-                  "max_y": 77,
-                  "max_z": 1421
                 }
               }
             ]
@@ -181206,6 +181206,35 @@
         "z": 68,
         "starts": [
           {
+            "structure": "minecraft:nether_fossil",
+            "chunk_x": -74,
+            "chunk_z": 68,
+            "references": 0,
+            "bounding_box": {
+              "min_x": -1192,
+              "min_y": 71,
+              "min_z": 1078,
+              "max_x": -1164,
+              "max_y": 99,
+              "max_z": 1104
+            },
+            "pieces": [
+              {
+                "type": "minecraft:nefos",
+                "gen_depth": 0,
+                "orientation": 2,
+                "bounding_box": {
+                  "min_x": -1180,
+                  "min_y": 83,
+                  "min_z": 1090,
+                  "max_x": -1176,
+                  "max_y": 87,
+                  "max_z": 1092
+                }
+              }
+            ]
+          },
+          {
             "structure": "minecraft:bastion_remnant",
             "chunk_x": -74,
             "chunk_z": 68,
@@ -185012,35 +185041,6 @@
                   },
                   "rotation": "CLOCKWISE_180",
                   "liquid_settings": "apply_waterlogging"
-                }
-              }
-            ]
-          },
-          {
-            "structure": "minecraft:nether_fossil",
-            "chunk_x": -74,
-            "chunk_z": 68,
-            "references": 0,
-            "bounding_box": {
-              "min_x": -1192,
-              "min_y": 71,
-              "min_z": 1078,
-              "max_x": -1164,
-              "max_y": 99,
-              "max_z": 1104
-            },
-            "pieces": [
-              {
-                "type": "minecraft:nefos",
-                "gen_depth": 0,
-                "orientation": 2,
-                "bounding_box": {
-                  "min_x": -1180,
-                  "min_y": 83,
-                  "min_z": 1090,
-                  "max_x": -1176,
-                  "max_y": 87,
-                  "max_z": 1092
                 }
               }
             ]

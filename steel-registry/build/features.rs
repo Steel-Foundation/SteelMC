@@ -9,7 +9,7 @@ use steel_utils::value_providers::{
     FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
     WeightedIntProvider,
 };
-use steel_utils::{Direction, Identifier};
+use steel_utils::{Direction, Identifier, Rotation};
 
 #[path = "feature_data.rs"]
 mod feature_data;
@@ -95,12 +95,25 @@ fn generate_box<T>(value: &T, f: impl Fn(&T) -> TokenStream) -> TokenStream {
 
 fn generate_offset(offset: &[i32; 3]) -> TokenStream {
     let [x, y, z] = *offset;
-    quote! { [#x, #y, #z] }
+    quote! { IVec3::new(#x, #y, #z) }
 }
 
 fn generate_block_ref_list(list: &IdentifierList) -> TokenStream {
     let values = generate_vec(&list.0, generate_block_ref);
     quote! { BlockRefList(#values) }
+}
+
+fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
+    match set {
+        BlockHolderSet::Tag(tag) => {
+            let tag = generate_identifier(tag);
+            quote! { BlockHolderSet::Tag(#tag) }
+        }
+        BlockHolderSet::Entries(entries) => {
+            let entries = generate_vec(entries, generate_block_ref);
+            quote! { BlockHolderSet::Entries(#entries) }
+        }
+    }
 }
 
 fn generate_fluid_ref_list(list: &IdentifierList) -> TokenStream {
@@ -158,6 +171,15 @@ fn generate_direction(direction: Direction) -> TokenStream {
         Direction::South => quote! { Direction::South },
         Direction::West => quote! { Direction::West },
         Direction::East => quote! { Direction::East },
+    }
+}
+
+fn generate_rotation(rotation: Rotation) -> TokenStream {
+    match rotation {
+        Rotation::None => quote! { Rotation::None },
+        Rotation::Clockwise90 => quote! { Rotation::Clockwise90 },
+        Rotation::Clockwise180 => quote! { Rotation::Clockwise180 },
+        Rotation::CounterClockwise90 => quote! { Rotation::CounterClockwise90 },
     }
 }
 
@@ -507,6 +529,7 @@ fn generate_block_state_provider(provider: &BlockStateProvider) -> TokenStream {
 
 fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStream {
     match predicate {
+        BlockPredicate::True => quote! { BlockPredicate::True },
         BlockPredicate::AllOf { predicates } => {
             let predicates = generate_vec(predicates, generate_block_predicate);
             quote! { BlockPredicate::AllOf { predicates: #predicates } }
@@ -818,6 +841,24 @@ fn generate_weighted_placed_feature(feature: &WeightedPlacedFeature) -> TokenStr
     let chance = feature.chance;
     let feature = generate_placed_feature_ref(&feature.feature);
     quote! { WeightedPlacedFeature { chance: #chance, feature: #feature } }
+}
+
+fn generate_weighted_random_placed_feature(feature: &WeightedRandomPlacedFeature) -> TokenStream {
+    let data = generate_placed_feature_ref(&feature.data);
+    let weight = feature.weight;
+    quote! { WeightedRandomPlacedFeature { data: #data, weight: #weight } }
+}
+
+fn generate_template_entry(entry: &TemplateEntry) -> TokenStream {
+    let id = generate_identifier(&entry.id);
+    let rotations = generate_vec(&entry.rotations, |rotation| generate_rotation(*rotation));
+    quote! { TemplateEntry { id: #id, rotations: #rotations } }
+}
+
+fn generate_weighted_template_entry(entry: &WeightedTemplateEntry) -> TokenStream {
+    let data = generate_template_entry(&entry.data);
+    let weight = entry.weight;
+    quote! { WeightedTemplateEntry { data: #data, weight: #weight } }
 }
 
 fn generate_trunk_placer_base(base: &TrunkPlacerBase) -> TokenStream {
@@ -1354,6 +1395,45 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
                 })
             }
         }
+        ConfiguredFeatureKind::SpeleothemCluster(config) => {
+            let base_block = generate_block_state_data(&config.base_block);
+            let pointed_block = generate_block_state_data(&config.pointed_block);
+            let replaceable_blocks = generate_block_holder_set(&config.replaceable_blocks);
+            let floor_to_ceiling_search_range = config.floor_to_ceiling_search_range;
+            let height = generate_int_provider(&config.height);
+            let radius = generate_int_provider(&config.radius);
+            let max_stalagmite_stalactite_height_diff =
+                config.max_stalagmite_stalactite_height_diff;
+            let height_deviation = config.height_deviation;
+            let speleothem_block_layer_thickness =
+                generate_int_provider(&config.speleothem_block_layer_thickness);
+            let density = generate_float_provider(config.density);
+            let wetness = generate_float_provider(config.wetness);
+            let chance_of_speleothem_at_max_distance_from_center =
+                config.chance_of_speleothem_at_max_distance_from_center;
+            let max_distance_from_edge_affecting_chance_of_speleothem =
+                config.max_distance_from_edge_affecting_chance_of_speleothem;
+            let max_distance_from_center_affecting_height_bias =
+                config.max_distance_from_center_affecting_height_bias;
+            quote! {
+                ConfiguredFeatureKind::SpeleothemCluster(SpeleothemClusterConfiguration {
+                    base_block: #base_block,
+                    pointed_block: #pointed_block,
+                    replaceable_blocks: #replaceable_blocks,
+                    floor_to_ceiling_search_range: #floor_to_ceiling_search_range,
+                    height: #height,
+                    radius: #radius,
+                    max_stalagmite_stalactite_height_diff: #max_stalagmite_stalactite_height_diff,
+                    height_deviation: #height_deviation,
+                    speleothem_block_layer_thickness: #speleothem_block_layer_thickness,
+                    density: #density,
+                    wetness: #wetness,
+                    chance_of_speleothem_at_max_distance_from_center: #chance_of_speleothem_at_max_distance_from_center,
+                    max_distance_from_edge_affecting_chance_of_speleothem: #max_distance_from_edge_affecting_chance_of_speleothem,
+                    max_distance_from_center_affecting_height_bias: #max_distance_from_center_affecting_height_bias,
+                })
+            }
+        }
         ConfiguredFeatureKind::EndGateway(config) => {
             let exit = generate_option(&config.exit, generate_offset);
             let exact = config.exact;
@@ -1474,14 +1554,23 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
         ConfiguredFeatureKind::Lake(config) => {
             let fluid = generate_block_state_provider(&config.fluid);
             let barrier = generate_block_state_provider(&config.barrier);
+            let can_place_feature = generate_block_predicate(&config.can_place_feature);
+            let can_replace_with_air_or_fluid =
+                generate_block_predicate(&config.can_replace_with_air_or_fluid);
+            let can_replace_with_barrier =
+                generate_block_predicate(&config.can_replace_with_barrier);
             quote! {
                 ConfiguredFeatureKind::Lake(LakeConfiguration {
                     fluid: #fluid,
                     barrier: #barrier,
+                    can_place_feature: #can_place_feature,
+                    can_replace_with_air_or_fluid: #can_replace_with_air_or_fluid,
+                    can_replace_with_barrier: #can_replace_with_barrier,
                 })
             }
         }
         ConfiguredFeatureKind::LargeDripstone(config) => {
+            let replaceable_blocks = generate_block_holder_set(&config.replaceable_blocks);
             let floor_to_ceiling_search_range = config.floor_to_ceiling_search_range;
             let column_radius = generate_int_provider(&config.column_radius);
             let height_scale = generate_float_provider(config.height_scale);
@@ -1494,6 +1583,7 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             let min_bluntness_for_wind = config.min_bluntness_for_wind;
             quote! {
                 ConfiguredFeatureKind::LargeDripstone(LargeDripstoneConfiguration {
+                    replaceable_blocks: #replaceable_blocks,
                     floor_to_ceiling_search_range: #floor_to_ceiling_search_range,
                     column_radius: #column_radius,
                     height_scale: #height_scale,
@@ -1597,9 +1687,19 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
                 })
             }
         }
+        ConfiguredFeatureKind::WeightedRandomSelector(config) => {
+            let features = generate_vec(&config.features, generate_weighted_random_placed_feature);
+            quote! {
+                ConfiguredFeatureKind::WeightedRandomSelector(WeightedRandomFeatureConfiguration {
+                    features: #features,
+                })
+            }
+        }
         ConfiguredFeatureKind::RootSystem(config) => {
             let feature = generate_placed_feature_ref(&config.feature);
             let required_vertical_space_for_tree = config.required_vertical_space_for_tree;
+            let level_test_distance = config.level_test_distance;
+            let max_level_deviation = config.max_level_deviation;
             let root_radius = config.root_radius;
             let root_placement_attempts = config.root_placement_attempts;
             let root_column_max_height = config.root_column_max_height;
@@ -1610,12 +1710,14 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             let root_state_provider = generate_block_state_provider(&config.root_state_provider);
             let hanging_root_state_provider =
                 generate_block_state_provider(&config.hanging_root_state_provider);
-            let root_replaceable = generate_identifier(&config.root_replaceable);
+            let root_replaceable = generate_block_holder_set(&config.root_replaceable);
             let allowed_tree_position = generate_block_predicate(&config.allowed_tree_position);
             quote! {
                 ConfiguredFeatureKind::RootSystem(RootSystemConfiguration {
                     feature: #feature,
                     required_vertical_space_for_tree: #required_vertical_space_for_tree,
+                    level_test_distance: #level_test_distance,
+                    max_level_deviation: #max_level_deviation,
                     root_radius: #root_radius,
                     root_placement_attempts: #root_placement_attempts,
                     root_column_max_height: #root_column_max_height,
@@ -1678,6 +1780,14 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
                 })
             }
         }
+        ConfiguredFeatureKind::Sequence(config) => {
+            let features = generate_vec(&config.features, generate_placed_feature_ref);
+            quote! {
+                ConfiguredFeatureKind::Sequence(CompositeFeatureConfiguration {
+                    features: #features,
+                })
+            }
+        }
         ConfiguredFeatureKind::SimpleBlock(config) => {
             let to_place = generate_block_state_provider(&config.to_place);
             let schedule_tick = config.schedule_tick;
@@ -1693,6 +1803,26 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             quote! {
                 ConfiguredFeatureKind::SimpleRandomSelector(SimpleRandomSelectorConfiguration {
                     features: #features,
+                })
+            }
+        }
+        ConfiguredFeatureKind::Speleothem(config) => {
+            let base_block = generate_block_state_data(&config.base_block);
+            let pointed_block = generate_block_state_data(&config.pointed_block);
+            let replaceable_blocks = generate_block_holder_set(&config.replaceable_blocks);
+            let chance_of_taller_generation = config.chance_of_taller_generation;
+            let chance_of_directional_spread = config.chance_of_directional_spread;
+            let chance_of_spread_radius2 = config.chance_of_spread_radius2;
+            let chance_of_spread_radius3 = config.chance_of_spread_radius3;
+            quote! {
+                ConfiguredFeatureKind::Speleothem(SpeleothemConfiguration {
+                    base_block: #base_block,
+                    pointed_block: #pointed_block,
+                    replaceable_blocks: #replaceable_blocks,
+                    chance_of_taller_generation: #chance_of_taller_generation,
+                    chance_of_directional_spread: #chance_of_directional_spread,
+                    chance_of_spread_radius2: #chance_of_spread_radius2,
+                    chance_of_spread_radius3: #chance_of_spread_radius3,
                 })
             }
         }
@@ -1713,7 +1843,7 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             let requires_block_below = config.requires_block_below;
             let rock_count = config.rock_count;
             let hole_count = config.hole_count;
-            let valid_blocks = generate_block_ref_list(&config.valid_blocks);
+            let valid_blocks = generate_block_holder_set(&config.valid_blocks);
             quote! {
                 ConfiguredFeatureKind::SpringFeature(SpringConfiguration {
                     state: #state,
@@ -1721,6 +1851,14 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
                     rock_count: #rock_count,
                     hole_count: #hole_count,
                     valid_blocks: #valid_blocks,
+                })
+            }
+        }
+        ConfiguredFeatureKind::Template(config) => {
+            let templates = generate_vec(&config.templates, generate_weighted_template_entry);
+            quote! {
+                ConfiguredFeatureKind::Template(TemplateFeatureConfiguration {
+                    templates: #templates,
                 })
             }
         }
@@ -1840,8 +1978,9 @@ pub(crate) fn build_configured() -> TokenStream {
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
         };
-        use steel_utils::{Direction, Identifier};
+        use steel_utils::{Direction, Identifier, Rotation};
         use std::sync::{LazyLock, OnceLock};
+        use glam::IVec3;
     });
 
     let mut register = TokenStream::new();
@@ -1892,8 +2031,9 @@ pub(crate) fn build_placed() -> TokenStream {
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
         };
-        use steel_utils::{Direction, Identifier};
+        use steel_utils::{Direction, Identifier, Rotation};
         use std::sync::{LazyLock, OnceLock};
+        use glam::IVec3;
     });
 
     let mut register = TokenStream::new();

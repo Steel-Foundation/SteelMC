@@ -1,5 +1,71 @@
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{
+    Identifier,
+    codec::VarInt,
+    serial::{ReadFrom, WriteTo},
+};
+
+/// The operation type for an attribute modifier.
+///
+/// Matches vanilla `AttributeModifier.Operation`:
+/// - `AddValue` (0): `total += amount`
+/// - `AddMultipliedBase` (1): `total += base * amount`
+/// - `AddMultipliedTotal` (2): `total *= 1 + amount`
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "matches vanilla `AttributeModifier.Operation` names"
+)]
+pub enum AttributeModifierOperation {
+    AddValue = 0,
+    AddMultipliedBase = 1,
+    AddMultipliedTotal = 2,
+}
+
+impl AttributeModifierOperation {
+    #[must_use]
+    pub const fn from_id(id: i32) -> Option<Self> {
+        match id {
+            0 => Some(Self::AddValue),
+            1 => Some(Self::AddMultipliedBase),
+            2 => Some(Self::AddMultipliedTotal),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn by_name(name: &str) -> Option<Self> {
+        match name {
+            "add_value" => Some(Self::AddValue),
+            "add_multiplied_base" => Some(Self::AddMultipliedBase),
+            "add_multiplied_total" => Some(Self::AddMultipliedTotal),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::AddValue => "add_value",
+            Self::AddMultipliedBase => "add_multiplied_base",
+            Self::AddMultipliedTotal => "add_multiplied_total",
+        }
+    }
+}
+
+impl WriteTo for AttributeModifierOperation {
+    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        VarInt(*self as i32).write(writer)
+    }
+}
+
+impl ReadFrom for AttributeModifierOperation {
+    fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
+        let id = VarInt::read(data)?.0;
+        Ok(Self::from_id(id).unwrap_or(Self::AddValue))
+    }
+}
 
 /// Vanilla entity attribute definition
 ///

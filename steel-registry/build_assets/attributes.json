@@ -1,6 +1,15 @@
 [
   {
     "id": 0,
+    "name": "air_drag_modifier",
+    "translation_key": "attribute.name.air_drag_modifier",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 1,
     "name": "armor",
     "translation_key": "attribute.name.armor",
     "default_value": 0.0,
@@ -9,7 +18,7 @@
     "max_value": 30.0
   },
   {
-    "id": 1,
+    "id": 2,
     "name": "armor_toughness",
     "translation_key": "attribute.name.armor_toughness",
     "default_value": 0.0,
@@ -18,7 +27,7 @@
     "max_value": 20.0
   },
   {
-    "id": 2,
+    "id": 3,
     "name": "attack_damage",
     "translation_key": "attribute.name.attack_damage",
     "default_value": 2.0,
@@ -27,7 +36,7 @@
     "max_value": 2048.0
   },
   {
-    "id": 3,
+    "id": 4,
     "name": "attack_knockback",
     "translation_key": "attribute.name.attack_knockback",
     "default_value": 0.0,
@@ -36,7 +45,7 @@
     "max_value": 5.0
   },
   {
-    "id": 4,
+    "id": 5,
     "name": "attack_speed",
     "translation_key": "attribute.name.attack_speed",
     "default_value": 4.0,
@@ -45,7 +54,16 @@
     "max_value": 1024.0
   },
   {
-    "id": 5,
+    "id": 6,
+    "name": "below_name_distance",
+    "translation_key": "attribute.name.below_name_distance",
+    "default_value": 10.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 512.0
+  },
+  {
+    "id": 7,
     "name": "block_break_speed",
     "translation_key": "attribute.name.block_break_speed",
     "default_value": 1.0,
@@ -54,7 +72,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 6,
+    "id": 8,
     "name": "block_interaction_range",
     "translation_key": "attribute.name.block_interaction_range",
     "default_value": 4.5,
@@ -63,7 +81,16 @@
     "max_value": 64.0
   },
   {
-    "id": 7,
+    "id": 9,
+    "name": "bounciness",
+    "translation_key": "attribute.name.bounciness",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 10,
     "name": "burning_time",
     "translation_key": "attribute.name.burning_time",
     "default_value": 1.0,
@@ -72,7 +99,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 8,
+    "id": 11,
     "name": "camera_distance",
     "translation_key": "attribute.name.camera_distance",
     "default_value": 4.0,
@@ -81,7 +108,7 @@
     "max_value": 32.0
   },
   {
-    "id": 9,
+    "id": 12,
     "name": "explosion_knockback_resistance",
     "translation_key": "attribute.name.explosion_knockback_resistance",
     "default_value": 0.0,
@@ -90,7 +117,7 @@
     "max_value": 1.0
   },
   {
-    "id": 10,
+    "id": 13,
     "name": "entity_interaction_range",
     "translation_key": "attribute.name.entity_interaction_range",
     "default_value": 3.0,
@@ -99,7 +126,7 @@
     "max_value": 64.0
   },
   {
-    "id": 11,
+    "id": 14,
     "name": "fall_damage_multiplier",
     "translation_key": "attribute.name.fall_damage_multiplier",
     "default_value": 1.0,
@@ -108,7 +135,7 @@
     "max_value": 100.0
   },
   {
-    "id": 12,
+    "id": 15,
     "name": "flying_speed",
     "translation_key": "attribute.name.flying_speed",
     "default_value": 0.4,
@@ -117,7 +144,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 13,
+    "id": 16,
     "name": "follow_range",
     "translation_key": "attribute.name.follow_range",
     "default_value": 32.0,
@@ -126,7 +153,16 @@
     "max_value": 2048.0
   },
   {
-    "id": 14,
+    "id": 17,
+    "name": "friction_modifier",
+    "translation_key": "attribute.name.friction_modifier",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 18,
     "name": "gravity",
     "translation_key": "attribute.name.gravity",
     "default_value": 0.08,
@@ -135,7 +171,7 @@
     "max_value": 1.0
   },
   {
-    "id": 15,
+    "id": 19,
     "name": "jump_strength",
     "translation_key": "attribute.name.jump_strength",
     "default_value": 0.41999998688697815,
@@ -144,16 +180,16 @@
     "max_value": 32.0
   },
   {
-    "id": 16,
+    "id": 20,
     "name": "knockback_resistance",
     "translation_key": "attribute.name.knockback_resistance",
     "default_value": 0.0,
     "syncable": false,
-    "min_value": 0.0,
+    "min_value": -2.0,
     "max_value": 1.0
   },
   {
-    "id": 17,
+    "id": 21,
     "name": "luck",
     "translation_key": "attribute.name.luck",
     "default_value": 0.0,
@@ -162,7 +198,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 18,
+    "id": 22,
     "name": "max_absorption",
     "translation_key": "attribute.name.max_absorption",
     "default_value": 0.0,
@@ -171,7 +207,7 @@
     "max_value": 2048.0
   },
   {
-    "id": 19,
+    "id": 23,
     "name": "max_health",
     "translation_key": "attribute.name.max_health",
     "default_value": 20.0,
@@ -180,7 +216,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 20,
+    "id": 24,
     "name": "mining_efficiency",
     "translation_key": "attribute.name.mining_efficiency",
     "default_value": 0.0,
@@ -189,7 +225,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 21,
+    "id": 25,
     "name": "movement_efficiency",
     "translation_key": "attribute.name.movement_efficiency",
     "default_value": 0.0,
@@ -198,7 +234,7 @@
     "max_value": 1.0
   },
   {
-    "id": 22,
+    "id": 26,
     "name": "movement_speed",
     "translation_key": "attribute.name.movement_speed",
     "default_value": 0.7,
@@ -207,7 +243,16 @@
     "max_value": 1024.0
   },
   {
-    "id": 23,
+    "id": 27,
+    "name": "name_tag_distance",
+    "translation_key": "attribute.name.name_tag_distance",
+    "default_value": 64.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 512.0
+  },
+  {
+    "id": 28,
     "name": "oxygen_bonus",
     "translation_key": "attribute.name.oxygen_bonus",
     "default_value": 0.0,
@@ -216,7 +261,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 24,
+    "id": 29,
     "name": "safe_fall_distance",
     "translation_key": "attribute.name.safe_fall_distance",
     "default_value": 3.0,
@@ -225,7 +270,7 @@
     "max_value": 1024.0
   },
   {
-    "id": 25,
+    "id": 30,
     "name": "scale",
     "translation_key": "attribute.name.scale",
     "default_value": 1.0,
@@ -234,7 +279,7 @@
     "max_value": 16.0
   },
   {
-    "id": 26,
+    "id": 31,
     "name": "sneaking_speed",
     "translation_key": "attribute.name.sneaking_speed",
     "default_value": 0.3,
@@ -243,7 +288,7 @@
     "max_value": 1.0
   },
   {
-    "id": 27,
+    "id": 32,
     "name": "spawn_reinforcements",
     "translation_key": "attribute.name.spawn_reinforcements",
     "default_value": 0.0,
@@ -252,7 +297,7 @@
     "max_value": 1.0
   },
   {
-    "id": 28,
+    "id": 33,
     "name": "step_height",
     "translation_key": "attribute.name.step_height",
     "default_value": 0.6,
@@ -261,7 +306,7 @@
     "max_value": 10.0
   },
   {
-    "id": 29,
+    "id": 34,
     "name": "submerged_mining_speed",
     "translation_key": "attribute.name.submerged_mining_speed",
     "default_value": 0.2,
@@ -270,7 +315,7 @@
     "max_value": 20.0
   },
   {
-    "id": 30,
+    "id": 35,
     "name": "sweeping_damage_ratio",
     "translation_key": "attribute.name.sweeping_damage_ratio",
     "default_value": 0.0,
@@ -279,7 +324,7 @@
     "max_value": 1.0
   },
   {
-    "id": 31,
+    "id": 36,
     "name": "tempt_range",
     "translation_key": "attribute.name.tempt_range",
     "default_value": 10.0,
@@ -288,7 +333,7 @@
     "max_value": 2048.0
   },
   {
-    "id": 32,
+    "id": 37,
     "name": "water_movement_efficiency",
     "translation_key": "attribute.name.water_movement_efficiency",
     "default_value": 0.0,
@@ -297,7 +342,7 @@
     "max_value": 1.0
   },
   {
-    "id": 33,
+    "id": 38,
     "name": "waypoint_transmit_range",
     "translation_key": "attribute.name.waypoint_transmit_range",
     "default_value": 0.0,
@@ -306,7 +351,7 @@
     "max_value": 6.0E7
   },
   {
-    "id": 34,
+    "id": 39,
     "name": "waypoint_receive_range",
     "translation_key": "attribute.name.waypoint_receive_range",
     "default_value": 0.0,

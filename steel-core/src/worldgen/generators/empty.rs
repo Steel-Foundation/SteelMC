@@ -1,6 +1,7 @@
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::region::WorldGenRegion;
+use glam::IVec3;
 use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
 use steel_worldgen::noise::Beardifier;
@@ -32,8 +33,7 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn fill_from_noise(&self, _chunk: &ChunkAccess, _beardifier: Option<&Beardifier>) {}
 
-    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
-    }
+    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(IVec3) -> u16) {}
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 

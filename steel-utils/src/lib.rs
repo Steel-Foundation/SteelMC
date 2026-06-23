@@ -5,7 +5,7 @@
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
 /// The Minecraft version this server supports.
-pub const MC_VERSION: &str = "26.1";
+pub const MC_VERSION: &str = "26.2";
 
 /// axis
 pub mod axis;
@@ -52,12 +52,12 @@ pub mod entity_events;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;
-pub use geometry::{BlockLocalAabb, WorldAabb};
+pub use geometry::{BlockLocalAabb, BoundingBox, WorldAabb};
 pub use rotation::Rotation;
 pub use types::BlockPos;
 pub use types::BlockStateId;
-pub use types::BoundingBox;
 pub use types::ChunkPos;
+pub use types::GlobalPos;
 pub use types::Identifier;
 pub use types::PackedBlockPos;
 pub use types::PackedChunkLocalXZ;
