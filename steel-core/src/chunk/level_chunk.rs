@@ -17,8 +17,8 @@ use steel_registry::{
     REGISTRY, RegistryEntry, blocks::block_state_ext::BlockStateExt, vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, Direction, PackedChunkLocalXZ, SectionPos, codec::BitSet,
-    locks::SyncRwLock, types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, Direction, PackedChunkLocalXZ, SectionPos, locks::SyncRwLock,
+    types::UpdateFlags,
 };
 
 use steel_utils::locks::SyncMutex;
@@ -26,7 +26,10 @@ use steel_utils::locks::SyncMutex;
 use crate::block_entity::{BlockEntityStorage, BlockEntityTickAction, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
-    light::{ChunkLightData, ChunkSkyLightSources, has_different_light_properties},
+    light::{
+        ChunkLightData, ChunkSkyLightSources, build_chunk_light_update_packet,
+        has_different_light_properties,
+    },
     proto_chunk::ProtoChunk,
     section::Sections,
 };
@@ -852,32 +855,66 @@ impl LevelChunk {
 
     /// Extracts the light data for sending to the client.
     #[must_use]
-    pub fn extract_light_data(&self) -> LightUpdatePacketData {
-        // Vanilla's light section count is sectionsCount + 2 (one below and one above the world)
-        let light_section_count = self.sections.sections.len() + 2;
-        let mut sky_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let mut block_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let empty_sky_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let empty_block_y_mask =
-            BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
+    pub fn extract_light_data(&self, has_skylight: bool) -> LightUpdatePacketData {
+        let light = self.light.read();
+        build_chunk_light_update_packet(&light, has_skylight)
+    }
+}
 
-        let mut sky_updates = Vec::new();
-        let mut block_updates = Vec::new();
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
 
-        for i in 0..light_section_count {
-            sky_y_mask.set(i, true);
-            block_y_mask.set(i, true);
-            sky_updates.push(vec![0xFF; 2048]);
-            block_updates.push(vec![0xFF; 2048]);
+    use steel_registry::test_support::init_test_registry;
+    use steel_utils::ChunkPos;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::{
+        light::{LightSection, LightSectionData},
+        proto_chunk::ProtoChunk,
+        section::{ChunkSection, Sections},
+    };
+
+    #[test]
+    fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let chunk = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+
+        {
+            let mut light = chunk.light.write();
+            let Some(sky_section) = light.sky.section_mut(0) else {
+                panic!("single-section light range should contain section 0");
+            };
+            *sky_section = LightSection::visible(LightSectionData::homogeneous(15));
+
+            let Some(block_section) = light.block.section_mut(0) else {
+                panic!("single-section light range should contain section 0");
+            };
+            let mut block_data = LightSectionData::homogeneous(0);
+            block_data.set(1, 2, 3, 12);
+            *block_section = LightSection::visible(block_data);
         }
 
-        LightUpdatePacketData {
-            sky_y_mask,
-            block_y_mask,
-            empty_sky_y_mask,
-            empty_block_y_mask,
-            sky_updates,
-            block_updates,
-        }
+        let with_sky = chunk.extract_light_data(true);
+        assert_eq!(with_sky.sky_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(with_sky.block_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(with_sky.sky_updates.len(), 1);
+        assert_eq!(with_sky.block_updates.len(), 1);
+        assert!(with_sky.sky_updates[0].iter().all(|byte| *byte == 0xff));
+
+        let without_sky = chunk.extract_light_data(false);
+        assert_eq!(without_sky.sky_y_mask.0[0], 0);
+        assert!(without_sky.sky_updates.is_empty());
+        assert_eq!(without_sky.block_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(without_sky.block_updates.len(), 1);
     }
 }

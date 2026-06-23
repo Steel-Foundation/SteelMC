@@ -38,6 +38,8 @@ const MAX_UNACKNOWLEDGED_BATCHES: u16 = 10;
 pub struct PreparedBatch {
     /// Chunk holders to encode.
     pub holders: Vec<Arc<ChunkHolder>>,
+    /// Whether the world dimension has a vanilla sky-light layer.
+    pub has_skylight: bool,
     /// Snapshot of the player's generation counter at prepare time.
     pub epoch_snapshot: u32,
 }
@@ -114,6 +116,7 @@ impl ChunkSender {
 
         Some(PreparedBatch {
             holders,
+            has_skylight: world.dimension_type.has_skylight,
             epoch_snapshot,
         })
     }
@@ -152,7 +155,7 @@ impl ChunkSender {
                     x: pos.0.x,
                     z: pos.0.y,
                     chunk_data: chunk.extract_chunk_data(),
-                    light_data: chunk.extract_light_data(),
+                    light_data: chunk.extract_light_data(batch.has_skylight),
                 },
                 compression,
                 ConnectionProtocol::Play,

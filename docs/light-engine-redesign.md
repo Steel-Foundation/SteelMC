@@ -39,9 +39,8 @@ Current `worldgen/light2` state:
 - The loading pyramid uses a separate `load_light` task for already-lit chunks.
 - `CLightUpdate` and full-chunk light-section broadcast queuing for tracked
   players are implemented.
-- `LevelChunk::extract_light_data` still emits the legacy all-`0xff`
-  placeholder for initial chunk packets; switching initial chunk packet light to
-  chunk-owned conversion is still pending.
+- `LevelChunk::extract_light_data` reads chunk-owned light data for initial
+  chunk packets and respects dimensions without skylight.
 - Dynamic queued block-change lighting is still pending.
 - Propagation layer order is old-light/ScalableLux order: sky before block.
 
@@ -405,8 +404,7 @@ Recommended implementation sequence:
 3. [x] Add `ChunkSkyLightSources` and `initialize_light_sources` to proto/full chunks.
 4. [x] Add fresh/loaded worldgen lighting on top of the implemented workset/edit
    foundation.
-5. [ ] Add queued dynamic block-change lighting and finish initial chunk packet
-   integration.
+5. [ ] Add queued dynamic block-change lighting.
 6. [ ] Optimize the internal propagation queue/cache only after parity tests are in
    place.
 
@@ -432,8 +430,7 @@ Before replacing the current branch, keep or add tests for:
 - Light section range padding for normal and overworld heights.
 - Packet masks for missing, homogeneous zero, homogeneous non-zero, packed data,
   hidden/internal, filtered sections, and no-skylight dimensions.
-- Initial chunk packets must come from chunk-owned light state; the current
-  all-`0xff` placeholder path should fail once real light tests are enabled.
+- Initial chunk packets must come from chunk-owned light state.
 - Save/load roundtrip for zero, data, hidden/internal, and loaded sky normalization.
 - World light reads for block light, sky light upward search, and full sky above highest non-empty.
 - `ChunkSkyLightSources` fill/update behavior.
