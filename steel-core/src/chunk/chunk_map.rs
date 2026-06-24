@@ -455,6 +455,13 @@ impl ChunkMap {
         }
     }
 
+    /// Marks client-visible chunk packet content as changed.
+    pub fn packet_content_changed(&self, chunk_pos: ChunkPos) {
+        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h)) {
+            holder.mark_packet_content_changed();
+        }
+    }
+
     /// Records a light-section change at the given position.
     pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) {
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
@@ -625,8 +632,8 @@ impl ChunkMap {
                 continue;
             }
 
-            // Get players tracking this chunk
-            let tracking_players = world.player_area_map.get_tracking_players(chunk_pos);
+            // Get players whose client already has the base chunk packet.
+            let tracking_players = world.get_packet_tracking_players(chunk_pos);
             if tracking_players.is_empty() {
                 continue;
             }
@@ -1336,7 +1343,10 @@ impl ChunkMap {
         // Entity visibility also depends on exact player position, not only
         // chunk-view changes. Vanilla refreshes tracked entities for accepted
         // movement within the same chunk as well.
-        world.entity_tracker().update_player(player, &new_view);
+        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        world
+            .entity_tracker()
+            .update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
     }
 
     /// Removes a player from the chunk map.

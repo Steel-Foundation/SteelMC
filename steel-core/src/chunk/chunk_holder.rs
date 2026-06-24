@@ -4,7 +4,7 @@ use parking_lot::RwLockReadGuard;
 use rustc_hash::FxHashSet;
 use std::fmt::Debug;
 use std::mem;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use steel_utils::locks::SyncRwLock;
 use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::SyncMutex};
@@ -137,6 +137,8 @@ pub struct ChunkHolder {
     has_changed_sections: AtomicBool,
     /// Whether this holder is already queued for the next broadcast flush.
     queued_for_broadcast: AtomicBool,
+    /// Monotonic revision for client-visible chunk packet content.
+    packet_content_revision: AtomicU64,
     /// Per-section sets of changed block positions.
     /// Index is `(block_y - min_y) / 16`.
     changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
@@ -193,6 +195,7 @@ impl ChunkHolder {
             height,
             has_changed_sections: AtomicBool::new(false),
             queued_for_broadcast: AtomicBool::new(false),
+            packet_content_revision: AtomicU64::new(0),
             changed_blocks_per_section,
             changed_light_sections: SyncMutex::new(ChangedLightSectionSets::default()),
         }
@@ -264,6 +267,7 @@ impl ChunkHolder {
         self.changed_blocks_per_section[section_index]
             .lock()
             .insert(packed);
+        self.mark_packet_content_changed();
         self.has_changed_sections.store(true, Ordering::Release);
 
         !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
@@ -301,6 +305,7 @@ impl ChunkHolder {
         if !ready_for_packet {
             return false;
         }
+        self.mark_packet_content_changed();
 
         let inserted = {
             let mut guard = self.changed_light_sections.lock();
@@ -351,6 +356,16 @@ impl ChunkHolder {
             sky: guard.sky.drain().collect(),
             block: guard.block.drain().collect(),
         }
+    }
+
+    /// Marks the holder's client-visible chunk packet content as changed.
+    pub fn mark_packet_content_changed(&self) {
+        self.packet_content_revision.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Returns the current client-visible content revision.
+    pub fn packet_content_revision(&self) -> u64 {
+        self.packet_content_revision.load(Ordering::Acquire)
     }
 
     /// Returns the number of sections in this chunk.

@@ -1399,6 +1399,7 @@ impl World {
     /// Marks the containing chunk as unsaved so it will be persisted to disk.
     pub fn block_entity_changed(&self, pos: BlockPos) {
         let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map.packet_content_changed(chunk_pos);
         self.mark_chunk_dirty(chunk_pos);
     }
 
@@ -1459,7 +1460,7 @@ impl World {
         {
             let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
             self.entity_tracker.send_changes(
-                |chunk| self.player_area_map.get_tracking_players(chunk),
+                |chunk| self.get_packet_tracking_players(chunk),
                 |player_id| self.players.get_by_entity_id(player_id),
                 EntityChangeSenders {
                     movement: |entity_id, packet| {
@@ -2183,7 +2184,7 @@ impl World {
         packet: EncodedPacket,
         exclude: Option<i32>,
     ) {
-        let tracking_players = self.player_area_map.get_tracking_players(chunk);
+        let tracking_players = self.get_packet_tracking_players(chunk);
         for entity_id in tracking_players {
             if Some(entity_id) == exclude {
                 continue;
@@ -2192,6 +2193,19 @@ impl World {
                 player.connection.send_encoded(packet.clone());
             }
         }
+    }
+
+    /// Returns players whose view includes the chunk and whose client has the base chunk packet.
+    pub fn get_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
+        self.player_area_map
+            .get_tracking_players(chunk)
+            .into_iter()
+            .filter(|entity_id| {
+                self.players
+                    .get_by_entity_id(*entity_id)
+                    .is_some_and(|player| player.chunk_sender.lock().is_chunk_sent(chunk))
+            })
+            .collect()
     }
 
     /// Broadcasts a packet to players currently tracking an entity.
@@ -3382,7 +3396,7 @@ impl World {
     pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
         self.entity_tracker.add(
             entity,
-            |chunk| self.player_area_map.get_tracking_players(chunk),
+            |chunk| self.get_packet_tracking_players(chunk),
             |id| self.players.get_by_entity_id(id),
         );
         self.track_navigating_mob(entity);

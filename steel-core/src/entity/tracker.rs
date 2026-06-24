@@ -216,7 +216,12 @@ impl EntityTracker {
     /// Mirrors vanilla `TrackedEntity.updatePlayer`: each tracked entity checks
     /// whether the player tracks the entity chunk, passes the entity-specific
     /// broadcast predicate, and is inside the effective horizontal range.
-    pub fn update_player(&self, player: &Player, view: &PlayerChunkView) {
+    pub fn update_player(
+        &self,
+        player: &Player,
+        view: &PlayerChunkView,
+        is_chunk_sent: impl Fn(ChunkPos) -> bool,
+    ) {
         let player_id = player.id();
         let player_pos = player.position();
         let player_view_distance = view.view_distance;
@@ -235,6 +240,7 @@ impl EntityTracker {
             let visible = !entity.is_removed()
                 && entity_id != player_id
                 && view.contains(tracked.registered_chunk)
+                && is_chunk_sent(tracked.registered_chunk)
                 && entity.broadcast_to_player(player)
                 && is_within_tracking_distance(
                     entity.position(),

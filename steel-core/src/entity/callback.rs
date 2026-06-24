@@ -162,14 +162,17 @@ impl EntityLevelCallback for PlayerEntityCallback {
                 self.entity_id,
                 update.old_chunk,
                 update.new_chunk,
-                |chunk| world.player_area_map.get_tracking_players(chunk),
+                |chunk| world.get_packet_tracking_players(chunk),
                 |player_id| world.players.get_by_entity_id(player_id),
             );
 
             if let Some(player) = world.players.get_by_entity_id(self.entity_id)
                 && let Some(view) = *player.last_tracking_view.lock()
             {
-                world.entity_tracker().update_player(&player, &view);
+                let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+                world
+                    .entity_tracker()
+                    .update_player(&player, &view, |chunk| sent_chunks.contains(&chunk));
             }
         }
 
@@ -244,7 +247,7 @@ impl EntityLevelCallback for EntityChunkCallback {
                     self.entity_id,
                     update.old_chunk,
                     update.new_chunk,
-                    |chunk| world.player_area_map.get_tracking_players(chunk),
+                    |chunk| world.get_packet_tracking_players(chunk),
                     |player_id| world.players.get_by_entity_id(player_id),
                 );
             }
