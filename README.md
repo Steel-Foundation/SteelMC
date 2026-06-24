@@ -50,6 +50,11 @@
 
 ---
 
+## How to install steel
+
+We have pre-built binaries, but also docker and eggs.
+More information can be found [here](https://steelmc.dev/guides/getting-started/installation/)
+
 ## ⚙ How to Contribute
 
 1. Identify a feature you'd like to add or an issue to work on.
@@ -78,3 +83,9 @@ cargo install prek typos-cli --locked
 
 Then you can run `prek install` to install the hook and it is configured to run automatically before every commit.
 It will fix some things already for you, but the commit will still fail and please check the changes.
+
+### Top contributors:
+
+<a href="https://github.com/othneildrew/Best-README-Template/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=othneildrew/Best-README-Template" alt="contrib.rocks image" />
+</a>
