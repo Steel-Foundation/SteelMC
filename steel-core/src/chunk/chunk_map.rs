@@ -898,13 +898,19 @@ impl ChunkMap {
             mem::take(&mut *guard)
         };
 
-        let world = self.world_gen_context.world();
-        let has_skylight = world.dimension_type.has_skylight;
+        let mut world = None;
+        let mut deferred_holders = Vec::new();
 
         for holder in holders {
             let chunk_pos = holder.get_pos();
-            let min_y = holder.min_y();
+            if self.light_updates.lock().touches_chunk(chunk_pos) {
+                deferred_holders.push(holder);
+                continue;
+            }
 
+            let world = world.get_or_insert_with(|| self.world_gen_context.world());
+            let has_skylight = world.dimension_type.has_skylight;
+            let min_y = holder.min_y();
             holder.clear_broadcast_queued();
 
             let light_changes = holder.take_changed_light_sections();
@@ -917,50 +923,57 @@ impl ChunkMap {
                 continue;
             }
 
+            if has_publishable_light_changes
+                && let Some(chunk) = holder.try_chunk(ChunkStatus::Full)
+            {
+                let tracking_players = world.get_light_packet_tracking_players(chunk_pos);
+                if !tracking_players.is_empty() {
+                    let light_data = {
+                        let light = chunk.light();
+                        let sky_sections = if has_skylight {
+                            light_changes.sky.as_slice()
+                        } else {
+                            &[]
+                        };
+                        build_chunk_light_update_packet_for_sections(
+                            chunk_pos,
+                            &light,
+                            has_skylight,
+                            sky_sections,
+                            &light_changes.block,
+                        )
+                    };
+                    let light_packet = CLightUpdate {
+                        x: chunk_pos.0.x,
+                        z: chunk_pos.0.y,
+                        light_data,
+                    };
+
+                    let Ok(encoded) = EncodedPacket::from_bare(
+                        light_packet,
+                        world.compression,
+                        ConnectionProtocol::Play,
+                    ) else {
+                        log::warn!("Failed to encode light update packet");
+                        continue;
+                    };
+
+                    for entity_id in &tracking_players {
+                        if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                            player.connection.send_encoded(encoded.clone());
+                        }
+                    }
+                }
+            }
+
+            if changes_by_section.is_empty() {
+                continue;
+            }
+
             // Get players whose client already has the base chunk packet.
             let tracking_players = world.get_packet_tracking_players(chunk_pos);
             if tracking_players.is_empty() {
                 continue;
-            }
-
-            if has_publishable_light_changes
-                && let Some(chunk) = holder.try_chunk(ChunkStatus::Full)
-            {
-                let light_data = {
-                    let light = chunk.light();
-                    let sky_sections = if has_skylight {
-                        light_changes.sky.as_slice()
-                    } else {
-                        &[]
-                    };
-                    build_chunk_light_update_packet_for_sections(
-                        chunk_pos,
-                        &light,
-                        has_skylight,
-                        sky_sections,
-                        &light_changes.block,
-                    )
-                };
-                let light_packet = CLightUpdate {
-                    x: chunk_pos.0.x,
-                    z: chunk_pos.0.y,
-                    light_data,
-                };
-
-                let Ok(encoded) = EncodedPacket::from_bare(
-                    light_packet,
-                    world.compression,
-                    ConnectionProtocol::Play,
-                ) else {
-                    log::warn!("Failed to encode light update packet");
-                    continue;
-                };
-
-                for entity_id in &tracking_players {
-                    if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                        player.connection.send_encoded(encoded.clone());
-                    }
-                }
             }
 
             // For each section with changes, send appropriate packet
@@ -1044,6 +1057,10 @@ impl ChunkMap {
                     }
                 }
             }
+        }
+
+        if !deferred_holders.is_empty() {
+            self.chunks_to_broadcast.lock().extend(deferred_holders);
         }
     }
 
@@ -2062,6 +2079,38 @@ mod tests {
         drop(in_flight_updates);
 
         assert!(!chunk_map.light_update_touches_chunk(inside));
+    }
+
+    #[test]
+    fn broadcast_changed_chunks_defers_holder_while_light_work_is_blocked() {
+        let chunk_map = test_chunk_map();
+        let center = ChunkPos::new(0, 0);
+        let holder = unloaded_full_holder(center);
+        assert!(holder.block_changed(BlockPos::new(1, 2, 3)));
+        chunk_map
+            .chunks_to_broadcast
+            .lock()
+            .push(Arc::clone(&holder));
+        chunk_map.light_updates.lock().pending.queue_change(
+            center,
+            BlockPos::new(1, 2, 3),
+            true,
+            None,
+        );
+        let Some(_reservation) = chunk_map
+            .light_work_window_gate
+            .try_reserve_centered(center)
+        else {
+            panic!("test should reserve the light work window");
+        };
+
+        chunk_map.broadcast_changed_chunks();
+
+        assert_eq!(chunk_map.chunks_to_broadcast.lock().len(), 1);
+        assert!(holder.has_changes_to_broadcast());
+        let changes = holder.take_changed_blocks();
+        assert_eq!(changes.len(), 1);
+        assert!(chunk_map.light_update_touches_chunk(center));
     }
 
     #[test]

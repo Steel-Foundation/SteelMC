@@ -364,7 +364,7 @@ impl ChunkLightLayerStorage {
 
         let local_x = section_relative_coord(block_pos.x());
         let local_z = section_relative_coord(block_pos.z());
-        let mut search_section_y = section_y + 1;
+        let mut search_section_y = section_y.saturating_add(1).max(self.range.min_section_y());
         while search_section_y < self.range.max_section_y_exclusive() {
             if let Some(section) = self.section(search_section_y)
                 && let Some(data) = section.visible_data()
@@ -467,5 +467,29 @@ impl ChunkLightData {
             LightLayer::Sky => self.sky.get_light_value(block_pos),
             LightLayer::Block => self.block.get_light_value(block_pos),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sky_light_below_range_starts_search_at_min_light_section() {
+        let Ok(range) = LightSectionRange::from_world_height(0, 16) else {
+            panic!("valid test height should create a light section range");
+        };
+        let mut storage =
+            ChunkLightLayerStorage::new(LightLayer::Sky, range, range.chunk_section_count());
+        let Some(section) = storage.section_mut(range.min_section_y()) else {
+            panic!("test range should include its minimum light section");
+        };
+        *section = LightSection::visible(LightSectionData::homogeneous(7));
+        let Ok(()) = storage.set_emptiness_map(vec![false; range.chunk_section_count()].into())
+        else {
+            panic!("test emptiness map should match the range");
+        };
+
+        assert_eq!(storage.get_light_value(BlockPos::new(0, i32::MIN, 0)), 7);
     }
 }

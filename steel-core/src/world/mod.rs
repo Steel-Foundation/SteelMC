@@ -87,7 +87,7 @@ use crate::{
     behavior::BlockStateBehaviorExt,
     behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, FLUID_BEHAVIORS},
     block_entity::SharedBlockEntity,
-    chunk::heightmap::HeightmapType,
+    chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
@@ -2208,6 +2208,58 @@ impl World {
             .collect()
     }
 
+    /// Returns players on the tracked border of a chunk whose client has its base chunk packet.
+    pub fn get_light_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
+        self.player_area_map
+            .get_tracking_players(chunk)
+            .into_iter()
+            .filter(|entity_id| {
+                let Some(player) = self.players.get_by_entity_id(*entity_id) else {
+                    return false;
+                };
+                let Some(view) = *player.last_tracking_view.lock() else {
+                    return false;
+                };
+                let chunk_sender = player.chunk_sender.lock();
+                let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
+                Self::chunk_is_on_packet_tracked_border(view, chunk, &is_chunk_sent)
+            })
+            .collect()
+    }
+
+    fn chunk_is_on_packet_tracked_border(
+        view: PlayerChunkView,
+        chunk: ChunkPos,
+        is_chunk_sent: &impl Fn(ChunkPos) -> bool,
+    ) -> bool {
+        if !Self::chunk_is_packet_tracked(view, chunk, is_chunk_sent) {
+            return false;
+        }
+
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                if dx == 0 && dz == 0 {
+                    continue;
+                }
+
+                let neighbor = ChunkPos::new(chunk.0.x + dx, chunk.0.y + dz);
+                if !Self::chunk_is_packet_tracked(view, neighbor, is_chunk_sent) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn chunk_is_packet_tracked(
+        view: PlayerChunkView,
+        chunk: ChunkPos,
+        is_chunk_sent: &impl Fn(ChunkPos) -> bool,
+    ) -> bool {
+        view.contains(chunk) && is_chunk_sent(chunk)
+    }
+
     /// Broadcasts a packet to players currently tracking an entity.
     pub fn broadcast_to_entity_trackers<P: ClientPacket>(
         &self,
@@ -4143,6 +4195,33 @@ mod tests {
         assert!(!World::is_in_spawnable_bounds(BlockPos::new(
             0, 20_000_000, 0
         )));
+    }
+
+    #[test]
+    fn light_packet_tracking_border_matches_vanilla_pending_chunk_rule() {
+        let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
+        let center = ChunkPos::new(0, 0);
+
+        assert!(!World::chunk_is_on_packet_tracked_border(
+            view,
+            center,
+            &|pos| view.contains(pos)
+        ));
+        assert!(World::chunk_is_on_packet_tracked_border(
+            view,
+            ChunkPos::new(3, 0),
+            &|_| true
+        ));
+        assert!(World::chunk_is_on_packet_tracked_border(
+            view,
+            center,
+            &|pos| pos != ChunkPos::new(1, 0)
+        ));
+        assert!(!World::chunk_is_on_packet_tracked_border(
+            view,
+            center,
+            &|pos| pos != center
+        ));
     }
 
     #[test]
