@@ -3077,6 +3077,26 @@ mod tests {
         assert_eq!(light.block.section_empty(0), Some(true));
     }
 
+    #[test]
+    fn forced_prepare_preserves_dirty_set_after_save_decision() {
+        init_test_registry();
+        let chunk = ChunkAccess::Proto(ProtoChunk::new(
+            single_empty_section(),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        ));
+
+        assert!(chunk.take_dirty());
+        chunk.mark_dirty();
+
+        let Some(_prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], true) else {
+            panic!("forced save prep should serialize the chunk");
+        };
+        assert!(chunk.is_dirty());
+    }
+
     fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
         PersistentEntity {
             entity_type: vanilla_entities::END_CRYSTAL.key.clone(),

@@ -1462,11 +1462,15 @@ impl ChunkMap {
                 .entity_manager()
                 .get_saveable_entities_for_chunk(chunk_pos);
             let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
-            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard, &runtime_entities, force);
+            let dirty = chunk_guard.take_dirty();
+            let prepared = if dirty || force {
+                ChunkStorage::prepare_chunk_save(&chunk_guard, &runtime_entities, true)
+            } else {
+                None
+            };
 
-            // Clear dirty flag while we still have the lock (only if we're actually saving)
-            if prepared.is_some() {
-                chunk_guard.clear_dirty();
+            if prepared.is_none() && dirty {
+                chunk_guard.mark_dirty();
             }
 
             (prepared, status)
@@ -1701,15 +1705,20 @@ impl ChunkMap {
                     .entity_manager()
                     .get_saveable_entities_for_chunk(chunk_pos);
                 let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
-                let Some(prepared) =
-                    ChunkStorage::prepare_chunk_save(&chunk, &runtime_entities, force)
-                else {
-                    if !force {
+                let dirty = chunk.take_dirty();
+                let prepared = if dirty || force {
+                    ChunkStorage::prepare_chunk_save(&chunk, &runtime_entities, true)
+                } else {
+                    None
+                };
+                let Some(prepared) = prepared else {
+                    if dirty {
+                        chunk.mark_dirty();
+                    } else if !force {
                         covered_chunk_positions.insert(chunk_pos);
                     }
-                    continue; // Not dirty
+                    continue;
                 };
-                chunk.clear_dirty();
                 (prepared, status)
             };
 

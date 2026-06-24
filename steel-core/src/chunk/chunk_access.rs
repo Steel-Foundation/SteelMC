@@ -327,7 +327,16 @@ impl ChunkAccess {
         }
     }
 
-    /// Clears the dirty flag (called after saving).
+    /// Clears the dirty flag and returns whether it was previously set.
+    pub fn take_dirty(&self) -> bool {
+        match self {
+            Self::Full(chunk) => chunk.dirty.swap(false, Ordering::AcqRel),
+            Self::Proto(proto_chunk) => proto_chunk.dirty.swap(false, Ordering::AcqRel),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Clears the dirty flag.
     pub fn clear_dirty(&self) {
         match self {
             Self::Full(chunk) => chunk.dirty.store(false, Ordering::Release),
@@ -810,6 +819,29 @@ mod tests {
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
+
+    #[test]
+    fn take_dirty_consumes_current_dirty_state_without_blocking_later_dirty() {
+        init_test_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let chunk = ChunkAccess::Proto(proto);
+
+        assert!(chunk.is_dirty());
+        assert!(chunk.take_dirty());
+        assert!(!chunk.is_dirty());
+        assert!(!chunk.take_dirty());
+
+        chunk.mark_dirty();
+
+        assert!(chunk.take_dirty());
+        assert!(!chunk.is_dirty());
+    }
 
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
