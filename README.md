@@ -11,10 +11,10 @@
 <div align="center">
   <img src="https://i.imgur.com/lFQ6jH2.png" alt="Logo" width="128" height="128">
 
-  <h3 align="center">SteelMC - Leveraging </h3>
+  <h3 align="center">SteelMC - Minecraft implemented the right way.</h3>
 
   <p align="center">
-    Minecraft implemented the right way. Built in Rust, with multithreading in mind.<br /> We aim for vanilla parity, performance, clean code and customization.
+    Built in Rust, with multithreading in mind. We aim for vanilla parity,<br />performance, clean code and customization.
     <br />
     <a href="https://steelmc.dev/"><strong>Explore the docs</strong></a>
     <br />
