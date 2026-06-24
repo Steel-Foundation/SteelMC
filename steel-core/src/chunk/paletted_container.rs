@@ -181,7 +181,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     /// Gets the value at a y,z,x linear index.
     ///
     /// The index layout is `x + z * DIM + y * DIM * DIM`, matching the flat
-    /// order used when serializing palette data and by ScalableLux light propagation.
+    /// order used when serializing palette data and by `ScalableLux` light propagation.
     pub fn get_at_index(&self, index: usize) -> V {
         debug_assert!(index < Self::VOLUME);
 
@@ -225,7 +225,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     /// Returns whether this container's palette may contain a matching value.
     ///
     /// This checks palette entries instead of every cell, matching vanilla and
-    /// ScalableLux's fast pre-scan before doing a full section pass.
+    /// `ScalableLux`'s fast pre-scan before doing a full section pass.
     #[must_use]
     pub fn maybe_has(&self, mut predicate: impl FnMut(V) -> bool) -> bool {
         match self {

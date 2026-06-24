@@ -184,7 +184,7 @@ impl Sections {
             .collect()
     }
 
-    /// Returns block-light source positions in ScalableLux section/local-index order.
+    /// Returns block-light source positions in `ScalableLux` section/local-index order.
     #[must_use]
     pub fn block_light_sources(&self, chunk_pos: ChunkPos, min_y: i32) -> Vec<BlockPos> {
         let mut sources = Vec::new();
@@ -368,7 +368,7 @@ impl ChunkSection {
                 .maybe_has(|state| state.get_light_emission() > 0)
     }
 
-    /// Appends block-light source positions in ScalableLux local-index order.
+    /// Appends block-light source positions in `ScalableLux` local-index order.
     pub fn append_block_light_sources(
         &self,
         chunk_min_x: i32,

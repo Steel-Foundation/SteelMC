@@ -9,7 +9,7 @@ use super::{
 };
 
 /// Error returned when a sky-light propagation context is built from mismatched caches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkyLightPropagationContextError {
     /// Sky-light propagation requires a sky light edit cache.
     WrongLayer {
@@ -19,15 +19,24 @@ pub enum SkyLightPropagationContextError {
     /// Section and light caches were built from different cache layouts.
     LayoutMismatch {
         /// Layout used by the section cache.
-        section_layout: LightCacheLayout,
+        section_layout: Box<LightCacheLayout>,
         /// Layout used by the light cache.
-        light_layout: LightCacheLayout,
+        light_layout: Box<LightCacheLayout>,
     },
     /// The workset does not contain its center chunk.
     MissingCenterChunk {
         /// Missing center chunk position.
         chunk_pos: ChunkPos,
     },
+}
+
+impl SkyLightPropagationContextError {
+    fn layout_mismatch(section_layout: LightCacheLayout, light_layout: LightCacheLayout) -> Self {
+        Self::LayoutMismatch {
+            section_layout: Box::new(section_layout),
+            light_layout: Box::new(light_layout),
+        }
+    }
 }
 
 /// Sections whose visible sky-light data changed during a scoped update.
@@ -55,7 +64,7 @@ pub fn propagate_sky_light_chunk_without_edge_checks(
 
 /// Seeds and propagates sky light for the center chunk of a scoped workset.
 ///
-/// This matches ScalableLux `SkyStarLightEngine.lightChunk`: sky sections
+/// This matches `ScalableLux` `SkyStarLightEngine.lightChunk`: sky sections
 /// around non-empty sections are initialized, full skylight is propagated
 /// downward, then the caller chooses between validating edge consistency or
 /// pulling already-initialized neighbor levels inward.
@@ -285,10 +294,10 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         }
 
         if sections.layout() != light.layout() {
-            return Err(SkyLightPropagationContextError::LayoutMismatch {
-                section_layout: sections.layout(),
-                light_layout: light.layout(),
-            });
+            return Err(SkyLightPropagationContextError::layout_mismatch(
+                sections.layout(),
+                light.layout(),
+            ));
         }
 
         let layout = light.layout();
@@ -447,13 +456,13 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         Some(true)
     }
 
-    /// Resets the center chunk to ScalableLux's fresh all-missing lighting state.
+    /// Resets the center chunk to `ScalableLux`'s fresh all-missing lighting state.
     pub fn reset_center_chunk_sections(&mut self) {
         self.light
             .reset_chunk_sections_to_missing(self.layout.center_chunk());
     }
 
-    /// Runs sky chunk lighting with the selected ScalableLux edge-check mode.
+    /// Runs sky chunk lighting with the selected `ScalableLux` edge-check mode.
     pub fn light_chunk(&mut self, chunk_pos: ChunkPos, edge_checks: SkyLightChunkEdgeChecks) {
         self.light.rewrite_missing_sections_for_skylight();
         self.missing_section_checked.fill(false);
@@ -514,7 +523,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         }
     }
 
-    /// Handles one sky-light opacity change, matching ScalableLux `checkBlock`.
+    /// Handles one sky-light opacity change, matching `ScalableLux` `checkBlock`.
     pub fn check_block(&mut self, block_pos: BlockPos) -> bool {
         let Some(cached_block) = self.layout.cached_block(block_pos) else {
             return false;
@@ -836,10 +845,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
             }
 
             let section_pos = SectionPos::from_block_pos(current_pos);
-            if !self.light.has_non_missing_section(section_pos) {
-                y &= !15;
-                above_state = Self::air();
-            } else {
+            if self.light.has_non_missing_section(section_pos) {
                 let Some(cached_block) = self.layout.cached_block(current_pos) else {
                     break;
                 };
@@ -858,6 +864,9 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
                 } else {
                     self.light.set(cached_block, MAX_LIGHT_LEVEL);
                 }
+            } else {
+                y &= !15;
+                above_state = Self::air();
             }
 
             y -= 1;
@@ -1364,9 +1373,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         directions: LightDirectionSet,
         flags: LightQueueFlags,
     ) -> Option<PackedLightQueueEntry> {
-        let Some(packed_pos) = self.layout.encode_block_pos(block_pos) else {
-            return None;
-        };
+        let packed_pos = self.layout.encode_block_pos(block_pos)?;
         let entry = PackedLightQueueEntry::from_parts(packed_pos, level, directions, flags);
         self.queues.enqueue_decrease(entry);
         Some(entry)
@@ -1379,9 +1386,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         directions: LightDirectionSet,
         flags: LightQueueFlags,
     ) -> Option<PackedLightQueueEntry> {
-        let Some(packed_pos) = self.layout.encode_block_pos(block_pos) else {
-            return None;
-        };
+        let packed_pos = self.layout.encode_block_pos(block_pos)?;
         let entry = PackedLightQueueEntry::from_parts(packed_pos, level, directions, flags);
         self.queues.enqueue_increase(entry);
         Some(entry)
@@ -1394,7 +1399,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         self.sections.get_block_state(cached_block)
     }
 
-    fn current_edge_scan(
+    const fn current_edge_scan(
         chunk_pos: ChunkPos,
         direction: LightAxisDirection,
     ) -> (i32, i32, i32, i32) {
@@ -1416,7 +1421,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         (1, 0, chunk_pos.0.x << 4, start_z)
     }
 
-    fn neighbor_edge_scan(
+    const fn neighbor_edge_scan(
         chunk_pos: ChunkPos,
         direction: LightAxisDirection,
     ) -> (i32, i32, i32, i32) {
@@ -1438,7 +1443,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         (1, 0, chunk_pos.0.x << 4, start_z)
     }
 
-    fn block_pos_from_local_index(
+    const fn block_pos_from_local_index(
         chunk_offset_x: i32,
         chunk_offset_y: i32,
         chunk_offset_z: i32,
@@ -1459,7 +1464,7 @@ impl<'a, 'sections, 'light> SkyLightPropagationContext<'a, 'sections, 'light> {
         }
     }
 
-    fn offset(block_pos: BlockPos, direction: LightAxisDirection) -> BlockPos {
+    const fn offset(block_pos: BlockPos, direction: LightAxisDirection) -> BlockPos {
         let (dx, dy, dz) = direction.offset();
         block_pos.offset(dx, dy, dz)
     }

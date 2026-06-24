@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use steel_registry::{REGISTRY, vanilla_blocks};
@@ -19,7 +19,7 @@ use super::{
 /// Error returned when a scoped light workset cannot acquire required chunks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightWorksetSetupError {
-    /// A chunk inside ScalableLux's required 1-radius cache was unavailable.
+    /// A chunk inside `ScalableLux`'s required 1-radius cache was unavailable.
     MissingRequiredChunk {
         /// Missing chunk position.
         chunk_pos: ChunkPos,
@@ -28,7 +28,7 @@ pub enum LightWorksetSetupError {
 
 /// Scoped chunk admission for one light operation.
 ///
-/// This keeps the ScalableLux cache-window admission rules without storing
+/// This keeps the `ScalableLux` cache-window admission rules without storing
 /// long-lived borrows into chunk internals. The workset pins admitted chunk
 /// holders, then builds short-lived read caches with locks acquired in stable
 /// cache-slot order.
@@ -44,7 +44,7 @@ struct LightWorksetChunk {
 }
 
 impl LightWorkset {
-    /// Creates a scoped cache window by scanning chunks in ScalableLux setup order.
+    /// Creates a scoped cache window by scanning chunks in `ScalableLux` setup order.
     pub fn setup(
         layout: LightCacheLayout,
         radius: LightCacheSetupRadius,
@@ -648,7 +648,7 @@ impl LightLayerEdit<'_> {
         let Some(target) = self.section_edit_mut(target_slot) else {
             return false;
         };
-        extrude_lower_row(&mut target.section, source_row);
+        extrude_lower_row(&mut target.section, source_row.as_ref());
         target.dirty = true;
         true
     }
@@ -783,7 +783,7 @@ impl LightLayerEdit<'_> {
         let Some(edit) = self.edits.get_mut(edit_index) else {
             return false;
         };
-        let edited = std::mem::replace(&mut edit.section, LightSection::missing());
+        let edited = mem::replace(&mut edit.section, LightSection::missing());
         let layer = self.layer;
         let Some(light_data) = self.chunks.get_mut_slot(target.chunk_slot) else {
             return false;
@@ -830,14 +830,17 @@ impl LightLayerEdit<'_> {
         }
     }
 
-    fn layer_storage(light_data: &ChunkLightData, layer: LightLayer) -> &ChunkLightLayerStorage {
+    const fn layer_storage(
+        light_data: &ChunkLightData,
+        layer: LightLayer,
+    ) -> &ChunkLightLayerStorage {
         match layer {
             LightLayer::Sky => &light_data.sky,
             LightLayer::Block => &light_data.block,
         }
     }
 
-    fn layer_storage_mut(
+    const fn layer_storage_mut(
         light_data: &mut ChunkLightData,
         layer: LightLayer,
     ) -> &mut ChunkLightLayerStorage {
@@ -870,16 +873,16 @@ fn set_section_non_missing(section: &mut LightSection) {
         }
         LightSection::Visible(_) => {}
         LightSection::Internal(data) => {
-            *section =
-                LightSection::visible(std::mem::replace(data, LightSectionData::homogeneous(0)));
+            *section = LightSection::visible(mem::replace(data, LightSectionData::homogeneous(0)));
         }
     }
 }
 
 fn take_internal_section(section: &mut LightSection) -> LightSection {
-    match std::mem::replace(section, LightSection::missing()) {
-        LightSection::Missing => LightSection::missing(),
-        LightSection::Visible(LightSectionData::Homogeneous(0)) => LightSection::missing(),
+    match mem::replace(section, LightSection::missing()) {
+        LightSection::Missing | LightSection::Visible(LightSectionData::Homogeneous(0)) => {
+            LightSection::missing()
+        }
         LightSection::Visible(data) | LightSection::Internal(data) => LightSection::internal(data),
     }
 }
@@ -911,10 +914,9 @@ fn set_section_value(section: &mut LightSection, local_index: usize, level: u8) 
     data.set(local_x, local_y, local_z, level);
 }
 
-fn section_has_light_data(section: &LightSection) -> bool {
+const fn section_has_light_data(section: &LightSection) -> bool {
     match section {
-        LightSection::Missing => false,
-        LightSection::Visible(LightSectionData::Homogeneous(0)) => false,
+        LightSection::Missing | LightSection::Visible(LightSectionData::Homogeneous(0)) => false,
         LightSection::Visible(_) | LightSection::Internal(_) => true,
     }
 }
@@ -938,7 +940,7 @@ fn lower_row(section: &LightSection) -> Option<[u8; 16 * 16]> {
     Some(row)
 }
 
-fn extrude_lower_row(section: &mut LightSection, row: Option<[u8; 16 * 16]>) {
+fn extrude_lower_row(section: &mut LightSection, row: Option<&[u8; 16 * 16]>) {
     let Some(row) = row else {
         *section = LightSection::visible(LightSectionData::homogeneous(0));
         return;

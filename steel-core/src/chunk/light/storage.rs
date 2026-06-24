@@ -85,7 +85,7 @@ impl LightSectionData {
 
     /// Returns true when this section is the visible empty section state.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         matches!(self, Self::Homogeneous(0))
     }
 
@@ -116,12 +116,12 @@ impl LightSectionData {
         }
     }
 
-    fn get_from_packed(data: &[u8; DATA_LAYER_SIZE], index: usize) -> u8 {
+    const fn get_from_packed(data: &[u8; DATA_LAYER_SIZE], index: usize) -> u8 {
         let packed = data[index >> 1];
         packed >> ((index & 1) << 2) & MAX_LIGHT_LEVEL
     }
 
-    fn set_in_packed(data: &mut [u8; DATA_LAYER_SIZE], index: usize, value: u8) {
+    const fn set_in_packed(data: &mut [u8; DATA_LAYER_SIZE], index: usize, value: u8) {
         let byte_index = index >> 1;
         let shift = (index & 1) << 2;
         let mask = !(MAX_LIGHT_LEVEL << shift);
@@ -317,7 +317,7 @@ impl ChunkLightLayerStorage {
         Some(previous)
     }
 
-    /// Applies ScalableLux's loaded-sky-data normalization.
+    /// Applies `ScalableLux`'s loaded-sky-data normalization.
     pub(crate) fn fill_loaded_missing_sky_sections_below_data_with_zero(&mut self) {
         if self.layer != LightLayer::Sky {
             return;
@@ -395,7 +395,7 @@ impl ChunkLightLayerStorage {
     }
 }
 
-fn section_relative_coord(block_coord: i32) -> usize {
+const fn section_relative_coord(block_coord: i32) -> usize {
     (block_coord & 15) as usize
 }
 
@@ -426,6 +426,10 @@ impl ChunkLightData {
     ///
     /// Invalid world heights are fatal because chunk-owned light arrays cannot
     /// be indexed coherently without the vanilla padded light-section range.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the supplied world height cannot form a valid light-section range.
     #[must_use]
     pub fn for_valid_world_height(min_y: i32, height: i32) -> Self {
         match Self::new(min_y, height) {

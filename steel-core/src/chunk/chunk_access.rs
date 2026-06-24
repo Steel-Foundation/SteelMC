@@ -453,7 +453,7 @@ impl ChunkAccess {
         }
     }
 
-    /// Returns block-light source positions in ScalableLux section/local-index order.
+    /// Returns block-light source positions in `ScalableLux` section/local-index order.
     #[must_use]
     pub fn block_light_sources(&self) -> Vec<BlockPos> {
         match self {

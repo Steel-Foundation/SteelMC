@@ -21,7 +21,7 @@ use serde::Deserialize;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
-use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
+use steel_core::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
 use steel_core::chunk::light::{
     BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
@@ -42,6 +42,17 @@ use steel_worldgen::noise::Beardifier;
 use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
+
+type FeatureHolderMap = Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>;
+
+struct FeatureGenerationInputs<'a> {
+    holders: &'a FeatureHolderMap,
+    context: &'a Arc<WorldGenContext>,
+    generator: &'a Arc<ChunkGeneratorType>,
+    feature_step: &'a ChunkStep,
+    feature_cache_radius: i32,
+    seed: u64,
+}
 
 #[derive(Deserialize, Debug)]
 struct ChunkStageEntry {
@@ -447,7 +458,7 @@ struct ReferenceLightChunk {
 ///     `min_section_y`: i32
 ///     `section_count`: i32
 ///     `sky_source_count`: i32
-///     `sky_sources`: [i32; sky_source_count]
+///     `sky_sources`: [i32; `sky_source_count`]
 ///     For sky, then block:
 ///       For each light section:
 ///         `state`: u8 (0 = null, 1 = empty, 2 = data)
@@ -706,7 +717,7 @@ fn compute_light_hash(chunk: &ChunkAccess) -> String {
     consume_i32(&mut ctx, range.min_section_y());
     consume_i32(&mut ctx, range.section_count() as i32);
     for layer in [LightLayer::Sky, LightLayer::Block] {
-        ctx.consume([if layer == LightLayer::Sky { 0 } else { 1 }]);
+        ctx.consume([u8::from(layer != LightLayer::Sky)]);
         let sections = match layer {
             LightLayer::Sky => light.sky.sections(),
             LightLayer::Block => light.block.sections(),
@@ -723,7 +734,7 @@ fn compute_light_hash(chunk: &ChunkAccess) -> String {
     format!("{:x}", ctx.finalize())
 }
 
-fn describe_light_state(state: u8) -> &'static str {
+const fn describe_light_state(state: u8) -> &'static str {
     match state {
         0 => "null",
         1 => "empty",
@@ -732,7 +743,7 @@ fn describe_light_state(state: u8) -> &'static str {
     }
 }
 
-fn light_value(bytes: &[u8], index: usize) -> u8 {
+const fn light_value(bytes: &[u8], index: usize) -> u8 {
     let packed = bytes[index >> 1];
     packed >> ((index & 1) << 2) & 0x0F
 }
@@ -970,12 +981,7 @@ fn build_test_beardifier(
 fn generate_features_for_positions(
     positions: &[(i32, i32)],
     generated_positions: &mut FxHashSet<(i32, i32)>,
-    holders: &Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>,
-    context: &Arc<WorldGenContext>,
-    generator: &Arc<ChunkGeneratorType>,
-    feature_step: &steel_core::chunk::chunk_pyramid::ChunkStep,
-    feature_cache_radius: i32,
-    seed: u64,
+    inputs: FeatureGenerationInputs<'_>,
 ) {
     for &(chunk_x, chunk_z) in positions {
         if !generated_positions.insert((chunk_x, chunk_z)) {
@@ -983,7 +989,7 @@ fn generate_features_for_positions(
         }
 
         let center = ChunkPos::new(chunk_x, chunk_z);
-        let Some(center_holder) = holders.get(&(chunk_x, chunk_z)) else {
+        let Some(center_holder) = inputs.holders.get(&(chunk_x, chunk_z)) else {
             panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
         };
         {
@@ -992,25 +998,27 @@ fn generate_features_for_positions(
             };
             chunk.prime_final_heightmaps();
         }
-        let cache_holders = holders.clone();
+        let cache_holders = inputs.holders.clone();
         let cache = Arc::new(StaticCache2D::create(
             chunk_x,
             chunk_z,
-            feature_cache_radius,
+            inputs.feature_cache_radius,
             move |x, z| match cache_holders.get(&(x, z)) {
                 Some(holder) => holder.clone(),
                 None => panic!("Missing feature dependency chunk ({x}, {z})"),
             },
         ));
-        let region_random = generator.create_worldgen_region_random(seed as i64, center);
+        let region_random = inputs
+            .generator
+            .create_worldgen_region_random(inputs.seed as i64, center);
         let mut region = steel_core::worldgen::WorldGenRegion::new(
-            context,
-            feature_step,
+            inputs.context,
+            inputs.feature_step,
             &cache,
             center,
             region_random,
         );
-        generator.apply_biome_decorations(&mut region);
+        inputs.generator.apply_biome_decorations(&mut region);
     }
 }
 
@@ -1242,7 +1250,7 @@ fn chunk_stage_hashes_inner() {
             && light_stage_has_entries
             && debug_stage
                 .as_deref()
-                .map_or(true, |filter| filter == LIGHT_STAGE);
+                .is_none_or(|filter| filter == LIGHT_STAGE);
         let light_dependency_radius = if check_light_stage {
             expected
                 .light_dependency_radius
@@ -1393,7 +1401,7 @@ fn chunk_stage_hashes_inner() {
             generator.fill_from_noise(chunk, beardifier.as_ref());
         }
 
-        let mut feature_holders: Option<Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>> = None;
+        let mut feature_holders: Option<FeatureHolderMap> = None;
         let mut feature_dependencies_prepared = false;
         let mut generated_feature_positions = FxHashSet::default();
         let mut light_initialized = false;
@@ -1486,12 +1494,14 @@ fn chunk_stage_hashes_inner() {
                 generate_features_for_positions(
                     &feature_stage_positions,
                     &mut generated_feature_positions,
-                    holders,
-                    context,
-                    &generator,
-                    feature_step,
-                    feature_cache_radius,
-                    seed,
+                    FeatureGenerationInputs {
+                        holders,
+                        context,
+                        generator: &generator,
+                        feature_step,
+                        feature_cache_radius,
+                        seed,
+                    },
                 );
             } else if stage == LIGHT_STAGE {
                 let Some(holders) = &feature_holders else {
@@ -1504,12 +1514,14 @@ fn chunk_stage_hashes_inner() {
                 generate_features_for_positions(
                     &tracked_positions_sorted,
                     &mut generated_feature_positions,
-                    holders,
-                    context,
-                    &generator,
-                    feature_step,
-                    feature_cache_radius,
-                    seed,
+                    FeatureGenerationInputs {
+                        holders,
+                        context,
+                        generator: &generator,
+                        feature_step,
+                        feature_cache_radius,
+                        seed,
+                    },
                 );
                 let extra_light_feature_positions = light_feature_positions_sorted
                     .iter()
@@ -1519,12 +1531,14 @@ fn chunk_stage_hashes_inner() {
                 generate_features_for_positions(
                     &extra_light_feature_positions,
                     &mut generated_feature_positions,
-                    holders,
-                    context,
-                    &generator,
-                    feature_step,
-                    feature_cache_radius,
-                    seed,
+                    FeatureGenerationInputs {
+                        holders,
+                        context,
+                        generator: &generator,
+                        feature_step,
+                        feature_cache_radius,
+                        seed,
+                    },
                 );
 
                 if !light_initialized {

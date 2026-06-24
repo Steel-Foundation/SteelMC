@@ -70,7 +70,7 @@ pub fn build_chunk_light_update_packet_for_sections(
         let Some(section_y) = range.section_y(section_index) else {
             continue;
         };
-        let section_pos = range.section_pos(chunk_pos, section_y);
+        let section_pos = SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y);
 
         if has_skylight && sky_sections.contains(&section_pos) {
             prepare_chunk_section_data(

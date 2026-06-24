@@ -136,6 +136,10 @@ impl ProtoChunk {
     }
 
     /// Creates a proto chunk that was loaded from disk.
+    ///
+    /// # Panics
+    ///
+    /// Panics when persisted light data does not match the loaded section range.
     #[expect(
         clippy::too_many_arguments,
         reason = "disk rehydration mirrors the persisted proto chunk fields"
@@ -420,7 +424,9 @@ impl ProtoChunk {
         }
 
         if self.status() >= ChunkStatus::InitializeLight {
-            let empty_section_change = if was_empty != is_empty {
+            let empty_section_change = if was_empty == is_empty {
+                None
+            } else {
                 self.update_light_section_emptiness(y, is_empty);
                 Some(LightSectionEmptinessChange {
                     section_pos: SectionPos::new(
@@ -430,8 +436,6 @@ impl ProtoChunk {
                     ),
                     empty: is_empty,
                 })
-            } else {
-                None
             };
 
             let light_properties_changed = has_different_light_properties(old_state, state);

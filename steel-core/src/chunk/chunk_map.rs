@@ -240,7 +240,7 @@ impl Drop for InFlightLightUpdates<'_> {
     }
 }
 
-fn light_update_window_contains(center: ChunkPos, chunk_pos: ChunkPos) -> bool {
+const fn light_update_window_contains(center: ChunkPos, chunk_pos: ChunkPos) -> bool {
     let dx = center.0.x.abs_diff(chunk_pos.0.x);
     let dz = center.0.y.abs_diff(chunk_pos.0.y);
     dx <= LIGHT_CACHE_RADIUS as u32 && dz <= LIGHT_CACHE_RADIUS as u32
@@ -870,9 +870,7 @@ impl ChunkMap {
             true,
             |chunk_pos| {
                 let holder = self.light_update_holder(chunk_pos)?;
-                if holder.try_chunk(ChunkStatus::Light).is_none() {
-                    return None;
-                }
+                drop(holder.try_chunk(ChunkStatus::Light)?);
                 Some(holder)
             },
             |_| true,
@@ -881,6 +879,10 @@ impl ChunkMap {
     }
 
     /// Broadcasts all pending block and light changes to nearby players.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "broadcasting block and light packets is one ordered publish workflow"
+    )]
     pub fn broadcast_changed_chunks(&self) {
         self.propagate_queued_light_changes();
 

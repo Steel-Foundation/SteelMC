@@ -332,11 +332,13 @@ impl ChunkSender {
     }
 
     /// Returns whether the client has been queued the initial chunk packet.
+    #[must_use]
     pub fn is_chunk_sent(&self, pos: ChunkPos) -> bool {
         self.sent_chunks.contains(&pos)
     }
 
     /// Returns a snapshot of all sent chunks for this player.
+    #[must_use]
     pub fn sent_chunks_snapshot(&self) -> FxHashSet<ChunkPos> {
         self.sent_chunks.clone()
     }

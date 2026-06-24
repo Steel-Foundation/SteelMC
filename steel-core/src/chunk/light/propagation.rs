@@ -9,7 +9,7 @@ use super::{
 };
 
 /// Error returned when a block-light propagation context is built from mismatched caches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockLightPropagationContextError {
     /// Block-light propagation requires a block light edit cache.
     WrongLayer {
@@ -19,15 +19,24 @@ pub enum BlockLightPropagationContextError {
     /// Section and light caches were built from different cache layouts.
     LayoutMismatch {
         /// Layout used by the section cache.
-        section_layout: LightCacheLayout,
+        section_layout: Box<LightCacheLayout>,
         /// Layout used by the light cache.
-        light_layout: LightCacheLayout,
+        light_layout: Box<LightCacheLayout>,
     },
     /// The workset does not contain its center chunk.
     MissingCenterChunk {
         /// Missing center chunk position.
         chunk_pos: ChunkPos,
     },
+}
+
+impl BlockLightPropagationContextError {
+    fn layout_mismatch(section_layout: LightCacheLayout, light_layout: LightCacheLayout) -> Self {
+        Self::LayoutMismatch {
+            section_layout: Box::new(section_layout),
+            light_layout: Box::new(light_layout),
+        }
+    }
 }
 
 /// Sections whose visible block-light data changed during a scoped update.
@@ -48,7 +57,7 @@ pub enum BlockLightChunkEdgeChecks {
 
 /// Runs ScalableLux-style block-light propagation for changed blocks in a scoped workset.
 ///
-/// This is the block-light equivalent of ScalableLux `propagateBlockChanges`
+/// This is the block-light equivalent of `ScalableLux` `propagateBlockChanges`
 /// plus publishing edited sections. It assumes the caller already created a
 /// cache window around the affected chunk and will deliver returned section
 /// updates to the world/chunk notification layer.
@@ -133,7 +142,7 @@ fn apply_block_empty_section_changes(
 
 /// Seeds and propagates block light for the center chunk of a scoped workset.
 ///
-/// This matches ScalableLux `BlockStarLightEngine.lightChunk`: source blocks in
+/// This matches `ScalableLux` `BlockStarLightEngine.lightChunk`: source blocks in
 /// the center chunk are seeded, then the caller chooses between validating edge
 /// consistency or pulling already-initialized neighbor levels inward.
 pub fn propagate_block_light_chunk(
@@ -193,7 +202,7 @@ pub fn propagate_block_light_chunk(
 
 /// Force-synchronizes block-light sections for an already-lit loaded chunk.
 ///
-/// This matches the block layer of ScalableLux `forceLoadInChunk`: existing
+/// This matches the block layer of `ScalableLux` `forceLoadInChunk`: existing
 /// light data is kept, empty-section state is synchronized, and dirty visible
 /// sections are published before the later edge-check pass.
 pub fn force_load_block_light_chunk(
@@ -220,7 +229,7 @@ pub fn force_load_block_light_chunk(
 
 /// Validates already-loaded block-light chunk edges without resetting sections.
 ///
-/// This matches ScalableLux `checkBlockEdges`: the force-load pass has already
+/// This matches `ScalableLux` `checkBlockEdges`: the force-load pass has already
 /// synchronized empty-section state, so this pass only checks horizontal
 /// consistency against loaded neighbors and publishes its own dirty sections.
 pub fn check_block_light_chunk_edges(
@@ -424,7 +433,7 @@ fn section_is_non_empty(
 
 /// ScalableLux-style block-light propagation over scoped Steel light caches.
 ///
-/// This keeps the queue algorithm close to ScalableLux while avoiding long-lived
+/// This keeps the queue algorithm close to `ScalableLux` while avoiding long-lived
 /// references into chunks: the caller owns the scoped section and light caches,
 /// and this context only borrows them for one propagation pass.
 pub struct BlockLightPropagationContext<'a, 'sections, 'light> {
@@ -448,10 +457,10 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         }
 
         if sections.layout() != light.layout() {
-            return Err(BlockLightPropagationContextError::LayoutMismatch {
-                section_layout: sections.layout(),
-                light_layout: light.layout(),
-            });
+            return Err(BlockLightPropagationContextError::layout_mismatch(
+                sections.layout(),
+                light.layout(),
+            ));
         }
 
         Ok(Self {
@@ -462,7 +471,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         })
     }
 
-    /// Handles one block-light source/opacity change, matching ScalableLux `checkBlock`.
+    /// Handles one block-light source/opacity change, matching `ScalableLux` `checkBlock`.
     ///
     /// Returns false when the changed block is outside this cache window.
     pub fn check_block(&mut self, block_pos: BlockPos) -> bool {
@@ -493,7 +502,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         true
     }
 
-    /// Seeds block-light sources in ScalableLux local-index order.
+    /// Seeds block-light sources in `ScalableLux` local-index order.
     pub fn seed_block_light_sources(&mut self, positions: impl IntoIterator<Item = BlockPos>) {
         for position in positions {
             self.seed_block_light_source(position);
@@ -519,7 +528,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
 
     /// Validates this chunk's horizontal edges against cached neighbor edges.
     ///
-    /// This mirrors ScalableLux `checkChunkEdges`: edge values whose calculated
+    /// This mirrors `ScalableLux` `checkChunkEdges`: edge values whose calculated
     /// level differs from the stored value are delayed, converted into regular
     /// block checks, then resolved through the decrease queue.
     pub fn check_chunk_edges(&mut self, chunk_pos: ChunkPos) {
@@ -582,7 +591,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         Some(level)
     }
 
-    /// Performs queued ScalableLux block-light decreases, then re-propagates increases.
+    /// Performs queued `ScalableLux` block-light decreases, then re-propagates increases.
     pub fn perform_light_decrease(&mut self) {
         while let Some(entry) = self.queues.dequeue_decrease() {
             let Some(source_block) = self.cached_block_from_entry(entry) else {
@@ -653,7 +662,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         self.perform_light_increase();
     }
 
-    /// Performs queued ScalableLux block-light increases.
+    /// Performs queued `ScalableLux` block-light increases.
     pub fn perform_light_increase(&mut self) {
         while let Some(entry) = self.queues.dequeue_increase() {
             let Some(source_block) = self.cached_block_from_entry(entry) else {
@@ -910,7 +919,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         }
     }
 
-    fn current_edge_scan(
+    const fn current_edge_scan(
         chunk_pos: ChunkPos,
         direction: LightAxisDirection,
     ) -> (i32, i32, i32, i32) {
@@ -932,7 +941,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         (1, 0, chunk_pos.0.x << 4, start_z)
     }
 
-    fn neighbor_edge_scan(
+    const fn neighbor_edge_scan(
         chunk_pos: ChunkPos,
         direction: LightAxisDirection,
     ) -> (i32, i32, i32, i32) {
@@ -954,7 +963,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         (1, 0, chunk_pos.0.x << 4, start_z)
     }
 
-    fn block_pos_from_local_index(
+    const fn block_pos_from_local_index(
         chunk_offset_x: i32,
         chunk_offset_y: i32,
         chunk_offset_z: i32,
@@ -1023,7 +1032,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         }
     }
 
-    fn offset(block_pos: BlockPos, direction: LightAxisDirection) -> BlockPos {
+    const fn offset(block_pos: BlockPos, direction: LightAxisDirection) -> BlockPos {
         let (dx, dy, dz) = direction.offset();
         block_pos.offset(dx, dy, dz)
     }

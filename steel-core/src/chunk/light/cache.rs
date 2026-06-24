@@ -4,11 +4,11 @@ use steel_utils::{BlockPos, ChunkPos, Direction, SectionPos};
 
 use super::LightSectionRange;
 
-/// Horizontal cache radius used by ScalableLux light propagation.
+/// Horizontal cache radius used by `ScalableLux` light propagation.
 pub const LIGHT_CACHE_RADIUS: i32 = 2;
-/// Horizontal radius where ScalableLux populates section and nibble cache data.
+/// Horizontal radius where `ScalableLux` populates section and nibble cache data.
 pub const LIGHT_CACHE_SECTION_RADIUS: i32 = 1;
-/// Horizontal cache width and depth used by ScalableLux light propagation.
+/// Horizontal cache width and depth used by `ScalableLux` light propagation.
 pub const LIGHT_CACHE_DIAMETER: usize = LIGHT_CACHE_RADIUS as usize * 2 + 1;
 /// Number of chunk columns in one light-engine cache window.
 pub const LIGHT_CACHE_CHUNK_SLOTS: usize = LIGHT_CACHE_DIAMETER * LIGHT_CACHE_DIAMETER;
@@ -28,7 +28,7 @@ const LIGHT_ENCODED_POSITION_MASK: u32 =
 const LIGHT_ENCODED_Z_SHIFT: u32 = LIGHT_ENCODED_HORIZONTAL_BITS as u32;
 const LIGHT_ENCODED_Y_SHIFT: u32 = (LIGHT_ENCODED_HORIZONTAL_BITS * 2) as u32;
 
-/// ScalableLux packed block position used in light propagation queue entries.
+/// `ScalableLux` packed block position used in light propagation queue entries.
 ///
 /// The lower 28 bits store `x | (z << 6) | (y << 12)`. X and Z are encoded in
 /// a 64-block window around the active chunk; Y is encoded relative to the
@@ -68,9 +68,9 @@ impl PackedLightBlockPos {
     }
 }
 
-/// ScalableLux cache role for a cached chunk column.
+/// `ScalableLux` cache role for a cached chunk column.
 ///
-/// During two-radius setup ScalableLux may cache chunk and emptiness-map data
+/// During two-radius setup `ScalableLux` may cache chunk and emptiness-map data
 /// for the full 5x5 window, but section and nibble arrays are normally
 /// populated only for the inner 3x3 chunk window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,7 +81,7 @@ pub enum LightCacheChunkScope {
     Outer,
 }
 
-/// ScalableLux setup-cache radius.
+/// `ScalableLux` setup-cache radius.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LightCacheSetupRadius {
     /// Scan the inner 3x3 chunk window.
@@ -104,12 +104,12 @@ impl LightCacheSetupRadius {
     }
 }
 
-/// Cached chunk slot plus its ScalableLux cache role.
+/// Cached chunk slot plus its `ScalableLux` cache role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CachedLightChunk {
     /// World chunk position for this cached chunk.
     pub chunk_pos: ChunkPos,
-    /// Slot into ScalableLux's 5x5 chunk cache arrays.
+    /// Slot into `ScalableLux`'s 5x5 chunk cache arrays.
     pub chunk_slot: usize,
     /// Whether this chunk is in the inner section/nibble radius or outer ring.
     pub scope: LightCacheChunkScope,
@@ -120,26 +120,26 @@ pub struct CachedLightChunk {
 pub struct CachedLightSection {
     /// World section position for this cached section.
     pub section_pos: SectionPos,
-    /// Slot into ScalableLux's section/nibble cache arrays.
+    /// Slot into `ScalableLux`'s section/nibble cache arrays.
     pub section_slot: usize,
 }
 
 /// Cached section slot and local nibble index for one block.
 ///
-/// ScalableLux propagation uses `sectionIndex` plus local index
+/// `ScalableLux` propagation uses `sectionIndex` plus local index
 /// `x | (z << 4) | (y << 8)` instead of repeatedly materializing section
 /// positions and local coordinates inside the hot propagation loops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CachedLightBlock {
     /// World block position for this cached block.
     pub block_pos: BlockPos,
-    /// Slot into ScalableLux's section/nibble cache arrays.
+    /// Slot into `ScalableLux`'s section/nibble cache arrays.
     pub section_slot: usize,
     /// Local block index inside the 16x16x16 light section.
     pub local_index: usize,
 }
 
-/// Iterator over chunks scanned by ScalableLux cache setup.
+/// Iterator over chunks scanned by `ScalableLux` cache setup.
 #[derive(Debug, Clone)]
 pub struct LightCacheSetupChunks {
     layout: LightCacheLayout,
@@ -185,7 +185,7 @@ impl ExactSizeIterator for LightCacheSetupChunks {}
 
 impl FusedIterator for LightCacheSetupChunks {}
 
-/// Optional value slots for ScalableLux's 5x5 chunk cache arrays.
+/// Optional value slots for `ScalableLux`'s 5x5 chunk cache arrays.
 #[derive(Debug, Clone)]
 pub struct LightChunkSlotArray<T> {
     values: Box<[Option<T>]>,
@@ -300,7 +300,7 @@ impl ExactSizeIterator for LightChunkSectionSlots {}
 
 impl FusedIterator for LightChunkSectionSlots {}
 
-/// Optional value slots for ScalableLux's section/nibble cache arrays.
+/// Optional value slots for `ScalableLux`'s section/nibble cache arrays.
 #[derive(Debug, Clone)]
 pub struct LightSectionSlotArray<T> {
     layout: LightCacheLayout,
@@ -384,7 +384,7 @@ impl<T> LightSectionSlotArray<T> {
 
 /// Section-slot notification flags used while publishing visible light updates.
 ///
-/// ScalableLux keeps `notifyUpdateCache` beside its nibble cache and marks the
+/// `ScalableLux` keeps `notifyUpdateCache` beside its nibble cache and marks the
 /// cached sections touched by a block's one-block lighting neighborhood. The
 /// light engine later scans the same section slots while publishing dirty
 /// nibbles and notifying clients.
@@ -493,9 +493,9 @@ impl LightUpdateNotificationCache {
     }
 }
 
-/// ScalableLux cache-window layout for chunk, section, and nibble arrays.
+/// `ScalableLux` cache-window layout for chunk, section, and nibble arrays.
 ///
-/// ScalableLux keeps a 5x5 chunk window around the active chunk and stores
+/// `ScalableLux` keeps a 5x5 chunk window around the active chunk and stores
 /// light sections in flat arrays with one extra cached section below and above
 /// the vanilla light-section range. This type owns that index math so the
 /// light engine can share the same slots for chunk sections, nibbles, and
@@ -567,7 +567,7 @@ impl LightCacheLayout {
 
     /// Returns the section Y coordinate one past the last cached section.
     #[must_use]
-    pub fn cached_max_section_y_exclusive(self) -> i32 {
+    pub const fn cached_max_section_y_exclusive(self) -> i32 {
         self.cached_min_section_y + self.cached_section_count as i32
     }
 
@@ -583,9 +583,9 @@ impl LightCacheLayout {
         LIGHT_CACHE_CHUNK_SLOTS * self.cached_section_count
     }
 
-    /// Iterates chunks in ScalableLux `setupCaches` scan order.
+    /// Iterates chunks in `ScalableLux` `setupCaches` scan order.
     #[must_use]
-    pub fn setup_chunks(self, radius: LightCacheSetupRadius) -> LightCacheSetupChunks {
+    pub const fn setup_chunks(self, radius: LightCacheSetupRadius) -> LightCacheSetupChunks {
         let remaining = radius.chunk_count();
         let radius = radius.chunk_radius();
         LightCacheSetupChunks {
@@ -647,7 +647,7 @@ impl LightCacheLayout {
 
     /// Converts a chunk slot back to its cached chunk position.
     #[must_use]
-    pub fn chunk_pos_for_slot(self, chunk_slot: usize) -> Option<ChunkPos> {
+    pub const fn chunk_pos_for_slot(self, chunk_slot: usize) -> Option<ChunkPos> {
         if chunk_slot >= LIGHT_CACHE_CHUNK_SLOTS {
             return None;
         }
@@ -681,7 +681,7 @@ impl LightCacheLayout {
 
     /// Converts a section/nibble slot back to its cached section position.
     #[must_use]
-    pub fn section_pos_for_slot(self, section_slot: usize) -> Option<SectionPos> {
+    pub const fn section_pos_for_slot(self, section_slot: usize) -> Option<SectionPos> {
         if section_slot >= self.section_slot_count() {
             return None;
         }
@@ -697,7 +697,7 @@ impl LightCacheLayout {
 
     /// Iterates the vanilla light-section slots for an inner cached chunk.
     ///
-    /// Returns `None` for the outer radius-2 ring because ScalableLux keeps
+    /// Returns `None` for the outer radius-2 ring because `ScalableLux` keeps
     /// those chunks available for chunk/emptiness lookups but does not
     /// populate section or nibble cache data for them during normal setup.
     #[must_use]
@@ -781,29 +781,29 @@ impl LightCacheLayout {
 
     /// Returns the first block X coordinate that can be packed into queue entries.
     #[must_use]
-    pub fn encoded_min_block_x(self) -> i32 {
+    pub const fn encoded_min_block_x(self) -> i32 {
         self.encoded_min_block_x as i32
     }
 
     /// Returns the block X coordinate one past the packed queue window.
     #[must_use]
-    pub fn encoded_max_block_x_exclusive(self) -> i32 {
+    pub const fn encoded_max_block_x_exclusive(self) -> i32 {
         (self.encoded_min_block_x + LIGHT_ENCODED_HORIZONTAL_MASK + 1) as i32
     }
 
     /// Returns the first block Z coordinate that can be packed into queue entries.
     #[must_use]
-    pub fn encoded_min_block_z(self) -> i32 {
+    pub const fn encoded_min_block_z(self) -> i32 {
         self.encoded_min_block_z as i32
     }
 
     /// Returns the block Z coordinate one past the packed queue window.
     #[must_use]
-    pub fn encoded_max_block_z_exclusive(self) -> i32 {
+    pub const fn encoded_max_block_z_exclusive(self) -> i32 {
         (self.encoded_min_block_z + LIGHT_ENCODED_HORIZONTAL_MASK + 1) as i32
     }
 
-    /// Packs a block position for ScalableLux queue storage.
+    /// Packs a block position for `ScalableLux` queue storage.
     #[must_use]
     pub fn encode_block_pos(self, block_pos: BlockPos) -> Option<PackedLightBlockPos> {
         if !self.contains_encoded_block_pos(block_pos) {
@@ -822,7 +822,7 @@ impl LightCacheLayout {
         ))
     }
 
-    /// Decodes ScalableLux queue-position bits back to a world block position.
+    /// Decodes `ScalableLux` queue-position bits back to a world block position.
     #[must_use]
     pub fn decode_block_pos(self, packed: PackedLightBlockPos) -> Option<BlockPos> {
         let x = i64::from(packed.encoded_x()) - self.encode_offset_x;
@@ -880,7 +880,7 @@ impl LightCacheLayout {
 
     /// Converts a cached vertical index back to section Y.
     #[must_use]
-    pub fn cached_section_y(self, index: usize) -> Option<i32> {
+    pub const fn cached_section_y(self, index: usize) -> Option<i32> {
         if index >= self.cached_section_count {
             return None;
         }
@@ -906,13 +906,13 @@ impl LightCacheLayout {
 
     /// Returns true if a section Y is inside vanilla's padded light-section range.
     #[must_use]
-    pub fn contains_light_section_y(self, section_y: i32) -> bool {
+    pub const fn contains_light_section_y(self, section_y: i32) -> bool {
         self.range.section_index(section_y).is_some()
     }
 
     /// Returns true if a section Y coordinate is inside the cached vertical range.
     #[must_use]
-    pub fn contains_section_y(self, section_y: i32) -> bool {
+    pub const fn contains_section_y(self, section_y: i32) -> bool {
         section_y >= self.cached_min_section_y && section_y < self.cached_max_section_y_exclusive()
     }
 }

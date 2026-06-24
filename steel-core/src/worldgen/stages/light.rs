@@ -64,9 +64,10 @@ fn run_light_stage(
     has_skylight: bool,
 ) -> (Vec<SectionPos>, Vec<SectionPos>) {
     let center = holder.get_pos();
-    if holder.try_chunk(ChunkStatus::InitializeLight).is_none() {
-        panic!("Chunk not found at status InitializeLight");
-    }
+    assert!(
+        holder.try_chunk(ChunkStatus::InitializeLight).is_some(),
+        "Chunk not found at status InitializeLight"
+    );
 
     let Ok(range) = LightSectionRange::from_world_height(holder.min_y(), holder.height()) else {
         panic!("invalid world height for light stage");
@@ -118,9 +119,10 @@ fn run_loaded_light_stage(
     has_skylight: bool,
 ) -> (Vec<SectionPos>, Vec<SectionPos>) {
     let center = holder.get_pos();
-    if holder.try_chunk(ChunkStatus::Light).is_none() {
-        panic!("Chunk not found at status Light");
-    }
+    assert!(
+        holder.try_chunk(ChunkStatus::Light).is_some(),
+        "Chunk not found at status Light"
+    );
 
     let Ok(range) = LightSectionRange::from_world_height(holder.min_y(), holder.height()) else {
         panic!("invalid world height for loaded light stage");

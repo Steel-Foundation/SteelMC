@@ -20,7 +20,7 @@ pub struct ChunkSkyLightSources {
 
 impl ChunkSkyLightSources {
     /// Creates an empty skylight-source cache for a level height.
-    pub fn new(min_y: i32, height: i32) -> Result<Self, LightSectionRangeError> {
+    pub const fn new(min_y: i32, height: i32) -> Result<Self, LightSectionRangeError> {
         if height <= 0 || min_y.checked_sub(1).is_none() || min_y.checked_add(height).is_none() {
             return Err(LightSectionRangeError { min_y, height });
         }
@@ -36,6 +36,10 @@ impl ChunkSkyLightSources {
     ///
     /// Invalid world heights are fatal because chunks and light sections cannot
     /// be indexed coherently without a valid vertical range.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the supplied world height cannot form a valid light-section range.
     #[must_use]
     pub fn for_valid_world_height(min_y: i32, height: i32) -> Self {
         match Self::new(min_y, height) {
@@ -121,7 +125,7 @@ impl ChunkSkyLightSources {
 
     /// Returns the lowest skylight source Y for a local X/Z column.
     #[must_use]
-    pub fn get_lowest_source_y(&self, x: usize, z: usize) -> i32 {
+    pub const fn get_lowest_source_y(&self, x: usize, z: usize) -> i32 {
         self.extend_sources_below_world(self.get(Self::index(x, z)))
     }
 
@@ -247,15 +251,15 @@ impl ChunkSkyLightSources {
         self.heightmap.fill(lowest_source_y);
     }
 
-    fn set(&mut self, index: usize, value: i32) {
+    const fn set(&mut self, index: usize, value: i32) {
         self.heightmap[index] = value;
     }
 
-    fn get(&self, index: usize) -> i32 {
+    const fn get(&self, index: usize) -> i32 {
         self.heightmap[index]
     }
 
-    fn extend_sources_below_world(&self, value: i32) -> i32 {
+    const fn extend_sources_below_world(&self, value: i32) -> i32 {
         if value == self.min_y {
             NEGATIVE_INFINITY
         } else {
@@ -263,7 +267,7 @@ impl ChunkSkyLightSources {
         }
     }
 
-    fn section_y_from_index(&self, section_index: usize) -> i32 {
+    const fn section_y_from_index(&self, section_index: usize) -> i32 {
         SectionPos::block_to_section_coord(self.min_y + 1) + section_index as i32
     }
 

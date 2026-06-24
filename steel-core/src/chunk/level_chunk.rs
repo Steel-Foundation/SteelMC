@@ -607,6 +607,10 @@ impl LevelChunk {
     ///
     /// Panics if the behavior registry has not been initialized.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "block mutation keeps vanilla side effects in one ordered transaction"
+    )]
     pub fn set_block_state(
         &self,
         pos: BlockPos,
@@ -659,7 +663,9 @@ impl LevelChunk {
         let old_block = old_state.get_block();
         let new_block = state.get_block();
 
-        let empty_section_change = if was_empty != is_empty {
+        let empty_section_change = if was_empty == is_empty {
+            None
+        } else {
             self.update_light_section_emptiness(y, is_empty);
             Some(LightSectionEmptinessChange {
                 section_pos: SectionPos::new(
@@ -669,8 +675,6 @@ impl LevelChunk {
                 ),
                 empty: is_empty,
             })
-        } else {
-            None
         };
 
         let light_properties_changed = has_different_light_properties(old_state, state);

@@ -100,7 +100,7 @@ pub struct ChangedLightSections {
 impl ChangedLightSections {
     /// Returns true when no light sections changed.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.sky.is_empty() && self.block.is_empty()
     }
 }
@@ -596,15 +596,13 @@ impl ChunkHolder {
         Box::pin(async move {
             let light_work_window_reservation =
                 light_work_window_gate.reserve_centered(holder.pos).await;
-            let Some(ready) = holder.apply_step_with_light_work_window_reservation(
+            let ready = holder.apply_step_with_light_work_window_reservation(
                 step,
                 &chunk_map,
                 &cache,
                 thread_pool,
                 Some(light_work_window_reservation),
-            ) else {
-                return None;
-            };
+            )?;
             ready.await
         })
     }

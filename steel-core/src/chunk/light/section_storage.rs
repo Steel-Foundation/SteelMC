@@ -1,4 +1,4 @@
-use steel_utils::{ChunkPos, SectionPos, codec::BitSet};
+use steel_utils::{SectionPos, codec::BitSet};
 
 use super::LIGHT_SECTION_PADDING;
 
@@ -24,7 +24,10 @@ pub struct LightSectionRange {
 
 impl LightSectionRange {
     /// Creates the vanilla padded light-section range for a world height.
-    pub fn from_world_height(min_y: i32, height: i32) -> Result<Self, LightSectionRangeError> {
+    pub const fn from_world_height(
+        min_y: i32,
+        height: i32,
+    ) -> Result<Self, LightSectionRangeError> {
         if height <= 0 {
             return Err(LightSectionRangeError { min_y, height });
         }
@@ -82,7 +85,7 @@ impl LightSectionRange {
 
     /// Converts a packet light-section index to a section Y coordinate.
     #[must_use]
-    pub fn section_y(self, section_index: usize) -> Option<i32> {
+    pub const fn section_y(self, section_index: usize) -> Option<i32> {
         if section_index >= self.section_count() {
             return None;
         }
@@ -92,7 +95,7 @@ impl LightSectionRange {
 
     /// Converts a section Y coordinate to a packet light-section index.
     #[must_use]
-    pub fn section_index(self, section_y: i32) -> Option<usize> {
+    pub const fn section_index(self, section_y: i32) -> Option<usize> {
         if section_y < self.min_section_y || section_y >= self.max_section_y_exclusive() {
             return None;
         }
@@ -102,7 +105,7 @@ impl LightSectionRange {
 
     /// Converts a real chunk-section index to a section Y coordinate.
     #[must_use]
-    pub fn chunk_section_y(self, section_index: usize) -> Option<i32> {
+    pub const fn chunk_section_y(self, section_index: usize) -> Option<i32> {
         if section_index >= self.chunk_section_count() {
             return None;
         }
@@ -112,7 +115,7 @@ impl LightSectionRange {
 
     /// Converts a real chunk section Y coordinate to an emptiness-map index.
     #[must_use]
-    pub fn chunk_section_index(self, section_y: i32) -> Option<usize> {
+    pub const fn chunk_section_index(self, section_y: i32) -> Option<usize> {
         if section_y < self.min_chunk_section_y()
             || section_y >= self.max_chunk_section_y_exclusive()
         {
@@ -120,12 +123,6 @@ impl LightSectionRange {
         }
 
         Some((section_y - self.min_chunk_section_y()) as usize)
-    }
-
-    /// Creates a section position for this light range's chunk column.
-    #[must_use]
-    pub fn section_pos(self, chunk_pos: ChunkPos, section_y: i32) -> SectionPos {
-        SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y)
     }
 
     #[must_use]

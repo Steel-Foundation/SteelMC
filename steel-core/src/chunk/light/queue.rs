@@ -21,10 +21,10 @@ const PACKED_LIGHT_QUEUE_DIRECTIONS_SHIFT: u64 =
 const PACKED_LIGHT_QUEUE_POSITION_MASK: u64 = (1_u64 << PACKED_LIGHT_QUEUE_POSITION_BITS) - 1;
 const PACKED_LIGHT_QUEUE_FLAGS_MASK: u64 = (1_u64 << 61) | (1_u64 << 62) | (1_u64 << 63);
 
-/// ScalableLux axis direction order used by packed light propagation queues.
+/// `ScalableLux` axis direction order used by packed light propagation queues.
 ///
 /// This intentionally differs from vanilla's `Direction.ordinal()` order.
-/// ScalableLux stores direction bitsets as +X, -X, +Z, -Z, +Y, -Y and relies on
+/// `ScalableLux` stores direction bitsets as +X, -X, +Z, -Z, +Y, -Y and relies on
 /// positive directions being even so `index ^ 1` gives the opposite direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LightAxisDirection {
@@ -43,7 +43,7 @@ pub enum LightAxisDirection {
 }
 
 impl LightAxisDirection {
-    /// All directions in ScalableLux propagation order.
+    /// All directions in `ScalableLux` propagation order.
     pub const ALL: [Self; 6] = [
         Self::PositiveX,
         Self::NegativeX,
@@ -53,7 +53,7 @@ impl LightAxisDirection {
         Self::NegativeY,
     ];
 
-    /// Horizontal directions in ScalableLux propagation order.
+    /// Horizontal directions in `ScalableLux` propagation order.
     pub const HORIZONTAL: [Self; 4] = [
         Self::PositiveX,
         Self::NegativeX,
@@ -61,7 +61,7 @@ impl LightAxisDirection {
         Self::NegativeZ,
     ];
 
-    /// Converts a vanilla direction into ScalableLux's axis-direction order.
+    /// Converts a vanilla direction into `ScalableLux`'s axis-direction order.
     #[must_use]
     pub const fn from_direction(direction: Direction) -> Self {
         match direction {
@@ -74,7 +74,7 @@ impl LightAxisDirection {
         }
     }
 
-    /// Returns the ScalableLux axis direction for a direction-bit index.
+    /// Returns the `ScalableLux` axis direction for a direction-bit index.
     #[must_use]
     pub const fn from_bit_index(bit_index: u8) -> Option<Self> {
         match bit_index {
@@ -114,7 +114,7 @@ impl LightAxisDirection {
         }
     }
 
-    /// Returns the opposite ScalableLux axis direction.
+    /// Returns the opposite `ScalableLux` axis direction.
     #[must_use]
     pub const fn opposite(self) -> Self {
         match self {
@@ -127,7 +127,7 @@ impl LightAxisDirection {
         }
     }
 
-    /// Returns this direction's ScalableLux bit index.
+    /// Returns this direction's `ScalableLux` bit index.
     #[must_use]
     pub const fn bit_index(self) -> u8 {
         match self {
@@ -145,7 +145,7 @@ impl LightAxisDirection {
     }
 }
 
-/// ScalableLux propagation direction bitset.
+/// `ScalableLux` propagation direction bitset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LightDirectionSet(u8);
 
@@ -162,7 +162,7 @@ impl LightDirectionSet {
         Self(PACKED_LIGHT_QUEUE_DIRECTION_MASK)
     }
 
-    /// Creates a direction set from raw ScalableLux direction bits.
+    /// Creates a direction set from raw `ScalableLux` direction bits.
     #[must_use]
     pub const fn from_raw(raw: u8) -> Self {
         Self(raw & PACKED_LIGHT_QUEUE_DIRECTION_MASK)
@@ -192,7 +192,7 @@ impl LightDirectionSet {
         Self::all_except(direction.opposite())
     }
 
-    /// Returns the raw ScalableLux direction bits.
+    /// Returns the raw `ScalableLux` direction bits.
     #[must_use]
     pub const fn raw(self) -> u8 {
         self.0
@@ -204,14 +204,14 @@ impl LightDirectionSet {
         self.0 & direction.bit() != 0
     }
 
-    /// Iterates selected directions in ScalableLux's propagation order.
+    /// Iterates selected directions in `ScalableLux`'s propagation order.
     #[must_use]
     pub const fn directions(self) -> LightDirectionSetIter {
         LightDirectionSetIter { remaining: self.0 }
     }
 }
 
-/// Iterator over a `LightDirectionSet` in ScalableLux propagation order.
+/// Iterator over a `LightDirectionSet` in `ScalableLux` propagation order.
 #[derive(Debug, Clone)]
 pub struct LightDirectionSetIter {
     remaining: u8,
@@ -240,7 +240,7 @@ impl ExactSizeIterator for LightDirectionSetIter {}
 
 impl FusedIterator for LightDirectionSetIter {}
 
-/// ScalableLux state flags stored in the top three queue-entry bits.
+/// `ScalableLux` state flags stored in the top three queue-entry bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LightQueueFlags(u64);
 
@@ -279,17 +279,17 @@ impl LightQueueFlags {
     }
 }
 
-/// ScalableLux packed light-propagation queue entry.
+/// `ScalableLux` packed light-propagation queue entry.
 ///
 /// The lower 28 bits store `PackedLightBlockPos`, followed by a 4-bit light
 /// level and a 6-bit `LightDirectionSet`. Bits 61, 62, and 63 carry
 /// `LightQueueFlags`; the middle 24 bits are intentionally unused to preserve
-/// ScalableLux's layout.
+/// `ScalableLux`'s layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PackedLightQueueEntry(u64);
 
 impl PackedLightQueueEntry {
-    /// Creates a packed queue entry from typed ScalableLux parts.
+    /// Creates a packed queue entry from typed `ScalableLux` parts.
     #[must_use]
     pub const fn from_parts(
         block_pos: PackedLightBlockPos,
@@ -306,13 +306,13 @@ impl PackedLightQueueEntry {
         )
     }
 
-    /// Creates a packed queue entry from raw ScalableLux queue bits.
+    /// Creates a packed queue entry from raw `ScalableLux` queue bits.
     #[must_use]
     pub const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
 
-    /// Returns the raw ScalableLux queue entry.
+    /// Returns the raw `ScalableLux` queue entry.
     #[must_use]
     pub const fn raw(self) -> u64 {
         self.0
@@ -365,7 +365,7 @@ impl PackedLightQueueEntry {
     }
 }
 
-/// Array-backed FIFO used for ScalableLux packed light propagation entries.
+/// Array-backed FIFO used for `ScalableLux` packed light propagation entries.
 #[derive(Debug)]
 pub struct PackedLightPropagationQueue {
     entries: Vec<PackedLightQueueEntry>,
@@ -373,7 +373,7 @@ pub struct PackedLightPropagationQueue {
 }
 
 impl PackedLightPropagationQueue {
-    /// Creates an empty ScalableLux packed propagation queue.
+    /// Creates an empty `ScalableLux` packed propagation queue.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -384,13 +384,13 @@ impl PackedLightPropagationQueue {
 
     /// Returns true when no packed queued work remains.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.read_index >= self.entries.len()
     }
 
     /// Returns the number of packed entries that have not been dequeued yet.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.entries.len() - self.read_index
     }
 
@@ -428,7 +428,7 @@ impl Default for PackedLightPropagationQueue {
     }
 }
 
-/// ScalableLux's separate packed increase and decrease propagation queues.
+/// `ScalableLux`'s separate packed increase and decrease propagation queues.
 #[derive(Debug, Default)]
 pub struct PackedLightPropagationQueues {
     increase: PackedLightPropagationQueue,
@@ -444,7 +444,7 @@ impl PackedLightPropagationQueues {
 
     /// Returns true when either packed propagation queue contains work.
     #[must_use]
-    pub fn has_work(&self) -> bool {
+    pub const fn has_work(&self) -> bool {
         !self.increase.is_empty() || !self.decrease.is_empty()
     }
 
@@ -545,28 +545,10 @@ impl LightQueueEntry {
 
     /// Creates a sky-source increase entry for selected directions.
     #[must_use]
-    pub const fn increase_sky_source_in_directions(
-        down: bool,
-        north: bool,
-        south: bool,
-        west: bool,
-        east: bool,
-    ) -> Self {
-        let mut entry = MAX_LIGHT_LEVEL as u64;
-        if down {
-            entry = Self::with_direction(entry, Direction::Down);
-        }
-        if north {
-            entry = Self::with_direction(entry, Direction::North);
-        }
-        if south {
-            entry = Self::with_direction(entry, Direction::South);
-        }
-        if west {
-            entry = Self::with_direction(entry, Direction::West);
-        }
-        if east {
-            entry = Self::with_direction(entry, Direction::East);
+    pub fn increase_sky_source_in_directions(directions: &[Direction]) -> Self {
+        let mut entry = u64::from(MAX_LIGHT_LEVEL);
+        for &direction in directions {
+            entry = Self::with_direction(entry, direction);
         }
 
         Self(entry)
@@ -586,7 +568,7 @@ impl LightQueueEntry {
 
     /// Returns the source light level stored in this entry.
     #[must_use]
-    pub const fn from_level(self) -> u8 {
+    pub const fn level(self) -> u8 {
         (self.0 & QUEUE_ENTRY_LEVEL_MASK) as u8
     }
 
@@ -669,13 +651,13 @@ impl LightPropagationQueue {
 
     /// Returns true when no queued work remains.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.read_index >= self.entries.len()
     }
 
     /// Returns the number of queued items that have not been dequeued yet.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.entries.len() - self.read_index
     }
 
@@ -729,7 +711,7 @@ impl LightPropagationQueues {
 
     /// Returns true when either propagation queue contains work.
     #[must_use]
-    pub fn has_work(&self) -> bool {
+    pub const fn has_work(&self) -> bool {
         !self.increase.is_empty() || !self.decrease.is_empty()
     }
 
@@ -861,7 +843,7 @@ mod tests {
         assert_eq!(LightDirectionSet::from_raw(u8::MAX).raw(), 0b11_1111);
         assert_eq!(
             LightDirectionSet::only(LightAxisDirection::PositiveZ).raw(),
-            0b000100
+            0b00_0100
         );
         assert_eq!(
             LightDirectionSet::all_except(LightAxisDirection::PositiveZ).raw(),
@@ -1002,8 +984,8 @@ mod tests {
     fn light_queue_entry_decrease_entries_match_vanilla_bits() {
         let all = LightQueueEntry::decrease_all_directions(7);
 
-        assert_eq!(all.raw(), 1008 | 7);
-        assert_eq!(all.from_level(), 7);
+        assert_eq!(all.raw(), 0b11_1111_0000 | 7);
+        assert_eq!(all.level(), 7);
         for direction in Direction::ALL {
             assert!(all.should_propagate_in_direction(direction));
         }
@@ -1020,7 +1002,7 @@ mod tests {
     fn light_queue_entry_increase_entries_match_vanilla_bits() {
         let emission = LightQueueEntry::increase_light_from_emission(15, true);
         assert_eq!(emission.raw(), 4095);
-        assert_eq!(emission.from_level(), 15);
+        assert_eq!(emission.level(), 15);
         assert!(emission.is_from_empty_shape());
         assert!(emission.is_increase_from_emission());
 
@@ -1040,11 +1022,14 @@ mod tests {
 
     #[test]
     fn light_queue_entry_sky_source_entry_selects_horizontal_and_down_directions() {
-        let entry =
-            LightQueueEntry::increase_sky_source_in_directions(true, true, false, true, false);
+        let entry = LightQueueEntry::increase_sky_source_in_directions(&[
+            Direction::Down,
+            Direction::North,
+            Direction::West,
+        ]);
 
         assert_eq!(entry.raw(), 351);
-        assert_eq!(entry.from_level(), 15);
+        assert_eq!(entry.level(), 15);
         assert!(entry.should_propagate_in_direction(Direction::Down));
         assert!(!entry.should_propagate_in_direction(Direction::Up));
         assert!(entry.should_propagate_in_direction(Direction::North));
@@ -1057,8 +1042,8 @@ mod tests {
     fn light_queue_entry_masks_levels_like_vanilla() {
         let entry = LightQueueEntry::increase_light_from_emission(31, false);
 
-        assert_eq!(entry.from_level(), 15);
-        assert_eq!(entry.raw(), 1008 | 2048 | 15);
+        assert_eq!(entry.level(), 15);
+        assert_eq!(entry.raw(), 0b11_1111_0000 | 0b1000_0000_0000 | 15);
     }
 
     #[test]
