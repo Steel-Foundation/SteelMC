@@ -829,17 +829,21 @@ impl ChunkMap {
         let world = self.world_gen_context.world();
 
         if world.dimension_type.has_skylight {
-            let Ok(result) = propagate_sky_light_changes_with_empty_sections(
+            match propagate_sky_light_changes_with_empty_sections(
                 &workset,
                 positions.iter().copied(),
                 empty_sections.iter().copied(),
-            ) else {
-                log::warn!("Failed to propagate queued sky-light change for {center:?}");
-                return;
-            };
-
-            for section_pos in result.updated_sections {
-                self.light_changed(LightLayer::Sky, section_pos);
+            ) {
+                Ok(result) => {
+                    for section_pos in result.updated_sections {
+                        self.light_changed(LightLayer::Sky, section_pos);
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "Failed to propagate queued sky-light change for {center:?}: {error:?}"
+                    );
+                }
             }
         }
 

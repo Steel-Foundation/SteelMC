@@ -283,7 +283,7 @@ impl LightQueueFlags {
 ///
 /// The lower 28 bits store `PackedLightBlockPos`, followed by a 4-bit light
 /// level and a 6-bit `LightDirectionSet`. Bits 61, 62, and 63 carry
-/// `LightQueueFlags`; the middle 24 bits are intentionally unused to preserve
+/// `LightQueueFlags`; the middle 23 bits are intentionally unused to preserve
 /// `ScalableLux`'s layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PackedLightQueueEntry(u64);
