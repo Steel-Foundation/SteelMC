@@ -29,9 +29,15 @@
     &middot;
     <a href="#Contributing">Contributing</a>
   </p>
+
+<br />
+<br />
+<br />
+<br />
+<br />
+<img width="600" height="3000" alt="showcase" src="assets/output.gif" />
 </div>
 
-<img width="600" height="3000" alt="showcase" src="assets/output.gif" />
 
 ## Features
 
