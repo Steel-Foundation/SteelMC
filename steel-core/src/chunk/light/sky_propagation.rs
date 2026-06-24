@@ -215,14 +215,15 @@ pub fn propagate_sky_light_changes_with_empty_sections(
 
     workset.with_chunk_read_cache(|chunk_cache| {
         let layout = chunk_cache.layout();
+        // ScalableLux drops queued dynamic changes once the center chunk leaves the light cache.
         let Some(center_slot) = layout.cached_chunk(layout.center_chunk()) else {
-            return Err(SkyLightPropagationContextError::MissingCenterChunk {
-                chunk_pos: layout.center_chunk(),
+            return Ok(SkyLightUpdateResult {
+                updated_sections: Vec::new(),
             });
         };
         if chunk_cache.chunk(center_slot).is_none() {
-            return Err(SkyLightPropagationContextError::MissingCenterChunk {
-                chunk_pos: layout.center_chunk(),
+            return Ok(SkyLightUpdateResult {
+                updated_sections: Vec::new(),
             });
         }
 
@@ -1892,5 +1893,34 @@ mod tests {
             propagate_sky_light_chunk_without_edge_checks(&workset).err(),
             Some(SkyLightPropagationContextError::MissingCenterChunk { chunk_pos: center })
         );
+    }
+
+    #[test]
+    fn sky_light_changes_skip_missing_center_chunk() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Full,
+            true,
+            |_| None,
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing chunks");
+        };
+
+        let Ok(result) = propagate_sky_light_changes_with_empty_sections(
+            &workset,
+            [BlockPos::new(1, 1, 1)],
+            [LightSectionEmptinessChange {
+                section_pos: SectionPos::new(0, 0, 0),
+                empty: true,
+            }],
+        ) else {
+            panic!("dynamic sky changes should skip a missing center chunk");
+        };
+
+        assert!(result.updated_sections.is_empty());
     }
 }

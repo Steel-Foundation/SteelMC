@@ -68,6 +68,19 @@ pub fn propagate_block_light_changes_with_empty_sections(
     let empty_sections = empty_sections.into_iter().collect::<Vec<_>>();
 
     workset.with_chunk_read_cache(|chunk_cache| {
+        let layout = chunk_cache.layout();
+        // ScalableLux drops queued dynamic changes once the center chunk leaves the light cache.
+        let Some(center_slot) = layout.cached_chunk(layout.center_chunk()) else {
+            return Ok(BlockLightUpdateResult {
+                updated_sections: Vec::new(),
+            });
+        };
+        if chunk_cache.chunk(center_slot).is_none() {
+            return Ok(BlockLightUpdateResult {
+                updated_sections: Vec::new(),
+            });
+        }
+
         chunk_cache.with_section_read_cache(|section_cache| {
             chunk_cache.with_light_edit(LightLayer::Block, |mut light_edit| {
                 let mut queues = PackedLightPropagationQueues::new();
@@ -1348,6 +1361,35 @@ mod tests {
             propagate_block_light_chunk(&workset, BlockLightChunkEdgeChecks::Skipped).err(),
             Some(BlockLightPropagationContextError::MissingCenterChunk { chunk_pos: center })
         );
+    }
+
+    #[test]
+    fn block_light_changes_skip_missing_center_chunk() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Full,
+            true,
+            |_| None,
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing chunks");
+        };
+
+        let Ok(result) = propagate_block_light_changes_with_empty_sections(
+            &workset,
+            [BlockPos::new(1, 1, 1)],
+            [LightSectionEmptinessChange {
+                section_pos: SectionPos::new(0, 0, 0),
+                empty: true,
+            }],
+        ) else {
+            panic!("dynamic block changes should skip a missing center chunk");
+        };
+
+        assert!(result.updated_sections.is_empty());
     }
 
     #[test]
