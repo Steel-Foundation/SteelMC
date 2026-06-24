@@ -31,7 +31,8 @@ use crate::chunk::chunk_ticket_manager::{
 };
 use crate::chunk::light::{
     LightCacheLayout, LightCacheSetupRadius, LightLayer, LightSectionEmptinessChange,
-    LightSectionRange, LightWorkset, build_chunk_light_update_packet_for_sections,
+    LightSectionRange, LightWorkWindowGate, LightWorkset,
+    build_chunk_light_update_packet_for_sections,
     propagate_block_light_changes_with_empty_sections,
     propagate_sky_light_changes_with_empty_sections,
 };
@@ -123,6 +124,33 @@ impl PendingLightUpdates {
             .filter_map(|chunk_pos| chunks.remove(&chunk_pos).map(|task| (chunk_pos, task)))
             .collect()
     }
+
+    fn prepend_drained(&mut self, tasks: Vec<(ChunkPos, PendingChunkLightUpdates)>) {
+        let previous_queued_chunks = mem::take(&mut self.queued_chunks);
+        let mut prepended_chunks = FxHashSet::default();
+
+        for (chunk_pos, task) in tasks {
+            if task.is_empty() {
+                continue;
+            }
+
+            if let Some(existing) = self.chunks.get_mut(&chunk_pos) {
+                existing.merge_older(task);
+            } else {
+                self.chunks.insert(chunk_pos, task);
+            }
+
+            if prepended_chunks.insert(chunk_pos) {
+                self.queued_chunks.push(chunk_pos);
+            }
+        }
+
+        for chunk_pos in previous_queued_chunks {
+            if !prepended_chunks.contains(&chunk_pos) {
+                self.queued_chunks.push(chunk_pos);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -134,6 +162,13 @@ struct PendingChunkLightUpdates {
 impl PendingChunkLightUpdates {
     fn is_empty(&self) -> bool {
         self.changed_positions.is_empty() && self.changed_sections.is_empty()
+    }
+
+    fn merge_older(&mut self, older: Self) {
+        self.changed_positions.extend(older.changed_positions);
+        for (section_pos, empty) in older.changed_sections {
+            self.changed_sections.entry(section_pos).or_insert(empty);
+        }
     }
 
     fn empty_section_changes(&self) -> Vec<LightSectionEmptinessChange> {
@@ -179,6 +214,8 @@ pub struct ChunkMap {
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
     /// Coalesced block and section changes waiting for one light pass.
     pending_light_updates: SyncMutex<PendingLightUpdates>,
+    /// Radius-2 work-window gate for light-engine worksets.
+    light_work_window_gate: Arc<LightWorkWindowGate>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
     last_tickable_len: AtomicUsize,
     /// Number of top-level generation tasks currently running.
@@ -268,6 +305,7 @@ impl ChunkMap {
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
             pending_light_updates: SyncMutex::new(PendingLightUpdates::default()),
+            light_work_window_gate: Arc::new(LightWorkWindowGate::new()),
             last_tickable_len: AtomicUsize::new(0),
             running_generation_tasks: AtomicUsize::new(0),
             generation_refill_notify: Notify::new(),
@@ -276,6 +314,10 @@ impl ChunkMap {
             generation_refill_started: AtomicBool::new(false),
             cancel_token: CancellationToken::new(),
         }
+    }
+
+    pub(crate) fn light_work_window_gate(&self) -> Arc<LightWorkWindowGate> {
+        Arc::clone(&self.light_work_window_gate)
     }
 
     /// Starts the notify-driven generation refill loop for this chunk map.
@@ -457,11 +499,26 @@ impl ChunkMap {
             pending.drain()
         };
 
+        let mut blocked_tasks = Vec::new();
         for (center, task) in tasks {
             if task.is_empty() {
                 continue;
             }
+            let Some(light_work_window_reservation) =
+                self.light_work_window_gate.try_reserve_centered(center)
+            else {
+                blocked_tasks.push((center, task));
+                continue;
+            };
+
             self.propagate_queued_light_change(center, task);
+            drop(light_work_window_reservation);
+        }
+
+        if !blocked_tasks.is_empty() {
+            self.pending_light_updates
+                .lock()
+                .prepend_drained(blocked_tasks);
         }
     }
 
@@ -1493,6 +1550,85 @@ mod tests {
             Some(&false)
         );
         assert!(drained[1].1.changed_positions.contains(&east_block));
+    }
+
+    #[test]
+    fn pending_light_updates_prepend_blocked_drained_tasks() {
+        let center = ChunkPos::new(0, 0);
+        let east = ChunkPos::new(1, 0);
+        let south = ChunkPos::new(0, 1);
+        let center_block = BlockPos::new(1, 2, 3);
+        let east_block = BlockPos::new(16, 4, 5);
+        let south_block = BlockPos::new(1, 6, 16);
+        let mut pending = PendingLightUpdates::default();
+
+        pending.queue_change(south, south_block, true, None);
+        pending.prepend_drained(vec![
+            (
+                center,
+                PendingChunkLightUpdates {
+                    changed_positions: FxHashSet::from_iter([center_block]),
+                    changed_sections: FxHashMap::default(),
+                },
+            ),
+            (
+                east,
+                PendingChunkLightUpdates {
+                    changed_positions: FxHashSet::from_iter([east_block]),
+                    changed_sections: FxHashMap::default(),
+                },
+            ),
+        ]);
+
+        let drained = pending.drain();
+
+        assert_eq!(
+            drained
+                .iter()
+                .map(|(chunk_pos, _)| *chunk_pos)
+                .collect::<Vec<_>>(),
+            vec![center, east, south]
+        );
+        assert!(drained[0].1.changed_positions.contains(&center_block));
+        assert!(drained[1].1.changed_positions.contains(&east_block));
+        assert!(drained[2].1.changed_positions.contains(&south_block));
+    }
+
+    #[test]
+    fn pending_light_updates_merge_requeued_task_with_existing_pending_task() {
+        let center = ChunkPos::new(0, 0);
+        let old_block = BlockPos::new(1, 2, 3);
+        let new_block = BlockPos::new(4, 5, 6);
+        let section_pos = SectionPos::new(0, 1, 0);
+        let mut pending = PendingLightUpdates::default();
+
+        pending.queue_change(
+            center,
+            new_block,
+            true,
+            Some(LightSectionEmptinessChange {
+                section_pos,
+                empty: false,
+            }),
+        );
+        pending.prepend_drained(vec![(
+            center,
+            PendingChunkLightUpdates {
+                changed_positions: FxHashSet::from_iter([old_block]),
+                changed_sections: FxHashMap::from_iter([(section_pos, true)]),
+            },
+        )]);
+
+        let drained = pending.drain();
+
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].0, center);
+        assert!(drained[0].1.changed_positions.contains(&old_block));
+        assert!(drained[0].1.changed_positions.contains(&new_block));
+        assert_eq!(
+            drained[0].1.changed_sections.get(&section_pos),
+            Some(&false)
+        );
     }
 
     #[test]

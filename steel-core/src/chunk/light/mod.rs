@@ -113,6 +113,7 @@ mod section_storage;
 mod sky_propagation;
 mod sky_sources;
 mod storage;
+mod work_gate;
 mod workset;
 
 pub use cache::{
@@ -147,6 +148,7 @@ pub use storage::{
     ChunkLightData, ChunkLightEmptinessMapLengthError, ChunkLightLayerStorage, LightSection,
     LightSectionData,
 };
+pub(crate) use work_gate::{LightWorkWindowGate, LightWorkWindowReservation};
 pub use workset::{
     LightChunkReadCache, LightLayerEdit, LightSectionReadCache, LightWorkset,
     LightWorksetSetupError,

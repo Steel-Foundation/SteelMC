@@ -22,7 +22,9 @@ pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
 use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
-use crate::chunk::light::{LightLayer, LightSectionRange};
+use crate::chunk::light::{
+    LightLayer, LightSectionRange, LightWorkWindowGate, LightWorkWindowReservation,
+};
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::EntityVisibility;
 use crate::world::World;
@@ -528,6 +530,80 @@ impl ChunkHolder {
             return None;
         }
 
+        if target_status == ChunkStatus::Light {
+            let light_work_window_gate = chunk_map.light_work_window_gate();
+            let Some(light_work_window_reservation) =
+                light_work_window_gate.try_reserve_centered(self.pos)
+            else {
+                return Some(Self::await_light_work_window_and_apply_step(
+                    Arc::clone(self),
+                    step,
+                    Arc::clone(chunk_map),
+                    Arc::clone(cache),
+                    thread_pool,
+                    light_work_window_gate,
+                ));
+            };
+
+            return self.apply_step_with_light_work_window_reservation(
+                step,
+                chunk_map,
+                cache,
+                thread_pool,
+                Some(light_work_window_reservation),
+            );
+        }
+
+        self.apply_step_with_light_work_window_reservation(
+            step,
+            chunk_map,
+            cache,
+            thread_pool,
+            None,
+        )
+    }
+
+    fn await_light_work_window_and_apply_step(
+        holder: Arc<Self>,
+        step: &'static ChunkStep,
+        chunk_map: Arc<ChunkMap>,
+        cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        thread_pool: Arc<rayon::ThreadPool>,
+        light_work_window_gate: Arc<LightWorkWindowGate>,
+    ) -> NeighborReady {
+        Box::pin(async move {
+            let light_work_window_reservation =
+                light_work_window_gate.reserve_centered(holder.pos).await;
+            let Some(ready) = holder.apply_step_with_light_work_window_reservation(
+                step,
+                &chunk_map,
+                &cache,
+                thread_pool,
+                Some(light_work_window_reservation),
+            ) else {
+                return None;
+            };
+            ready.await
+        })
+    }
+
+    fn apply_step_with_light_work_window_reservation(
+        self: &Arc<Self>,
+        step: &'static ChunkStep,
+        chunk_map: &Arc<ChunkMap>,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        thread_pool: Arc<rayon::ThreadPool>,
+        light_work_window_reservation: Option<LightWorkWindowReservation>,
+    ) -> Option<NeighborReady> {
+        let target_status = step.target_status;
+        debug_assert!(
+            target_status != ChunkStatus::Light || light_work_window_reservation.is_some()
+        );
+
+        if self.is_status_disallowed(target_status) {
+            return None;
+        }
+
         if !self.acquire_status_bump(target_status) {
             // Another task is already generating this chunk to `target_status`;
             // just wait for it. Parent cancellation is handled by the owning
@@ -551,7 +627,15 @@ impl ChunkHolder {
             let result = if target_status == ChunkStatus::Empty {
                 Self::apply_empty_step(self_clone, step, context, cache, storage, thread_pool).await
             } else {
-                Self::apply_generated_step(self_clone, step, context, cache, thread_pool).await
+                Self::apply_generated_step(
+                    self_clone,
+                    step,
+                    context,
+                    cache,
+                    thread_pool,
+                    light_work_window_reservation,
+                )
+                .await
             };
 
             #[cfg(feature = "slow_chunk_gen")]
@@ -745,6 +829,7 @@ impl ChunkHolder {
         context: Arc<WorldGenContext>,
         cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
         thread_pool: Arc<rayon::ThreadPool>,
+        light_work_window_reservation: Option<LightWorkWindowReservation>,
     ) -> Option<()> {
         let target_status = step.target_status;
         let Some(parent_status) = target_status.parent() else {
@@ -759,6 +844,7 @@ impl ChunkHolder {
 
         Self::run_step_task(thread_pool, step, context, cache, holder).await;
         holder_for_notify.finish_generation_status(target_status);
+        drop(light_work_window_reservation);
         Some(())
     }
 
