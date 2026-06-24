@@ -32,9 +32,6 @@
 
 <br />
 <br />
-<br />
-<br />
-<br />
 <img width="600" height="3000" alt="showcase" src="assets/output.gif" />
 </div>
 
