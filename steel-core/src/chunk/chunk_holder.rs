@@ -273,34 +273,12 @@ impl ChunkHolder {
         !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
     }
 
-    /// Records a light-section change for a full chunk and marks loaded chunks dirty.
+    /// Records a light-section change for a full chunk and marks saved light data dirty.
     ///
     /// Returns `true` if this is the first pending broadcast change for the chunk holder.
     pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) -> bool {
-        if section_pos.x() != self.pos.0.x || section_pos.z() != self.pos.0.y {
+        let Some(ready_for_packet) = self.mark_valid_light_section_dirty(section_pos) else {
             return false;
-        }
-
-        let Ok(range) = LightSectionRange::from_world_height(self.min_y, self.height) else {
-            return false;
-        };
-        if range.section_index(section_pos.y()).is_none() {
-            return false;
-        }
-
-        let ready_for_packet = {
-            let chunk = self.data.read();
-            match &*chunk {
-                ChunkAccess::Full(_) => {
-                    chunk.mark_dirty();
-                    true
-                }
-                ChunkAccess::Proto(_) => {
-                    chunk.mark_dirty();
-                    false
-                }
-                ChunkAccess::Unloaded => false,
-            }
         };
         if !ready_for_packet {
             return false;
@@ -320,6 +298,35 @@ impl ChunkHolder {
         }
 
         !self.queued_for_broadcast.swap(true, Ordering::AcqRel)
+    }
+
+    /// Marks saved light data dirty without queuing client-visible changes.
+    pub fn mark_light_section_dirty(&self, section_pos: SectionPos) -> bool {
+        self.mark_valid_light_section_dirty(section_pos).is_some()
+    }
+
+    fn mark_valid_light_section_dirty(&self, section_pos: SectionPos) -> Option<bool> {
+        if section_pos.x() != self.pos.0.x || section_pos.z() != self.pos.0.y {
+            return None;
+        }
+
+        let Ok(range) = LightSectionRange::from_world_height(self.min_y, self.height) else {
+            return None;
+        };
+        range.section_index(section_pos.y())?;
+
+        let chunk = self.data.read();
+        match &*chunk {
+            ChunkAccess::Full(_) => {
+                chunk.mark_dirty();
+                Some(true)
+            }
+            ChunkAccess::Proto(_) => {
+                chunk.mark_dirty();
+                Some(false)
+            }
+            ChunkAccess::Unloaded => None,
+        }
     }
 
     /// Returns whether there are pending changes to broadcast.

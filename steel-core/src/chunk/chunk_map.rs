@@ -30,8 +30,8 @@ use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
 };
 use crate::chunk::light::{
-    LightCacheLayout, LightCacheSetupRadius, LightLayer, LightSectionEmptinessChange,
-    LightSectionRange, LightWorkWindowGate, LightWorkset,
+    LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
+    LightSectionEmptinessChange, LightSectionRange, LightWorkWindowGate, LightWorkset,
     build_chunk_light_update_packet_for_sections,
     propagate_block_light_changes_with_empty_sections,
     propagate_sky_light_changes_with_empty_sections,
@@ -95,6 +95,19 @@ impl PendingLightUpdates {
         self.chunks.is_empty()
     }
 
+    fn next_center(&self) -> Option<ChunkPos> {
+        self.queued_chunks
+            .iter()
+            .copied()
+            .find(|chunk_pos| self.chunks.contains_key(chunk_pos))
+    }
+
+    fn next_center_touching_chunk(&self, chunk_pos: ChunkPos) -> Option<ChunkPos> {
+        self.queued_chunks.iter().copied().find(|center| {
+            self.chunks.contains_key(center) && light_update_window_contains(*center, chunk_pos)
+        })
+    }
+
     fn queue_change(
         &mut self,
         chunk_pos: ChunkPos,
@@ -125,6 +138,12 @@ impl PendingLightUpdates {
             .collect()
     }
 
+    fn drain_center(&mut self, chunk_pos: ChunkPos) -> Option<PendingChunkLightUpdates> {
+        let task = self.chunks.remove(&chunk_pos)?;
+        self.queued_chunks.retain(|&queued| queued != chunk_pos);
+        Some(task)
+    }
+
     fn prepend_drained(&mut self, tasks: Vec<(ChunkPos, PendingChunkLightUpdates)>) {
         let previous_queued_chunks = mem::take(&mut self.queued_chunks);
         let mut prepended_chunks = FxHashSet::default();
@@ -151,6 +170,80 @@ impl PendingLightUpdates {
             }
         }
     }
+}
+
+#[derive(Debug, Default)]
+struct LightUpdateState {
+    pending: PendingLightUpdates,
+    in_flight_centers: FxHashMap<ChunkPos, usize>,
+}
+
+impl LightUpdateState {
+    #[cfg(test)]
+    fn is_idle(&self) -> bool {
+        self.pending.is_empty() && self.in_flight_centers.is_empty()
+    }
+
+    fn has_in_flight_updates(&self) -> bool {
+        !self.in_flight_centers.is_empty()
+    }
+
+    fn has_in_flight_update_touching_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.in_flight_centers
+            .keys()
+            .copied()
+            .any(|center| light_update_window_contains(center, chunk_pos))
+    }
+
+    fn track_in_flight(&mut self, centers: &[ChunkPos]) {
+        for &center in centers {
+            *self.in_flight_centers.entry(center).or_default() += 1;
+        }
+    }
+
+    fn finish_in_flight(&mut self, centers: &[ChunkPos]) {
+        for center in centers {
+            let Some(count) = self.in_flight_centers.get_mut(center) else {
+                debug_assert!(false, "in-flight light update counter underflow");
+                continue;
+            };
+            *count -= 1;
+            if *count == 0 {
+                self.in_flight_centers.remove(center);
+            }
+        }
+    }
+
+    fn touches_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.pending
+            .chunks
+            .keys()
+            .copied()
+            .chain(self.in_flight_centers.keys().copied())
+            .any(|center| light_update_window_contains(center, chunk_pos))
+    }
+}
+
+struct InFlightLightUpdates<'a> {
+    centers: Vec<ChunkPos>,
+    light_updates: &'a SyncMutex<LightUpdateState>,
+    progress_notify: &'a Notify,
+}
+
+impl Drop for InFlightLightUpdates<'_> {
+    fn drop(&mut self) {
+        {
+            let mut light_updates = self.light_updates.lock();
+            light_updates.finish_in_flight(&self.centers);
+        }
+        self.progress_notify.notify_waiters();
+    }
+}
+
+fn light_update_window_contains(center: ChunkPos, chunk_pos: ChunkPos) -> bool {
+    let dx = center.0.x.abs_diff(chunk_pos.0.x);
+    let dz = center.0.y.abs_diff(chunk_pos.0.y);
+    dx <= LIGHT_CACHE_RADIUS as u32 && dz <= LIGHT_CACHE_RADIUS as u32
 }
 
 #[derive(Debug, Default)]
@@ -212,8 +305,10 @@ pub struct ChunkMap {
     pub storage: Arc<ChunkStorage>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
-    /// Coalesced block and section changes waiting for one light pass.
-    pending_light_updates: SyncMutex<PendingLightUpdates>,
+    /// Coalesced light changes and drained-but-not-yet-applied light work.
+    light_updates: SyncMutex<LightUpdateState>,
+    /// Notifies save barriers when in-flight light propagation state changes.
+    light_updates_progress_notify: Notify,
     /// Radius-2 work-window gate for light-engine worksets.
     light_work_window_gate: Arc<LightWorkWindowGate>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
@@ -304,7 +399,8 @@ impl ChunkMap {
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
-            pending_light_updates: SyncMutex::new(PendingLightUpdates::default()),
+            light_updates: SyncMutex::new(LightUpdateState::default()),
+            light_updates_progress_notify: Notify::new(),
             light_work_window_gate: Arc::new(LightWorkWindowGate::new()),
             last_tickable_len: AtomicUsize::new(0),
             running_generation_tasks: AtomicUsize::new(0),
@@ -466,10 +562,18 @@ impl ChunkMap {
     pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) {
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
 
-        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h))
-            && holder.light_changed(layer, section_pos)
+        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h)) {
+            if holder.light_changed(layer, section_pos) {
+                self.chunks_to_broadcast.lock().push(holder);
+            }
+            return;
+        }
+
+        if let Some(holder) = self
+            .unloading_chunks
+            .read_sync(&chunk_pos, |_, h| Arc::clone(h))
         {
-            self.chunks_to_broadcast.lock().push(holder);
+            holder.mark_light_section_dirty(section_pos);
         }
     }
 
@@ -488,22 +592,21 @@ impl ChunkMap {
             SectionPos::block_to_section_coord(pos.0.x),
             SectionPos::block_to_section_coord(pos.0.z),
         );
-        if !self.can_accept_queued_light_change(chunk_pos) {
+
+        let mut light_updates = self.light_updates.lock();
+        if !self.light_update_center_is_available(chunk_pos) {
             return;
         }
 
-        let mut pending = self.pending_light_updates.lock();
-        pending.queue_change(chunk_pos, pos, check_block, empty_section_change);
+        light_updates
+            .pending
+            .queue_change(chunk_pos, pos, check_block, empty_section_change);
     }
 
     /// Drains all queued light updates and runs one scoped propagation per changed chunk.
     pub fn propagate_queued_light_changes(&self) {
-        let tasks = {
-            let mut pending = self.pending_light_updates.lock();
-            if pending.is_empty() {
-                return;
-            }
-            pending.drain()
+        let Some((tasks, in_flight_updates)) = self.drain_pending_light_updates() else {
+            return;
         };
 
         let mut blocked_tasks = Vec::new();
@@ -523,18 +626,196 @@ impl ChunkMap {
         }
 
         if !blocked_tasks.is_empty() {
-            self.pending_light_updates
+            self.light_updates
                 .lock()
+                .pending
                 .prepend_drained(blocked_tasks);
+        }
+        drop(in_flight_updates);
+    }
+
+    async fn flush_queued_light_changes_for_save(&self) {
+        loop {
+            let Some(center) = self.next_pending_light_update_center() else {
+                if !self.has_in_flight_light_updates() {
+                    return;
+                }
+                self.wait_for_in_flight_light_updates().await;
+                continue;
+            };
+
+            let light_work_window_reservation =
+                self.light_work_window_gate.reserve_centered(center).await;
+
+            let Some((task, in_flight_updates)) =
+                self.drain_pending_light_update_for_center(center)
+            else {
+                drop(light_work_window_reservation);
+                continue;
+            };
+
+            if task.is_empty() {
+                drop(light_work_window_reservation);
+                drop(in_flight_updates);
+                continue;
+            }
+
+            self.propagate_queued_light_change(center, task);
+            drop(light_work_window_reservation);
+            drop(in_flight_updates);
         }
     }
 
-    fn can_accept_queued_light_change(&self, center: ChunkPos) -> bool {
+    fn drain_pending_light_updates(
+        &self,
+    ) -> Option<(
+        Vec<(ChunkPos, PendingChunkLightUpdates)>,
+        InFlightLightUpdates<'_>,
+    )> {
+        let mut light_updates = self.light_updates.lock();
+        if light_updates.pending.is_empty() {
+            return None;
+        }
+        let tasks = light_updates.pending.drain();
+        let centers = tasks
+            .iter()
+            .map(|(chunk_pos, _)| *chunk_pos)
+            .collect::<Vec<_>>();
+        let in_flight = self.track_in_flight_light_updates(&mut light_updates, centers);
+        Some((tasks, in_flight))
+    }
+
+    fn next_pending_light_update_center(&self) -> Option<ChunkPos> {
+        self.light_updates.lock().pending.next_center()
+    }
+
+    fn next_pending_light_update_center_touching_chunk(
+        &self,
+        chunk_pos: ChunkPos,
+    ) -> Option<ChunkPos> {
+        self.light_updates
+            .lock()
+            .pending
+            .next_center_touching_chunk(chunk_pos)
+    }
+
+    fn drain_pending_light_update_for_center(
+        &self,
+        center: ChunkPos,
+    ) -> Option<(PendingChunkLightUpdates, InFlightLightUpdates<'_>)> {
+        let mut light_updates = self.light_updates.lock();
+        let task = light_updates.pending.drain_center(center)?;
+        let in_flight = self.track_in_flight_light_updates(&mut light_updates, vec![center]);
+        Some((task, in_flight))
+    }
+
+    fn track_in_flight_light_updates(
+        &self,
+        light_updates: &mut LightUpdateState,
+        centers: Vec<ChunkPos>,
+    ) -> InFlightLightUpdates<'_> {
+        light_updates.track_in_flight(&centers);
+        InFlightLightUpdates {
+            centers,
+            light_updates: &self.light_updates,
+            progress_notify: &self.light_updates_progress_notify,
+        }
+    }
+
+    fn has_in_flight_light_updates(&self) -> bool {
+        self.light_updates.lock().has_in_flight_updates()
+    }
+
+    fn has_in_flight_light_update_touching_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.light_updates
+            .lock()
+            .has_in_flight_update_touching_chunk(chunk_pos)
+    }
+
+    async fn wait_for_in_flight_light_updates(&self) {
+        loop {
+            if !self.has_in_flight_light_updates() {
+                return;
+            }
+
+            let progress = self.light_updates_progress_notify.notified();
+            if !self.has_in_flight_light_updates() {
+                return;
+            }
+            progress.await;
+        }
+    }
+
+    async fn wait_for_in_flight_light_update_touching_chunk(&self, chunk_pos: ChunkPos) {
+        loop {
+            if !self.has_in_flight_light_update_touching_chunk(chunk_pos) {
+                return;
+            }
+
+            let progress = self.light_updates_progress_notify.notified();
+            if !self.has_in_flight_light_update_touching_chunk(chunk_pos) {
+                return;
+            }
+            progress.await;
+        }
+    }
+
+    async fn flush_queued_light_changes_touching_chunk_for_save(&self, chunk_pos: ChunkPos) {
+        loop {
+            let Some(center) = self.next_pending_light_update_center_touching_chunk(chunk_pos)
+            else {
+                if !self.has_in_flight_light_update_touching_chunk(chunk_pos) {
+                    return;
+                }
+                self.wait_for_in_flight_light_update_touching_chunk(chunk_pos)
+                    .await;
+                continue;
+            };
+
+            let light_work_window_reservation =
+                self.light_work_window_gate.reserve_centered(center).await;
+
+            let Some((task, in_flight_updates)) =
+                self.drain_pending_light_update_for_center(center)
+            else {
+                drop(light_work_window_reservation);
+                continue;
+            };
+
+            if task.is_empty() {
+                drop(light_work_window_reservation);
+                drop(in_flight_updates);
+                continue;
+            }
+
+            self.propagate_queued_light_change(center, task);
+            drop(light_work_window_reservation);
+            drop(in_flight_updates);
+        }
+    }
+
+    #[cfg(test)]
+    fn has_pending_light_updates(&self) -> bool {
+        !self.light_updates.lock().is_idle()
+    }
+
+    #[cfg(test)]
+    fn light_update_touches_chunk(&self, chunk_pos: ChunkPos) -> bool {
+        self.light_updates.lock().touches_chunk(chunk_pos)
+    }
+
+    fn light_update_center_is_available(&self, center: ChunkPos) -> bool {
+        self.light_update_holder(center)
+            .is_some_and(|holder| holder.try_chunk(ChunkStatus::Light).is_some())
+    }
+
+    fn light_update_holder(&self, chunk_pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         self.chunks
-            .read_sync(&center, |_, holder| {
-                holder.try_chunk(ChunkStatus::Light).is_some()
+            .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+            .or_else(|| {
+                self.unloading_chunks
+                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
             })
-            .unwrap_or(false)
     }
 
     fn propagate_queued_light_change(&self, center: ChunkPos, task: PendingChunkLightUpdates) {
@@ -588,9 +869,7 @@ impl ChunkMap {
             LightCacheSetupRadius::Full,
             true,
             |chunk_pos| {
-                let holder = self
-                    .chunks
-                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))?;
+                let holder = self.light_update_holder(chunk_pos)?;
                 if holder.try_chunk(ChunkStatus::Light).is_none() {
                     return None;
                 }
@@ -1162,6 +1441,9 @@ impl ChunkMap {
     #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
     async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
         let chunk_pos = chunk_holder.get_pos();
+        self.flush_queued_light_changes_touching_chunk_for_save(chunk_pos)
+            .await;
+
         // Prepare chunk data while holding the lock, then release before async I/O
         let prepared = {
             let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
@@ -1216,7 +1498,14 @@ impl ChunkMap {
     /// - If not dirty: release region handle and remove
     #[instrument(level = "trace", skip(self))]
     pub fn process_unloads(self: &Arc<Self>) {
+        self.propagate_queued_light_changes();
+
+        let light_updates = self.light_updates.lock();
         self.unloading_chunks.retain_sync(|pos, holder| {
+            if light_updates.touches_chunk(*pos) {
+                return true;
+            }
+
             if Arc::strong_count(holder) == 1 {
                 // Check if dirty by trying to get chunk access
                 let is_dirty = holder
@@ -1375,6 +1664,8 @@ impl ChunkMap {
     pub async fn save_all_chunks(self: &Arc<Self>) -> io::Result<usize> {
         let mut saved_count = 0;
 
+        self.flush_queued_light_changes_for_save().await;
+
         // Collect all chunks from both maps
         let all_chunks: Vec<Arc<ChunkHolder>> = {
             let mut chunks = Vec::new();
@@ -1484,6 +1775,17 @@ impl ChunkMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::heightmap::ChunkHeightmaps;
+    use crate::chunk::level_chunk::LevelChunk;
+    use crate::chunk::light::ChunkLightData;
+    use crate::chunk::proto_chunk::ProtoChunk;
+    use crate::chunk::section::{ChunkSection, Sections};
+    use crate::chunk_saver::RamOnlyStorage;
+    use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
+    use crate::worldgen::EmptyChunkGenerator;
+    use steel_registry::{test_support::init_test_registry, vanilla_dimension_types::OVERWORLD};
+    use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     #[test]
     fn generation_priority_prefers_simulation_tickets() {
@@ -1525,6 +1827,200 @@ mod tests {
         );
 
         assert!(stronger_load < weaker_load);
+    }
+
+    fn test_chunk_map() -> Arc<ChunkMap> {
+        init_test_registry();
+        init_behaviors();
+        Arc::new(ChunkMap::new_with_storage(
+            Arc::new(Runtime::new().expect("test runtime should initialize")),
+            Weak::new(),
+            &OVERWORLD,
+            63,
+            Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world())),
+            Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new())),
+            Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(1)
+                    .build()
+                    .expect("test generation pool should initialize"),
+            ),
+        ))
+    }
+
+    fn unloaded_light_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
+        let proto = ProtoChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            pos,
+            ChunkStatus::Light,
+            0,
+            16,
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            None,
+            Vec::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            Weak::new(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        );
+        let holder = Arc::new(ChunkHolder::new(
+            pos,
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            0,
+            16,
+        ));
+        holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+        holder
+    }
+
+    fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
+        let chunk = LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            pos,
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        );
+        let holder = Arc::new(ChunkHolder::new(
+            pos,
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            0,
+            16,
+        ));
+        holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+        holder
+    }
+
+    #[test]
+    fn light_update_center_is_available_in_unloading_chunks() {
+        let chunk_map = test_chunk_map();
+        let pos = ChunkPos::new(2, 3);
+        let holder = unloaded_light_holder(pos);
+        let _ = chunk_map.unloading_chunks.insert_sync(pos, holder);
+
+        assert!(chunk_map.light_update_center_is_available(pos));
+    }
+
+    #[test]
+    fn light_changed_marks_unloading_chunk_dirty() {
+        let chunk_map = test_chunk_map();
+        let pos = ChunkPos::new(2, 3);
+        let holder = unloaded_light_holder(pos);
+        let _ = chunk_map
+            .unloading_chunks
+            .insert_sync(pos, Arc::clone(&holder));
+
+        let chunk = holder
+            .try_chunk(ChunkStatus::Light)
+            .expect("test holder should contain a light-status chunk");
+        chunk.clear_dirty();
+        drop(chunk);
+
+        chunk_map.light_changed(LightLayer::Block, SectionPos::new(pos.0.x, 0, pos.0.y));
+
+        let chunk = holder
+            .try_chunk(ChunkStatus::Light)
+            .expect("test holder should still contain a light-status chunk");
+        assert!(chunk.is_dirty());
+    }
+
+    #[test]
+    fn light_changed_does_not_broadcast_unloading_full_chunk() {
+        let chunk_map = test_chunk_map();
+        let pos = ChunkPos::new(2, 3);
+        let holder = unloaded_full_holder(pos);
+        let _ = chunk_map
+            .unloading_chunks
+            .insert_sync(pos, Arc::clone(&holder));
+
+        let chunk = holder
+            .try_chunk(ChunkStatus::Full)
+            .expect("test holder should contain a full chunk");
+        chunk.clear_dirty();
+        drop(chunk);
+
+        chunk_map.light_changed(LightLayer::Block, SectionPos::new(pos.0.x, 0, pos.0.y));
+
+        let chunk = holder
+            .try_chunk(ChunkStatus::Full)
+            .expect("test holder should still contain a full chunk");
+        assert!(chunk.is_dirty());
+        drop(chunk);
+
+        assert!(chunk_map.chunks_to_broadcast.lock().is_empty());
+        assert!(!holder.has_changes_to_broadcast());
+    }
+
+    #[test]
+    fn drained_light_updates_remain_unload_blocking_until_applied() {
+        let chunk_map = test_chunk_map();
+        let center = ChunkPos::new(0, 0);
+        chunk_map.light_updates.lock().pending.queue_change(
+            center,
+            BlockPos::new(1, 2, 3),
+            true,
+            None,
+        );
+
+        let Some((_tasks, in_flight_updates)) = chunk_map.drain_pending_light_updates() else {
+            panic!("queued light update should drain");
+        };
+
+        assert!(chunk_map.light_updates.lock().pending.is_empty());
+        assert!(chunk_map.has_pending_light_updates());
+
+        drop(in_flight_updates);
+
+        assert!(!chunk_map.has_pending_light_updates());
+    }
+
+    #[test]
+    fn light_update_unload_barrier_is_limited_to_cache_window() {
+        let chunk_map = test_chunk_map();
+        let center = ChunkPos::new(0, 0);
+        let inside = ChunkPos::new(LIGHT_CACHE_RADIUS, -LIGHT_CACHE_RADIUS);
+        let outside = ChunkPos::new(LIGHT_CACHE_RADIUS + 1, 0);
+        chunk_map.light_updates.lock().pending.queue_change(
+            center,
+            BlockPos::new(1, 2, 3),
+            true,
+            None,
+        );
+
+        assert!(chunk_map.light_update_touches_chunk(inside));
+        assert!(!chunk_map.light_update_touches_chunk(outside));
+    }
+
+    #[test]
+    fn drained_light_update_window_remains_unload_blocking_until_applied() {
+        let chunk_map = test_chunk_map();
+        let center = ChunkPos::new(0, 0);
+        let inside = ChunkPos::new(LIGHT_CACHE_RADIUS, 0);
+        chunk_map.light_updates.lock().pending.queue_change(
+            center,
+            BlockPos::new(1, 2, 3),
+            true,
+            None,
+        );
+
+        let Some((_tasks, in_flight_updates)) = chunk_map.drain_pending_light_updates() else {
+            panic!("queued light update should drain");
+        };
+
+        assert!(chunk_map.light_update_touches_chunk(inside));
+
+        drop(in_flight_updates);
+
+        assert!(!chunk_map.light_update_touches_chunk(inside));
     }
 
     #[test]
