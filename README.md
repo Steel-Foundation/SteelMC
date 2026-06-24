@@ -6,21 +6,38 @@
 ![Lint](https://github.com/4lve/SteelMC/actions/workflows/lint.yml/badge.svg)
 ![Build](https://github.com/4lve/SteelMC/actions/workflows/release.yml/badge.svg)
 
-
-
+<!-- PROJECT LOGO -->
+<br />
 <div align="center">
+  <a href="https://i.imgur.com/lFQ6jH2.png">
+    <img src="https://i.imgur.com/lFQ6jH2.png" alt="Logo" width="128" height="128">
+  </a>
 
-# Steel
+  <h3 align="center">SteelMC - Leveraging </h3>
 
-![Logo](https://i.imgur.com/lFQ6jH2.png)
-
-Steel is a lightweight Rust implementation of the Minecraft server.
-It focuses on clean code, performance, extensibility, and ease of use.
-
-<img width="800" height="450" alt="showcase" src="assets/output.gif" />
-
-
+  <p align="center">
+    Minecraft implemented the right way. Built in Rust, with multithreading in mind. We aim for vanilla parity, performance, clean code and customization.
+    <br />
+    <a href="https://steelmc.dev/"><strong>Explore the docs</strong></a>
+    <br />
+    <br />
+    <a href="#features">Features</a>
+    &middot;
+    <a href="#roadmap">Roadmap</a>
+    &middot;
+    <a href="#our-approach">Our approach</a>
+    &middot;
+    <a href="#Contributing">Contributing</a>
+  </p>
 </div>
+
+<img width="600" height="3000" alt="showcase" src="assets/output.gif" />
+
+## Features
+
+## Roadmap
+
+## Our approach
 
 ---
 
