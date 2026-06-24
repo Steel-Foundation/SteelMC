@@ -146,6 +146,23 @@ pub struct ChunkHolder {
     changed_light_sections: SyncMutex<ChangedLightSectionSets>,
 }
 
+struct StatusWorkClaim {
+    holder: Arc<ChunkHolder>,
+    status: ChunkStatus,
+}
+
+impl StatusWorkClaim {
+    const fn new(holder: Arc<ChunkHolder>, status: ChunkStatus) -> Self {
+        Self { holder, status }
+    }
+}
+
+impl Drop for StatusWorkClaim {
+    fn drop(&mut self) {
+        self.holder.release_status_work_claim(self.status);
+    }
+}
+
 impl ChunkHolder {
     /// Gets the chunk position.
     pub const fn get_pos(&self) -> ChunkPos {
@@ -519,6 +536,39 @@ impl ChunkHolder {
         }
     }
 
+    fn await_claimed_chunk_status(
+        &self,
+        status: ChunkStatus,
+    ) -> impl Future<Output = Option<ChunkStatus>> + '_ {
+        let mut subscriber = self.sender.subscribe();
+        async move {
+            loop {
+                let ready = {
+                    let chunk_result = subscriber.borrow_and_update();
+                    match &*chunk_result {
+                        ChunkResult::Ok(current_status) if status <= *current_status => {
+                            Some(*current_status)
+                        }
+                        ChunkResult::Ok(_) | ChunkResult::Unloaded => None,
+                    }
+                };
+
+                if ready.is_some() {
+                    return ready;
+                }
+
+                if self.is_status_disallowed(status) || !self.status_work_covers(status) {
+                    return None;
+                }
+
+                if subscriber.changed().await.is_err() {
+                    log::error!("Failed to wait for claimed chunk status");
+                    return None;
+                }
+            }
+        }
+    }
+
     /// Gets the persisted status of the chunk.
     pub fn persisted_status(&self) -> Option<ChunkStatus> {
         let chunk_result = self.chunk_result.borrow();
@@ -624,19 +674,19 @@ impl ChunkHolder {
             return None;
         }
 
-        if !self.acquire_status_bump(target_status) {
+        let Some(status_claim) = self.claim_status_work(target_status) else {
             // Another task is already generating this chunk to `target_status`;
             // just wait for it. Parent cancellation is handled by the owning
             // task's run loop dropping this future; a failed dependency returns
-            // `None` from `await_chunk_status`.
+            // `None` from `await_claimed_chunk_status`.
             let self_clone = self.clone();
             return Some(Box::pin(async move {
                 self_clone
-                    .await_chunk_status(target_status)
+                    .await_claimed_chunk_status(target_status)
                     .await
                     .map(|_| ())
             }));
-        }
+        };
 
         let cache = cache.clone();
         let context = chunk_map.world_gen_context.clone();
@@ -644,6 +694,8 @@ impl ChunkHolder {
         let storage = chunk_map.storage.clone();
 
         let future = chunk_map.task_tracker.spawn(async move {
+            // Keep the claim alive for the producer task so Drop can roll back abandoned work.
+            let _status_claim = status_claim;
             let result = if target_status == ChunkStatus::Empty {
                 Self::apply_empty_step(self_clone, step, context, cache, storage, thread_pool).await
             } else {
@@ -882,7 +934,7 @@ impl ChunkHolder {
         .await;
     }
 
-    fn acquire_status_bump(&self, status: ChunkStatus) -> bool {
+    fn claim_status_work(self: &Arc<Self>, status: ChunkStatus) -> Option<StatusWorkClaim> {
         let status_index = status.get_index();
         let parent_index = status
             .parent()
@@ -896,10 +948,10 @@ impl ChunkHolder {
         );
 
         match previous_started {
-            Ok(_) => true,
+            Ok(_) => Some(StatusWorkClaim::new(Arc::clone(self), status)),
             Err(current) => {
                 if current != usize::MAX && current >= status_index {
-                    false
+                    None
                 } else {
                     panic!(
                         "Unexpected started work status: {current:?} (index {current}) while trying to start: {status:?} (index {status_index})"
@@ -907,6 +959,56 @@ impl ChunkHolder {
                 }
             }
         }
+    }
+
+    fn release_status_work_claim(&self, status: ChunkStatus) {
+        let status_index = status.get_index();
+        let rollback_index = self
+            .persisted_status()
+            .map_or(usize::MAX, super::chunk_access::ChunkStatus::get_index);
+
+        if rollback_index != usize::MAX && rollback_index >= status_index {
+            return;
+        }
+
+        if self
+            .started_work
+            .compare_exchange(
+                status_index,
+                rollback_index,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            self.wake_all_watchers();
+        }
+    }
+
+    fn mark_status_work_published(&self, status: ChunkStatus) {
+        let status_index = status.get_index();
+        let mut current = self.started_work.load(Ordering::Acquire);
+
+        loop {
+            if current != usize::MAX && current >= status_index {
+                return;
+            }
+
+            match self.started_work.compare_exchange(
+                current,
+                status_index,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return,
+                Err(next) => current = next,
+            }
+        }
+    }
+
+    fn status_work_covers(&self, status: ChunkStatus) -> bool {
+        let current = self.started_work.load(Ordering::Acquire);
+        current != usize::MAX && current >= status.get_index()
     }
 
     /// Upgrades the chunk to a full chunk.
@@ -978,6 +1080,7 @@ impl ChunkHolder {
             }
         }
 
+        self.mark_status_work_published(status);
         self.sender.send_modify(|chunk| match chunk {
             ChunkResult::Ok(current_status) if *current_status < status => {
                 *current_status = status;
@@ -1002,6 +1105,7 @@ impl ChunkHolder {
     /// if calling from a rayon thread to avoid contention.
     pub fn insert_chunk(&self, chunk: ChunkAccess, status: ChunkStatus) {
         self.data.with_write(|c| *c = chunk);
+        self.mark_status_work_published(status);
         self.sender.send_replace(ChunkResult::Ok(status));
     }
 
@@ -1052,4 +1156,116 @@ where
         sender.send(func()).expect("Failed to send result");
     });
     async move { receiver.await.expect("Failed to receive rayon task result") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::proto_chunk::ProtoChunk;
+    use crate::chunk::section::{ChunkSection, Sections};
+    use steel_registry::test_support::init_test_registry;
+
+    fn init_chunk_test_registry() {
+        init_test_registry();
+        init_behaviors();
+    }
+
+    fn test_holder() -> Arc<ChunkHolder> {
+        Arc::new(ChunkHolder::new(
+            ChunkPos::new(0, 0),
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            0,
+            16,
+        ))
+    }
+
+    fn test_proto_chunk(status: ChunkStatus) -> ProtoChunk {
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.set_status(status);
+        proto
+    }
+
+    #[test]
+    fn unpublished_status_claim_rolls_back_to_unloaded() {
+        let holder = test_holder();
+        let claim = holder
+            .claim_status_work(ChunkStatus::Empty)
+            .expect("empty status should be claimable");
+
+        assert!(holder.claim_status_work(ChunkStatus::Empty).is_none());
+
+        drop(claim);
+
+        assert!(!holder.status_work_covers(ChunkStatus::Empty));
+        let retry = holder
+            .claim_status_work(ChunkStatus::Empty)
+            .expect("abandoned empty status should be claimable again");
+        drop(retry);
+    }
+
+    #[test]
+    fn unpublished_child_claim_rolls_back_to_published_parent() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        holder.insert_chunk(
+            ChunkAccess::Proto(test_proto_chunk(ChunkStatus::Empty)),
+            ChunkStatus::Empty,
+        );
+
+        let claim = holder
+            .claim_status_work(ChunkStatus::StructureStarts)
+            .expect("child status should be claimable after parent is published");
+
+        drop(claim);
+
+        assert!(holder.status_work_covers(ChunkStatus::Empty));
+        assert!(!holder.status_work_covers(ChunkStatus::StructureStarts));
+        let retry = holder
+            .claim_status_work(ChunkStatus::StructureStarts)
+            .expect("abandoned child status should be claimable again");
+        drop(retry);
+    }
+
+    #[test]
+    fn empty_claim_can_publish_a_higher_loaded_status() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        let empty_claim = holder
+            .claim_status_work(ChunkStatus::Empty)
+            .expect("empty status should be claimable");
+
+        holder.insert_chunk(
+            ChunkAccess::Proto(test_proto_chunk(ChunkStatus::StructureStarts)),
+            ChunkStatus::StructureStarts,
+        );
+        drop(empty_claim);
+
+        assert!(holder.status_work_covers(ChunkStatus::StructureStarts));
+        assert!(!holder.status_work_covers(ChunkStatus::StructureReferences));
+        let next_claim = holder
+            .claim_status_work(ChunkStatus::StructureReferences)
+            .expect("next status should be claimable from loaded status");
+        drop(next_claim);
+    }
+
+    #[tokio::test]
+    async fn claimed_status_waiter_finishes_when_claim_is_abandoned() {
+        let holder = test_holder();
+        let claim = holder
+            .claim_status_work(ChunkStatus::Empty)
+            .expect("empty status should be claimable");
+        let waiter = holder.await_claimed_chunk_status(ChunkStatus::Empty);
+
+        drop(claim);
+
+        assert!(waiter.await.is_none());
+    }
 }
