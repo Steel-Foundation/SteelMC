@@ -9,9 +9,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://i.imgur.com/lFQ6jH2.png">
-    <img src="https://i.imgur.com/lFQ6jH2.png" alt="Logo" width="128" height="128">
-  </a>
+  <img src="https://i.imgur.com/lFQ6jH2.png" alt="Logo" width="128" height="128">
 
   <h3 align="center">SteelMC - Leveraging </h3>
 
