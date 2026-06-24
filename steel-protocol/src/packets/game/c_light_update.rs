@@ -26,7 +26,7 @@ mod tests {
     use crate::packets::game::LightUpdatePacketData;
 
     #[test]
-    fn writes_chunk_coordinates_as_varints() {
+    fn writes_chunk_coordinates_as_varints_and_trims_empty_masks() {
         fn empty_mask() -> BitSet {
             BitSet(vec![0].into_boxed_slice())
         }
@@ -58,5 +58,11 @@ mod tests {
         };
         assert_eq!(x.0, 2);
         assert_eq!(z.0, -3);
+        for _ in 0..4 {
+            let Ok(mask_len) = VarInt::read(&mut cursor) else {
+                panic!("light mask length missing");
+            };
+            assert_eq!(mask_len.0, 0);
+        }
     }
 }

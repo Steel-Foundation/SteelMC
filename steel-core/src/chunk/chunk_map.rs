@@ -1486,13 +1486,20 @@ impl ChunkMap {
                 Ok(true) => world
                     .entity_manager()
                     .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids),
-                Ok(false) => world.mark_chunk_dirty(chunk_pos),
+                Ok(false) => Self::mark_chunk_dirty_for_save_retry(chunk_holder),
                 Err(e) => {
                     tracing::error!("Error saving chunk: {e}");
-                    world.mark_chunk_dirty(chunk_pos);
+                    Self::mark_chunk_dirty_for_save_retry(chunk_holder);
                 }
             }
         }
+    }
+
+    fn mark_chunk_dirty_for_save_retry(chunk_holder: &ChunkHolder) {
+        let Some(chunk) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
+            return;
+        };
+        chunk.mark_dirty();
     }
 
     /// Processes chunks that are pending unload.
@@ -1733,10 +1740,10 @@ impl ChunkMap {
                     covered_chunk_positions.insert(chunk_pos);
                     saved_count += 1;
                 }
-                Ok(false) => world.mark_chunk_dirty(chunk_pos),
+                Ok(false) => Self::mark_chunk_dirty_for_save_retry(holder),
                 Err(e) => {
                     tracing::error!(chunk = ?holder.get_pos(), "Failed to save chunk: {e}");
-                    world.mark_chunk_dirty(chunk_pos);
+                    Self::mark_chunk_dirty_for_save_retry(holder);
                 }
             }
         }
@@ -1967,6 +1974,25 @@ mod tests {
 
         assert!(chunk_map.chunks_to_broadcast.lock().is_empty());
         assert!(!holder.has_changes_to_broadcast());
+    }
+
+    #[test]
+    fn save_retry_marks_same_unloading_holder_dirty() {
+        let _chunk_map = test_chunk_map();
+        let pos = ChunkPos::new(2, 3);
+        let holder = unloaded_light_holder(pos);
+        let chunk = holder
+            .try_chunk(ChunkStatus::Light)
+            .expect("test holder should contain a light-status chunk");
+        chunk.clear_dirty();
+        drop(chunk);
+
+        ChunkMap::mark_chunk_dirty_for_save_retry(&holder);
+
+        let chunk = holder
+            .try_chunk(ChunkStatus::Light)
+            .expect("test holder should still contain a light-status chunk");
+        assert!(chunk.is_dirty());
     }
 
     #[test]

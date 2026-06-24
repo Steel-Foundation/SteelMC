@@ -1124,7 +1124,7 @@ fn chunk_stage_hashes_inner() {
         );
     }
     let includes_light = STAGES.contains(&LIGHT_STAGE);
-    if includes_light && expected.light_hash_capture.is_some() {
+    if includes_light {
         assert_eq!(
             expected.light_hash_capture.as_deref(),
             Some(LIGHT_HASH_CAPTURE_AFTER_IDLE),

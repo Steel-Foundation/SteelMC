@@ -34,6 +34,42 @@ impl ReadFrom for BitSet {
 
 impl WriteTo for BitSet {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        self.0.write_prefixed::<VarInt>(writer)
+        let trimmed_len = self
+            .0
+            .iter()
+            .rposition(|word| *word != 0)
+            .map_or(0, |index| index + 1);
+        self.0[..trimmed_len].write_prefixed::<VarInt>(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::serial::WriteTo;
+
+    use super::BitSet;
+
+    #[test]
+    fn write_trims_empty_bit_set_to_zero_longs() {
+        let bit_set = BitSet(vec![0].into_boxed_slice());
+        let mut data = Vec::new();
+
+        bit_set.write(&mut data).expect("bit set should encode");
+
+        assert_eq!(data, vec![0]);
+    }
+
+    #[test]
+    fn write_trims_only_trailing_zero_longs() {
+        let bit_set = BitSet(vec![5, 0, 7, 0, 0].into_boxed_slice());
+        let mut data = Vec::new();
+
+        bit_set.write(&mut data).expect("bit set should encode");
+
+        let mut expected = vec![3];
+        expected.extend_from_slice(&5_u64.to_be_bytes());
+        expected.extend_from_slice(&0_u64.to_be_bytes());
+        expected.extend_from_slice(&7_u64.to_be_bytes());
+        assert_eq!(data, expected);
     }
 }
