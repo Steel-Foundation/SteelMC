@@ -1,11 +1,11 @@
-[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=plastic&logo=rust&logoColor=white)](https://www.youtube.com/watch?v=cE0wfjsybIQ&t=73s)
-[![License](https://img.shields.io/github/license/4lve/SteelMC?style=social)](https://github.com/4lve/SteelMC/blob/master/LICENSE)
-[![SteelMC](https://dcbadge.limes.pink/api/server/MwChEHnAbh?style=social)](https://discord.gg/MwChEHnAbh)
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/4lve/SteelMC)
-![Tests](https://github.com/4lve/SteelMC/actions/workflows/test.yml/badge.svg)
-![Lint](https://github.com/4lve/SteelMC/actions/workflows/lint.yml/badge.svg)
-![Build](https://github.com/4lve/SteelMC/actions/workflows/release.yml/badge.svg)
-
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=cE0wfjsybIQ&t=73s"><img src="https://img.shields.io/badge/rust-%23000000.svg?style=plastic&logo=rust&logoColor=white" alt="Rust" /></a>
+  <a href="https://github.com/4lve/SteelMC/blob/master/LICENSE"><img src="https://img.shields.io/github/license/4lve/SteelMC?style=social" alt="License" /></a>
+  <a href="https://discord.gg/MwChEHnAbh"><img src="https://dcbadge.limes.pink/api/server/MwChEHnAbh?style=social" alt="SteelMC" /></a>
+  <img src="https://github.com/4lve/SteelMC/actions/workflows/test.yml/badge.svg" alt="Tests" />
+  <img src="https://github.com/4lve/SteelMC/actions/workflows/lint.yml/badge.svg" alt="Lint" />
+  <img src="https://github.com/4lve/SteelMC/actions/workflows/release.yml/badge.svg" alt="Build" />
+</div>
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
@@ -16,7 +16,7 @@
   <h3 align="center">SteelMC - Leveraging </h3>
 
   <p align="center">
-    Minecraft implemented the right way. Built in Rust, with multithreading in mind. We aim for vanilla parity, performance, clean code and customization.
+    Minecraft implemented the right way. Built in Rust, with multithreading in mind.<br /> We aim for vanilla parity, performance, clean code and customization.
     <br />
     <a href="https://steelmc.dev/"><strong>Explore the docs</strong></a>
     <br />
