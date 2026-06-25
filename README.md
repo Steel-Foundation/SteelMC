@@ -25,7 +25,11 @@
     &middot;
     <a href="#our-approach">Our approach</a>
     &middot;
-    <a href="#Contributing">Contributing</a>
+    <a href="https://steelmc.dev/tracker/">Tracker</a>
+    &middot;
+    <a href="#contributing">Contributing</a>
+    &middot;
+    <a href="#acknowledgements">Acknowledgements</a>
   </p>
 
 <br />
@@ -38,6 +42,8 @@
 ## Roadmap
 
 ## Our approach
+
+## Acknowledgements
 
 ---
 
