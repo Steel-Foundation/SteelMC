@@ -86,6 +86,6 @@ It will fix some things already for you, but the commit will still fail and plea
 
 ### Top contributors:
 
-<a href="https://github.com/othneildrew/Best-README-Template/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=othneildrew/Best-README-Template" alt="contrib.rocks image" />
+<a href="https://github.com/Steel-Foundation/SteelMC/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Steel-Foundation/SteelMC" alt="contrib.rocks image" />
 </a>
