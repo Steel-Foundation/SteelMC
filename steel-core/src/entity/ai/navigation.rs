@@ -1,7 +1,7 @@
 //! Path navigation state shell.
 
 use glam::DVec3;
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_registry::REGISTRY;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::BlockPos;
@@ -236,7 +236,7 @@ impl PathNavigation {
     }
 
     pub fn update_pathfinder_max_visited_nodes(&mut self, follow_range: f64) {
-        let max_visited_nodes = floor(f64::from(
+        let max_visited_nodes = fast_floor(f64::from(
             self.max_path_length(follow_range) * MAX_VISITED_NODES_SCALE,
         ));
         self.path_finder.set_max_visited_nodes(max_visited_nodes);
@@ -468,8 +468,8 @@ impl PathNavigation {
 
         if context.mob_position.y > target.y
             && !on_ground
-            && floor(context.mob_position.x) == floor(target.x)
-            && floor(context.mob_position.z) == floor(target.z)
+            && fast_floor(context.mob_position.x) == fast_floor(target.x)
+            && fast_floor(context.mob_position.z) == fast_floor(target.z)
         {
             path.advance();
         }
@@ -704,7 +704,7 @@ fn block_center(pos: BlockPos) -> DVec3 {
 
 fn path_move_target(path: &Path, mob_bounding_box_width: f64) -> Option<DVec3> {
     path.next_node().map(|node| {
-        let offset = f64::from(floor(mob_bounding_box_width + 1.0)) * 0.5;
+        let offset = f64::from(fast_floor(mob_bounding_box_width + 1.0)) * 0.5;
         DVec3::new(
             f64::from(node.x) + offset,
             f64::from(node.y),

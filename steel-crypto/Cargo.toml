@@ -24,6 +24,5 @@ reqwest.workspace = true
 
 # Cryptography
 rsa.workspace = true
-rsa-der.workspace = true
 rand.workspace = true
 base64.workspace = true

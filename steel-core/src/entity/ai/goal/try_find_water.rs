@@ -1,5 +1,5 @@
 use glam::DVec3;
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
@@ -69,14 +69,14 @@ impl Goal for TryFindWaterGoal {
 fn water_search_bounds(position: DVec3) -> (BlockPos, BlockPos) {
     (
         BlockPos::new(
-            floor(position.x - WATER_SEARCH_HORIZONTAL_RADIUS),
-            floor(position.y - WATER_SEARCH_VERTICAL_BELOW),
-            floor(position.z - WATER_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.x - WATER_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.y - WATER_SEARCH_VERTICAL_BELOW),
+            fast_floor(position.z - WATER_SEARCH_HORIZONTAL_RADIUS),
         ),
         BlockPos::new(
-            floor(position.x + WATER_SEARCH_HORIZONTAL_RADIUS),
-            floor(position.y),
-            floor(position.z + WATER_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.x + WATER_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.y),
+            fast_floor(position.z + WATER_SEARCH_HORIZONTAL_RADIUS),
         ),
     )
 }

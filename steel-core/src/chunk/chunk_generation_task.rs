@@ -66,13 +66,7 @@ impl<T> StaticCache2D<T> {
     /// Panics if coordinates are out of bounds.
     #[must_use]
     pub fn get(&self, x: i32, z: i32) -> &T {
-        let rel_x = x - self.min_x;
-        let rel_z = z - self.min_z;
-
-        if rel_x >= 0 && rel_x < self.size && rel_z >= 0 && rel_z < self.size {
-            let index = (rel_z * self.size + rel_x) as usize;
-            &self.cache[index]
-        } else {
+        let Some(value) = self.try_get(x, z) else {
             panic!(
                 "Out of bounds: ({x}, {z}) vs [({}, {}) to ({}, {})]",
                 self.min_x,
@@ -80,6 +74,21 @@ impl<T> StaticCache2D<T> {
                 self.min_x + self.size - 1,
                 self.min_z + self.size - 1
             );
+        };
+        value
+    }
+
+    /// Gets a reference to an element by world coordinates.
+    #[must_use]
+    pub fn try_get(&self, x: i32, z: i32) -> Option<&T> {
+        let rel_x = x - self.min_x;
+        let rel_z = z - self.min_z;
+
+        if rel_x >= 0 && rel_x < self.size && rel_z >= 0 && rel_z < self.size {
+            let index = (rel_z * self.size + rel_x) as usize;
+            self.cache.get(index)
+        } else {
+            None
         }
     }
 }

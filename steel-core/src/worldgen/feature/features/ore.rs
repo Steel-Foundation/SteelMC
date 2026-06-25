@@ -1,7 +1,6 @@
 use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use crate::chunk::section::{BlockStateSectionCounts, ChunkSection};
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
@@ -231,12 +230,12 @@ impl FeatureDecorationRunner {
                 continue;
             }
 
-            let x_min = floor(node[0] - radius).max(x_start);
-            let z_min = floor(node[2] - radius).max(z_start);
-            let x_max = floor(node[0] + radius).max(x_min);
-            let z_max = floor(node[2] + radius).max(z_min);
-            let raw_y_min = floor(node[1] - radius).max(y_start);
-            let raw_y_max = floor(node[1] + radius).max(raw_y_min);
+            let x_min = fast_floor(node[0] - radius).max(x_start);
+            let z_min = fast_floor(node[2] - radius).max(z_start);
+            let x_max = fast_floor(node[0] + radius).max(x_min);
+            let z_max = fast_floor(node[2] + radius).max(z_min);
+            let raw_y_min = fast_floor(node[1] - radius).max(y_start);
+            let raw_y_max = fast_floor(node[1] + radius).max(raw_y_min);
             let y_min = raw_y_min.max(min_y);
             let y_max = raw_y_max.min(min_y + height - 1);
             if y_min > y_max {
@@ -511,7 +510,6 @@ struct ResolvedOreTargets {
 struct ResolvedOreTarget {
     matcher: ResolvedOreRuleTest,
     state: BlockStateId,
-    state_counts: BlockStateSectionCounts,
 }
 
 enum ResolvedOreRuleTest {
@@ -575,12 +573,7 @@ impl ResolvedOreTargets {
                 &target.state,
                 "ore feature",
             );
-            let state_counts = ChunkSection::block_state_section_counts(state);
-            targets.push(ResolvedOreTarget {
-                matcher,
-                state,
-                state_counts,
-            });
+            targets.push(ResolvedOreTarget { matcher, state });
         }
 
         Self { targets }
@@ -594,13 +587,11 @@ impl ResolvedOreTargets {
         &self,
         registry: &Registry,
         state: BlockStateId,
-    ) -> Option<(BlockStateId, BlockStateSectionCounts)> {
+    ) -> Option<BlockStateId> {
         let block_id = Self::block_id_for_state(registry, state);
-        self.targets.iter().find_map(|target| {
-            target
-                .matches_block_id(block_id)
-                .then_some((target.state, target.state_counts))
-        })
+        self.targets
+            .iter()
+            .find_map(|target| target.matches_block_id(block_id).then_some(target.state))
     }
 
     fn block_id_for_state(registry: &Registry, state: BlockStateId) -> usize {

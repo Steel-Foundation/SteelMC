@@ -2,13 +2,18 @@
 //!
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
-use std::simd::cmp::SimdPartialOrd;
-use std::simd::{Select, Simd, StdFloat, f64x4};
-
 use crate::random::Random;
+use std::ops;
+use std::simd::Simd;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+#[cfg(target_feature = "avx512f")]
+use std::simd::f64x4;
+use std::simd::num::{SimdFloat, SimdInt, SimdUint};
+use std::simd::ptr::SimdConstPtr;
+use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
 use steel_math::{
-    GRADIENT, floor, grad_dot, grad_dot_4x, grad_dot_simd, lerp2, lerp3, lerp3_4x, lerp3_simd,
-    smoothstep, smoothstep_4x, smoothstep_derivative, smoothstep_simd,
+    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3, lerp3_simd,
+    smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -57,9 +62,9 @@ impl ImprovedNoise {
             p.swap(i, i + offset);
         }
 
-        let yo_floor = floor(yo);
+        let yo_floor = fast_floor(yo);
         let yo_fraction = yo - f64::from(yo_floor);
-        let zo_floor = floor(zo);
+        let zo_floor = fast_floor(zo);
         let zo_fraction = zo - f64::from(zo_floor);
 
         Self {
@@ -84,15 +89,49 @@ impl ImprovedNoise {
         let y = y + self.yo;
         let z = z + self.zo;
 
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
 
         let xr = x - f64::from(xf);
         let yr = y - f64::from(yf);
         let zr = z - f64::from(zf);
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    }
+
+    /// Calculate Perlin noise using SIMD vectors.
+    #[inline]
+    #[must_use]
+    pub fn noise_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>,
+    {
+        let x = x + Simd::splat(self.xo).cast();
+        let y = y + Simd::splat(self.yo).cast();
+        let z = z + Simd::splat(self.zo).cast();
+
+        let xf = fast_floor_simd::<F, i32, N>(x);
+        let yf = fast_floor_simd::<F, i32, N>(y);
+        let zf = fast_floor_simd::<F, i32, N>(z);
+
+        let xr = x - xf.cast();
+        let yr = y - yf.cast();
+        let zr = z - zf.cast();
+
+        self.sample_and_lerp_simd(xf, yf, zf, xr, yr, zr, yr)
     }
 
     /// Sample noise at `(x, 0.0, z)`.
@@ -102,8 +141,8 @@ impl ImprovedNoise {
         let x = x + self.xo;
         let z = z + self.zo;
 
-        let xf = floor(x);
-        let zf = floor(z);
+        let xf = fast_floor(x);
+        let zf = fast_floor(z);
 
         let xr = x - f64::from(xf);
         let zr = z - f64::from(zf);
@@ -126,8 +165,8 @@ impl ImprovedNoise {
         let x = x + self.xo;
         let y = y + self.yo;
 
-        let xf = floor(x);
-        let yf = floor(y);
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
 
         let xr = x - f64::from(xf);
         let yr = y - f64::from(yf);
@@ -151,9 +190,9 @@ impl ImprovedNoise {
         let y = y + self.yo;
         let z = z + self.zo;
 
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
 
         let xr = x - f64::from(xf);
         let yr = y - f64::from(yf);
@@ -181,9 +220,9 @@ impl ImprovedNoise {
         let y = y + self.yo;
         let z = z + self.zo;
 
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
 
         let xr = x - f64::from(xf);
         let yr = y - f64::from(yf);
@@ -205,14 +244,7 @@ impl ImprovedNoise {
         } else {
             0.0
         };
-
         self.sample_and_lerp(xf, yf, zf, xr, yr - yr_fudge, zr, yr)
-    }
-
-    /// Look up the permutation value at index x.
-    #[inline]
-    const fn p(&self, x: i32) -> usize {
-        self.p[(x & 255) as usize] as usize
     }
 
     /// Sample noise at grid point and interpolate.
@@ -232,36 +264,94 @@ impl ImprovedNoise {
         zr: f64,
         yr_original: f64,
     ) -> f64 {
+        let x = x as u8;
+        let y = y as u8;
+        let z = z as u8;
         // Get permutation indices for the 8 corners
-        let x0 = self.p(x);
-        let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let x0 = self.p[x as usize];
+        let x1 = self.p[x.wrapping_add(1) as usize];
 
-        // Hashes for the z-face and z+1-face, in (000,100,010,110) order.
-        let h_z0 = [
-            self.p(xy00 as i32 + z),
-            self.p(xy10 as i32 + z),
-            self.p(xy01 as i32 + z),
-            self.p(xy11 as i32 + z),
-        ];
-        let h_z1 = [
-            self.p(xy00 as i32 + z + 1),
-            self.p(xy10 as i32 + z + 1),
-            self.p(xy01 as i32 + z + 1),
-            self.p(xy11 as i32 + z + 1),
-        ];
+        let xy00 = self.p[x0.wrapping_add(y) as usize];
+        let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+        let xy10 = self.p[x1.wrapping_add(y) as usize];
+        let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
 
-        let xr_v = f64x4::from_array([xr, xr - 1.0, xr, xr - 1.0]);
-        let yr_v = f64x4::from_array([yr, yr, yr - 1.0, yr - 1.0]);
-        let zr_v0 = f64x4::splat(zr);
-        let zr_v1 = f64x4::splat(zr - 1.0);
+        let (d000, d100, d010, d110, d001, d101, d011, d111) = {
+            #[cfg(target_feature = "avx512f")]
+            {
+                // Hashes for the z-face and z+1-face, in (000,100,010,110) order.
+                let h_z0 = [
+                    self.p[xy00.wrapping_add(z) as usize] as usize,
+                    self.p[xy10.wrapping_add(z) as usize] as usize,
+                    self.p[xy01.wrapping_add(z) as usize] as usize,
+                    self.p[xy11.wrapping_add(z) as usize] as usize,
+                ];
+                let h_z1 = [
+                    self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                ];
 
-        let [d000, d100, d010, d110] = grad_dot_4x(h_z0, xr_v, yr_v, zr_v0).to_array();
-        let [d001, d101, d011, d111] = grad_dot_4x(h_z1, xr_v, yr_v, zr_v1).to_array();
+                let xr_v = f64x4::from_array([xr, xr - 1.0, xr, xr - 1.0]);
+                let yr_v = f64x4::from_array([yr, yr, yr - 1.0, yr - 1.0]);
+                let zr_v0 = f64x4::splat(zr);
+                let zr_v1 = f64x4::splat(zr - 1.0);
 
+                let [d000, d100, d010, d110] = grad_dot_simd(h_z0, xr_v, yr_v, zr_v0).to_array();
+                let [d001, d101, d011, d111] = grad_dot_simd(h_z1, xr_v, yr_v, zr_v1).to_array();
+                (d000, d100, d010, d110, d001, d101, d011, d111)
+            }
+
+            #[cfg(not(target_feature = "avx512f"))]
+            {
+                // Calculate gradient dot products at each corner
+                let d000 = grad_dot(self.p[xy00.wrapping_add(z) as usize] as usize, xr, yr, zr);
+                let d100 = grad_dot(
+                    self.p[xy10.wrapping_add(z) as usize] as usize,
+                    xr - 1.0,
+                    yr,
+                    zr,
+                );
+                let d010 = grad_dot(
+                    self.p[xy01.wrapping_add(z) as usize] as usize,
+                    xr,
+                    yr - 1.0,
+                    zr,
+                );
+                let d110 = grad_dot(
+                    self.p[xy11.wrapping_add(z) as usize] as usize,
+                    xr - 1.0,
+                    yr - 1.0,
+                    zr,
+                );
+                let d001 = grad_dot(
+                    self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    xr,
+                    yr,
+                    zr - 1.0,
+                );
+                let d101 = grad_dot(
+                    self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    xr - 1.0,
+                    yr,
+                    zr - 1.0,
+                );
+                let d011 = grad_dot(
+                    self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    xr,
+                    yr - 1.0,
+                    zr - 1.0,
+                );
+                let d111 = grad_dot(
+                    self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize,
+                    xr - 1.0,
+                    yr - 1.0,
+                    zr - 1.0,
+                );
+                (d000, d100, d010, d110, d001, d101, d011, d111)
+            }
+        };
         // Apply smoothstep interpolation
         let x_alpha = smoothstep(xr);
         let y_alpha = smoothstep(yr_original);
@@ -272,140 +362,112 @@ impl ImprovedNoise {
         )
     }
 
-    /// Sample noise for 4 points that share the same x/z but differ in y.
-    ///
-    /// This is the SIMD counterpart of [`noise_with_y_scale`]. The x and z
-    /// coordinate work (offset, floor, permutation) is done once and reused
-    /// across all 4 lanes, while the y-dependent math is vectorized.
-    #[must_use]
-    pub fn noise_with_y_scale_4x(
-        &self,
-        x: f64,
-        ys: f64x4,
-        z: f64,
-        y_scale: f64,
-        y_fudges: f64x4,
-    ) -> f64x4 {
-        // Shared x/z offset and floor
-        let x = x + self.xo;
-        let z = z + self.zo;
-        let xf = floor(x);
-        let zf = floor(z);
-        let xr = x - f64::from(xf);
-        let zr = z - f64::from(zf);
-
-        // Per-lane y offset and floor
-        let ys = ys + f64x4::splat(self.yo);
-        let ys_floor = ys.floor();
-        let yrs = ys - ys_floor;
-
-        // Y fudge (per-lane)
-        let yr_fudge = if y_scale == 0.0 {
-            f64x4::splat(0.0)
-        } else {
-            let y_scale_v = f64x4::splat(y_scale);
-            let zero = f64x4::splat(0.0);
-            let mask = y_fudges.simd_ge(zero) & y_fudges.simd_lt(yrs);
-            let fudge_limits = mask.select(y_fudges, yrs);
-            let epsilon = f64x4::splat(f64::from(1.0e-7_f32));
-            ((fudge_limits / y_scale_v) + epsilon).floor() * y_scale_v
-        };
-
-        let yrs_adjusted = yrs - yr_fudge;
-
-        self.sample_and_lerp_4x(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
+    #[inline]
+    fn p_simd<const N: usize>(&self, idx: Simd<u8, N>) -> Simd<u8, N> {
+        let offset = idx.cast::<usize>();
+        let p = Simd::splat(self.p.as_ptr()).wrapping_add(offset);
+        // SAFETY: `idx` is a `Simd<u8, N>`, meaning each lane's index is at most 255.
+        // `self.p` has length 256, so all offsets are guaranteed to be within bounds of `self.p`.
+        unsafe { Simd::gather_ptr(p) }
     }
 
-    /// Vectorized sample-and-lerp for 4 Y values sharing x/z grid position.
-    ///
-    /// `ys_floor` contains the floored y coordinates (as f64 for extraction),
-    /// `yrs` are the adjusted fractional y parts, `yrs_original` are the
-    /// un-fudged fractional parts (used for smoothstep).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "mirrors scalar sample_and_lerp with 4x SIMD y-batching"
-    )]
-    fn sample_and_lerp_4x(
+    /// Sample noise at grid point and interpolate.
+    #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
+    fn sample_and_lerp_simd<F, const N: usize>(
         &self,
-        xf: i32,
-        zf: i32,
-        xr: f64,
-        zr: f64,
-        ys_floor: f64x4,
-        yrs: f64x4,
-        yrs_original: f64x4,
-    ) -> f64x4 {
-        // Shared x permutation lookups (2 instead of 2×4)
-        let x0 = self.p(xf);
-        let x1 = self.p(xf + 1);
+        x: Simd<i32, N>,
+        y: Simd<i32, N>,
+        z: Simd<i32, N>,
+        xr: Simd<F, N>,
+        yr: Simd<F, N>,
+        zr: Simd<F, N>,
+        yr_original: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>,
+    {
+        let x = x.cast::<u8>();
+        let y = y.cast::<u8>();
+        let z = z.cast::<u8>();
+        // Get permutation indices for the 8 corners
+        let x0 = self.p_simd(x);
+        let x1 = self.p_simd(x + Simd::splat(1));
 
-        // Per-lane y-dependent permutation lookups
-        let yf = [
-            ys_floor[0] as i32,
-            ys_floor[1] as i32,
-            ys_floor[2] as i32,
-            ys_floor[3] as i32,
-        ];
+        let xy00 = self.p_simd(x0 + y);
+        let xy01 = self.p_simd(x0 + y + Simd::splat(1));
+        let xy10 = self.p_simd(x1 + y);
+        let xy11 = self.p_simd(x1 + y + Simd::splat(1));
 
-        let mut h000 = [0usize; 4];
-        let mut h100 = [0usize; 4];
-        let mut h010 = [0usize; 4];
-        let mut h110 = [0usize; 4];
-        let mut h001 = [0usize; 4];
-        let mut h101 = [0usize; 4];
-        let mut h011 = [0usize; 4];
-        let mut h111 = [0usize; 4];
+        let h000 = self.p_simd(xy00 + z).cast::<usize>().to_array();
+        let h100 = self.p_simd(xy10 + z).cast::<usize>().to_array();
+        let h010 = self.p_simd(xy01 + z).cast::<usize>().to_array();
+        let h110 = self.p_simd(xy11 + z).cast::<usize>().to_array();
+        let h001 = self
+            .p_simd(xy00 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h101 = self
+            .p_simd(xy10 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h011 = self
+            .p_simd(xy01 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h111 = self
+            .p_simd(xy11 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
 
-        for i in 0..4 {
-            let y = yf[i];
-            let xy00 = self.p(x0 as i32 + y);
-            let xy01 = self.p(x0 as i32 + y + 1);
-            let xy10 = self.p(x1 as i32 + y);
-            let xy11 = self.p(x1 as i32 + y + 1);
-            h000[i] = self.p(xy00 as i32 + zf);
-            h100[i] = self.p(xy10 as i32 + zf);
-            h010[i] = self.p(xy01 as i32 + zf);
-            h110[i] = self.p(xy11 as i32 + zf);
-            h001[i] = self.p(xy00 as i32 + zf + 1);
-            h101[i] = self.p(xy10 as i32 + zf + 1);
-            h011[i] = self.p(xy01 as i32 + zf + 1);
-            h111[i] = self.p(xy11 as i32 + zf + 1);
-        }
+        // Calculate gradient dot products at each corner
+        let d000 = grad_dot_simd(h000, xr, yr, zr);
+        let d100 = grad_dot_simd(h100, xr - Simd::splat(1.0).cast::<F>(), yr, zr);
+        let d010 = grad_dot_simd(h010, xr, yr - Simd::splat(1.0).cast::<F>(), zr);
+        let d110 = grad_dot_simd(
+            h110,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr,
+        );
+        let d001 = grad_dot_simd(h001, xr, yr, zr - Simd::splat(1.0).cast::<F>());
+        let d101 = grad_dot_simd(
+            h101,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr,
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
+        let d011 = grad_dot_simd(
+            h011,
+            xr,
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
+        let d111 = grad_dot_simd(
+            h111,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
 
-        // Vectorized gradient dot products
-        let xr_v = f64x4::splat(xr);
-        let zr_v = f64x4::splat(zr);
-        let xr_m1 = xr_v - f64x4::splat(1.0);
-        let yr_m1 = yrs - f64x4::splat(1.0);
-        let zr_m1 = zr_v - f64x4::splat(1.0);
+        // Apply smoothstep interpolation
+        let x_alpha = smoothstep_simd(xr);
+        let y_alpha = smoothstep_simd(yr_original);
+        let z_alpha = smoothstep_simd(zr);
 
-        let d000 = grad_dot_4x(h000, xr_v, yrs, zr_v);
-        let d100 = grad_dot_4x(h100, xr_m1, yrs, zr_v);
-        let d010 = grad_dot_4x(h010, xr_v, yr_m1, zr_v);
-        let d110 = grad_dot_4x(h110, xr_m1, yr_m1, zr_v);
-        let d001 = grad_dot_4x(h001, xr_v, yrs, zr_m1);
-        let d101 = grad_dot_4x(h101, xr_m1, yrs, zr_m1);
-        let d011 = grad_dot_4x(h011, xr_v, yr_m1, zr_m1);
-        let d111 = grad_dot_4x(h111, xr_m1, yr_m1, zr_m1);
-
-        // Smoothstep — x and z are shared across lanes
-        let x_alpha = f64x4::splat(smoothstep(xr));
-        let y_alpha = smoothstep_4x(yrs_original);
-        let z_alpha = f64x4::splat(smoothstep(zr));
-
-        lerp3_4x(
+        lerp3_simd(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
-
-    // -----------------------------------------------------------------------
-    // SIMD: process N Y values sharing the same (x, z)
-    // -----------------------------------------------------------------------
 
     /// Generic N-lane form of [`Self::noise_with_y_scale_4x`]. Each lane runs the
     /// exact per-lane math of the scalar [`Self::noise_with_y_scale`], so any
     /// supported lane width yields bit-identical per-lane results — only the
     /// SIMD batch size changes. `f64x4` ≡ `noise_with_y_scale_simd::<4>`.
+    #[inline]
     #[must_use]
     pub fn noise_with_y_scale_simd<const N: usize>(
         &self,
@@ -418,8 +480,8 @@ impl ImprovedNoise {
         // Shared x/z offset and floor
         let x = x + self.xo;
         let z = z + self.zo;
-        let xf = floor(x);
-        let zf = floor(z);
+        let xf = fast_floor(x);
+        let zf = fast_floor(z);
         let xr = x - f64::from(xf);
         let zr = z - f64::from(zf);
 
@@ -442,7 +504,7 @@ impl ImprovedNoise {
 
         let yrs_adjusted = yrs - yr_fudge;
 
-        self.sample_and_lerp_simd::<N>(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
+        self.sample_and_lerp_y_simd(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
     }
 
     /// Vectorized sample-and-lerp for N Y values sharing x/z grid position.
@@ -451,7 +513,8 @@ impl ImprovedNoise {
         clippy::too_many_arguments,
         reason = "mirrors scalar sample_and_lerp with Nx SIMD y-batching"
     )]
-    fn sample_and_lerp_simd<const N: usize>(
+    #[inline]
+    fn sample_and_lerp_y_simd<const N: usize>(
         &self,
         xf: i32,
         zf: i32,
@@ -461,9 +524,13 @@ impl ImprovedNoise {
         yrs: Simd<f64, N>,
         yrs_original: Simd<f64, N>,
     ) -> Simd<f64, N> {
+        let xf = xf as u8;
+        let zf = zf as u8;
         // Shared x permutation lookups (2 instead of 2×N)
-        let x0 = self.p(xf);
-        let x1 = self.p(xf + 1);
+        let x0 = self.p[xf as usize];
+        let x1 = self.p[xf.wrapping_add(1) as usize];
+
+        let yf = ys_floor.cast::<i32>().cast();
 
         // Per-lane y-dependent permutation lookups
         let mut h000 = [0usize; N];
@@ -476,19 +543,19 @@ impl ImprovedNoise {
         let mut h111 = [0usize; N];
 
         for i in 0..N {
-            let y = ys_floor[i] as i32;
-            let xy00 = self.p(x0 as i32 + y);
-            let xy01 = self.p(x0 as i32 + y + 1);
-            let xy10 = self.p(x1 as i32 + y);
-            let xy11 = self.p(x1 as i32 + y + 1);
-            h000[i] = self.p(xy00 as i32 + zf);
-            h100[i] = self.p(xy10 as i32 + zf);
-            h010[i] = self.p(xy01 as i32 + zf);
-            h110[i] = self.p(xy11 as i32 + zf);
-            h001[i] = self.p(xy00 as i32 + zf + 1);
-            h101[i] = self.p(xy10 as i32 + zf + 1);
-            h011[i] = self.p(xy01 as i32 + zf + 1);
-            h111[i] = self.p(xy11 as i32 + zf + 1);
+            let y = yf[i];
+            let xy00 = self.p[x0.wrapping_add(y) as usize];
+            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+            let xy10 = self.p[x1.wrapping_add(y) as usize];
+            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+            h000[i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
+            h100[i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
+            h010[i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
+            h110[i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
+            h001[i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h101[i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h011[i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h111[i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
         }
 
         // Vectorized gradient dot products
@@ -499,21 +566,21 @@ impl ImprovedNoise {
         let yr_m1 = yrs - one;
         let zr_m1 = zr_v - one;
 
-        let d000 = grad_dot_simd::<N>(h000, xr_v, yrs, zr_v);
-        let d100 = grad_dot_simd::<N>(h100, xr_m1, yrs, zr_v);
-        let d010 = grad_dot_simd::<N>(h010, xr_v, yr_m1, zr_v);
-        let d110 = grad_dot_simd::<N>(h110, xr_m1, yr_m1, zr_v);
-        let d001 = grad_dot_simd::<N>(h001, xr_v, yrs, zr_m1);
-        let d101 = grad_dot_simd::<N>(h101, xr_m1, yrs, zr_m1);
-        let d011 = grad_dot_simd::<N>(h011, xr_v, yr_m1, zr_m1);
-        let d111 = grad_dot_simd::<N>(h111, xr_m1, yr_m1, zr_m1);
+        let d000 = grad_dot_simd(h000, xr_v, yrs, zr_v);
+        let d100 = grad_dot_simd(h100, xr_m1, yrs, zr_v);
+        let d010 = grad_dot_simd(h010, xr_v, yr_m1, zr_v);
+        let d110 = grad_dot_simd(h110, xr_m1, yr_m1, zr_v);
+        let d001 = grad_dot_simd(h001, xr_v, yrs, zr_m1);
+        let d101 = grad_dot_simd(h101, xr_m1, yrs, zr_m1);
+        let d011 = grad_dot_simd(h011, xr_v, yr_m1, zr_m1);
+        let d111 = grad_dot_simd(h111, xr_m1, yr_m1, zr_m1);
 
         // Smoothstep — x and z are shared across lanes
         let x_alpha: Simd<f64, N> = Simd::splat(smoothstep(xr));
-        let y_alpha = smoothstep_simd::<N>(yrs_original);
+        let y_alpha = smoothstep_simd(yrs_original);
         let z_alpha: Simd<f64, N> = Simd::splat(smoothstep(zr));
 
-        lerp3_simd::<N>(
+        lerp3_simd(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
@@ -530,31 +597,34 @@ impl ImprovedNoise {
         zr: f64,
         derivative_out: &mut [f64; 3],
     ) -> f64 {
-        let x0 = self.p(x);
-        let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let x = x as u8;
+        let y = y as u8;
+        let z = z as u8;
 
-        // Get hashes and gradient vectors for all 8 corners
-        let h000 = self.p(xy00 as i32 + z);
-        let h100 = self.p(xy10 as i32 + z);
-        let h010 = self.p(xy01 as i32 + z);
-        let h110 = self.p(xy11 as i32 + z);
-        let h001 = self.p(xy00 as i32 + z + 1);
-        let h101 = self.p(xy10 as i32 + z + 1);
-        let h011 = self.p(xy01 as i32 + z + 1);
-        let h111 = self.p(xy11 as i32 + z + 1);
+        let x0 = self.p[x as usize];
+        let x1 = self.p[x.wrapping_add(1) as usize];
+        let xy00 = self.p[x0.wrapping_add(y) as usize];
+        let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+        let xy10 = self.p[x1.wrapping_add(y) as usize];
+        let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
 
-        let g000 = &GRADIENT[h000 & 15];
-        let g100 = &GRADIENT[h100 & 15];
-        let g010 = &GRADIENT[h010 & 15];
-        let g110 = &GRADIENT[h110 & 15];
-        let g001 = &GRADIENT[h001 & 15];
-        let g101 = &GRADIENT[h101 & 15];
-        let g011 = &GRADIENT[h011 & 15];
-        let g111 = &GRADIENT[h111 & 15];
+        let h000 = self.p[xy00.wrapping_add(z) as usize] as usize;
+        let h100 = self.p[xy10.wrapping_add(z) as usize] as usize;
+        let h010 = self.p[xy01.wrapping_add(z) as usize] as usize;
+        let h110 = self.p[xy11.wrapping_add(z) as usize] as usize;
+        let h001 = self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h101 = self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h011 = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h111 = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
+
+        let g000 = Simd::from_array(GRADIENT[h000 & 15]);
+        let g100 = Simd::from_array(GRADIENT[h100 & 15]);
+        let g010 = Simd::from_array(GRADIENT[h010 & 15]);
+        let g110 = Simd::from_array(GRADIENT[h110 & 15]);
+        let g001 = Simd::from_array(GRADIENT[h001 & 15]);
+        let g101 = Simd::from_array(GRADIENT[h101 & 15]);
+        let g011 = Simd::from_array(GRADIENT[h011 & 15]);
+        let g111 = Simd::from_array(GRADIENT[h111 & 15]);
 
         // Gradient dot products at each corner
         let d000 = grad_dot(h000, xr, yr, zr);
@@ -566,44 +636,45 @@ impl ImprovedNoise {
         let d011 = grad_dot(h011, xr, yr - 1.0, zr - 1.0);
         let d111 = grad_dot(h111, xr - 1.0, yr - 1.0, zr - 1.0);
 
-        let x_alpha = smoothstep(xr);
-        let y_alpha = smoothstep(yr);
-        let z_alpha = smoothstep(zr);
+        let alpha_x = smoothstep(xr);
+        let alpha_y = smoothstep(yr);
+        let alpha_z = smoothstep(zr);
 
         // Interpolate gradient components for direct derivative contribution
-        let d1x = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[0], g100[0], g010[0], g110[0], g001[0], g101[0],
-            g011[0], g111[0],
-        );
-        let d1y = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[1], g100[1], g010[1], g110[1], g001[1], g101[1],
-            g011[1], g111[1],
-        );
-        let d1z = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[2], g100[2], g010[2], g110[2], g001[2], g101[2],
-            g011[2], g111[2],
+        let d1_v = lerp3_simd(
+            Simd::splat(alpha_x),
+            Simd::splat(alpha_y),
+            Simd::splat(alpha_z),
+            g000,
+            g100,
+            g010,
+            g110,
+            g001,
+            g101,
+            g011,
+            g111,
         );
 
         // Smoothstep correction terms via differences
         let d2x = lerp2(
-            y_alpha,
-            z_alpha,
+            alpha_y,
+            alpha_z,
             d100 - d000,
             d110 - d010,
             d101 - d001,
             d111 - d011,
         );
         let d2y = lerp2(
-            z_alpha,
-            x_alpha,
+            alpha_z,
+            alpha_x,
             d010 - d000,
             d011 - d001,
             d110 - d100,
             d111 - d101,
         );
         let d2z = lerp2(
-            x_alpha,
-            y_alpha,
+            alpha_x,
+            alpha_y,
             d001 - d000,
             d101 - d100,
             d011 - d010,
@@ -615,12 +686,11 @@ impl ImprovedNoise {
         let z_sd = smoothstep_derivative(zr);
 
         // Accumulate derivatives (vanilla uses +=)
-        derivative_out[0] += d1x + x_sd * d2x;
-        derivative_out[1] += d1y + y_sd * d2y;
-        derivative_out[2] += d1z + z_sd * d2z;
-
+        derivative_out[0] += d1_v[0] + x_sd * d2x;
+        derivative_out[1] += d1_v[1] + y_sd * d2y;
+        derivative_out[2] += d1_v[2] + z_sd * d2z;
         lerp3(
-            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+            alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
 }
@@ -629,6 +699,7 @@ impl ImprovedNoise {
 mod tests {
     use super::*;
     use crate::random::xoroshiro::Xoroshiro;
+    use std::simd::f64x4;
 
     #[test]
     fn test_noise_with_y_scale_4x_matches_scalar() {
@@ -661,7 +732,7 @@ mod tests {
                         *ys // use ys as fudge values (matching BlendedNoise usage)
                     };
 
-                    let simd_result = noise.noise_with_y_scale_4x(
+                    let simd_result = noise.noise_with_y_scale_simd(
                         x,
                         f64x4::from_array(*ys),
                         z,
@@ -681,6 +752,61 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_noise_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        let batches = [
+            (
+                [0.0, 1.25, -5.5, 1000.75],
+                [0.0, 64.5, -20.25, 255.75],
+                [0.0, -30.75, 4096.5, -1000.25],
+            ),
+            (
+                [
+                    255.25 - noise.xo,
+                    256.25 - noise.xo,
+                    -1.75 - noise.xo,
+                    -256.25 - noise.xo,
+                ],
+                [
+                    255.5 - noise.yo,
+                    256.5 - noise.yo,
+                    -1.5 - noise.yo,
+                    -256.5 - noise.yo,
+                ],
+                [
+                    255.75 - noise.zo,
+                    256.75 - noise.zo,
+                    -1.25 - noise.zo,
+                    -256.25 - noise.zo,
+                ],
+            ),
+        ];
+
+        for (xs, ys, zs) in batches {
+            let simd = noise.noise_simd(
+                f64x4::from_array(xs),
+                f64x4::from_array(ys),
+                f64x4::from_array(zs),
+            );
+            for i in 0..4 {
+                let scalar = noise.noise(xs[i], ys[i], zs[i]);
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
+                )]
+                let matches = scalar == simd[i];
+                assert!(
+                    matches,
+                    "Mismatch at ({}, {}, {}): scalar={}, simd={}",
+                    xs[i], ys[i], zs[i], scalar, simd[i],
+                );
             }
         }
     }
@@ -713,7 +839,7 @@ mod tests {
                 for &y_scale in &y_scales {
                     let y_fudges: [f64; 8] = if y_scale == 0.0 { [0.0; 8] } else { *ys };
 
-                    let simd_result = noise.noise_with_y_scale_simd::<8>(
+                    let simd_result = noise.noise_with_y_scale_simd(
                         x,
                         f64x8::from_array(*ys),
                         z,

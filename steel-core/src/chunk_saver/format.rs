@@ -55,7 +55,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v17: Added entity `NoGravity` persistence.
 /// v18: Added entity `Invulnerable` persistence.
 /// v19: Added shared entity save-data persistence.
-pub const FORMAT_VERSION: u16 = 19;
+/// v20: Added chunk-owned light section persistence.
+pub const FORMAT_VERSION: u16 = 20;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -300,6 +301,51 @@ pub struct PersistentHeightmap {
     pub data: Vec<u16>,
 }
 
+/// Chunk-owned light data stored with a chunk.
+#[derive(SchemaWrite, SchemaRead, Default)]
+pub struct PersistentLightData {
+    /// Block-light sections indexed by light-section index.
+    pub block: Vec<PersistentLightSection>,
+    /// Sky-light sections indexed by light-section index.
+    pub sky: Vec<PersistentLightSection>,
+}
+
+/// One persisted chunk-owned light section.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentLightSection {
+    /// Present zero-filled section without backing bytes.
+    Uninitialized {
+        /// Index in the chunk's padded light-section array.
+        section_index: u32,
+    },
+    /// Visible initialized light bytes.
+    Initialized {
+        /// Index in the chunk's padded light-section array.
+        section_index: u32,
+        /// Packed 4-bit light values.
+        data: Vec<u8>,
+    },
+    /// Initialized bytes hidden from vanilla packet conversion.
+    Internal {
+        /// Index in the chunk's padded light-section array.
+        section_index: u32,
+        /// Packed 4-bit light values.
+        data: Vec<u8>,
+    },
+}
+
+impl PersistentLightSection {
+    /// Returns the padded light-section index.
+    #[must_use]
+    pub const fn section_index(&self) -> u32 {
+        match self {
+            Self::Uninitialized { section_index }
+            | Self::Initialized { section_index, .. }
+            | Self::Internal { section_index, .. } => *section_index,
+        }
+    }
+}
+
 /// A persistent chunk containing sections and metadata.
 ///
 /// Each chunk stores its own block state and biome palettes, making it
@@ -324,6 +370,8 @@ pub struct PersistentChunk {
     pub fluid_ticks: Vec<PersistentTick>,
     /// Final heightmaps for full chunks (empty for proto chunks).
     pub heightmaps: Vec<PersistentHeightmap>,
+    /// Chunk-owned light sections.
+    pub light: PersistentLightData,
     /// Proto chunk carving mask as Steel's packed bitset layout.
     pub carving_mask: Option<Vec<u64>>,
     /// Proto chunk postprocessing offsets grouped by section index.

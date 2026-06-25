@@ -722,6 +722,7 @@ impl Registry {
 
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
         vanilla_poi_type_tags::PoiTag::register_poi_tags(&mut registry.poi_types);
+        registry.poi_types.build_state_index(&registry.blocks);
 
         vanilla_enchantments::register_enchantments(&mut registry.enchantments);
         vanilla_enchantment_tags::EnchantmentTag::register_enchantment_tags(

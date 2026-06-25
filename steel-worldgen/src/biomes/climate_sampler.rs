@@ -60,6 +60,10 @@ impl OverworldClimateSampler {
         // Ensure column cache is populated for this (x, z)
         cache.ensure(block_x, block_z, &self.noises);
 
+        let block_x = f64::from(block_x);
+        let block_y = f64::from(block_y);
+        let block_z = f64::from(block_z);
+
         // Density functions return f64 but vanilla truncates to float before quantizing.
         // The f64→f32→f64 round-trip through quantize_coord is intentional for parity.
         let temp =

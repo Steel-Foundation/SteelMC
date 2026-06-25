@@ -3,7 +3,11 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
-use std::simd::{Simd, f64x4};
+use std::ops;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::f64x4;
+use std::simd::num::SimdFloat;
+use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
 
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
@@ -151,6 +155,34 @@ impl NormalNoise {
         (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
     }
 
+    /// Calculate normal noise value using SIMD vectors.
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Div<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>
+            + StdFloat,
+    {
+        let x2 = x * Simd::splat(INPUT_FACTOR).cast::<F>();
+        let y2 = y * Simd::splat(INPUT_FACTOR).cast::<F>();
+        let z2 = z * Simd::splat(INPUT_FACTOR).cast::<F>();
+        (self.first.get_value_simd(x, y, z) + self.second.get_value_simd(x2, y2, z2))
+            * Simd::splat(self.value_factor).cast()
+    }
+
     /// Sample the noise at `(x, 0.0, z)`.
     #[inline]
     #[must_use]
@@ -170,14 +202,9 @@ impl NormalNoise {
     }
 
     /// Sample 4 Y values at fixed `(x, z)` in one call.
-    ///
-    /// SIMD form of [`Self::get_value`] for transpiled density-function trees
-    /// that batch 4 cell-corner Ys together. Per-lane math is identical to
-    /// the scalar path, so `get_value_4x(x, splat(y), z)[i] == get_value(x, y, z)`
-    /// for any finite `y`.
     #[inline]
     #[must_use]
-    pub fn get_value_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
+    pub fn get_value_y_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
         let x2 = x * INPUT_FACTOR;
         let ys2 = ys * f64x4::splat(INPUT_FACTOR);
         let z2 = z * INPUT_FACTOR;
@@ -190,10 +217,20 @@ impl NormalNoise {
             * f64x4::splat(self.value_factor)
     }
 
-    /// Generic N-lane form of [`Self::get_value_4x`].
+    /// Sample N Y values at fixed `(x, z)` in one call.
+    ///
+    /// SIMD form of [`Self::get_value`] for transpiled density-function trees
+    /// that batch N cell-corner Ys together. Per-lane math is identical to
+    /// the scalar path, so `get_value_y_simd(x, splat(y), z)[i] == get_value(x, y, z)`
+    /// for any finite `y`.
     #[inline]
     #[must_use]
-    pub fn get_value_simd<const N: usize>(&self, x: f64, ys: Simd<f64, N>, z: f64) -> Simd<f64, N> {
+    pub fn get_value_y_simd<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+    ) -> Simd<f64, N> {
         let x2 = x * INPUT_FACTOR;
         let ys2 = ys * Simd::splat(INPUT_FACTOR);
         let z2 = z * INPUT_FACTOR;
@@ -231,6 +268,7 @@ fn expected_deviation(octave_span: i32) -> f64 {
 mod tests {
     use super::*;
     use crate::random::{Random, xoroshiro::Xoroshiro};
+    use std::simd::f64x4;
 
     #[test]
     fn test_normal_noise_deterministic() {
@@ -277,6 +315,36 @@ mod tests {
         let v2 = noise.get_value(1001.0, 0.0, 1000.0);
         // Values at different coordinates should differ
         assert!((v1 - v2).abs() > 0.0001);
+    }
+
+    #[test]
+    fn test_get_value_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(98_765);
+        let splitter = rng.next_positional();
+        let noise = NormalNoise::create(&splitter, "simd_xyz", -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let xs = [0.0, 1.25, -1000.0, 33_554_431.5];
+        let ys = [0.0, 64.5, -32.25, 255.75];
+        let zs = [0.0, -30.75, 4096.5, -33_554_432.25];
+
+        let simd = noise.get_value_simd(
+            f64x4::from_array(xs),
+            f64x4::from_array(ys),
+            f64x4::from_array(zs),
+        );
+
+        for i in 0..4 {
+            let scalar = noise.get_value(xs[i], ys[i], zs[i]);
+            #[expect(
+                clippy::float_cmp,
+                reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
+            )]
+            let matches = scalar == simd[i];
+            assert!(
+                matches,
+                "Mismatch at ({}, {}, {}): scalar={}, simd={}",
+                xs[i], ys[i], zs[i], scalar, simd[i],
+            );
+        }
     }
 
     #[test]
@@ -333,10 +401,13 @@ mod tests {
         ];
 
         for &(x, ys, z) in test_cases {
-            let simd = noise.get_value_4x(x, f64x4::from_array(ys), z);
+            let ys_v = f64x4::from_array(ys);
+            let simd = noise.get_value_y_4x(x, ys_v, z);
+            let generic = noise.get_value_y_simd(x, ys_v, z);
             for i in 0..4 {
                 let scalar = noise.get_value(x, ys[i], z);
                 let simd_val = simd[i];
+                let generic_val = generic[i];
                 #[expect(
                     clippy::float_cmp,
                     reason = "SIMD/scalar paths must produce bit-identical results for vanilla determinism"
@@ -345,6 +416,16 @@ mod tests {
                 assert!(
                     bit_match,
                     "Mismatch at x={x}, y={}, z={z}: scalar={scalar}, simd={simd_val}",
+                    ys[i]
+                );
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "explicit 4x and generic SIMD paths should be equivalent"
+                )]
+                let generic_match = simd_val == generic_val;
+                assert!(
+                    generic_match,
+                    "Generic mismatch at x={x}, y={}, z={z}: 4x={simd_val}, generic={generic_val}",
                     ys[i]
                 );
             }

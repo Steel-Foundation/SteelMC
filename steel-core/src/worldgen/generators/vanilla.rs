@@ -314,7 +314,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
         let mut prev_x: usize = usize::MAX;
         let mut prev_z: usize = usize::MAX;
-        let sections = chunk.sections();
         let mut ocean_floor_wg =
             Heightmap::new(HeightmapType::OceanFloorWg, min_y, N::Settings::HEIGHT);
         let mut world_surface_wg =
@@ -328,7 +327,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {
                     if !pending_writes.is_empty() {
-                        sections.write_block_batch(&pending_writes);
+                        chunk.write_block_batch_for_generation(&pending_writes);
                         pending_writes.clear();
                     }
                     prev_x = local_x;
@@ -375,7 +374,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         // Flush remaining writes
         if !pending_writes.is_empty() {
-            sections.write_block_batch(&pending_writes);
+            chunk.write_block_batch_for_generation(&pending_writes);
         }
 
         let ChunkAccess::Proto(proto) = chunk else {
@@ -646,9 +645,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // Flush batched writes — holds each section's write guard once
                 if !pending_writes.is_empty() {
-                    chunk
-                        .sections()
-                        .write_column_blocks(local_x, local_z, &pending_writes);
+                    chunk.write_column_blocks_for_generation(local_x, local_z, &pending_writes);
                     for &(relative_y, state) in &pending_writes {
                         column_buf[relative_y] = state;
                     }
@@ -677,9 +674,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         &mut pending_writes,
                     );
                     if !pending_writes.is_empty() {
-                        chunk
-                            .sections()
-                            .write_column_blocks(local_x, local_z, &pending_writes);
+                        chunk.write_column_blocks_for_generation(local_x, local_z, &pending_writes);
                         chunk.update_heightmaps_after_direct_column_writes(
                             local_x,
                             local_z,

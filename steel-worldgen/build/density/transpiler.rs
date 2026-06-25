@@ -723,7 +723,7 @@ impl TranspileContext {
                 let scale = Literal::f64_unsuffixed(*xz_scale);
                 quote! {
                     self.#field = noises.#noise_field.get_value_xz(
-                        f64::from(x) * #scale, f64::from(z) * #scale,
+                        x * #scale, z * #scale,
                     );
                 }
             })
@@ -846,8 +846,8 @@ impl TranspileContext {
                     // into the grid arrays.
                     for rel_z in 0..Self::GRID_SIDE {
                         for rel_x in 0..Self::GRID_SIDE {
-                            let x = (self.grid_first_quart_x + rel_x) << 2;
-                            let z = (self.grid_first_quart_z + rel_z) << 2;
+                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
                             let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
 
                             #(#ensure_stmts)*
@@ -900,8 +900,8 @@ impl TranspileContext {
                         }
                         self.qx = x;
                         self.qz = z;
-                        let x = x;
-                        let z = z;
+                        let x = x as f64;
+                        let z = z as f64;
                         #(#ensure_stmts)*
                         #(#router_ensure_stmts)*
                         #(#inline_noise_ensure_stmts)*
@@ -917,8 +917,8 @@ impl TranspileContext {
                     }
                     self.qx = eval_x;
                     self.qz = eval_z;
-                    let x = eval_x;
-                    let z = eval_z;
+                    let x = eval_x as f64;
+                    let z = eval_z as f64;
                     #(#ensure_stmts)*
                     #(#router_ensure_stmts)*
                     #(#inline_noise_ensure_stmts)*
@@ -933,9 +933,9 @@ impl TranspileContext {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         if is_flat {
-            quote! { noises: &#noises, cache: &#cache, x: i32, z: i32 }
+            quote! { noises: &#noises, cache: &#cache, x: f64, z: f64 }
         } else {
-            quote! { noises: &#noises, cache: &#cache, x: i32, y: i32, z: i32 }
+            quote! { noises: &#noises, cache: &#cache, x: f64, y: f64, z: f64 }
         }
     }
 
@@ -944,7 +944,7 @@ impl TranspileContext {
     fn fn_params_4x(&self) -> TokenStream {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
-        quote! { noises: &#noises, cache: &#cache, x: i32, ys: f64x4, z: i32 }
+        quote! { noises: &#noises, cache: &#cache, x: f64, ys: f64x4, z: f64 }
     }
 
     /// Generate the function parameter list for a router entry point.
@@ -955,7 +955,7 @@ impl TranspileContext {
         if is_flat {
             quote! { noises: &#noises, cache: &#cache }
         } else {
-            quote! { noises: &#noises, cache: &#cache, x: i32, y: i32, z: i32 }
+            quote! { noises: &#noises, cache: &#cache, x: f64, y: f64, z: f64 }
         }
     }
 
@@ -1076,8 +1076,8 @@ impl TranspileContext {
                     #[doc = #doc]
                     #[inline]
                     pub fn #fn_name(#params) -> f64 {
-                        let x = cache.x;
-                        let z = cache.z;
+                        let x = cache.x as f64;
+                        let z = cache.z as f64;
                         #body
                     }
                 });
@@ -1244,8 +1244,9 @@ impl TranspileContext {
                 blended_noise_value: f64,
                 out: &mut [f64],
             ) {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
+                let y = y as f64;
                 #(#inner_stmts)*
             }
 
@@ -1268,8 +1269,8 @@ impl TranspileContext {
                 blended_noise_value_v: f64x4,
                 out: &mut [f64],
             ) {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
                 #(#inner_stmts_4x)*
             }
 
@@ -1283,8 +1284,9 @@ impl TranspileContext {
                 y: i32,
                 _z: i32,
             ) -> f64 {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
+                let y = y as f64;
                 #combine_fd_body
             }
 
@@ -1298,8 +1300,9 @@ impl TranspileContext {
                 y: i32,
                 _z: i32,
             ) -> f64 {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
+                let y = y as f64;
                 #combine_vein_toggle_body
             }
 
@@ -1313,8 +1316,9 @@ impl TranspileContext {
                 y: i32,
                 _z: i32,
             ) -> f64 {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
+                let y = y as f64;
                 #combine_vein_ridged_body
             }
 
@@ -1358,7 +1362,7 @@ impl TranspileContext {
                 let to_y = Literal::f64_unsuffixed(f64::from(g.to_y));
                 let from_val = Literal::f64_unsuffixed(g.from_value);
                 let to_val = Literal::f64_unsuffixed(g.to_value);
-                quote! { map_clamped(f64::from(y), #from_y, #to_y, #from_val, #to_val) }
+                quote! { map_clamped(y, #from_y, #to_y, #from_val, #to_val) }
             }
 
             DensityFunction::Noise(n) => {
@@ -1374,9 +1378,9 @@ impl TranspileContext {
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
                 if is_flat || n.y_scale == 0.0 {
-                    quote! { noises.#field.get_value_xz(f64::from(x) * #xz_scale, f64::from(z) * #xz_scale) }
+                    quote! { noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale) }
                 } else {
-                    quote! { noises.#field.get_value(f64::from(x) * #xz_scale, f64::from(y) * #y_scale, f64::from(z) * #xz_scale) }
+                    quote! { noises.#field.get_value(x * #xz_scale, y * #y_scale, z * #xz_scale) }
                 }
             }
 
@@ -1393,8 +1397,9 @@ impl TranspileContext {
                         let dx = #dx;
                         let dz = #dz;
                         noises.#field.get_value_xz(
-                            f64::from(x) * #xz_scale + dx,
-                            f64::from(z) * #xz_scale + dz,
+                            x * #xz_scale + dx,
+                            z * #xz_scale + dz,
+
                         )
                     }}
                 } else {
@@ -1403,9 +1408,9 @@ impl TranspileContext {
                         let dy = #dy;
                         let dz = #dz;
                         noises.#field.get_value(
-                            f64::from(x) * #xz_scale + dx,
-                            f64::from(y) * #y_scale + dy,
-                            f64::from(z) * #xz_scale + dz,
+                            x * #xz_scale + dx,
+                            y * #y_scale + dy,
+                            z * #xz_scale + dz,
                         )
                     }}
                 }
@@ -1413,20 +1418,20 @@ impl TranspileContext {
 
             DensityFunction::ShiftA(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value_xz(f64::from(x) * 0.25, f64::from(z) * 0.25) * 4.0 }
+                quote! { noises.#field.get_value_xz(x * 0.25, z * 0.25) * 4.0 }
             }
 
             DensityFunction::ShiftB(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value_xy(f64::from(z) * 0.25, f64::from(x) * 0.25) * 4.0 }
+                quote! { noises.#field.get_value_xy(z * 0.25, x * 0.25) * 4.0 }
             }
 
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 if is_flat {
-                    quote! { noises.#field.get_value_xz(f64::from(x) * 0.25, f64::from(z) * 0.25) * 4.0 }
+                    quote! { noises.#field.get_value_xz(x * 0.25, z * 0.25) * 4.0 }
                 } else {
-                    quote! { noises.#field.get_value(f64::from(x) * 0.25, f64::from(y) * 0.25, f64::from(z) * 0.25) * 4.0 }
+                    quote! { noises.#field.get_value(x * 0.25, y * 0.25, z * 0.25) * 4.0 }
                 }
             }
 
@@ -1665,7 +1670,7 @@ impl TranspileContext {
                     let rarity = #input_expr;
                     let scale = #mapper.get_values(rarity);
                     scale * noises.#field.get_value(
-                        f64::from(x) / scale, f64::from(y) / scale, f64::from(z) / scale,
+                        x / scale, y / scale, z / scale,
                     ).abs()
                 }}
             }
@@ -1675,7 +1680,7 @@ impl TranspileContext {
             // EndIslands ignores y internally, so we can pass 0 in flat contexts
             DensityFunction::EndIslands => {
                 if is_flat {
-                    quote! { noises.end_islands.sample(x, 0, z) }
+                    quote! { noises.end_islands.sample(x, 0.0, z) }
                 } else {
                     quote! { noises.end_islands.sample(x, y, z) }
                 }
@@ -1696,20 +1701,20 @@ impl TranspileContext {
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
                 // density uses y — generate with is_flat=false so it references our loop var
                 let density_expr = self.gen_expr(&fts.density, input, false);
-                let cell_height = Literal::i32_unsuffixed(fts.cell_height);
-                let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);
+                let cell_height = Literal::f64_unsuffixed(f64::from(fts.cell_height));
+                let lower_bound = Literal::f64_unsuffixed(f64::from(fts.lower_bound));
                 quote! {{
                     let __upper = #upper_expr;
-                    let __top_y = ((__upper / f64::from(#cell_height)).floor() as i32) * #cell_height;
+                    let __top_y = (__upper / #cell_height).floor() * #cell_height;
                     if __top_y <= #lower_bound {
-                        f64::from(#lower_bound)
+                        #lower_bound
                     } else {
-                        let mut __result = f64::from(#lower_bound);
+                        let mut __result = #lower_bound;
                         let mut y = __top_y;
                         while y >= #lower_bound {
                             let __d = #density_expr;
                             if __d > 0.0 {
-                                __result = f64::from(y);
+                                __result = y;
                                 break;
                             }
                             y -= #cell_height;
@@ -1962,15 +1967,15 @@ impl TranspileContext {
                 if n.y_scale == 0.0 {
                     quote! {
                         f64x4::splat(noises.#field.get_value_xz(
-                            f64::from(x) * #xz_scale, f64::from(z) * #xz_scale,
+                            x * #xz_scale, z * #xz_scale,
                         ))
                     }
                 } else {
                     quote! {
-                        noises.#field.get_value_4x(
-                            f64::from(x) * #xz_scale,
+                        noises.#field.get_value_y_simd(
+                            x * #xz_scale,
                             ys * f64x4::splat(#y_scale),
-                            f64::from(z) * #xz_scale,
+                            z * #xz_scale,
                         )
                     }
                 }
@@ -2044,7 +2049,7 @@ impl TranspileContext {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
                     f64x4::splat(noises.#field.get_value_xz(
-                        f64::from(x) * 0.25, f64::from(z) * 0.25,
+                        x * 0.25, z * 0.25,
                     ) * 4.0)
                 }
             }
@@ -2053,7 +2058,7 @@ impl TranspileContext {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
                     f64x4::splat(noises.#field.get_value_xy(
-                        f64::from(z) * 0.25, f64::from(x) * 0.25,
+                        z * 0.25, x * 0.25,
                     ) * 4.0)
                 }
             }
@@ -2061,10 +2066,10 @@ impl TranspileContext {
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
-                    noises.#field.get_value_4x(
-                        f64::from(x) * 0.25,
+                    noises.#field.get_value_y_simd(
+                        x * 0.25,
                         ys * f64x4::splat(0.25),
-                        f64::from(z) * 0.25,
+                        z * 0.25,
                     ) * f64x4::splat(4.0)
                 }
             }
@@ -2074,7 +2079,7 @@ impl TranspileContext {
                 // (x, y, z). When all three shifts are Y-independent (typical
                 // vanilla case — they're flat-cached `shift_x`/`shift_z` and
                 // a constant `shift_y`), evaluate them as scalar splats and
-                // call `get_value_4x(`. Otherwise fall back to scalar 4×.
+                // call `get_value_y_simd(`. Otherwise fall back to scalar 4×.
                 if self.is_y_independent(&sn.shift_x)
                     && self.is_y_independent(&sn.shift_y)
                     && self.is_y_independent(&sn.shift_z)
@@ -2091,8 +2096,8 @@ impl TranspileContext {
                             let dx = #dx;
                             let dz = #dz;
                             f64x4::splat(noises.#field.get_value_xz(
-                                f64::from(x) * #xz_scale + dx,
-                                f64::from(z) * #xz_scale + dz,
+                                x * #xz_scale + dx,
+                                z * #xz_scale + dz,
                             ))
                         }}
                     } else {
@@ -2100,10 +2105,10 @@ impl TranspileContext {
                             let dx = #dx;
                             let dy = #dy;
                             let dz = #dz;
-                            noises.#field.get_value_4x(
-                                f64::from(x) * #xz_scale + dx,
+                            noises.#field.get_value_y_simd(
+                                x * #xz_scale + dx,
                                 ys * f64x4::splat(#y_scale) + f64x4::splat(dy),
-                                f64::from(z) * #xz_scale + dz,
+                                z * #xz_scale + dz,
                             )
                         }}
                     }
@@ -2184,11 +2189,11 @@ impl TranspileContext {
                         let rarity = __rarity_arr[#i_lit];
                         let scale = #mapper.get_values(rarity);
                         #[allow(clippy::cast_possible_truncation)]
-                        let y = __ys_arr[#i_lit] as i32;
+                        let y = __ys_arr[#i_lit];
                         scale * noises.#field.get_value(
-                            f64::from(x) / scale,
-                            f64::from(y) / scale,
-                            f64::from(z) / scale,
+                            x / scale,
+                            y / scale,
+                            z / scale,
                         ).abs()
                     }}
                 };
@@ -2286,7 +2291,7 @@ impl TranspileContext {
                 // only on (block_x, block_z). All 4 lanes get the same value, so
                 // we evaluate scalar once and splat. This skips the 25×25
                 // simplex-noise neighborhood scan three out of four times.
-                quote! { f64x4::splat(noises.end_islands.sample(x, 0, z)) }
+                quote! { f64x4::splat(noises.end_islands.sample(x, 0.0, z)) }
             }
 
             DensityFunction::RangeChoice(rc) => {
@@ -2386,7 +2391,7 @@ impl TranspileContext {
             };
             quote! {{
                 #[allow(clippy::cast_possible_truncation)]
-                let y = __ys_arr[#i_lit] as i32;
+                let y = __ys_arr[#i_lit];
                 #bv_decl
                 #scalar
             }}

@@ -32,6 +32,12 @@ pub trait BlockStateExt {
     fn get_interaction_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
     fn get_static_visual_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_visual_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
+    /// Returns this block state's block light emission, in vanilla's 0-15 range.
+    fn get_light_emission(&self) -> u8;
+    /// Returns this block state's light dampening, in vanilla's 0-15 range.
+    fn get_light_dampening(&self) -> u8;
+    /// Returns true if vanilla uses face shapes for light occlusion on this state.
+    fn use_shape_for_light_occlusion(&self) -> bool;
     /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
     fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
@@ -149,6 +155,21 @@ impl BlockStateExt for BlockStateId {
         REGISTRY.blocks.get_visual_shape_at(*self, pos)
     }
 
+    fn get_light_emission(&self) -> u8 {
+        REGISTRY.blocks.get_light_properties(*self).light_emission
+    }
+
+    fn get_light_dampening(&self) -> u8 {
+        REGISTRY.blocks.get_light_properties(*self).light_dampening
+    }
+
+    fn use_shape_for_light_occlusion(&self) -> bool {
+        REGISTRY
+            .blocks
+            .get_light_properties(*self)
+            .use_shape_for_light_occlusion
+    }
+
     fn get_offset(&self, pos: BlockPos) -> DVec3 {
         self.get_block().offset_at(pos)
     }
@@ -261,6 +282,34 @@ mod tests {
             glass.get_static_collision_shape()
         ));
         assert!(!glass.is_solid_render());
+    }
+
+    #[test]
+    fn light_properties_match_generated_state_offsets() {
+        init_test_registry();
+
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        assert_eq!(air.get_light_emission(), 0);
+        assert_eq!(air.get_light_dampening(), 0);
+        assert!(!air.use_shape_for_light_occlusion());
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        assert_eq!(stone.get_light_emission(), 0);
+        assert_eq!(stone.get_light_dampening(), 15);
+        assert!(!stone.use_shape_for_light_occlusion());
+
+        let light = vanilla_blocks::LIGHT.default_state();
+        assert_eq!(light.get_light_emission(), 15);
+        let dim_light = light.set_value(&BlockStateProperties::LEVEL, 7);
+        assert_eq!(dim_light.get_light_emission(), 7);
+
+        let sticky_piston = vanilla_blocks::STICKY_PISTON.default_state();
+        assert_eq!(sticky_piston.get_light_dampening(), 15);
+        assert!(!sticky_piston.use_shape_for_light_occlusion());
+
+        let extended_piston = sticky_piston.set_value(&BlockStateProperties::EXTENDED, true);
+        assert_eq!(extended_piston.get_light_dampening(), 0);
+        assert!(extended_piston.use_shape_for_light_occlusion());
     }
 
     #[test]

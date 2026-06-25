@@ -2,6 +2,9 @@ use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
 use crate::chunk::level_chunk::LevelChunk;
+use crate::chunk::light::{
+    ChunkLightData, ChunkLightLayerStorage, DATA_LAYER_SIZE, LightSection, LightSectionData,
+};
 use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
@@ -336,13 +339,23 @@ fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
         .then_with(|| a.path.cmp(&b.path))
 }
 
+fn homogeneous_packed_light_value(data: &[u8; DATA_LAYER_SIZE]) -> Option<u8> {
+    let first = data[0];
+    let value = first & 0x0F;
+    if first >> 4 != value {
+        return None;
+    }
+    data.iter().all(|byte| *byte == first).then_some(value)
+}
+
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentBoundingBox,
     PersistentChunk, PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
-    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
+    PersistentLightData, PersistentLightSection, PersistentMineshaftPieceData,
+    PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
     PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
     PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
@@ -614,6 +627,12 @@ impl ChunkStorage {
             .map(|c| Self::heightmaps_to_persistent(&c.heightmaps.read()))
             .unwrap_or_default();
 
+        let light = match chunk {
+            ChunkAccess::Full(c) => Self::light_to_persistent(&c.light.read()),
+            ChunkAccess::Proto(c) => Self::light_to_persistent(&c.light.read()),
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
         // Serialize structure data (works for both proto and full chunks)
         let structure_starts = Self::structure_starts_to_persistent(&chunk.structure_starts());
         let structure_references =
@@ -650,6 +669,7 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            light,
             carving_mask,
             postprocessing,
             structure_starts,
@@ -703,6 +723,7 @@ impl ChunkStorage {
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
+        light: PersistentLightData,
         carving_mask: Option<Vec<u64>>,
         postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
@@ -755,11 +776,165 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            light,
             carving_mask,
             postprocessing,
             structure_starts,
             structure_references,
             pois,
+        }
+    }
+
+    /// Converts chunk-owned light data to persistent format.
+    fn light_to_persistent(light: &ChunkLightData) -> PersistentLightData {
+        PersistentLightData {
+            block: Self::light_layer_to_persistent(&light.block),
+            sky: Self::light_layer_to_persistent(&light.sky),
+        }
+    }
+
+    fn light_layer_to_persistent(layer: &ChunkLightLayerStorage) -> Vec<PersistentLightSection> {
+        layer
+            .sections()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| {
+                let Ok(section_index) = u32::try_from(index) else {
+                    tracing::warn!(
+                        index,
+                        "Light section index does not fit in persistent format"
+                    );
+                    return None;
+                };
+
+                match section {
+                    LightSection::Missing => None,
+                    LightSection::Visible(data) => {
+                        if data.is_all_zero() {
+                            Some(PersistentLightSection::Uninitialized { section_index })
+                        } else {
+                            Some(PersistentLightSection::Initialized {
+                                section_index,
+                                data: data.to_bytes().as_ref().to_vec(),
+                            })
+                        }
+                    }
+                    LightSection::Internal(data) => {
+                        if data.is_all_zero() {
+                            None
+                        } else {
+                            Some(PersistentLightSection::Internal {
+                                section_index,
+                                data: data.to_bytes().as_ref().to_vec(),
+                            })
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn persistent_to_light(
+        persistent: &PersistentLightData,
+        min_y: i32,
+        height: i32,
+        status: ChunkStatus,
+    ) -> ChunkLightData {
+        let mut light = ChunkLightData::for_valid_world_height(min_y, height);
+        if status < ChunkStatus::Light {
+            return light;
+        }
+
+        Self::apply_persistent_light_layer(&mut light.block, &persistent.block, "block");
+        Self::apply_persistent_light_layer(&mut light.sky, &persistent.sky, "sky");
+        light
+            .sky
+            .fill_loaded_missing_sky_sections_below_data_with_zero();
+        light
+    }
+
+    fn apply_persistent_light_layer(
+        layer: &mut ChunkLightLayerStorage,
+        persistent: &[PersistentLightSection],
+        layer_name: &str,
+    ) {
+        for section in persistent {
+            let Ok(section_index) = usize::try_from(section.section_index()) else {
+                tracing::warn!(
+                    layer = layer_name,
+                    section_index = section.section_index(),
+                    "Persisted light section index does not fit this platform"
+                );
+                continue;
+            };
+
+            let Some(target) = layer.sections_mut().get_mut(section_index) else {
+                tracing::warn!(
+                    layer = layer_name,
+                    section_index,
+                    "Persisted light section index is outside world light range"
+                );
+                continue;
+            };
+
+            let Some(restored) = Self::persistent_to_light_section(section, layer_name) else {
+                continue;
+            };
+            *target = restored;
+        }
+    }
+
+    fn persistent_to_light_section(
+        persistent: &PersistentLightSection,
+        layer_name: &str,
+    ) -> Option<LightSection> {
+        match persistent {
+            PersistentLightSection::Uninitialized { .. } => {
+                Some(LightSection::visible(LightSectionData::homogeneous(0)))
+            }
+            PersistentLightSection::Initialized {
+                section_index,
+                data,
+            } => Self::persistent_light_bytes_to_data(data, *section_index, layer_name)
+                .map(LightSection::visible),
+            PersistentLightSection::Internal {
+                section_index,
+                data,
+            } => {
+                let restored =
+                    Self::persistent_light_bytes_to_data(data, *section_index, layer_name)?;
+                if restored.is_all_zero() {
+                    None
+                } else {
+                    Some(LightSection::internal(restored))
+                }
+            }
+        }
+    }
+
+    fn persistent_light_bytes_to_data(
+        data: &[u8],
+        section_index: u32,
+        layer_name: &str,
+    ) -> Option<LightSectionData> {
+        let actual = data.len();
+        let bytes = Box::<[u8]>::from(data);
+        let result: Result<Box<[u8; DATA_LAYER_SIZE]>, Box<[u8]>> = bytes.try_into();
+        let Ok(bytes) = result else {
+            tracing::warn!(
+                layer = layer_name,
+                section_index,
+                actual,
+                expected = DATA_LAYER_SIZE,
+                "Skipping persisted light section with invalid byte length"
+            );
+            return None;
+        };
+
+        if let Some(value) = homogeneous_packed_light_value(&bytes) {
+            Some(LightSectionData::homogeneous(value))
+        } else {
+            Some(LightSectionData::Packed(bytes))
         }
     }
 
@@ -1100,6 +1275,7 @@ impl ChunkStorage {
         let structure_starts = Self::persistent_to_structure_starts(&persistent.structure_starts);
         let structure_references =
             Self::persistent_to_structure_references(&persistent.structure_references);
+        let light = Self::persistent_to_light(&persistent.light, min_y, height, status);
 
         if status == ChunkStatus::Full {
             // Reconstruct scheduled ticks from persistent data
@@ -1120,6 +1296,7 @@ impl ChunkStorage {
                 heightmaps,
                 structure_starts,
                 structure_references,
+                light,
             );
 
             // Load block entities
@@ -1187,6 +1364,7 @@ impl ChunkStorage {
                 block_ticks,
                 fluid_ticks,
                 level.clone(),
+                light,
             );
 
             for persistent_be in &persistent.block_entities {
@@ -2766,6 +2944,157 @@ mod tests {
 
     fn single_empty_section() -> Sections {
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice())
+    }
+
+    fn visible_homogeneous_value(section: Option<&LightSection>) -> Option<u8> {
+        let Some(LightSection::Visible(LightSectionData::Homogeneous(value))) = section else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    #[test]
+    fn persisted_light_is_ignored_before_light_status() {
+        let persistent = PersistentLightData {
+            block: vec![PersistentLightSection::Initialized {
+                section_index: 1,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+            sky: vec![PersistentLightSection::Initialized {
+                section_index: 1,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+        };
+
+        let light =
+            ChunkStorage::persistent_to_light(&persistent, 0, 16, ChunkStatus::InitializeLight);
+
+        assert!(matches!(
+            light.block.section(0),
+            Some(LightSection::Missing)
+        ));
+        assert!(matches!(light.sky.section(0), Some(LightSection::Missing)));
+    }
+
+    #[test]
+    fn loaded_sky_light_fills_missing_sections_below_loaded_data_with_zero() {
+        let persistent = PersistentLightData {
+            block: Vec::new(),
+            sky: vec![PersistentLightSection::Initialized {
+                section_index: 2,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+        };
+
+        let light = ChunkStorage::persistent_to_light(&persistent, 0, 16, ChunkStatus::Light);
+
+        assert_eq!(visible_homogeneous_value(light.sky.section(1)), Some(15));
+        assert_eq!(visible_homogeneous_value(light.sky.section(0)), Some(0));
+        assert_eq!(visible_homogeneous_value(light.sky.section(-1)), Some(0));
+    }
+
+    #[test]
+    fn chunk_light_persistence_canonicalizes_visible_and_internal_sections() {
+        let mut light = ChunkLightData::for_valid_world_height(0, 16);
+        let mut block_data = LightSectionData::homogeneous(0);
+        block_data.set(1, 2, 3, 12);
+        *light.block.section_mut(0).expect("real section in range") =
+            LightSection::visible(block_data);
+        *light.sky.section_mut(-1).expect("bottom section in range") =
+            LightSection::internal(LightSectionData::homogeneous(7));
+        *light.sky.section_mut(0).expect("real section in range") =
+            LightSection::visible(LightSectionData::homogeneous(0));
+        *light.sky.section_mut(1).expect("top section in range") =
+            LightSection::internal(LightSectionData::homogeneous(0));
+
+        let persistent = ChunkStorage::light_to_persistent(&light);
+
+        assert_eq!(persistent.block.len(), 1);
+        match &persistent.block[0] {
+            PersistentLightSection::Initialized {
+                section_index,
+                data,
+            } => {
+                assert_eq!(*section_index, 1);
+                assert_eq!(data.len(), DATA_LAYER_SIZE);
+                assert_eq!(data[280], 0xC0);
+            }
+            _ => panic!("block light should persist initialized data"),
+        }
+
+        assert_eq!(persistent.sky.len(), 2);
+        assert!(matches!(
+            persistent.sky[0],
+            PersistentLightSection::Internal {
+                section_index: 0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            persistent.sky[1],
+            PersistentLightSection::Uninitialized { section_index: 1 }
+        ));
+    }
+
+    #[test]
+    fn persistent_chunk_loads_chunk_owned_light_into_full_chunk() {
+        init_test_registry();
+        init_runtime_registries();
+        let mut light = ChunkLightData::for_valid_world_height(0, 16);
+        *light.block.section_mut(0).expect("real section in range") =
+            LightSection::visible(LightSectionData::homogeneous(12));
+        let persistent_light = ChunkStorage::light_to_persistent(&light);
+        let persistent = ChunkStorage::to_persistent(
+            &single_empty_section(),
+            &[],
+            &[],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            persistent_light,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            ChunkPos::new(0, 0),
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &persistent,
+            ChunkPos::new(0, 0),
+            ChunkStatus::Full,
+            0,
+            16,
+            Weak::new(),
+        );
+
+        let ChunkAccess::Full(chunk) = loaded.chunk else {
+            panic!("full status should load a full chunk");
+        };
+        let light = chunk.light.read();
+        assert_eq!(visible_homogeneous_value(light.block.section(0)), Some(12));
+        assert_eq!(light.block.section_empty(0), Some(true));
+    }
+
+    #[test]
+    fn forced_prepare_preserves_dirty_set_after_save_decision() {
+        init_test_registry();
+        let chunk = ChunkAccess::Proto(ProtoChunk::new(
+            single_empty_section(),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        ));
+
+        assert!(chunk.take_dirty());
+        chunk.mark_dirty();
+
+        let Some(_prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], true) else {
+            panic!("forced save prep should serialize the chunk");
+        };
+        assert!(chunk.is_dirty());
     }
 
     fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {

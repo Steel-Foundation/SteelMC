@@ -21,7 +21,7 @@ use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entiti
 
 use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
-use crate::player::chunk_sender::ChunkSender;
+use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
@@ -44,7 +44,6 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
-use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetDefaultSpawnPosition, CSystemChat, CTabList,
     CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
@@ -1216,7 +1215,7 @@ impl Server {
     fn send_chunks_for_player(
         player: &Arc<Player>,
         world: &Arc<World>,
-        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
     ) {
         let chunk_pos = *player.last_chunk_pos.lock();
         let connection = &player.connection;
@@ -1236,8 +1235,22 @@ impl Server {
         let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
 
         // Phase 3: commit (brief lock + generation check)
-        let mut sender = player.chunk_sender.lock();
-        sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch);
+        let sent_chunks = {
+            let mut sender = player.chunk_sender.lock();
+            sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
+        };
+
+        if sent_chunks.is_empty() {
+            return;
+        }
+
+        let Some(view) = *player.last_tracking_view.lock() else {
+            return;
+        };
+        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        world
+            .entity_tracker()
+            .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
     /// Executes one chunk scheduling tick across all worlds.

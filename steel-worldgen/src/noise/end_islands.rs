@@ -49,7 +49,9 @@ impl EndIslands {
     ///
     /// Converts block coordinates to section coordinates internally (divides by 8).
     #[must_use]
-    pub fn sample(&self, block_x: i32, _block_y: i32, block_z: i32) -> f64 {
+    pub fn sample(&self, block_x: f64, _block_y: f64, block_z: f64) -> f64 {
+        let block_x = block_x as i32;
+        let block_z = block_z as i32;
         // Widen to f64 BEFORE subtracting 8.0, matching Java's `float - 8.0` (double literal)
         // where the float is promoted to double first.
         (f64::from(Self::get_height_value(

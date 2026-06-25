@@ -1,6 +1,6 @@
 //! Vanilla walk path-type classification.
 
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::fluid::FluidState;
@@ -53,9 +53,9 @@ impl MobPathSettings {
         drop(navigation);
 
         Self {
-            entity_width: floor(bounding_box.width() + 1.0),
-            entity_height: floor(bounding_box.height() + 1.0),
-            entity_depth: floor(bounding_box.width() + 1.0),
+            entity_width: fast_floor(bounding_box.width() + 1.0),
+            entity_height: fast_floor(bounding_box.height() + 1.0),
+            entity_depth: fast_floor(bounding_box.width() + 1.0),
             mob_position_vec: mob.position(),
             mob_position: mob.block_position(),
             bounding_box,
@@ -382,7 +382,7 @@ impl WalkNodeEvaluator {
             }
             start_y -= 1;
         } else if self.settings.on_ground() {
-            start_y = floor(position.y + 0.5);
+            start_y = fast_floor(position.y + 0.5);
         } else {
             reusable_pos = BlockPos::containing(position.x, position.y + 1.0, position.z);
 
@@ -430,7 +430,7 @@ impl WalkNodeEvaluator {
         let jump_size = if self.settings.pathfinding_malus(path_type_above) >= 0.0
             && current_path_type != PathType::StickyHoney
         {
-            floor(f64::from(self.settings.max_up_step()).max(1.0))
+            fast_floor(f64::from(self.settings.max_up_step()).max(1.0))
         } else {
             0
         };
@@ -845,7 +845,7 @@ impl WalkNodeEvaluator {
         let half_width = self.settings.bounding_box().width() / 2.0;
         let min_y = self.get_floor_level(
             context,
-            BlockPos::new(floor(center_x), y + 1, floor(center_z)),
+            BlockPos::new(fast_floor(center_x), y + 1, fast_floor(center_z)),
         ) + 0.001;
         let max_y = self.get_floor_level(context, BlockPos::new(node.x, node.y, node.z))
             + self.settings.bounding_box().height()
