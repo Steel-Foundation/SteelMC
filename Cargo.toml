@@ -113,7 +113,6 @@ sha2 = "0.11"
 md5 = "0.8.0"
 base64 = "0.22.1"
 hex = "0.4.3"
-rsa-der = "0.3.0"
 text_components = {
     git = "https://github.com/Steel-Foundation/TextComponents.git",
     rev = "e058b936e66b496385ba162b2e20344d14572a6a",
