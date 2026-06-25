@@ -411,38 +411,45 @@ impl ProtoChunk {
 
         let section_index = self.get_section_index(y);
         let section = &self.sections.sections[section_index];
-        let (old_state, was_empty, is_empty) = {
+        let status = self.status();
+        let (old_state, empty_section_changed_to) = {
             let mut section_guard = section.write();
-            let was_empty = section_guard.is_empty();
-            let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
-            let is_empty = section_guard.is_empty();
-            (old_state, was_empty, is_empty)
+            if status >= ChunkStatus::InitializeLight {
+                let was_empty = section_guard.is_empty();
+                let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+                let is_empty = section_guard.is_empty();
+                let empty_section_changed_to = (was_empty != is_empty).then_some(is_empty);
+                (old_state, empty_section_changed_to)
+            } else {
+                (
+                    section_guard.set_block_state_for_generation(local_x, local_y, local_z, state),
+                    None,
+                )
+            }
         };
 
         if old_state == state {
             return None;
         }
 
-        if self.status() >= ChunkStatus::InitializeLight {
-            let empty_section_change = if was_empty == is_empty {
-                None
-            } else {
+        if status >= ChunkStatus::InitializeLight {
+            let empty_section_change = empty_section_changed_to.map(|is_empty| {
                 self.update_light_section_emptiness(y, is_empty);
-                Some(LightSectionEmptinessChange {
+                LightSectionEmptinessChange {
                     section_pos: SectionPos::new(
                         self.pos.0.x,
                         SectionPos::block_to_section_coord(y),
                         self.pos.0.y,
                     ),
                     empty: is_empty,
-                })
-            };
+                }
+            });
 
             let light_properties_changed = has_different_light_properties(old_state, state);
             if light_properties_changed {
                 self.update_sky_light_sources(local_x, y, local_z);
             }
-            if self.status() >= ChunkStatus::Light
+            if status >= ChunkStatus::Light
                 && (light_properties_changed || empty_section_change.is_some())
                 && let Some(level) = self.level.upgrade()
             {
@@ -723,5 +730,41 @@ mod tests {
         proto.set_block_state(pos, cave_air, UpdateFlags::UPDATE_CLIENTS);
 
         assert_eq!(proto.get_block_state(pos), cave_air);
+    }
+
+    #[test]
+    fn pre_light_block_writes_defer_counts_until_light_initialization() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let stone = vanilla_blocks::STONE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        proto
+            .sections
+            .set_relative_block_for_generation(3, 4, 5, stone);
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 0);
+
+        assert_eq!(
+            proto.set_block_state(pos, air, UpdateFlags::UPDATE_CLIENTS),
+            Some(stone)
+        );
+        assert_eq!(proto.get_block_state(pos), air);
+
+        assert_eq!(
+            proto.set_block_state(pos, stone, UpdateFlags::UPDATE_CLIENTS),
+            Some(air)
+        );
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 0);
+
+        proto.initialize_light_sources();
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 1);
     }
 }

@@ -4,7 +4,7 @@
 //! Supports 2D and 3D sampling with the same gradient vectors as Perlin noise.
 
 use crate::random::Random;
-use steel_math::{corner_noise_3d, floor};
+use steel_math::{corner_noise_3d, fast_floor};
 
 #[expect(
     clippy::unreadable_literal,
@@ -73,8 +73,8 @@ impl SimplexNoise {
     #[must_use]
     pub fn get_value_2d(&self, xin: f64, yin: f64) -> f64 {
         let s = (xin + yin) * F2;
-        let i = floor(xin + s);
-        let j = floor(yin + s);
+        let i = fast_floor(xin + s);
+        let j = fast_floor(yin + s);
         let t = f64::from(i + j) * G2;
         let x0 = xin - (f64::from(i) - t);
         let y0 = yin - (f64::from(j) - t);
@@ -115,9 +115,9 @@ impl SimplexNoise {
     )]
     pub fn get_value_3d(&self, xin: f64, yin: f64, zin: f64) -> f64 {
         let s = (xin + yin + zin) * Self::F3;
-        let i = floor(xin + s);
-        let j = floor(yin + s);
-        let k = floor(zin + s);
+        let i = fast_floor(xin + s);
+        let j = fast_floor(yin + s);
+        let k = fast_floor(zin + s);
         let t = f64::from(i + j + k) * Self::G3;
         let x0 = xin - (f64::from(i) - t);
         let y0 = yin - (f64::from(j) - t);

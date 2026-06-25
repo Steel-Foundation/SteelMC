@@ -420,7 +420,7 @@ impl FeatureDecorationRunner {
         {
             cursor.charge - 1
         } else if random.next_i32_bounded(spreader.charge_decay_rate) == 0 {
-            floor(f64::from(cursor.charge) * 0.5) as i32
+            fast_floor(f64::from(cursor.charge) * 0.5) as i32
         } else {
             cursor.charge
         }

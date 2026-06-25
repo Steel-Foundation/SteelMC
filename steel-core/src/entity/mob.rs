@@ -6,7 +6,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
@@ -1692,9 +1692,9 @@ pub trait Mob: LivingEntity {
         };
         let position = self.position();
         let pos = BlockPos::new(
-            floor(position.x + f64::from(dx)),
-            floor(position.y),
-            floor(position.z + f64::from(dz)),
+            fast_floor(position.x + f64::from(dx)),
+            fast_floor(position.y),
+            fast_floor(position.z + f64::from(dz)),
         );
         let mut context = PathfindingContext::new(world.as_ref(), self.block_position());
         WalkPathEvaluator::path_type_static(&mut context, pos) == PathType::Walkable
@@ -1868,7 +1868,7 @@ fn ground_navigation_temp_mob_pos<M: Mob + ?Sized>(
 
 fn ground_navigation_surface_y<M: Mob + ?Sized>(mob: &M, world: &World, can_float: bool) -> i32 {
     if !mob.is_in_water() || !can_float {
-        return floor(mob.position().y + 0.5);
+        return fast_floor(mob.position().y + 0.5);
     }
 
     let position = mob.position();

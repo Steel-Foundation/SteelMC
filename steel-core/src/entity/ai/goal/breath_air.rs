@@ -1,5 +1,5 @@
 use glam::DVec3;
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
@@ -88,14 +88,14 @@ fn first_air_position(level: &dyn LevelReader, position: DVec3) -> Option<BlockP
 fn air_search_bounds(position: DVec3) -> (BlockPos, BlockPos) {
     (
         BlockPos::new(
-            floor(position.x - AIR_SEARCH_HORIZONTAL_RADIUS),
-            floor(position.y),
-            floor(position.z - AIR_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.x - AIR_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.y),
+            fast_floor(position.z - AIR_SEARCH_HORIZONTAL_RADIUS),
         ),
         BlockPos::new(
-            floor(position.x + AIR_SEARCH_HORIZONTAL_RADIUS),
-            floor(position.y + AIR_SEARCH_VERTICAL_ABOVE),
-            floor(position.z + AIR_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.x + AIR_SEARCH_HORIZONTAL_RADIUS),
+            fast_floor(position.y + AIR_SEARCH_VERTICAL_ABOVE),
+            fast_floor(position.z + AIR_SEARCH_HORIZONTAL_RADIUS),
         ),
     )
 }

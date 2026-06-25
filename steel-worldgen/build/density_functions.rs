@@ -906,77 +906,77 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
             #[inline]
             fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_final_density(self, cache, x, y, z)
+                router_final_density(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_depth(self, cache, x, y, z)
+                router_depth(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_barrier(self, cache, x, y, z)
+                router_barrier(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_floodedness(self, cache, x, y, z)
+                router_fluid_level_floodedness(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_spread(self, cache, x, y, z)
+                router_fluid_level_spread(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_lava(self, cache, x, y, z)
+                router_lava(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_toggle(self, cache, x, y, z)
+                router_vein_toggle(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_ridged(self, cache, x, y, z)
+                router_vein_ridged(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_gap(self, cache, x, y, z)
+                router_vein_gap(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_erosion(self, cache, x, y, z)
+                router_erosion(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_continentalness(self, cache, x, y, z)
+                router_continentalness(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_temperature(self, cache, x, y, z)
+                router_temperature(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vegetation(self, cache, x, y, z)
+                router_vegetation(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_ridges(self, cache, x, y, z)
+                router_ridges(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
             fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_preliminary_surface_level(self, cache, x, y, z)
+                router_preliminary_surface_level(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]
@@ -988,6 +988,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 VEIN_INTERP_ENABLED
             }
 
+            #[inline]
             fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
                 self.blended_noise.compute_column(x, block_ys, z, out);
             }

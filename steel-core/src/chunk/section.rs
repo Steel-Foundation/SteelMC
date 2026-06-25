@@ -293,8 +293,7 @@ impl Sections {
         let idx = relative_y / BlockPalette::SIZE;
         let relative_y = relative_y % BlockPalette::SIZE;
         let mut guard = self.sections[idx].write();
-        guard.states.enter_building_mode();
-        guard.states.set(relative_x, relative_y, relative_z, value);
+        guard.set_block_state_for_generation(relative_x, relative_y, relative_z, value);
     }
 }
 
@@ -550,6 +549,7 @@ impl ChunkSection {
         new_state: BlockStateId,
         block_behaviors: &BlockBehaviorRegistry,
     ) -> BlockStateId {
+        self.ensure_counter_ready_for_delta_with(block_behaviors);
         let old_state = self.states.set(x, y, z, new_state);
 
         if old_state != new_state {
@@ -561,23 +561,20 @@ impl ChunkSection {
         old_state
     }
 
-    /// Sets a block state and updates counters when the caller already knows
-    /// the replacement state's counter traits.
-    pub(crate) fn set_block_state_with_known_new_counts(
+    /// Sets a block state through the raw worldgen building path.
+    ///
+    /// Returns the old block state. Cached counters are intentionally not
+    /// updated; callers must recount before light, promotion, save, or packet
+    /// serialization.
+    pub(crate) fn set_block_state_for_generation(
         &mut self,
         x: usize,
         y: usize,
         z: usize,
         new_state: BlockStateId,
-        new_counts: BlockStateSectionCounts,
     ) -> BlockStateId {
-        let old_state = self.states.set(x, y, z, new_state);
-        if old_state != new_state {
-            let old_counts = Self::block_state_section_counts(old_state);
-            self.apply_count_change(old_counts, new_counts);
-        }
-
-        old_state
+        self.states.enter_building_mode();
+        self.states.set(x, y, z, new_state)
     }
 
     /// Returns the cached-counter traits for a block state using the global
@@ -587,6 +584,22 @@ impl ChunkSection {
             panic!("invalid block state id {}", state.0);
         };
         counts
+    }
+
+    pub(crate) fn finalize_generation_counts_if_needed(&mut self) {
+        if matches!(&self.states, BlockPalette::Building(_)) {
+            self.recalculate_counts();
+        }
+    }
+
+    fn ensure_counter_ready_for_delta_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
+        if matches!(&self.states, BlockPalette::Building(_)) {
+            log::debug!(
+                "finalizing worldgen Building palette before applying a counter-aware \
+                 block-state delta"
+            );
+            self.recalculate_counts_with(block_behaviors);
+        }
     }
 
     fn block_state_section_counts_with(
@@ -703,5 +716,27 @@ mod tests {
         assert_eq!(section.non_empty_block_count(), 6);
         assert_eq!(section.fluid_count(), 4);
         assert_eq!(section.ticking_block_count(), 1);
+    }
+
+    #[test]
+    fn counter_aware_write_recounts_building_palette_before_delta() {
+        init_test_behaviors();
+
+        let air = vanilla_blocks::AIR.default_state();
+        let stone = vanilla_blocks::STONE.default_state();
+        let mut section = ChunkSection::new_empty();
+
+        section.set_block_state_for_generation(0, 0, 0, stone);
+        assert_eq!(section.non_empty_block_count(), 0);
+
+        let old_state = section.set_block_state(0, 0, 0, air);
+
+        assert_eq!(old_state, stone);
+        assert_eq!(section.non_empty_block_count(), 0);
+
+        let old_state = section.set_block_state(0, 0, 0, stone);
+
+        assert_eq!(old_state, air);
+        assert_eq!(section.non_empty_block_count(), 1);
     }
 }

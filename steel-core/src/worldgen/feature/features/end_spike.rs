@@ -58,8 +58,8 @@ impl FeatureDecorationRunner {
             .map(|(index, size)| {
                 let angle = 2.0 * (-PI + END_SPIKE_ANGLE_STEP * index as f64);
                 EndSpike {
-                    center_x: floor(END_SPIKE_DISTANCE * angle.cos()),
-                    center_z: floor(END_SPIKE_DISTANCE * angle.sin()),
+                    center_x: fast_floor(END_SPIKE_DISTANCE * angle.cos()),
+                    center_z: fast_floor(END_SPIKE_DISTANCE * angle.sin()),
                     radius: 2 + size / 3,
                     height: 76 + size * 3,
                     guarded: *size == 1 || *size == 2,

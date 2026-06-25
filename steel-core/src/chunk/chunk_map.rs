@@ -989,7 +989,7 @@ impl ChunkMap {
                     let block_pos = section_pos.relative_to_block_pos(packed);
                     let block_state = world.get_block_state(block_pos);
 
-                    tracing::debug!(
+                    tracing::trace!(
                         ?block_pos,
                         ?block_state,
                         player_count = tracking_players.len(),
@@ -1029,7 +1029,7 @@ impl ChunkMap {
                         })
                         .collect();
 
-                    tracing::debug!(
+                    tracing::trace!(
                         change_count = changes.len(),
                         ?section_pos,
                         player_count = tracking_players.len(),

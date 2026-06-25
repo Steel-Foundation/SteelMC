@@ -1,4 +1,8 @@
-use core::simd::{Simd, f64x4};
+use core::simd::Simd;
+use std::{
+    ops,
+    simd::{SimdCast, SimdElement, num::SimdFloat},
+};
 
 /// Smoothstep - quintic Hermite interpolation (NOT cubic!)
 ///
@@ -24,18 +28,19 @@ pub fn smoothstep_derivative(x: f64) -> f64 {
     30.0 * x * x * (x - 1.0) * (x - 1.0)
 }
 
-/// Smoothstep for 4 lanes: 6x^5 - 15x^4 + 10x^3
-#[inline]
-#[must_use]
-pub fn smoothstep_4x(x: f64x4) -> f64x4 {
-    smoothstep_simd::<4>(x)
-}
-
 /// Smoothstep for N lanes: 6x^5 - 15x^4 + 10x^3. Per-lane identical to [`smoothstep`].
 #[inline]
 #[must_use]
-pub fn smoothstep_simd<const N: usize>(x: Simd<f64, N>) -> Simd<f64, N> {
-    x * x * x * (x * (x * Simd::splat(6.0) - Simd::splat(15.0)) + Simd::splat(10.0))
+pub fn smoothstep_simd<F, const N: usize>(x: Simd<F, N>) -> Simd<F, N>
+where
+    F: SimdElement + SimdCast,
+    Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>,
+{
+    x * x
+        * x
+        * (x * (x * Simd::splat(6.0).cast() - Simd::splat(15.0).cast()) + Simd::splat(10.0).cast())
 }
 
 #[cfg(test)]

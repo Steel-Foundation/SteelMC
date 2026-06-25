@@ -1104,6 +1104,13 @@ impl ChunkHolder {
     /// This notifies watchers - use `insert_chunk_no_notify` + separate notification
     /// if calling from a rayon thread to avoid contention.
     pub fn insert_chunk(&self, chunk: ChunkAccess, status: ChunkStatus) {
+        if let ChunkAccess::Proto(proto) = &chunk {
+            debug_assert!(
+                status < ChunkStatus::Full,
+                "full status must be stored as a LevelChunk"
+            );
+            proto.set_status(status);
+        }
         self.data.with_write(|c| *c = chunk);
         self.mark_status_work_published(status);
         self.sender.send_replace(ChunkResult::Ok(status));
@@ -1191,6 +1198,29 @@ mod tests {
         );
         proto.set_status(status);
         proto
+    }
+
+    #[test]
+    fn insert_chunk_synchronizes_proto_status_with_published_status() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+
+        holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Light) else {
+            panic!("inserted chunk should be available at published status");
+        };
+        let ChunkAccess::Proto(proto) = &*chunk else {
+            panic!("inserted test chunk should remain proto");
+        };
+        assert_eq!(proto.status(), ChunkStatus::Light);
     }
 
     #[test]

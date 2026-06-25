@@ -1164,7 +1164,6 @@ impl World {
         };
 
         // Record the block change for broadcasting to clients
-        log::debug!("Block changed at {pos:?}: {old_state:?} -> {block_state:?}");
         self.chunk_map.block_changed(pos);
         self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
 

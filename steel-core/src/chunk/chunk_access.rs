@@ -216,19 +216,90 @@ impl ChunkAccess {
             Self::Full(chunk) => {
                 chunk
                     .sections
-                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                    .set_relative_block(relative_x, relative_y, relative_z, value);
+                chunk.refresh_light_emptiness_maps();
                 chunk.dirty.store(true, Ordering::Release);
             }
             Self::Proto(proto_chunk) => {
-                proto_chunk
-                    .sections
-                    .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+                if proto_chunk.status() >= ChunkStatus::InitializeLight {
+                    proto_chunk
+                        .sections
+                        .set_relative_block(relative_x, relative_y, relative_z, value);
+                    proto_chunk.refresh_light_emptiness_maps();
+                } else {
+                    proto_chunk.sections.set_relative_block_for_generation(
+                        relative_x, relative_y, relative_z, value,
+                    );
+                }
                 proto_chunk.dirty.store(true, Ordering::Release);
             }
             Self::Unloaded => unreachable!(),
         }
         let y = self.min_y() + relative_y as i32;
         self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
+    }
+
+    /// Writes multiple generation blocks in one batch.
+    ///
+    /// Uses the raw `Building` palette only while the actual chunk is still pre-light.
+    /// Later chunks keep cached section counters/light emptiness coherent.
+    pub(crate) fn write_block_batch_for_generation(
+        &self,
+        blocks: &[(usize, usize, usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+
+        if self.uses_pre_light_generation_writes() {
+            self.sections().write_block_batch(blocks);
+            return;
+        }
+
+        for &(x, relative_y, z, value) in blocks {
+            self.sections().set_relative_block(x, relative_y, z, value);
+        }
+        self.refresh_light_emptiness_maps_after_generation_write();
+    }
+
+    /// Writes multiple generation blocks in one column.
+    ///
+    /// Heightmap maintenance remains the caller's responsibility, matching
+    /// `write_column_blocks`.
+    pub(crate) fn write_column_blocks_for_generation(
+        &self,
+        x: usize,
+        z: usize,
+        blocks: &[(usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+
+        if self.uses_pre_light_generation_writes() {
+            self.sections().write_column_blocks(x, z, blocks);
+            return;
+        }
+
+        for &(relative_y, value) in blocks {
+            self.sections().set_relative_block(x, relative_y, z, value);
+        }
+        self.refresh_light_emptiness_maps_after_generation_write();
+    }
+
+    fn uses_pre_light_generation_writes(&self) -> bool {
+        matches!(self, Self::Proto(proto) if proto.status() < ChunkStatus::InitializeLight)
+    }
+
+    fn refresh_light_emptiness_maps_after_generation_write(&self) {
+        match self {
+            Self::Full(chunk) => chunk.refresh_light_emptiness_maps(),
+            Self::Proto(proto) if proto.status() >= ChunkStatus::InitializeLight => {
+                proto.refresh_light_emptiness_maps();
+            }
+            Self::Proto(_) => {}
+            Self::Unloaded => unreachable!(),
+        }
     }
 
     /// Applies heightmap maintenance after a direct section write.
@@ -898,6 +969,29 @@ mod tests {
     }
 
     #[test]
+    fn initialized_proto_generation_relative_write_keeps_counts_ready() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.set_status(ChunkStatus::InitializeLight);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(3, 5, 7, stone);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 1);
+    }
+
+    #[test]
     fn batched_generation_column_writes_update_proto_heightmaps() {
         init_test_registry();
         let proto = ProtoChunk::new(
@@ -936,6 +1030,30 @@ mod tests {
             .get(HeightmapType::OceanFloorWg)
             .expect("OceanFloorWg should remain present");
         assert_eq!(ocean_floor.get_first_available(3, 7), 6);
+    }
+
+    #[test]
+    fn initialized_proto_generation_batch_writes_keep_counts_ready() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.set_status(ChunkStatus::InitializeLight);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.write_block_batch_for_generation(&[(1, 2, 3, stone), (4, 5, 6, stone)]);
+        chunk.write_column_blocks_for_generation(7, 8, &[(9, stone)]);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 3);
     }
 
     #[test]
