@@ -21,8 +21,6 @@
     <br />
     <a href="#features">Features</a>
     &middot;
-    <a href="#roadmap">Roadmap</a>
-    &middot;
     <a href="#our-approach">Our approach</a>
     &middot;
     <a href="https://steelmc.dev/tracker/">Tracker</a>
@@ -52,7 +50,6 @@
 
 🎒 **Player Systems** — Inventory, crafting, hunger, experience, all four game modes, and 24+ commands with tab completion. Secure chat and Mojang authentication fully implemented.
 
-## Roadmap
 
 ## Our approach
 
