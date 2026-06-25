@@ -140,18 +140,6 @@ impl BlockBehavior for WallBlock {
     }
 }
 
-/// Returns the opposite of a direction.
-const fn opposite(direction: Direction) -> Direction {
-    match direction {
-        Direction::North => Direction::South,
-        Direction::South => Direction::North,
-        Direction::East => Direction::West,
-        Direction::West => Direction::East,
-        Direction::Up => Direction::Down,
-        Direction::Down => Direction::Up,
-    }
-}
-
 /// Whether the wall is connected on the given side.
 fn is_connected(state: BlockStateId, side: &EnumProperty<WallSide>) -> bool {
     state.get_value(side) != WallSide::None
@@ -190,7 +178,7 @@ fn side_update(
     neighbor: BlockStateId,
     direction: Direction,
 ) -> BlockStateId {
-    let opposite = opposite(direction);
+    let opposite = direction.opposite();
     let connected = connects_to(
         neighbor,
         neighbor.is_face_sturdy_at(pos, opposite),

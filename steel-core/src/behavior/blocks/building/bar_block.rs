@@ -137,16 +137,8 @@ fn connects_to(neighbor_state: BlockStateId, neighbor_pos: BlockPos, direction: 
     {
         return true;
     }
-
-    let opposite = match direction {
-        Direction::North => Direction::South,
-        Direction::South => Direction::North,
-        Direction::East => Direction::West,
-        Direction::West => Direction::East,
-        Direction::Up => Direction::Down,
-        Direction::Down => Direction::Up,
-    };
-    neighbor_state.is_face_sturdy_at(neighbor_pos, opposite)
+    
+    neighbor_state.is_face_sturdy_at(neighbor_pos, direction.opposite())
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.
