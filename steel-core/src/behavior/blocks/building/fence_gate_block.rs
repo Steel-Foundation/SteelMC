@@ -7,6 +7,12 @@
 //! Steel has no neighbor-signal/redstone foundation yet, so the redstone-driven
 //! paths are left as `// TODO:` rather than faked — every other behavior is 1:1.
 
+use crate::behavior::InventoryAccess;
+use crate::behavior::block::BlockBehavior;
+use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::entity::Entity;
+use crate::player::Player;
+use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -17,15 +23,9 @@ use steel_registry::blocks::properties::{
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::axis::Axis;
+use steel_utils::random::Random;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
-
-use crate::behavior::InventoryAccess;
-use crate::behavior::block::BlockBehavior;
-use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::entity::Entity;
-use crate::player::Player;
-use crate::world::{ScheduledTickAccess, World};
 
 /// Behavior for all fence gate variants.
 #[block_behavior]
@@ -165,9 +165,8 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        // TODO: vanilla randomizes pitch as random*0.1 + 0.9; world RNG not
-        // wired into block behaviors yet (same compromise as ButtonBlock).
-        world.play_block_sound(sound, pos, 1.0, 1.0, Some(player.id()));
+        let pitch = world.random().lock().next_f32() * 0.1 + 0.9;
+        world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
         // TODO: GameEvent.BLOCK_OPEN / BLOCK_CLOSE when game event system exists.
         InteractionResult::Success
     }

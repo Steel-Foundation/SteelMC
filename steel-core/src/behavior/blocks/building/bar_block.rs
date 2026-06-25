@@ -137,7 +137,7 @@ fn connects_to(neighbor_state: BlockStateId, neighbor_pos: BlockPos, direction: 
     {
         return true;
     }
-    
+
     neighbor_state.is_face_sturdy_at(neighbor_pos, direction.opposite())
 }
 
