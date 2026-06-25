@@ -36,6 +36,8 @@
 <img width="600" height="3000" alt="showcase" src="assets/output.gif" />
 </div>
 
+<br />
+<br />
 
 ## Features
 
@@ -45,7 +47,6 @@
 
 ## Acknowledgements
 
----
 
 ## 🔗 Links
 <div align="center">
@@ -53,7 +54,6 @@
 [Discord](https://discord.gg/MwChEHnAbh) | [GitCraft](https://github.com/WinPlay02/GitCraft)
 </div>
 
----
 
 ## How to install steel
 
