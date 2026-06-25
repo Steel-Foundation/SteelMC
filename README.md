@@ -41,9 +41,26 @@
 
 ## Features
 
+> [!IMPORTANT]
+> Steel targets **Minecraft 26.2** and is under active development — some systems are still being built out.
+
+🌍 **World Generation** — Fully implemented and multithreaded. Terrain, biomes, caves, structures (villages, strongholds, monuments, fortresses, and more), and lighting are all vanilla-compliant and generated on a dedicated thread pool.
+
+🧱 **Blocks, Items & Fluids** — Over 100 block behaviors, tool and item interactions, water and lava flow — all functioning with vanilla parity. Redstone is in progress.
+
+🐷 **Entities & Combat** — Entity lifecycle, physics, goal-based AI with pathfinding, attributes, equipment, enchantments, damage pipeline, loot tables, and mob effects. Early but growing — more entity types are being added continuously.
+
+🎒 **Player Systems** — Inventory, crafting, hunger, experience, all four game modes, and 24+ commands with tab completion. Secure chat and Mojang authentication fully implemented.
+
+🗺️ **Persistence & Multi-World** — Chunks, player data, and world state save and load across restarts using vanilla-compatible region files. Multiple worlds are supported via a domain-based configuration.
+
+🌐 **Networking** — Complete protocol implementation with compression, packet bundling, and view-distance aware chunk streaming.
+
 ## Roadmap
 
 ## Our approach
+
+Steel is built around the idea that getting the foundations right makes everything else easier. Rather than rushing to implement content, we focus on designing robust, high-performance core systems — registries, codegen pipelines, chunk management, entity architecture — so that adding new blocks, entities, or mechanics becomes straightforward and reliable. The server is written in Rust with multithreading at its core: world generation runs on a dedicated thread pool, networking is fully asynchronous, and game data is compiled at build time rather than parsed at runtime. The result is a server that aims for exact vanilla parity while being significantly faster, with an architecture designed from the ground up for future extensibility and customization.
 
 ## Acknowledgements
 
