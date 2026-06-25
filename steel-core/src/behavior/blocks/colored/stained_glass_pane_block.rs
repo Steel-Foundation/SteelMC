@@ -45,10 +45,10 @@ impl BlockBehavior for StainedGlassPaneBlock {
         _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        update_shape(state, neighbor_state, direction)
+        update_shape(state, neighbor_state, neighbor_pos, direction)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

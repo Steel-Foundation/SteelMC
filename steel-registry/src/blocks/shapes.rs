@@ -929,7 +929,7 @@ struct FaceRect {
 
 const FACE_EPSILON: f64 = 1.0e-6;
 
-fn face_rectangles_cover(
+pub fn face_rectangles_cover(
     shape: VoxelShape,
     direction: Direction,
     target_min_a: f64,

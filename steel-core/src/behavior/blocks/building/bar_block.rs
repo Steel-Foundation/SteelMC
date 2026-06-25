@@ -55,11 +55,10 @@ impl BlockBehavior for IronBarsBlock {
         _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // Only update for horizontal directions
-        update_shape(state, neighbor_state, direction)
+        update_shape(state, neighbor_state, neighbor_pos, direction)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -102,10 +101,10 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
         _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        update_shape(state, neighbor_state, direction)
+        update_shape(state, neighbor_state, neighbor_pos, direction)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -125,14 +124,13 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
 }
 
 /// Checks if this bar should connect to the given neighbor state.
-fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
+fn connects_to(neighbor_state: BlockStateId, neighbor_pos: BlockPos, direction: Direction) -> bool {
     let neighbor_block = neighbor_state.get_block();
     let excluded = is_excluded_for_connection(neighbor_block);
     if excluded {
         return false;
     }
-    //TODO(jonas) fix pos
-    if !excluded && neighbor_state.is_face_sturdy_at(BlockPos::new(0,0,0), direction)
+    if neighbor_state.is_face_sturdy_at(neighbor_pos, direction)
         || neighbor_block.has_tag(&BlockTag::BARS)
         || neighbor_block.has_tag(&BlockTag::WALLS)
         || neighbor_block.has_tag(&BlockTag::C_GLASS_PANES)
@@ -140,7 +138,6 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
         return true;
     }
 
-    // Check if the neighbor has a sturdy face on the opposite side
     let opposite = match direction {
         Direction::North => Direction::South,
         Direction::South => Direction::North,
@@ -149,9 +146,7 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
         Direction::Up => Direction::Down,
         Direction::Down => Direction::Up,
     };
-    // neighbor_state.is_face_sturdy_at(pos, opposite)
-    //TODO(Jonas fix)
-    true
+    neighbor_state.is_face_sturdy_at(neighbor_pos, opposite)
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.
@@ -161,25 +156,25 @@ pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> B
     // Check north
     let north_pos = Direction::North.relative(*pos);
     let north_state = world.get_block_state(north_pos);
-    let connects_north = connects_to(north_state, Direction::North);
+    let connects_north = connects_to(north_state, north_pos, Direction::North);
     state = state.set_value(&NORTH, connects_north);
 
     // Check east
     let east_pos = Direction::East.relative(*pos);
     let east_state = world.get_block_state(east_pos);
-    let connects_east = connects_to(east_state, Direction::East);
+    let connects_east = connects_to(east_state, east_pos, Direction::East);
     state = state.set_value(&EAST, connects_east);
 
     // Check south
     let south_pos = Direction::South.relative(*pos);
     let south_state = world.get_block_state(south_pos);
-    let connects_south = connects_to(south_state, Direction::South);
+    let connects_south = connects_to(south_state, south_pos, Direction::South);
     state = state.set_value(&SOUTH, connects_south);
 
     // Check west
     let west_pos = Direction::West.relative(*pos);
     let west_state = world.get_block_state(west_pos);
-    let connects_west = connects_to(west_state, Direction::West);
+    let connects_west = connects_to(west_state, west_pos, Direction::West);
     state = state.set_value(&WEST, connects_west);
 
     state
@@ -188,27 +183,26 @@ pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> B
 pub fn update_shape(
     state: BlockStateId,
     neighbor_state: BlockStateId,
+    neighbor_pos: BlockPos,
     direction: Direction,
 ) -> BlockStateId {
-    // Only update for horizontal directions
     match direction {
         Direction::North => {
-            let connects = connects_to(neighbor_state, Direction::North);
+            let connects = connects_to(neighbor_state, neighbor_pos, Direction::North);
             state.set_value(&NORTH, connects)
         }
         Direction::East => {
-            let connects = connects_to(neighbor_state, Direction::East);
+            let connects = connects_to(neighbor_state, neighbor_pos, Direction::East);
             state.set_value(&EAST, connects)
         }
         Direction::South => {
-            let connects = connects_to(neighbor_state, Direction::South);
+            let connects = connects_to(neighbor_state, neighbor_pos, Direction::South);
             state.set_value(&SOUTH, connects)
         }
         Direction::West => {
-            let connects = connects_to(neighbor_state, Direction::West);
+            let connects = connects_to(neighbor_state, neighbor_pos, Direction::West);
             state.set_value(&WEST, connects)
         }
-        // Vertical directions don't affect bar connections
         Direction::Up | Direction::Down => state,
     }
 }

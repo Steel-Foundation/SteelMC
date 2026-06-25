@@ -2,10 +2,6 @@
 //!
 //! Walls connect to adjacent walls, bars, fence gates and solid blocks. Each
 //! horizontal side has a [`WallSide`] (none/low/tall) and an `UP` post flag.
-//!
-//! NOTE: `is_covered` depends on `VoxelShape`, which is not implemented in
-//! Steel yet. Every place vanilla calls `isCovered` is hardcoded to `false`
-//! and tagged `// is_covered` so it can be wired up once shapes land.
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -13,6 +9,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
+use steel_registry::blocks::shapes::{VoxelShape, face_rectangles_cover};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_fluids::WATER;
@@ -49,6 +46,18 @@ const SOUTH: EnumProperty<WallSide> = BlockStateProperties::SOUTH_WALL;
 const WEST: EnumProperty<WallSide> = BlockStateProperties::WEST_WALL;
 /// Waterlogged property.
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+
+// Vanilla TEST_SHAPE_POST = Block.column(2.0, 0.0, 16.0), projected onto the DOWN face.
+const POST_X_MIN: f64 = 7.0 / 16.0;
+const POST_X_MAX: f64 = 9.0 / 16.0;
+const POST_Z_MIN: f64 = 7.0 / 16.0;
+const POST_Z_MAX: f64 = 9.0 / 16.0;
+
+// Vanilla TEST_SHAPES_WALL = Shapes.rotateHorizontal(Block.boxZ(2.0, 16.0, 0.0, 9.0)),
+// projected onto the DOWN face per direction.
+const WALL_ARM_MIN: f64 = 7.0 / 16.0;
+const WALL_ARM_MAX: f64 = 9.0 / 16.0;
+const WALL_ARM_EXTENT: f64 = 9.0 / 16.0;
 
 impl WallBlock {
     /// Creates a new wall block behavior for the given block.
@@ -182,7 +191,11 @@ fn side_update(
     direction: Direction,
 ) -> BlockStateId {
     let opposite = opposite(direction);
-    let connected = connects_to(neighbor, neighbor.is_face_sturdy(opposite), opposite);
+    let connected = connects_to(
+        neighbor,
+        neighbor.is_face_sturdy_at(pos, opposite),
+        opposite,
+    );
 
     let north = if direction == Direction::North {
         connected
@@ -223,8 +236,9 @@ fn update_wall_state(
     south: bool,
     west: bool,
 ) -> BlockStateId {
-    let sides = update_sides(state, north, east, south, west);
-    sides.set_value(&UP, should_raise_post(sides, top_neighbor))
+    let above_shape = top_neighbor.get_static_collision_shape();
+    let sides = update_sides(state, above_shape, north, east, south, west);
+    sides.set_value(&UP, should_raise_post(sides, top_neighbor, above_shape))
 }
 
 /// Vanilla `WallBlock.updateSides`.
@@ -234,29 +248,72 @@ fn update_wall_state(
 )]
 fn update_sides(
     state: BlockStateId,
+    above_shape: VoxelShape,
     north: bool,
     east: bool,
     south: bool,
     west: bool,
 ) -> BlockStateId {
     state
-        .set_value(&NORTH, make_wall_state(north))
-        .set_value(&EAST, make_wall_state(east))
-        .set_value(&SOUTH, make_wall_state(south))
-        .set_value(&WEST, make_wall_state(west))
+        .set_value(
+            &NORTH,
+            make_wall_state(
+                north,
+                above_shape,
+                WALL_ARM_MIN,
+                WALL_ARM_MAX,
+                0.0,
+                WALL_ARM_EXTENT,
+            ),
+        )
+        .set_value(
+            &EAST,
+            make_wall_state(
+                east,
+                above_shape,
+                WALL_ARM_MIN,
+                1.0,
+                WALL_ARM_MIN,
+                WALL_ARM_MAX,
+            ),
+        )
+        .set_value(
+            &SOUTH,
+            make_wall_state(
+                south,
+                above_shape,
+                WALL_ARM_MIN,
+                WALL_ARM_MAX,
+                WALL_ARM_MIN,
+                1.0,
+            ),
+        )
+        .set_value(
+            &WEST,
+            make_wall_state(
+                west,
+                above_shape,
+                0.0,
+                WALL_ARM_EXTENT,
+                WALL_ARM_MIN,
+                WALL_ARM_MAX,
+            ),
+        )
 }
 
 /// Vanilla `WallBlock.makeWallState`.
-#[expect(
-    clippy::missing_const_for_fn,
-    reason = "becomes non-const once is_covered/VoxelShape is implemented"
-)]
-fn make_wall_state(connects_to_side: bool) -> WallSide {
+fn make_wall_state(
+    connects_to_side: bool,
+    above_shape: VoxelShape,
+    x_min: f64,
+    x_max: f64,
+    z_min: f64,
+    z_max: f64,
+) -> WallSide {
     if !connects_to_side {
         return WallSide::None;
     }
-    let is_covered = false; // is_covered
-    if is_covered {
+    if is_covered(above_shape, x_min, x_max, z_min, z_max) {
         WallSide::Tall
     } else {
         WallSide::Low
@@ -264,7 +321,11 @@ fn make_wall_state(connects_to_side: bool) -> WallSide {
 }
 
 /// Vanilla `WallBlock.shouldRaisePost`.
-fn should_raise_post(state: BlockStateId, top_neighbor: BlockStateId) -> bool {
+fn should_raise_post(
+    state: BlockStateId,
+    top_neighbor: BlockStateId,
+    above_shape: VoxelShape,
+) -> bool {
     let top_neighbor_has_post = top_neighbor.get_block().has_tag(&BlockTag::WALLS)
         && top_neighbor.try_get_value(&UP).unwrap_or(false);
     if top_neighbor_has_post {
@@ -294,9 +355,16 @@ fn should_raise_post(state: BlockStateId, top_neighbor: BlockStateId) -> bool {
         return false;
     }
 
-    let is_covered = false; // is_covered
     top_neighbor
         .get_block()
         .has_tag(&BlockTag::WALL_POST_OVERRIDE)
-        || is_covered
+        || is_covered(above_shape, POST_X_MIN, POST_X_MAX, POST_Z_MIN, POST_Z_MAX)
+}
+
+/// Vanilla `WallBlock.isCovered`.
+///
+/// Checks whether the block above's collision shape fully covers a test
+/// rectangle on its DOWN face.
+fn is_covered(above_shape: VoxelShape, x_min: f64, x_max: f64, z_min: f64, z_max: f64) -> bool {
+    face_rectangles_cover(above_shape, Direction::Down, x_min, x_max, z_min, z_max)
 }
