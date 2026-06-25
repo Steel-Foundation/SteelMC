@@ -31,7 +31,7 @@
   </p>
 
 <br />
-<img width="600" height="3000" alt="showcase" src="assets/output.gif" />
+<img width="600" height="300" alt="showcase" src="assets/output.gif" />
 </div>
 
 <br />
