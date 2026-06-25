@@ -12,6 +12,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::world::game_event_context::GameEventContext;
 use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;
@@ -22,6 +23,7 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_game_events;
 use steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::types::UpdateFlags;
@@ -167,7 +169,12 @@ impl BlockBehavior for FenceGateBlock {
         };
         let pitch = world.random().lock().next_f32() * 0.1 + 0.9;
         world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
-        // TODO: GameEvent.BLOCK_OPEN / BLOCK_CLOSE when game event system exists.
+        let event = if opens {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::new(Some(player), None));
         InteractionResult::Success
     }
 }
