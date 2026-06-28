@@ -235,8 +235,8 @@ impl RegionHeader {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), CHUNK_TABLE_SIZE);
         let mut entries = Box::new([ChunkEntry::default(); CHUNKS_PER_REGION]);
-        for (i, chunk) in bytes.chunks_exact(8).enumerate() {
-            entries[i] = ChunkEntry::from_bytes(chunk.try_into().expect("chunk entry is 8 bytes"));
+        for (i, &chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
+            entries[i] = ChunkEntry::from_bytes(chunk);
         }
         Self { entries }
     }
