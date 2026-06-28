@@ -129,8 +129,6 @@ const fn const_md5(data: &[u8]) -> [u8; 16] {
 
     i = 0;
     while i < 64 {
-        
-        
         let (f, g) = if i < 16 {
             ((b & c) | (!b & d), i)
         } else if i < 32 {
