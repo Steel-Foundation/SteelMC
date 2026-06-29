@@ -20,7 +20,7 @@ pub use building::{
 };
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
+    BellBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
     TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
 };
 pub use fluid::LiquidBlock;
