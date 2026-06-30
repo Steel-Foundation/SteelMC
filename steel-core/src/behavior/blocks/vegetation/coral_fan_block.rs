@@ -37,9 +37,6 @@ impl BlockBehavior for CoralFanBlock {
         if !self.can_survive(state, context.world, context.relative_pos) {
             return None;
         }
-        Some(state.set_value(
-            &BlockStateProperties::WATERLOGGED,
-            context.is_water_source(),
-        ))
+        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
     }
 }

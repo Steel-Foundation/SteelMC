@@ -1,5 +1,5 @@
 use steel_macros::block_behavior;
-use steel_registry::fluid::FluidState;
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -30,11 +30,19 @@ impl BlockBehavior for KelpBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        (context.is_water_source() && self.can_survive(state, context.world, context.relative_pos))
+        (context.is_full_water() && self.can_survive(state, context.world, context.relative_pos))
             .then_some(state)
     }
 
     fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
         water_source_fluid_state()
+    }
+
+    fn is_liquid_container(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
+    fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
+        false
     }
 }

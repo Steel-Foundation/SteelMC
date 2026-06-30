@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
@@ -14,7 +12,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::get_fluid_state_from_block;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, water_source_fluid_state};
 
@@ -81,20 +79,20 @@ impl BlockBehavior for TallSeagrassBlock {
                 .get_block()
                 .has_tag(&BlockTag::CANNOT_SUPPORT_SEAGRASS)
             && fluid.is_water()
-            && fluid.is_source()
+            && fluid.is_full()
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
-        if !context.is_water_source() {
+        if !context.is_full_water() {
             return None;
         }
 
         let above_fluid =
             get_fluid_state_from_block(context.world.get_block_state(context.relative_pos.above()));
-        if !above_fluid.is_water() || !above_fluid.is_source() {
+        if !above_fluid.is_water() || !above_fluid.is_full() {
             return None;
         }
 
@@ -119,9 +117,13 @@ impl BlockBehavior for TallSeagrassBlock {
         water_source_fluid_state()
     }
 
+    fn is_liquid_container(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn place_liquid(
         &self,
-        _world: &Arc<World>,
+        _level: &dyn LevelAccessor,
         _pos: BlockPos,
         _state: BlockStateId,
         _fluid_state: FluidState,
@@ -136,6 +138,7 @@ impl BlockBehavior for TallSeagrassBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::behavior::init_behaviors;
     use steel_registry::fluid::FluidRef;
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
@@ -242,5 +245,23 @@ mod tests {
         );
 
         assert!(updated.is_air());
+    }
+
+    #[test]
+    fn tall_seagrass_lower_survives_in_falling_full_water() {
+        init_test_registry();
+        init_behaviors();
+        let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
+        let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
+            &BlockStateProperties::DOUBLE_BLOCK_HALF,
+            DoubleBlockHalf::Lower,
+        );
+        let falling_full_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 8);
+        let level =
+            TallSeagrassLevel::new(vanilla_blocks::DIRT.default_state(), falling_full_water);
+
+        assert!(behavior.can_survive(lower, &level, BlockPos::ZERO));
     }
 }

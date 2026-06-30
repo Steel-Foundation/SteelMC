@@ -1,20 +1,22 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
+use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::{sound_events, vanilla_fluids};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
+    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
-    world::World,
+    world::{LevelAccessor, ScheduledTickAccess, World},
 };
 
 /// Behavior for campfires and soul campfires.
 ///
-/// TODO: Add campfire cooking, waterlogging updates, smoke particles, and dowse item ejection.
+/// TODO: Add campfire cooking, smoke particles, and dowse item ejection.
 #[block_behavior]
 pub struct CampfireBlock {
     block: BlockRef,
@@ -46,8 +48,31 @@ impl CampfireBlock {
 }
 
 impl BlockBehavior for CampfireBlock {
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state())
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let waterlogged = context.is_water_source();
+        Some(
+            self.block
+                .default_state()
+                .set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
+                .set_value(&BlockStateProperties::LIT, !waterlogged),
+        )
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
+        state
     }
 
     fn entity_inside(
@@ -68,14 +93,119 @@ impl BlockBehavior for CampfireBlock {
 
         self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
+
+    fn place_liquid(
+        &self,
+        level: &dyn LevelAccessor,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        if state.try_get_value(&BlockStateProperties::WATERLOGGED) != Some(false)
+            || fluid_state.fluid_id != &vanilla_fluids::WATER
+        {
+            return false;
+        }
+
+        if state.get_value(&BlockStateProperties::LIT) {
+            level.play_block_sound(
+                &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+                pos,
+                1.0,
+                1.0,
+                None,
+            );
+        }
+
+        level.set_block_state(
+            pos,
+            state
+                .set_value(&BlockStateProperties::WATERLOGGED, true)
+                .set_value(&BlockStateProperties::LIT, false),
+            UpdateFlags::UPDATE_ALL,
+        );
+        schedule_placed_liquid_tick(level, pos, fluid_state);
+        true
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::LevelReader;
+    use std::cell::RefCell;
     use steel_registry::{
         blocks::block_state_ext::BlockStateExt, test_support::init_test_registry, vanilla_blocks,
     };
+    use steel_registry::{fluid::FluidRef, sound_event::SoundEventRef};
+
+    #[derive(Default)]
+    struct TestLevel {
+        placed: RefCell<Option<BlockStateId>>,
+        scheduled: RefCell<Vec<(BlockPos, FluidRef, i32)>>,
+        sounds: RefCell<Vec<SoundEventRef>>,
+    }
+
+    impl LevelReader for TestLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            vanilla_blocks::AIR.default_state()
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            0
+        }
+
+        fn min_y(&self) -> i32 {
+            0
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    impl ScheduledTickAccess for TestLevel {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
+            5
+        }
+
+        fn schedule_block_tick_default(
+            &self,
+            _pos: BlockPos,
+            _block: BlockRef,
+            _delay: i32,
+        ) -> bool {
+            true
+        }
+
+        fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+            self.scheduled.borrow_mut().push((pos, fluid, delay));
+            true
+        }
+    }
+
+    impl LevelAccessor for TestLevel {
+        fn set_block_state(
+            &self,
+            _pos: BlockPos,
+            state: BlockStateId,
+            _flags: UpdateFlags,
+        ) -> bool {
+            *self.placed.borrow_mut() = Some(state);
+            true
+        }
+
+        fn play_block_sound(
+            &self,
+            sound: SoundEventRef,
+            _pos: BlockPos,
+            _volume: f32,
+            _pitch: f32,
+            _exclude: Option<i32>,
+        ) {
+            self.sounds.borrow_mut().push(sound);
+        }
+    }
 
     #[test]
     fn lit_campfire_damages_living_entities() {
@@ -108,5 +238,36 @@ mod tests {
             .set_value(&BlockStateProperties::LIT, true);
 
         assert_eq!(campfire.contact_damage_amount(state, false), None);
+    }
+
+    #[test]
+    fn water_placement_extinguishes_lit_campfire() {
+        init_test_registry();
+        let level = TestLevel::default();
+        let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
+        let state = vanilla_blocks::CAMPFIRE
+            .default_state()
+            .set_value(&BlockStateProperties::LIT, true)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let pos = BlockPos::new(1, 2, 3);
+
+        assert!(campfire.place_liquid(
+            &level,
+            pos,
+            state,
+            FluidState::source(&vanilla_fluids::WATER),
+        ));
+
+        let placed = level.placed.borrow().expect("campfire should be updated");
+        assert!(!placed.get_value(&BlockStateProperties::LIT));
+        assert!(placed.get_value(&BlockStateProperties::WATERLOGGED));
+        assert_eq!(
+            *level.sounds.borrow(),
+            vec![&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE]
+        );
+        assert_eq!(
+            *level.scheduled.borrow(),
+            vec![(pos, &vanilla_fluids::WATER, 5)]
+        );
     }
 }

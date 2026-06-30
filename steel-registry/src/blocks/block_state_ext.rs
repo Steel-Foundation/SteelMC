@@ -243,16 +243,10 @@ pub trait FluidReplaceableExt {
 }
 
 impl FluidReplaceableExt for BlockStateId {
-    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, _fluid: BlockRef) -> bool {
         let block = self.get_block();
 
         if self.is_air() {
-            return true;
-        }
-
-        if fluid == &vanilla_blocks::WATER
-            && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
-        {
             return true;
         }
 
@@ -327,6 +321,21 @@ mod tests {
             .blocks
             .get_default_state_id(&vanilla_blocks::COBWEB);
         assert!(!cobweb.blocks_motion());
+    }
+
+    #[test]
+    fn dry_waterloggable_solid_blocks_are_not_fluid_replaceable_by_property_alone() {
+        init_test_registry();
+
+        let double_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(
+                &BlockStateProperties::SLAB_TYPE,
+                crate::blocks::properties::SlabType::Double,
+            )
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        assert!(!double_slab.can_be_replaced_by_fluid(&vanilla_blocks::WATER));
     }
 
     #[test]

@@ -37,10 +37,7 @@ impl BlockBehavior for BaseCoralWallFanBlock {
             .block
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            );
+            .set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water());
         self.can_survive(state, context.world, context.relative_pos)
             .then_some(state)
     }

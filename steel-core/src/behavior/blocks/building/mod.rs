@@ -1,4 +1,5 @@
 mod bar_block;
+mod barrier_block;
 mod bed_block;
 mod campfire_block;
 mod door_block;
@@ -17,10 +18,12 @@ mod slime_block;
 mod sponge_block;
 mod stair_block;
 mod wall_block;
+mod waterlogged_transparent_block;
 mod weathering_block;
 mod wet_sponge_block;
 
 pub use bar_block::{IronBarsBlock, WeatheringCopperBarsBlock, get_connection_state, update_shape};
+pub use barrier_block::BarrierBlock;
 pub use bed_block::BedBlock;
 pub use campfire_block::CampfireBlock;
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
@@ -39,5 +42,6 @@ pub use slime_block::SlimeBlock;
 pub use sponge_block::SpongeBlock;
 pub use stair_block::{StairBlock, WeatheringCopperStairBlock};
 pub use wall_block::WallBlock;
+pub use waterlogged_transparent_block::{WaterloggedTransparentBlock, WeatheringCopperGrateBlock};
 pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};
 pub use wet_sponge_block::WetSpongeBlock;

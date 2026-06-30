@@ -12,6 +12,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -141,12 +142,17 @@ impl BlockBehavior for FenceBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &dyn ScheduledTickAccess,
-        _pos: BlockPos,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
         direction: Direction,
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
+        if state.get_value(&Self::WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
         // Only update for horizontal directions
         match direction {
             Direction::North => {
@@ -168,5 +174,88 @@ impl BlockBehavior for FenceBlock {
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use steel_registry::blocks::BlockRef;
+    use steel_registry::fluid::FluidRef;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::BlockPos;
+
+    use crate::world::LevelReader;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct TickLevel {
+        scheduled_fluid: Cell<Option<FluidRef>>,
+        scheduled_delay: Cell<i32>,
+    }
+
+    impl LevelReader for TickLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            vanilla_blocks::AIR.default_state()
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            0
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    impl ScheduledTickAccess for TickLevel {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
+            5
+        }
+
+        fn schedule_block_tick_default(
+            &self,
+            _pos: BlockPos,
+            _block: BlockRef,
+            _delay: i32,
+        ) -> bool {
+            false
+        }
+
+        fn schedule_fluid_tick_default(&self, _pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+            self.scheduled_fluid.set(Some(fluid));
+            self.scheduled_delay.set(delay);
+            true
+        }
+    }
+
+    #[test]
+    fn waterlogged_fence_update_shape_schedules_water_tick() {
+        init_test_registry();
+
+        let behavior = FenceBlock::new(&vanilla_blocks::OAK_FENCE);
+        let state = vanilla_blocks::OAK_FENCE
+            .default_state()
+            .set_value(&FenceBlock::WATERLOGGED, true);
+        let level = TickLevel::default();
+
+        let updated = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Up,
+            Direction::Up.relative(BlockPos::ZERO),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert_eq!(updated, state);
+        assert_eq!(level.scheduled_fluid.get(), Some(&vanilla_fluids::WATER));
+        assert_eq!(level.scheduled_delay.get(), 5);
     }
 }

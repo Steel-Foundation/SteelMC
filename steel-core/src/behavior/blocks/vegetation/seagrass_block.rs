@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, water_source_fluid_state};
 
@@ -64,7 +64,7 @@ impl BlockBehavior for SeagrassBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        (context.is_water_source() && self.can_survive(state, context.world, context.relative_pos))
+        (context.is_full_water() && self.can_survive(state, context.world, context.relative_pos))
             .then_some(state)
     }
 
@@ -72,9 +72,13 @@ impl BlockBehavior for SeagrassBlock {
         water_source_fluid_state()
     }
 
+    fn is_liquid_container(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn place_liquid(
         &self,
-        _world: &Arc<World>,
+        _level: &dyn LevelAccessor,
         _pos: BlockPos,
         _state: BlockStateId,
         _fluid_state: FluidState,

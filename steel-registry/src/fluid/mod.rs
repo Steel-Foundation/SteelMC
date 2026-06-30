@@ -1,6 +1,6 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::{TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids};
+use crate::{RegistryExt, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -31,6 +31,40 @@ impl Fluid {
     /// Returns `true` if this fluid is tagged with the given tag.
     pub fn has_tag(&'static self, tag: &Identifier) -> bool {
         REGISTRY.fluids.is_in_tag(self, tag)
+    }
+
+    /// Returns this fluid's source variant.
+    ///
+    /// Vanilla's source and flowing fluids are distinct registry entries. Liquid
+    /// blocks store a single block id plus a level property, so state decoding
+    /// resolves the correct fluid variant from extracted fluid relationship data.
+    pub fn source_variant(&'static self) -> FluidRef {
+        let Some(source_key) = &self.source_fluid else {
+            return self;
+        };
+
+        match REGISTRY.fluids.by_key(source_key) {
+            Some(fluid) => fluid,
+            None => panic!(
+                "fluid `{}` references missing source fluid `{source_key}`",
+                self.key
+            ),
+        }
+    }
+
+    /// Returns this fluid's flowing variant.
+    pub fn flowing_variant(&'static self) -> FluidRef {
+        let Some(flowing_key) = &self.flowing_fluid else {
+            return self;
+        };
+
+        match REGISTRY.fluids.by_key(flowing_key) {
+            Some(fluid) => fluid,
+            None => panic!(
+                "fluid `{}` references missing flowing fluid `{flowing_key}`",
+                self.key
+            ),
+        }
     }
 }
 
@@ -93,14 +127,23 @@ impl FluidState {
         self.fluid_id.is_empty || self.amount == 0
     }
 
-    /// Returns true if this is a source block (full fluid, not falling).
+    /// Returns true if this state is owned by a source fluid type.
     ///
-    /// Checks both the registry `fluid_id.is_source` flag (primary discriminator,
-    /// equivalent to vanilla checking if the type is a `SourceFluid`) and the
-    /// data invariant `amount == 8 && !falling`, guarding against malformed chunk data.
+    /// Vanilla `FluidState.isSource()` delegates to the owning fluid. Source
+    /// fluids can still carry `FALLING=true` through `FlowingFluid.getSource`.
     #[must_use]
     pub const fn is_source(&self) -> bool {
-        self.fluid_id.is_source && self.amount == 8 && !self.falling
+        self.fluid_id.is_source
+    }
+
+    /// Returns true if this fluid has vanilla's full amount (`8`).
+    ///
+    /// This intentionally does not require a source fluid type. Vanilla
+    /// `FluidState.isFull()` is `getAmount() == 8`, so a falling full fluid is
+    /// full without being a source.
+    #[must_use]
+    pub const fn is_full(&self) -> bool {
+        self.amount == 8
     }
 
     /// Returns the fluid's own height (0.0 to ~0.89).
@@ -119,18 +162,16 @@ impl FluidState {
     /// - LEVEL 1-7 = flowing levels 7-1 (amount = 8 - level)
     /// - LEVEL 8-15 = falling fluid (amount=8, falling=true, but clamped)
     #[must_use]
-    pub const fn from_block_level(fluid: FluidRef, level: u8) -> Self {
+    pub fn from_block_level(fluid: FluidRef, level: u8) -> Self {
         if level == 0 {
             // Source block
-            Self::source(fluid)
+            Self::source(fluid.source_variant())
         } else if level <= 7 {
             // Flowing fluid: level 1 = amount 7, level 7 = amount 1
-            Self::flowing(fluid, 8 - level, false)
+            Self::flowing(fluid.flowing_variant(), 8 - level, false)
         } else {
-            // Falling fluid (level 8-15): vanilla encodes as 8 + (8 - amount)
-            // so amount = 16 - level. In practice only level=8 (amount=8) is used.
-            let amount = 16u8.saturating_sub(level).max(1);
-            Self::flowing(fluid, amount, true)
+            // LiquidBlock clamps LEVEL 8-15 to the single cached falling state.
+            Self::flowing(fluid.flowing_variant(), 8, true)
         }
     }
 
@@ -227,5 +268,64 @@ impl FluidStateExt for FluidState {
     }
     fn is_lava(&self) -> bool {
         is_lava_fluid(self.fluid_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{test_support::init_test_registry, vanilla_fluids};
+
+    use super::*;
+
+    #[test]
+    fn from_block_level_uses_source_variant_for_level_zero() {
+        init_test_registry();
+
+        let water = FluidState::from_block_level(&vanilla_fluids::WATER, 0);
+        let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 0);
+
+        assert_eq!(water.fluid_id, &vanilla_fluids::WATER);
+        assert_eq!(lava.fluid_id, &vanilla_fluids::LAVA);
+        assert!(water.is_source());
+        assert!(lava.is_source());
+    }
+
+    #[test]
+    fn from_block_level_uses_flowing_variant_for_non_source_levels() {
+        init_test_registry();
+
+        let water = FluidState::from_block_level(&vanilla_fluids::WATER, 1);
+        let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 8);
+
+        assert_eq!(water.fluid_id, &vanilla_fluids::FLOWING_WATER);
+        assert_eq!(lava.fluid_id, &vanilla_fluids::FLOWING_LAVA);
+        assert!(!water.is_source());
+        assert!(!lava.is_source());
+        assert!(lava.falling);
+    }
+
+    #[test]
+    fn from_block_level_clamps_all_falling_liquid_levels_to_full_amount() {
+        init_test_registry();
+
+        for level in 8..=15 {
+            let water = FluidState::from_block_level(&vanilla_fluids::WATER, level);
+
+            assert_eq!(water.fluid_id, &vanilla_fluids::FLOWING_WATER);
+            assert_eq!(water.amount, 8);
+            assert!(water.falling);
+            assert!(water.is_full());
+            assert!(!water.is_source());
+        }
+    }
+
+    #[test]
+    fn source_fluid_type_is_source_even_when_falling() {
+        init_test_registry();
+
+        let falling_source = FluidState::new(&vanilla_fluids::WATER, 8, true);
+
+        assert!(falling_source.is_source());
+        assert!(falling_source.is_full());
     }
 }

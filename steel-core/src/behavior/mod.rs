@@ -120,6 +120,9 @@ pub trait BlockStateBehaviorExt {
     /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
     fn get_fluid_state(&self) -> FluidState;
 
+    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    fn is_liquid_container(&self) -> bool;
+
     /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 }
@@ -129,6 +132,12 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.get_fluid_state(*self)
+    }
+
+    fn is_liquid_container(&self) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.is_liquid_container(*self)
     }
 
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {

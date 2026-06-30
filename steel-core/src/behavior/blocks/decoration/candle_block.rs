@@ -10,8 +10,9 @@ use steel_registry::{
         shapes::SupportType,
     },
     entity_data::Direction,
+    fluid::FluidState,
     items::item::BlockHitResult,
-    vanilla_blocks,
+    sound_events, vanilla_blocks, vanilla_fluids,
 };
 use steel_utils::{
     BlockPos,
@@ -19,9 +20,12 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+        block::schedule_placed_liquid_tick,
+    },
     player,
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
 };
 
 const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
@@ -118,5 +122,34 @@ impl BlockBehavior for CandleBlock {
         }
 
         InteractionResult::TryEmptyHandInteraction
+    }
+
+    fn place_liquid(
+        &self,
+        level: &dyn LevelAccessor,
+        pos: BlockPos,
+        state: steel_utils::BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        if state.try_get_value(&WATERLOGGED) != Some(false)
+            || fluid_state.fluid_id != &vanilla_fluids::WATER
+        {
+            return false;
+        }
+
+        let waterlogged = state.set_value(&WATERLOGGED, true);
+        if state.get_value(&LIT_PROPERTY) {
+            level.set_block_state(
+                pos,
+                waterlogged.set_value(&LIT_PROPERTY, false),
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
+            );
+            level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
+        } else {
+            level.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL);
+        }
+
+        schedule_placed_liquid_tick(level, pos, fluid_state);
+        true
     }
 }

@@ -62,7 +62,7 @@ pub fn get_new_liquid(
         if below_state.is_solid()
             || (behavior.is_same(below_fluid.fluid_id) && below_fluid.is_source())
         {
-            return FluidState::source(fluid_id);
+            return FluidState::source(fluid_id.source_variant());
         }
     }
 
@@ -72,11 +72,11 @@ pub fn get_new_liquid(
     if behavior.is_same(above_fluid.fluid_id)
         && can_pass_through_wall(world, pos, above_pos, Direction::Up)
     {
-        return FluidState::flowing(fluid_id, 8, true);
+        return FluidState::flowing(fluid_id.flowing_variant(), 8, true);
     }
 
     if max_incoming_amount > 0 {
-        FluidState::flowing(fluid_id, max_incoming_amount, false)
+        FluidState::flowing(fluid_id.flowing_variant(), max_incoming_amount, false)
     } else {
         FluidState::EMPTY
     }
@@ -101,16 +101,25 @@ pub fn is_hole(world: &Arc<World>, pos: BlockPos, fluid_id: FluidRef) -> bool {
     let below_state = world.get_block_state(below);
     let below_fluid = below_state.get_fluid_state();
 
-    // Vanilla: bottomState.getFluidState().getType().isSame(this) ? true : canHoldFluid(...)
-    if !below_fluid.is_empty()
-        && FLUID_BEHAVIORS
-            .get_behavior(fluid_id)
-            .is_same(below_fluid.fluid_id)
+    can_flow_down_into(below_state, below_fluid, fluid_id)
+}
+
+fn can_flow_down_into(
+    below_state: steel_utils::BlockStateId,
+    below_fluid: FluidState,
+    fluid_id: FluidRef,
+) -> bool {
+    // Vanilla: bottomState.getFluidState().getType().isSame(this)
+    //     ? true
+    //     : canHoldFluid(..., this.getFlowing())
+    if FLUID_BEHAVIORS
+        .get_behavior(fluid_id)
+        .is_same(below_fluid.fluid_id)
     {
         return true;
     }
 
-    can_hold_fluid(below_state, fluid_id)
+    can_hold_fluid(below_state, fluid_id.flowing_variant())
 }
 
 /// Computes slope distance using DFS search.
@@ -153,19 +162,10 @@ fn get_slope_distance(
             continue;
         }
 
-        // canHoldSpecificFluid check (part of vanilla's canPassThrough)
+        // canHoldSpecificFluid check (part of vanilla's canPassThrough).
+        // getSlopeDistance passes getFlowing() to canPassThrough.
         let neighbor_state = ctx.get_block_state(neighbor);
-        if !can_hold_specific_fluid(neighbor_state, fluid_id) {
-            continue;
-        }
-
-        // Vanilla parity: getSlopeDistance passes getFlowing() to canPassThrough,
-        // and SimpleWaterloggedBlock.canPlaceLiquid only accepts source water
-        // (fluid == Fluids.WATER). The DFS never traverses waterloggable blocks.
-        if neighbor_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
-        {
+        if !can_hold_specific_fluid(neighbor_state, fluid_id.flowing_variant()) {
             continue;
         }
 
@@ -306,4 +306,45 @@ pub fn get_spread(
         })
         .map(|(dir, fluid, _)| (dir, fluid))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::behavior::init_behaviors;
+    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+
+    use super::*;
+
+    #[test]
+    fn hole_check_rejects_dry_waterloggable_for_flowing_water_fallback() {
+        init_test_registry();
+        init_behaviors();
+
+        let dry_waterloggable = vanilla_blocks::OAK_LEAVES
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        assert!(!can_flow_down_into(
+            dry_waterloggable,
+            FluidState::EMPTY,
+            &vanilla_fluids::WATER
+        ));
+    }
+
+    #[test]
+    fn hole_check_treats_source_and_flowing_variants_as_same_fluid_below() {
+        init_test_registry();
+        init_behaviors();
+
+        let flowing_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 1);
+
+        assert!(can_flow_down_into(
+            flowing_water,
+            flowing_water.get_fluid_state(),
+            &vanilla_fluids::WATER
+        ));
+    }
 }

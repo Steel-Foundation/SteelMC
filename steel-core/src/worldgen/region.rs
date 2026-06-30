@@ -36,7 +36,7 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
 
@@ -1289,6 +1289,12 @@ impl ScheduledTickAccess for WorldGenRegion<'_> {
 
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         WorldGenRegion::schedule_fluid_tick_default(self, pos, fluid, delay)
+    }
+}
+
+impl LevelAccessor for WorldGenRegion<'_> {
+    fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
+        WorldGenRegion::set_block_state(self, pos, state, flags)
     }
 }
 

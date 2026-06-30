@@ -134,6 +134,14 @@ impl BlockPlaceContext<'_> {
         let fluid_state = get_fluid_state(self.world, self.relative_pos);
         fluid_state.is_source() && fluid_state.is_water()
     }
+
+    /// Returns true if the block at the relative position contains full water.
+    #[must_use]
+    pub fn is_full_water(&self) -> bool {
+        use crate::fluid::get_fluid_state;
+        let fluid_state = get_fluid_state(self.world, self.relative_pos);
+        fluid_state.is_full() && fluid_state.is_water()
+    }
 }
 
 /// Access to the player's inventory.

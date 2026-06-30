@@ -58,14 +58,14 @@ pub fn fluid_state_to_block_with_existing(
         return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     }
 
-    // If it's water, check if the block can be waterlogged.
-    // Vanilla's FlowingFluid.spreadTo() calls LiquidBlockContainer.placeLiquid()
-    // for any fluid level (source or flowing), so we waterlog regardless of amount.
     if is_water_fluid(fluid_id) {
-        if existing_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
+        if fluid_id == &vanilla_fluids::WATER
+            && fluid_state.is_source()
+            && existing_state
+                .try_get_value(&BlockStateProperties::WATERLOGGED)
+                .is_some()
         {
+            // Vanilla SimpleWaterloggedBlock only accepts source WATER, not FLOWING_WATER.
             return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
         }
 
@@ -340,7 +340,7 @@ mod tests {
             same_water,
             |fluid_pos| {
                 if fluid_pos == pos.east() {
-                    FluidState::flowing(&vanilla_fluids::WATER, 4, false)
+                    FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false)
                 } else {
                     FluidState::EMPTY
                 }
@@ -359,7 +359,7 @@ mod tests {
         let pos = BlockPos::new(0, 64, 0);
         let flow = get_flow_with(
             pos,
-            FluidState::flowing(&vanilla_fluids::WATER, 8, true),
+            FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 8, true),
             same_water,
             |_fluid_pos| FluidState::EMPTY,
             |block_pos| {

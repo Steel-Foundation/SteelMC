@@ -185,7 +185,7 @@ use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 pub use border::WorldBorderError;
 use border::{WorldBorder, WorldBorderSnapshot};
-pub use level_reader::{LevelReader, ScheduledTickAccess};
+pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
 pub use tick_scheduler::ScheduledTick;
@@ -2726,7 +2726,14 @@ impl World {
 
     fn fluid_clip_height(&self, pos: BlockPos, fluid_state: FluidState) -> f64 {
         let above_fluid = self.get_block_state(pos.above()).get_fluid_state();
-        if above_fluid.fluid_id == fluid_state.fluid_id {
+        Self::fluid_clip_height_from_above(fluid_state, above_fluid)
+    }
+
+    fn fluid_clip_height_from_above(fluid_state: FluidState, above_fluid: FluidState) -> f64 {
+        if FLUID_BEHAVIORS
+            .get_behavior(fluid_state.fluid_id)
+            .is_same(above_fluid.fluid_id)
+        {
             1.0
         } else {
             f64::from(fluid_state.own_height())
@@ -4113,15 +4120,34 @@ impl ScheduledTickAccess for Arc<World> {
     }
 }
 
+impl LevelAccessor for Arc<World> {
+    fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
+        self.set_block(pos, state, flags)
+    }
+
+    fn play_block_sound(
+        &self,
+        sound: SoundEventRef,
+        pos: BlockPos,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+        self.as_ref()
+            .play_block_sound(sound, pos, volume, pitch, exclude);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Weak};
 
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_fluids};
     use uuid::Uuid;
 
+    use crate::behavior::init_behaviors;
     use crate::entity::{EntityBase, entities::PigEntity};
 
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
@@ -4293,5 +4319,18 @@ mod tests {
 
         assert_eq!(hit.direction, Direction::Up);
         assert_vec3_close(hit.location, DVec3::new(0.5, 0.5, 0.5));
+    }
+
+    #[test]
+    fn fluid_clip_height_treats_source_and_flowing_variants_as_same_fluid_above() {
+        init_test_registry();
+        init_behaviors();
+
+        let height = World::fluid_clip_height_from_above(
+            FluidState::source(&vanilla_fluids::WATER),
+            FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 4, false),
+        );
+
+        assert_eq!(height.to_bits(), 1.0_f64.to_bits());
     }
 }

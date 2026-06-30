@@ -39,7 +39,7 @@ use steel_utils::{
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, ENTITIES, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
@@ -1103,9 +1103,9 @@ impl StructureTemplate {
     }
 
     fn is_liquid_block_container(state: BlockStateId) -> bool {
-        state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_liquid_container(state)
     }
 
     fn place_liquid(
@@ -1115,30 +1115,7 @@ impl StructureTemplate {
         fluid_state: FluidState,
     ) -> bool {
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        if state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_none()
-        {
-            return false;
-        }
-        if !behavior.can_place_liquid(state, fluid_state.fluid_id) {
-            return false;
-        }
-
-        let waterlogged = state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        if !region.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL) {
-            return false;
-        }
-
-        let delay = region.weak_world().upgrade().map_or_else(
-            || i32::try_from(fluid_state.fluid_id.tick_delay).unwrap_or(i32::MAX),
-            |world| {
-                FLUID_BEHAVIORS
-                    .get_behavior(fluid_state.fluid_id)
-                    .tick_delay(&world)
-            },
-        );
-        region.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay)
+        behavior.place_liquid(region, pos, state, fluid_state)
     }
 
     fn for_all_shape_faces(
