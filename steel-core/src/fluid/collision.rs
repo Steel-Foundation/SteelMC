@@ -142,7 +142,7 @@ pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: Flui
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
 
     use super::*;
@@ -171,8 +171,9 @@ mod tests {
         init_test_registry();
         init_behaviors();
 
-        let dry = vanilla_blocks::OAK_LEAVES
+        let dry = vanilla_blocks::OAK_SLAB
             .default_state()
+            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Bottom)
             .set_value(&BlockStateProperties::WATERLOGGED, false);
 
         assert!(can_hold_specific_fluid(dry, &vanilla_fluids::WATER));

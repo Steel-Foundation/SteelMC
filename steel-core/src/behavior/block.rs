@@ -105,6 +105,12 @@ pub(crate) fn place_simple_waterlogged_liquid(
     true
 }
 
+pub(crate) fn simple_waterlogged_is_liquid_container(state: BlockStateId) -> bool {
+    state
+        .try_get_value(&BlockStateProperties::WATERLOGGED)
+        .is_some()
+}
+
 const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
 
 /// Entity facts used by vanilla `CollisionContext` for block collision shapes.
@@ -1152,9 +1158,7 @@ pub trait BlockBehavior: Send + Sync {
     /// also has liquid containers without that property, such as kelp and
     /// seagrass.
     fn is_liquid_container(&self, state: BlockStateId) -> bool {
-        state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
+        simple_waterlogged_is_liquid_container(state)
     }
 
     /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
@@ -1244,6 +1248,28 @@ impl DefaultBlockBehavior {
 impl BlockBehavior for DefaultBlockBehavior {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
+        FluidState::EMPTY
+    }
+
+    fn is_liquid_container(&self, _state: BlockStateId) -> bool {
+        false
+    }
+
+    fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
+        false
+    }
+
+    fn place_liquid(
+        &self,
+        _level: &dyn LevelAccessor,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _fluid_state: FluidState,
+    ) -> bool {
+        false
     }
 }
 
@@ -1377,6 +1403,25 @@ mod tests {
         let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
 
         assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_blocks::WATER));
+    }
+
+    #[test]
+    fn default_behavior_does_not_infer_liquid_container_from_waterlogged_property() {
+        init_test_registry();
+        let ladder = vanilla_blocks::LADDER
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::LADDER);
+
+        assert_eq!(behavior.get_fluid_state(ladder), FluidState::EMPTY);
+        assert!(!behavior.is_liquid_container(ladder));
+        assert!(!behavior.can_place_liquid(ladder, &vanilla_fluids::WATER));
+        assert!(!behavior.place_liquid(
+            &crate::test_support::TestLevel::default(),
+            BlockPos::ZERO,
+            ladder,
+            FluidState::source(&vanilla_fluids::WATER),
+        ));
     }
 
     #[test]

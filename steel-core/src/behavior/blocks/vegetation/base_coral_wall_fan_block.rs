@@ -54,15 +54,21 @@ impl BlockBehavior for BaseCoralWallFanBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // TODO: Vanilla iterates over nearestLookingDirections; placeholder uses
-        // the context's horizontal direction opposite (clicked face).
-        let facing = context.horizontal_direction.opposite();
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
             .set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water());
-        self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state)
+
+        context
+            .get_nearest_looking_directions()
+            .into_iter()
+            .filter(|direction| direction.is_horizontal())
+            .map(|direction| {
+                state.set_value(
+                    &BlockStateProperties::HORIZONTAL_FACING,
+                    direction.opposite(),
+                )
+            })
+            .find(|state| self.can_survive(*state, context.world, context.relative_pos))
     }
 }

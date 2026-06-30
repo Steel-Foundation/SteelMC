@@ -29,7 +29,7 @@ pub use decoration::{
     StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
     WeatheringCopperChainBlock,
 };
-pub use fluid::LiquidBlock;
+pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
     SoulFireBlock,

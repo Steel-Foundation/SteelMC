@@ -71,13 +71,26 @@ impl BlockBehavior for KelpBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        if !context.is_full_water() {
+            return None;
+        }
+
+        let above = context.world.get_block_state(context.relative_pos.above());
+        let above_block = above.get_block();
+        if above_block == self.block || above_block == &vanilla_blocks::KELP_PLANT {
+            let state = Self::body_state();
+            return self
+                .can_survive(state, context.world, context.relative_pos)
+                .then_some(state);
+        }
+
         // Intentional Steel divergence: incidental runtime age does not use world RNG.
         let age = rand::random_range(0..25) as u8;
         let state = self
             .block
             .default_state()
             .set_value(&BlockStateProperties::AGE_25, age);
-        (context.is_full_water() && self.can_survive(state, context.world, context.relative_pos))
+        self.can_survive(state, context.world, context.relative_pos)
             .then_some(state)
     }
 
