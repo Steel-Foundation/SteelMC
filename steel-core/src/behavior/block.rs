@@ -1191,6 +1191,19 @@ pub trait BlockBehavior: Send + Sync {
         self.can_place_liquid(state, fluid)
     }
 
+    /// Vanilla parity: `BlockBehaviour.BlockStateBase.canBeReplaced(Fluid)`.
+    ///
+    /// This is a behavior hook because vanilla block subclasses can override the
+    /// base replacement rule. The default mirrors `Block.canBeReplaced(Fluid)`.
+    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid_block: BlockRef) -> bool {
+        if state.is_air() {
+            return true;
+        }
+
+        let block = state.get_block();
+        block.config.replaceable || !state.is_solid()
+    }
+
     /// Vanilla parity: `LiquidBlockContainer.placeLiquid()`.
     ///
     /// Attempts to place `fluid_state` into this block.  Returns `true` on success,
@@ -1302,7 +1315,7 @@ mod tests {
     use super::*;
 
     use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
     use steel_registry::sound_events;
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_blocks;
@@ -1352,6 +1365,18 @@ mod tests {
             waterlogged_barrier,
             None
         ));
+    }
+
+    #[test]
+    fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
+        init_test_registry();
+        let double_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Double)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
+
+        assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_blocks::WATER));
     }
 
     #[test]

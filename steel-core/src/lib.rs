@@ -20,5 +20,7 @@ pub mod player;
 pub mod poi;
 pub(crate) mod portal;
 pub mod server;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod world;
 pub mod worldgen;

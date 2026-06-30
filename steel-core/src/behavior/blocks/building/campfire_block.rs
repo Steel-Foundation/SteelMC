@@ -5,13 +5,13 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
-use steel_registry::{sound_events, vanilla_fluids};
+use steel_registry::{sound_events, vanilla_fluids, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
-    world::{LevelAccessor, ScheduledTickAccess, World},
+    world::{LevelAccessor, ScheduledTickAccess, World, game_event_context::GameEventContext},
 };
 
 /// Behavior for campfires and soul campfires.
@@ -115,6 +115,14 @@ impl BlockBehavior for CampfireBlock {
                 1.0,
                 None,
             );
+            level.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(
+                    None,
+                    Some(state.set_value(&BlockStateProperties::LIT, false)),
+                ),
+            );
         }
 
         level.set_block_state(
@@ -132,80 +140,10 @@ impl BlockBehavior for CampfireBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::LevelReader;
-    use std::cell::RefCell;
+    use crate::test_support::TestLevel;
     use steel_registry::{
         blocks::block_state_ext::BlockStateExt, test_support::init_test_registry, vanilla_blocks,
     };
-    use steel_registry::{fluid::FluidRef, sound_event::SoundEventRef};
-
-    #[derive(Default)]
-    struct TestLevel {
-        placed: RefCell<Option<BlockStateId>>,
-        scheduled: RefCell<Vec<(BlockPos, FluidRef, i32)>>,
-        sounds: RefCell<Vec<SoundEventRef>>,
-    }
-
-    impl LevelReader for TestLevel {
-        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
-            vanilla_blocks::AIR.default_state()
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            0
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
-    }
-
-    impl ScheduledTickAccess for TestLevel {
-        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
-            5
-        }
-
-        fn schedule_block_tick_default(
-            &self,
-            _pos: BlockPos,
-            _block: BlockRef,
-            _delay: i32,
-        ) -> bool {
-            true
-        }
-
-        fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
-            self.scheduled.borrow_mut().push((pos, fluid, delay));
-            true
-        }
-    }
-
-    impl LevelAccessor for TestLevel {
-        fn set_block_state(
-            &self,
-            _pos: BlockPos,
-            state: BlockStateId,
-            _flags: UpdateFlags,
-        ) -> bool {
-            *self.placed.borrow_mut() = Some(state);
-            true
-        }
-
-        fn play_block_sound(
-            &self,
-            sound: SoundEventRef,
-            _pos: BlockPos,
-            _volume: f32,
-            _pitch: f32,
-            _exclude: Option<i32>,
-        ) {
-            self.sounds.borrow_mut().push(sound);
-        }
-    }
 
     #[test]
     fn lit_campfire_damages_living_entities() {
@@ -258,16 +196,37 @@ mod tests {
             FluidState::source(&vanilla_fluids::WATER),
         ));
 
-        let placed = level.placed.borrow().expect("campfire should be updated");
+        let placed = level
+            .last_placed_state()
+            .expect("campfire should be updated");
         assert!(!placed.get_value(&BlockStateProperties::LIT));
         assert!(placed.get_value(&BlockStateProperties::WATERLOGGED));
         assert_eq!(
-            *level.sounds.borrow(),
+            level
+                .block_sounds
+                .borrow()
+                .iter()
+                .map(|sound| sound.sound)
+                .collect::<Vec<_>>(),
             vec![&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE]
         );
         assert_eq!(
-            *level.scheduled.borrow(),
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.pos, tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
             vec![(pos, &vanilla_fluids::WATER, 5)]
+        );
+        assert_eq!(
+            level
+                .game_events
+                .borrow()
+                .iter()
+                .map(|event| event.event)
+                .collect::<Vec<_>>(),
+            vec![&vanilla_game_events::BLOCK_CHANGE]
         );
     }
 }

@@ -12,7 +12,7 @@ use steel_registry::{
     entity_data::Direction,
     fluid::FluidState,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_fluids,
+    sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos,
@@ -25,7 +25,10 @@ use crate::{
         block::schedule_placed_liquid_tick,
     },
     player,
-    world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
+    world::{
+        LevelAccessor, LevelReader, ScheduledTickAccess, World,
+        game_event_context::GameEventContext,
+    },
 };
 
 const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
@@ -83,6 +86,11 @@ impl BlockBehavior for CandleBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
+        if state.get_value(&WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
         if !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
@@ -139,17 +147,109 @@ impl BlockBehavior for CandleBlock {
 
         let waterlogged = state.set_value(&WATERLOGGED, true);
         if state.get_value(&LIT_PROPERTY) {
-            level.set_block_state(
-                pos,
-                waterlogged.set_value(&LIT_PROPERTY, false),
-                UpdateFlags::UPDATE_ALL_IMMEDIATE,
-            );
+            let extinguished = waterlogged.set_value(&LIT_PROPERTY, false);
+            level.set_block_state(pos, extinguished, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
+            level.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(None, Some(extinguished)),
+            );
         } else {
             level.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL);
         }
 
         schedule_placed_liquid_tick(level, pos, fluid_state);
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestLevel;
+    use steel_registry::test_support::init_test_registry;
+
+    fn supporting_level() -> TestLevel {
+        TestLevel::default().with_block(
+            BlockPos::ZERO.below(),
+            vanilla_blocks::STONE.default_state(),
+        )
+    }
+
+    #[test]
+    fn waterlogged_candle_update_shape_schedules_water_tick() {
+        init_test_registry();
+
+        let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
+        let state = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&WATERLOGGED, true);
+        let level = supporting_level();
+
+        assert_eq!(
+            candle.update_shape(
+                state,
+                &level,
+                BlockPos::ZERO,
+                Direction::North,
+                Direction::North.relative(BlockPos::ZERO),
+                vanilla_blocks::AIR.default_state(),
+            ),
+            state
+        );
+        assert_eq!(
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| tick.fluid)
+                .collect::<Vec<_>>(),
+            vec![&vanilla_fluids::WATER]
+        );
+    }
+
+    #[test]
+    fn water_placement_on_lit_candle_emits_block_change_event() {
+        init_test_registry();
+
+        let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
+        let state = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&WATERLOGGED, false)
+            .set_value(&LIT_PROPERTY, true);
+        let level = supporting_level();
+
+        assert!(candle.place_liquid(
+            &level,
+            BlockPos::ZERO,
+            state,
+            FluidState::source(&vanilla_fluids::WATER),
+        ));
+
+        assert_eq!(
+            level
+                .block_sounds
+                .borrow()
+                .iter()
+                .map(|sound| sound.sound)
+                .collect::<Vec<_>>(),
+            vec![&sound_events::BLOCK_CANDLE_EXTINGUISH]
+        );
+        assert_eq!(
+            level
+                .game_events
+                .borrow()
+                .iter()
+                .map(|event| event.event)
+                .collect::<Vec<_>>(),
+            vec![&vanilla_game_events::BLOCK_CHANGE]
+        );
+        assert!(
+            level
+                .last_placed_state()
+                .expect("candle should be waterlogged")
+                .get_value(&WATERLOGGED)
+        );
     }
 }

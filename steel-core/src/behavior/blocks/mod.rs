@@ -30,7 +30,10 @@ pub use decoration::{
     WeatheringCopperChainBlock,
 };
 pub use fluid::LiquidBlock;
-pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
+pub use portal::{
+    EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
+    SoulFireBlock,
+};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,

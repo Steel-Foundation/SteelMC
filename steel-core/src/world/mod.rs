@@ -4136,6 +4136,10 @@ impl LevelAccessor for Arc<World> {
         self.as_ref()
             .play_block_sound(sound, pos, volume, pitch, exclude);
     }
+
+    fn game_event(&self, event: GameEventRef, pos: BlockPos, context: &GameEventContext<'_>) {
+        World::game_event(self, event, pos, context);
+    }
 }
 
 #[cfg(test)]

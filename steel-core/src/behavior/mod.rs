@@ -80,6 +80,7 @@ pub use items::{
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
@@ -123,6 +124,9 @@ pub trait BlockStateBehaviorExt {
     /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
     fn is_liquid_container(&self) -> bool;
 
+    /// Returns whether this block state can be replaced by the given fluid block.
+    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
+
     /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 }
@@ -138,6 +142,12 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.is_liquid_container(*self)
+    }
+
+    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.can_be_replaced_by_fluid(*self, fluid_block)
     }
 
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {

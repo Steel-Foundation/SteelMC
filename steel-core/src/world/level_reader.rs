@@ -6,10 +6,12 @@
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
+use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::world::game_event_context::GameEventContext;
 
 const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
 
@@ -126,6 +128,13 @@ pub trait LevelAccessor: ScheduledTickAccess {
         exclude: Option<i32>,
     ) {
     }
+
+    /// Dispatches a game event when this level surface supports runtime listeners.
+    #[expect(
+        unused_variables,
+        reason = "worldgen and test level surfaces do not emit game events"
+    )]
+    fn game_event(&self, event: GameEventRef, pos: BlockPos, context: &GameEventContext<'_>) {}
 }
 
 #[cfg(test)]

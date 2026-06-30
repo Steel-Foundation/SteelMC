@@ -16,7 +16,6 @@ use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::block_state_ext::FluidReplaceableExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
@@ -25,9 +24,12 @@ use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
+use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_items;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
+
+use crate::world::game_event_context::GameEventContext;
 
 /// Handles all bucket variants (empty, water, lava).
 #[item_behavior]
@@ -138,6 +140,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 
         // Give filled bucket
         consume_bucket(context, result.filled_bucket);
+        context.world.game_event(
+            &vanilla_game_events::FLUID_PICKUP,
+            hit_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
 
         return InteractionResult::Success;
     }
@@ -157,6 +164,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         }
 
         consume_bucket(context, result.filled_bucket);
+        context.world.game_event(
+            &vanilla_game_events::FLUID_PICKUP,
+            hit_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
 
         return InteractionResult::Success;
     }
@@ -248,9 +260,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         if is_water_bucket && is_liquid_container {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
             behavior.place_liquid(context.world, pos, state, source_water);
-            context
-                .world
-                .play_block_sound(&sound_events::ITEM_BUCKET_EMPTY, pos, 1.0, 1.0, None);
+            play_empty_sound_and_event(context, pos, true);
             consume_bucket(context, &vanilla_items::ITEMS.bucket);
             return Some(InteractionResult::Success);
         }
@@ -265,14 +275,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             };
 
             if is_same_fluid && fluid_state.is_source() {
-                let sound_event = if is_water_bucket {
-                    &sound_events::ITEM_BUCKET_EMPTY
-                } else {
-                    &sound_events::ITEM_BUCKET_EMPTY_LAVA
-                };
-                context
-                    .world
-                    .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+                play_empty_sound_and_event(context, pos, is_water_bucket);
                 consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);
             }
@@ -301,14 +304,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
                     .world
                     .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
 
-                let sound_event = if is_water_bucket {
-                    &sound_events::ITEM_BUCKET_EMPTY
-                } else {
-                    &sound_events::ITEM_BUCKET_EMPTY_LAVA
-                };
-                context
-                    .world
-                    .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+                play_empty_sound_and_event(context, pos, is_water_bucket);
 
                 consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);
@@ -339,6 +335,22 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     }
 
     InteractionResult::Fail
+}
+
+fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_bucket: bool) {
+    let sound_event = if is_water_bucket {
+        &sound_events::ITEM_BUCKET_EMPTY
+    } else {
+        &sound_events::ITEM_BUCKET_EMPTY_LAVA
+    };
+    context
+        .world
+        .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+    context.world.game_event(
+        &vanilla_game_events::FLUID_PLACE,
+        pos,
+        &GameEventContext::new(Some(context.player), None),
+    );
 }
 
 fn filled_bucket_primary_pos(
