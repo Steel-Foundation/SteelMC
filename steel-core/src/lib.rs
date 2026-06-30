@@ -21,6 +21,7 @@ pub mod poi;
 pub(crate) mod portal;
 pub mod server;
 #[cfg(test)]
+#[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;
 pub mod world;
 pub mod worldgen;

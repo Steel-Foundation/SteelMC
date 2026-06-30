@@ -146,15 +146,15 @@ pub use wither_rose_block::WitherRoseBlock;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::blocks::shapes;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
-use steel_registry::fluid::FluidState;
+use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::behavior::{BlockStateBehaviorExt as _, block::BlockBehavior};
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
 
@@ -261,6 +261,40 @@ pub(super) fn coral_wall_fan_can_survive(
     let relative_pos = pos.relative(facing.opposite());
     let relative_state = world.get_block_state(relative_pos);
     relative_state.is_face_sturdy_at(relative_pos, facing)
+}
+
+/// Vanilla `BaseCoralPlantTypeBlock.scanForWater`.
+pub(super) fn coral_scan_for_water(
+    state: BlockStateId,
+    world: &dyn LevelReader,
+    pos: BlockPos,
+) -> bool {
+    if state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
+        return true;
+    }
+
+    Direction::ALL.iter().any(|direction| {
+        world
+            .get_block_state(pos.relative(*direction))
+            .get_fluid_state()
+            .is_water()
+    })
+}
+
+/// Vanilla `BaseCoralPlantTypeBlock.tryScheduleDieTick`.
+pub(super) fn schedule_coral_die_tick(
+    state: BlockStateId,
+    world: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+    block: BlockRef,
+) {
+    if coral_scan_for_water(state, world, pos) {
+        return;
+    }
+
+    // Intentional Steel divergence: incidental runtime timing does not use world RNG.
+    let delay = 60 + rand::random_range(0..40);
+    let _ = world.schedule_block_tick_default(pos, block, delay);
 }
 
 /// Vanilla `GrowingPlantBlock.canSurvive`.

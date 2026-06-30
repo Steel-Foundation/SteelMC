@@ -139,68 +139,16 @@ impl BlockBehavior for TallSeagrassBlock {
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::fluid::FluidRef;
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use crate::test_support::TestLevel;
 
     use super::*;
 
-    struct TallSeagrassLevel {
-        below: BlockStateId,
-        current: BlockStateId,
-    }
-
-    impl TallSeagrassLevel {
-        const fn new(below: BlockStateId, current: BlockStateId) -> Self {
-            Self { below, current }
-        }
-    }
-
-    impl LevelReader for TallSeagrassLevel {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == BlockPos::ZERO.below() {
-                self.below
-            } else if pos == BlockPos::ZERO {
-                self.current
-            } else {
-                vanilla_blocks::AIR.default_state()
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            -64
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
-    }
-
-    impl ScheduledTickAccess for TallSeagrassLevel {
-        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
-            5
-        }
-
-        fn schedule_block_tick_default(
-            &self,
-            _pos: BlockPos,
-            _block: BlockRef,
-            _delay: i32,
-        ) -> bool {
-            true
-        }
-
-        fn schedule_fluid_tick_default(
-            &self,
-            _pos: BlockPos,
-            _fluid: FluidRef,
-            _delay: i32,
-        ) -> bool {
-            true
-        }
+    fn tall_seagrass_level(below: BlockStateId, current: BlockStateId) -> TestLevel {
+        TestLevel::default()
+            .with_block(BlockPos::ZERO.below(), below)
+            .with_block(BlockPos::ZERO, current)
     }
 
     #[test]
@@ -211,7 +159,7 @@ mod tests {
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Lower,
         );
-        let level = TallSeagrassLevel::new(vanilla_blocks::DIRT.default_state(), lower);
+        let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), lower);
 
         let updated = behavior.update_shape(
             lower,
@@ -233,7 +181,7 @@ mod tests {
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Upper,
         );
-        let level = TallSeagrassLevel::new(vanilla_blocks::AIR.default_state(), upper);
+        let level = tall_seagrass_level(vanilla_blocks::AIR.default_state(), upper);
 
         let updated = behavior.update_shape(
             upper,
@@ -259,8 +207,7 @@ mod tests {
         let falling_full_water = vanilla_blocks::WATER
             .default_state()
             .set_value(&BlockStateProperties::LEVEL, 8);
-        let level =
-            TallSeagrassLevel::new(vanilla_blocks::DIRT.default_state(), falling_full_water);
+        let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), falling_full_water);
 
         assert!(behavior.can_survive(lower, &level, BlockPos::ZERO));
     }

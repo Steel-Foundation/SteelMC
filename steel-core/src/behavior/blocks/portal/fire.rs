@@ -237,69 +237,41 @@ mod tests {
     use steel_registry::{
         blocks::block_state_ext::BlockStateExt, test_support::init_test_registry, vanilla_blocks,
     };
-
-    use super::FireBlock;
-    use crate::world::LevelReader;
     use steel_utils::{BlockPos, BlockStateId};
 
-    struct SingleSupportLevel {
-        support_state: BlockStateId,
-    }
+    use crate::test_support::TestLevel;
 
-    impl SingleSupportLevel {
-        const POS: BlockPos = BlockPos::new(0, 64, 0);
+    use super::FireBlock;
 
-        const fn new(support_state: BlockStateId) -> Self {
-            Self { support_state }
-        }
-    }
+    const POS: BlockPos = BlockPos::new(0, 64, 0);
 
-    impl LevelReader for SingleSupportLevel {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == Self::POS.below() {
-                self.support_state
-            } else {
-                vanilla_blocks::AIR.default_state()
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            0
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
+    fn level_with_support(support_state: BlockStateId) -> TestLevel {
+        TestLevel::default()
+            .with_min_y(0)
+            .with_block(POS.below(), support_state)
     }
 
     #[test]
     fn get_state_selects_soul_fire_on_soul_fire_base_block() {
         init_test_registry();
 
-        let level = SingleSupportLevel::new(vanilla_blocks::SOUL_SAND.default_state());
+        let level = level_with_support(vanilla_blocks::SOUL_SAND.default_state());
 
         assert_eq!(
-            FireBlock::get_state(&level, SingleSupportLevel::POS).get_block(),
+            FireBlock::get_state(&level, POS).get_block(),
             &vanilla_blocks::SOUL_FIRE
         );
-        assert!(FireBlock::selected_fire_can_survive_at(
-            &level,
-            SingleSupportLevel::POS
-        ));
+        assert!(FireBlock::selected_fire_can_survive_at(&level, POS));
     }
 
     #[test]
     fn get_state_selects_regular_fire_otherwise() {
         init_test_registry();
 
-        let level = SingleSupportLevel::new(vanilla_blocks::STONE.default_state());
+        let level = level_with_support(vanilla_blocks::STONE.default_state());
 
         assert_eq!(
-            FireBlock::get_state(&level, SingleSupportLevel::POS).get_block(),
+            FireBlock::get_state(&level, POS).get_block(),
             &vanilla_blocks::FIRE
         );
     }

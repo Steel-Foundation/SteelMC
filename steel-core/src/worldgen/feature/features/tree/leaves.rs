@@ -88,7 +88,7 @@ impl FeatureDecorationRunner {
     }
 
     fn update_tree_shape_at_edge(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         bounds: TreeBounds,
         shape: &FxHashSet<BlockPos>,
     ) {
@@ -136,7 +136,7 @@ impl FeatureDecorationRunner {
     }
 
     fn scan_tree_shape_line(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         shape: &FxHashSet<BlockPos>,
         start: i32,
         end: i32,
@@ -159,11 +159,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn update_tree_shape_face(
-        region: &mut WorldGenRegion<'_>,
-        pos: BlockPos,
-        direction: Direction,
-    ) {
+    fn update_tree_shape_face(region: &WorldGenRegion<'_>, pos: BlockPos, direction: Direction) {
         let neighbor_pos = pos.relative(direction);
         let state = region.block_state(pos);
         let neighbor_state = region.block_state(neighbor_pos);
@@ -198,7 +194,7 @@ impl FeatureDecorationRunner {
     }
 
     fn update_leaf_shape_at_edge(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         pos: BlockPos,
         state: BlockStateId,
         neighbor_state: BlockStateId,

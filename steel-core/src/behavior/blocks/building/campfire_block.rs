@@ -5,7 +5,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
-use steel_registry::{sound_events, vanilla_fluids, vanilla_game_events};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
@@ -45,17 +45,34 @@ impl CampfireBlock {
             None
         }
     }
+
+    fn is_smoke_source(state: BlockStateId) -> bool {
+        state.get_block() == &vanilla_blocks::HAY_BLOCK
+    }
+
+    fn placement_state(
+        &self,
+        waterlogged: bool,
+        below_state: BlockStateId,
+        facing: Direction,
+    ) -> BlockStateId {
+        self.block
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
+            .set_value(
+                &BlockStateProperties::SIGNAL_FIRE,
+                Self::is_smoke_source(below_state),
+            )
+            .set_value(&BlockStateProperties::LIT, !waterlogged)
+            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+    }
 }
 
 impl BlockBehavior for CampfireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let waterlogged = context.is_water_source();
-        Some(
-            self.block
-                .default_state()
-                .set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
-                .set_value(&BlockStateProperties::LIT, !waterlogged),
-        )
+        let below_state = context.world.get_block_state(context.relative_pos.below());
+        Some(self.placement_state(waterlogged, below_state, context.horizontal_direction))
     }
 
     fn update_shape(
@@ -63,16 +80,23 @@ impl BlockBehavior for CampfireBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        _direction: Direction,
+        direction: Direction,
         _neighbor_pos: BlockPos,
-        _neighbor_state: BlockStateId,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if state.get_value(&BlockStateProperties::WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
 
-        state
+        if direction == Direction::Down {
+            state.set_value(
+                &BlockStateProperties::SIGNAL_FIRE,
+                Self::is_smoke_source(neighbor_state),
+            )
+        } else {
+            state
+        }
     }
 
     fn entity_inside(
@@ -176,6 +200,48 @@ mod tests {
             .set_value(&BlockStateProperties::LIT, true);
 
         assert_eq!(campfire.contact_damage_amount(state, false), None);
+    }
+
+    #[test]
+    fn placement_state_sets_facing_and_signal_fire() {
+        init_test_registry();
+        let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
+
+        let state = campfire.placement_state(
+            false,
+            vanilla_blocks::HAY_BLOCK.default_state(),
+            Direction::East,
+        );
+
+        assert_eq!(
+            state.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+            Direction::East
+        );
+        assert!(state.get_value(&BlockStateProperties::SIGNAL_FIRE));
+        assert!(state.get_value(&BlockStateProperties::LIT));
+        assert!(!state.get_value(&BlockStateProperties::WATERLOGGED));
+    }
+
+    #[test]
+    fn update_shape_recomputes_signal_fire_from_below() {
+        init_test_registry();
+        let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
+        let level = TestLevel::default();
+        let state = vanilla_blocks::CAMPFIRE
+            .default_state()
+            .set_value(&BlockStateProperties::SIGNAL_FIRE, false)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        let updated = campfire.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::HAY_BLOCK.default_state(),
+        );
+
+        assert!(updated.get_value(&BlockStateProperties::SIGNAL_FIRE));
     }
 
     #[test]

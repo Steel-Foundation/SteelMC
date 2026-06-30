@@ -98,7 +98,7 @@ impl BlockBehavior for CactusBlock {
         // Block above must not be liquid
         let above = world.get_block_state(pos.above());
 
-        if !above.get_fluid_state().is_empty() {
+        if above.has_fluid() {
             return false;
         }
 

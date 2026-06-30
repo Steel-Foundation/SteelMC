@@ -310,44 +310,14 @@ impl<T: CropLike> Vegetation for T {
 mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
+    use crate::test_support::TestLevel;
+
     use super::*;
 
-    struct CropSurvivalLevel {
-        support: BlockStateId,
-        air: BlockStateId,
-        raw_brightness: u8,
-    }
-
-    impl CropSurvivalLevel {
-        fn new(support: BlockStateId, raw_brightness: u8) -> Self {
-            Self {
-                support,
-                air: vanilla_blocks::AIR.default_state(),
-                raw_brightness,
-            }
-        }
-    }
-
-    impl LevelReader for CropSurvivalLevel {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == BlockPos::ZERO.below() {
-                self.support
-            } else {
-                self.air
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            self.raw_brightness
-        }
-
-        fn min_y(&self) -> i32 {
-            -64
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
+    fn crop_survival_level(support: BlockStateId, raw_brightness: u8) -> TestLevel {
+        TestLevel::default()
+            .with_block(BlockPos::ZERO.below(), support)
+            .with_raw_brightness(raw_brightness)
     }
 
     #[test]
@@ -358,8 +328,8 @@ mod tests {
         let state = vanilla_blocks::WHEAT.default_state();
         let farmland = vanilla_blocks::FARMLAND.default_state();
 
-        assert!(!crop.can_survive(state, &CropSurvivalLevel::new(farmland, 7), BlockPos::ZERO));
-        assert!(crop.can_survive(state, &CropSurvivalLevel::new(farmland, 8), BlockPos::ZERO));
+        assert!(!crop.can_survive(state, &crop_survival_level(farmland, 7), BlockPos::ZERO));
+        assert!(crop.can_survive(state, &crop_survival_level(farmland, 8), BlockPos::ZERO));
     }
 
     #[test]

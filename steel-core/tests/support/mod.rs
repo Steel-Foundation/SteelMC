@@ -91,6 +91,21 @@ impl TestLevel {
         self
     }
 
+    pub(crate) fn with_raw_brightness(self, raw_brightness: u8) -> Self {
+        self.raw_brightness.set(raw_brightness);
+        self
+    }
+
+    pub(crate) fn with_min_y(self, min_y: i32) -> Self {
+        self.min_y.set(min_y);
+        self
+    }
+
+    pub(crate) fn with_height(self, height: i32) -> Self {
+        self.height.set(height);
+        self
+    }
+
     pub(crate) fn set_test_block(&self, pos: BlockPos, state: BlockStateId) {
         let mut blocks = self.blocks.borrow_mut();
         if let Some((_, existing)) = blocks.iter_mut().find(|(block_pos, _)| *block_pos == pos) {

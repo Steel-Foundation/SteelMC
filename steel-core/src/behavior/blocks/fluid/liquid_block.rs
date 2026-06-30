@@ -229,60 +229,12 @@ impl BlockBehavior for LiquidBlock {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-
     use crate::behavior::init_behaviors;
-    use steel_registry::blocks::BlockRef;
     use steel_registry::{test_support::init_test_registry, vanilla_fluids};
 
-    use crate::world::LevelReader;
+    use crate::test_support::TestLevel;
 
     use super::*;
-
-    #[derive(Default)]
-    struct TickLevel {
-        scheduled_fluid: Cell<Option<FluidRef>>,
-        scheduled_delay: Cell<i32>,
-    }
-
-    impl LevelReader for TickLevel {
-        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
-            vanilla_blocks::AIR.default_state()
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            0
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
-    }
-
-    impl ScheduledTickAccess for TickLevel {
-        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
-            5
-        }
-
-        fn schedule_block_tick_default(
-            &self,
-            _pos: BlockPos,
-            _block: BlockRef,
-            _delay: i32,
-        ) -> bool {
-            false
-        }
-
-        fn schedule_fluid_tick_default(&self, _pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
-            self.scheduled_fluid.set(Some(fluid));
-            self.scheduled_delay.set(delay);
-            true
-        }
-    }
 
     #[test]
     fn update_shape_schedules_actual_flowing_fluid_variant() {
@@ -294,7 +246,7 @@ mod tests {
             .default_state()
             .set_value(&BlockStateProperties::LEVEL, 1);
         let neighbor_state = vanilla_blocks::WATER.default_state();
-        let level = TickLevel::default();
+        let level = TestLevel::default();
 
         let updated = block.update_shape(
             state,
@@ -307,9 +259,13 @@ mod tests {
 
         assert_eq!(updated, state);
         assert_eq!(
-            level.scheduled_fluid.get(),
-            Some(&vanilla_fluids::FLOWING_WATER)
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(&vanilla_fluids::FLOWING_WATER, 5)]
         );
-        assert_eq!(level.scheduled_delay.get(), 5);
     }
 }

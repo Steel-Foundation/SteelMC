@@ -973,7 +973,7 @@ impl StructureTemplate {
     }
 
     fn update_shape_at_edge(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         flags: UpdateFlags,
         placed_positions: &[BlockPos],
         min: BlockPos,
@@ -1046,7 +1046,7 @@ impl StructureTemplate {
     }
 
     fn fill_neighbor_source_liquids(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         to_fill: &mut Vec<BlockPos>,
         locked_fluids: &[BlockPos],
     ) {
@@ -1078,9 +1078,8 @@ impl StructureTemplate {
 
                 if to_place.is_source() {
                     let state = region.block_state(pos);
-                    if Self::is_liquid_block_container(state)
-                        && Self::place_liquid(region, pos, state, to_place)
-                    {
+                    if Self::is_liquid_block_container(state) {
+                        let _ = Self::place_liquid(region, pos, state, to_place);
                         filled = true;
                         to_fill.remove(index);
                         continue;
@@ -1109,7 +1108,7 @@ impl StructureTemplate {
     }
 
     fn place_liquid(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,
