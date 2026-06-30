@@ -5,7 +5,6 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::random::Random as _;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
@@ -120,18 +119,13 @@ impl HoneyBlock {
         entity.reset_fall_distance();
     }
 
-    fn maybe_do_slide_effects(world: &World, entity: &dyn Entity) {
+    fn maybe_do_slide_effects(_world: &World, entity: &dyn Entity) {
         if !Self::does_entity_do_slide_effects(entity) {
             return;
         }
 
-        let (play_sound, broadcast_particles) = {
-            let mut random = world.random().lock();
-            (
-                random.next_i32_bounded(5) == 0,
-                random.next_i32_bounded(5) == 0,
-            )
-        };
+        let play_sound = rand::random_range(0..5) == 0;
+        let broadcast_particles = rand::random_range(0..5) == 0;
         if play_sound {
             entity.play_sound(&sound_events::BLOCK_HONEY_BLOCK_SLIDE, 1.0, 1.0);
         }

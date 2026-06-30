@@ -21,7 +21,6 @@ use steel_registry::{
 };
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::Random as _;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, ChunkPos, Identifier, WorldAabb, axis::Axis};
 use uuid::Uuid;
@@ -591,7 +590,7 @@ pub trait Mob: LivingEntity {
                 !equipment.get_ref(slot).is_empty() && self.equipment_drop_chance(slot) <= 1.0
             };
             if should_increase {
-                result += 1 + self.base().random().lock().next_i32_bounded(3);
+                result += 1 + rand::random_range(0..3);
             }
         }
         result
@@ -631,7 +630,7 @@ pub trait Mob: LivingEntity {
         }
 
         let ambient_sound_time = self.mob_base().get_and_increment_ambient_sound_time();
-        if self.base().random().lock().next_i32_bounded(1000) < ambient_sound_time {
+        if rand::random_range(0..1000) < ambient_sound_time {
             self.reset_ambient_sound_time();
             self.play_ambient_sound();
         }
@@ -648,7 +647,7 @@ pub trait Mob: LivingEntity {
 
     fn finalize_spawn_mob_base(
         &self,
-        world: &Arc<World>,
+        _world: &Arc<World>,
         _spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -656,13 +655,9 @@ pub trait Mob: LivingEntity {
             .attributes()
             .lock()
             .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
-        let (random_spawn_bonus, left_handed) = {
-            let mut random = world.random().lock();
-            let random_spawn_bonus =
-                needs_random_spawn_bonus.then(|| random.triangle(0.0, RANDOM_SPAWN_BONUS_SCALE));
-            let left_handed = random.next_f32() < LEFT_HANDED_SPAWN_CHANCE;
-            (random_spawn_bonus, left_handed)
-        };
+        let random_spawn_bonus = needs_random_spawn_bonus
+            .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
+        let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
 
         if let Some(amount) = random_spawn_bonus {
             self.attributes().lock().add_modifier(
@@ -791,7 +786,7 @@ pub trait Mob: LivingEntity {
 
             // TODO: Apply EquipmentDrops enchantment value effects once damage
             // sources can resolve their living attacker context.
-            let random_roll = self.base().random().lock().next_f32();
+            let random_roll = rand::random::<f32>();
             if random_roll >= drop_chance {
                 continue;
             }
@@ -810,11 +805,8 @@ pub trait Mob: LivingEntity {
             };
             if !preserve && item_stack.is_damageable_item() {
                 let max_damage = item_stack.get_max_damage();
-                let damage = {
-                    let mut random = self.base().random().lock();
-                    let inner = random.next_i32_bounded((max_damage - 3).max(1));
-                    max_damage - random.next_i32_bounded(1 + inner)
-                };
+                let inner = rand::random_range(0..(max_damage - 3).max(1));
+                let damage = max_damage - rand::random_range(0..=inner);
                 item_stack.set_damage_value(damage);
             }
 
@@ -1260,10 +1252,7 @@ pub trait Mob: LivingEntity {
             && nearest_player_dist_sqr > f64::from(no_despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
-            let should_discard = {
-                let mut random = self.base().random().lock();
-                random.next_i32_bounded(800) == 0
-            };
+            let should_discard = rand::random_range(0..800) == 0;
             if should_discard {
                 self.set_removed(RemovalReason::Discarded);
             }

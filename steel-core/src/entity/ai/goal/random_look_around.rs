@@ -1,7 +1,6 @@
 use std::f64::consts::TAU;
 
 use glam::DVec3;
-use steel_utils::random::Random as _;
 
 use crate::entity::PathfinderMob;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
@@ -37,20 +36,19 @@ impl Goal for RandomLookAroundGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        mob.base().random().lock().next_f32() < RANDOM_LOOK_AROUND_CHANCE
+    fn can_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+        rand::random::<f32>() < RANDOM_LOOK_AROUND_CHANCE
     }
 
     fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
         self.look_time >= 0
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
-        let mut random = mob.base().random().lock();
-        let direction = TAU * random.next_f64();
+    fn start(&mut self, _mob: &dyn PathfinderMob) {
+        let direction = TAU * rand::random::<f64>();
         self.rel_x = direction.cos();
         self.rel_z = direction.sin();
-        self.look_time = 20 + random.next_i32_bounded(20);
+        self.look_time = 20 + rand::random_range(0..20);
     }
 
     fn requires_update_every_tick(&self) -> bool {

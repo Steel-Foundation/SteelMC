@@ -15,7 +15,6 @@ use steel_protocol::packets::game::{
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, items::ItemRef};
-use steel_utils::random::Random;
 use steel_utils::types::{GameType, InteractionHand};
 
 use crate::{
@@ -542,11 +541,7 @@ impl PlayerInventory {
     }
 
     /// Repairs a random damaged equipped item with `REPAIR_WITH_XP`, returning leftover XP.
-    pub fn repair_random_equipped_item_with_xp(
-        &mut self,
-        amount: i32,
-        random: &mut impl Random,
-    ) -> i32 {
+    pub fn repair_random_equipped_item_with_xp(&mut self, amount: i32) -> i32 {
         let mut remaining = amount;
 
         loop {
@@ -555,7 +550,7 @@ impl PlayerInventory {
                 return remaining;
             }
 
-            let selected = random.next_i32_bounded(candidates.len() as i32) as usize;
+            let selected = rand::random_range(0..candidates.len());
             let slot = candidates[selected];
             let item = self.get_equipment_slot_item_mut(slot);
             let to_repair = item
@@ -1371,7 +1366,6 @@ mod tests {
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items::ITEMS;
     use steel_utils::Identifier;
-    use steel_utils::random::legacy_random::LegacyRandom;
 
     use super::*;
 
@@ -1726,9 +1720,8 @@ mod tests {
         inventory.set_selected_item(pickaxe);
         inventory.drain_dirty_equipment_items();
         let before = inventory.get_times_changed();
-        let mut random = LegacyRandom::from_seed(1);
 
-        let remaining = inventory.repair_random_equipped_item_with_xp(3, &mut random);
+        let remaining = inventory.repair_random_equipped_item_with_xp(3);
 
         assert_eq!(remaining, 0);
         assert_eq!(inventory.get_selected_item().get_damage_value(), 4);
@@ -1751,9 +1744,8 @@ mod tests {
         pickaxe.set_damage_value(3);
         pickaxe.set_enchantments(&[(Identifier::vanilla_static("mending"), 1)], false);
         inventory.set_selected_item(pickaxe);
-        let mut random = LegacyRandom::from_seed(1);
 
-        let remaining = inventory.repair_random_equipped_item_with_xp(5, &mut random);
+        let remaining = inventory.repair_random_equipped_item_with_xp(5);
 
         assert_eq!(remaining, 4);
         assert_eq!(inventory.get_selected_item().get_damage_value(), 0);

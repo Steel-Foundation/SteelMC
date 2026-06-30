@@ -15,7 +15,6 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -985,8 +984,6 @@ pub struct EntityBase {
     lifecycle: SyncMutex<EntityLifecycleState>,
     /// Passenger, vehicle, and boarding-cooldown state.
     relationships: SyncMutex<EntityRelationshipState>,
-    /// Per-entity random source.
-    random: SyncMutex<LegacyRandom>,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
 }
@@ -1046,7 +1043,6 @@ impl EntityBase {
             movement_trace: SyncMutex::new(EntityMovementTrace::default()),
             lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             relationships: SyncMutex::new(EntityRelationshipState::default()),
-            random: SyncMutex::new(LegacyRandom::from_seed(rand::random())),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
     }
@@ -1079,12 +1075,6 @@ impl EntityBase {
     #[inline]
     pub const fn uuid(&self) -> Uuid {
         self.uuid
-    }
-
-    /// Gets the entity's vanilla random source.
-    #[inline]
-    pub const fn random(&self) -> &SyncMutex<LegacyRandom> {
-        &self.random
     }
 
     /// Gets the entity's current position.
@@ -1785,10 +1775,7 @@ impl EntityBase {
             progress.crystal_sound_intensity
         };
 
-        let pitch = {
-            let mut random = self.random.lock();
-            0.5 + intensity * random.next_f32() * 1.2
-        };
+        let pitch = 0.5 + intensity * rand::random::<f32>() * 1.2;
         let volume = 0.1 + intensity * 1.2;
         Some(EntityAmethystStepSound { volume, pitch })
     }

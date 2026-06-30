@@ -40,7 +40,6 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::Random as _;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis};
 use text_components::TextComponent;
@@ -2483,10 +2482,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
         if self.hurt(&DamageSource::environment(&vanilla_damage_types::LAVA), 4.0)
             && self.should_play_lava_hurt_sound()
         {
-            let pitch = {
-                let mut random = self.base().random().lock();
-                2.0 + random.next_f32() * 0.4
-            };
+            let pitch = 2.0 + rand::random::<f32>() * 0.4;
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
@@ -2820,10 +2816,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = {
-            let mut random = self.base().random().lock();
-            f64::from(random.next_f32().mul_add(0.2, 0.1))
-        };
+        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {
@@ -3288,10 +3281,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Plays vanilla's extinguished-on-fire entity sound.
     fn play_entity_on_fire_extinguished_sound(&self) {
-        let pitch = {
-            let mut random = self.base().random().lock();
-            1.6 + (random.next_f32() - random.next_f32()) * 0.4
-        };
+        let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
         self.play_sound(&sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE, 0.7, pitch);
     }
 
@@ -3367,10 +3357,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Plays this entity's swim sound at the given volume.
     fn play_swim_sound(&self, volume: f32) {
-        let pitch = {
-            let mut random = self.base().random().lock();
-            1.0 + (random.next_f32() - random.next_f32()) * 0.4
-        };
+        let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
         self.play_sound(self.swim_sound(), volume, pitch);
     }
 
@@ -4133,11 +4120,10 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getVoicePitch`.
     fn voice_pitch(&self) -> f32 {
-        let mut random = self.base().random().lock();
         if self.is_baby() {
-            (random.next_f32() - random.next_f32()) * 0.2 + 1.5
+            (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
-            (random.next_f32() - random.next_f32()) * 0.2 + 1.0
+            (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.0
         }
     }
 
@@ -4543,9 +4529,8 @@ pub trait LivingEntity: Entity {
         }
 
         while xd * xd + zd * zd < KNOCKBACK_DIRECTION_EPSILON_SQ {
-            let mut random = self.base().random().lock();
-            xd = (random.next_f64() - random.next_f64()) * 0.01;
-            zd = (random.next_f64() - random.next_f64()) * 0.01;
+            xd = (rand::random::<f64>() - rand::random::<f64>()) * 0.01;
+            zd = (rand::random::<f64>() - rand::random::<f64>()) * 0.01;
         }
 
         let old_velocity = self.velocity();
@@ -5004,9 +4989,7 @@ pub trait LivingEntity: Entity {
             .lock()
             .get_value(vanilla_attributes::OXYGEN_BONUS)
             .unwrap_or(0.0);
-        if oxygen_bonus > 0.0
-            && self.base().random().lock().next_f64() >= 1.0 / (oxygen_bonus + 1.0)
-        {
+        if oxygen_bonus > 0.0 && rand::random::<f64>() >= 1.0 / (oxygen_bonus + 1.0) {
             current_supply
         } else {
             current_supply - 1
@@ -5457,11 +5440,7 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        let slot_index = self
-            .base()
-            .random()
-            .lock()
-            .next_i32_bounded(slot_count as i32) as usize;
+        let slot_index = rand::random_range(0..slot_count);
         let slot_to_damage = slots_with_gliders[slot_index];
         let has_infinite_materials = self.has_infinite_materials();
         let mut item_broke = false;
@@ -5848,7 +5827,7 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        let random_roll = self.base().random().lock().next_i32_bounded(4);
+        let random_roll = rand::random_range(0..4);
         let non_passenger_count = pushable_entities
             .iter()
             .filter(|entity| !entity.is_passenger())

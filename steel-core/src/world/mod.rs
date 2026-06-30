@@ -338,8 +338,6 @@ pub struct World {
     navigating_mobs: NavigatingMobTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
-    /// Vanilla `Level.random` runtime random source.
-    random: SyncMutex<LegacyRandom>,
     /// Monotonic counter for `sub_tick_order` on scheduled ticks.
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
@@ -446,7 +444,6 @@ impl World {
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
                 weather: SyncMutex::new(weather),
-                random: SyncMutex::new(LegacyRandom::from_seed(rand::random())),
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
@@ -986,12 +983,6 @@ impl World {
     #[must_use]
     pub fn seed(&self) -> i64 {
         self.level_data.read().data().seed
-    }
-
-    /// Returns this world's vanilla runtime random source.
-    #[must_use]
-    pub const fn random(&self) -> &SyncMutex<LegacyRandom> {
-        &self.random
     }
 
     /// Gets the obfuscated seed for sending to clients.

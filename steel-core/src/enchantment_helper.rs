@@ -6,7 +6,6 @@ use steel_registry::enchantment_effect::{
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities};
-use steel_utils::random::Random;
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance};
@@ -296,15 +295,8 @@ fn apply_post_attack_effects(
             let Some(enchanted_entity) = context.affected_entity(enchanted_target) else {
                 continue;
             };
-            let requirements_match = {
-                let mut random = enchanted_entity.base().random().lock();
-                post_attack_requirements_match(
-                    effect.requirements,
-                    &damage_context,
-                    level,
-                    &mut *random,
-                )
-            };
+            let requirements_match =
+                post_attack_requirements_match(effect.requirements, &damage_context, level);
             if !requirements_match {
                 continue;
             }
@@ -424,10 +416,7 @@ fn apply_supported_entity_effect(
         } => {
             let min_damage = min_damage.calculate(level);
             let max_damage = max_damage.calculate(level);
-            let damage = {
-                let mut random = entity.base().random().lock();
-                random_between(&mut *random, min_damage, max_damage)
-            };
+            let damage = random_between(min_damage, max_damage);
             let source = DamageSource::environment(damage_type)
                 .with_causing_entity(enchanted_entity.id())
                 .with_direct_entity(enchanted_entity.id());
@@ -453,13 +442,8 @@ fn apply_supported_entity_effect(
             let max_duration = max_duration.calculate(level);
             let min_amplifier = min_amplifier.calculate(level);
             let max_amplifier = max_amplifier.calculate(level);
-            let (duration_seconds, amplifier) = {
-                let mut random = entity.base().random().lock();
-                (
-                    random_between(&mut *random, min_duration, max_duration),
-                    random_between(&mut *random, min_amplifier, max_amplifier),
-                )
-            };
+            let duration_seconds = random_between(min_duration, max_duration);
+            let amplifier = random_between(min_amplifier, max_amplifier);
             let duration_ticks = java_round(duration_seconds * 20.0);
             let amplifier = java_round(amplifier).max(0);
             living.add_mob_effect(MobEffectInstance::with_duration(
@@ -568,8 +552,8 @@ fn apply_supported_post_piercing_entity_effect(
     }
 }
 
-fn random_between(random: &mut impl Random, min: f32, max: f32) -> f32 {
-    min + random.next_f32() * (max - min)
+fn random_between(min: f32, max: f32) -> f32 {
+    min + rand::random::<f32>() * (max - min)
 }
 
 fn java_round(value: f32) -> i32 {
@@ -587,18 +571,17 @@ fn requirements_match(
     matches!(requirements_state(requirements, context), Some(true))
 }
 
-fn post_attack_requirements_match<R: Random>(
+fn post_attack_requirements_match(
     requirements: Option<&'static EnchantmentEffectRequirements>,
     context: &EnchantmentDamageContext<'_>,
     level: i32,
-    random: &mut R,
 ) -> bool {
     let Some(requirements) = requirements else {
         return true;
     };
 
     matches!(
-        requirements_state_with_random(requirements, context, level, random),
+        requirements_state_with_random(requirements, context, level),
         Some(true)
     )
 }
@@ -644,17 +627,16 @@ fn requirements_state(
     }
 }
 
-fn requirements_state_with_random<R: Random>(
+fn requirements_state_with_random(
     requirements: &'static EnchantmentEffectRequirements,
     context: &EnchantmentDamageContext<'_>,
     level: i32,
-    random: &mut R,
 ) -> Option<bool> {
     match requirements {
         EnchantmentEffectRequirements::AllOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level, random) {
+                match requirements_state_with_random(term, context, level) {
                     Some(true) => {}
                     Some(false) => return Some(false),
                     None => has_unknown = true,
@@ -665,7 +647,7 @@ fn requirements_state_with_random<R: Random>(
         EnchantmentEffectRequirements::AnyOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level, random) {
+                match requirements_state_with_random(term, context, level) {
                     Some(true) => return Some(true),
                     Some(false) => {}
                     None => has_unknown = true,
@@ -674,7 +656,7 @@ fn requirements_state_with_random<R: Random>(
             if has_unknown { None } else { Some(false) }
         }
         EnchantmentEffectRequirements::Inverted(term) => {
-            requirements_state_with_random(term, context, level, random).map(|matched| !matched)
+            requirements_state_with_random(term, context, level).map(|matched| !matched)
         }
         EnchantmentEffectRequirements::EntityProperties { entity, predicate } => context
             .entity_type(*entity)
@@ -683,7 +665,7 @@ fn requirements_state_with_random<R: Random>(
             damage_source_predicate_matches(predicate, context.damage_source),
         ),
         EnchantmentEffectRequirements::RandomChance { chance } => {
-            Some(random.next_f32() < chance.calculate(level))
+            Some(rand::random::<f32>() < chance.calculate(level))
         }
         EnchantmentEffectRequirements::Unsupported { .. } => None,
     }

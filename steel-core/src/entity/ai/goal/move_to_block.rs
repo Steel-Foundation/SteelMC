@@ -1,11 +1,9 @@
-use glam::DVec3;
-use steel_utils::BlockPos;
-use steel_utils::random::Random as _;
-
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
 use crate::world::LevelReader;
+use glam::DVec3;
+use steel_utils::BlockPos;
 
 const GIVE_UP_TICKS: i32 = 1200;
 const STAY_TICKS: i32 = 1200;
@@ -112,8 +110,8 @@ impl MoveToBlockGoal {
         self.reached_target
     }
 
-    fn next_start_tick(mob: &dyn PathfinderMob) -> i32 {
-        reduced_tick_delay(INTERVAL_TICKS + mob.base().random().lock().next_i32_bounded(200))
+    fn next_start_tick(_mob: &dyn PathfinderMob) -> i32 {
+        reduced_tick_delay(INTERVAL_TICKS + rand::random_range(0..200))
     }
 
     fn move_mob_to_block(&self, mob: &dyn PathfinderMob) {
@@ -182,11 +180,8 @@ impl Goal for MoveToBlockGoal {
     fn start(&mut self, mob: &dyn PathfinderMob) {
         self.move_mob_to_block(mob);
         self.try_ticks = 0;
-        self.max_stay_ticks = {
-            let mut random = mob.base().random().lock();
-            let inner_bound = random.next_i32_bounded(STAY_TICKS) + STAY_TICKS;
-            random.next_i32_bounded(inner_bound) + STAY_TICKS
-        };
+        let inner_bound = rand::random_range(0..STAY_TICKS) + STAY_TICKS;
+        self.max_stay_ticks = rand::random_range(0..inner_bound) + STAY_TICKS;
     }
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {

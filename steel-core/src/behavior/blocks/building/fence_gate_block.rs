@@ -26,7 +26,6 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
 use steel_utils::axis::Axis;
-use steel_utils::random::Random;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -168,7 +167,7 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        let pitch = world.random().lock().next_f32() * 0.1 + 0.9;
+        let pitch = rand::random::<f32>() * 0.1 + 0.9;
         world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
         let event = if opens {
             &vanilla_game_events::BLOCK_OPEN

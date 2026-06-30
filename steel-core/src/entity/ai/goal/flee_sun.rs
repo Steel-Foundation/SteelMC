@@ -1,6 +1,5 @@
 use glam::DVec3;
 use steel_utils::BlockPos;
-use steel_utils::random::Random as _;
 
 use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
@@ -93,11 +92,10 @@ fn get_hide_pos_with(
 
     for _ in 0..HIDE_POS_ATTEMPTS {
         let random_pos = {
-            let mut random = mob.base().random().lock();
             pos.offset(
-                random.next_i32_bounded(20) - 10,
-                random.next_i32_bounded(6) - 3,
-                random.next_i32_bounded(20) - 10,
+                rand::random_range(0..20) - 10,
+                rand::random_range(0..6) - 3,
+                rand::random_range(0..20) - 10,
             )
         };
         if !can_see_sky(random_pos) && walk_target_value(random_pos) < 0.0 {
