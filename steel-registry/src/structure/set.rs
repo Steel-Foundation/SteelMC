@@ -40,7 +40,7 @@ pub enum PlacementData {
         /// Spread type: `"linear"` or `"triangular"`.
         spread_type: SpreadTypeData,
         /// Unique seed modifier.
-        salt: i32,
+        salt: i64,
         /// Generation probability (0.0–1.0). Default: 1.0.
         frequency: f32,
         /// Frequency reduction method name. Default: `"default"`.
@@ -61,7 +61,7 @@ pub enum PlacementData {
         /// Biomes that ring positions prefer to snap to.
         preferred_biomes: Vec<Identifier>,
         /// Unique seed modifier.
-        salt: i32,
+        salt: i64,
         /// Generation probability. Default: 1.0.
         frequency: f32,
         /// Frequency reduction method name.
