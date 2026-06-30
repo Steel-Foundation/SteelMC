@@ -15,7 +15,9 @@ use crate::behavior::blocks::WeatherState;
 use crate::behavior::blocks::building::WeatheringCopper;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::world::{ScheduledTickAccess, World};
+use steel_registry::vanilla_fluids;
 
 /// Behavior for bar blocks.
 ///
@@ -52,12 +54,13 @@ impl BlockBehavior for IronBarsBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &dyn ScheduledTickAccess,
-        _pos: BlockPos,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
         direction: Direction,
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
         update_shape(state, neighbor_state, neighbor_pos, direction)
     }
 
@@ -66,6 +69,14 @@ impl BlockBehavior for IronBarsBlock {
             get_connection_state(self.block, context.world, &context.relative_pos)
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
     }
 }
 
@@ -98,12 +109,13 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &dyn ScheduledTickAccess,
-        _pos: BlockPos,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
         direction: Direction,
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
         update_shape(state, neighbor_state, neighbor_pos, direction)
     }
 
@@ -121,24 +133,35 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
     }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+}
+
+fn schedule_water_tick_if_waterlogged(
+    state: BlockStateId,
+    world: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+) {
+    if state.get_value(&WATERLOGGED) {
+        let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+        world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+    }
 }
 
 /// Checks if this bar should connect to the given neighbor state.
 fn connects_to(neighbor_state: BlockStateId, neighbor_pos: BlockPos, direction: Direction) -> bool {
     let neighbor_block = neighbor_state.get_block();
     let excluded = is_excluded_for_connection(neighbor_block);
-    if excluded {
-        return false;
-    }
-    if neighbor_state.is_face_sturdy_at(neighbor_pos, direction)
+    (!excluded && neighbor_state.is_face_sturdy_at(neighbor_pos, direction.opposite()))
         || neighbor_block.has_tag(&BlockTag::BARS)
         || neighbor_block.has_tag(&BlockTag::WALLS)
         || neighbor_block.has_tag(&BlockTag::C_GLASS_PANES)
-    {
-        return true;
-    }
-
-    neighbor_state.is_face_sturdy_at(neighbor_pos, direction.opposite())
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.

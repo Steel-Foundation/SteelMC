@@ -5,12 +5,16 @@
 
 use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
-use crate::world::World;
+use crate::entity::ai::path::PathComputationType;
+use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, EnumProperty};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
+use steel_registry::vanilla_fluids;
 use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -44,6 +48,27 @@ impl BlockBehavior for ChainBlock {
                 .set_value(&AXIS, context.clicked_face.get_axis())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        state
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
     }
 }
 /// Behavior for weathering copper chain blocks.
@@ -84,5 +109,37 @@ impl BlockBehavior for WeatheringCopperChainBlock {
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        state
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+}
+
+fn schedule_water_tick_if_waterlogged(
+    state: BlockStateId,
+    world: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+) {
+    if state.get_value(&WATERLOGGED) {
+        let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+        world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
     }
 }

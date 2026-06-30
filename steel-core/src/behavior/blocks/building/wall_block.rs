@@ -9,7 +9,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
-use steel_registry::blocks::shapes::{VoxelShape, face_rectangles_cover};
+use steel_registry::blocks::shapes::{OffsetVoxelShape, offset_face_rectangles_cover};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_fluids::WATER;
@@ -19,6 +19,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::building::FenceGateBlock;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::world::ScheduledTickAccess;
 
 /// Behavior for wall blocks.
@@ -88,22 +89,22 @@ impl BlockBehavior for WallBlock {
         // i.e. the opposite of the direction toward the neighbor.
         let north = connects_to(
             north_state,
-            north_state.is_face_sturdy_at(pos, Direction::South),
+            north_state.is_face_sturdy_at(north_pos, Direction::South),
             Direction::South,
         );
         let east = connects_to(
             east_state,
-            east_state.is_face_sturdy_at(pos, Direction::West),
+            east_state.is_face_sturdy_at(east_pos, Direction::West),
             Direction::West,
         );
         let south = connects_to(
             south_state,
-            south_state.is_face_sturdy_at(pos, Direction::North),
+            south_state.is_face_sturdy_at(south_pos, Direction::North),
             Direction::North,
         );
         let west = connects_to(
             west_state,
-            west_state.is_face_sturdy_at(pos, Direction::East),
+            west_state.is_face_sturdy_at(west_pos, Direction::East),
             Direction::East,
         );
 
@@ -113,7 +114,7 @@ impl BlockBehavior for WallBlock {
             .set_value(&WATERLOGGED, context.is_water_source());
 
         Some(update_wall_state(
-            state, top_state, north, east, south, west,
+            state, top_pos, top_state, north, east, south, west,
         ))
     }
 
@@ -123,7 +124,7 @@ impl BlockBehavior for WallBlock {
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if state.get_value(&WATERLOGGED) {
@@ -134,9 +135,17 @@ impl BlockBehavior for WallBlock {
         match direction {
             // Base behavior: nothing below changes a wall's shape.
             Direction::Down => state,
-            Direction::Up => top_update(state, neighbor_state),
-            _ => side_update(world, pos, state, neighbor_state, direction),
+            Direction::Up => top_update(state, neighbor_pos, neighbor_state),
+            _ => side_update(world, pos, state, neighbor_pos, neighbor_state, direction),
         }
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
     }
 }
 
@@ -162,12 +171,12 @@ fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direct
 }
 
 /// Vanilla `WallBlock.topUpdate`.
-fn top_update(state: BlockStateId, top_neighbor: BlockStateId) -> BlockStateId {
+fn top_update(state: BlockStateId, top_pos: BlockPos, top_neighbor: BlockStateId) -> BlockStateId {
     let north = is_connected(state, &NORTH);
     let east = is_connected(state, &EAST);
     let south = is_connected(state, &SOUTH);
     let west = is_connected(state, &WEST);
-    update_wall_state(state, top_neighbor, north, east, south, west)
+    update_wall_state(state, top_pos, top_neighbor, north, east, south, west)
 }
 
 /// Vanilla `WallBlock.sideUpdate`.
@@ -175,13 +184,14 @@ fn side_update(
     world: &dyn ScheduledTickAccess,
     pos: BlockPos,
     state: BlockStateId,
+    neighbor_pos: BlockPos,
     neighbor: BlockStateId,
     direction: Direction,
 ) -> BlockStateId {
     let opposite = direction.opposite();
     let connected = connects_to(
         neighbor,
-        neighbor.is_face_sturdy_at(pos, opposite),
+        neighbor.is_face_sturdy_at(neighbor_pos, opposite),
         opposite,
     );
 
@@ -208,7 +218,7 @@ fn side_update(
 
     let above = Direction::Up.relative(pos);
     let above_state = world.get_block_state(above);
-    update_wall_state(state, above_state, north, east, south, west)
+    update_wall_state(state, above, above_state, north, east, south, west)
 }
 
 /// Vanilla `WallBlock.updateShape` (private side/post helper).
@@ -218,13 +228,14 @@ fn side_update(
 )]
 fn update_wall_state(
     state: BlockStateId,
+    top_pos: BlockPos,
     top_neighbor: BlockStateId,
     north: bool,
     east: bool,
     south: bool,
     west: bool,
 ) -> BlockStateId {
-    let above_shape = top_neighbor.get_static_collision_shape();
+    let above_shape = top_neighbor.get_collision_shape_at(top_pos);
     let sides = update_sides(state, above_shape, north, east, south, west);
     sides.set_value(&UP, should_raise_post(sides, top_neighbor, above_shape))
 }
@@ -236,7 +247,7 @@ fn update_wall_state(
 )]
 fn update_sides(
     state: BlockStateId,
-    above_shape: VoxelShape,
+    above_shape: OffsetVoxelShape,
     north: bool,
     east: bool,
     south: bool,
@@ -292,7 +303,7 @@ fn update_sides(
 /// Vanilla `WallBlock.makeWallState`.
 fn make_wall_state(
     connects_to_side: bool,
-    above_shape: VoxelShape,
+    above_shape: OffsetVoxelShape,
     x_min: f64,
     x_max: f64,
     z_min: f64,
@@ -312,7 +323,7 @@ fn make_wall_state(
 fn should_raise_post(
     state: BlockStateId,
     top_neighbor: BlockStateId,
-    above_shape: VoxelShape,
+    above_shape: OffsetVoxelShape,
 ) -> bool {
     let top_neighbor_has_post = top_neighbor.get_block().has_tag(&BlockTag::WALLS)
         && top_neighbor.try_get_value(&UP).unwrap_or(false);
@@ -353,6 +364,12 @@ fn should_raise_post(
 ///
 /// Checks whether the block above's collision shape fully covers a test
 /// rectangle on its DOWN face.
-fn is_covered(above_shape: VoxelShape, x_min: f64, x_max: f64, z_min: f64, z_max: f64) -> bool {
-    face_rectangles_cover(above_shape, Direction::Down, x_min, x_max, z_min, z_max)
+fn is_covered(
+    above_shape: OffsetVoxelShape,
+    x_min: f64,
+    x_max: f64,
+    z_min: f64,
+    z_max: f64,
+) -> bool {
+    offset_face_rectangles_cover(above_shape, Direction::Down, x_min, x_max, z_min, z_max)
 }

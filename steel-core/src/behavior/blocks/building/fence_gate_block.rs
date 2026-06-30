@@ -11,6 +11,7 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::Entity;
+use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{ScheduledTickAccess, World};
@@ -176,5 +177,12 @@ impl BlockBehavior for FenceGateBlock {
         };
         world.game_event(event, pos, &GameEventContext::new(Some(player), None));
         InteractionResult::Success
+    }
+
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        match computation_type {
+            PathComputationType::Land | PathComputationType::Air => state.get_value(&OPEN),
+            PathComputationType::Water => false,
+        }
     }
 }

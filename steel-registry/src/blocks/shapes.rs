@@ -966,7 +966,7 @@ pub fn face_rectangles_cover(
     )
 }
 
-fn offset_face_rectangles_cover(
+pub fn offset_face_rectangles_cover(
     shape: OffsetVoxelShape,
     direction: Direction,
     target_min_a: f64,
