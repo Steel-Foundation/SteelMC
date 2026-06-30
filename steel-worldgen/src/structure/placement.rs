@@ -402,7 +402,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             exclusion_zone,
             locate_offset,
         } => StructurePlacement {
-            salt,
+            salt: salt as i32,
             frequency,
             frequency_reduction_method: frequency_reduction_method.into(),
             exclusion_zone: exclusion_zone.map(|ez| ExclusionZone {
@@ -426,7 +426,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             frequency_reduction_method,
             locate_offset,
         } => StructurePlacement {
-            salt,
+            salt: salt as i32,
             frequency,
             frequency_reduction_method: frequency_reduction_method.into(),
             exclusion_zone: None,
