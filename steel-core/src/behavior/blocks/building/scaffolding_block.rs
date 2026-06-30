@@ -40,6 +40,8 @@ impl ScaffoldingBlock {
 }
 
 impl BlockBehavior for ScaffoldingBlock {
+    // TODO: Mirror vanilla scaffolding placement here, including WATERLOGGED,
+    // STABILITY_DISTANCE, BOTTOM, on_place, and update_shape tick scheduling.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

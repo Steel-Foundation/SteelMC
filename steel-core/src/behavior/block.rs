@@ -1246,6 +1246,9 @@ impl DefaultBlockBehavior {
 }
 
 impl BlockBehavior for DefaultBlockBehavior {
+    // TODO: This fallback only preserves generic block placement. Unported
+    // SimpleWaterloggedBlock implementations still need vanilla placement and
+    // update_shape water tick handling when they get real behaviors.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
