@@ -349,6 +349,8 @@ async fn run_server(
 
     let server = steel.server.clone();
 
+    log::info!("By using this server, you accept the Minecraft EULA: https://aka.ms/MinecraftEULA");
+
     if !server.prepare_spawn_area().await {
         shutdown_worlds(&server).await;
         return Ok(());
