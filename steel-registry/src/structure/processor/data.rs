@@ -20,7 +20,7 @@ pub struct StructureProcessorListData {
 #[serde(tag = "processor_type")]
 pub enum StructureProcessorKind {
     /// Randomly drops input blocks.
-    #[serde(rename = "minecraft:block_rot")]
+    #[serde(rename = "minecraft:block_rot", alias = "block_rot")]
     BlockRot {
         /// Optional tag restricting which blocks may be dropped.
         #[serde(default, deserialize_with = "deserialize_optional_tag_identifier")]
@@ -29,30 +29,62 @@ pub enum StructureProcessorKind {
         integrity: f32,
     },
     /// Prevents replacement of protected world blocks.
-    #[serde(rename = "minecraft:protected_blocks")]
+    #[serde(rename = "minecraft:protected_blocks", alias = "protected_blocks")]
     ProtectedBlocks {
         /// Vanilla field name is `value`; it stores the cannot-replace tag.
         #[serde(rename = "value", deserialize_with = "deserialize_tag_identifier")]
         cannot_replace: Identifier,
     },
     /// Applies the first matching rule.
-    #[serde(rename = "minecraft:rule")]
+    #[serde(rename = "minecraft:rule", alias = "rule")]
     Rule { rules: Vec<ProcessorRuleData> },
     /// Ages stone/obsidian structure blocks, used by ruined portals.
-    #[serde(rename = "minecraft:block_age")]
+    #[serde(rename = "minecraft:block_age", alias = "block_age")]
     BlockAge { mossiness: f32 },
     /// Keeps non-full structure blocks submerged in existing lava.
-    #[serde(rename = "minecraft:lava_submerged_block")]
+    #[serde(rename = "minecraft:lava_submerged_block", alias = "lava_submerged_block")]
     LavaSubmergedBlock,
     /// Replaces stone ruin blocks with blackstone variants.
-    #[serde(rename = "minecraft:blackstone_replace")]
+    #[serde(rename = "minecraft:blackstone_replace", alias = "blackstone_replace")]
     BlackstoneReplace,
+    /// Skips placing blocks whose template block type is in the ignore list.
+    #[serde(rename = "minecraft:block_ignore", alias = "block_ignore")]
+    BlockIgnore { blocks: Vec<BlockStateData> },
+    /// Snaps template blocks to a heightmap column plus their template-relative Y.
+    #[serde(rename = "minecraft:gravity", alias = "gravity")]
+    Gravity {
+        #[serde(default = "default_gravity_heightmap")]
+        heightmap: StructureProcessorHeightmap,
+        #[serde(default)]
+        offset: i32,
+    },
     /// Delegates to another processor but caps successful modifications.
-    #[serde(rename = "minecraft:capped")]
+    #[serde(rename = "minecraft:capped", alias = "capped")]
     Capped {
         delegate: Box<StructureProcessorKind>,
         limit: IntProvider,
     },
+}
+
+/// Heightmap types referenced by structure processors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum StructureProcessorHeightmap {
+    #[serde(rename = "WORLD_SURFACE")]
+    WorldSurface,
+    #[serde(rename = "MOTION_BLOCKING")]
+    MotionBlocking,
+    #[serde(rename = "MOTION_BLOCKING_NO_LEAVES")]
+    MotionBlockingNoLeaves,
+    #[serde(rename = "OCEAN_FLOOR")]
+    OceanFloor,
+    #[serde(rename = "WORLD_SURFACE_WG")]
+    WorldSurfaceWg,
+    #[serde(rename = "OCEAN_FLOOR_WG")]
+    OceanFloorWg,
+}
+
+const fn default_gravity_heightmap() -> StructureProcessorHeightmap {
+    StructureProcessorHeightmap::WorldSurfaceWg
 }
 
 /// One rule inside vanilla's `RuleProcessor`.
@@ -72,16 +104,24 @@ pub struct ProcessorRuleData {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "predicate_type")]
 pub enum StructureRuleTestData {
-    #[serde(rename = "minecraft:always_true")]
+    #[serde(rename = "minecraft:always_true", alias = "always_true")]
     AlwaysTrue,
-    #[serde(rename = "minecraft:block_match")]
+    #[serde(rename = "minecraft:block_match", alias = "block_match")]
     BlockMatch { block: Identifier },
-    #[serde(rename = "minecraft:random_block_match")]
+    #[serde(rename = "minecraft:random_block_match", alias = "random_block_match")]
     RandomBlockMatch { block: Identifier, probability: f32 },
-    #[serde(rename = "minecraft:tag_match")]
+    #[serde(rename = "minecraft:tag_match", alias = "tag_match")]
     TagMatch { tag: Identifier },
-    #[serde(rename = "minecraft:blockstate_match")]
+    #[serde(rename = "minecraft:blockstate_match", alias = "blockstate_match")]
     BlockStateMatch { block_state: BlockStateData },
+    #[serde(
+        rename = "minecraft:random_blockstate_match",
+        alias = "random_blockstate_match"
+    )]
+    RandomBlockStateMatch {
+        block_state: BlockStateData,
+        probability: f32,
+    },
 }
 
 /// Position rule tests used by `RuleProcessor`.
@@ -89,9 +129,12 @@ pub enum StructureRuleTestData {
 #[serde(tag = "predicate_type")]
 pub enum PosRuleTestData {
     #[default]
-    #[serde(rename = "minecraft:always_true")]
+    #[serde(rename = "minecraft:always_true", alias = "always_true")]
     AlwaysTrue,
-    #[serde(rename = "minecraft:axis_aligned_linear_pos")]
+    #[serde(
+        rename = "minecraft:axis_aligned_linear_pos",
+        alias = "axis_aligned_linear_pos"
+    )]
     AxisAlignedLinearPos {
         #[serde(
             default = "default_structure_processor_axis",
