@@ -113,22 +113,39 @@ pub struct BiomeEffects {
     particle: Option<Particle>,
 }
 
+/// JSON color: `#RRGGBB` string or packed RGB integer (vanilla `STRING_RGB_COLOR`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ColorJson {
+    Int(i32),
+    Hex(String),
+}
+
+impl ColorJson {
+    fn to_i32(self) -> i32 {
+        match self {
+            ColorJson::Int(value) => value,
+            ColorJson::Hex(hex) => parse_hex_color(&hex),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct BiomeEffectsJson {
     #[serde(default = "default_water_color")]
-    water_color: String,
+    water_color: ColorJson,
     #[serde(default)]
-    foliage_color: Option<String>,
+    foliage_color: Option<ColorJson>,
     #[serde(default)]
-    grass_color: Option<String>,
+    grass_color: Option<ColorJson>,
     #[serde(default)]
-    dry_foliage_color: Option<String>,
+    dry_foliage_color: Option<ColorJson>,
     #[serde(default)]
     grass_color_modifier: GrassColorModifier,
 }
 
-fn default_water_color() -> String {
-    "#3f76e4".to_string()
+fn default_water_color() -> ColorJson {
+    ColorJson::Hex("#3f76e4".to_string())
 }
 
 impl From<BiomeEffectsJson> for BiomeEffects {
@@ -136,11 +153,11 @@ impl From<BiomeEffectsJson> for BiomeEffects {
         BiomeEffects {
             fog_color: 12638463, // Default value, will be overridden from attributes
             sky_color: 8103167,  // Default value, will be overridden from attributes
-            water_color: parse_hex_color(&json.water_color),
+            water_color: json.water_color.to_i32(),
             water_fog_color: 329011, // Default value, will be overridden from attributes
-            foliage_color: json.foliage_color.map(|s| parse_hex_color(&s)),
-            grass_color: json.grass_color.map(|s| parse_hex_color(&s)),
-            dry_foliage_color: json.dry_foliage_color.map(|s| parse_hex_color(&s)),
+            foliage_color: json.foliage_color.map(ColorJson::to_i32),
+            grass_color: json.grass_color.map(ColorJson::to_i32),
+            dry_foliage_color: json.dry_foliage_color.map(ColorJson::to_i32),
             grass_color_modifier: json.grass_color_modifier,
             music: None,           // Will be populated from attributes
             ambient_sound: None,   // Will be populated from attributes
