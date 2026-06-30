@@ -1249,28 +1249,6 @@ impl BlockBehavior for DefaultBlockBehavior {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        FluidState::EMPTY
-    }
-
-    fn is_liquid_container(&self, _state: BlockStateId) -> bool {
-        false
-    }
-
-    fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
-        false
-    }
-
-    fn place_liquid(
-        &self,
-        _level: &dyn LevelAccessor,
-        _pos: BlockPos,
-        _state: BlockStateId,
-        _fluid_state: FluidState,
-    ) -> bool {
-        false
-    }
 }
 
 /// Registry for block behaviors.
@@ -1338,6 +1316,8 @@ impl Default for BlockBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestLevel;
+
     use super::*;
 
     use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -1406,22 +1386,29 @@ mod tests {
     }
 
     #[test]
-    fn default_behavior_does_not_infer_liquid_container_from_waterlogged_property() {
+    fn default_behavior_preserves_unported_simple_waterlogged_blocks() {
         init_test_registry();
-        let ladder = vanilla_blocks::LADDER
+        let dry_ladder = vanilla_blocks::LADDER
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let wet_ladder = dry_ladder.set_value(&BlockStateProperties::WATERLOGGED, true);
         let behavior = DefaultBlockBehavior::new(&vanilla_blocks::LADDER);
+        let level = TestLevel::default();
 
-        assert_eq!(behavior.get_fluid_state(ladder), FluidState::EMPTY);
-        assert!(!behavior.is_liquid_container(ladder));
-        assert!(!behavior.can_place_liquid(ladder, &vanilla_fluids::WATER));
-        assert!(!behavior.place_liquid(
-            &crate::test_support::TestLevel::default(),
+        assert_eq!(
+            behavior.get_fluid_state(wet_ladder),
+            FluidState::source(&vanilla_fluids::WATER)
+        );
+        assert!(behavior.is_liquid_container(dry_ladder));
+        assert!(behavior.can_place_liquid(dry_ladder, &vanilla_fluids::WATER));
+        assert!(behavior.place_liquid(
+            &level,
             BlockPos::ZERO,
-            ladder,
+            dry_ladder,
             FluidState::source(&vanilla_fluids::WATER),
         ));
+        assert_eq!(level.last_placed_state(), Some(wet_ladder));
+        assert!(level.scheduled_water_tick());
     }
 
     #[test]
