@@ -268,23 +268,21 @@ impl ChunkGenerationTask {
     /// # Panics
     /// Panics if the schedule is invalid.
     pub fn schedule_next_layer(&self) {
-        let status_to_schedule;
-        if self.scheduled_status.lock().is_none() {
-            status_to_schedule = ChunkStatus::Empty;
+        let status_to_schedule = if self.scheduled_status.lock().is_none() {
+            ChunkStatus::Empty
         } else if !self.needs_generation.load(Ordering::Relaxed)
             && *self.scheduled_status.lock() == Some(ChunkStatus::Empty)
             && !self.can_load_without_generation()
         {
             self.needs_generation.store(true, Ordering::Relaxed);
-            status_to_schedule = ChunkStatus::Empty;
+            ChunkStatus::Empty
         } else {
-            status_to_schedule = self
-                .scheduled_status
+            self.scheduled_status
                 .lock()
                 .expect("Scheduled status missing")
                 .next()
-                .expect("Next status missing");
-        }
+                .expect("Next status missing")
+        };
 
         self.schedule_layer(
             status_to_schedule,
