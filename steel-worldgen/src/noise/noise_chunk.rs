@@ -21,10 +21,6 @@ use crate::noise::Beardifier;
 /// Overworld uses 8 (1 terrain + 4 noodle caves + 3 vein channels), nether/end use 1.
 const MAX_INTERP: usize = 16;
 
-/// Maximum slice length (`z_corners` * `corners_y`) across all dimensions.
-/// Overworld: (16/4+1) * (384/8+1) = 5 * 49 = 245. Rounded up for headroom.
-const MAX_SLICE_LEN: usize = 256;
-
 /// Stores density values at cell corners for a single chunk and provides
 /// trilinear interpolation between corners for block-level resolution.
 ///
@@ -47,7 +43,7 @@ pub struct NoiseChunk<N: DimensionNoises> {
     /// the slice-fill phase can run in parallel: each `cx` boundary's noise
     /// tree evaluation is independent. The per-block trilerp loop then
     /// indexes `slices[cx]` and `slices[cx + 1]` sequentially.
-    slices: Vec<Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>>,
+    slices: Vec<Box<[f64]>>,
     /// Number of active interpolation channels.
     interp_count: usize,
     /// Number of Y corners per Z column (`cell_count_y` + 1).
@@ -99,10 +95,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
         let interp_count = N::interpolated_count();
         assert!(
-            slice_len <= MAX_SLICE_LEN,
-            "slice_len {slice_len} exceeds MAX_SLICE_LEN {MAX_SLICE_LEN}"
-        );
-        assert!(
             interp_count <= MAX_INTERP,
             "interp_count {interp_count} exceeds MAX_INTERP {MAX_INTERP}"
         );
@@ -112,16 +104,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             .collect();
 
         let n_slices = cell_count_xz + 1;
+        let slice_storage_len = MAX_INTERP * slice_len;
         let mut slices = Vec::with_capacity(n_slices);
         for _ in 0..n_slices {
-            // The boxed fixed-size array keeps the `[f64; N]` type that the SIMD
-            // `fill` path and its `get_unchecked` SAFETY proofs rely on. This is a
-            // per-chunk constructor, not a hot path, so the stack temporary is fine.
-            #[expect(
-                clippy::large_stack_arrays,
-                reason = "fixed-size boxed array keeps the [f64; N] type the SIMD fill path relies on; cold per-chunk constructor"
-            )]
-            slices.push(Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]));
+            slices.push(vec![0.0; slice_storage_len].into_boxed_slice());
         }
 
         Self {
@@ -146,7 +132,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         reason = "slice filling needs the precomputed geometry and per-thread cache"
     )]
     fn fill_slice_into(
-        slice: &mut [f64; MAX_INTERP * MAX_SLICE_LEN],
+        slice: &mut [f64],
         cell_x: i32,
         block_ys: &[i32],
         blended_column: &mut [f64],
@@ -328,8 +314,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 // result is bit-identical to vanilla.
                                 //
                                 // SAFETY: max index = (z1_base + cell_y_idx + 1) * MAX_INTERP + (ch_batch+3)
-                                //         ≤ ((cell_count_xz+1)*corners_y - 1) * MAX_INTERP + MAX_INTERP - 1
-                                //         < MAX_SLICE_LEN * MAX_INTERP
+                                //         ≤ (slice_len - 1) * MAX_INTERP + MAX_INTERP - 1
+                                //         < slice.len()
                                 let i0_base = (z0_base + cell_y_idx) * MAX_INTERP;
                                 let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
                                 let i0_next = i0_base + MAX_INTERP;
