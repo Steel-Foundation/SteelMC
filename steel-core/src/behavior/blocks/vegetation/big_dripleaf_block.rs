@@ -147,7 +147,7 @@ impl BlockBehavior for BigDripleafBlock {
         }
     }
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let below_state = context.world.get_block_state(context.relative_pos.below());
+        let below_state = context.world.get_block_state(context.place_pos.below());
         let below_is_dripleaf_part = below_state.get_block() == &vanilla_blocks::BIG_DRIPLEAF
             || below_state.get_block() == &vanilla_blocks::BIG_DRIPLEAF_STEM;
         let facing = {
