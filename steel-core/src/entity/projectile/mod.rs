@@ -209,9 +209,24 @@ pub trait Projectile: Entity {
             .bounding_box()
             .expand_towards(self.velocity())
             .inflate(1.0);
-        // TODO: vanilla also checks the owner's root-vehicle passengers; we only
-        // consider the owner itself (no projectiles ride vehicles yet).
-        !aabb.intersects(owner.bounding_box())
+        let root_vehicle = owner.root_vehicle().unwrap_or_else(|| owner.clone());
+        let mut to_check = vec![root_vehicle];
+        let mut visited = Vec::new();
+
+        while let Some(entity) = to_check.pop() {
+            let entity_id = entity.id();
+            if visited.contains(&entity_id) {
+                continue;
+            }
+            visited.push(entity_id);
+
+            if entity.is_pickable() && aabb.intersects(entity.bounding_box()) {
+                return false;
+            }
+            to_check.extend(entity.passengers());
+        }
+
+        true
     }
 
     /// Returns vanilla `Projectile.canHitEntity`.
@@ -495,6 +510,74 @@ fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::{
+        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_entities,
+    };
+
+    use crate::entity::EntityBase;
+
+    struct OwnerCollisionProjectile {
+        base: EntityBase,
+        projectile_base: ProjectileBase,
+    }
+
+    impl OwnerCollisionProjectile {
+        fn new(id: i32, position: DVec3) -> Self {
+            Self {
+                base: EntityBase::new(
+                    id,
+                    position,
+                    vanilla_entities::ENDER_PEARL.dimensions,
+                    Weak::new(),
+                ),
+                projectile_base: ProjectileBase::new(),
+            }
+        }
+    }
+
+    impl Entity for OwnerCollisionProjectile {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ENDER_PEARL
+        }
+    }
+
+    impl Projectile for OwnerCollisionProjectile {
+        fn projectile_base(&self) -> &ProjectileBase {
+            &self.projectile_base
+        }
+    }
+
+    struct OwnerCollisionTestEntity {
+        base: EntityBase,
+        pickable: bool,
+    }
+
+    impl OwnerCollisionTestEntity {
+        fn shared(id: i32, position: DVec3, pickable: bool) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, Weak::new()),
+                pickable,
+            })
+        }
+    }
+
+    impl Entity for OwnerCollisionTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::PIG
+        }
+
+        fn is_pickable(&self) -> bool {
+            self.pickable && !self.is_removed()
+        }
+    }
 
     #[test]
     fn compute_margin_ramps_from_zero_to_cap() {
@@ -517,5 +600,37 @@ mod tests {
         let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
             .expect("a ray starting inside the box hits at its origin");
         assert_eq!(hit, DVec3::ZERO);
+    }
+
+    #[test]
+    fn owner_collision_range_checks_root_vehicle_passengers() {
+        init_test_registry();
+
+        let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
+        let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);
+        let vehicle = OwnerCollisionTestEntity::shared(3, DVec3::new(10.0, 0.0, 0.0), true);
+        let passenger = OwnerCollisionTestEntity::shared(4, DVec3::ZERO, true);
+        EntityBase::restore_passenger_relationship(&vehicle, &owner);
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        projectile.set_owner_entity(Some(&owner));
+
+        assert!(!projectile.is_outside_owner_collision_range());
+    }
+
+    #[test]
+    fn owner_collision_range_ignores_non_pickable_root_vehicle_passengers() {
+        init_test_registry();
+
+        let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
+        let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);
+        let vehicle = OwnerCollisionTestEntity::shared(3, DVec3::new(10.0, 0.0, 0.0), true);
+        let passenger = OwnerCollisionTestEntity::shared(4, DVec3::ZERO, false);
+        EntityBase::restore_passenger_relationship(&vehicle, &owner);
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+        projectile.set_owner_entity(Some(&owner));
+
+        assert!(projectile.is_outside_owner_collision_range());
     }
 }

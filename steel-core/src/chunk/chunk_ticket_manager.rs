@@ -194,8 +194,9 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
 /// A stored ticket plus its optional expiry countdown.
 ///
 /// `ticks_left` is `None` for permanent tickets (e.g. player view tickets) and
-/// `Some(n)` for timeout tickets that count down each scheduling tick and are
-/// removed when they reach zero. Mirrors vanilla `Ticket.ticksLeft` /
+/// `Some(n)` for timeout tickets. Vanilla removes timed-out tickets after their
+/// countdown drops below zero, so a ticket is retained for the tick where this
+/// value reaches zero. Mirrors vanilla `Ticket.ticksLeft` /
 /// `TicketType.hasTimeout`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StoredTicket {
@@ -297,19 +298,33 @@ impl ChunkTicketManager {
         false
     }
 
-    /// Decrements every timeout ticket's countdown and removes the expired ones.
+    /// Decrements every eligible timeout ticket's countdown and removes expired ones.
     ///
-    /// Mirrors vanilla `TicketStorage.purgeStaleTickets`; call once per scheduling
-    /// tick before [`Self::run_all_updates`].
+    /// Mirrors vanilla `TicketStorage.purgeStaleTickets`; call once per normal
+    /// game tick before the next [`Self::run_all_updates`] propagation.
     pub fn tick_timeouts(&mut self) {
-        self.tickets.retain(|_, tickets| {
+        self.tick_timeouts_if(|_, _| true);
+    }
+
+    pub(crate) fn tick_timeouts_if(
+        &mut self,
+        mut can_expire: impl FnMut(ChunkPos, ChunkTicket) -> bool,
+    ) {
+        self.tickets.retain(|pos, tickets| {
+            let pos = *pos;
             let before = tickets.len();
             tickets.retain_mut(|stored| {
                 let Some(ticks_left) = stored.ticks_left.as_mut() else {
                     return true;
                 };
-                *ticks_left = ticks_left.saturating_sub(1);
-                *ticks_left > 0
+                if !can_expire(pos, stored.ticket) {
+                    return true;
+                }
+                if *ticks_left == 0 {
+                    return false;
+                }
+                *ticks_left -= 1;
+                true
             });
             if tickets.len() != before {
                 self.dirty = true;
@@ -842,10 +857,16 @@ mod tests {
         manager.run_all_updates();
         assert!(manager.get_level(pos).is_some());
 
-        // 3 ticks: 3 -> 2 -> 1 -> 0 (removed on the third).
+        // Vanilla removes after the countdown drops below zero:
+        // 3 -> 2 -> 1 -> 0 -> removed.
         manager.tick_timeouts();
         assert!(!manager.is_dirty(), "no removal yet, levels unchanged");
         manager.tick_timeouts();
+        manager.tick_timeouts();
+        assert!(
+            !manager.is_dirty(),
+            "zero is retained until the next timeout tick"
+        );
         manager.tick_timeouts();
         assert!(manager.is_dirty(), "expiry marks the manager dirty");
 
@@ -868,11 +889,31 @@ mod tests {
         manager.add_ticket_with_timeout(pos, ticket, 3);
         assert_eq!(manager.ticket_count(), 1, "refresh must not duplicate");
 
-        // Would have expired after one more tick; instead it survives the full reset.
+        // Would have reached zero after one more tick; instead it survives the full reset.
+        manager.tick_timeouts();
         manager.tick_timeouts();
         manager.tick_timeouts();
         manager.run_all_updates();
         assert!(manager.get_level(pos).is_some());
+    }
+
+    #[test]
+    fn timeout_ticket_does_not_age_while_ineligible_to_expire() {
+        let mut manager = ChunkTicketManager::new();
+        let pos = ChunkPos::new(0, 0);
+        let ticket = ChunkTicket::simulated_full_chunks(2);
+        manager.add_ticket_with_timeout(pos, ticket, 1);
+        manager.run_all_updates();
+
+        manager.tick_timeouts_if(|_, _| false);
+        manager.tick_timeouts_if(|_, _| false);
+        manager.run_all_updates();
+        assert!(manager.get_level(pos).is_some());
+
+        manager.tick_timeouts_if(|_, _| true);
+        manager.tick_timeouts_if(|_, _| true);
+        manager.run_all_updates();
+        assert_eq!(manager.get_level(pos), None);
     }
 
     #[test]

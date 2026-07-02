@@ -1334,6 +1334,21 @@ impl ChunkMap {
         timings.tick_block_entities = start.elapsed();
     }
 
+    /// Advances timeout tickets once for a normal game tick.
+    pub fn tick_ticket_timeouts(&self) {
+        self.chunk_tickets
+            .lock()
+            .tick_timeouts_if(|pos, _| self.can_timeout_ticket_expire(pos));
+    }
+
+    fn can_timeout_ticket_expire(&self, pos: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&pos, |_, holder| {
+                holder.try_chunk(ChunkStatus::Full).is_some()
+            })
+            .unwrap_or(true)
+    }
+
     /// Scheduling tick: processes tickets, creates holders, schedules generation,
     /// runs generation tasks, and processes unloads.
     ///
@@ -1348,12 +1363,7 @@ impl ChunkMap {
         let changes: Vec<LevelChange> = {
             let _span = tracing::trace_span!("ticket_updates").entered();
             let start = Instant::now();
-            let mut ct = self.chunk_tickets.lock();
-            // Vanilla `ServerChunkCache.tick` purges stale timeout tickets before
-            // `runDistanceManagerUpdates`; do the same so expired tickets release
-            // their chunks in the same propagation pass.
-            ct.tick_timeouts();
-            let result = ct.run_all_updates().to_vec();
+            let result = self.chunk_tickets.lock().run_all_updates().to_vec();
             timings.ticket_updates = start.elapsed();
             result
         };

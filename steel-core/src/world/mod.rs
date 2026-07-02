@@ -1424,6 +1424,7 @@ impl World {
             self.tick_world_border();
             self.tick_weather();
             self.tick_time();
+            self.chunk_map.tick_ticket_timeouts();
         }
 
         let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;

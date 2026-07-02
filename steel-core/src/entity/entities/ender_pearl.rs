@@ -154,6 +154,7 @@ impl EnderPearlEntity {
             return;
         }
         player.reset_fall_distance();
+        player.reset_current_impulse_context();
 
         let damage = DamageSource::environment(&vanilla_damage_types::ENDER_PEARL);
         player.hurt(&damage, TELEPORT_DAMAGE);
