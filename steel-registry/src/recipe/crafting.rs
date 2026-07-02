@@ -252,6 +252,14 @@ pub enum CraftingRecipe {
     Shapeless(&'static ShapelessRecipe),
 }
 
+impl PartialEq for CraftingRecipe {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for CraftingRecipe {}
+
 impl CraftingRecipe {
     /// Returns the recipe identifier.
     #[must_use]

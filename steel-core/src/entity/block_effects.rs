@@ -30,7 +30,7 @@ pub(super) fn for_each_block_intersected_between(
     }
 
     let mut visited = FxHashSet::default();
-    let aabb_at_start = aabb_at_target.move_vec(-travel);
+    let aabb_at_start = aabb_at_target.translate(-travel);
     for pos in between_corners_in_direction(aabb_at_start, travel) {
         last_iteration = 0;
         if !visitor(pos, 0) {
@@ -106,9 +106,9 @@ fn add_collisions_along_travel(
     );
     let corner_dir = get_furthest_corner(travel);
     let to_center = DVec3::new(
-        f64::midpoint(aabb_at_target.min_x(), aabb_at_target.max_x()),
-        f64::midpoint(aabb_at_target.min_y(), aabb_at_target.max_y()),
-        f64::midpoint(aabb_at_target.min_z(), aabb_at_target.max_z()),
+        f64::midpoint(aabb_at_target.min(Axis::X), aabb_at_target.max(Axis::X)),
+        f64::midpoint(aabb_at_target.min(Axis::Y), aabb_at_target.max(Axis::Y)),
+        f64::midpoint(aabb_at_target.min(Axis::Z), aabb_at_target.max(Axis::Z)),
     );
     let to_corner = DVec3::new(
         to_center.x + box_size.x * 0.5 * f64::from(corner_dir.x),
@@ -208,13 +208,16 @@ fn add_collisions_along_travel(
     Some(iterations)
 }
 
-fn for_each_block_in_aabb(aabb: WorldAabb, mut visitor: impl FnMut(BlockPos) -> bool) -> bool {
-    let min_x = aabb.min_x().floor() as i32;
-    let min_y = aabb.min_y().floor() as i32;
-    let min_z = aabb.min_z().floor() as i32;
-    let max_x = aabb.max_x().floor() as i32;
-    let max_y = aabb.max_y().floor() as i32;
-    let max_z = aabb.max_z().floor() as i32;
+pub(super) fn for_each_block_in_aabb(
+    aabb: WorldAabb,
+    mut visitor: impl FnMut(BlockPos) -> bool,
+) -> bool {
+    let min_x = aabb.min(Axis::X).floor() as i32;
+    let min_y = aabb.min(Axis::Y).floor() as i32;
+    let min_z = aabb.min(Axis::Z).floor() as i32;
+    let max_x = aabb.max(Axis::X).floor() as i32;
+    let max_y = aabb.max(Axis::Y).floor() as i32;
+    let max_z = aabb.max(Axis::Z).floor() as i32;
 
     for x in min_x..=max_x {
         for y in min_y..=max_y {
@@ -231,14 +234,14 @@ fn for_each_block_in_aabb(aabb: WorldAabb, mut visitor: impl FnMut(BlockPos) -> 
 
 fn between_corners_in_direction(aabb: WorldAabb, direction: DVec3) -> Vec<BlockPos> {
     let first_corner = IVec3::new(
-        aabb.min_x().floor() as i32,
-        aabb.min_y().floor() as i32,
-        aabb.min_z().floor() as i32,
+        aabb.min(Axis::X).floor() as i32,
+        aabb.min(Axis::Y).floor() as i32,
+        aabb.min(Axis::Z).floor() as i32,
     );
     let second_corner = IVec3::new(
-        aabb.max_x().floor() as i32,
-        aabb.max_y().floor() as i32,
-        aabb.max_z().floor() as i32,
+        aabb.max(Axis::X).floor() as i32,
+        aabb.max(Axis::Y).floor() as i32,
+        aabb.max(Axis::Z).floor() as i32,
     );
     between_corners_in_direction_between(first_corner, second_corner, direction)
 }
@@ -374,19 +377,19 @@ fn clip_aabb(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
 }
 
 fn contains(aabb: WorldAabb, point: DVec3) -> bool {
-    point.x >= aabb.min_x()
-        && point.x < aabb.max_x()
-        && point.y >= aabb.min_y()
-        && point.y < aabb.max_y()
-        && point.z >= aabb.min_z()
-        && point.z < aabb.max_z()
+    point.x >= aabb.min(Axis::X)
+        && point.x < aabb.max(Axis::X)
+        && point.y >= aabb.min(Axis::Y)
+        && point.y < aabb.max(Axis::Y)
+        && point.z >= aabb.min(Axis::Z)
+        && point.z < aabb.max(Axis::Z)
 }
 
-const fn center(aabb: WorldAabb) -> DVec3 {
+fn center(aabb: WorldAabb) -> DVec3 {
     DVec3::new(
-        f64::midpoint(aabb.min_x(), aabb.max_x()),
-        f64::midpoint(aabb.min_y(), aabb.max_y()),
-        f64::midpoint(aabb.min_z(), aabb.max_z()),
+        f64::midpoint(aabb.min(Axis::X), aabb.max(Axis::X)),
+        f64::midpoint(aabb.min(Axis::Y), aabb.max(Axis::Y)),
+        f64::midpoint(aabb.min(Axis::Z), aabb.max(Axis::Z)),
     )
 }
 

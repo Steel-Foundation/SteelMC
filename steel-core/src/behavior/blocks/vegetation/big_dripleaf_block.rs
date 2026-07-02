@@ -259,6 +259,11 @@ impl Bonemealable for BigDripleafBlock {
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {
-        BonemealAction::Grower
+        let state = self.block.default_state();
+        self.can_survive(state, context.world, context.place_pos)
+            .then_some(state.set_value(
+                &BlockStateProperties::WATERLOGGED,
+                context.is_water_source(),
+            ))
     }
 }

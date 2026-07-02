@@ -16,6 +16,11 @@ impl CommandArgument for Vector3Argument {
         arg: &'a [&'a str],
         context: &mut CommandContext,
     ) -> Option<(&'a [&'a str], Self::Output)> {
+        if arg.first()?.starts_with('^') {
+            let pos = Helper::parse_local_coordinates(arg, context)?;
+            return Some((&arg[3..], pos));
+        }
+
         let x = Helper::parse_relative_coordinate::<false>(arg.first()?, Some(context.position.x))?;
         let y = Helper::parse_relative_coordinate::<true>(arg.get(1)?, Some(context.position.y))?;
         let z = Helper::parse_relative_coordinate::<false>(arg.get(2)?, Some(context.position.z))?;

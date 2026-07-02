@@ -1,3 +1,4 @@
+use glam::IVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -6,6 +7,7 @@ use steel_registry::{REGISTRY, RegistryExt, vanilla_biomes};
 use steel_utils::random::RandomSource;
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::region::WorldGenRegion;
@@ -287,8 +289,7 @@ impl ChunkGenerator for FlatChunkGenerator {
         }
     }
 
-    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
-    }
+    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(IVec3) -> u16) {}
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 

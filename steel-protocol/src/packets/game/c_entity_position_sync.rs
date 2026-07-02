@@ -1,3 +1,4 @@
+use glam::DVec3;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_ENTITY_POSITION_SYNC;
 
@@ -7,12 +8,8 @@ use steel_registry::packets::play::C_ENTITY_POSITION_SYNC;
 pub struct CEntityPositionSync {
     #[write(as = VarInt)]
     pub entity_id: i32,
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-    pub velocity_x: f64,
-    pub velocity_y: f64,
-    pub velocity_z: f64,
+    pub pos: DVec3,
+    pub vel: DVec3,
     /// Rotation on the X axis, in degrees
     pub yaw: f32,
     /// Rotation on the Y axis, in degrees

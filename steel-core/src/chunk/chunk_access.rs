@@ -9,7 +9,8 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
-    heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
+    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkLightData,
+    light::ChunkSkyLightSources, proto_chunk::ProtoChunk, section::Sections,
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -184,12 +185,16 @@ impl ChunkAccess {
                 chunk
                     .sections
                     .set_relative_block(relative_x, relative_y, relative_z, value);
+                chunk.refresh_light_emptiness_maps();
                 chunk.dirty.store(true, Ordering::Release);
             }
             Self::Proto(proto_chunk) => {
                 proto_chunk
                     .sections
                     .set_relative_block(relative_x, relative_y, relative_z, value);
+                if proto_chunk.status() >= ChunkStatus::InitializeLight {
+                    proto_chunk.refresh_light_emptiness_maps();
+                }
                 proto_chunk.dirty.store(true, Ordering::Release);
             }
             Self::Unloaded => unreachable!(),
@@ -207,9 +212,94 @@ impl ChunkAccess {
         relative_z: usize,
         value: BlockStateId,
     ) {
-        self.set_relative_block(relative_x, relative_y, relative_z, value);
+        match self {
+            Self::Full(chunk) => {
+                chunk
+                    .sections
+                    .set_relative_block(relative_x, relative_y, relative_z, value);
+                chunk.refresh_light_emptiness_maps();
+                chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Proto(proto_chunk) => {
+                if proto_chunk.status() >= ChunkStatus::InitializeLight {
+                    proto_chunk
+                        .sections
+                        .set_relative_block(relative_x, relative_y, relative_z, value);
+                    proto_chunk.refresh_light_emptiness_maps();
+                } else {
+                    proto_chunk.sections.set_relative_block_for_generation(
+                        relative_x, relative_y, relative_z, value,
+                    );
+                }
+                proto_chunk.dirty.store(true, Ordering::Release);
+            }
+            Self::Unloaded => unreachable!(),
+        }
         let y = self.min_y() + relative_y as i32;
         self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
+    }
+
+    /// Writes multiple generation blocks in one batch.
+    ///
+    /// Uses the raw `Building` palette only while the actual chunk is still pre-light.
+    /// Later chunks keep cached section counters/light emptiness coherent.
+    pub(crate) fn write_block_batch_for_generation(
+        &self,
+        blocks: &[(usize, usize, usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+
+        if self.uses_pre_light_generation_writes() {
+            self.sections().write_block_batch(blocks);
+            return;
+        }
+
+        for &(x, relative_y, z, value) in blocks {
+            self.sections().set_relative_block(x, relative_y, z, value);
+        }
+        self.refresh_light_emptiness_maps_after_generation_write();
+    }
+
+    /// Writes multiple generation blocks in one column.
+    ///
+    /// Heightmap maintenance remains the caller's responsibility, matching
+    /// `write_column_blocks`.
+    pub(crate) fn write_column_blocks_for_generation(
+        &self,
+        x: usize,
+        z: usize,
+        blocks: &[(usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+
+        if self.uses_pre_light_generation_writes() {
+            self.sections().write_column_blocks(x, z, blocks);
+            return;
+        }
+
+        for &(relative_y, value) in blocks {
+            self.sections().set_relative_block(x, relative_y, z, value);
+        }
+        self.refresh_light_emptiness_maps_after_generation_write();
+    }
+
+    fn uses_pre_light_generation_writes(&self) -> bool {
+        matches!(self, Self::Proto(proto) if proto.status() < ChunkStatus::InitializeLight)
+    }
+
+    fn refresh_light_emptiness_maps_after_generation_write(&self) {
+        match self {
+            Self::Full(chunk) => chunk.refresh_light_emptiness_maps(),
+            Self::Proto(proto) if proto.status() >= ChunkStatus::InitializeLight => {
+                proto.refresh_light_emptiness_maps();
+            }
+            Self::Proto(_) => {}
+            Self::Unloaded => unreachable!(),
+        }
     }
 
     /// Applies heightmap maintenance after a direct section write.
@@ -244,6 +334,51 @@ impl ChunkAccess {
         }
     }
 
+    /// Applies heightmap maintenance after direct section writes in one column.
+    pub(crate) fn update_heightmaps_after_direct_column_writes(
+        &self,
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        if relative_writes.is_empty() {
+            return;
+        }
+
+        match self {
+            Self::Full(chunk) => {
+                let min_y = chunk.min_y();
+                let sections = &chunk.sections;
+                let get_block = |lx: usize, scan_y: i32, lz: usize| {
+                    let scan_section_index = ((scan_y - min_y) / 16) as usize;
+                    let scan_local_y = ((scan_y - min_y) % 16) as usize;
+                    sections.sections[scan_section_index]
+                        .read()
+                        .states
+                        .get(lx, scan_local_y, lz)
+                };
+                let mut heightmaps = chunk.heightmaps.write();
+                for &(relative_y, state) in relative_writes {
+                    heightmaps.update(
+                        local_x,
+                        min_y + relative_y as i32,
+                        local_z,
+                        state,
+                        get_block,
+                    );
+                }
+            }
+            Self::Proto(proto) => {
+                proto.update_status_heightmaps_after_column_block_changes(
+                    local_x,
+                    local_z,
+                    relative_writes,
+                );
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns whether the chunk has been modified since last save.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -263,7 +398,16 @@ impl ChunkAccess {
         }
     }
 
-    /// Clears the dirty flag (called after saving).
+    /// Clears the dirty flag and returns whether it was previously set.
+    pub fn take_dirty(&self) -> bool {
+        match self {
+            Self::Full(chunk) => chunk.dirty.swap(false, Ordering::AcqRel),
+            Self::Proto(proto_chunk) => proto_chunk.dirty.swap(false, Ordering::AcqRel),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Clears the dirty flag.
     pub fn clear_dirty(&self) {
         match self {
             Self::Full(chunk) => chunk.dirty.store(false, Ordering::Release),
@@ -358,6 +502,52 @@ impl ChunkAccess {
                 );
             }
             Self::Full(_) => panic!("prime_final_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Fills this chunk's vanilla skylight-source cache from current sections.
+    pub fn initialize_light_sources(&self) {
+        match self {
+            Self::Full(chunk) => chunk.initialize_light_sources(),
+            Self::Proto(proto) => proto.initialize_light_sources(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard for this chunk's skylight-source cache.
+    pub fn sky_light_sources(&self) -> RwLockReadGuard<'_, ChunkSkyLightSources> {
+        match self {
+            Self::Full(chunk) => chunk.sky_light_sources.read(),
+            Self::Proto(proto) => proto.sky_light_sources.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns block-light source positions in `ScalableLux` section/local-index order.
+    #[must_use]
+    pub fn block_light_sources(&self) -> Vec<BlockPos> {
+        match self {
+            Self::Full(chunk) => chunk.sections.block_light_sources(chunk.pos, chunk.min_y()),
+            Self::Proto(proto) => proto.sections.block_light_sources(proto.pos, proto.min_y()),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard for this chunk's committed light data.
+    pub fn light(&self) -> RwLockReadGuard<'_, ChunkLightData> {
+        match self {
+            Self::Full(chunk) => chunk.light.read(),
+            Self::Proto(proto) => proto.light.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a write guard for this chunk's committed light data.
+    pub fn light_mut(&self) -> RwLockWriteGuard<'_, ChunkLightData> {
+        match self {
+            Self::Full(chunk) => chunk.light.write(),
+            Self::Proto(proto) => proto.light.write(),
             Self::Unloaded => unreachable!(),
         }
     }
@@ -644,8 +834,7 @@ impl ChunkAccess {
 
     /// Ticks the chunk if it's a full chunk.
     ///
-    /// Drains ready scheduled ticks into the provided vecs, then processes
-    /// block entities, entities, and random ticks.
+    /// Drains ready scheduled ticks into the provided vecs, then processes random ticks.
     pub fn tick(
         &self,
         random_tick_speed: u32,
@@ -662,22 +851,73 @@ impl ChunkAccess {
             );
         }
     }
+
+    /// Drains ready scheduled ticks if this is a full chunk.
+    pub fn drain_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        if let Self::Full(chunk) = self {
+            chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        }
+    }
+
+    /// Ticks random blocks if this is a full chunk.
+    pub fn tick_random_blocks(&self, random_tick_speed: u32) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_random_blocks(random_tick_speed);
+        }
+    }
+
+    /// Ticks block entities if this is a full chunk.
+    pub fn tick_block_entities(&self) {
+        if let Self::Full(chunk) = self {
+            chunk.tick_block_entities();
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::types::UpdateFlags;
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::heightmap::ChunkHeightmaps;
+    use crate::chunk::light::ChunkLightData;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     #[test]
+    fn take_dirty_consumes_current_dirty_state_without_blocking_later_dirty() {
+        init_test_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let chunk = ChunkAccess::Proto(proto);
+
+        assert!(chunk.is_dirty());
+        assert!(chunk.take_dirty());
+        assert!(!chunk.is_dirty());
+        assert!(!chunk.take_dirty());
+
+        chunk.mark_dirty();
+
+        assert!(chunk.take_dirty());
+        assert!(!chunk.is_dirty());
+    }
+
+    #[test]
     fn proto_height_at_primes_missing_heightmap() {
         init_test_registry();
+        init_behaviors();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -729,6 +969,114 @@ mod tests {
     }
 
     #[test]
+    fn initialized_proto_generation_relative_write_keeps_counts_ready() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.set_status(ChunkStatus::InitializeLight);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(3, 5, 7, stone);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 1);
+    }
+
+    #[test]
+    fn batched_generation_column_writes_update_proto_heightmaps() {
+        init_test_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk
+            .sections()
+            .write_column_blocks(3, 7, &[(5, stone), (8, stone)]);
+        chunk.mark_dirty();
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(5, stone), (8, stone)]);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("batched generation writes should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 9);
+        drop(heightmaps);
+
+        chunk.sections().write_column_blocks(3, 7, &[(8, air)]);
+        chunk.mark_dirty();
+        chunk.update_heightmaps_after_direct_column_writes(3, 7, &[(8, air)]);
+
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("OceanFloorWg should remain present");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 6);
+    }
+
+    #[test]
+    fn initialized_proto_generation_batch_writes_keep_counts_ready() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.set_status(ChunkStatus::InitializeLight);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.write_block_batch_for_generation(&[(1, 2, 3, stone), (4, 5, 6, stone)]);
+        chunk.write_column_blocks_for_generation(7, 8, &[(9, stone)]);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 3);
+    }
+
+    #[test]
+    fn initialize_light_sources_reads_direct_generation_writes() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(0, 4, 0, stone);
+        chunk.initialize_light_sources();
+
+        assert_eq!(chunk.sky_light_sources().get_lowest_source_y(0, 0), 5);
+    }
+
+    #[test]
     fn full_chunk_heightmap_type_maps_worldgen_types_to_final_types() {
         assert_eq!(
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::WorldSurfaceWg),
@@ -742,6 +1090,110 @@ mod tests {
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
             HeightmapType::MotionBlocking
         );
+    }
+
+    #[test]
+    fn public_relative_write_keeps_full_chunk_serializable() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        chunk.set_relative_block(3, 5, 7, stone);
+
+        let ChunkAccess::Full(level_chunk) = &chunk else {
+            panic!("test chunk should remain full");
+        };
+        let _ = level_chunk.extract_chunk_data();
+    }
+
+    #[test]
+    fn full_chunk_light_emptiness_map_tracks_public_relative_writes() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+
+        let ChunkAccess::Full(level_chunk) = &chunk else {
+            panic!("test chunk should remain full");
+        };
+        {
+            let light = level_chunk.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+        }
+
+        chunk.set_relative_block(3, 5, 7, stone);
+        {
+            let light = level_chunk.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[false][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[false][..]));
+        }
+
+        chunk.set_relative_block(3, 5, 7, air);
+        let light = level_chunk.light.read();
+        assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+        assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+    }
+
+    #[test]
+    fn loaded_proto_light_emptiness_map_tracks_set_block_state_after_initialize_light() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            ChunkStatus::InitializeLight,
+            0,
+            16,
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            None,
+            Vec::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            Weak::new(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        {
+            let light = proto.light.read();
+            assert_eq!(light.block.emptiness_map(), Some(&[true][..]));
+            assert_eq!(light.sky.emptiness_map(), Some(&[true][..]));
+        }
+
+        proto.set_block_state(BlockPos::new(3, 5, 7), stone, UpdateFlags::UPDATE_NONE);
+
+        assert_eq!(proto.sky_light_sources.read().get_lowest_source_y(3, 7), 6);
+        let light = proto.light.read();
+        assert_eq!(light.block.emptiness_map(), Some(&[false][..]));
+        assert_eq!(light.sky.emptiness_map(), Some(&[false][..]));
     }
 
     #[test]
@@ -759,8 +1211,33 @@ mod tests {
             ChunkHeightmaps::new(0, 16),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
         ));
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
+    }
+
+    #[test]
+    fn full_block_change_updates_sky_light_sources() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        ));
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        chunk.set_block_state(BlockPos::new(0, 4, 0), stone, UpdateFlags::UPDATE_CLIENTS);
+
+        assert_eq!(chunk.sky_light_sources().get_lowest_source_y(0, 0), 5);
     }
 }

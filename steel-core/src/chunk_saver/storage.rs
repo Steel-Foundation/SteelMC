@@ -2,19 +2,23 @@ use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
 use crate::chunk::level_chunk::LevelChunk;
+use crate::chunk::light::{
+    ChunkLightData, ChunkLightLayerStorage, DATA_LAYER_SIZE, LightSection, LightSectionData,
+};
 use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
 use crate::entity::{
-    ENTITIES, Entity, EntityBase, EntityFireFreezeState, EntityLoadRequest, RemovalReason,
-    SharedEntity,
+    ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
+    MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
-use glam::DVec3;
+use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
+use simdnbt::ToNbtTag;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
@@ -33,6 +37,7 @@ use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_bio
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
+use text_components::TextComponent;
 
 use steel_worldgen::structure::desert_pyramid::DesertPyramidPieceData;
 use steel_worldgen::structure::fortress::FortressPieceData;
@@ -53,6 +58,9 @@ use steel_worldgen::structure::{
     StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
     TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
+
+const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
+const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
 /// -1 = none, 0 = south, 1 = west, 2 = north, 3 = east.
@@ -331,13 +339,23 @@ fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
         .then_with(|| a.path.cmp(&b.path))
 }
 
+fn homogeneous_packed_light_value(data: &[u8; DATA_LAYER_SIZE]) -> Option<u8> {
+    let first = data[0];
+    let value = first & 0x0F;
+    if first >> 4 != value {
+        return None;
+    }
+    data.iter().all(|byte| *byte == first).then_some(value)
+}
+
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
-    PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
+    PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentBoundingBox,
+    PersistentChunk, PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
-    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
+    PersistentLightData, PersistentLightSection, PersistentMineshaftPieceData,
+    PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
     PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
     PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
@@ -523,6 +541,10 @@ impl ChunkStorage {
         clippy::similar_names,
         reason = "`pois` vs `pos` are semantically distinct"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "chunk save preparation keeps related serialization setup in one pass"
+    )]
     pub fn prepare_chunk_save(
         chunk: &ChunkAccess,
         runtime_entities: &[SharedEntity],
@@ -530,6 +552,18 @@ impl ChunkStorage {
     ) -> Option<PreparedChunkSave> {
         if !force && !chunk.is_dirty() {
             return None;
+        }
+
+        // Finalize any sections still in worldgen Building mode. Proto chunks
+        // can be saved before being upgraded to `LevelChunk::from_proto`
+        // (which is where `recalculate_counts` normally runs and implicitly
+        // finalizes). Without this, `section_to_persistent` would panic on
+        // the Building variant.
+        for section_holder in &chunk.sections().sections {
+            let mut guard = section_holder.write();
+            if matches!(&guard.states, PalettedContainer::Building(_)) {
+                guard.recalculate_counts();
+            }
         }
 
         let pos = chunk.pos();
@@ -593,6 +627,12 @@ impl ChunkStorage {
             .map(|c| Self::heightmaps_to_persistent(&c.heightmaps.read()))
             .unwrap_or_default();
 
+        let light = match chunk {
+            ChunkAccess::Full(c) => Self::light_to_persistent(&c.light.read()),
+            ChunkAccess::Proto(c) => Self::light_to_persistent(&c.light.read()),
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
         // Serialize structure data (works for both proto and full chunks)
         let structure_starts = Self::structure_starts_to_persistent(&chunk.structure_starts());
         let structure_references =
@@ -629,6 +669,7 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            light,
             carving_mask,
             postprocessing,
             structure_starts,
@@ -682,6 +723,7 @@ impl ChunkStorage {
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
+        light: PersistentLightData,
         carving_mask: Option<Vec<u64>>,
         postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
@@ -734,11 +776,165 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            light,
             carving_mask,
             postprocessing,
             structure_starts,
             structure_references,
             pois,
+        }
+    }
+
+    /// Converts chunk-owned light data to persistent format.
+    fn light_to_persistent(light: &ChunkLightData) -> PersistentLightData {
+        PersistentLightData {
+            block: Self::light_layer_to_persistent(&light.block),
+            sky: Self::light_layer_to_persistent(&light.sky),
+        }
+    }
+
+    fn light_layer_to_persistent(layer: &ChunkLightLayerStorage) -> Vec<PersistentLightSection> {
+        layer
+            .sections()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| {
+                let Ok(section_index) = u32::try_from(index) else {
+                    tracing::warn!(
+                        index,
+                        "Light section index does not fit in persistent format"
+                    );
+                    return None;
+                };
+
+                match section {
+                    LightSection::Missing => None,
+                    LightSection::Visible(data) => {
+                        if data.is_all_zero() {
+                            Some(PersistentLightSection::Uninitialized { section_index })
+                        } else {
+                            Some(PersistentLightSection::Initialized {
+                                section_index,
+                                data: data.to_bytes().as_ref().to_vec(),
+                            })
+                        }
+                    }
+                    LightSection::Internal(data) => {
+                        if data.is_all_zero() {
+                            None
+                        } else {
+                            Some(PersistentLightSection::Internal {
+                                section_index,
+                                data: data.to_bytes().as_ref().to_vec(),
+                            })
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn persistent_to_light(
+        persistent: &PersistentLightData,
+        min_y: i32,
+        height: i32,
+        status: ChunkStatus,
+    ) -> ChunkLightData {
+        let mut light = ChunkLightData::for_valid_world_height(min_y, height);
+        if status < ChunkStatus::Light {
+            return light;
+        }
+
+        Self::apply_persistent_light_layer(&mut light.block, &persistent.block, "block");
+        Self::apply_persistent_light_layer(&mut light.sky, &persistent.sky, "sky");
+        light
+            .sky
+            .fill_loaded_missing_sky_sections_below_data_with_zero();
+        light
+    }
+
+    fn apply_persistent_light_layer(
+        layer: &mut ChunkLightLayerStorage,
+        persistent: &[PersistentLightSection],
+        layer_name: &str,
+    ) {
+        for section in persistent {
+            let Ok(section_index) = usize::try_from(section.section_index()) else {
+                tracing::warn!(
+                    layer = layer_name,
+                    section_index = section.section_index(),
+                    "Persisted light section index does not fit this platform"
+                );
+                continue;
+            };
+
+            let Some(target) = layer.sections_mut().get_mut(section_index) else {
+                tracing::warn!(
+                    layer = layer_name,
+                    section_index,
+                    "Persisted light section index is outside world light range"
+                );
+                continue;
+            };
+
+            let Some(restored) = Self::persistent_to_light_section(section, layer_name) else {
+                continue;
+            };
+            *target = restored;
+        }
+    }
+
+    fn persistent_to_light_section(
+        persistent: &PersistentLightSection,
+        layer_name: &str,
+    ) -> Option<LightSection> {
+        match persistent {
+            PersistentLightSection::Uninitialized { .. } => {
+                Some(LightSection::visible(LightSectionData::homogeneous(0)))
+            }
+            PersistentLightSection::Initialized {
+                section_index,
+                data,
+            } => Self::persistent_light_bytes_to_data(data, *section_index, layer_name)
+                .map(LightSection::visible),
+            PersistentLightSection::Internal {
+                section_index,
+                data,
+            } => {
+                let restored =
+                    Self::persistent_light_bytes_to_data(data, *section_index, layer_name)?;
+                if restored.is_all_zero() {
+                    None
+                } else {
+                    Some(LightSection::internal(restored))
+                }
+            }
+        }
+    }
+
+    fn persistent_light_bytes_to_data(
+        data: &[u8],
+        section_index: u32,
+        layer_name: &str,
+    ) -> Option<LightSectionData> {
+        let actual = data.len();
+        let bytes = Box::<[u8]>::from(data);
+        let result: Result<Box<[u8; DATA_LAYER_SIZE]>, Box<[u8]>> = bytes.try_into();
+        let Ok(bytes) = result else {
+            tracing::warn!(
+                layer = layer_name,
+                section_index,
+                actual,
+                expected = DATA_LAYER_SIZE,
+                "Skipping persisted light section with invalid byte length"
+            );
+            return None;
+        };
+
+        if let Some(value) = homogeneous_packed_light_value(&bytes) {
+            Some(LightSectionData::homogeneous(value))
+        } else {
+            Some(LightSectionData::Packed(bytes))
         }
     }
 
@@ -754,6 +950,108 @@ impl ChunkStorage {
     pub(crate) fn entity_tree_to_persistent(entity: &SharedEntity) -> Option<PersistentEntity> {
         let mut visited = FxHashSet::default();
         Self::entity_to_persistent(entity, &mut visited)
+    }
+
+    fn custom_name_to_persistent(custom_name: Option<&TextComponent>) -> Vec<u8> {
+        let Some(custom_name) = custom_name else {
+            return Vec::new();
+        };
+
+        let mut root = NbtCompound::new();
+        root.insert("CustomName", custom_name.to_nbt_tag());
+        let mut bytes = Vec::new();
+        root.write(&mut bytes);
+        bytes
+    }
+
+    fn custom_name_from_persistent(bytes: &[u8], uuid: uuid::Uuid) -> Option<TextComponent> {
+        if bytes.is_empty() {
+            return None;
+        }
+
+        let Ok(root) = read_borrowed_compound(&mut Cursor::new(bytes)) else {
+            tracing::warn!(
+                ?uuid,
+                "Failed to parse entity custom name NBT, defaulting to no custom name"
+            );
+            return None;
+        };
+        let root = simdnbt::borrow::NbtCompound::from(&root);
+        let tag = root.get("CustomName")?;
+        let custom_name = TextComponent::from_nbt(&tag.to_owned());
+        if custom_name.is_none() {
+            tracing::warn!(
+                ?uuid,
+                "Failed to decode entity custom name, defaulting to no custom name"
+            );
+            return None;
+        }
+        custom_name
+    }
+
+    fn compound_to_persistent(compound: &NbtCompound) -> Vec<u8> {
+        if compound.is_empty() {
+            return Vec::new();
+        }
+
+        let mut bytes = Vec::new();
+        compound.write(&mut bytes);
+        bytes
+    }
+
+    fn compound_from_persistent(bytes: &[u8], uuid: uuid::Uuid) -> NbtCompound {
+        if bytes.is_empty() {
+            return NbtCompound::new();
+        }
+
+        let Ok(compound) = read_borrowed_compound(&mut Cursor::new(bytes)) else {
+            tracing::warn!(
+                ?uuid,
+                "Failed to parse entity custom data NBT, defaulting to empty custom data"
+            );
+            return NbtCompound::new();
+        };
+        simdnbt::borrow::NbtCompound::from(&compound).to_owned()
+    }
+
+    fn save_data_from_persistent(
+        persistent: &PersistentEntity,
+        uuid: uuid::Uuid,
+    ) -> EntityBaseSaveData {
+        EntityBaseSaveData {
+            air_supply: persistent.air_supply,
+            portal_cooldown: persistent.portal_cooldown,
+            no_gravity: persistent.no_gravity,
+            invulnerable: persistent.invulnerable,
+            custom_name: Self::custom_name_from_persistent(&persistent.custom_name_nbt, uuid),
+            custom_name_visible: persistent.custom_name_visible,
+            silent: persistent.silent,
+            glowing: persistent.glowing,
+            tags: persistent
+                .tags
+                .iter()
+                .take(MAX_ENTITY_TAGS)
+                .cloned()
+                .collect(),
+            custom_data: Self::compound_from_persistent(&persistent.custom_data_nbt, uuid),
+        }
+    }
+
+    fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
+        DVec3::new(
+            pos.x.clamp(
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ),
+            pos.y.clamp(
+                -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+                ENTITY_LOAD_MAX_VERTICAL_POSITION,
+            ),
+            pos.z.clamp(
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ),
+        )
     }
 
     fn entity_to_persistent(
@@ -783,6 +1081,7 @@ impl ChunkStorage {
         let vel = entity.velocity();
         let (yaw, pitch) = entity.rotation();
         let fire_freeze = entity.fire_freeze_state();
+        let save_data = entity.base().save_data();
 
         if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
@@ -817,7 +1116,16 @@ impl ChunkStorage {
             was_in_powder_snow: fire_freeze.was_in_powder_snow(),
             has_visual_fire: fire_freeze.has_visual_fire(),
             on_ground: entity.on_ground(),
-            no_gravity: entity.is_no_gravity(),
+            no_gravity: save_data.no_gravity,
+            invulnerable: save_data.invulnerable,
+            air_supply: save_data.air_supply,
+            portal_cooldown: save_data.portal_cooldown,
+            custom_name_nbt: Self::custom_name_to_persistent(save_data.custom_name.as_ref()),
+            custom_name_visible: save_data.custom_name_visible,
+            silent: save_data.silent,
+            glowing: save_data.glowing,
+            tags: save_data.tags.iter().cloned().collect(),
+            custom_data_nbt: Self::compound_to_persistent(&save_data.custom_data),
             nbt_data: nbt_bytes,
             passengers,
         })
@@ -880,6 +1188,10 @@ impl ChunkStorage {
                     biomes,
                 }
             }
+            PalettedContainer::Building(_) => panic!(
+                "section_to_persistent called on a section still in worldgen Building mode; \
+                 finalize_building must be called before serialization"
+            ),
         }
     }
 
@@ -924,6 +1236,10 @@ impl ChunkStorage {
                     biome_data,
                 }
             }
+            PalettedContainer::Building(_) => panic!(
+                "biomes_to_persistent called on a section still in worldgen Building mode; \
+                 finalize_building must be called before serialization"
+            ),
         }
     }
 
@@ -959,6 +1275,7 @@ impl ChunkStorage {
         let structure_starts = Self::persistent_to_structure_starts(&persistent.structure_starts);
         let structure_references =
             Self::persistent_to_structure_references(&persistent.structure_references);
+        let light = Self::persistent_to_light(&persistent.light, min_y, height, status);
 
         if status == ChunkStatus::Full {
             // Reconstruct scheduled ticks from persistent data
@@ -979,6 +1296,7 @@ impl ChunkStorage {
                 heightmaps,
                 structure_starts,
                 structure_references,
+                light,
             );
 
             // Load block entities
@@ -1046,6 +1364,7 @@ impl ChunkStorage {
                 block_ticks,
                 fluid_ticks,
                 level.clone(),
+                light,
             );
 
             for persistent_be in &persistent.block_entities {
@@ -1183,7 +1502,7 @@ impl ChunkStorage {
         use uuid::Uuid;
 
         // Reconstruct base fields
-        let pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
+        let stored_pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
         let mut velocity = DVec3::new(
             persistent.motion[0],
             persistent.motion[1],
@@ -1193,14 +1512,24 @@ impl ChunkStorage {
         let uuid = Uuid::from_bytes(persistent.uuid);
 
         // Validate position is finite
-        if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+        if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
                 ?uuid,
                 "Entity has non-finite position {:?}, skipping load",
-                pos
+                stored_pos
             );
             return None;
         }
+
+        if !rotation.0.is_finite() || !rotation.1.is_finite() {
+            tracing::warn!(
+                ?uuid,
+                "Entity has non-finite rotation {rotation:?}, skipping load"
+            );
+            return None;
+        }
+
+        let pos = Self::clamp_loaded_entity_position(stored_pos);
 
         // Validate position is within expected chunk (sanity check)
         let expected_chunk = ChunkPos::from_entity_pos(pos);
@@ -1226,11 +1555,12 @@ impl ChunkStorage {
 
         // Look up entity type
         let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
+        let save_data = Self::save_data_from_persistent(persistent, uuid);
 
         // Parse NBT from bytes (or use empty compound data)
         let nbt_bytes = if persistent.nbt_data.is_empty() {
-            // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
-            &[0x0a, 0x00, 0x00, 0x00][..]
+            // Empty compound body for `simdnbt::borrow::read_compound`.
+            &[0x00][..]
         } else {
             &persistent.nbt_data[..]
         };
@@ -1256,7 +1586,7 @@ impl ChunkStorage {
                     persistent.has_visual_fire,
                 ),
                 on_ground: persistent.on_ground,
-                no_gravity: persistent.no_gravity,
+                save_data,
                 world: Weak::clone(level),
             },
             &nbt,
@@ -1401,7 +1731,7 @@ impl ChunkStorage {
     fn jigsaw_piece_data_to_persistent(data: &JigsawPieceData) -> PersistentJigsawPieceData {
         PersistentJigsawPieceData {
             pool_element: Self::pool_element_to_persistent(&data.pool_element),
-            position: [data.position.0, data.position.1, data.position.2],
+            position: [data.position.x, data.position.y, data.position.z],
             rotation: rotation_to_persistent(data.rotation),
             liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
         }
@@ -1410,7 +1740,7 @@ impl ChunkStorage {
     fn persistent_to_jigsaw_piece_data(data: &PersistentJigsawPieceData) -> JigsawPieceData {
         JigsawPieceData {
             pool_element: Self::persistent_to_pool_element(&data.pool_element),
-            position: (data.position[0], data.position[1], data.position[2]),
+            position: IVec3::new(data.position[0], data.position[1], data.position[2]),
             rotation: rotation_from_persistent(data.rotation),
             liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
         }
@@ -1542,7 +1872,7 @@ impl ChunkStorage {
         child: &OceanMonumentChildPiece,
     ) -> PersistentOceanMonumentChildPiece {
         PersistentOceanMonumentChildPiece {
-            bounding_box: child.bounding_box,
+            bounding_box: PersistentBoundingBox::from_bounding_box(child.bounding_box),
             kind: Self::ocean_monument_child_kind_to_persistent(&child.kind),
         }
     }
@@ -1551,7 +1881,7 @@ impl ChunkStorage {
         child: &PersistentOceanMonumentChildPiece,
     ) -> OceanMonumentChildPiece {
         OceanMonumentChildPiece {
-            bounding_box: child.bounding_box,
+            bounding_box: child.bounding_box.to_bounding_box(),
             kind: Self::persistent_to_ocean_monument_child_kind(&child.kind),
         }
     }
@@ -2005,7 +2335,10 @@ impl ChunkStorage {
             MineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => PersistentMineshaftPieceKind::Room {
-                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
+                child_entrance_boxes: child_entrance_boxes
+                    .iter()
+                    .map(|&b| PersistentBoundingBox::from_bounding_box(b))
+                    .collect(),
             },
             MineshaftPieceKind::Corridor {
                 has_rails,
@@ -2034,7 +2367,10 @@ impl ChunkStorage {
             PersistentMineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => MineshaftPieceKind::Room {
-                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
+                child_entrance_boxes: child_entrance_boxes
+                    .iter()
+                    .map(|b| b.to_bounding_box())
+                    .collect(),
             },
             PersistentMineshaftPieceKind::Corridor {
                 has_rails,
@@ -2058,14 +2394,6 @@ impl ChunkStorage {
         }
     }
 
-    fn copy_bounding_boxes(boxes: &[steel_utils::BoundingBox]) -> Vec<steel_utils::BoundingBox> {
-        let mut copied = Vec::with_capacity(boxes.len());
-        for bounding_box in boxes {
-            copied.push(*bounding_box);
-        }
-        copied
-    }
-
     fn structure_piece_payload_to_persistent(
         payload: &StructurePiecePayload,
     ) -> PersistentStructurePiecePayload {
@@ -2077,16 +2405,16 @@ impl ChunkStorage {
                 PersistentStructurePiecePayload::Template(PersistentTemplatePieceData {
                     template_id: data.template_id.clone(),
                     template_position: [
-                        data.template_position.0,
-                        data.template_position.1,
-                        data.template_position.2,
+                        data.template_position.x,
+                        data.template_position.y,
+                        data.template_position.z,
                     ],
                     rotation: rotation_to_persistent(data.rotation),
                     mirror: mirror_to_persistent(data.mirror),
                     rotation_pivot: [
-                        data.rotation_pivot.0,
-                        data.rotation_pivot.1,
-                        data.rotation_pivot.2,
+                        data.rotation_pivot.x,
+                        data.rotation_pivot.y,
+                        data.rotation_pivot.z,
                     ],
                     block_ignore: block_ignore_to_persistent(data.block_ignore),
                     late_block_ignore: block_ignore_to_persistent(data.late_block_ignore),
@@ -2116,14 +2444,14 @@ impl ChunkStorage {
             PersistentStructurePiecePayload::Template(data) => {
                 StructurePiecePayload::Template(TemplatePieceData {
                     template_id: data.template_id.clone(),
-                    template_position: (
+                    template_position: IVec3::new(
                         data.template_position[0],
                         data.template_position[1],
                         data.template_position[2],
                     ),
                     rotation: rotation_from_persistent(data.rotation),
                     mirror: mirror_from_persistent(data.mirror),
-                    rotation_pivot: (
+                    rotation_pivot: IVec3::new(
                         data.rotation_pivot[0],
                         data.rotation_pivot[1],
                         data.rotation_pivot[2],
@@ -2324,7 +2652,7 @@ impl ChunkStorage {
                     .iter()
                     .map(|piece| PersistentStructurePiece {
                         piece_type: piece.piece_type.clone(),
-                        bounding_box: piece.bounding_box,
+                        bounding_box: PersistentBoundingBox::from_bounding_box(piece.bounding_box),
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
                         payload: Self::structure_piece_payload_to_persistent(&piece.payload),
@@ -2334,9 +2662,9 @@ impl ChunkStorage {
                             .junctions
                             .iter()
                             .map(|junction| PersistentJigsawJunction {
-                                source_x: junction.source_x,
-                                source_ground_y: junction.source_ground_y,
-                                source_z: junction.source_z,
+                                source_x: junction.source_pos.x,
+                                source_ground_y: junction.source_pos.y,
+                                source_z: junction.source_pos.z,
                                 delta_y: junction.delta_y,
                                 dest_projection: projection_to_persistent(Some(
                                     junction.dest_projection,
@@ -2388,7 +2716,7 @@ impl ChunkStorage {
                     .iter()
                     .map(|pp| StructurePiece {
                         piece_type: pp.piece_type.clone(),
-                        bounding_box: pp.bounding_box,
+                        bounding_box: pp.bounding_box.to_bounding_box(),
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
                         payload: Self::persistent_to_structure_piece_payload(&pp.payload),
@@ -2397,9 +2725,11 @@ impl ChunkStorage {
                             .junctions
                             .iter()
                             .map(|junction| JigsawJunction {
-                                source_x: junction.source_x,
-                                source_ground_y: junction.source_ground_y,
-                                source_z: junction.source_z,
+                                source_pos: IVec3::new(
+                                    junction.source_x,
+                                    junction.source_ground_y,
+                                    junction.source_z,
+                                ),
                                 delta_y: junction.delta_y,
                                 dest_projection: required_projection_from_persistent(
                                     junction.dest_projection,
@@ -2574,9 +2904,9 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use crate::entity::{
-        Entity, SharedEntity,
+        DEFAULT_MAX_AIR_SUPPLY, Entity, SharedEntity,
         entities::{EndCrystalEntity, RawEntity},
-        init_entities, next_entity_id,
+        init_test_entities, next_entity_id,
     };
     use glam::DVec3;
     use rustc_hash::FxHashMap;
@@ -2584,24 +2914,25 @@ mod tests {
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
     use steel_registry::vanilla_entities;
+    use steel_utils::BoundingBox;
     use steel_utils::types::UpdateFlags;
     use steel_worldgen::structure::StructureReferenceSet;
+    use text_components::TextComponent;
 
     static RUNTIME_REGISTRIES: Once = Once::new();
 
     fn init_runtime_registries() {
-        init_test_registry();
         RUNTIME_REGISTRIES.call_once(|| {
+            init_test_entities();
             init_behaviors();
             init_block_entities();
-            init_entities();
         });
     }
 
     fn test_structure_piece() -> StructurePiece {
         StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
-            bounding_box: steel_utils::BoundingBox::new(0, 64, 0, 1, 65, 1),
+            bounding_box: BoundingBox::new(IVec3::new(0, 64, 0), IVec3::new(1, 65, 1)),
             gen_depth: 0,
             orientation: None,
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented),
@@ -2613,6 +2944,186 @@ mod tests {
 
     fn single_empty_section() -> Sections {
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice())
+    }
+
+    fn visible_homogeneous_value(section: Option<&LightSection>) -> Option<u8> {
+        let Some(LightSection::Visible(LightSectionData::Homogeneous(value))) = section else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    #[test]
+    fn persisted_light_is_ignored_before_light_status() {
+        let persistent = PersistentLightData {
+            block: vec![PersistentLightSection::Initialized {
+                section_index: 1,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+            sky: vec![PersistentLightSection::Initialized {
+                section_index: 1,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+        };
+
+        let light =
+            ChunkStorage::persistent_to_light(&persistent, 0, 16, ChunkStatus::InitializeLight);
+
+        assert!(matches!(
+            light.block.section(0),
+            Some(LightSection::Missing)
+        ));
+        assert!(matches!(light.sky.section(0), Some(LightSection::Missing)));
+    }
+
+    #[test]
+    fn loaded_sky_light_fills_missing_sections_below_loaded_data_with_zero() {
+        let persistent = PersistentLightData {
+            block: Vec::new(),
+            sky: vec![PersistentLightSection::Initialized {
+                section_index: 2,
+                data: vec![0xFF; DATA_LAYER_SIZE],
+            }],
+        };
+
+        let light = ChunkStorage::persistent_to_light(&persistent, 0, 16, ChunkStatus::Light);
+
+        assert_eq!(visible_homogeneous_value(light.sky.section(1)), Some(15));
+        assert_eq!(visible_homogeneous_value(light.sky.section(0)), Some(0));
+        assert_eq!(visible_homogeneous_value(light.sky.section(-1)), Some(0));
+    }
+
+    #[test]
+    fn chunk_light_persistence_canonicalizes_visible_and_internal_sections() {
+        let mut light = ChunkLightData::for_valid_world_height(0, 16);
+        let mut block_data = LightSectionData::homogeneous(0);
+        block_data.set(1, 2, 3, 12);
+        *light.block.section_mut(0).expect("real section in range") =
+            LightSection::visible(block_data);
+        *light.sky.section_mut(-1).expect("bottom section in range") =
+            LightSection::internal(LightSectionData::homogeneous(7));
+        *light.sky.section_mut(0).expect("real section in range") =
+            LightSection::visible(LightSectionData::homogeneous(0));
+        *light.sky.section_mut(1).expect("top section in range") =
+            LightSection::internal(LightSectionData::homogeneous(0));
+
+        let persistent = ChunkStorage::light_to_persistent(&light);
+
+        assert_eq!(persistent.block.len(), 1);
+        match &persistent.block[0] {
+            PersistentLightSection::Initialized {
+                section_index,
+                data,
+            } => {
+                assert_eq!(*section_index, 1);
+                assert_eq!(data.len(), DATA_LAYER_SIZE);
+                assert_eq!(data[280], 0xC0);
+            }
+            _ => panic!("block light should persist initialized data"),
+        }
+
+        assert_eq!(persistent.sky.len(), 2);
+        assert!(matches!(
+            persistent.sky[0],
+            PersistentLightSection::Internal {
+                section_index: 0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            persistent.sky[1],
+            PersistentLightSection::Uninitialized { section_index: 1 }
+        ));
+    }
+
+    #[test]
+    fn persistent_chunk_loads_chunk_owned_light_into_full_chunk() {
+        init_test_registry();
+        init_runtime_registries();
+        let mut light = ChunkLightData::for_valid_world_height(0, 16);
+        *light.block.section_mut(0).expect("real section in range") =
+            LightSection::visible(LightSectionData::homogeneous(12));
+        let persistent_light = ChunkStorage::light_to_persistent(&light);
+        let persistent = ChunkStorage::to_persistent(
+            &single_empty_section(),
+            &[],
+            &[],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            persistent_light,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            ChunkPos::new(0, 0),
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &persistent,
+            ChunkPos::new(0, 0),
+            ChunkStatus::Full,
+            0,
+            16,
+            Weak::new(),
+        );
+
+        let ChunkAccess::Full(chunk) = loaded.chunk else {
+            panic!("full status should load a full chunk");
+        };
+        let light = chunk.light.read();
+        assert_eq!(visible_homogeneous_value(light.block.section(0)), Some(12));
+        assert_eq!(light.block.section_empty(0), Some(true));
+    }
+
+    #[test]
+    fn forced_prepare_preserves_dirty_set_after_save_decision() {
+        init_test_registry();
+        let chunk = ChunkAccess::Proto(ProtoChunk::new(
+            single_empty_section(),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        ));
+
+        assert!(chunk.take_dirty());
+        chunk.mark_dirty();
+
+        let Some(_prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], true) else {
+            panic!("forced save prep should serialize the chunk");
+        };
+        assert!(chunk.is_dirty());
+    }
+
+    fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
+        PersistentEntity {
+            entity_type: vanilla_entities::END_CRYSTAL.key.clone(),
+            uuid: [9; 16],
+            pos: [pos.x, pos.y, pos.z],
+            motion: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0],
+            fall_distance: 0.0,
+            remaining_fire_ticks: 0,
+            ticks_frozen: 0,
+            is_in_powder_snow: false,
+            was_in_powder_snow: false,
+            has_visual_fire: false,
+            on_ground: false,
+            no_gravity: false,
+            invulnerable: false,
+            air_supply: DEFAULT_MAX_AIR_SUPPLY,
+            portal_cooldown: 0,
+            custom_name_nbt: Vec::new(),
+            custom_name_visible: false,
+            silent: false,
+            glowing: false,
+            tags: Vec::new(),
+            custom_data_nbt: Vec::new(),
+            nbt_data: Vec::new(),
+            passengers: Vec::new(),
+        }
     }
 
     #[test]
@@ -2723,6 +3234,47 @@ mod tests {
     }
 
     #[test]
+    fn persistent_entity_load_clamps_position_like_vanilla() {
+        init_runtime_registries();
+
+        let persistent =
+            test_persistent_end_crystal(DVec3::new(100_000_000.0, -100_000_000.0, -100_000_000.0));
+        let Some(entity) = ChunkStorage::persistent_to_entity_at_level(
+            &persistent,
+            ChunkPos::new(0, 0),
+            &Weak::new(),
+        ) else {
+            panic!("entity should load with clamped position");
+        };
+
+        assert_eq!(
+            entity.position(),
+            DVec3::new(
+                ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+                -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+                -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            )
+        );
+    }
+
+    #[test]
+    fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
+        init_runtime_registries();
+
+        let mut persistent = test_persistent_end_crystal(DVec3::new(1.0, 2.0, 3.0));
+        persistent.rotation = [f32::NAN, 0.0];
+
+        assert!(
+            ChunkStorage::persistent_to_entity_at_level(
+                &persistent,
+                ChunkPos::new(0, 0),
+                &Weak::new(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
         init_runtime_registries();
 
@@ -2767,6 +3319,7 @@ mod tests {
         let entity_pos = DVec3::new(5.5, 6.0, 7.5);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let crystal = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             entity_pos,
             Weak::new(),
@@ -2775,6 +3328,16 @@ mod tests {
         crystal.set_invulnerable(true);
         crystal.set_fall_distance(3.75);
         crystal.set_no_gravity(true);
+        crystal.set_air_supply(120);
+        crystal.set_portal_cooldown(9);
+        crystal.set_custom_name(Some(TextComponent::plain("End Test")));
+        crystal.set_custom_name_visible(true);
+        crystal.set_silent(true);
+        crystal.set_glowing_tag(true);
+        assert!(crystal.add_tag("steel:test".to_owned()));
+        let mut custom_data = NbtCompound::new();
+        custom_data.insert("marker", "roundtrip");
+        crystal.set_custom_data(custom_data);
         proto.add_entity(crystal);
 
         let chunk = ChunkAccess::Proto(proto);
@@ -2784,6 +3347,18 @@ mod tests {
         assert_eq!(prepared.persistent.entities.len(), 1);
         assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f64::EPSILON);
         assert!(prepared.persistent.entities[0].no_gravity);
+        assert!(prepared.persistent.entities[0].invulnerable);
+        assert_eq!(prepared.persistent.entities[0].air_supply, 120);
+        assert_eq!(prepared.persistent.entities[0].portal_cooldown, 9);
+        assert!(prepared.persistent.entities[0].custom_name_visible);
+        assert!(prepared.persistent.entities[0].silent);
+        assert!(prepared.persistent.entities[0].glowing);
+        assert_eq!(
+            prepared.persistent.entities[0].tags,
+            vec!["steel:test".to_owned()]
+        );
+        assert!(!prepared.persistent.entities[0].custom_name_nbt.is_empty());
+        assert!(!prepared.persistent.entities[0].custom_data_nbt.is_empty());
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,
@@ -2801,6 +3376,28 @@ mod tests {
 
         let promoted = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
         assert_eq!(promoted.pending_entities.len(), 1);
+        assert!(promoted.pending_entities[0].is_no_gravity());
+        assert!(promoted.pending_entities[0].is_invulnerable());
+        assert_eq!(promoted.pending_entities[0].air_supply(), 120);
+        assert_eq!(promoted.pending_entities[0].portal_cooldown(), 9);
+        assert_eq!(
+            promoted.pending_entities[0].custom_name(),
+            Some(TextComponent::plain("End Test"))
+        );
+        assert!(promoted.pending_entities[0].is_custom_name_visible());
+        assert!(promoted.pending_entities[0].is_silent());
+        assert!(promoted.pending_entities[0].has_glowing_tag());
+        assert_eq!(
+            promoted.pending_entities[0].tags(),
+            vec!["steel:test".to_owned()]
+        );
+        assert_eq!(
+            promoted.pending_entities[0]
+                .custom_data()
+                .string("marker")
+                .map(ToString::to_string),
+            Some("roundtrip".to_owned())
+        );
     }
 
     #[test]
@@ -2811,6 +3408,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
@@ -2834,6 +3432,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let entity: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
@@ -2868,11 +3467,13 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
         ));
         let passenger: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 8.0, 7.5),
             Weak::new(),
@@ -2930,6 +3531,7 @@ mod tests {
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
         let vehicle: SharedEntity = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(5.5, 6.0, 7.5),
             Weak::new(),
@@ -3121,7 +3723,7 @@ mod tests {
 
         let piece = StructurePiece {
             piece_type: piece_type.clone(),
-            bounding_box: steel_utils::BoundingBox::new(10, 64, 20, 15, 70, 25),
+            bounding_box: BoundingBox::new(IVec3::new(10, 64, 20), IVec3::new(15, 70, 25)),
             gen_depth: 3,
             orientation: Some(Direction::North),
             payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
@@ -3139,15 +3741,13 @@ mod tests {
                     ],
                     projection: Projection::Rigid,
                 },
-                position: (10, 64, 20),
+                position: IVec3::new(10, 64, 20),
                 rotation: Rotation::Clockwise90,
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
             }),
             ground_level_delta: 1,
             junctions: vec![JigsawJunction {
-                source_x: 12,
-                source_ground_y: 65,
-                source_z: 24,
+                source_pos: IVec3::new(12, 65, 24),
                 delta_y: -1,
                 dest_projection: Projection::TerrainMatching,
             }],
@@ -3189,7 +3789,7 @@ mod tests {
         let StructurePiecePayload::Jigsaw(jigsaw) = &loaded_piece.payload else {
             panic!("typed jigsaw state should roundtrip");
         };
-        assert_eq!(jigsaw.position, (10, 64, 20));
+        assert_eq!(jigsaw.position, IVec3::new(10, 64, 20));
         assert_eq!(jigsaw.rotation, Rotation::Clockwise90);
         assert_eq!(
             jigsaw.liquid_settings,
@@ -3245,15 +3845,15 @@ mod tests {
 
         let template_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "shipwreck"),
-            bounding_box: steel_utils::BoundingBox::new(0, 70, 0, 12, 80, 12),
+            bounding_box: BoundingBox::new(IVec3::new(0, 70, 0), IVec3::new(12, 80, 12)),
             gen_depth: 2,
             orientation: Some(Direction::East),
             payload: StructurePiecePayload::Template(TemplatePieceData {
                 template_id: template_id.clone(),
-                template_position: (1, 70, 2),
+                template_position: IVec3::new(1, 70, 2),
                 rotation: Rotation::Clockwise180,
                 mirror: StructureMirror::FrontBack,
-                rotation_pivot: (4, 0, 15),
+                rotation_pivot: IVec3::new(4, 0, 15),
                 block_ignore: StructureBlockIgnore::StructureAndAir,
                 late_block_ignore: StructureBlockIgnore::None,
                 processors: TemplateProcessorList::Registry(processor_id.clone()),
@@ -3272,15 +3872,15 @@ mod tests {
         };
         let igloo_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "iglu"),
-            bounding_box: steel_utils::BoundingBox::new(4, 80, 4, 10, 84, 11),
+            bounding_box: BoundingBox::new(IVec3::new(4, 80, 4), IVec3::new(10, 84, 11)),
             gen_depth: 0,
             orientation: Some(Direction::North),
             payload: StructurePiecePayload::Template(TemplatePieceData {
                 template_id: igloo_template_id.clone(),
-                template_position: (4, 90, 4),
+                template_position: IVec3::new(4, 90, 4),
                 rotation: Rotation::Clockwise90,
                 mirror: StructureMirror::None,
-                rotation_pivot: (3, 5, 5),
+                rotation_pivot: IVec3::new(3, 5, 5),
                 block_ignore: StructureBlockIgnore::StructureBlock,
                 late_block_ignore: StructureBlockIgnore::None,
                 processors: TemplateProcessorList::Empty,
@@ -3298,15 +3898,15 @@ mod tests {
         };
         let ocean_ruin_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "orp"),
-            bounding_box: steel_utils::BoundingBox::new(12, 90, 12, 20, 96, 20),
+            bounding_box: BoundingBox::new(IVec3::new(12, 90, 12), IVec3::new(20, 96, 20)),
             gen_depth: 0,
             orientation: Some(Direction::North),
             payload: StructurePiecePayload::Template(TemplatePieceData {
                 template_id: ocean_ruin_template_id.clone(),
-                template_position: (12, 90, 12),
+                template_position: IVec3::new(12, 90, 12),
                 rotation: Rotation::CounterClockwise90,
                 mirror: StructureMirror::None,
-                rotation_pivot: (0, 0, 0),
+                rotation_pivot: IVec3::new(0, 0, 0),
                 block_ignore: StructureBlockIgnore::None,
                 late_block_ignore: StructureBlockIgnore::StructureAndAir,
                 processors: TemplateProcessorList::OceanRuin {
@@ -3325,13 +3925,13 @@ mod tests {
         };
         let procedural_piece = StructurePiece::non_jigsaw(
             Identifier::new_static("minecraft", "mscorridor"),
-            steel_utils::BoundingBox::new(20, 40, 20, 30, 50, 30),
+            BoundingBox::new(IVec3::new(20, 40, 20), IVec3::new(30, 50, 30)),
             5,
             Some(Direction::South),
         );
         let buried_treasure_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "btp"),
-            bounding_box: steel_utils::BoundingBox::new(41, 90, 43, 41, 90, 43),
+            bounding_box: BoundingBox::new(IVec3::new(41, 90, 43), IVec3::new(41, 90, 43)),
             gen_depth: 0,
             orientation: None,
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure),
@@ -3341,7 +3941,7 @@ mod tests {
         };
         let desert_pyramid_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "tedp"),
-            bounding_box: steel_utils::BoundingBox::new(48, 63, 48, 68, 77, 68),
+            bounding_box: BoundingBox::new(IVec3::new(48, 63, 48), IVec3::new(68, 77, 68)),
             gen_depth: 0,
             orientation: Some(Direction::East),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(
@@ -3358,7 +3958,7 @@ mod tests {
         };
         let jungle_temple_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "tejp"),
-            bounding_box: steel_utils::BoundingBox::new(64, 63, 64, 75, 72, 78),
+            bounding_box: BoundingBox::new(IVec3::new(64, 63, 64), IVec3::new(75, 72, 78)),
             gen_depth: 0,
             orientation: Some(Direction::South),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(
@@ -3376,7 +3976,7 @@ mod tests {
         };
         let mineshaft_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
-            bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
+            bounding_box: BoundingBox::new(IVec3::new(32, 45, 32), IVec3::new(34, 47, 46)),
             gen_depth: 4,
             orientation: Some(Direction::North),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(
@@ -3396,7 +3996,7 @@ mod tests {
         };
         let fortress_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "nemt"),
-            bounding_box: steel_utils::BoundingBox::new(48, 52, 48, 54, 59, 56),
+            bounding_box: BoundingBox::new(IVec3::new(48, 52, 48), IVec3::new(54, 59, 56)),
             gen_depth: 6,
             orientation: Some(Direction::East),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(
@@ -3415,25 +4015,34 @@ mod tests {
         };
         let ocean_monument_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "omb"),
-            bounding_box: steel_utils::BoundingBox::new(64, 39, 64, 121, 61, 121),
+            bounding_box: BoundingBox::new(IVec3::new(64, 39, 64), IVec3::new(121, 61, 121)),
             gen_depth: 0,
             orientation: Some(Direction::South),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(
                 OceanMonumentPieceData {
                     child_pieces: vec![
                         OceanMonumentChildPiece {
-                            bounding_box: steel_utils::BoundingBox::new(73, 39, 86, 80, 42, 93),
+                            bounding_box: BoundingBox::new(
+                                IVec3::new(73, 39, 86),
+                                IVec3::new(80, 42, 93),
+                            ),
                             kind: OceanMonumentChildPieceKind::SimpleRoom {
                                 room: ocean_monument_room,
                                 main_design: 2,
                             },
                         },
                         OceanMonumentChildPiece {
-                            bounding_box: steel_utils::BoundingBox::new(65, 40, 65, 87, 47, 85),
+                            bounding_box: BoundingBox::new(
+                                IVec3::new(65, 40, 65),
+                                IVec3::new(87, 47, 85),
+                            ),
                             kind: OceanMonumentChildPieceKind::WingRoom { main_design: 1 },
                         },
                         OceanMonumentChildPiece {
-                            bounding_box: steel_utils::BoundingBox::new(86, 52, 86, 99, 56, 99),
+                            bounding_box: BoundingBox::new(
+                                IVec3::new(86, 52, 86),
+                                IVec3::new(99, 56, 99),
+                            ),
                             kind: OceanMonumentChildPieceKind::Penthouse,
                         },
                     ],
@@ -3445,7 +4054,7 @@ mod tests {
         };
         let stronghold_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "shrc"),
-            bounding_box: steel_utils::BoundingBox::new(55, 35, 55, 65, 41, 65),
+            bounding_box: BoundingBox::new(IVec3::new(55, 35, 55), IVec3::new(65, 41, 65)),
             gen_depth: 7,
             orientation: Some(Direction::North),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(
@@ -3460,7 +4069,7 @@ mod tests {
         };
         let swamp_hut_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "tesh"),
-            bounding_box: steel_utils::BoundingBox::new(80, 63, 80, 86, 69, 88),
+            bounding_box: BoundingBox::new(IVec3::new(80, 63, 80), IVec3::new(86, 69, 88)),
             gen_depth: 0,
             orientation: Some(Direction::West),
             payload: StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(
@@ -3511,10 +4120,10 @@ mod tests {
             panic!("template payload should roundtrip");
         };
         assert_eq!(template.template_id, template_id);
-        assert_eq!(template.template_position, (1, 70, 2));
+        assert_eq!(template.template_position, IVec3::new(1, 70, 2));
         assert_eq!(template.rotation, Rotation::Clockwise180);
         assert_eq!(template.mirror, StructureMirror::FrontBack);
-        assert_eq!(template.rotation_pivot, (4, 0, 15));
+        assert_eq!(template.rotation_pivot, IVec3::new(4, 0, 15));
         assert_eq!(template.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(
@@ -3546,10 +4155,10 @@ mod tests {
             panic!("igloo template payload should roundtrip");
         };
         assert_eq!(template.template_id, igloo_template_id);
-        assert_eq!(template.template_position, (4, 90, 4));
+        assert_eq!(template.template_position, IVec3::new(4, 90, 4));
         assert_eq!(template.rotation, Rotation::Clockwise90);
         assert_eq!(template.mirror, StructureMirror::None);
-        assert_eq!(template.rotation_pivot, (3, 5, 5));
+        assert_eq!(template.rotation_pivot, IVec3::new(3, 5, 5));
         assert_eq!(template.block_ignore, StructureBlockIgnore::StructureBlock);
         assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(template.processors, TemplateProcessorList::Empty);
@@ -3567,10 +4176,10 @@ mod tests {
             panic!("ocean ruin template payload should roundtrip");
         };
         assert_eq!(template.template_id, ocean_ruin_template_id);
-        assert_eq!(template.template_position, (12, 90, 12));
+        assert_eq!(template.template_position, IVec3::new(12, 90, 12));
         assert_eq!(template.rotation, Rotation::CounterClockwise90);
         assert_eq!(template.mirror, StructureMirror::None);
-        assert_eq!(template.rotation_pivot, (0, 0, 0));
+        assert_eq!(template.rotation_pivot, IVec3::new(0, 0, 0));
         assert_eq!(template.block_ignore, StructureBlockIgnore::None);
         assert_eq!(
             template.late_block_ignore,

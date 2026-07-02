@@ -1,8 +1,8 @@
 //! Chunk generation stage regression test.
 //!
 //! Verifies that Steel's chunk generation matches vanilla Minecraft at each stage
-//! by comparing MD5 hashes of block data. When a mismatch is found and binary
-//! reference data is available, shows exact block-level diffs.
+//! by comparing MD5 hashes of block and light data. When a mismatch is found and
+//! binary reference data is available, shows exact block/light diffs.
 //!
 //! Tests all dimensions (overworld, nether, end) using the new JSON format
 //! with a `dimensions` wrapper.
@@ -15,18 +15,24 @@ use std::mem;
 use std::sync::{Arc, Weak};
 
 use flate2::read::GzDecoder;
+use glam::IVec3;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::Deserialize;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
-use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
+use steel_core::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
+use steel_core::chunk::light::{
+    BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
+    LightLayer, LightSection, LightSectionRange, LightWorkset, SkyLightChunkEdgeChecks,
+    propagate_block_light_chunk, propagate_sky_light_chunk,
+};
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
-use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType};
+use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
@@ -36,6 +42,17 @@ use steel_worldgen::noise::Beardifier;
 use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
+
+type FeatureHolderMap = Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>;
+
+struct FeatureGenerationInputs<'a> {
+    holders: &'a FeatureHolderMap,
+    context: &'a Arc<WorldGenContext>,
+    generator: &'a Arc<ChunkGeneratorType>,
+    feature_step: &'a ChunkStep,
+    feature_cache_radius: i32,
+    seed: u64,
+}
 
 #[derive(Deserialize, Debug)]
 struct ChunkStageEntry {
@@ -57,6 +74,16 @@ struct ChunkStageHashesJson {
     feature_hash_capture: Option<String>,
     #[serde(default)]
     hashset_iteration_order: Option<String>,
+    #[serde(default)]
+    light_hash_capture: Option<String>,
+    #[serde(default)]
+    light_dependency_radius: Option<i32>,
+    #[serde(default)]
+    light_feature_dependency_capture: Option<String>,
+    #[serde(default)]
+    light_binary_format: Option<String>,
+    #[serde(default)]
+    light_hash_format: Option<String>,
     dimensions: FxHashMap<String, DimensionData>,
 }
 
@@ -66,6 +93,7 @@ const STAGES: &[&str] = &[
     "minecraft:surface",
     "minecraft:carvers",
     "minecraft:features",
+    "minecraft:light",
 ];
 
 /// Match the extractor run's structure setting.
@@ -80,6 +108,8 @@ const MAX_DIFFS_PER_CHUNK: usize = 30;
 /// Set specific chunk coordinates to test only those chunks.
 /// When non-empty, only these chunks are generated and checked (ignores the JSON list).
 /// Example: &[(24, 35)] to debug a single failing chunk.
+/// Prefer `STEEL_HASH_DEBUG_CLUSTER` for light failures because fixtures are
+/// captured after the extractor lights whole sampled clusters.
 const DEBUG_CHUNKS: &[(i32, i32)] = &[];
 const DEBUG_CLUSTER_ENV: &str = "STEEL_HASH_DEBUG_CLUSTER";
 const DEBUG_CHUNK_ENV: &str = "STEEL_HASH_DEBUG_CHUNK";
@@ -88,9 +118,16 @@ const DEBUG_STAGE_ENV: &str = "STEEL_HASH_DEBUG_STAGE";
 const DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV: &str = "STEEL_HASH_STOP_AFTER_FIRST_MISMATCH";
 
 const FEATURE_STAGE: &str = "minecraft:features";
+const LIGHT_STAGE: &str = "minecraft:light";
 const CHUNK_GENERATION_ORDER_X_Z_ASCENDING: &str = "x_z_ascending";
 const FEATURE_HASH_CAPTURE_AFTER_ALL_READY: &str = "after_all_tracked_features_ready";
 const HASHSET_ITERATION_ORDER_INSERTION: &str = "insertion_order";
+const LIGHT_HASH_CAPTURE_AFTER_IDLE: &str =
+    "after_all_tracked_light_ready_pending_tasks_drained_and_light_engine_idle";
+const LIGHT_FEATURE_DEPENDENCY_CAPTURE: &str = "after_tracked_features_before_light_x_z_ascending";
+const LIGHT_BINARY_FORMAT: &str = "packet_data_layers_and_sky_sources_binary_v1";
+const LIGHT_HASH_FORMAT: &str = "packet_data_layers_v1";
+const LIGHT_FEATURE_DEPENDENCY_RADIUS: i32 = 1;
 
 fn load_expected_hashes() -> ChunkStageHashesJson {
     let json_str = include_str!("../test_assets/chunk_stage_hashes.json");
@@ -101,6 +138,18 @@ fn sorted_positions(positions: &FxHashSet<(i32, i32)>) -> Vec<(i32, i32)> {
     let mut positions = positions.iter().copied().collect::<Vec<_>>();
     positions.sort_unstable();
     positions
+}
+
+fn expanded_positions(positions: &FxHashSet<(i32, i32)>, radius: i32) -> FxHashSet<(i32, i32)> {
+    let mut expanded = FxHashSet::default();
+    for &(x, z) in positions {
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                expanded.insert((x + dx, z + dz));
+            }
+        }
+    }
+    expanded
 }
 
 fn debug_chunk_filter() -> Option<FxHashSet<(i32, i32)>> {
@@ -304,6 +353,12 @@ fn compute_block_hash(sections: &Sections) -> String {
     format!("{:x}", ctx.finalize())
 }
 
+fn recalculate_section_counts(chunk: &ChunkAccess) {
+    for section in &chunk.sections().sections {
+        section.write().recalculate_counts();
+    }
+}
+
 /// Per-chunk reference block data from the extractor binary.
 struct ChunkBlockData {
     /// Sections, each None (all air) or Some(4096 state IDs in YZX order).
@@ -372,6 +427,108 @@ fn load_reference_blocks(
         }
 
         map.insert((cx, cz), ChunkBlockData { sections });
+    }
+
+    Some(map)
+}
+
+#[derive(Debug)]
+struct ReferenceLightSection {
+    state: u8,
+    bytes: Option<Vec<u8>>,
+}
+
+/// Per-chunk reference light data from the extractor binary.
+#[derive(Debug)]
+struct ReferenceLightChunk {
+    min_section: i32,
+    section_count: usize,
+    sky_sources: Vec<i32>,
+    sky: Vec<ReferenceLightSection>,
+    block: Vec<ReferenceLightSection>,
+}
+
+/// Loads binary reference light data for a given dimension.
+///
+/// Binary format (gzip compressed, all integers big-endian):
+///   `chunk_count`: i32
+///   For each chunk:
+///     `chunk_x`: i32
+///     `chunk_z`: i32
+///     `min_section_y`: i32
+///     `section_count`: i32
+///     `sky_source_count`: i32
+///     `sky_sources`: [i32; `sky_source_count`]
+///     For sky, then block:
+///       For each light section:
+///         `state`: u8 (0 = null, 1 = empty, 2 = data)
+///         if `state` == 2: `bytes`: [u8; 2048]
+fn load_reference_lights(dim_short: &str) -> Option<FxHashMap<(i32, i32), ReferenceLightChunk>> {
+    let path = format!(
+        "{}/test_assets/chunk_stage_{dim_short}_light_layers.bin.gz",
+        env!("CARGO_MANIFEST_DIR"),
+    );
+    let compressed = fs::read(&path).ok()?;
+
+    let decoder = GzDecoder::new(Cursor::new(compressed));
+    let mut buf = Vec::new();
+    BufReader::new(decoder).read_to_end(&mut buf).ok()?;
+
+    let mut pos = 0;
+
+    let read_i32 = |pos: &mut usize| -> i32 {
+        let val = i32::from_be_bytes(
+            buf[*pos..*pos + 4]
+                .try_into()
+                .expect("slice should be 4 bytes"),
+        );
+        *pos += 4;
+        val
+    };
+
+    let read_layer = |pos: &mut usize, section_count: usize| -> Vec<ReferenceLightSection> {
+        let mut sections = Vec::with_capacity(section_count);
+        for _ in 0..section_count {
+            let state = buf[*pos];
+            *pos += 1;
+            let bytes = if state == 2 {
+                let bytes = buf[*pos..*pos + DATA_LAYER_SIZE].to_vec();
+                *pos += DATA_LAYER_SIZE;
+                Some(bytes)
+            } else {
+                None
+            };
+            sections.push(ReferenceLightSection { state, bytes });
+        }
+        sections
+    };
+
+    let chunk_count = read_i32(&mut pos) as usize;
+    let mut map = FxHashMap::with_capacity_and_hasher(chunk_count, FxBuildHasher);
+
+    for _ in 0..chunk_count {
+        let cx = read_i32(&mut pos);
+        let cz = read_i32(&mut pos);
+        let min_section = read_i32(&mut pos);
+        let section_count = read_i32(&mut pos) as usize;
+        let sky_source_count = read_i32(&mut pos) as usize;
+        let mut sky_sources = Vec::with_capacity(sky_source_count);
+        for _ in 0..sky_source_count {
+            sky_sources.push(read_i32(&mut pos));
+        }
+        let sky = read_layer(&mut pos, section_count);
+        let block = read_layer(&mut pos, section_count);
+
+        map.insert(
+            (cx, cz),
+            ReferenceLightChunk {
+                min_section,
+                section_count,
+                sky_sources,
+                sky,
+                block,
+            },
+        );
     }
 
     Some(map)
@@ -530,6 +687,214 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
     msg
 }
 
+struct LightDiffs {
+    total: usize,
+    lines: Vec<String>,
+}
+
+enum ChunkDiff {
+    Blocks(Vec<BlockDiff>),
+    Light(LightDiffs),
+}
+
+fn consume_i32(ctx: &mut md5::Context, value: i32) {
+    ctx.consume(value.to_be_bytes());
+}
+
+fn light_section_state(section: &LightSection) -> (u8, Option<Box<[u8; DATA_LAYER_SIZE]>>) {
+    match section.visible_data() {
+        None => (0, None),
+        Some(data) if data.is_empty() => (1, None),
+        Some(data) => (2, Some(data.to_bytes())),
+    }
+}
+
+fn compute_light_hash(chunk: &ChunkAccess) -> String {
+    let light = chunk.light();
+    let range = light.sky.range();
+    let mut ctx = md5::Context::new();
+
+    consume_i32(&mut ctx, range.min_section_y());
+    consume_i32(&mut ctx, range.section_count() as i32);
+    for layer in [LightLayer::Sky, LightLayer::Block] {
+        ctx.consume([u8::from(layer != LightLayer::Sky)]);
+        let sections = match layer {
+            LightLayer::Sky => light.sky.sections(),
+            LightLayer::Block => light.block.sections(),
+        };
+        for section in sections {
+            let (state, bytes) = light_section_state(section);
+            ctx.consume([state]);
+            if let Some(bytes) = bytes {
+                ctx.consume(bytes.as_ref());
+            }
+        }
+    }
+
+    format!("{:x}", ctx.finalize())
+}
+
+const fn describe_light_state(state: u8) -> &'static str {
+    match state {
+        0 => "null",
+        1 => "empty",
+        2 => "data",
+        _ => "unknown",
+    }
+}
+
+const fn light_value(bytes: &[u8], index: usize) -> u8 {
+    let packed = bytes[index >> 1];
+    packed >> ((index & 1) << 2) & 0x0F
+}
+
+fn push_light_diff(diffs: &mut LightDiffs, line: String) {
+    diffs.total += 1;
+    if diffs.lines.len() < MAX_DIFFS_PER_CHUNK {
+        diffs.lines.push(line);
+    }
+}
+
+fn diff_light_layer(
+    diffs: &mut LightDiffs,
+    layer_name: &str,
+    min_section: i32,
+    reference: &[ReferenceLightSection],
+    actual: &[LightSection],
+) {
+    for (section_index, reference_section) in reference.iter().enumerate() {
+        let section_y = min_section + section_index as i32;
+        let Some(actual_section) = actual.get(section_index) else {
+            push_light_diff(
+                diffs,
+                format!(
+                    "{layer_name} section y={section_y}: vanilla={} steel=missing-section",
+                    describe_light_state(reference_section.state)
+                ),
+            );
+            continue;
+        };
+
+        let (actual_state, actual_bytes) = light_section_state(actual_section);
+        if actual_state != reference_section.state {
+            push_light_diff(
+                diffs,
+                format!(
+                    "{layer_name} section y={section_y}: vanilla={} steel={}",
+                    describe_light_state(reference_section.state),
+                    describe_light_state(actual_state)
+                ),
+            );
+            continue;
+        }
+
+        let (Some(reference_bytes), Some(actual_bytes)) =
+            (reference_section.bytes.as_deref(), actual_bytes.as_deref())
+        else {
+            continue;
+        };
+
+        for index in 0..4096 {
+            let vanilla = light_value(reference_bytes, index);
+            let steel = light_value(actual_bytes, index);
+            if vanilla == steel {
+                continue;
+            }
+
+            let local_y = index / 256;
+            let local_z = (index % 256) / 16;
+            let local_x = index % 16;
+            push_light_diff(
+                diffs,
+                format!(
+                    "{layer_name} section y={section_y} ({local_x:2},{local_y:2},{local_z:2}): vanilla={vanilla} steel={steel}"
+                ),
+            );
+        }
+    }
+}
+
+fn diff_light_chunk(chunk: &ChunkAccess, reference: &ReferenceLightChunk) -> LightDiffs {
+    let mut diffs = LightDiffs {
+        total: 0,
+        lines: Vec::new(),
+    };
+    let light = chunk.light();
+    let range = light.sky.range();
+
+    if range.min_section_y() != reference.min_section {
+        push_light_diff(
+            &mut diffs,
+            format!(
+                "min_section: vanilla={} steel={}",
+                reference.min_section,
+                range.min_section_y()
+            ),
+        );
+    }
+    if range.section_count() != reference.section_count {
+        push_light_diff(
+            &mut diffs,
+            format!(
+                "section_count: vanilla={} steel={}",
+                reference.section_count,
+                range.section_count()
+            ),
+        );
+    }
+
+    {
+        let sky_sources = chunk.sky_light_sources();
+        for z in 0..16 {
+            for x in 0..16 {
+                let index = x + z * 16;
+                let Some(&vanilla) = reference.sky_sources.get(index) else {
+                    continue;
+                };
+                let steel = sky_sources.get_lowest_source_y(x, z);
+                if vanilla != steel {
+                    push_light_diff(
+                        &mut diffs,
+                        format!("sky source ({x:2},{z:2}): vanilla={vanilla} steel={steel}"),
+                    );
+                }
+            }
+        }
+    }
+
+    diff_light_layer(
+        &mut diffs,
+        "sky",
+        reference.min_section,
+        &reference.sky,
+        light.sky.sections(),
+    );
+    diff_light_layer(
+        &mut diffs,
+        "block",
+        reference.min_section,
+        &reference.block,
+        light.block.sections(),
+    );
+
+    diffs
+}
+
+fn format_light_diffs(diffs: &LightDiffs, chunk_x: i32, chunk_z: i32) -> String {
+    let mut msg = format!(
+        "  Chunk ({chunk_x:3},{chunk_z:3}): {} light differences\n",
+        diffs.total
+    );
+    for line in &diffs.lines {
+        let _ = writeln!(msg, "    {line}");
+    }
+    if diffs.total > diffs.lines.len() {
+        let remaining = diffs.total - diffs.lines.len();
+        let _ = writeln!(msg, "    ... and {remaining} more");
+    }
+    msg
+}
+
 #[test]
 #[ignore = "This test takes too long to run for normal testing; run with --release"]
 fn chunk_stage_hashes() {
@@ -613,6 +978,110 @@ fn build_test_beardifier(
     (!beardifier.is_empty()).then_some(beardifier)
 }
 
+fn generate_features_for_positions(
+    positions: &[(i32, i32)],
+    generated_positions: &mut FxHashSet<(i32, i32)>,
+    inputs: FeatureGenerationInputs<'_>,
+) {
+    for &(chunk_x, chunk_z) in positions {
+        if !generated_positions.insert((chunk_x, chunk_z)) {
+            continue;
+        }
+
+        let center = ChunkPos::new(chunk_x, chunk_z);
+        let Some(center_holder) = inputs.holders.get(&(chunk_x, chunk_z)) else {
+            panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
+        };
+        {
+            let Some(chunk) = center_holder.try_chunk(ChunkStatus::Carvers) else {
+                panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
+            };
+            chunk.prime_final_heightmaps();
+        }
+        let cache_holders = inputs.holders.clone();
+        let cache = Arc::new(StaticCache2D::create(
+            chunk_x,
+            chunk_z,
+            inputs.feature_cache_radius,
+            move |x, z| match cache_holders.get(&(x, z)) {
+                Some(holder) => holder.clone(),
+                None => panic!("Missing feature dependency chunk ({x}, {z})"),
+            },
+        ));
+        let region_random = inputs
+            .generator
+            .create_worldgen_region_random(inputs.seed as i64, center);
+        let mut region = steel_core::worldgen::WorldGenRegion::new(
+            inputs.context,
+            inputs.feature_step,
+            &cache,
+            center,
+            region_random,
+        );
+        inputs.generator.apply_biome_decorations(&mut region);
+    }
+}
+
+fn initialize_light_positions(
+    positions: &[(i32, i32)],
+    holders: &FxHashMap<(i32, i32), Arc<ChunkHolder>>,
+) {
+    for &(chunk_x, chunk_z) in positions {
+        let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
+            panic!("Missing light initialization chunk ({chunk_x}, {chunk_z})");
+        };
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("Light initialization chunk ({chunk_x}, {chunk_z}) missing");
+        };
+        chunk.initialize_light_sources();
+    }
+}
+
+fn propagate_light_for_positions(
+    positions: &[(i32, i32)],
+    holders: &Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>,
+    range: LightSectionRange,
+    has_skylight: bool,
+) {
+    let initialized_positions = positions.iter().copied().collect::<FxHashSet<_>>();
+    let mut lit_positions = FxHashSet::default();
+
+    for &(chunk_x, chunk_z) in positions {
+        let center = ChunkPos::new(chunk_x, chunk_z);
+        let layout = LightCacheLayout::new(center, range);
+        let holder_map = holders.clone();
+        let Ok(workset) = LightWorkset::setup_with_scopes(
+            layout,
+            LightCacheSetupRadius::Full,
+            true,
+            |pos| {
+                let key = (pos.0.x, pos.0.y);
+                initialized_positions
+                    .contains(&key)
+                    .then(|| holder_map.get(&key).cloned())
+                    .flatten()
+            },
+            |cached_chunk, _holder, _chunk| {
+                let key = (cached_chunk.chunk_pos.0.x, cached_chunk.chunk_pos.0.y);
+                let center_chunk = cached_chunk.chunk_pos == center;
+                let initialized = initialized_positions.contains(&key);
+                let lit = lit_positions.contains(&key);
+                (center_chunk || initialized, center_chunk || lit)
+            },
+        ) else {
+            panic!("required light-stage chunk is missing for ({chunk_x}, {chunk_z})");
+        };
+
+        if has_skylight {
+            propagate_sky_light_chunk(&workset, SkyLightChunkEdgeChecks::Required)
+                .unwrap_or_else(|error| panic!("sky light chunk propagation failed: {error:?}"));
+        }
+        propagate_block_light_chunk(&workset, BlockLightChunkEdgeChecks::Required)
+            .unwrap_or_else(|error| panic!("block light chunk propagation failed: {error:?}"));
+        lit_positions.insert((chunk_x, chunk_z));
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     clippy::similar_names,
@@ -642,8 +1111,13 @@ fn chunk_stage_hashes_inner() {
     );
     let includes_features = STAGES.contains(&FEATURE_STAGE);
     assert!(
-        !includes_features || STAGES.last().copied() == Some(FEATURE_STAGE),
-        "features must remain the last checked stage because it consumes the local chunk map"
+        !includes_features
+            || STAGES
+                .iter()
+                .position(|stage| *stage == FEATURE_STAGE)
+                .zip(STAGES.iter().position(|stage| *stage == LIGHT_STAGE))
+                .is_none_or(|(features, light)| features < light),
+        "features must run before light so tracked feature hashes are captured before light dependencies"
     );
     if includes_features {
         assert_eq!(
@@ -655,6 +1129,34 @@ fn chunk_stage_hashes_inner() {
             expected.hashset_iteration_order.as_deref(),
             Some(HASHSET_ITERATION_ORDER_INSERTION),
             "features stage hashes must be extracted with deterministic insertion-order HashSet normalization; rerun the extractor"
+        );
+    }
+    let includes_light = STAGES.contains(&LIGHT_STAGE);
+    if includes_light {
+        assert_eq!(
+            expected.light_hash_capture.as_deref(),
+            Some(LIGHT_HASH_CAPTURE_AFTER_IDLE),
+            "light stage hashes must be captured after light tasks drain and the light engine is idle; rerun the extractor"
+        );
+        assert_eq!(
+            expected.light_dependency_radius,
+            Some(1),
+            "light stage hash test only supports radius-1 light dependencies"
+        );
+        assert_eq!(
+            expected.light_feature_dependency_capture.as_deref(),
+            Some(LIGHT_FEATURE_DEPENDENCY_CAPTURE),
+            "light dependency features must be captured after tracked features and before lighting; rerun the extractor"
+        );
+        assert_eq!(
+            expected.light_binary_format.as_deref(),
+            Some(LIGHT_BINARY_FORMAT),
+            "light binary fixture format changed; update the test reader"
+        );
+        assert_eq!(
+            expected.light_hash_format.as_deref(),
+            Some(LIGHT_HASH_FORMAT),
+            "light hash fixture format changed; update the test hash"
         );
     }
     let feature_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
@@ -741,20 +1243,47 @@ fn chunk_stage_hashes_inner() {
         let mut starts_positions: FxHashSet<(i32, i32)> =
             FxHashSet::with_capacity_and_hasher(test_entries.len() * 289, FxBuildHasher);
         let mut biome_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
-        let mut feature_carver_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
+        let light_stage_has_entries = test_entries
+            .iter()
+            .any(|entry| entry.stages.contains_key(LIGHT_STAGE));
+        let check_light_stage = includes_light
+            && light_stage_has_entries
+            && debug_stage
+                .as_deref()
+                .is_none_or(|filter| filter == LIGHT_STAGE);
+        let light_dependency_radius = if check_light_stage {
+            expected
+                .light_dependency_radius
+                .expect("light stage fixture missing light_dependency_radius")
+        } else {
+            0
+        };
+        let light_positions = if check_light_stage {
+            expanded_positions(&tracked_positions, light_dependency_radius)
+        } else {
+            FxHashSet::default()
+        };
+        let light_feature_positions = if check_light_stage {
+            expanded_positions(&light_positions, LIGHT_FEATURE_DEPENDENCY_RADIUS)
+        } else {
+            FxHashSet::default()
+        };
+        let mut feature_center_positions = tracked_positions.clone();
+        if check_light_stage {
+            feature_center_positions.extend(light_feature_positions.iter().copied());
+        }
+        let feature_carver_positions: FxHashSet<(i32, i32)> = if includes_features {
+            expanded_positions(&feature_center_positions, feature_carver_radius)
+        } else {
+            FxHashSet::default()
+        };
+
+        if includes_features {
+            starts_positions.extend(feature_carver_positions.iter().copied());
+        } else {
+            starts_positions.extend(tracked_positions.iter().copied());
+        }
         for entry in &test_entries {
-            if includes_features {
-                for dx in -feature_cache_radius..=feature_cache_radius {
-                    for dz in -feature_cache_radius..=feature_cache_radius {
-                        starts_positions.insert((entry.x + dx, entry.z + dz));
-                    }
-                }
-                for dx in -feature_carver_radius..=feature_carver_radius {
-                    for dz in -feature_carver_radius..=feature_carver_radius {
-                        feature_carver_positions.insert((entry.x + dx, entry.z + dz));
-                    }
-                }
-            }
             for dx in -1i32..=1 {
                 for dz in -1i32..=1 {
                     biome_positions.insert((entry.x + dx, entry.z + dz));
@@ -872,62 +1401,84 @@ fn chunk_stage_hashes_inner() {
             generator.fill_from_noise(chunk, beardifier.as_ref());
         }
 
+        let mut feature_holders: Option<FeatureHolderMap> = None;
+        let mut feature_dependencies_prepared = false;
+        let mut generated_feature_positions = FxHashSet::default();
+        let mut light_initialized = false;
+        let mut light_propagated = false;
+        let tracked_positions_sorted = sorted_positions(&tracked_positions);
+        let light_positions_sorted = sorted_positions(&light_positions);
+        let light_feature_positions_sorted = sorted_positions(&light_feature_positions);
+
         for &stage in STAGES {
             if debug_stage.as_deref().is_some_and(|filter| filter != stage) {
                 continue;
             }
-            let reference_blocks = load_reference_blocks(stage, dim_short);
-            let has_reference = reference_blocks.is_some();
+            let reference_blocks = (stage != LIGHT_STAGE)
+                .then(|| load_reference_blocks(stage, dim_short))
+                .flatten();
+            let reference_lights = (stage == LIGHT_STAGE)
+                .then(|| load_reference_lights(dim_short))
+                .flatten();
+            let has_reference = reference_blocks.is_some() || reference_lights.is_some();
 
             let stage_entries: Vec<_> = test_entries
                 .iter()
                 .filter_map(|e| e.stages.get(stage).map(|hash| (e.x, e.z, hash.as_str())))
                 .collect();
             let total = stage_entries.len();
+            if total == 0 {
+                continue;
+            }
             let mut mismatches = Vec::new();
-            let feature_holders = if stage == FEATURE_STAGE {
+
+            if (stage == FEATURE_STAGE || stage == LIGHT_STAGE) && feature_holders.is_none() {
                 // Vanilla requests all sampled chunks to CARVERS first, then requests
-                // FEATURES in x/z order. Untracked radius-1 dependencies must reach
-                // CARVERS, but their feature stage must not run.
-                let dependency_positions = sorted_positions(&feature_carver_positions);
-                let feature_stage_only = debug_stage.as_deref() == Some(FEATURE_STAGE);
-                for &pos in &dependency_positions {
-                    if !feature_stage_only && tracked_positions.contains(&pos) {
-                        continue;
+                // FEATURES in x/z order. Untracked dependencies must reach CARVERS,
+                // but their feature stage must wait until after tracked feature hashes.
+                if !feature_dependencies_prepared {
+                    let dependency_positions = sorted_positions(&feature_carver_positions);
+                    let tracked_block_stages_already_ran = debug_stage.is_none();
+                    for &pos in &dependency_positions {
+                        if tracked_block_stages_already_ran && tracked_positions.contains(&pos) {
+                            continue;
+                        }
+                        let chunk = chunk_or_panic(&chunks, pos);
+                        let neighbor_biomes = |q: IVec3| -> u16 {
+                            let cx = q.x >> 2;
+                            let cz = q.z >> 2;
+                            let neighbor = chunk_or_panic(&chunks, (cx, cz));
+                            let sections = neighbor.sections();
+                            let local_qx = (q.x - cx * 4) as usize;
+                            let local_qz = (q.z - cz * 4) as usize;
+                            let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                            let section_idx = qy_clamped / 4;
+                            let local_qy = qy_clamped % 4;
+                            sections.sections[section_idx]
+                                .read()
+                                .biomes
+                                .get(local_qx, local_qy, local_qz)
+                        };
+                        generator.build_surface(chunk, &neighbor_biomes);
                     }
-                    let chunk = chunk_or_panic(&chunks, pos);
-                    let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
-                        let cx = qx >> 2;
-                        let cz = qz >> 2;
-                        let neighbor = chunk_or_panic(&chunks, (cx, cz));
-                        let sections = neighbor.sections();
-                        let local_qx = (qx - cx * 4) as usize;
-                        let local_qz = (qz - cz * 4) as usize;
-                        let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
-                        let section_idx = qy_clamped / 4;
-                        let local_qy = qy_clamped % 4;
-                        sections.sections[section_idx]
-                            .read()
-                            .biomes
-                            .get(local_qx, local_qy, local_qz)
-                    };
-                    generator.build_surface(chunk, &neighbor_biomes);
-                }
-                for &pos in &dependency_positions {
-                    if !feature_stage_only && tracked_positions.contains(&pos) {
-                        continue;
+                    for &pos in &dependency_positions {
+                        if tracked_block_stages_already_ran && tracked_positions.contains(&pos) {
+                            continue;
+                        }
+                        let chunk = chunk_or_panic(&chunks, pos);
+                        recalculate_section_counts(chunk);
+                        generator.apply_carvers(chunk);
                     }
-                    generator.apply_carvers(chunk_or_panic(&chunks, pos));
+                    feature_dependencies_prepared = true;
                 }
-                Some(Arc::new(build_feature_holders(
+
+                feature_holders = Some(Arc::new(build_feature_holders(
                     mem::take(&mut chunks),
                     &feature_carver_positions,
                     min_y,
                     height,
-                )))
-            } else {
-                None
-            };
+                )));
+            }
 
             if stage == FEATURE_STAGE {
                 let Some(holders) = &feature_holders else {
@@ -936,38 +1487,74 @@ fn chunk_stage_hashes_inner() {
                 let Some(context) = &feature_context else {
                     panic!("features stage missing worldgen context");
                 };
-
-                for &(chunk_x, chunk_z, _) in &stage_entries {
-                    let center = ChunkPos::new(chunk_x, chunk_z);
-                    let Some(center_holder) = holders.get(&(chunk_x, chunk_z)) else {
-                        panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
-                    };
-                    {
-                        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Carvers) else {
-                            panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
-                        };
-                        chunk.prime_final_heightmaps();
-                    }
-                    let cache_holders = holders.clone();
-                    let cache = Arc::new(StaticCache2D::create(
-                        chunk_x,
-                        chunk_z,
-                        feature_cache_radius,
-                        move |x, z| match cache_holders.get(&(x, z)) {
-                            Some(holder) => holder.clone(),
-                            None => panic!("Missing feature dependency chunk ({x}, {z})"),
-                        },
-                    ));
-                    let region_random =
-                        generator.create_worldgen_region_random(seed as i64, center);
-                    let mut region = steel_core::worldgen::WorldGenRegion::new(
+                let feature_stage_positions = stage_entries
+                    .iter()
+                    .map(|(x, z, _)| (*x, *z))
+                    .collect::<Vec<_>>();
+                generate_features_for_positions(
+                    &feature_stage_positions,
+                    &mut generated_feature_positions,
+                    FeatureGenerationInputs {
+                        holders,
                         context,
+                        generator: &generator,
                         feature_step,
-                        &cache,
-                        center,
-                        region_random,
+                        feature_cache_radius,
+                        seed,
+                    },
+                );
+            } else if stage == LIGHT_STAGE {
+                let Some(holders) = &feature_holders else {
+                    panic!("light stage missing chunk holders");
+                };
+                let Some(context) = &feature_context else {
+                    panic!("light stage missing worldgen context");
+                };
+
+                generate_features_for_positions(
+                    &tracked_positions_sorted,
+                    &mut generated_feature_positions,
+                    FeatureGenerationInputs {
+                        holders,
+                        context,
+                        generator: &generator,
+                        feature_step,
+                        feature_cache_radius,
+                        seed,
+                    },
+                );
+                let extra_light_feature_positions = light_feature_positions_sorted
+                    .iter()
+                    .copied()
+                    .filter(|pos| !tracked_positions.contains(pos))
+                    .collect::<Vec<_>>();
+                generate_features_for_positions(
+                    &extra_light_feature_positions,
+                    &mut generated_feature_positions,
+                    FeatureGenerationInputs {
+                        holders,
+                        context,
+                        generator: &generator,
+                        feature_step,
+                        feature_cache_radius,
+                        seed,
+                    },
+                );
+
+                if !light_initialized {
+                    initialize_light_positions(&light_positions_sorted, holders);
+                    light_initialized = true;
+                }
+                if !light_propagated {
+                    let range = LightSectionRange::from_world_height(min_y, height)
+                        .expect("valid test dimension light section range");
+                    propagate_light_for_positions(
+                        &light_positions_sorted,
+                        holders,
+                        range,
+                        dim_type.has_skylight,
                     );
-                    generator.apply_biome_decorations(&mut region);
+                    light_propagated = true;
                 }
             }
 
@@ -983,20 +1570,31 @@ fn chunk_stage_hashes_inner() {
                         panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                     };
                     compute_block_hash(chunk.sections())
+                } else if stage == LIGHT_STAGE {
+                    let Some(holders) = &feature_holders else {
+                        panic!("light stage missing chunk holders");
+                    };
+                    let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
+                        panic!("Missing light center chunk ({chunk_x}, {chunk_z})");
+                    };
+                    let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+                        panic!("Light center chunk ({chunk_x}, {chunk_z}) missing");
+                    };
+                    compute_light_hash(&chunk)
                 } else {
                     let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
 
                     // Apply current stage (structure_starts, references, biomes, noise
                     // already done by pre-pass).
                     if stage != "minecraft:noise" {
-                        let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
-                            let cx = qx >> 2;
-                            let cz = qz >> 2;
+                        let neighbor_biomes = |q: IVec3| -> u16 {
+                            let cx = q.x >> 2;
+                            let cz = q.z >> 2;
                             let neighbor = chunk_or_panic(&chunks, (cx, cz));
                             let sections = neighbor.sections();
-                            let local_qx = (qx - cx * 4) as usize;
-                            let local_qz = (qz - cz * 4) as usize;
-                            let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                            let local_qx = (q.x - cx * 4) as usize;
+                            let local_qz = (q.z - cz * 4) as usize;
+                            let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
                             let section_idx = qy_clamped / 4;
                             let local_qy = qy_clamped % 4;
                             sections.sections[section_idx]
@@ -1007,7 +1605,10 @@ fn chunk_stage_hashes_inner() {
 
                         match stage {
                             "minecraft:surface" => generator.build_surface(chunk, &neighbor_biomes),
-                            "minecraft:carvers" => generator.apply_carvers(chunk),
+                            "minecraft:carvers" => {
+                                recalculate_section_counts(chunk);
+                                generator.apply_carvers(chunk);
+                            }
                             _ => panic!("Stage {stage} not yet implemented in test harness"),
                         }
                     }
@@ -1025,33 +1626,55 @@ fn chunk_stage_hashes_inner() {
                 }
 
                 if actual_hash != expected_hash {
-                    let block_diffs = reference_blocks
-                        .as_ref()
-                        .and_then(|refs| refs.get(&(chunk_x, chunk_z)))
-                        .map(|ref_data| {
-                            if stage == FEATURE_STAGE {
+                    let diff = if stage == LIGHT_STAGE {
+                        reference_lights
+                            .as_ref()
+                            .and_then(|refs| refs.get(&(chunk_x, chunk_z)))
+                            .map(|ref_data| {
                                 let Some(holders) = &feature_holders else {
-                                    panic!("features stage missing chunk holders");
+                                    panic!("light stage missing chunk holders");
                                 };
                                 let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
-                                    panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
+                                    panic!("Missing light center chunk ({chunk_x}, {chunk_z})");
                                 };
-                                let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
-                                    panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
+                                let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+                                    panic!("Light center chunk ({chunk_x}, {chunk_z}) missing");
                                 };
-                                diff_chunk(chunk.sections(), ref_data, min_y)
-                            } else {
-                                let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
-                                diff_chunk(chunk.sections(), ref_data, min_y)
-                            }
-                        });
+                                ChunkDiff::Light(diff_light_chunk(&chunk, ref_data))
+                            })
+                    } else {
+                        reference_blocks
+                            .as_ref()
+                            .and_then(|refs| refs.get(&(chunk_x, chunk_z)))
+                            .map(|ref_data| {
+                                if stage == FEATURE_STAGE {
+                                    let Some(holders) = &feature_holders else {
+                                        panic!("features stage missing chunk holders");
+                                    };
+                                    let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
+                                        panic!(
+                                            "Missing feature center chunk ({chunk_x}, {chunk_z})"
+                                        );
+                                    };
+                                    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+                                        panic!(
+                                            "Feature center chunk ({chunk_x}, {chunk_z}) missing"
+                                        );
+                                    };
+                                    ChunkDiff::Blocks(diff_chunk(chunk.sections(), ref_data, min_y))
+                                } else {
+                                    let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
+                                    ChunkDiff::Blocks(diff_chunk(chunk.sections(), ref_data, min_y))
+                                }
+                            })
+                    };
 
                     mismatches.push((
                         chunk_x,
                         chunk_z,
                         expected_hash.to_owned(),
                         actual_hash,
-                        block_diffs,
+                        diff,
                     ));
                     if stop_after_first_mismatch {
                         break;
@@ -1071,10 +1694,13 @@ fn chunk_stage_hashes_inner() {
             }
             msg.push('\n');
 
-            for (x, z, expected_hash, actual_hash, block_diffs) in &mismatches {
-                match block_diffs {
-                    Some(diffs) if !diffs.is_empty() => {
+            for (x, z, expected_hash, actual_hash, diff) in &mismatches {
+                match diff {
+                    Some(ChunkDiff::Blocks(diffs)) if !diffs.is_empty() => {
                         msg.push_str(&format_chunk_diffs(diffs, *x, *z, min_y));
+                    }
+                    Some(ChunkDiff::Light(diffs)) if diffs.total > 0 => {
+                        msg.push_str(&format_light_diffs(diffs, *x, *z));
                     }
                     _ => {
                         let _ = writeln!(

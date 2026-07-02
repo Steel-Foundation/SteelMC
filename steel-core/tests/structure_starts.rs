@@ -14,6 +14,7 @@ use std::fmt::Write as _;
 use std::mem::take;
 use std::sync::Weak;
 
+use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -40,12 +41,12 @@ struct ExpectedBoundingBox {
 
 impl ExpectedBoundingBox {
     const fn matches(&self, actual: &steel_utils::BoundingBox) -> bool {
-        self.min_x == actual.min_x
-            && self.min_y == actual.min_y
-            && self.min_z == actual.min_z
-            && self.max_x == actual.max_x
-            && self.max_y == actual.max_y
-            && self.max_z == actual.max_z
+        self.min_x == actual.min_x()
+            && self.min_y == actual.min_y()
+            && self.min_z == actual.min_z()
+            && self.max_x == actual.max_x()
+            && self.max_y == actual.max_y()
+            && self.max_z == actual.max_z()
     }
 }
 
@@ -63,7 +64,7 @@ struct ExpectedPiece {
 #[derive(Deserialize, Debug)]
 struct ExpectedPieceData {
     #[serde(default)]
-    position: Option<[i32; 3]>,
+    position: Option<IVec3>,
     #[serde(default)]
     ground_level_delta: Option<i32>,
     #[serde(default)]
@@ -165,7 +166,12 @@ const fn direction_to_2d(orientation: Option<Direction>) -> i32 {
 fn fmt_bb_actual(bb: &steel_utils::BoundingBox) -> String {
     format!(
         "[{},{},{} .. {},{},{}]",
-        bb.min_x, bb.min_y, bb.min_z, bb.max_x, bb.max_y, bb.max_z,
+        bb.min_x(),
+        bb.min_y(),
+        bb.min_z(),
+        bb.max_x(),
+        bb.max_y(),
+        bb.max_z(),
     )
 }
 
@@ -671,7 +677,7 @@ fn compare_jigsaw_state(
     };
 
     if let Some(expected_position) = expected_data.position
-        && expected_position != [jigsaw.position.0, jigsaw.position.1, jigsaw.position.2]
+        && expected_position != jigsaw.position
     {
         diffs.push(format!(
             "piece[{index}].piece_data.position: expected {:?}, got {:?}",
@@ -825,22 +831,22 @@ fn compare_junctions(
         let actual_junction = &actual.junctions[junction_index];
         let actual_dest_projection = projection_to_name(Some(actual_junction.dest_projection));
 
-        if expected_junction.source_x != actual_junction.source_x {
+        if expected_junction.source_x != actual_junction.source_pos.x {
             diffs.push(format!(
                 "piece[{index}].piece_data.junctions[{junction_index}].source_x: expected {}, got {}",
-                expected_junction.source_x, actual_junction.source_x,
+                expected_junction.source_x, actual_junction.source_pos.x,
             ));
         }
-        if expected_junction.source_ground_y != actual_junction.source_ground_y {
+        if expected_junction.source_ground_y != actual_junction.source_pos.y {
             diffs.push(format!(
                 "piece[{index}].piece_data.junctions[{junction_index}].source_ground_y: expected {}, got {}",
-                expected_junction.source_ground_y, actual_junction.source_ground_y,
+                expected_junction.source_ground_y, actual_junction.source_pos.y,
             ));
         }
-        if expected_junction.source_z != actual_junction.source_z {
+        if expected_junction.source_z != actual_junction.source_pos.z {
             diffs.push(format!(
                 "piece[{index}].piece_data.junctions[{junction_index}].source_z: expected {}, got {}",
-                expected_junction.source_z, actual_junction.source_z,
+                expected_junction.source_z, actual_junction.source_pos.z,
             ));
         }
         if expected_junction.delta_y != actual_junction.delta_y {

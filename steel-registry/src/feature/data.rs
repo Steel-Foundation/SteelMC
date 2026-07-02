@@ -8,6 +8,7 @@
 use super::{ConfiguredFeatureEntryRef, PlacedFeatureEntryRef};
 use crate::blocks::BlockRef;
 use crate::fluid::FluidRef;
+use glam::IVec3;
 use steel_utils::{
     Direction, Identifier, Rotation,
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
@@ -145,7 +146,7 @@ pub struct FluidStateData {
 }
 
 /// Block position offset.
-pub type Offset = [i32; 3];
+pub type Offset = IVec3;
 
 /// Block predicates used by placement modifiers and feature configs.
 #[derive(Debug, Clone)]

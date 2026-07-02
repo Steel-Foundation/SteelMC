@@ -26,8 +26,8 @@ impl StructurePiecePlacer {
         clip: BoundingBox,
         random: &mut WorldgenRandom,
     ) -> bool {
-        let x = bounding_box.min_x;
-        let z = bounding_box.min_z;
+        let x = bounding_box.min_x();
+        let z = bounding_box.min_z();
         let mut y = region.height_at(HeightmapType::OceanFloorWg, x, z);
 
         while y > region.min_y() {
@@ -96,7 +96,9 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
         pos: BlockPos,
     ) -> bool {
-        if !clip.is_inside(pos) || region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+        if !clip.contains_blockpos(pos)
+            || region.block_state(pos).get_block() == &vanilla_blocks::CHEST
+        {
             return false;
         }
 

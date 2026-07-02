@@ -7,6 +7,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::world::LevelReader;
 
 use super::BlockRef;
@@ -52,9 +53,14 @@ impl BlockBehavior for SnowLayerBlock {
         below_block == self.block && below.get_value(&BlockStateProperties::LAYERS) == 8
     }
 
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        computation_type == PathComputationType::Land
+            && state.get_value(&BlockStateProperties::LAYERS) < 5
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        self.can_survive(state, context.world, context.relative_pos)
+        self.can_survive(state, context.world, context.place_pos)
             .then_some(state)
     }
 }

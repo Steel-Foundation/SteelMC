@@ -3,12 +3,12 @@
 use std::sync::Weak;
 
 use glam::DVec3;
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_macros::entity_behavior;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
@@ -21,27 +21,52 @@ use crate::world::World;
 /// This intentionally implements only placement, synced item/facing data, and
 /// persistence. Interaction, drops, map tracking, and support checks belong to
 /// the full item-frame entity implementation.
+#[entity_behavior(class = "ItemFrame")]
 pub struct ItemFrameEntity {
     base: EntityBase,
+    entity_type: EntityTypeRef,
     entity_data: SyncMutex<ItemFrameEntityData>,
     block_pos: SyncMutex<BlockPos>,
 }
 
 impl ItemFrameEntity {
+    /// Creates a fresh item frame from the generic entity factory path.
+    #[must_use]
+    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+        Self::new_attached(
+            entity_type,
+            id,
+            BlockPos::new(
+                position.x.floor() as i32,
+                position.y.floor() as i32,
+                position.z.floor() as i32,
+            ),
+            Direction::South,
+            world,
+        )
+    }
+
     /// Creates a fresh item frame attached to `block_pos`.
     #[must_use]
-    pub fn new(id: i32, block_pos: BlockPos, direction: Direction, world: Weak<World>) -> Self {
+    pub fn new_attached(
+        entity_type: EntityTypeRef,
+        id: i32,
+        block_pos: BlockPos,
+        direction: Direction,
+        world: Weak<World>,
+    ) -> Self {
         let entity = Self {
             base: EntityBase::new_with_state(
                 id,
                 EntityBaseState::new_with_bounding_box(
                     Self::frame_center(block_pos, direction),
-                    vanilla_entities::ITEM_FRAME.dimensions,
+                    entity_type.dimensions,
                     Self::frame_bounding_box(block_pos, direction, false),
                 )
                 .with_rotation(Self::rotation_for_direction(direction)),
                 world,
             ),
+            entity_type,
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(block_pos),
         };
@@ -56,10 +81,11 @@ impl ItemFrameEntity {
 
     /// Creates an item frame from persistent entity data.
     #[must_use]
-    pub fn from_saved(load: EntityBaseLoad) -> Self {
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         let position = load.position;
         Self {
-            base: EntityBase::from_load(load, vanilla_entities::ITEM_FRAME.dimensions),
+            base: EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(BlockPos::new(
                 position.x.floor() as i32,
@@ -111,12 +137,8 @@ impl ItemFrameEntity {
     }
 
     fn frame_center(block_pos: BlockPos, direction: Direction) -> DVec3 {
-        let (dx, dy, dz) = direction.offset();
-        DVec3::new(
-            f64::from(block_pos.x()) + 0.5 - f64::from(dx) * 0.46875,
-            f64::from(block_pos.y()) + 0.5 - f64::from(dy) * 0.46875,
-            f64::from(block_pos.z()) + 0.5 - f64::from(dz) * 0.46875,
-        )
+        let off = direction.offset_vec().as_dvec3() * 0.46875;
+        block_pos.0.as_dvec3() + DVec3::splat(0.5) - off
     }
 
     fn rotation_for_direction(direction: Direction) -> (f32, f32) {
@@ -171,11 +193,20 @@ impl Entity for ItemFrameEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM_FRAME
+        self.entity_type
     }
 
     fn spawn_data(&self) -> i32 {
         direction_3d_data_value(*self.entity_data.lock().hanging_entity.direction.get())
+    }
+
+    fn spawn_position(&self) -> DVec3 {
+        let block_pos = *self.block_pos.lock();
+        DVec3::new(
+            f64::from(block_pos.x()),
+            f64::from(block_pos.y()),
+            f64::from(block_pos.z()),
+        )
     }
 
     fn is_pickable(&self) -> bool {
@@ -208,9 +239,7 @@ impl Entity for ItemFrameEntity {
         nbt.insert("Fixed", 0_i8);
     }
 
-    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
-
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         if let Some(block_pos) = nbt.int_array("block_pos")
             && block_pos.len() == 3
         {
@@ -278,12 +307,17 @@ const fn direction_2d_data_value(direction: Direction) -> u8 {
 mod tests {
     use super::*;
     use std::string::ToString;
-    use steel_registry::vanilla_items;
+    use steel_registry::{vanilla_entities, vanilla_items};
 
     #[test]
     fn item_frame_persists_structure_marker_state() {
-        let frame =
-            ItemFrameEntity::new(1, BlockPos::new(12, 80, 14), Direction::West, Weak::new());
+        let frame = ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            1,
+            BlockPos::new(12, 80, 14),
+            Direction::West,
+            Weak::new(),
+        );
         frame.set_item(ItemStack::new(&vanilla_items::ITEMS.elytra));
 
         let mut nbt = NbtCompound::new();
@@ -306,8 +340,13 @@ mod tests {
 
     #[test]
     fn item_frame_is_pickable_like_vanilla() {
-        let frame =
-            ItemFrameEntity::new(1, BlockPos::new(12, 80, 14), Direction::West, Weak::new());
+        let frame = ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            1,
+            BlockPos::new(12, 80, 14),
+            Direction::West,
+            Weak::new(),
+        );
 
         assert!(frame.is_pickable());
     }

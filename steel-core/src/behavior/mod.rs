@@ -61,6 +61,7 @@ pub mod waxables;
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
+pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
     EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
@@ -79,11 +80,13 @@ pub use items::{
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
+use crate::entity::ai::path::PathComputationType;
 use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
@@ -117,6 +120,18 @@ pub trait BlockStateBehaviorExt {
     ///
     /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
     fn get_fluid_state(&self) -> FluidState;
+
+    /// Returns true when vanilla `BlockState.getFluidState()` is non-empty.
+    fn has_fluid(&self) -> bool;
+
+    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    fn is_liquid_container(&self) -> bool;
+
+    /// Returns whether this block state can be replaced by the given fluid block.
+    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
+
+    /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
+    fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 }
 
 impl BlockStateBehaviorExt for BlockStateId {
@@ -124,6 +139,28 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.get_fluid_state(*self)
+    }
+
+    fn has_fluid(&self) -> bool {
+        !self.get_fluid_state().is_empty()
+    }
+
+    fn is_liquid_container(&self) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.is_liquid_container(*self)
+    }
+
+    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.can_be_replaced_by_fluid(*self, fluid_block)
+    }
+
+    fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.is_pathfindable(*self, computation_type)
     }
 }
 

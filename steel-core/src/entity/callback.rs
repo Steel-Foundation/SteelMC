@@ -162,14 +162,17 @@ impl EntityLevelCallback for PlayerEntityCallback {
                 self.entity_id,
                 update.old_chunk,
                 update.new_chunk,
-                |chunk| world.player_area_map.get_tracking_players(chunk),
+                |chunk| world.get_packet_tracking_players(chunk),
                 |player_id| world.players.get_by_entity_id(player_id),
             );
 
             if let Some(player) = world.players.get_by_entity_id(self.entity_id)
                 && let Some(view) = *player.last_tracking_view.lock()
             {
-                world.entity_tracker().update_player(&player, &view);
+                let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+                world
+                    .entity_tracker()
+                    .update_player(&player, &view, |chunk| sent_chunks.contains(&chunk));
             }
         }
 
@@ -234,9 +237,7 @@ impl EntityLevelCallback for EntityChunkCallback {
 
         if update.section_changed() {
             if update.became_inaccessible() {
-                world.entity_tracker().remove(self.entity_id, |player_id| {
-                    world.players.get_by_entity_id(player_id)
-                });
+                world.remove_entity_from_tracker(self.entity_id);
             } else if update.became_accessible() {
                 if let Some(entity) = world.entity_manager().get_by_id(self.entity_id) {
                     world.add_entity_to_tracker(&entity);
@@ -246,7 +247,7 @@ impl EntityLevelCallback for EntityChunkCallback {
                     self.entity_id,
                     update.old_chunk,
                     update.new_chunk,
-                    |chunk| world.player_area_map.get_tracking_players(chunk),
+                    |chunk| world.get_packet_tracking_players(chunk),
                     |player_id| world.players.get_by_entity_id(player_id),
                 );
             }
@@ -267,8 +268,6 @@ impl EntityLevelCallback for EntityChunkCallback {
             world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
         }
 
-        world.entity_tracker().remove(self.entity_id, |player_id| {
-            world.players.get_by_entity_id(player_id)
-        });
+        world.remove_entity_from_tracker(self.entity_id);
     }
 }

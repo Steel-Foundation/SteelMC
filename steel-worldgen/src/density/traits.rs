@@ -4,6 +4,8 @@
 //! allowing generic chunk generation code to work with any dimension's transpiled
 //! density functions.
 
+use std::simd::f64x4;
+
 use crate::BlockStateId;
 use crate::random::RandomSplitter;
 use crate::surface::SurfaceRuleContext;
@@ -183,6 +185,41 @@ pub trait DimensionNoises: Sized + Send + Sync {
         blended_noise_value: f64,
         out: &mut [f64],
     );
+
+    /// SIMD form of [`fill_cell_corner_densities`] that batches 4 cell-corner
+    /// Y values at fixed `(x, z)`.
+    ///
+    /// `out` layout: lane-major `SoA`. Lane `i`'s `interpolated_count()` channels
+    /// occupy `out[i * interpolated_count()..(i + 1) * interpolated_count()]`.
+    /// `out` must have length `4 * interpolated_count()`.
+    ///
+    /// The default implementation calls the scalar [`fill_cell_corner_densities`]
+    /// four times. Dimensions can override with a true SIMD implementation (the
+    /// transpiled `compute_*_4x` chain) once the SIMD codegen is in place.
+    ///
+    /// [`fill_cell_corner_densities`]: Self::fill_cell_corner_densities
+    fn fill_cell_corner_densities_4x(
+        &self,
+        cache: &mut Self::ColumnCache,
+        x: i32,
+        ys: f64x4,
+        z: i32,
+        blended_noise_values: f64x4,
+        out: &mut [f64],
+    ) {
+        let interp_count = Self::interpolated_count();
+        let ys_arr = ys.to_array();
+        let blended_arr = blended_noise_values.to_array();
+        for lane in 0..4 {
+            let dst = &mut out[lane * interp_count..(lane + 1) * interp_count];
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "block Y values are integer-valued f64s in cell-corner range"
+            )]
+            let y = ys_arr[lane] as i32;
+            self.fill_cell_corner_densities(cache, x, y, z, blended_arr[lane], dst);
+        }
+    }
 
     /// Combine trilinearly interpolated values for `final_density`.
     fn combine_interpolated(

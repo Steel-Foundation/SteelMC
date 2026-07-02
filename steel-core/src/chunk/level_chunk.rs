@@ -17,8 +17,8 @@ use steel_registry::{
     REGISTRY, RegistryEntry, blocks::block_state_ext::BlockStateExt, vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, Direction, PackedChunkLocalXZ, SectionPos, codec::BitSet,
-    locks::SyncRwLock, types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, Direction, PackedChunkLocalXZ, SectionPos, locks::SyncRwLock,
+    types::UpdateFlags,
 };
 
 use steel_utils::locks::SyncMutex;
@@ -26,6 +26,10 @@ use steel_utils::locks::SyncMutex;
 use crate::block_entity::{BlockEntityStorage, BlockEntityTickAction, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
+    light::{
+        ChunkLightData, ChunkSkyLightSources, LightSectionEmptinessChange,
+        build_chunk_light_update_packet, has_different_light_properties,
+    },
     proto_chunk::ProtoChunk,
     section::Sections,
 };
@@ -75,6 +79,10 @@ pub struct LevelChunk {
     pub structure_references: SyncRwLock<StructureReferenceMap>,
     /// Vanilla proto postprocessing offsets carried through promotion and drained once.
     postprocessing: SyncMutex<Box<[Vec<u16>]>>,
+    /// Vanilla skylight source edge cache for this chunk.
+    pub sky_light_sources: SyncRwLock<ChunkSkyLightSources>,
+    /// Chunk-owned light sections and section emptiness maps.
+    pub light: SyncRwLock<ChunkLightData>,
 }
 
 /// Result of promoting a proto chunk to a full chunk.
@@ -86,12 +94,10 @@ pub struct LevelChunkPromotion {
 }
 
 impl LevelChunk {
-    /// Ticks this chunk, processing random block ticks and block entity ticks.
+    /// Ticks this chunk, processing scheduled and random block ticks.
     ///
     /// For each section that contains randomly-ticking blocks, selects
     /// `random_tick_speed` random blocks and calls their `random_tick` behavior.
-    /// Also ticks all ticking block entities in this chunk.
-    ///
     /// # Arguments
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick.
     ///   This is controlled by the `randomTickSpeed` game rule.
@@ -106,13 +112,22 @@ impl LevelChunk {
         ready_block_ticks: &mut Vec<BlockTick>,
         ready_fluid_ticks: &mut Vec<FluidTick>,
     ) {
-        // Drain ready scheduled ticks (decrement delays, collect those at 0)
+        self.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        self.tick_random_blocks(random_tick_speed);
+    }
+
+    /// Drains ready scheduled block and fluid ticks into the provided buffers.
+    pub fn drain_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
         ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
         ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
+    }
 
-        // Tick block entities regardless of random tick speed
-        self.tick_block_entities();
-
+    /// Runs vanilla random block ticks for this chunk.
+    pub fn tick_random_blocks(&self, random_tick_speed: u32) {
         if random_tick_speed == 0 {
             return;
         }
@@ -216,6 +231,11 @@ impl LevelChunk {
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
         let block_entities = proto_chunk.block_entities;
         let pending_entities = proto_chunk.entities.get_all();
+        let sky_light_sources = proto_chunk.sky_light_sources.into_inner();
+        let mut light = proto_chunk.light.into_inner();
+        if let Err(error) = light.refresh_emptiness_maps_from_sections(&proto_chunk.sections) {
+            panic!("invalid proto chunk light emptiness map length: {error:?}");
+        }
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -233,6 +253,8 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
+            sky_light_sources: SyncRwLock::new(sky_light_sources),
+            light: SyncRwLock::new(light),
         };
         LevelChunkPromotion {
             chunk,
@@ -253,6 +275,7 @@ impl LevelChunk {
     /// * `block_ticks` - Scheduled block ticks loaded from disk
     /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
     /// * `heightmaps` - Heightmaps loaded from disk
+    /// * `light` - Chunk-owned light data loaded from disk
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
@@ -272,11 +295,20 @@ impl LevelChunk {
         heightmaps: ChunkHeightmaps,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
+        mut light: ChunkLightData,
     ) -> Self {
         // Recalculate section counts for random tick optimization
         for section in &sections.sections {
             section.write().recalculate_counts();
         }
+        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
+            panic!("invalid loaded chunk light emptiness map length: {error:?}");
+        }
+        let sky_light_sources = {
+            let mut sources = ChunkSkyLightSources::for_valid_world_height(min_y, height);
+            sources.fill_from_sections(&sections);
+            sources
+        };
 
         Self::populate_poi(&level, &sections, pos, min_y);
 
@@ -294,6 +326,8 @@ impl LevelChunk {
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(empty_postprocessing(height)),
+            sky_light_sources: SyncRwLock::new(sky_light_sources),
+            light: SyncRwLock::new(light),
         }
     }
 
@@ -312,6 +346,14 @@ impl LevelChunk {
     #[must_use]
     pub fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Fills the vanilla skylight-source cache from current section contents.
+    pub fn initialize_light_sources(&self) {
+        self.refresh_light_emptiness_maps();
+        self.sky_light_sources
+            .write()
+            .fill_from_sections(&self.sections);
     }
 
     /// Drains the vanilla proto postprocessing offsets carried through promotion.
@@ -389,14 +431,28 @@ impl LevelChunk {
         let Some(world) = level.upgrade() else {
             return;
         };
-        let mut poi_storage = world.poi_storage.lock();
+
+        // Palette pre-check WITHOUT the global POI lock: collect only the
+        // sections that actually contain POI blocks. The vast majority of
+        // worldgen chunks have none, so they never touch the (heavily
+        // contended) `poi_storage` mutex and never do a per-block scan.
+        // `Vec::new()` doesn't allocate until the first push, so the common
+        // empty case is allocation-free.
+        let mut poi_sections: Vec<(usize, SectionPos)> = Vec::new();
         for (i, section) in sections.sections.iter().enumerate() {
-            let section_y = min_y / 16 + i as i32;
-            let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
-            let guard = section.read();
-            if !guard.is_empty() {
-                poi_storage.scan_and_populate(&guard, section_pos);
+            if section.read().contains_poi() {
+                let section_y = min_y / 16 + i as i32;
+                poi_sections.push((i, SectionPos::new(pos.0.x, section_y, pos.0.y)));
             }
+        }
+        if poi_sections.is_empty() {
+            return;
+        }
+
+        let mut poi_storage = world.poi_storage.lock();
+        for (i, section_pos) in poi_sections {
+            let guard = sections.sections[i].read();
+            poi_storage.scan_and_populate(&guard, section_pos);
         }
     }
 
@@ -551,6 +607,10 @@ impl LevelChunk {
     ///
     /// Panics if the behavior registry has not been initialized.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "block mutation keeps vanilla side effects in one ordered transaction"
+    )]
     pub fn set_block_state(
         &self,
         pos: BlockPos,
@@ -575,9 +635,13 @@ impl LevelChunk {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        let old_state = section
-            .write()
-            .set_block_state(local_x, local_y, local_z, state);
+        let (old_state, was_empty, is_empty) = {
+            let mut section_guard = section.write();
+            let was_empty = section_guard.is_empty();
+            let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+            let is_empty = section_guard.is_empty();
+            (old_state, was_empty, is_empty)
+        };
 
         if old_state == state {
             return None;
@@ -599,19 +663,24 @@ impl LevelChunk {
         let old_block = old_state.get_block();
         let new_block = state.get_block();
 
-        // TODO: Light updates
-        // In vanilla, light engine is notified when section emptiness changes:
-        // let is_empty = section.read().states.has_only_air();
-        // if was_empty != is_empty {
-        //     level.chunk_source.light_engine.update_section_status(pos, is_empty);
-        //     level.chunk_source.on_section_emptiness_changed(chunk_pos.x, section_y, chunk_pos.z, is_empty);
-        // }
-        //
-        // And when light properties change:
-        // if LightEngine::has_different_light_properties(old_state, state) {
-        //     self.sky_light_sources.update(self, local_x, y, local_z);
-        //     level.chunk_source.light_engine.check_block(pos);
-        // }
+        let empty_section_change = if was_empty == is_empty {
+            None
+        } else {
+            self.update_light_section_emptiness(y, is_empty);
+            Some(LightSectionEmptinessChange {
+                section_pos: SectionPos::new(
+                    self.pos.0.x,
+                    SectionPos::block_to_section_coord(y),
+                    self.pos.0.y,
+                ),
+                empty: is_empty,
+            })
+        };
+
+        let light_properties_changed = has_different_light_properties(old_state, state);
+        if light_properties_changed {
+            self.update_sky_light_sources(local_x, y, local_z);
+        }
 
         // Re-read the block to verify it wasn't changed concurrently
         let current_block = section
@@ -624,6 +693,15 @@ impl LevelChunk {
         }
 
         if let Some(level) = self.get_level() {
+            if light_properties_changed || empty_section_change.is_some() {
+                level.queue_light_change_after_block_set(
+                    pos,
+                    old_state,
+                    state,
+                    empty_section_change,
+                );
+            }
+
             // Update POI storage when block states change
             level
                 .poi_storage
@@ -682,6 +760,35 @@ impl LevelChunk {
 
         self.mark_unsaved();
         Some(old_state)
+    }
+
+    fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
+        let section_y = SectionPos::block_to_section_coord(y);
+        self.light.write().set_section_empty(section_y, is_empty);
+    }
+
+    fn update_sky_light_sources(&self, local_x: usize, y: i32, local_z: usize) {
+        let chunk_min_x = self.pos.0.x * 16;
+        let chunk_min_z = self.pos.0.y * 16;
+        self.sky_light_sources
+            .write()
+            .update(local_x, y, local_z, |scan_x, scan_y, scan_z| {
+                self.get_block_state(BlockPos::new(
+                    chunk_min_x + scan_x as i32,
+                    scan_y,
+                    chunk_min_z + scan_z as i32,
+                ))
+            });
+    }
+
+    pub(crate) fn refresh_light_emptiness_maps(&self) {
+        if let Err(error) = self
+            .light
+            .write()
+            .refresh_emptiness_maps_from_sections(&self.sections)
+        {
+            panic!("invalid chunk light emptiness map length: {error:?}");
+        }
     }
 
     /// Gets a block state at the given position.
@@ -771,32 +878,66 @@ impl LevelChunk {
 
     /// Extracts the light data for sending to the client.
     #[must_use]
-    pub fn extract_light_data(&self) -> LightUpdatePacketData {
-        // Vanilla's light section count is sectionsCount + 2 (one below and one above the world)
-        let light_section_count = self.sections.sections.len() + 2;
-        let mut sky_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let mut block_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let empty_sky_y_mask = BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
-        let empty_block_y_mask =
-            BitSet(vec![0; light_section_count.div_ceil(64)].into_boxed_slice());
+    pub fn extract_light_data(&self, has_skylight: bool) -> LightUpdatePacketData {
+        let light = self.light.read();
+        build_chunk_light_update_packet(&light, has_skylight)
+    }
+}
 
-        let mut sky_updates = Vec::new();
-        let mut block_updates = Vec::new();
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
 
-        for i in 0..light_section_count {
-            sky_y_mask.set(i, true);
-            block_y_mask.set(i, true);
-            sky_updates.push(vec![0xFF; 2048]);
-            block_updates.push(vec![0xFF; 2048]);
+    use steel_registry::test_support::init_test_registry;
+    use steel_utils::ChunkPos;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::{
+        light::{LightSection, LightSectionData},
+        proto_chunk::ProtoChunk,
+        section::{ChunkSection, Sections},
+    };
+
+    #[test]
+    fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let chunk = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+
+        {
+            let mut light = chunk.light.write();
+            let Some(sky_section) = light.sky.section_mut(0) else {
+                panic!("single-section light range should contain section 0");
+            };
+            *sky_section = LightSection::visible(LightSectionData::homogeneous(15));
+
+            let Some(block_section) = light.block.section_mut(0) else {
+                panic!("single-section light range should contain section 0");
+            };
+            let mut block_data = LightSectionData::homogeneous(0);
+            block_data.set(1, 2, 3, 12);
+            *block_section = LightSection::visible(block_data);
         }
 
-        LightUpdatePacketData {
-            sky_y_mask,
-            block_y_mask,
-            empty_sky_y_mask,
-            empty_block_y_mask,
-            sky_updates,
-            block_updates,
-        }
+        let with_sky = chunk.extract_light_data(true);
+        assert_eq!(with_sky.sky_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(with_sky.block_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(with_sky.sky_updates.len(), 1);
+        assert_eq!(with_sky.block_updates.len(), 1);
+        assert!(with_sky.sky_updates[0].iter().all(|byte| *byte == 0xff));
+
+        let without_sky = chunk.extract_light_data(false);
+        assert_eq!(without_sky.sky_y_mask.0[0], 0);
+        assert!(without_sky.sky_updates.is_empty());
+        assert_eq!(without_sky.block_y_mask.0[0] & 0b10, 0b10);
+        assert_eq!(without_sky.block_updates.len(), 1);
     }
 }

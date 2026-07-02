@@ -64,7 +64,7 @@ impl BlockBehavior for TorchBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = self.block.default_state();
         // Check if we can place on the block below
-        if !self.can_survive(default_state, context.world, context.relative_pos) {
+        if !self.can_survive(default_state, context.world, context.place_pos) {
             return None;
         }
 
@@ -129,7 +129,7 @@ impl BlockBehavior for WallTorchBlock {
                     .block
                     .default_state()
                     .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
-                if self.can_survive(state, context.world, context.relative_pos) {
+                if self.can_survive(state, context.world, context.place_pos) {
                     return Some(state);
                 }
             }

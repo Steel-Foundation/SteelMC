@@ -18,7 +18,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
-            vegetation_block::{vegetation_can_survive, vegetation_update_shape},
+            vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
     },
     world::{LevelReader, ScheduledTickAccess, World},
@@ -44,9 +44,9 @@ impl NetherWartBlock {
 impl BlockBehavior for NetherWartBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.relative_pos.below()),
+            context.world.get_block_state(context.place_pos.below()),
             context.world,
-            context.relative_pos.below(),
+            context.place_pos.below(),
         ) {
             Some(self.block.default_state())
         } else {
@@ -63,7 +63,7 @@ impl BlockBehavior for NetherWartBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        vegetation_update_shape(self, state, world, pos)
+        survival_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

@@ -40,6 +40,8 @@ impl ScaffoldingBlock {
 }
 
 impl BlockBehavior for ScaffoldingBlock {
+    // TODO: Mirror vanilla scaffolding placement here, including WATERLOGGED,
+    // STABILITY_DISTANCE, BOTTOM, on_place, and update_shape tick scheduling.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -74,25 +76,7 @@ mod tests {
     use super::*;
     use steel_registry::{test_support, vanilla_blocks};
 
-    struct EmptyLevel;
-
-    impl LevelReader for EmptyLevel {
-        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
-            vanilla_blocks::AIR.default_state()
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            0
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
-    }
+    use crate::test_support::TestLevel;
 
     fn scaffolding_state(distance: u8, bottom: bool) -> BlockStateId {
         vanilla_blocks::SCAFFOLDING
@@ -103,7 +87,8 @@ mod tests {
 
     fn collision_shape(state: BlockStateId, context: BlockCollisionContext) -> VoxelShape {
         let behavior = ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING);
-        behavior.get_collision_shape(state, &EmptyLevel, BlockPos::new(0, 64, 0), context)
+        let level = TestLevel::default().with_min_y(0);
+        behavior.get_collision_shape(state, &level, BlockPos::new(0, 64, 0), context)
     }
 
     #[test]

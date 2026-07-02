@@ -4,13 +4,12 @@
 
 use std::sync::Arc;
 
-use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockStateBehaviorExt;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::physics::shapes::merged_offset_face_occludes;
 use crate::world::World;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -56,11 +55,7 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
     let block = state.get_block();
 
     // Vanilla: block instanceof LiquidBlockContainer → true
-    // Our equivalent: waterloggable blocks always accept fluid.
-    if state
-        .try_get_value(&BlockStateProperties::WATERLOGGED)
-        .is_some()
-    {
+    if state.is_liquid_container() {
         return true;
     }
 
@@ -88,14 +83,11 @@ fn is_fluid_excluded_block(block: BlockRef) -> bool {
 
 /// Vanilla equivalent: `FlowingFluid.canHoldSpecificFluid(BlockGetter, BlockPos, BlockState, Fluid)`.
 ///
-/// For `LiquidBlockContainer` blocks (blocks with WATERLOGGED), delegates to
-/// `canPlaceLiquid(null, ...)`. For other blocks, always returns true.
+/// For `LiquidBlockContainer` blocks, delegates to `canPlaceLiquid(null, ...)`.
+/// For other blocks, always returns true.
 #[must_use]
 pub fn can_hold_specific_fluid(state: BlockStateId, fluid: FluidRef) -> bool {
-    if state
-        .try_get_value(&BlockStateProperties::WATERLOGGED)
-        .is_some()
-    {
+    if state.is_liquid_container() {
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         behavior.can_place_liquid(state, fluid)
     } else {
@@ -135,10 +127,76 @@ pub fn can_pass_horizontally(world: &Arc<World>, pos: BlockPos, target_fluid_id:
 pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: FluidRef) -> bool {
     // Vanilla: !isSourceBlockOfThisType — reject same-type source blocks
     let fluid_state = state.get_fluid_state();
-    if fluid_state.fluid_id == target_fluid_id && fluid_state.is_source() {
+    if FLUID_BEHAVIORS
+        .get_behavior(target_fluid_id)
+        .is_same(fluid_state.fluid_id)
+        && fluid_state.is_source()
+    {
         return false;
     }
 
     // Vanilla: canHoldAnyFluid
     can_hold_any_fluid_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::behavior::init_behaviors;
+    use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+
+    use super::*;
+
+    #[test]
+    fn waterlogged_source_blocks_block_same_fluid_flowing_variant_spread() {
+        init_test_registry();
+        init_behaviors();
+
+        let waterlogged = vanilla_blocks::OAK_LEAVES
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        assert!(!can_pass_horizontally_internal(
+            waterlogged,
+            &vanilla_fluids::FLOWING_WATER
+        ));
+        assert!(!can_pass_horizontally_internal(
+            waterlogged,
+            &vanilla_fluids::WATER
+        ));
+    }
+
+    #[test]
+    fn dry_waterloggable_blocks_reject_flowing_water() {
+        init_test_registry();
+        init_behaviors();
+
+        let dry = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Bottom)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        assert!(can_hold_specific_fluid(dry, &vanilla_fluids::WATER));
+        assert!(!can_hold_specific_fluid(
+            dry,
+            &vanilla_fluids::FLOWING_WATER
+        ));
+    }
+
+    #[test]
+    fn kelp_is_liquid_container_without_waterlogged_property() {
+        init_test_registry();
+        init_behaviors();
+
+        let kelp = vanilla_blocks::KELP.default_state();
+
+        assert!(
+            kelp.try_get_value(&BlockStateProperties::WATERLOGGED)
+                .is_none()
+        );
+        assert!(kelp.is_liquid_container());
+        assert!(can_hold_any_fluid_state(kelp));
+        assert!(!can_hold_specific_fluid(kelp, &vanilla_fluids::WATER));
+        assert!(!can_hold_specific_fluid(kelp, &vanilla_fluids::LAVA));
+    }
 }

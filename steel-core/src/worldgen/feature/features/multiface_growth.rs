@@ -429,7 +429,7 @@ impl FeatureDecorationRunner {
         ]
     }
 
-    const fn multiface_spread_pos(
+    fn multiface_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,

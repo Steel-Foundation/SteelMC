@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Cow,
+    collections::VecDeque,
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -12,6 +13,7 @@ use std::{
 
 use bitflags::bitflags;
 use glam::{DVec3, IVec2, IVec3};
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize, de::Error as _};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
@@ -191,6 +193,17 @@ impl ReadFrom for ChunkPos {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPos(pub IVec3);
 
+/// Result of processing a node during bfs
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TraversalNodeStatus {
+    /// Count the node and visit its neighbors if depth allows
+    Accept,
+    /// Do not count the node or visit its neighbors
+    Skip,
+    /// Stop traversal immediately
+    Stop,
+}
+
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -311,19 +324,62 @@ impl BlockPos {
 
     /// Returns the position offset by one block in the given direction.
     #[must_use]
-    pub const fn relative(self, direction: Direction) -> Self {
-        let (dx, dy, dz) = direction.offset();
-        self.offset(dx, dy, dz)
+    pub fn relative(self, direction: Direction) -> Self {
+        Self(self.0 + direction.offset_vec())
+    }
+
+    /// Does a breadth-first traversal of all block pos from `start_pos`
+    #[must_use]
+    pub fn breadth_first_traversal<NP, P>(
+        start_pos: Self,
+        max_depth: i32,
+        max_count: i32,
+        mut neighbor_provider: NP,
+        mut node_processor: P,
+    ) -> i32
+    where
+        NP: FnMut(Self, &mut dyn FnMut(Self)),
+        P: FnMut(Self) -> TraversalNodeStatus,
+    {
+        let mut nodes = VecDeque::from([(start_pos, 0)]);
+        let mut visited = FxHashSet::default();
+        let mut count = 0;
+
+        while let Some((current_pos, depth)) = nodes.pop_front() {
+            if !visited.insert(current_pos) {
+                continue;
+            }
+
+            let next = node_processor(current_pos);
+            if next == TraversalNodeStatus::Skip {
+                continue;
+            }
+
+            if next == TraversalNodeStatus::Stop {
+                break;
+            }
+
+            count += 1;
+            if count >= max_count {
+                return count;
+            }
+
+            if depth < max_depth {
+                let next_depth = depth + 1;
+                neighbor_provider(current_pos, &mut |pos| nodes.push_back((pos, next_depth)));
+            }
+        }
+
+        count
     }
 
     /// Returns the position offset by `n` blocks in the given direction.
     #[must_use]
-    pub const fn relative_n(&self, direction: Direction, n: i32) -> Self {
+    pub fn relative_n(&self, direction: Direction, n: i32) -> Self {
         if n == 0 {
             *self
         } else {
-            let (dx, dy, dz) = direction.offset();
-            self.offset(dx * n, dy * n, dz * n)
+            Self(self.0 + direction.offset_vec() * n)
         }
     }
 
@@ -396,12 +452,148 @@ impl BlockPos {
     pub const fn max(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
+
+    /// Returns positions in vanilla `BlockPos.withinManhattan` order.
+    #[must_use]
+    pub const fn within_manhattan(
+        self,
+        reach_x: i32,
+        reach_y: i32,
+        reach_z: i32,
+    ) -> BlockPosWithinManhattan {
+        BlockPosWithinManhattan {
+            origin: self,
+            reach_x,
+            reach_y,
+            reach_z,
+            max_depth: reach_x + reach_y + reach_z,
+            current_depth: 0,
+            max_x: 0,
+            max_y: 0,
+            x: 0,
+            y: 0,
+            pending_z_mirror: None,
+            done: false,
+        }
+    }
+
+    /// Returns vanilla `BlockPos.findClosestMatch`.
+    #[must_use]
+    pub fn find_closest_match(
+        self,
+        horizontal_search_radius: i32,
+        vertical_search_radius: i32,
+        mut predicate: impl FnMut(BlockPos) -> bool,
+    ) -> Option<BlockPos> {
+        self.within_manhattan(
+            horizontal_search_radius,
+            vertical_search_radius,
+            horizontal_search_radius,
+        )
+        .find(|pos| predicate(*pos))
+    }
+}
+
+/// Iterator returned by [`BlockPos::within_manhattan`].
+#[derive(Debug, Clone)]
+pub struct BlockPosWithinManhattan {
+    origin: BlockPos,
+    reach_x: i32,
+    reach_y: i32,
+    reach_z: i32,
+    max_depth: i32,
+    current_depth: i32,
+    max_x: i32,
+    max_y: i32,
+    x: i32,
+    y: i32,
+    pending_z_mirror: Option<BlockPos>,
+    done: bool,
+}
+
+impl Iterator for BlockPosWithinManhattan {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(pos) = self.pending_z_mirror.take() {
+            return Some(pos);
+        }
+        if self.done {
+            return None;
+        }
+
+        loop {
+            if self.y > self.max_y {
+                self.x += 1;
+                if self.x > self.max_x {
+                    self.current_depth += 1;
+                    if self.current_depth > self.max_depth {
+                        self.done = true;
+                        return None;
+                    }
+
+                    self.max_x = self.reach_x.min(self.current_depth);
+                    self.x = -self.max_x;
+                }
+
+                self.max_y = self.reach_y.min(self.current_depth - self.x.abs());
+                self.y = -self.max_y;
+            }
+
+            let x = self.x;
+            let y = self.y;
+            let z = self.current_depth - x.abs() - y.abs();
+            self.y += 1;
+            if z > self.reach_z {
+                continue;
+            }
+
+            let pos = self.origin.offset(x, y, z);
+            if z != 0 {
+                self.pending_z_mirror = Some(self.origin.offset(x, y, -z));
+            }
+            return Some(pos);
+        }
+    }
 }
 
 impl ReadFrom for BlockPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let packed = <i64 as ReadFrom>::read(data)?;
         Ok(PackedBlockPos::from_raw(packed).into())
+    }
+}
+
+/// A position tied to a dimension key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GlobalPos {
+    /// Dimension containing the block position.
+    pub dimension: Identifier,
+    /// Block position within the dimension.
+    pub pos: BlockPos,
+}
+
+impl GlobalPos {
+    /// Creates a new global position.
+    #[must_use]
+    pub const fn new(dimension: Identifier, pos: BlockPos) -> Self {
+        Self { dimension, pos }
+    }
+}
+
+impl ReadFrom for GlobalPos {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self {
+            dimension: <Identifier as ReadFrom>::read(data)?,
+            pos: BlockPos::read(data)?,
+        })
+    }
+}
+
+impl WriteTo for GlobalPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.dimension.write(writer)?;
+        self.pos.write(writer)
     }
 }
 
@@ -892,148 +1084,6 @@ impl WriteTo for SectionPos {
     }
 }
 
-/// An integer axis-aligned bounding box for structure pieces.
-///
-/// Corresponds to vanilla's `BoundingBox` (not the float `AABB`/`AABBd`
-/// for block shapes or entity collision). Coordinates are absolute world block positions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SchemaWrite, SchemaRead)]
-pub struct BoundingBox {
-    /// Minimum X coordinate (inclusive).
-    pub min_x: i32,
-    /// Minimum Y coordinate (inclusive).
-    pub min_y: i32,
-    /// Minimum Z coordinate (inclusive).
-    pub min_z: i32,
-    /// Maximum X coordinate (inclusive).
-    pub max_x: i32,
-    /// Maximum Y coordinate (inclusive).
-    pub max_y: i32,
-    /// Maximum Z coordinate (inclusive).
-    pub max_z: i32,
-}
-
-impl BoundingBox {
-    /// Creates a new bounding box, normalizing so min <= max on each axis.
-    #[must_use]
-    pub const fn new(x1: i32, y1: i32, z1: i32, x2: i32, y2: i32, z2: i32) -> Self {
-        Self {
-            min_x: x1.min(x2),
-            min_y: y1.min(y2),
-            min_z: z1.min(z2),
-            max_x: x1.max(x2),
-            max_y: y1.max(y2),
-            max_z: z1.max(z2),
-        }
-    }
-
-    /// Creates a bounding box from two corner block positions.
-    #[must_use]
-    pub const fn from_corners(a: BlockPos, b: BlockPos) -> Self {
-        Self::new(a.0.x, a.0.y, a.0.z, b.0.x, b.0.y, b.0.z)
-    }
-
-    /// Returns whether this bounding box intersects another.
-    #[must_use]
-    pub const fn intersects(&self, other: &Self) -> bool {
-        self.max_x >= other.min_x
-            && self.min_x <= other.max_x
-            && self.max_z >= other.min_z
-            && self.min_z <= other.max_z
-            && self.max_y >= other.min_y
-            && self.min_y <= other.max_y
-    }
-
-    /// Returns whether this bounding box intersects the given XZ range.
-    #[must_use]
-    pub const fn intersects_xz(&self, min_x: i32, min_z: i32, max_x: i32, max_z: i32) -> bool {
-        self.max_x >= min_x && self.min_x <= max_x && self.max_z >= min_z && self.min_z <= max_z
-    }
-
-    /// Returns whether the given block position is inside this bounding box.
-    #[must_use]
-    pub const fn is_inside(&self, pos: BlockPos) -> bool {
-        self.contains_xyz(pos.0.x, pos.0.y, pos.0.z)
-    }
-
-    /// Returns whether the given coordinates are inside this bounding box.
-    #[must_use]
-    pub const fn contains_xyz(&self, x: i32, y: i32, z: i32) -> bool {
-        x >= self.min_x
-            && x <= self.max_x
-            && z >= self.min_z
-            && z <= self.max_z
-            && y >= self.min_y
-            && y <= self.max_y
-    }
-
-    /// Returns the center of this bounding box.
-    #[must_use]
-    pub const fn get_center(&self) -> BlockPos {
-        BlockPos(IVec3::new(
-            self.min_x + (self.max_x - self.min_x + 1) / 2,
-            self.min_y + (self.max_y - self.min_y + 1) / 2,
-            self.min_z + (self.max_z - self.min_z + 1) / 2,
-        ))
-    }
-
-    /// Returns the span (size) along the X axis.
-    #[must_use]
-    pub const fn get_x_span(&self) -> i32 {
-        self.max_x - self.min_x + 1
-    }
-
-    /// Returns the span (size) along the Y axis.
-    #[must_use]
-    pub const fn get_y_span(&self) -> i32 {
-        self.max_y - self.min_y + 1
-    }
-
-    /// Returns the span (size) along the Z axis.
-    #[must_use]
-    pub const fn get_z_span(&self) -> i32 {
-        self.max_z - self.min_z + 1
-    }
-
-    /// Returns the smallest bounding box that contains both `a` and `b`.
-    #[must_use]
-    pub const fn encapsulating(a: &Self, b: &Self) -> Self {
-        Self {
-            min_x: a.min_x.min(b.min_x),
-            min_y: a.min_y.min(b.min_y),
-            min_z: a.min_z.min(b.min_z),
-            max_x: a.max_x.max(b.max_x),
-            max_y: a.max_y.max(b.max_y),
-            max_z: a.max_z.max(b.max_z),
-        }
-    }
-
-    /// Returns a new bounding box moved by the given offset.
-    #[must_use]
-    pub const fn moved(&self, dx: i32, dy: i32, dz: i32) -> Self {
-        Self {
-            min_x: self.min_x + dx,
-            min_y: self.min_y + dy,
-            min_z: self.min_z + dz,
-            max_x: self.max_x + dx,
-            max_y: self.max_y + dy,
-            max_z: self.max_z + dz,
-        }
-    }
-
-    /// Returns a new bounding box inflated by the given amounts on each axis.
-    #[must_use]
-    pub const fn inflated_by(&self, x: i32, y: i32, z: i32) -> Self {
-        Self {
-            min_x: self.min_x - x,
-            min_y: self.min_y - y,
-            min_z: self.min_z - z,
-            max_x: self.max_x + x,
-            max_y: self.max_y + y,
-            max_z: self.max_z + z,
-        }
-    }
-}
-
 /// The game type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[expect(missing_docs, reason = "variant names are self-explanatory")]
@@ -1425,6 +1475,37 @@ mod tests {
         let encoded = PackedBlockPos::from(pos);
         let decoded = encoded.to_block_pos();
         assert_eq!(pos, decoded, "Position 0, -61, -2 failed roundtrip");
+    }
+
+    #[test]
+    fn block_pos_within_manhattan_starts_in_vanilla_order() {
+        let positions: Vec<_> = BlockPos::new(10, 20, 30)
+            .within_manhattan(1, 1, 1)
+            .take(7)
+            .collect();
+
+        assert_eq!(
+            positions,
+            [
+                BlockPos::new(10, 20, 30),
+                BlockPos::new(9, 20, 30),
+                BlockPos::new(10, 19, 30),
+                BlockPos::new(10, 20, 31),
+                BlockPos::new(10, 20, 29),
+                BlockPos::new(10, 21, 30),
+                BlockPos::new(11, 20, 30),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_pos_find_closest_match_uses_vanilla_order() {
+        let origin = BlockPos::new(10, 20, 30);
+
+        let found =
+            origin.find_closest_match(1, 1, |pos| pos == origin.south() || pos == origin.west());
+
+        assert_eq!(found, Some(origin.west()));
     }
 
     #[test]

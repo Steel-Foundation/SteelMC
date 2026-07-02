@@ -67,38 +67,12 @@ mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
+    use crate::test_support::TestLevel;
+
     use super::*;
 
-    struct SingleSupportLevel {
-        support: BlockRef,
-    }
-
-    impl SingleSupportLevel {
-        const fn new(support: BlockRef) -> Self {
-            Self { support }
-        }
-    }
-
-    impl LevelReader for SingleSupportLevel {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == BlockPos::new(0, 63, 0) {
-                self.support.default_state()
-            } else {
-                vanilla_blocks::AIR.default_state()
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            -64
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
+    fn level_with_support(support: BlockRef) -> TestLevel {
+        TestLevel::default().with_block(BlockPos::new(0, 63, 0), support.default_state())
     }
 
     #[test]
@@ -109,7 +83,7 @@ mod tests {
         let pos = BlockPos::new(0, 64, 0);
         let state = vanilla_blocks::CLOSED_EYEBLOSSOM.default_state();
 
-        assert!(behavior.can_survive(state, &SingleSupportLevel::new(&vanilla_blocks::DIRT), pos));
-        assert!(!behavior.can_survive(state, &SingleSupportLevel::new(&vanilla_blocks::AIR), pos));
+        assert!(behavior.can_survive(state, &level_with_support(&vanilla_blocks::DIRT), pos));
+        assert!(!behavior.can_survive(state, &level_with_support(&vanilla_blocks::AIR), pos));
     }
 }

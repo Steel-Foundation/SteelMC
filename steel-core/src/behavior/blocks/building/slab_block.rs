@@ -12,15 +12,15 @@ use steel_registry::{
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, Direction, SlabType},
     },
-    fluid::FluidRef,
+    fluid::{FluidRef, FluidState},
     vanilla_fluids,
 };
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
-    world::{ScheduledTickAccess, World},
+    behavior::{BlockBehavior, BlockPlaceContext, block::place_simple_waterlogged_liquid},
+    world::{LevelAccessor, ScheduledTickAccess, World},
 };
 
 /// Behavior for slab blocks.
@@ -39,7 +39,7 @@ impl SlabBlock {
     fn single_slab_type_for_placement(context: &BlockPlaceContext<'_>) -> SlabType {
         if context.clicked_face != Direction::Down
             && (context.clicked_face == Direction::Up
-                || context.click_location.y - f64::from(context.relative_pos.y()) <= 0.5)
+                || context.click_location.y - f64::from(context.place_pos.y()) <= 0.5)
         {
             SlabType::Bottom
         } else {
@@ -50,7 +50,7 @@ impl SlabBlock {
 
 impl BlockBehavior for SlabBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let existing_state = context.world.get_block_state(context.relative_pos);
+        let existing_state = context.world.get_block_state(context.place_pos);
         if existing_state.get_block() == self.block {
             return Some(
                 existing_state
@@ -92,8 +92,18 @@ impl BlockBehavior for SlabBlock {
 
     fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
         state.try_get_value(&BlockStateProperties::SLAB_TYPE) != Some(SlabType::Double)
-            && state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(false)
             && fluid == &vanilla_fluids::WATER
+    }
+
+    fn place_liquid(
+        &self,
+        level: &dyn LevelAccessor,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        state.try_get_value(&BlockStateProperties::SLAB_TYPE) != Some(SlabType::Double)
+            && place_simple_waterlogged_liquid(level, pos, state, fluid_state)
     }
 }
 
@@ -138,6 +148,16 @@ impl BlockBehavior for WeatheringCopperSlabBlock {
         self.slab.can_place_liquid(state, fluid)
     }
 
+    fn place_liquid(
+        &self,
+        level: &dyn LevelAccessor,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        self.slab.place_liquid(level, pos, state, fluid_state)
+    }
+
     fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
         self.weathering.is_randomly_ticking()
     }
@@ -166,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn single_slabs_accept_source_water_when_not_waterlogged() {
+    fn single_slabs_accept_source_water_for_container_admission() {
         init_test_registry();
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
@@ -175,5 +195,17 @@ mod tests {
             .set_value(&BlockStateProperties::WATERLOGGED, false);
 
         assert!(behavior.can_place_liquid(bottom_slab, &vanilla_fluids::WATER));
+    }
+
+    #[test]
+    fn single_slabs_reject_flowing_water_for_container_admission() {
+        init_test_registry();
+        let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
+        let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Bottom)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        assert!(!behavior.can_place_liquid(bottom_slab, &vanilla_fluids::FLOWING_WATER));
     }
 }

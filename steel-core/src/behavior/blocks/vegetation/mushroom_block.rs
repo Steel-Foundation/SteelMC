@@ -65,44 +65,14 @@ impl BlockBehavior for MushroomBlock {
 mod tests {
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
+    use crate::test_support::TestLevel;
+
     use super::*;
 
-    struct SingleSupportWorld {
-        support: BlockStateId,
-        air: BlockStateId,
-        raw_brightness: u8,
-    }
-
-    impl SingleSupportWorld {
-        fn new(support: BlockStateId, raw_brightness: u8) -> Self {
-            Self {
-                support,
-                air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
-                raw_brightness,
-            }
-        }
-    }
-
-    impl LevelReader for SingleSupportWorld {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == BlockPos::new(0, -1, 0) {
-                self.support
-            } else {
-                self.air
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            self.raw_brightness
-        }
-
-        fn min_y(&self) -> i32 {
-            -64
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
+    fn single_support_level(support: BlockStateId, raw_brightness: u8) -> TestLevel {
+        TestLevel::default()
+            .with_block(BlockPos::ZERO.below(), support)
+            .with_raw_brightness(raw_brightness)
     }
 
     #[test]
@@ -118,17 +88,17 @@ mod tests {
         let grass_block = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::GRASS_BLOCK);
-        assert!(mushroom.can_survive(state, &SingleSupportWorld::new(grass_block, 12), pos));
-        assert!(!mushroom.can_survive(state, &SingleSupportWorld::new(grass_block, 13), pos));
+        assert!(mushroom.can_survive(state, &single_support_level(grass_block, 12), pos));
+        assert!(!mushroom.can_survive(state, &single_support_level(grass_block, 13), pos));
 
         let oak_leaves = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::OAK_LEAVES);
-        assert!(!mushroom.can_survive(state, &SingleSupportWorld::new(oak_leaves, 0), pos));
+        assert!(!mushroom.can_survive(state, &single_support_level(oak_leaves, 0), pos));
 
         let podzol = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::PODZOL);
-        assert!(mushroom.can_survive(state, &SingleSupportWorld::new(podzol, 15), pos));
+        assert!(mushroom.can_survive(state, &single_support_level(podzol, 15), pos));
     }
 }

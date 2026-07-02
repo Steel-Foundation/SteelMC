@@ -13,6 +13,7 @@ use syn::Ident;
 mod blocks;
 mod candle_cakes;
 mod common;
+mod entities;
 mod items;
 mod strippables;
 mod waxables;
@@ -22,32 +23,53 @@ mod weathering;
 struct Classes {
     blocks: Vec<blocks::BlockClass>,
     items: Vec<items::ItemClass>,
+    #[serde(default)]
+    entities: Vec<entities::EntityClass>,
 }
 
 pub fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let out_dir = format!("{manifest_dir}/src/behavior/generated");
+    let behavior_out_dir = format!("{manifest_dir}/src/behavior/generated");
+    let entity_out_dir = format!("{manifest_dir}/src/entity/generated");
 
     let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
         .expect("Failed to read classes.json");
     let classes: Classes =
         serde_json::from_str(&classes_json).expect("Failed to parse classes.json");
 
-    fs::create_dir_all(&out_dir).expect("Failed to create output directory");
+    fs::create_dir_all(&behavior_out_dir).expect("Failed to create behavior output directory");
+    fs::create_dir_all(&entity_out_dir).expect("Failed to create entity output directory");
 
     write_if_changed(
-        format!("{out_dir}/blocks.rs"),
+        format!("{behavior_out_dir}/blocks.rs"),
         blocks::build(&classes.blocks),
     );
-    write_if_changed(format!("{out_dir}/candle_cakes.rs"), candle_cakes::build());
-    write_if_changed(format!("{out_dir}/items.rs"), items::build(&classes.items));
-    write_if_changed(format!("{out_dir}/waxables.rs"), waxables::build());
-    write_if_changed(format!("{out_dir}/weathering.rs"), weathering::build());
-    write_if_changed(format!("{out_dir}/strippables.rs"), strippables::build());
+    write_if_changed(
+        format!("{behavior_out_dir}/candle_cakes.rs"),
+        candle_cakes::build(),
+    );
+    write_if_changed(
+        format!("{behavior_out_dir}/items.rs"),
+        items::build(&classes.items),
+    );
+    write_if_changed(format!("{behavior_out_dir}/waxables.rs"), waxables::build());
+    write_if_changed(
+        format!("{behavior_out_dir}/weathering.rs"),
+        weathering::build(),
+    );
+    write_if_changed(
+        format!("{behavior_out_dir}/strippables.rs"),
+        strippables::build(),
+    );
+    write_if_changed(
+        format!("{entity_out_dir}/entities.rs"),
+        entities::build(&classes.entities),
+    );
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
+    println!("cargo:rerun-if-changed={manifest_dir}/src/entity/entities");
 }
 
 /// Items use lowercase field names (`vanilla_items::ITEMS.stone`)

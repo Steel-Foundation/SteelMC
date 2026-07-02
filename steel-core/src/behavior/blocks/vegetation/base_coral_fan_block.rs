@@ -1,11 +1,12 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, coral_plant_can_survive};
 
@@ -30,14 +31,32 @@ impl BlockBehavior for BaseCoralFanBlock {
         coral_plant_can_survive(world, pos)
     }
 
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
+        if direction == Direction::Down && !self.can_survive(state, world, pos) {
+            vanilla_blocks::AIR.default_state()
+        } else {
+            state
+        }
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        if !self.can_survive(state, context.world, context.relative_pos) {
+        if !self.can_survive(state, context.world, context.place_pos) {
             return None;
         }
-        Some(state.set_value(
-            &BlockStateProperties::WATERLOGGED,
-            context.is_water_source(),
-        ))
+        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
     }
 }

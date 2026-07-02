@@ -817,6 +817,7 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
+    use glam::IVec3;
     use steel_registry::{test_support::init_test_registry, vanilla_biomes};
 
     use crate::structure::placement::{
@@ -825,7 +826,7 @@ mod tests {
 
     use super::*;
 
-    fn random_spread_plan(locate_offset: [i32; 3]) -> StructureLocatePlan {
+    fn random_spread_plan(locate_offset: IVec3) -> StructureLocatePlan {
         StructureLocatePlan {
             seed: 0,
             placements: vec![StructureLocatePlacement {
@@ -855,7 +856,7 @@ mod tests {
                 other_set,
                 chunk_count: 0,
             }),
-            locate_offset: [0, 0, 0],
+            locate_offset: IVec3::ZERO,
             kind: PlacementKind::RandomSpread {
                 spacing: 1,
                 separation: 0,
@@ -920,7 +921,7 @@ mod tests {
                     frequency: 1.0,
                     frequency_reduction_method: FrequencyReductionMethod::Default,
                     exclusion_zone: None,
-                    locate_offset: [0, 0, 0],
+                    locate_offset: IVec3::ZERO,
                     kind: PlacementKind::RandomSpread {
                         spacing: 0,
                         separation: 0,
@@ -984,7 +985,7 @@ mod tests {
 
     #[test]
     fn random_spread_candidates_follow_vanilla_shell_order() {
-        let plan = random_spread_plan([0, 0, 0]);
+        let plan = random_spread_plan(IVec3::ZERO);
         let origin = BlockPos::new(8, 64, 8);
         let candidates = plan.random_spread_candidates_at_radius(origin, 1);
 
@@ -1016,7 +1017,7 @@ mod tests {
 
     #[test]
     fn random_spread_candidates_use_locate_offset() {
-        let plan = random_spread_plan([9, 0, 9]);
+        let plan = random_spread_plan(IVec3::new(9, 0, 9));
         let origin = BlockPos::new(0, 64, 0);
         let candidate = plan.random_spread_candidates_at_radius(origin, 0)[0];
 
@@ -1040,7 +1041,7 @@ mod tests {
                     frequency: 1.0,
                     frequency_reduction_method: FrequencyReductionMethod::Default,
                     exclusion_zone: None,
-                    locate_offset: [0, 0, 0],
+                    locate_offset: IVec3::ZERO,
                     kind: PlacementKind::ConcentricRings {
                         distance: 32,
                         spread: 3,

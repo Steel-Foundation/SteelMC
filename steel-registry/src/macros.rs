@@ -36,10 +36,26 @@ macro_rules! impl_registry_ext {
     };
 }
 
+/// Implements registry-identity equality for an entry type by key.
+#[macro_export]
+macro_rules! impl_registry_entry_eq {
+    ($Entry:ty) => {
+        impl ::core::cmp::PartialEq for $Entry {
+            fn eq(&self, other: &Self) -> bool {
+                self.key == other.key
+            }
+        }
+
+        impl ::core::cmp::Eq for $Entry {}
+    };
+}
+
 /// Implements `RegistryEntry` for an entry type via hash map lookup.
 #[macro_export]
 macro_rules! impl_registry_entry {
     ($Entry:ty, $global_field:ident) => {
+        $crate::impl_registry_entry_eq!($Entry);
+
         impl $crate::RegistryEntry for $Entry {
             fn key(&self) -> &steel_utils::Identifier {
                 &self.key

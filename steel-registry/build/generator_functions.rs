@@ -1,4 +1,6 @@
-use crate::shared_structs::{BiomeCondition, SpawnConditionEntry, TextComponentJson};
+use crate::shared_structs::{
+    BiomeCondition, BiomeConditionTarget, SpawnConditionEntry, TextComponentJson,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
@@ -67,12 +69,25 @@ where
 
 pub fn generate_biome_condition(condition: &BiomeCondition) -> TokenStream {
     let condition_type = condition.condition_type.as_str();
-    let biomes = condition.biomes.as_str();
+    let biomes = generate_biome_condition_target(&condition.biomes);
 
     quote! {
         BiomeCondition {
             condition_type: #condition_type,
             biomes: #biomes,
+        }
+    }
+}
+
+fn generate_biome_condition_target(target: &BiomeConditionTarget) -> TokenStream {
+    match target {
+        BiomeConditionTarget::Tag(tag) => {
+            let tag = generate_identifier(tag);
+            quote! { crate::shared_structs::BiomeConditionTarget::Tag(#tag) }
+        }
+        BiomeConditionTarget::Direct(biome) => {
+            let biome = generate_identifier(biome);
+            quote! { crate::shared_structs::BiomeConditionTarget::Direct(#biome) }
         }
     }
 }

@@ -61,16 +61,9 @@ impl StructureStart {
         let (first, rest) = pieces.split_first()?;
         let mut bb = first.bounding_box;
         for piece in rest {
-            bb = BoundingBox::new(
-                bb.min_x.min(piece.bounding_box.min_x),
-                bb.min_y.min(piece.bounding_box.min_y),
-                bb.min_z.min(piece.bounding_box.min_z),
-                bb.max_x.max(piece.bounding_box.max_x),
-                bb.max_y.max(piece.bounding_box.max_y),
-                bb.max_z.max(piece.bounding_box.max_z),
-            );
+            bb = BoundingBox::encapsulating(&bb, &piece.bounding_box);
         }
-        Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
+        Some(bb.inflate_xyz(bb_inflate, bb_inflate, bb_inflate))
     }
 
     /// Vanilla `StructureStart.placeInChunk` reference position: the first
@@ -78,11 +71,11 @@ impl StructureStart {
     #[must_use]
     pub fn placement_reference_pos(&self) -> Option<BlockPos> {
         let first_piece = self.pieces.first()?;
-        let center = first_piece.bounding_box.get_center();
+        let center = first_piece.bounding_box.center();
         Some(BlockPos::new(
-            center.x(),
-            first_piece.bounding_box.min_y,
-            center.z(),
+            center.x,
+            first_piece.bounding_box.min_y(),
+            center.z,
         ))
     }
 }

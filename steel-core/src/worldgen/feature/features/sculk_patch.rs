@@ -420,7 +420,7 @@ impl FeatureDecorationRunner {
         {
             cursor.charge - 1
         } else if random.next_i32_bounded(spreader.charge_decay_rate) == 0 {
-            floor(f64::from(cursor.charge) * 0.5) as i32
+            fast_floor(f64::from(cursor.charge) * 0.5) as i32
         } else {
             cursor.charge
         }
@@ -1056,7 +1056,7 @@ impl FeatureDecorationRunner {
         state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    const fn sculk_vein_spread_pos(
+    fn sculk_vein_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,

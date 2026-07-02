@@ -66,13 +66,7 @@ impl<T> StaticCache2D<T> {
     /// Panics if coordinates are out of bounds.
     #[must_use]
     pub fn get(&self, x: i32, z: i32) -> &T {
-        let rel_x = x - self.min_x;
-        let rel_z = z - self.min_z;
-
-        if rel_x >= 0 && rel_x < self.size && rel_z >= 0 && rel_z < self.size {
-            let index = (rel_z * self.size + rel_x) as usize;
-            &self.cache[index]
-        } else {
+        let Some(value) = self.try_get(x, z) else {
             panic!(
                 "Out of bounds: ({x}, {z}) vs [({}, {}) to ({}, {})]",
                 self.min_x,
@@ -80,6 +74,21 @@ impl<T> StaticCache2D<T> {
                 self.min_x + self.size - 1,
                 self.min_z + self.size - 1
             );
+        };
+        value
+    }
+
+    /// Gets a reference to an element by world coordinates.
+    #[must_use]
+    pub fn try_get(&self, x: i32, z: i32) -> Option<&T> {
+        let rel_x = x - self.min_x;
+        let rel_z = z - self.min_z;
+
+        if rel_x >= 0 && rel_x < self.size && rel_z >= 0 && rel_z < self.size {
+            let index = (rel_z * self.size + rel_x) as usize;
+            self.cache.get(index)
+        } else {
+            None
         }
     }
 }
@@ -217,7 +226,6 @@ impl ChunkGenerationTask {
             &self.chunk_map,
             &self.cache,
             self.thread_pool.clone(),
-            self.cancel_token.clone(),
         ) {
             self.neighbor_ready.lock().push(future);
         } else {
@@ -260,23 +268,21 @@ impl ChunkGenerationTask {
     /// # Panics
     /// Panics if the schedule is invalid.
     pub fn schedule_next_layer(&self) {
-        let status_to_schedule;
-        if self.scheduled_status.lock().is_none() {
-            status_to_schedule = ChunkStatus::Empty;
+        let status_to_schedule = if self.scheduled_status.lock().is_none() {
+            ChunkStatus::Empty
         } else if !self.needs_generation.load(Ordering::Relaxed)
             && *self.scheduled_status.lock() == Some(ChunkStatus::Empty)
             && !self.can_load_without_generation()
         {
             self.needs_generation.store(true, Ordering::Relaxed);
-            status_to_schedule = ChunkStatus::Empty;
+            ChunkStatus::Empty
         } else {
-            status_to_schedule = self
-                .scheduled_status
+            self.scheduled_status
                 .lock()
                 .expect("Scheduled status missing")
                 .next()
-                .expect("Next status missing");
-        }
+                .expect("Next status missing")
+        };
 
         self.schedule_layer(
             status_to_schedule,
