@@ -66,21 +66,6 @@ impl InteractionResult {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::InteractionResult;
-
-    #[test]
-    fn item_use_side_effects_apply_to_all_success_variants() {
-        assert!(InteractionResult::Success.should_apply_item_use_side_effects());
-        assert!(InteractionResult::SuccessServer.should_apply_item_use_side_effects());
-        assert!(InteractionResult::Consume.should_apply_item_use_side_effects());
-        assert!(!InteractionResult::Fail.should_apply_item_use_side_effects());
-        assert!(!InteractionResult::Pass.should_apply_item_use_side_effects());
-        assert!(!InteractionResult::TryEmptyHandInteraction.should_apply_item_use_side_effects());
-    }
-}
-
 /// Context for placing a block.
 ///
 /// Vanilla porting map:
@@ -338,5 +323,20 @@ impl<'a> UseItemContext<'a> {
             world,
             inv: InventoryAccess::new(inventory, hand),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InteractionResult;
+
+    #[test]
+    fn item_use_side_effects_apply_to_all_success_variants() {
+        assert!(InteractionResult::Success.should_apply_item_use_side_effects());
+        assert!(InteractionResult::SuccessServer.should_apply_item_use_side_effects());
+        assert!(InteractionResult::Consume.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::Fail.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::Pass.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::TryEmptyHandInteraction.should_apply_item_use_side_effects());
     }
 }
