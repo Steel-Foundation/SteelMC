@@ -1730,6 +1730,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().set_removed(reason);
     }
 
+    /// Caches a live owner reference after restoring persisted owner-linked
+    /// entities. Most entities do not store owner references.
+    fn restore_owner_reference(&self, _owner: &SharedEntity) {}
+
     /// Sets the level callback for lifecycle events (movement, removal).
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
         self.base().set_level_callback(callback);

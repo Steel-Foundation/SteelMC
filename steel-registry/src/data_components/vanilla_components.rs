@@ -15,7 +15,7 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 pub use super::components::{
     AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, PiercingWeapon, Tool, ToolRule, Weapon,
+    ItemEnchantments, PiercingWeapon, Tool, ToolRule, UseCooldown, Weapon,
 };
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
@@ -121,7 +121,7 @@ pub const CONSUMABLE: DataComponentType<()> =
 pub const USE_REMAINDER: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("use_remainder"));
 
-pub const USE_COOLDOWN: DataComponentType<()> =
+pub const USE_COOLDOWN: DataComponentType<UseCooldown> =
     DataComponentType::new(Identifier::vanilla_static("use_cooldown"));
 
 pub const DAMAGE_RESISTANT: DataComponentType<()> =
@@ -485,7 +485,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 25: use_remainder
     register_stub!(registry, USE_REMAINDER.key.clone());
     // 26: use_cooldown
-    register_stub!(registry, USE_COOLDOWN.key.clone());
+    registry.register(USE_COOLDOWN, ComponentDataDiscriminant::UseCooldown);
     // 27: damage_resistant
     register_stub!(registry, DAMAGE_RESISTANT.key.clone());
     // 28: tool

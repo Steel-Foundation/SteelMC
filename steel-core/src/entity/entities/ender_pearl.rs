@@ -78,15 +78,19 @@ impl EnderPearlEntity {
         }
     }
 
-    /// Resolves the owner as an online player in `world`, if any.
-    fn owner_player(&self, world: &Arc<World>) -> Option<Arc<Player>> {
-        world.players.get_by_uuid(&self.owner_uuid()?)
+    /// Resolves the owner as an online player, including cached cross-world refs.
+    fn owner_player(&self) -> Option<SharedEntity> {
+        let owner = self.get_owner()?;
+        owner.as_player()?;
+        Some(owner)
     }
 
     /// Removes this pearl from its owner's persistence set when it hits or is
     /// discarded (vanilla `ThrownEnderpearl.onRemoval` deregistration).
-    fn deregister_from_owner(&self, world: &Arc<World>) {
-        if let Some(player) = self.owner_player(world) {
+    fn deregister_from_owner(&self) {
+        if let Some(owner) = self.owner_player()
+            && let Some(player) = owner.as_player()
+        {
             player.deregister_ender_pearl(self.uuid());
         }
     }
@@ -103,7 +107,7 @@ impl EnderPearlEntity {
 
         let mut timer = self.ticket_timer.lock();
         *timer -= 1;
-        if (*timer > 0 && !crossed_border) || self.owner_player(world).is_none() {
+        if (*timer > 0 && !crossed_border) || self.owner_player().is_none() {
             return;
         }
 
@@ -116,12 +120,15 @@ impl EnderPearlEntity {
     /// owner is a dead player vanishes when the gamerule is set.
     // TODO: vanilla also exempts `serverPlayer.wonGame` (credits roll).
     fn should_vanish_on_owner_death(&self, world: &Arc<World>) -> bool {
-        let Some(player) = self.owner_player(world) else {
+        let Some(owner) = self.owner_player() else {
+            return false;
+        };
+        let Some(player) = owner.as_player() else {
             return false;
         };
         // Vanilla checks `!owner.isAlive()` for a dead (but still connected) player.
         // `LivingEntity::is_alive` is the health-based override vanilla dispatches to.
-        !LivingEntity::is_alive(&*player)
+        !LivingEntity::is_alive(player)
             && world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true)
     }
 
@@ -138,15 +145,11 @@ impl EnderPearlEntity {
         clippy::unused_self,
         reason = "uses self once the endermite-spawn and portal-cooldown TODOs land"
     )]
-    fn teleport_owner(&self, world: &Arc<World>, player: &Arc<Player>, teleport_pos: DVec3) {
+    fn teleport_owner(&self, world: &Arc<World>, player: &Player, teleport_pos: DVec3) {
         // TODO: 5% endermite spawn (Endermite entity not implemented).
         // TODO: portal-cooldown transfer when the pearl is on portal cooldown.
 
-        // Vanilla keeps the owner's rotation (Relative.ROTATION) and momentum
-        // (Relative.DELTA); Steel's `teleport` preserves rotation but currently
-        // zeroes velocity. TODO: preserve momentum once the teleport API allows it.
-        let (yaw, pitch) = player.rotation();
-        if let Err(error) = player.teleport(teleport_pos, yaw, pitch) {
+        if let Err(error) = player.teleport_preserving_velocity(teleport_pos) {
             log::debug!("failed to teleport ender pearl owner: {error}");
             return;
         }
@@ -185,7 +188,7 @@ impl Entity for EnderPearlEntity {
         };
 
         if self.should_vanish_on_owner_death(&world) {
-            self.deregister_from_owner(&world);
+            self.deregister_from_owner();
             self.set_removed(RemovalReason::Discarded);
             return;
         }
@@ -203,6 +206,14 @@ impl Entity for EnderPearlEntity {
 
     fn sound_source(&self) -> SoundSource {
         SoundSource::Neutral
+    }
+
+    fn spawn_data(&self) -> i32 {
+        self.get_owner().map_or(0, |owner| owner.id())
+    }
+
+    fn restore_owner_reference(&self, owner: &SharedEntity) {
+        self.cache_owner_entity(owner);
     }
 
     fn attackable(&self) -> bool {
@@ -258,12 +269,13 @@ impl Projectile for EnderPearlEntity {
         }
 
         let teleport_pos = self.old_position();
-        if let Some(player) = self.owner_player(&world)
-            && Self::is_allowed_to_teleport_owner(&player)
+        if let Some(owner) = self.owner_player()
+            && let Some(player) = owner.as_player()
+            && Self::is_allowed_to_teleport_owner(player)
         {
-            self.teleport_owner(&world, &player, teleport_pos);
+            self.teleport_owner(&world, player, teleport_pos);
         }
-        self.deregister_from_owner(&world);
+        self.deregister_from_owner();
         self.set_removed(RemovalReason::Discarded);
     }
 }

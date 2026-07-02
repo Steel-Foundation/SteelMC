@@ -137,12 +137,13 @@ pub fn use_item_on(
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
-        // TODO: Check item cooldowns
-        // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
 
         let mut context = UseOnContext::new(
             player,
@@ -178,14 +179,15 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         return InteractionResult::Pass;
     }
 
-    // TODO: Check item cooldowns
-    // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
-
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
+
         let mut context =
             crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
@@ -202,6 +204,10 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
                     item.count = original_count;
                 }
             });
+        }
+
+        if result.should_apply_item_use_side_effects() {
+            player.apply_item_use_cooldown(&stack_before_use);
         }
 
         return result;

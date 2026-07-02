@@ -25,7 +25,6 @@ pub struct EnderPearlItem;
 
 impl ItemBehavior for EnderPearlItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: enforce the 1-second throw cooldown once an item cooldown system exists.
         let player = context.player;
         let world = context.world;
 
@@ -51,7 +50,12 @@ impl ItemBehavior for EnderPearlItem {
             spawn_pos,
             Arc::downgrade(world),
         ));
-        pearl.set_owner_uuid(Some(player.gameprofile.id));
+        if let Some(owner) = world.players.get_by_uuid(&player.gameprofile.id) {
+            let owner: SharedEntity = owner;
+            pearl.set_owner_entity(Some(&owner));
+        } else {
+            pearl.set_owner_uuid(Some(player.gameprofile.id));
+        }
         pearl.set_item_clamped(thrown_item);
 
         let (yaw, player_pitch) = player.rotation();

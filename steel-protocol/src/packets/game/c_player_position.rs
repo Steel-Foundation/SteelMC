@@ -38,6 +38,9 @@ impl RelativeMovement {
 
     /// All rotation flags
     pub const ALL_ROTATION: RelativeMovement = RelativeMovement(Self::Y_ROT | Self::X_ROT);
+    /// All delta movement flags
+    pub const ALL_DELTA: RelativeMovement =
+        RelativeMovement(Self::DELTA_X | Self::DELTA_Y | Self::DELTA_Z | Self::ROTATE_DELTA);
 
     /// Creates a new RelativeMovement with the given flags.
     #[must_use]
@@ -61,6 +64,22 @@ impl RelativeMovement {
     #[must_use]
     pub const fn is_z_relative(self) -> bool {
         self.0 & Self::Z != 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RelativeMovement;
+
+    #[test]
+    fn all_delta_matches_vanilla_relative_delta_set() {
+        assert_eq!(
+            RelativeMovement::ALL_DELTA.0,
+            RelativeMovement::DELTA_X
+                | RelativeMovement::DELTA_Y
+                | RelativeMovement::DELTA_Z
+                | RelativeMovement::ROTATE_DELTA
+        );
     }
 }
 
@@ -117,6 +136,21 @@ impl CPlayerPosition {
             yaw: 0.0,
             pitch: 0.0,
             relatives: RelativeMovement::ALL_ROTATION,
+        }
+    }
+
+    /// Creates an absolute-position teleport that preserves client rotation and velocity.
+    #[must_use]
+    pub fn preserving_rotation_and_delta(teleport_id: i32, pos: DVec3) -> Self {
+        Self {
+            teleport_id,
+            pos,
+            vel: DVec3::ZERO,
+            yaw: 0.0,
+            pitch: 0.0,
+            relatives: RelativeMovement::new(
+                RelativeMovement::ALL_ROTATION.0 | RelativeMovement::ALL_DELTA.0,
+            ),
         }
     }
 }

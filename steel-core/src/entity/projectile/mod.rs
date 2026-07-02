@@ -13,7 +13,7 @@ mod throwable;
 mod throwable_item;
 
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -74,6 +74,7 @@ pub struct EntityHitResult {
 
 struct ProjectileState {
     owner: Option<Uuid>,
+    owner_entity: Option<Weak<dyn Entity>>,
     left_owner: bool,
     left_owner_checked: bool,
     has_been_shot: bool,
@@ -91,6 +92,7 @@ impl ProjectileBase {
         Self {
             state: SyncMutex::new(ProjectileState {
                 owner: None,
+                owner_entity: None,
                 left_owner: false,
                 left_owner_checked: false,
                 has_been_shot: false,
@@ -114,7 +116,24 @@ pub trait Projectile: Entity {
     /// UUID and resolves lazily.
     // TODO: introduce an `EntityReference` type to cache the resolved owner.
     fn set_owner_uuid(&self, owner: Option<Uuid>) {
-        self.projectile_base().state.lock().owner = owner;
+        let mut state = self.projectile_base().state.lock();
+        state.owner = owner;
+        state.owner_entity = None;
+    }
+
+    /// Sets the owning entity and caches its live reference.
+    fn set_owner_entity(&self, owner: Option<&SharedEntity>) {
+        let mut state = self.projectile_base().state.lock();
+        state.owner = owner.map(|owner| owner.uuid());
+        state.owner_entity = owner.map(Arc::downgrade);
+    }
+
+    /// Caches a live owner reference when it matches the saved owner UUID.
+    fn cache_owner_entity(&self, owner: &SharedEntity) {
+        let mut state = self.projectile_base().state.lock();
+        if state.owner == Some(owner.uuid()) {
+            state.owner_entity = Some(Arc::downgrade(owner));
+        }
     }
 
     /// Returns the owner UUID, if any.
@@ -125,7 +144,22 @@ pub trait Projectile: Entity {
     /// Resolves the owning entity in the current world (vanilla `Projectile.getOwner`).
     fn get_owner(&self) -> Option<SharedEntity> {
         let uuid = self.owner_uuid()?;
-        self.level()?.get_entity_by_uuid(&uuid)
+        if let Some(owner) = self
+            .projectile_base()
+            .state
+            .lock()
+            .owner_entity
+            .as_ref()
+            .and_then(Weak::upgrade)
+            && !owner.is_removed()
+            && owner.uuid() == uuid
+        {
+            return Some(owner);
+        }
+
+        let owner = self.level()?.get_entity_by_uuid(&uuid)?;
+        self.cache_owner_entity(&owner);
+        Some(owner)
     }
 
     /// Returns vanilla `Projectile.ownedBy`.

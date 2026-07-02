@@ -367,12 +367,14 @@ struct EnderPearlRestoreJob {
     player: Arc<Player>,
     world: Arc<World>,
     request: ChunkRequestHandle,
+    uuid: Uuid,
     entity: PersistentEntity,
 }
 
 impl EnderPearlRestoreJob {
     fn new(player: Arc<Player>, world: Arc<World>, entity: PersistentEntity) -> Option<Self> {
         let chunk = persistent_entity_chunk(&entity)?;
+        let uuid = Uuid::from_bytes(entity.uuid);
         let request = world.chunk_map.request_chunk(
             chunk,
             ChunkStatus::StructureStarts,
@@ -382,6 +384,7 @@ impl EnderPearlRestoreJob {
             player,
             world,
             request,
+            uuid,
             entity,
         })
     }
@@ -402,7 +405,9 @@ impl ServerJob for EnderPearlRestoreJob {
                 if self.request.ready_chunks().is_none() {
                     return JobPoll::Pending;
                 }
-                restore_ender_pearl_for_player(&self.player, &self.world, &self.entity);
+                if !restore_ender_pearl_for_player(&self.player, &self.world, &self.entity) {
+                    self.player.remove_pending_ender_pearl(self.uuid);
+                }
                 JobPoll::Finished
             }
         }
@@ -417,9 +422,9 @@ fn restore_ender_pearl_for_player(
     player: &Arc<Player>,
     world: &Arc<World>,
     entity: &PersistentEntity,
-) {
+) -> bool {
     let Some(chunk) = persistent_entity_chunk(entity) else {
-        return;
+        return false;
     };
     let level = Arc::downgrade(world);
     let entities = ChunkStorage::persistent_to_entity_tree_at_level(entity, chunk, &level);
@@ -428,7 +433,12 @@ fn restore_ender_pearl_for_player(
             player = %player.gameprofile.name,
             "Persisted ender pearl did not recreate a runtime entity",
         );
-        return;
+        return false;
+    }
+
+    let owner: SharedEntity = player.clone();
+    for entity in &entities {
+        entity.restore_owner_reference(&owner);
     }
 
     if let Err(error) = world.register_loaded_entity_tree(&entities) {
@@ -437,7 +447,7 @@ fn restore_ender_pearl_for_player(
             "Discarding persisted ender pearl because it could not be registered: {error}",
         );
         discard_restored_entities(&entities);
-        return;
+        return false;
     }
 
     for pearl in &entities {
@@ -445,6 +455,7 @@ fn restore_ender_pearl_for_player(
     }
     world.chunk_map.place_ender_pearl_ticket(chunk);
     world.mark_chunk_dirty(chunk);
+    true
 }
 
 /// The main server struct.
@@ -914,12 +925,22 @@ impl Server {
     /// Spawns a restore job per persisted ender pearl, each in its own world
     /// (vanilla `ServerPlayer.loadAndSpawnEnderPearls`).
     fn schedule_ender_pearl_restores(&self, player: &Arc<Player>, state: &DomainPlayerState) {
-        for pearl in Self::ender_pearls_to_restore(state) {
+        let pearls = Self::ender_pearls_to_restore(state);
+        if pearls.is_empty() {
+            player.clear_pending_ender_pearls();
+            return;
+        }
+        player.set_pending_ender_pearls(pearls.clone());
+        for pearl in pearls {
+            let pearl_uuid = Uuid::from_bytes(pearl.entity.uuid);
             let Some(world) = self.resolve_pearl_world(&pearl.world, player) else {
+                player.remove_pending_ender_pearl(pearl_uuid);
                 continue;
             };
             if let Some(job) = EnderPearlRestoreJob::new(Arc::clone(player), world, pearl.entity) {
                 self.jobs.spawn(job);
+            } else {
+                player.remove_pending_ender_pearl(pearl_uuid);
             }
         }
     }
@@ -1565,6 +1586,7 @@ impl Server {
             return Err("failed to add player to target world".to_owned());
         }
         self.schedule_root_vehicle_restore(&player, &target_state);
+        self.schedule_ender_pearl_restores(&player, &target_state);
 
         if let Err(e) = self
             .player_data_storage

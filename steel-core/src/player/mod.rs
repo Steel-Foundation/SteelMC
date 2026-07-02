@@ -16,6 +16,7 @@ mod game_mode_state;
 mod game_profile;
 mod health_sync;
 mod input_state;
+mod item_cooldowns;
 mod lifecycle_state;
 pub mod message_chain;
 mod message_validator;
@@ -39,13 +40,14 @@ use food_data::FoodData;
 use glam::DVec3;
 use health_sync::HealthSyncState;
 pub use input_state::PlayerInput;
+use item_cooldowns::ItemCooldowns;
 use lifecycle_state::PlayerLifecycleState;
 pub use message_validator::LastSeenMessagesValidator;
 use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::{CSetEntityData, CSetExperience},
+    packets::game::{CCooldown, CSetEntityData, CSetExperience},
 };
 use teleport_state::TeleportState;
 use tick_state::PlayerTickState;
@@ -102,7 +104,7 @@ use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::level_data::RespawnData;
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
-use crate::player::player_data::PersistentRootVehicle;
+use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::{
     Server,
@@ -250,6 +252,8 @@ pub struct Player {
 
     /// Pending server-initiated teleport state (ID, position, timeout).
     teleport_state: SyncMutex<TeleportState>,
+    /// Vanilla item use cooldown groups.
+    item_cooldowns: SyncMutex<ItemCooldowns>,
 
     /// Local tick and once-per-tick packet state.
     tick_state: SyncMutex<PlayerTickState>,
@@ -279,6 +283,8 @@ pub struct Player {
 
     /// Persisted `RootVehicle` payload awaiting live entity restoration.
     pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
+    /// Persisted ender pearl payloads awaiting live entity restoration.
+    pending_ender_pearls: SyncMutex<Vec<PersistentEnderPearl>>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
@@ -497,6 +503,7 @@ impl Player {
             open_menu: SyncMutex::new(None),
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
+            item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
             tick_state: SyncMutex::new(PlayerTickState::new()),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
@@ -506,6 +513,7 @@ impl Player {
             experience: SyncMutex::new(Experience::default()),
             chunk_send_epoch: SyncMutex::new(0),
             pending_root_vehicle: SyncMutex::new(None),
+            pending_ender_pearls: SyncMutex::new(Vec::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
         }
     }
@@ -522,6 +530,7 @@ impl Player {
     )]
     pub fn tick(&self) {
         self.advance_tick();
+        self.tick_item_cooldowns();
         self.tick_attack_strength();
         self.tick_spam_throttlers();
         self.tick_client_load_timeout();
@@ -1159,6 +1168,24 @@ impl Player {
         }
     }
 
+    pub(crate) fn set_pending_ender_pearls(&self, pearls: Vec<PersistentEnderPearl>) {
+        *self.pending_ender_pearls.lock() = pearls;
+    }
+
+    pub(crate) fn pending_ender_pearls(&self) -> Vec<PersistentEnderPearl> {
+        self.pending_ender_pearls.lock().clone()
+    }
+
+    pub(crate) fn clear_pending_ender_pearls(&self) {
+        self.pending_ender_pearls.lock().clear();
+    }
+
+    pub(crate) fn remove_pending_ender_pearl(&self, uuid: Uuid) {
+        self.pending_ender_pearls
+            .lock()
+            .retain(|pearl| Uuid::from_bytes(pearl.entity.uuid) != uuid);
+    }
+
     /// Registers a thrown ender pearl so it persists with this player and
     /// re-spawns on login (vanilla `ServerPlayer.registerEnderPearl`).
     pub fn register_ender_pearl(&self, pearl: &SharedEntity) {
@@ -1169,6 +1196,8 @@ impl Player {
                 .is_some_and(|p| !p.is_removed() && p.uuid() != uuid)
         });
         pearls.push(Arc::downgrade(pearl));
+        drop(pearls);
+        self.remove_pending_ender_pearl(uuid);
     }
 
     /// Deregisters a thrown ender pearl once it hits, teleports, or is discarded
@@ -1185,6 +1214,45 @@ impl Player {
         let mut pearls = self.ender_pearls.lock();
         pearls.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_removed()));
         pearls.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Marks live ender pearls as stored with this player so chunk saves remove
+    /// them from world storage and player data remains the sole owner.
+    pub fn store_ender_pearls_with_player(&self) {
+        for pearl in self.ender_pearls() {
+            let world = pearl.level();
+            let chunk = ChunkPos::from_entity_pos(pearl.position());
+            pearl.set_removed(RemovalReason::StoredWithPlayer);
+            if let Some(world) = world {
+                world.mark_chunk_dirty(chunk);
+            }
+        }
+    }
+
+    /// Returns whether the stack's vanilla cooldown group is currently active.
+    pub fn is_item_on_cooldown(&self, stack: &ItemStack) -> bool {
+        self.item_cooldowns.lock().is_on_cooldown(stack)
+    }
+
+    /// Starts the stack's vanilla `use_cooldown`, if it has one.
+    pub fn apply_item_use_cooldown(&self, stack: &ItemStack) {
+        let cooldown = self.item_cooldowns.lock().add_from_stack(stack);
+        if let Some((cooldown_group, duration)) = cooldown {
+            self.send_packet(CCooldown {
+                cooldown_group,
+                duration,
+            });
+        }
+    }
+
+    fn tick_item_cooldowns(&self) {
+        let ended = self.item_cooldowns.lock().tick();
+        for cooldown_group in ended {
+            self.send_packet(CCooldown {
+                cooldown_group,
+                duration: 0,
+            });
+        }
     }
 
     /// Returns this player's local server tick count.

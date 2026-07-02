@@ -2,6 +2,7 @@
 //!
 //! This module defines the data format for saving and loading player state.
 
+use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::types::GameType;
 
@@ -243,15 +244,24 @@ impl PersistentPlayerData {
 
     /// Snapshots the player's live in-flight ender pearls for persistence.
     fn ender_pearls_from_player(player: &Player) -> Vec<PersistentEnderPearl> {
-        player
+        let mut seen = FxHashSet::default();
+        let mut pearls = player
             .ender_pearls()
             .iter()
             .filter_map(|pearl| {
                 let world = pearl.level()?.key.to_string();
                 let entity = ChunkStorage::entity_tree_to_persistent(pearl)?;
+                seen.insert(entity.uuid);
                 Some(PersistentEnderPearl { world, entity })
             })
-            .collect()
+            .collect::<Vec<_>>();
+        pearls.extend(
+            player
+                .pending_ender_pearls()
+                .into_iter()
+                .filter(|pearl| seen.insert(pearl.entity.uuid)),
+        );
+        pearls
     }
 
     fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {

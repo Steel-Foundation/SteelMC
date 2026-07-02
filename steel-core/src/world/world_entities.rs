@@ -73,16 +73,6 @@ impl World {
         }
     }
 
-    /// Removes the player's in-flight ender pearls with `StoredWithPlayer` so they
-    /// are not also saved to their chunks (vanilla `UNLOADED_WITH_PLAYER`). The
-    /// pearls are persisted with the player and re-spawned on login; this must run
-    /// after the player's data snapshot has captured them.
-    fn remove_ender_pearls_stored_with_player(player: &Player) {
-        for pearl in player.ender_pearls() {
-            pearl.set_removed(RemovalReason::StoredWithPlayer);
-        }
-    }
-
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
         let entity_id = player.id();
         self.remove_entity_from_tracker(entity_id);
@@ -122,7 +112,7 @@ impl World {
         let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);
-        Self::remove_ender_pearls_stored_with_player(&player);
+        player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -189,7 +179,7 @@ impl World {
         let entity_id = player.id();
 
         self.unride_player_for_removal(&player, true);
-        Self::remove_ender_pearls_stored_with_player(&player);
+        player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);

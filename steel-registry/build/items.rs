@@ -669,6 +669,30 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:use_cooldown" => {
+                let seconds = value
+                    .get("seconds")
+                    .and_then(Value::as_f64)
+                    .expect("use_cooldown.seconds must be a number")
+                    as f32;
+                let cooldown_group = value
+                    .get("cooldown_group")
+                    .and_then(Value::as_str)
+                    .map(|group| {
+                        let id = Identifier::from_str(group)
+                            .expect("use_cooldown.cooldown_group must be an identifier");
+                        let namespace = id.namespace.as_ref();
+                        let path = id.path.as_ref();
+                        quote! { Some(Identifier::new_static(#namespace, #path)) }
+                    })
+                    .unwrap_or_else(|| quote! { None });
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::USE_COOLDOWN,
+                        Some(vanilla_components::UseCooldown::new(#seconds, #cooldown_group)),
+                    )
+                });
+            }
             "minecraft:weapon" => {
                 let weapon = generate_weapon_component(value);
                 builder_calls
