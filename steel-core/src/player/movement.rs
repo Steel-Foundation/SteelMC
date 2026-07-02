@@ -52,7 +52,7 @@ pub fn clamp_vertical(value: f64) -> f64 {
 }
 
 #[must_use]
-fn wrap_degrees(mut degrees: f32) -> f32 {
+pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
     degrees %= 360.0;
     if degrees >= 180.0 {
         degrees -= 360.0;

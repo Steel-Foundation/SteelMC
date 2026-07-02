@@ -45,6 +45,7 @@ use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
+use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;
@@ -1433,6 +1434,12 @@ impl Player {
         );
 
         self.ack_block_changes_up_to(packet.sequence);
+
+        let target_yaw = wrap_degrees(packet.y_rot);
+        let target_pitch = wrap_degrees(packet.x_rot);
+        if self.rotation() != (target_yaw, target_pitch) {
+            self.set_rotation((target_yaw, target_pitch));
+        }
 
         let world = self.get_world();
         let result = use_item(self, &world, packet.hand);
