@@ -1,11 +1,12 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, coral_wall_fan_can_survive};
 
@@ -29,19 +30,45 @@ impl BlockBehavior for BaseCoralWallFanBlock {
         coral_wall_fan_can_survive(world, pos, facing)
     }
 
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
+        if direction.opposite() == state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
+            && !self.can_survive(state, world, pos)
+        {
+            vanilla_blocks::AIR.default_state()
+        } else {
+            state
+        }
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // TODO: Vanilla iterates over nearestLookingDirections; placeholder uses
-        // the context's horizontal direction opposite (clicked face).
-        let facing = context.horizontal_direction.opposite();
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            );
-        self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state)
+            .set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water());
+
+        context
+            .get_nearest_looking_directions()
+            .into_iter()
+            .filter(|direction| direction.is_horizontal())
+            .map(|direction| {
+                state.set_value(
+                    &BlockStateProperties::HORIZONTAL_FACING,
+                    direction.opposite(),
+                )
+            })
+            .find(|state| self.can_survive(*state, context.world, context.place_pos))
     }
 }

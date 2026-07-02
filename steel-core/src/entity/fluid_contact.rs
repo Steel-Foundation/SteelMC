@@ -406,7 +406,7 @@ mod tests {
             12.0,
             |pos| {
                 if pos.y() == 10 {
-                    FluidState::flowing(&vanilla_fluids::LAVA, 4, false)
+                    FluidState::flowing(&vanilla_fluids::FLOWING_LAVA, 4, false)
                 } else {
                     FluidState::EMPTY
                 }
@@ -431,7 +431,7 @@ mod tests {
             10.3,
             |pos| {
                 if pos.y() == 10 {
-                    FluidState::flowing(&vanilla_fluids::WATER, 1, false)
+                    FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 1, false)
                 } else {
                     FluidState::EMPTY
                 }

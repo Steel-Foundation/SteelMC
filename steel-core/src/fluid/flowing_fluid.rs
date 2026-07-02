@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
@@ -52,7 +52,7 @@ pub trait FlowingFluid: FluidBehavior {
 
                 world.schedule_fluid_tick_default(
                     pos,
-                    self.fluid_type(),
+                    new_fluid.fluid_id,
                     self.get_spread_delay(world, pos, old_fluid, new_fluid),
                 );
             }
@@ -118,14 +118,10 @@ pub trait FlowingFluid: FluidBehavior {
     fn base_spread_to(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         let target_state = world.get_block_state(pos);
 
-        if target_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
-        {
+        if target_state.is_liquid_container() {
             let behavior = BLOCK_BEHAVIORS.get_behavior(target_state.get_block());
-            if behavior.place_liquid(world, pos, target_state, fluid_state) {
-                return;
-            }
+            behavior.place_liquid(world, pos, target_state, fluid_state);
+            return;
         }
 
         // Non-LiquidBlockContainer path: destroy the block and place the raw fluid.

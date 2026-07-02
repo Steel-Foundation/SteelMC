@@ -13,7 +13,6 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_registry::{vanilla_damage_type_tags, vanilla_entities};
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::Random as _;
 use steel_utils::{BlockPos, ChunkPos, WorldAabb};
 
 use crate::entity::damage::DamageSource;
@@ -191,16 +190,12 @@ impl ExperienceOrbEntity {
     }
 
     fn initialize_spawn_movement(&self) {
-        let (yaw, velocity) = {
-            let mut random = self.base.random().lock();
-            let yaw = random.next_f32() * 360.0;
-            let velocity = DVec3::new(
-                (f64::from(random.next_f32()) * 0.2 - 0.1) * 2.0,
-                f64::from(random.next_f32()) * 0.2 * 2.0,
-                (f64::from(random.next_f32()) * 0.2 - 0.1) * 2.0,
-            );
-            (yaw, velocity)
-        };
+        let yaw = rand::random::<f32>() * 360.0;
+        let velocity = DVec3::new(
+            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+            f64::from(rand::random::<f32>()) * 0.2 * 2.0,
+            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+        );
         self.base.set_rotation((yaw, 0.0));
         self.base.set_velocity(velocity);
     }
@@ -214,7 +209,7 @@ impl ExperienceOrbEntity {
             position.y + 0.5,
             position.z + 0.5,
         );
-        let merge_id = world.random().lock().next_i32_bounded(ORB_GROUPS_PER_AREA);
+        let merge_id = rand::random_range(0..ORB_GROUPS_PER_AREA);
         for entity in world.get_entities_in_aabb(&search_box) {
             let Some(orb) = entity.as_experience_orb_merge_entity() else {
                 continue;
@@ -260,14 +255,11 @@ impl ExperienceOrbEntity {
             return;
         }
 
-        let velocity = {
-            let mut random = self.base.random().lock();
-            DVec3::new(
-                f64::from(random.next_f32() - random.next_f32()) * 0.2,
-                0.2,
-                f64::from(random.next_f32() - random.next_f32()) * 0.2,
-            )
-        };
+        let velocity = DVec3::new(
+            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+            0.2,
+            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+        );
         self.set_velocity(velocity);
     }
 
@@ -362,11 +354,10 @@ impl ExperienceOrbEntity {
             );
         }
 
-        let remaining = {
-            let mut inventory = player.inventory.lock();
-            let mut random = player.base().random().lock();
-            inventory.repair_random_equipped_item_with_xp(self.value(), &mut *random)
-        };
+        let remaining = player
+            .inventory
+            .lock()
+            .repair_random_equipped_item_with_xp(self.value());
         if remaining > 0 {
             player.give_experience_points(remaining);
         }

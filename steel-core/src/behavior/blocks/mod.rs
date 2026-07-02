@@ -4,27 +4,36 @@
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
 mod building;
+mod colored;
 mod container;
 mod decoration;
 mod fluid;
 mod portal;
 mod redstone;
+mod utils;
 pub mod vegetation;
 
 pub use building::{
-    BedBlock, CampfireBlock, DoorBlock, FenceBlock, HayBlock, HoneyBlock, LavaCauldronBlock,
-    MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock,
-    SlabBlock, SlimeBlock, SpongeBlock, StairBlock, WeatherState, WeatheringCopper,
-    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperSlabBlock,
-    WeatheringCopperStairBlock, WetSpongeBlock,
+    AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock, CampfireBlock, DoorBlock,
+    FenceBlock, FenceGateBlock, HayBlock, HoneyBlock, IronBarsBlock, LavaCauldronBlock, MagmaBlock,
+    PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock,
+    SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
+    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
+    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WetSpongeBlock,
 };
+pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
-    TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
+    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
+    StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
+    WeatheringCopperChainBlock,
 };
-pub use fluid::LiquidBlock;
-pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
+pub use fluid::{BubbleColumnBlock, LiquidBlock};
+pub use portal::{
+    EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
+    SoulFireBlock,
+};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,

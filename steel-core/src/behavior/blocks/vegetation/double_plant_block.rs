@@ -107,12 +107,12 @@ impl BlockBehavior for DoublePlantBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context
             .world
-            .get_block_state(context.relative_pos.above())
+            .get_block_state(context.place_pos.above())
             .is_replaceable()
         {
             return None;

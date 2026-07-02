@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_utils::{BlockPos, BlockStateId, Direction, random::Random, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::BLOCK_BEHAVIORS,
@@ -90,22 +90,13 @@ pub fn find_spreadable_neighbor_pos(
     block_to_place: BlockStateId,
 ) -> Option<BlockPos> {
     let mut directions = Direction::HORIZONTAL;
-    {
-        let mut random = world.random().lock();
-        shuffle_directions(&mut directions, &mut *random);
-    }
+    shuffle_directions(&mut directions, &mut rand::rng());
     get_spreadable_neighbor_pos(directions, world, pos, block_to_place)
 }
 
-fn shuffle_directions(directions: &mut [Direction; 4], random: &mut impl Random) {
+fn shuffle_directions(directions: &mut [Direction; 4], random: &mut impl Rng) {
     for i in (1..directions.len()).rev() {
-        let Ok(bound) = i32::try_from(i + 1) else {
-            panic!(
-                "direction shuffle length {} exceeds i32 range",
-                directions.len()
-            );
-        };
-        let j = random.next_i32_bounded(bound) as usize;
+        let j = random.random_range(0..=i);
         directions.swap(i, j);
     }
 }

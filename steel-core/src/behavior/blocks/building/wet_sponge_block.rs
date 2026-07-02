@@ -4,7 +4,6 @@ use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::{level_events, sound_events, vanilla_blocks};
-use steel_utils::random::Random;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
@@ -52,7 +51,7 @@ impl BlockBehavior for WetSpongeBlock {
             SoundSource::Blocks,
             pos,
             1.0,
-            (1.0 + world.random().lock().next_f32() * 0.2) * 0.7,
+            (1.0 + rand::random::<f32>() * 0.2) * 0.7,
             None,
         );
     }

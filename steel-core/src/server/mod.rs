@@ -419,6 +419,9 @@ impl Server {
         init_block_entities();
         init_entities();
         log::info!("Behavior registries initialized");
+        log::info!(
+            "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
+        );
 
         let registry_cache = RegistryCache::new(config.compression);
 

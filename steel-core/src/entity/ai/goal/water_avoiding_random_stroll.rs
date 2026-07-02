@@ -1,5 +1,4 @@
 use glam::DVec3;
-use steel_utils::random::Random as _;
 
 use super::random_pos::{default_random_pos, land_random_pos};
 use super::random_stroll::RandomStrollGoal;
@@ -57,10 +56,7 @@ fn random_stroll_pos(mob: &dyn PathfinderMob, probability: f32) -> Option<DVec3>
         return land_random_pos(mob, 15, 7).or_else(|| default_random_pos(mob, 10, 7));
     }
 
-    let use_land_random_pos = {
-        let mut random = mob.base().random().lock();
-        random.next_f32() >= probability
-    };
+    let use_land_random_pos = rand::random::<f32>() >= probability;
     if use_land_random_pos {
         land_random_pos(mob, 10, 7)
     } else {

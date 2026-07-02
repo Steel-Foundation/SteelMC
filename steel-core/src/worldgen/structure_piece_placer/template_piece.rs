@@ -15,11 +15,13 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, types::UpdateFlags};
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
     entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };
+use crate::fluid::FluidStateExt as _;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructureDataMarker, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
@@ -301,10 +303,7 @@ impl StructurePiecePlacer {
     }
 
     fn is_water_state(state: BlockStateId) -> bool {
-        state.get_block() == &vanilla_blocks::WATER
-            || state
-                .try_get_value(&BlockStateProperties::WATERLOGGED)
-                .unwrap_or(false)
+        state.get_fluid_state().is_water()
     }
 
     fn handle_template_data_markers(
@@ -779,6 +778,8 @@ impl StructurePiecePlacer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::init_behaviors;
+    use steel_registry::test_support::init_test_registry;
 
     #[test]
     fn center_gated_expanded_clip_requires_template_center_inside_center_chunk() {
@@ -802,5 +803,15 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn marker_water_check_uses_fluid_state_for_seagrass() {
+        init_test_registry();
+        init_behaviors();
+
+        assert!(StructurePiecePlacer::is_water_state(
+            vanilla_blocks::SEAGRASS.default_state()
+        ));
     }
 }

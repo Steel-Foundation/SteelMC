@@ -130,38 +130,20 @@ impl Bonemealable for TallGrassBlock {
 mod tests {
     use steel_registry::test_support::init_test_registry;
 
+    use crate::test_support::TestLevel;
+
     use super::*;
-
-    struct OneBlockTallLevel;
-
-    impl LevelReader for OneBlockTallLevel {
-        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
-            if pos == BlockPos::ZERO.below() {
-                vanilla_blocks::DIRT.default_state()
-            } else {
-                vanilla_blocks::AIR.default_state()
-            }
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            0
-        }
-
-        fn height(&self) -> i32 {
-            1
-        }
-    }
 
     #[test]
     fn tall_grass_bonemeal_rejects_top_build_height() {
         init_test_registry();
         let behavior = TallGrassBlock::new(&vanilla_blocks::SHORT_GRASS);
         let state = vanilla_blocks::SHORT_GRASS.default_state();
+        let level = TestLevel::default()
+            .with_min_y(0)
+            .with_height(1)
+            .with_block(BlockPos::ZERO.below(), vanilla_blocks::DIRT.default_state());
 
-        assert!(!behavior.is_valid_bonemeal_target(state, &OneBlockTallLevel, BlockPos::ZERO));
+        assert!(!behavior.is_valid_bonemeal_target(state, &level, BlockPos::ZERO));
     }
 }

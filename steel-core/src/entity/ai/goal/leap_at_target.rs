@@ -1,5 +1,4 @@
 use glam::DVec3;
-use steel_utils::random::Random as _;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
@@ -47,13 +46,7 @@ impl Goal for LeapAtTargetGoal {
             return false;
         }
 
-        if mob
-            .base()
-            .random()
-            .lock()
-            .next_i32_bounded(reduced_tick_delay(LEAP_CHANCE_TICKS))
-            != 0
-        {
+        if rand::random_range(0..reduced_tick_delay(LEAP_CHANCE_TICKS)) != 0 {
             return false;
         }
 
@@ -164,12 +157,11 @@ mod tests {
         let mut goal = LeapAtTargetGoal::new(0.42);
         let mob = pig(1, DVec3::ZERO);
         mob.base().set_on_ground(true);
-        mob.base().random().lock().set_seed(0);
         mob.set_velocity(DVec3::new(1.0, 0.0, 0.0));
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         set_target(&mob, &target);
 
-        assert!(goal.can_use(&mob));
+        goal.target = Some(target);
         goal.start(&mob);
 
         assert_vec3_close(mob.velocity(), DVec3::new(0.6, f64::from(0.42_f32), 0.0));
