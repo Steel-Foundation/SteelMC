@@ -177,14 +177,14 @@ impl BlockBehavior for BambooStalkBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if !context
             .world
-            .get_block_state(context.relative_pos)
+            .get_block_state(context.place_pos)
             .get_fluid_state()
             .is_empty()
         {
             return None;
         }
 
-        let state_below = context.world.get_block_state(context.relative_pos.below());
+        let state_below = context.world.get_block_state(context.place_pos.below());
         let block_below = state_below.get_block();
 
         if !block_below.has_tag(&BlockTag::SUPPORTS_BAMBOO) {
@@ -203,7 +203,7 @@ impl BlockBehavior for BambooStalkBlock {
                 state_below.get_value(&BlockStateProperties::AGE_1),
             ))
         } else {
-            let state_above = context.world.get_block_state(context.relative_pos.above());
+            let state_above = context.world.get_block_state(context.place_pos.above());
             if state_above.get_block() == &vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO

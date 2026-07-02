@@ -15,7 +15,11 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::{BlockStateBehaviorExt, block::BlockBehavior, block::PickupResult};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt, block::BlockBehavior,
+    block::PickupResult,
+};
+use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::player::Player;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 
@@ -100,6 +104,35 @@ impl BubbleColumnBlock {
             occupy_state
         }
     }
+
+    fn is_open_above(level: &dyn LevelReader, pos: BlockPos) -> bool {
+        let above_pos = pos.above();
+        let above_state = level.get_block_state(above_pos);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(above_state.get_block());
+        behavior
+            .get_collision_shape(above_state, level, pos, BlockCollisionContext::empty())
+            .is_empty()
+            && above_state.get_fluid_state().is_empty()
+    }
+
+    fn apply_entity_effect(
+        state: BlockStateId,
+        level: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        is_precise: bool,
+    ) {
+        if !is_precise {
+            return;
+        }
+
+        let drag_down = state.get_value(&BlockStateProperties::DRAG);
+        if Self::is_open_above(level, pos) {
+            entity.on_above_bubble_column(drag_down, pos);
+        } else {
+            entity.on_inside_bubble_column(drag_down);
+        }
+    }
 }
 
 impl BlockBehavior for BubbleColumnBlock {
@@ -150,6 +183,18 @@ impl BlockBehavior for BubbleColumnBlock {
         FluidState::source(&vanilla_fluids::WATER)
     }
 
+    fn entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+        Self::apply_entity_effect(state, world.as_ref(), pos, entity, is_precise);
+    }
+
     fn pickup_block(
         &self,
         world: &Arc<World>,
@@ -171,10 +216,75 @@ impl BlockBehavior for BubbleColumnBlock {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_entities;
+    use steel_utils::locks::SyncMutex;
+
     use super::*;
     use crate::behavior::init_behaviors;
+    use crate::entity::EntityBase;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum BubbleColumnCall {
+        Above { drag_down: bool, pos: BlockPos },
+        Inside { drag_down: bool },
+    }
+
+    struct RecordingEntity {
+        base: EntityBase,
+        calls: SyncMutex<Vec<BubbleColumnCall>>,
+    }
+
+    impl RecordingEntity {
+        fn new() -> Self {
+            Self {
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
+                calls: SyncMutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<BubbleColumnCall> {
+            self.calls.lock().clone()
+        }
+    }
+
+    impl Entity for RecordingEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+            self.calls
+                .lock()
+                .push(BubbleColumnCall::Above { drag_down, pos });
+        }
+
+        fn on_inside_bubble_column(&self, drag_down: bool) {
+            self.calls
+                .lock()
+                .push(BubbleColumnCall::Inside { drag_down });
+        }
+    }
+
+    fn bubble_column_state(drag_down: bool) -> BlockStateId {
+        vanilla_blocks::BUBBLE_COLUMN
+            .default_state()
+            .set_value(&BlockStateProperties::DRAG, drag_down)
+    }
 
     #[test]
     fn bubble_column_update_shape_schedules_water_and_column_tick() {
@@ -227,5 +337,72 @@ mod tests {
             placed.state.get_block() == &vanilla_blocks::BUBBLE_COLUMN
                 && !placed.state.get_value(&BlockStateProperties::DRAG)
         }));
+    }
+
+    #[test]
+    fn precise_entity_with_open_block_above_uses_above_bubble_column_hook() {
+        init_test_registry();
+        init_behaviors();
+        let level = TestLevel::default();
+        let entity = RecordingEntity::new();
+        let pos = BlockPos::ZERO;
+
+        BubbleColumnBlock::apply_entity_effect(
+            bubble_column_state(false),
+            &level,
+            pos,
+            &entity,
+            true,
+        );
+
+        assert_eq!(
+            entity.calls(),
+            vec![BubbleColumnCall::Above {
+                drag_down: false,
+                pos
+            }]
+        );
+    }
+
+    #[test]
+    fn precise_entity_with_fluid_above_stays_inside_bubble_column() {
+        init_test_registry();
+        init_behaviors();
+        let level = TestLevel::default().with_block(
+            BlockPos::ZERO.above(),
+            vanilla_blocks::WATER.default_state(),
+        );
+        let entity = RecordingEntity::new();
+
+        BubbleColumnBlock::apply_entity_effect(
+            bubble_column_state(true),
+            &level,
+            BlockPos::ZERO,
+            &entity,
+            true,
+        );
+
+        assert_eq!(
+            entity.calls(),
+            vec![BubbleColumnCall::Inside { drag_down: true }]
+        );
+    }
+
+    #[test]
+    fn imprecise_entity_does_not_apply_bubble_column_effect() {
+        init_test_registry();
+        init_behaviors();
+        let level = TestLevel::default();
+        let entity = RecordingEntity::new();
+
+        BubbleColumnBlock::apply_entity_effect(
+            bubble_column_state(false),
+            &level,
+            BlockPos::ZERO,
+            &entity,
+            false,
+        );
+
+        assert_eq!(entity.calls(), Vec::new());
     }
 }

@@ -77,7 +77,7 @@ impl BlockBehavior for CoralPlantBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        if !self.can_survive(state, context.world, context.relative_pos) {
+        if !self.can_survive(state, context.world, context.place_pos) {
             return None;
         }
         // Vanilla: WATERLOGGED reflects whether the click position has full water.

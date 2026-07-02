@@ -111,10 +111,10 @@ impl StandingAndWallBlockItem {
 
             // Vanilla's canPlace checks canSurvive (already done in get_state_for_placement)
             // Then checks isUnobstructed
-            let collision_shape = state.get_collision_shape_at(place_context.relative_pos);
+            let collision_shape = state.get_collision_shape_at(place_context.place_pos);
             if place_context
                 .world
-                .is_unobstructed(collision_shape, place_context.relative_pos)
+                .is_unobstructed(collision_shape, place_context.place_pos)
             {
                 return Some(state);
             }
@@ -144,7 +144,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
         };
-        let place_pos = place_context.relative_pos;
+        let place_pos = place_context.place_pos;
 
         let Some(new_state) = self.get_placement_state(&place_context) else {
             return InteractionResult::Fail;

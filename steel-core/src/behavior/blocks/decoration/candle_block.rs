@@ -71,7 +71,7 @@ impl BlockBehavior for CandleBlock {
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         let default_state = self.block.default_state();
-        if self.can_survive(default_state, context.world, context.relative_pos) {
+        if self.can_survive(default_state, context.world, context.place_pos) {
             return Some(default_state.set_value(&WATERLOGGED, context.is_water_source()));
         }
         None
