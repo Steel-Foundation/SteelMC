@@ -207,6 +207,22 @@ impl ChunkBiomeSampler<'_> {
             Self::End(s) => s.sample(quart_x, quart_y, quart_z),
         }
     }
+
+    /// Pre-populate the per-chunk flat-noise grid so a full-chunk biome fill
+    /// reuses vanilla's `NoiseChunk.FlatCache` (O(1) column lookups) instead of
+    /// recomputing flat (xz-only) climate noise for every quart cell.
+    ///
+    /// Call once per chunk, before sampling, passing the chunk's minimum block
+    /// coordinates. No-op for the End, which selects biomes spatially and has no
+    /// column cache. Samplers used for sparse, scattered lookups (e.g.
+    /// `find_biome_horizontal`) intentionally skip this and keep lazy caching.
+    pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
+        match self {
+            Self::Overworld(s) => s.init_grid(chunk_block_x, chunk_block_z),
+            Self::Nether(s) => s.init_grid(chunk_block_x, chunk_block_z),
+            Self::End(_) => {}
+        }
+    }
 }
 
 /// Multi-noise biome source for the overworld.
@@ -257,6 +273,14 @@ impl OverworldChunkBiomeSampler<'_> {
                 .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
         get_overworld_biome_cached(&target, &mut self.biome_cache)
     }
+
+    fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
+        self.source.climate_sampler.init_column_grid(
+            &mut self.column_cache,
+            chunk_block_x,
+            chunk_block_z,
+        );
+    }
 }
 
 // ── Nether ──────────────────────────────────────────────────────────────────
@@ -302,6 +326,14 @@ impl NetherChunkBiomeSampler<'_> {
                 .climate_sampler
                 .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
         get_nether_biome_cached(&target, &mut self.biome_cache)
+    }
+
+    fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
+        self.source.climate_sampler.init_column_grid(
+            &mut self.column_cache,
+            chunk_block_x,
+            chunk_block_z,
+        );
     }
 }
 
@@ -363,12 +395,12 @@ impl EndChunkBiomeSampler<'_> {
         {
             return erosion;
         }
-        let weird_block_x = (chunk_x * 2 + 1) * 8;
-        let weird_block_z = (chunk_z * 2 + 1) * 8;
+        let weird_block_x = f64::from((chunk_x * 2 + 1) * 8);
+        let weird_block_z = f64::from((chunk_z * 2 + 1) * 8);
         let erosion = self
             .source
             .end_islands
-            .sample(weird_block_x, 0, weird_block_z);
+            .sample(weird_block_x, 0.0, weird_block_z);
         self.cached_erosion = Some((chunk_x, chunk_z, erosion));
         erosion
     }

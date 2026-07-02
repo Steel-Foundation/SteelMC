@@ -203,7 +203,7 @@ impl FeatureDecorationRunner {
         for y_offset in 0..tree_height {
             let y = origin.y() + y_offset;
             if y_offset >= lean_height && lean_steps > 0 {
-                let (dx, _, dz) = lean_direction.offset();
+                let (dx, dz) = lean_direction.offset_xz();
                 trunk_x += dx;
                 trunk_z += dz;
                 lean_steps -= 1;
@@ -234,7 +234,7 @@ impl FeatureDecorationRunner {
             while branch_y_offset < tree_height && branch_steps > 0 {
                 if branch_y_offset >= 1 {
                     let y = origin.y() + branch_y_offset;
-                    let (dx, _, dz) = branch_direction.offset();
+                    let (dx, dz) = branch_direction.offset_xz();
                     trunk_x += dx;
                     trunk_z += dz;
                     let pos = BlockPos::new(trunk_x, y, trunk_z);
@@ -513,7 +513,7 @@ impl FeatureDecorationRunner {
         while branch_placement_index < tree_height && branch_steps > 0 {
             if branch_placement_index >= 1 {
                 let placement_height = current_height + branch_placement_index;
-                let (dx, _, dz) = branch_dir.offset();
+                let (dx, dz) = branch_dir.offset_xz();
                 log_x += dx;
                 log_z += dz;
                 height_along_branch = placement_height;
@@ -773,7 +773,7 @@ impl FeatureDecorationRunner {
 
         for y_offset in 0..tree_height {
             if y_offset >= lean_height && lean_steps > 0 {
-                let (dx, _, dz) = lean_direction.offset();
+                let (dx, dz) = lean_direction.offset_xz();
                 trunk_x += dx;
                 trunk_z += dz;
                 lean_steps -= 1;
@@ -851,10 +851,10 @@ impl FeatureDecorationRunner {
         placement: &mut TreePlacement,
     ) -> Vec<FoliageAttachment> {
         let height = tree_height + 2;
-        let trunk_height = floor(f64::from(height) * FANCY_TRUNK_HEIGHT_SCALE);
+        let trunk_height = fast_floor(f64::from(height) * FANCY_TRUNK_HEIGHT_SCALE);
         Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
 
-        let clusters_per_y = 1.min(floor(
+        let clusters_per_y = 1.min(fast_floor(
             FANCY_CLUSTER_DENSITY_MAGIC + (f64::from(height) / 13.0).powi(2),
         ));
         let trunk_top = origin.y() + trunk_height;
@@ -877,7 +877,7 @@ impl FeatureDecorationRunner {
                     let angle = f64::from(random.next_f32() * 2.0_f32) * PI;
                     let x = radius * angle.sin() + 0.5;
                     let z = radius * angle.cos() + 0.5;
-                    let check_start = origin.offset(floor(x), relative_y - 1, floor(z));
+                    let check_start = origin.offset(fast_floor(x), relative_y - 1, fast_floor(z));
                     let check_end = check_start.above_n(5);
                     if Self::make_fancy_tree_limb(
                         region,
@@ -994,9 +994,9 @@ impl FeatureDecorationRunner {
         for step in 0..=steps {
             let step = step as f32;
             let pos = start_pos.offset(
-                floor(f64::from(0.5_f32 + step * dx)),
-                floor(f64::from(0.5_f32 + step * dy)),
-                floor(f64::from(0.5_f32 + step * dz)),
+                fast_floor(f64::from(0.5_f32 + step * dx)),
+                fast_floor(f64::from(0.5_f32 + step * dy)),
+                fast_floor(f64::from(0.5_f32 + step * dz)),
             );
             if do_place {
                 let axis = Self::fancy_tree_log_axis(start_pos, pos);

@@ -34,12 +34,30 @@ const START_CHUNKS_PER_TICK: f32 = 9.0;
 /// Maximum unacknowledged batches after first ack (vanilla: 10)
 const MAX_UNACKNOWLEDGED_BATCHES: u16 = 10;
 
+/// One chunk selected during the prepare phase.
+pub struct PreparedChunk {
+    /// Chunk position.
+    pub pos: ChunkPos,
+    /// Chunk holder to encode.
+    pub holder: Arc<ChunkHolder>,
+}
+
 /// Data collected during the prepare phase, used to encode and then commit.
 pub struct PreparedBatch {
     /// Chunk holders to encode.
-    pub holders: Vec<Arc<ChunkHolder>>,
+    pub chunks: Vec<PreparedChunk>,
+    /// Whether the world dimension has a vanilla sky-light layer.
+    pub has_skylight: bool,
     /// Snapshot of the player's generation counter at prepare time.
     pub epoch_snapshot: u32,
+}
+
+/// Encoded chunk packet plus the holder content revision it was built from.
+#[derive(Clone)]
+pub struct EncodedChunk {
+    pos: ChunkPos,
+    packet: EncodedPacket,
+    content_revision: u64,
 }
 
 /// This struct is responsible for sending chunks to the client.
@@ -47,6 +65,8 @@ pub struct PreparedBatch {
 pub struct ChunkSender {
     /// A list of chunks that are waiting to be sent to the client.
     pub pending_chunks: FxHashSet<ChunkPos>,
+    /// Chunks whose initial chunk packet has been queued for this client.
+    sent_chunks: FxHashSet<ChunkPos>,
     /// The number of batches that have been sent to the client but have not been acknowledged yet.
     pub unacknowledged_batches: u16,
     /// The number of chunks that should be sent to the client per tick.
@@ -62,12 +82,14 @@ pub struct ChunkSender {
 impl ChunkSender {
     /// Marks a chunk as pending to be sent to the client.
     pub fn mark_chunk_pending_to_send(&mut self, pos: ChunkPos) {
+        self.sent_chunks.remove(&pos);
         self.pending_chunks.insert(pos);
     }
 
     /// Drops a chunk from the client's view.
     pub fn drop_chunk(&mut self, connection: &PlayerConnection, pos: ChunkPos) {
-        if !self.pending_chunks.remove(&pos) && !connection.closed() {
+        self.pending_chunks.remove(&pos);
+        if self.sent_chunks.remove(&pos) && !connection.closed() {
             Self::send_packet(
                 connection,
                 CForgetLevelChunk {
@@ -113,7 +135,8 @@ impl ChunkSender {
         let epoch_snapshot = *chunk_send_epoch.lock();
 
         Some(PreparedBatch {
-            holders,
+            chunks: holders,
+            has_skylight: world.dimension_type.has_skylight,
             epoch_snapshot,
         })
     }
@@ -127,19 +150,23 @@ impl ChunkSender {
     /// Panics if a chunk packet fails to encode.
     pub fn encode_batch(
         batch: &PreparedBatch,
-        cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+        cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
         compression: Option<CompressionInfo>,
-    ) -> Vec<EncodedPacket> {
-        let mut encoded_chunks = Vec::with_capacity(batch.holders.len());
+    ) -> Vec<EncodedChunk> {
+        let mut encoded_chunks = Vec::with_capacity(batch.chunks.len());
 
-        for holder in &batch.holders {
-            let pos = ChunkPos::new(holder.get_pos().0.x, holder.get_pos().0.y);
+        for prepared in &batch.chunks {
+            let holder = &prepared.holder;
+            let pos = prepared.pos;
 
-            if let Some(cached) = cache.get(&pos) {
+            if let Some(cached) = cache.get(&pos)
+                && cached.content_revision == holder.packet_content_revision()
+            {
                 encoded_chunks.push(cached.clone());
                 continue;
             }
 
+            let revision_before = holder.packet_content_revision();
             let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) else {
                 continue;
             };
@@ -152,13 +179,22 @@ impl ChunkSender {
                     x: pos.0.x,
                     z: pos.0.y,
                     chunk_data: chunk.extract_chunk_data(),
-                    light_data: chunk.extract_light_data(),
+                    light_data: chunk.extract_light_data(batch.has_skylight),
                 },
                 compression,
                 ConnectionProtocol::Play,
             )
             .expect("Failed to encode chunk packet");
+            let revision_after = holder.packet_content_revision();
+            if revision_before != revision_after {
+                continue;
+            }
 
+            let encoded = EncodedChunk {
+                pos,
+                packet: encoded,
+                content_revision: revision_after,
+            };
             cache.insert(pos, encoded.clone());
             encoded_chunks.push(encoded);
         }
@@ -173,27 +209,42 @@ impl ChunkSender {
     pub fn commit_batch(
         &mut self,
         batch: &PreparedBatch,
-        encoded_chunks: Vec<EncodedPacket>,
+        encoded_chunks: Vec<EncodedChunk>,
         connection: &PlayerConnection,
         chunk_send_epoch: &SyncMutex<u32>,
-    ) {
+    ) -> Vec<ChunkPos> {
         let epoch = chunk_send_epoch.lock();
         if *epoch != batch.epoch_snapshot {
-            return;
+            return Vec::new();
+        }
+        drop(epoch);
+
+        let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
+        for encoded in encoded_chunks {
+            if !self.pending_chunks.contains(&encoded.pos) {
+                continue;
+            }
+            let Some(prepared) = batch.chunks.iter().find(|chunk| chunk.pos == encoded.pos) else {
+                continue;
+            };
+            if prepared.holder.packet_content_revision() != encoded.content_revision {
+                continue;
+            }
+            valid_chunks.push(encoded);
         }
 
-        if encoded_chunks.is_empty() {
-            return;
+        if valid_chunks.is_empty() {
+            return Vec::new();
         }
 
         self.unacknowledged_batches += 1;
-        self.batch_quota -= encoded_chunks.len() as f32;
+        self.batch_quota -= valid_chunks.len() as f32;
 
         Self::send_packet(connection, CChunkBatchStart {});
 
-        let batch_size = encoded_chunks.len();
-        for encoded in encoded_chunks {
-            connection.send_encoded(encoded);
+        let batch_size = valid_chunks.len();
+        for encoded in &valid_chunks {
+            connection.send_encoded(encoded.packet.clone());
         }
 
         Self::send_packet(
@@ -202,22 +253,26 @@ impl ChunkSender {
                 batch_size: batch_size as i32,
             },
         );
+
+        let mut sent_chunks = Vec::with_capacity(valid_chunks.len());
+        for encoded in valid_chunks {
+            self.pending_chunks.remove(&encoded.pos);
+            self.sent_chunks.insert(encoded.pos);
+            sent_chunks.push(encoded.pos);
+        }
+        sent_chunks
     }
 
     fn collect_candidates(
         &mut self,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
-    ) -> Vec<Arc<ChunkHolder>> {
+    ) -> Vec<PreparedChunk> {
         let max_batch_size = self.batch_quota.floor() as usize;
         let mut candidates: Vec<ChunkPos> = self.pending_chunks.iter().copied().collect();
 
         // Sort by distance to player
-        candidates.sort_by_key(|pos| {
-            let dx = pos.0.x - player_chunk_pos.0.x;
-            let dz = pos.0.y - player_chunk_pos.0.y;
-            dx * dx + dz * dz
-        });
+        candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
 
@@ -232,11 +287,16 @@ impl ChunkSender {
                 .read_sync(&pos, |_, chunk| chunk.clone())
                 && holder.persisted_status() == Some(ChunkStatus::Full)
             {
-                chunks_to_send.push(holder);
-                self.pending_chunks.remove(&pos);
+                chunks_to_send.push(PreparedChunk { pos, holder });
             }
         }
         chunks_to_send
+    }
+
+    fn chunk_distance_squared(pos: ChunkPos, player_chunk_pos: ChunkPos) -> u64 {
+        let dx = u64::from(pos.0.x.abs_diff(player_chunk_pos.0.x));
+        let dz = u64::from(pos.0.y.abs_diff(player_chunk_pos.0.y));
+        dx.saturating_mul(dx).saturating_add(dz.saturating_mul(dz))
     }
 
     /// Handles the acknowledgement of a chunk batch from the client.
@@ -270,12 +330,25 @@ impl ChunkSender {
         self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
         true
     }
+
+    /// Returns whether the client has been queued the initial chunk packet.
+    #[must_use]
+    pub fn is_chunk_sent(&self, pos: ChunkPos) -> bool {
+        self.sent_chunks.contains(&pos)
+    }
+
+    /// Returns a snapshot of all sent chunks for this player.
+    #[must_use]
+    pub fn sent_chunks_snapshot(&self) -> FxHashSet<ChunkPos> {
+        self.sent_chunks.clone()
+    }
 }
 
 impl Default for ChunkSender {
     fn default() -> Self {
         Self {
             pending_chunks: FxHashSet::default(),
+            sent_chunks: FxHashSet::default(),
             unacknowledged_batches: 0,
             desired_chunks_per_tick: START_CHUNKS_PER_TICK,
             batch_quota: 0.0,
@@ -320,5 +393,49 @@ mod tests {
             sender.max_unacknowledged_batches,
             MAX_UNACKNOWLEDGED_BATCHES
         );
+    }
+
+    #[test]
+    fn marking_chunk_pending_clears_sent_state() {
+        let mut sender = ChunkSender::default();
+        let pos = ChunkPos::new(2, -3);
+        sender.sent_chunks.insert(pos);
+
+        sender.mark_chunk_pending_to_send(pos);
+
+        assert!(sender.pending_chunks.contains(&pos));
+        assert!(!sender.is_chunk_sent(pos));
+    }
+
+    #[test]
+    fn chunk_distance_squared_handles_far_chunk_coordinates() {
+        let distance = ChunkSender::chunk_distance_squared(
+            ChunkPos::new(1_250_000, -1_250_000),
+            ChunkPos::new(0, 0),
+        );
+
+        assert_eq!(distance, 3_125_000_000_000);
+    }
+
+    #[test]
+    fn chunk_distance_squared_handles_valid_world_extremes() {
+        let max = ChunkPos::MAX_COORDINATE_VALUE;
+        let delta = u64::from(max.abs_diff(-max));
+        let expected = delta * delta * 2;
+
+        let distance =
+            ChunkSender::chunk_distance_squared(ChunkPos::new(max, max), ChunkPos::new(-max, -max));
+
+        assert_eq!(distance, expected);
+    }
+
+    #[test]
+    fn chunk_distance_squared_saturates_for_invalid_i32_extremes() {
+        let distance = ChunkSender::chunk_distance_squared(
+            ChunkPos::new(i32::MIN, i32::MIN),
+            ChunkPos::new(i32::MAX, i32::MAX),
+        );
+
+        assert_eq!(distance, u64::MAX);
     }
 }

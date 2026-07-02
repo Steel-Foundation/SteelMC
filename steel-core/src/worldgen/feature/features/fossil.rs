@@ -1,6 +1,7 @@
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
+use glam::IVec3;
 use steel_utils::{BoundingBox, Rotation};
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
@@ -158,26 +159,26 @@ impl FeatureDecorationRunner {
         lowest
     }
 
-    fn fossil_bounding_box(region: &WorldGenRegion<'_>, origin: BlockPos) -> BoundingBox {
+    const fn fossil_bounding_box(region: &WorldGenRegion<'_>, origin: BlockPos) -> BoundingBox {
         let chunk_x = SectionPos::block_to_section_coord(origin.x());
         let chunk_z = SectionPos::block_to_section_coord(origin.z());
         let min_x = chunk_x << 4;
         let min_z = chunk_z << 4;
         BoundingBox::new(
-            min_x - 16,
-            region.min_y(),
-            min_z - 16,
-            min_x + 15 + 16,
-            region.max_y_exclusive() - 1,
-            min_z + 15 + 16,
+            IVec3::new(min_x - 16, region.min_y(), min_z - 16),
+            IVec3::new(
+                min_x + 15 + 16,
+                region.max_y_exclusive() - 1,
+                min_z + 15 + 16,
+            ),
         )
     }
 
     fn count_empty_corners(region: &WorldGenRegion<'_>, bounding_box: BoundingBox) -> i32 {
         let mut count = 0;
-        for x in [bounding_box.min_x, bounding_box.max_x] {
-            for y in [bounding_box.min_y, bounding_box.max_y] {
-                for z in [bounding_box.min_z, bounding_box.max_z] {
+        for x in [bounding_box.min_x(), bounding_box.max_x()] {
+            for y in [bounding_box.min_y(), bounding_box.max_y()] {
+                for z in [bounding_box.min_z(), bounding_box.max_z()] {
                     let state = region.block_state(BlockPos::new(x, y, z));
                     let block = state.get_block();
                     if state.is_air()

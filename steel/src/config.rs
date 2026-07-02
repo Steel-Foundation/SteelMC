@@ -70,6 +70,9 @@ pub struct ServerConfig {
     pub server_port: u16,
     /// The maximum number of players that can be on the server at once.
     pub max_players: u32,
+    /// Allow `view_distance` above vanilla's 32-chunk cap.
+    #[serde(default)]
+    pub allow_extended_view_distance: bool,
     /// The view distance of the server.
     pub view_distance: u8,
     /// The simulation distance of the server.
@@ -101,6 +104,9 @@ pub struct ServerConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Thread counts for server thread pools.
+    #[serde(default)]
+    pub threads: ThreadConfig,
 }
 
 impl ServerConfig {
@@ -123,8 +129,23 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
+            chunk_generation_threads: self.threads.chunk_generation,
         }
     }
+}
+
+/// Optional worker counts for server thread pools.
+///
+/// A value of `0` or an omitted field uses the pool's automatic default.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ThreadConfig {
+    /// Worker threads for the primary Tokio runtime.
+    pub main_runtime: Option<usize>,
+    /// Worker threads for the chunk Tokio runtime.
+    pub chunk_runtime: Option<usize>,
+    /// Worker threads for the Rayon chunk generation pool.
+    pub chunk_generation: Option<usize>,
 }
 
 /// Logging configuration
@@ -284,8 +305,11 @@ fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 fn validate(config: &ServerConfig) -> Result<(), &'static str> {
-    if !(1..=32).contains(&config.view_distance) {
+    if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
+    }
+    if config.allow_extended_view_distance && !(1..=127).contains(&config.view_distance) {
+        return Err("View distance must in range 1..127");
     }
     if let Some(auth_server) = &config.auth_server {
         let Ok(url) = Url::parse(auth_server) else {
@@ -369,6 +393,48 @@ mod tests {
             config.server.into_runtime_config().auth_server.as_deref(),
             Some(auth_server)
         );
+    }
+
+    #[test]
+    fn configured_thread_counts_parse_and_generation_flows_to_runtime_config() {
+        let config_toml = DEFAULT_CONFIG
+            .replace("main_runtime = 0", "main_runtime = 3")
+            .replace("chunk_runtime = 0", "chunk_runtime = 4")
+            .replace("chunk_generation = 0", "chunk_generation = 5");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(config.server.threads.main_runtime, Some(3));
+        assert_eq!(config.server.threads.chunk_runtime, Some(4));
+        assert_eq!(config.server.threads.chunk_generation, Some(5));
+        assert_eq!(
+            config.server.into_runtime_config().chunk_generation_threads,
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn validate_rejects_extended_view_distance_without_opt_in() {
+        let config_toml = DEFAULT_CONFIG.replace("view_distance = 10", "view_distance = 33");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("View distance must in range 1..32")
+        );
+    }
+
+    #[test]
+    fn validate_allows_extended_view_distance_with_opt_in() {
+        let config_toml = DEFAULT_CONFIG
+            .replace(
+                "allow_extended_view_distance = false",
+                "allow_extended_view_distance = true",
+            )
+            .replace("view_distance = 10", "view_distance = 127")
+            .replace("simulation_distance = 10", "simulation_distance = 127");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("extended view distance validates");
     }
 
     #[test]

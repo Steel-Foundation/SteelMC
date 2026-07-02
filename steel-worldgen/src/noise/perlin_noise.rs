@@ -3,9 +3,14 @@
 //! This combines multiple `ImprovedNoise` instances at different frequencies (octaves)
 //! to create more natural-looking noise with detail at multiple scales.
 
+use std::ops;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::num::SimdFloat;
+use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat, f64x4};
+
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use steel_math::wrap;
+use steel_math::{wrap, wrap_simd};
 
 /// Octave-based Perlin noise generator.
 ///
@@ -13,16 +18,36 @@ use steel_math::wrap;
 /// to create noise with detail at multiple scales.
 #[derive(Debug, Clone)]
 pub struct PerlinNoise {
-    /// Noise generators for each octave (None if amplitude is 0)
+    /// Noise generators for each octave (None if amplitude is 0).
+    /// Kept for [`Self::get_octave_noise`] which is indexed by original octave order.
     noise_levels: Vec<Option<ImprovedNoise>>,
-    /// Amplitude multipliers for each octave
+    /// Amplitude multipliers for each octave.
+    /// Kept for [`Self::max_broken_value`] which recomputes the edge value.
     amplitudes: Vec<f64>,
-    /// Factor applied to input coordinates for the lowest frequency octave
-    lowest_freq_input_factor: f64,
-    /// Factor applied to output values for the lowest frequency octave
+    /// Pre-computed per-octave data for the hot sampling loop. Only contains
+    /// entries with non-zero amplitude, in original (low → high frequency) order
+    /// so that floating-point accumulation matches the legacy iteration.
+    active_octaves: Vec<ActiveOctave>,
+    /// Factor applied to output values for the lowest frequency octave.
+    /// Used by [`Self::max_broken_value`] which recomputes the edge value.
     lowest_freq_value_factor: f64,
     /// Maximum possible output value
     max_value: f64,
+}
+
+/// Pre-computed octave data for the hot sampling path.
+///
+/// Avoids per-iteration `*= 2.0` / `/= 2.0` factor reductions and the per-octave
+/// `Option` check in [`PerlinNoise::get_value_with_y_params`].
+#[derive(Debug, Clone)]
+struct ActiveOctave {
+    noise: ImprovedNoise,
+    /// `lowest_freq_input_factor * 2^i` for original octave index `i`.
+    input_factor: f64,
+    /// `amplitude * (lowest_freq_value_factor / 2^i)` — combines the per-octave
+    /// amplitude with the value factor reduction so the inner loop does one
+    /// multiply + one add per octave.
+    output_factor: f64,
 }
 
 impl PerlinNoise {
@@ -102,24 +127,15 @@ impl PerlinNoise {
 
         let mut noise_levels = vec![None; octaves];
 
-        // Create the zero-octave noise level first (directly from random)
-        let zero_octave = ImprovedNoise::new(random);
         if zero_octave_index < octaves && amplitudes[zero_octave_index] != 0.0 {
-            noise_levels[zero_octave_index] = Some(zero_octave);
+            noise_levels[zero_octave_index] = Some(ImprovedNoise::new(random));
+        } else {
+            random.consume_count(262);
         }
 
-        // Walk backwards from zero-octave, creating or skipping octaves
         for ix in (0..zero_octave_index).rev() {
-            if ix < octaves {
-                if amplitudes[ix] == 0.0 {
-                    // Skip: consume 262 values to advance random state.
-                    // 262 = ImprovedNoise::new() consumption: 3 nextDouble() calls (offsets)
-                    // + 256 nextInt() calls (Fisher-Yates shuffle) + 3 loop iterations that
-                    // call nextInt() for the final swaps = 262 total random advances.
-                    random.consume_count(262);
-                } else {
-                    noise_levels[ix] = Some(ImprovedNoise::new(random));
-                }
+            if ix < octaves && amplitudes[ix] != 0.0 {
+                noise_levels[ix] = Some(ImprovedNoise::new(random));
             } else {
                 random.consume_count(262);
             }
@@ -148,10 +164,27 @@ impl PerlinNoise {
         // Calculate max value
         let max_value = Self::edge_value(amplitudes, lowest_freq_value_factor, 2.0);
 
+        // Pre-compute per-octave factors for the hot path. Mirrors the legacy
+        // iteration order so summation is bit-identical.
+        let mut active_octaves = Vec::with_capacity(noise_levels.len());
+        let mut input_factor = lowest_freq_input_factor;
+        let mut value_factor = lowest_freq_value_factor;
+        for (i, noise_opt) in noise_levels.iter().enumerate() {
+            if let Some(noise) = noise_opt {
+                active_octaves.push(ActiveOctave {
+                    noise: noise.clone(),
+                    input_factor,
+                    output_factor: amplitudes[i] * value_factor,
+                });
+            }
+            input_factor *= 2.0;
+            value_factor /= 2.0;
+        }
+
         Self {
             noise_levels,
             amplitudes: amplitudes.to_vec(),
-            lowest_freq_input_factor,
+            active_octaves,
             lowest_freq_value_factor,
             max_value,
         }
@@ -177,21 +210,85 @@ impl PerlinNoise {
     #[must_use]
     pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
         let mut value = 0.0;
-        let mut input_factor = self.lowest_freq_input_factor;
-        let mut value_factor = self.lowest_freq_value_factor;
 
-        for (i, noise_opt) in self.noise_levels.iter().enumerate() {
-            if let Some(noise) = noise_opt {
-                let noise_val = noise.noise(
-                    wrap(x * input_factor),
-                    wrap(y * input_factor),
-                    wrap(z * input_factor),
-                );
-                value += self.amplitudes[i] * noise_val * value_factor;
-            }
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise_val = octave.noise.noise(
+                wrap(x * input_factor),
+                wrap(y * input_factor),
+                wrap(z * input_factor),
+            );
+            value += octave.output_factor * noise_val;
+        }
 
-            input_factor *= 2.0;
-            value_factor /= 2.0;
+        value
+    }
+
+    /// Sample the noise at `(x, 0.0, z)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xz(&self, x: f64, z: f64) -> f64 {
+        let mut value = 0.0;
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise_val = octave
+                .noise
+                .noise_xz(wrap(x * input_factor), wrap(z * input_factor));
+            value += octave.output_factor * noise_val;
+        }
+
+        value
+    }
+
+    /// Sample the noise at `(x, y, 0.0)`.
+    #[inline]
+    #[must_use]
+    pub fn get_value_xy(&self, x: f64, y: f64) -> f64 {
+        let mut value = 0.0;
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise_val = octave
+                .noise
+                .noise_xy(wrap(x * input_factor), wrap(y * input_factor));
+            value += octave.output_factor * noise_val;
+        }
+
+        value
+    }
+
+    /// Calculate Perlin noise value using SIMD vectors.
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Div<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>
+            + StdFloat,
+    {
+        let mut value = Simd::splat(0.0).cast();
+
+        for octave in &self.active_octaves {
+            let input_factor = Simd::splat(octave.input_factor).cast();
+            let noise_val = octave.noise.noise_simd(
+                wrap_simd(x * input_factor),
+                wrap_simd(y * input_factor),
+                wrap_simd(z * input_factor),
+            );
+            value += Simd::splat(octave.output_factor).cast() * noise_val;
         }
 
         value
@@ -215,27 +312,103 @@ impl PerlinNoise {
         y_flat_hack: bool,
     ) -> f64 {
         let mut value = 0.0;
-        let mut input_factor = self.lowest_freq_input_factor;
-        let mut value_factor = self.lowest_freq_value_factor;
 
-        for (i, noise_opt) in self.noise_levels.iter().enumerate() {
-            if let Some(noise) = noise_opt {
-                let noise_val = noise.noise_with_y_scale(
-                    wrap(x * input_factor),
-                    if y_flat_hack {
-                        -noise.yo
-                    } else {
-                        wrap(y * input_factor)
-                    },
-                    wrap(z * input_factor),
-                    y_scale * input_factor,
-                    y_fudge * input_factor,
-                );
-                value += self.amplitudes[i] * noise_val * value_factor;
-            }
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise = &octave.noise;
+            let noise_val = noise.noise_with_y_scale(
+                wrap(x * input_factor),
+                if y_flat_hack {
+                    -noise.yo
+                } else {
+                    wrap(y * input_factor)
+                },
+                wrap(z * input_factor),
+                y_scale * input_factor,
+                y_fudge * input_factor,
+            );
+            value += octave.output_factor * noise_val;
+        }
 
-            input_factor *= 2.0;
-            value_factor /= 2.0;
+        value
+    }
+
+    /// SIMD form of [`Self::get_value_with_y_params`] that processes 4 Y values
+    /// at a fixed `(x, z)` per call. Used by transpiled density-function trees
+    /// that batch 4 cell-corner Ys in one pass.
+    ///
+    /// Per-lane math is identical to the scalar path — same operation order,
+    /// same wrapping, same octave loop — so the 4 returned lanes are
+    /// bit-identical to four scalar calls at the same Y values.
+    #[must_use]
+    pub fn get_value_with_y_params_4x(
+        &self,
+        x: f64,
+        ys: f64x4,
+        z: f64,
+        y_scale: f64,
+        y_fudge: f64,
+        y_flat_hack: bool,
+    ) -> f64x4 {
+        let mut value = f64x4::splat(0.0);
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise = &octave.noise;
+            let x_w = wrap(x * input_factor);
+            let z_w = wrap(z * input_factor);
+            let ys_for_call = if y_flat_hack {
+                f64x4::splat(-noise.yo)
+            } else {
+                wrap_simd(ys * f64x4::splat(input_factor))
+            };
+            let y_fudges = f64x4::splat(y_fudge * input_factor);
+            let noise_val = noise.noise_with_y_scale_simd(
+                x_w,
+                ys_for_call,
+                z_w,
+                y_scale * input_factor,
+                y_fudges,
+            );
+            value += f64x4::splat(octave.output_factor) * noise_val;
+        }
+
+        value
+    }
+
+    /// Generic N-lane form of [`Self::get_value_with_y_params_4x`]. Per-lane
+    /// math is identical to the scalar path at any supported width.
+    #[must_use]
+    pub fn get_value_with_y_params_simd<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+        y_scale: f64,
+        y_fudge: f64,
+        y_flat_hack: bool,
+    ) -> Simd<f64, N> {
+        let mut value = Simd::splat(0.0);
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise = &octave.noise;
+            let x_w = wrap(x * input_factor);
+            let z_w = wrap(z * input_factor);
+            let ys_for_call = if y_flat_hack {
+                Simd::splat(-noise.yo)
+            } else {
+                wrap_simd(ys * Simd::splat(input_factor))
+            };
+            let y_fudges = Simd::splat(y_fudge * input_factor);
+            let noise_val = noise.noise_with_y_scale_simd(
+                x_w,
+                ys_for_call,
+                z_w,
+                y_scale * input_factor,
+                y_fudges,
+            );
+            value += Simd::splat(octave.output_factor) * noise_val;
         }
 
         value
@@ -276,6 +449,7 @@ impl PerlinNoise {
 mod tests {
     use super::*;
     use crate::random::{Random, xoroshiro::Xoroshiro};
+    use std::simd::f64x4;
 
     #[test]
     fn test_perlin_noise_deterministic() {
@@ -308,6 +482,36 @@ mod tests {
                     - noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false))
                 .abs()
                     < 1e-15
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_value_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let splitter = rng.next_positional();
+        let noise = PerlinNoise::create(&splitter, -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let xs = [0.0, 1.25, -1000.0, 33_554_431.5];
+        let ys = [0.0, 64.5, -32.25, 255.75];
+        let zs = [0.0, -30.75, 4096.5, -33_554_432.25];
+
+        let simd = noise.get_value_simd(
+            f64x4::from_array(xs),
+            f64x4::from_array(ys),
+            f64x4::from_array(zs),
+        );
+
+        for i in 0..4 {
+            let scalar = noise.get_value(xs[i], ys[i], zs[i]);
+            #[expect(
+                clippy::float_cmp,
+                reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
+            )]
+            let matches = scalar == simd[i];
+            assert!(
+                matches,
+                "Mismatch at ({}, {}, {}): scalar={}, simd={}",
+                xs[i], ys[i], zs[i], scalar, simd[i],
             );
         }
     }
@@ -347,5 +551,30 @@ mod tests {
             (v1 - v2).abs() > 0.001,
             "Two PerlinNoise from sequential random should differ: v1={v1}, v2={v2}",
         );
+    }
+
+    #[test]
+    fn test_zero_axis_helpers_match_full_noise() {
+        let mut rng = Xoroshiro::from_seed(98_765);
+        let splitter = rng.next_positional();
+        let noise = PerlinNoise::create(&splitter, -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let samples = [
+            (0.0, 0.0),
+            (1.25, -30.75),
+            (-1000.0, 4096.5),
+            (33_554_431.5, -33_554_432.25),
+            (-0.000_000_1, 0.000_000_1),
+        ];
+
+        for &(a, b) in &samples {
+            #[expect(
+                clippy::float_cmp,
+                reason = "zero-axis helpers must be bit-identical to the full scalar path"
+            )]
+            {
+                assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
+                assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
+            }
+        }
     }
 }

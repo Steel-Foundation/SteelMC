@@ -12,6 +12,7 @@ pub mod kill;
 pub mod list;
 pub mod locate;
 pub mod seed;
+pub mod setworldspawn;
 pub mod steel;
 pub mod stop;
 pub mod summon;

@@ -126,7 +126,7 @@ impl Player {
             drop(tp);
 
             let (yaw, pitch) = self.rotation();
-            if let Err(error) = self.teleport(pos.x, pos.y, pos.z, yaw, pitch) {
+            if let Err(error) = self.teleport(pos, yaw, pitch) {
                 log::warn!(
                     "Failed to resend pending teleport for player {}: {error}",
                     self.id()
@@ -255,13 +255,7 @@ impl Player {
             let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
             if moved_dist_sq > 1.0 {
-                if let Err(error) = self.teleport(
-                    start_pos.x,
-                    start_pos.y,
-                    start_pos.z,
-                    target_yaw,
-                    target_pitch,
-                ) {
+                if let Err(error) = self.teleport(start_pos, target_yaw, target_pitch) {
                     log::warn!(
                         "Failed to correct sleeping player {} movement: {error}",
                         self.id()
@@ -295,13 +289,9 @@ impl Player {
                 } * f64::from(delta_packets);
 
                 if moved_dist_sq - self.velocity().length_squared() > threshold {
-                    if let Err(error) = self.teleport(
-                        start_pos.x,
-                        start_pos.y,
-                        start_pos.z,
-                        current_rotation.0,
-                        current_rotation.1,
-                    ) {
+                    if let Err(error) =
+                        self.teleport(start_pos, current_rotation.0, current_rotation.1)
+                    {
                         log::warn!(
                             "Failed to correct too-fast player {} movement: {error}",
                             self.id()
@@ -322,13 +312,7 @@ impl Player {
         }
 
         if self.move_entity(MoverType::Player, move_delta).is_none() {
-            if let Err(error) = self.teleport(
-                start_pos.x,
-                start_pos.y,
-                start_pos.z,
-                target_yaw,
-                target_pitch,
-            ) {
+            if let Err(error) = self.teleport(start_pos, target_yaw, target_pitch) {
                 panic!(
                     "failed to correct rejected player {} movement: {error}",
                     self.id()
@@ -345,7 +329,7 @@ impl Player {
             && !is_spectator
             && !in_impulse_grace;
 
-        let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
+        let new_aabb = self.bounding_box().translate(target_pos - self.position());
         let collision_world = WorldCollisionProvider::for_entity(&world, self);
         let old_collision = collision_world.has_entity_context_collision(
             old_aabb,
@@ -363,13 +347,7 @@ impl Player {
         })
         .rejects()
         {
-            if let Err(error) = self.teleport(
-                start_pos.x,
-                start_pos.y,
-                start_pos.z,
-                target_yaw,
-                target_pitch,
-            ) {
+            if let Err(error) = self.teleport(start_pos, target_yaw, target_pitch) {
                 log::warn!(
                     "Failed to correct collided player {} movement: {error}",
                     self.id()
@@ -414,13 +392,7 @@ impl Player {
                     "Rejected accepted player movement for entity {}: {error}",
                     self.id()
                 );
-                if let Err(teleport_error) = self.teleport(
-                    start_pos.x,
-                    start_pos.y,
-                    start_pos.z,
-                    target_yaw,
-                    target_pitch,
-                ) {
+                if let Err(teleport_error) = self.teleport(start_pos, target_yaw, target_pitch) {
                     log::warn!(
                         "Failed to correct rejected player movement for entity {}: {teleport_error}",
                         self.id()
@@ -459,9 +431,9 @@ impl Player {
     )]
     pub fn handle_move_vehicle(&self, packet: SMoveVehicle) {
         if Self::is_invalid_position(
-            packet.position.x,
-            packet.position.y,
-            packet.position.z,
+            packet.pos.x,
+            packet.pos.y,
+            packet.pos.z,
             packet.x_rot,
             packet.y_rot,
         ) {
@@ -491,9 +463,9 @@ impl Player {
         let world = self.get_world();
         let old_position = vehicle.position();
         let target_pos = DVec3::new(
-            clamp_horizontal(packet.position.x),
-            clamp_vertical(packet.position.y),
-            clamp_horizontal(packet.position.z),
+            clamp_horizontal(packet.pos.x),
+            clamp_vertical(packet.pos.y),
+            clamp_horizontal(packet.pos.z),
         );
         let target_yaw = wrap_degrees(packet.y_rot);
         let target_pitch = wrap_degrees(packet.x_rot);
@@ -539,7 +511,7 @@ impl Player {
 
         let new_aabb = vehicle
             .bounding_box()
-            .move_vec(target_pos - vehicle.position());
+            .translate(target_pos - vehicle.position());
         let collision_world = WorldCollisionProvider::for_entity(&world, vehicle.as_ref());
         let old_collision = collision_world.has_entity_context_collision(
             old_aabb,
@@ -755,17 +727,12 @@ impl Player {
     /// Until acknowledged, movement packets from the client will be rejected.
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
-    pub fn teleport(
-        &self,
-        x: f64,
-        y: f64,
-        z: f64,
-        yaw: f32,
-        pitch: f32,
-    ) -> Result<(), EntityMoveError> {
-        let pos = DVec3::new(x, y, z);
-
+    pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        let world = self.get_world();
         self.try_set_position(pos)?;
+        if world.entity_manager().get_by_id(self.id()).is_some() {
+            world.chunk_map.update_player_status(self);
+        }
         self.set_velocity(DVec3::ZERO);
 
         let new_id = {
@@ -783,7 +750,7 @@ impl Player {
             movement.reset_last_known_client_movement();
         }
 
-        self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
+        self.send_packet(CPlayerPosition::absolute(new_id, pos, yaw, pitch));
         Ok(())
     }
 

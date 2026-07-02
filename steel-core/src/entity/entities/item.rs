@@ -7,9 +7,9 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -18,7 +18,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, EntitySyncedData,
+    ItemMergeEntity, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -26,7 +27,7 @@ use crate::player::Player;
 use crate::world::World;
 
 use simdnbt::ToNbtTag;
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -94,9 +95,13 @@ impl ItemEntityState {
 /// - Applies friction when on ground (0.98)
 /// - Despawns after 5 minutes (6000 ticks)
 /// - Has pickup delay before players can collect it
+#[entity_behavior]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     base: EntityBase,
+
+    /// Vanilla entity type registered for this implementation.
+    entity_type: EntityTypeRef,
 
     /// Entity data containing the `ItemStack`.
     entity_data: SyncMutex<ItemEntityData>,
@@ -110,14 +115,34 @@ impl ItemEntity {
     ///
     /// Use `set_item()` to set the actual item after creation, or use `with_item()`.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::with_item_and_velocity(id, position, ItemStack::empty(), DVec3::ZERO, world)
+    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+        Self::with_item_and_velocity(
+            entity_type,
+            id,
+            position,
+            ItemStack::empty(),
+            DVec3::ZERO,
+            world,
+        )
     }
 
     /// Creates a new item entity with the specified item.
     #[must_use]
-    pub fn with_item(id: i32, position: DVec3, item: ItemStack, world: Weak<World>) -> Self {
-        Self::with_item_and_velocity(id, position, item, Self::default_spawn_velocity(), world)
+    pub fn with_item(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        item: ItemStack,
+        world: Weak<World>,
+    ) -> Self {
+        Self::with_item_and_velocity(
+            entity_type,
+            id,
+            position,
+            item,
+            Self::default_spawn_velocity(),
+            world,
+        )
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
@@ -125,6 +150,7 @@ impl ItemEntity {
     /// Mirrors vanilla's `ItemEntity(Level, double, double, double, ItemStack, double, double, double)`.
     #[must_use]
     pub fn with_item_and_velocity(
+        entity_type: EntityTypeRef,
         id: i32,
         position: DVec3,
         item: ItemStack,
@@ -140,11 +166,12 @@ impl ItemEntity {
         Self {
             base: EntityBase::new_with_state(
                 id,
-                EntityBaseState::new(position, vanilla_entities::ITEM.dimensions)
+                EntityBaseState::new(position, entity_type.dimensions)
                     .with_velocity(velocity)
                     .with_rotation((yaw, 0.0)),
                 world,
             ),
+            entity_type,
             entity_data: SyncMutex::new(entity_data),
             item_state: SyncMutex::new(ItemEntityState::new()),
         }
@@ -163,9 +190,10 @@ impl ItemEntity {
     /// Used when loading entities from disk. Type-specific data (item, age, etc.)
     /// is restored via `load_additional()` after this constructor.
     #[must_use]
-    pub fn from_saved(load: EntityBaseLoad) -> Self {
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self {
-            base: EntityBase::from_load(load, vanilla_entities::ITEM.dimensions),
+            base: EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
             entity_data: SyncMutex::new(ItemEntityData::new()),
             item_state: SyncMutex::new(ItemEntityState::new()),
         }
@@ -362,12 +390,12 @@ impl ItemEntity {
     ///
     /// Mirrors vanilla's `ItemEntity.tryToMerge()`.
     /// The item with fewer items is merged into the one with more.
-    fn try_to_merge(&self, other: &ItemEntity) {
+    fn try_to_merge(&self, other: &dyn ItemMergeEntity) {
         let this_stack = self.get_item();
-        let other_stack = other.get_item();
+        let other_stack = other.item_merge_stack();
 
         // Both items must have the same owner (target)
-        if self.get_owner() != other.get_owner() {
+        if self.get_owner() != other.item_merge_owner() {
             return;
         }
 
@@ -387,9 +415,9 @@ impl ItemEntity {
     ///
     /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
-        to_item: &ItemEntity,
+        to_item: &dyn ItemMergeEntity,
         to_stack: &ItemStack,
-        from_item: &ItemEntity,
+        from_item: &dyn ItemMergeEntity,
         from_stack: &ItemStack,
     ) {
         // Calculate how many items to transfer
@@ -406,26 +434,10 @@ impl ItemEntity {
         new_from_stack.shrink(transfer_count);
 
         // Update the destination item
-        to_item.set_item(new_to_stack);
+        let (from_pickup_delay, from_age) = from_item.item_merge_timing();
+        to_item.apply_item_merge_destination(new_to_stack, from_pickup_delay, from_age);
 
-        // Pickup delay is the max of both (so merged items don't become instantly pickable)
-        // Age is the min of both (so merged items don't despawn prematurely).
-        let (from_pickup_delay, from_age) = {
-            let state = from_item.item_state.lock();
-            (state.pickup_delay, state.age)
-        };
-        {
-            let mut state = to_item.item_state.lock();
-            state.pickup_delay = state.pickup_delay.max(from_pickup_delay);
-            state.age = state.age.min(from_age);
-        }
-
-        // Update or remove the source item
-        if new_from_stack.is_empty() {
-            from_item.set_removed(RemovalReason::Discarded);
-        } else {
-            from_item.set_item(new_from_stack);
-        }
+        from_item.apply_item_merge_source(new_from_stack);
     }
 
     /// Attempts to merge this item with nearby item entities.
@@ -449,10 +461,10 @@ impl ItemEntity {
             }
 
             // Try to get as ItemEntity
-            if let Some(other_item) = entity.as_item_entity() {
+            if let Some(other_item) = entity.as_item_merge_entity() {
                 // Double-check mergability (might have changed)
-                if other_item.is_mergeable() {
-                    self.try_to_merge(&other_item);
+                if other_item.is_mergeable_item_entity() {
+                    self.try_to_merge(other_item);
 
                     // If we've been removed (merged into other), stop
                     if self.is_removed() {
@@ -495,7 +507,7 @@ impl Entity for ItemEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM
+        self.entity_type
     }
 
     fn tick(&self) {
@@ -634,16 +646,24 @@ impl Entity for ItemEntity {
         Some(&self.entity_data)
     }
 
+    fn capabilities(&self) -> EntityCapabilities<'_> {
+        EntityCapabilities::none().with_item_merge_entity(self)
+    }
+
     fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
         self.on_pos(0.999_999)
+    }
+
+    fn attackable(&self) -> bool {
+        false
     }
 
     fn should_play_lava_hurt_sound(&self) -> bool {
         self.get_health() <= 0 || self.tick_count() % 10 == 0
     }
 
-    fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
-        Some(self)
+    fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
+        self.try_pickup(player);
     }
 
     fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
@@ -681,10 +701,7 @@ impl Entity for ItemEntity {
         }
     }
 
-    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        // Convert to view type to access accessor methods
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
-
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.item_state.lock();
         if let Some(health) = nbt.short("Health") {
@@ -722,29 +739,83 @@ impl Entity for ItemEntity {
     }
 }
 
+impl ItemMergeEntity for ItemEntity {
+    fn is_mergeable_item_entity(&self) -> bool {
+        self.is_mergeable()
+    }
+
+    fn try_merge_item_entity(&self, other: &dyn ItemMergeEntity) {
+        self.try_to_merge(other);
+    }
+
+    fn item_merge_stack(&self) -> ItemStack {
+        self.get_item()
+    }
+
+    fn item_merge_owner(&self) -> Option<Uuid> {
+        self.get_owner()
+    }
+
+    fn item_merge_timing(&self) -> (i32, i32) {
+        let state = self.item_state.lock();
+        (state.pickup_delay, state.age)
+    }
+
+    fn apply_item_merge_destination(&self, stack: ItemStack, pickup_delay: i32, age: i32) {
+        self.set_item(stack);
+
+        // Pickup delay is the max of both so merged items do not become instantly pickable.
+        // Age is the min of both so merged items do not despawn prematurely.
+        let mut state = self.item_state.lock();
+        state.pickup_delay = state.pickup_delay.max(pickup_delay);
+        state.age = state.age.min(age);
+    }
+
+    fn apply_item_merge_source(&self, stack: ItemStack) {
+        if stack.is_empty() {
+            self.set_removed(RemovalReason::Discarded);
+        } else {
+            self.set_item(stack);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
 
-    use steel_registry::{item_stack::ItemStack, vanilla_damage_types, vanilla_items};
+    use steel_registry::{
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_damage_types,
+        vanilla_entities, vanilla_items,
+    };
 
-    use crate::entity::{Entity, damage::DamageSource};
+    use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
     use crate::world::World;
 
     use super::ItemEntity;
 
     #[test]
     fn item_entities_do_not_obstruct_block_placement() {
-        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+        let item = ItemEntity::new(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
 
         assert!(!item.blocks_building());
     }
 
     #[test]
     fn item_lava_hurt_sound_uses_vanilla_interval() {
-        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+        let item = ItemEntity::new(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
 
         assert!(item.should_play_lava_hurt_sound());
         item.advance_tick_count();
@@ -763,6 +834,7 @@ mod tests {
     #[test]
     fn item_with_stack_uses_vanilla_default_velocity() {
         let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
             1,
             DVec3::ZERO,
             ItemStack::new(&vanilla_items::ITEMS.stone),
@@ -778,8 +850,46 @@ mod tests {
     }
 
     #[test]
+    fn item_merge_capability_preserves_vanilla_stack_and_timing() {
+        init_test_registry();
+
+        let source = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            ItemStack::with_count(&vanilla_items::ITEMS.stone, 10),
+            Weak::<World>::new(),
+        );
+        source.set_pickup_delay(5);
+        source.set_age(20);
+
+        let target = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            2,
+            DVec3::ZERO,
+            ItemStack::with_count(&vanilla_items::ITEMS.stone, 20),
+            Weak::<World>::new(),
+        );
+        target.set_pickup_delay(1);
+        target.set_age(50);
+
+        assert!(source.as_item_merge_entity().is_some());
+        source.try_merge_item_entity(&target);
+
+        assert!(source.is_removed());
+        assert_eq!(target.get_item().count(), 30);
+        assert_eq!(target.get_pickup_delay(), 5);
+        assert_eq!(target.get_age(), 20);
+    }
+
+    #[test]
     fn item_damage_truncates_after_fractional_subtraction() {
-        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+        let item = ItemEntity::new(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
 
         assert!(item.hurt(
             &DamageSource::environment(&vanilla_damage_types::GENERIC),

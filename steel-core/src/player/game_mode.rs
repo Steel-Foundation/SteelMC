@@ -3,38 +3,57 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
+use std::mem::swap;
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_protocol::packets::game::{
-    AnimateAction, CAnimate, CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent,
-    COpenSignEditor, CPlayerInfoUpdate, CSetCamera, CSetHeldSlot, GameEventType, PlayerAction,
-    SPickItemFromBlock, SPlayerAction, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent, COpenSignEditor,
+    CPlayerInfoUpdate, CSetCamera, CSetEntityMotion, CSetHeldSlot, GameEventType, PlayerAction,
+    SAttack, SInteract, SPickItemFromBlock, SPlayerAction, SSignUpdate, SSpectatorAction, SUseItem,
+    SUseItemOn,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::{REGISTRY, vanilla_attributes};
+use steel_registry::damage_type::DamageType;
+use steel_registry::data_components::components::PiercingWeapon;
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
+use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
+use steel_utils::entity_events::EntityStatus;
 use steel_utils::translations;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use steel_utils::{BlockPos, Identifier, WorldAabb};
 use text_components::TextComponent;
+use text_components::translation::TranslatedMessage;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, InventoryAccess,
-    UseOnContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockHitResult, ITEM_BEHAVIORS, InteractionResult,
+    InventoryAccess, UseOnContext,
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::command::commands::gamemode::get_gamemode_translation;
+use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::menu::Menu;
+use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
+use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
 use crate::player::player_inventory::PlayerInventory;
-use crate::world::World;
+use crate::world::{ClipBlockShape, ClipFluid, World};
+use steel_utils::axis::Axis;
 
 const CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT: f64 = 0.5;
 const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;
+const ATTACK_RANGE_BUFFER: f64 = 3.0;
+const ENTITY_INTERACTION_RANGE_BUFFER: f64 = 3.0;
+const FLIGHT_DISABLE_RANGE: f64 = 1.0;
 
 /// Handles using an item on a block.
 ///
@@ -191,7 +210,763 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
     InteractionResult::Pass
 }
 
+const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
+    match holder {
+        SoundEventHolder::Registry(sound) => Some(*sound),
+        SoundEventHolder::Direct { .. } => {
+            // TODO: Support direct sound holders when entity sound playback can send them.
+            None
+        }
+    }
+}
+
+fn piercing_ray_hit_t(
+    world: &World,
+    bounding_box: WorldAabb,
+    from: DVec3,
+    to: DVec3,
+    entity_margin: f64,
+) -> Option<f64> {
+    if let Some(hit_t) = ray_aabb_hit_t(bounding_box, from, to) {
+        return Some(hit_t);
+    }
+    if entity_margin <= 0.0 {
+        return None;
+    }
+
+    let outside_hit_t = ray_aabb_hit_t(bounding_box.inflate(entity_margin), from, to)?;
+    let outside_hit = from + (to - from) * outside_hit_t;
+    let mut towards_target = DVec3::new(
+        f64::midpoint(bounding_box.min_x(), bounding_box.max_x()),
+        f64::midpoint(bounding_box.min_y(), bounding_box.max_y()),
+        f64::midpoint(bounding_box.min_z(), bounding_box.max_z()),
+    );
+    let block_hit = world.clip(
+        outside_hit,
+        towards_target,
+        ClipBlockShape::Collider,
+        ClipFluid::None,
+    );
+    if !block_hit.is_miss() {
+        towards_target = block_hit.location;
+    }
+    ray_aabb_hit_t(bounding_box, outside_hit, towards_target).map(|_| outside_hit_t)
+}
+
+fn ray_aabb_hit_t(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<f64> {
+    if aabb.contains(from) {
+        return Some(0.0);
+    }
+
+    let delta = to - from;
+    let mut t_min = 0.0_f64;
+    let mut t_max = 1.0_f64;
+    if !update_ray_axis(
+        from.x,
+        delta.x,
+        aabb.min_x(),
+        aabb.max_x(),
+        &mut t_min,
+        &mut t_max,
+    ) {
+        return None;
+    }
+    if !update_ray_axis(
+        from.y,
+        delta.y,
+        aabb.min_y(),
+        aabb.max_y(),
+        &mut t_min,
+        &mut t_max,
+    ) {
+        return None;
+    }
+    if !update_ray_axis(
+        from.z,
+        delta.z,
+        aabb.min_z(),
+        aabb.max_z(),
+        &mut t_min,
+        &mut t_max,
+    ) {
+        return None;
+    }
+
+    Some(t_min)
+}
+
+fn update_ray_axis(
+    start: f64,
+    delta: f64,
+    min: f64,
+    max: f64,
+    t_min: &mut f64,
+    t_max: &mut f64,
+) -> bool {
+    if delta.abs() < f64::EPSILON {
+        return start >= min && start <= max;
+    }
+
+    let inverse_delta = 1.0 / delta;
+    let mut enter = (min - start) * inverse_delta;
+    let mut exit = (max - start) * inverse_delta;
+    if enter > exit {
+        swap(&mut enter, &mut exit);
+    }
+
+    *t_min = (*t_min).max(enter);
+    *t_max = (*t_max).min(exit);
+    *t_min <= *t_max
+}
+
 impl Player {
+    fn invalid_entity_attacked_message() -> TextComponent {
+        TranslatedMessage {
+            key: "multiplayer.disconnect.invalid_entity_attacked".into(),
+            fallback: None,
+            args: None,
+        }
+        .component()
+    }
+
+    fn eye_position(&self) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.get_eye_y(), position.z)
+    }
+
+    fn damage_source_for_attack_type(&self, damage_type: &'static DamageType) -> DamageSource {
+        DamageSource::environment(damage_type)
+            .with_causing_entity(self.id())
+            .with_direct_entity(self.id())
+            .with_source_position(self.position())
+    }
+
+    fn attack_damage_source(&self, attacking_item: &ItemStack) -> DamageSource {
+        if let Some(damage_type) = attacking_item.get_damage_type() {
+            return self.damage_source_for_attack_type(damage_type);
+        }
+        if let Some(source) = ITEM_BEHAVIORS
+            .get_behavior(attacking_item.item())
+            .get_item_damage_source(self)
+        {
+            return source;
+        }
+        self.damage_source_for_attack_type(&vanilla_damage_types::PLAYER_ATTACK)
+    }
+
+    /// Ticks vanilla attack-strength recovery and resets it on main-hand item changes.
+    pub(super) fn tick_attack_strength(&self) {
+        self.tick_state.lock().advance_attack_strength_ticker();
+
+        let main_hand_item = {
+            let inventory = self.inventory.lock();
+            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            stack.copy_with_count(stack.count())
+        };
+
+        let mut last_item = self.last_item_in_main_hand.lock();
+        if ItemStack::matches(&last_item, &main_hand_item) {
+            return;
+        }
+
+        if !ItemStack::is_same_item(&last_item, &main_hand_item) {
+            self.reset_attack_strength_ticker();
+        }
+
+        *last_item = main_hand_item;
+    }
+
+    fn reset_attack_strength_ticker(&self) {
+        self.tick_state.lock().reset_attack_strength_ticker();
+    }
+
+    fn current_item_attack_strength_delay(&self) -> f32 {
+        let attack_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::ATTACK_SPEED);
+        Self::attack_strength_delay_from_speed(attack_speed)
+    }
+
+    fn attack_strength_delay_from_speed(attack_speed: f64) -> f32 {
+        (1.0 / attack_speed * 20.0) as f32
+    }
+
+    /// Returns vanilla `Player.getAttackStrengthScale`.
+    #[must_use]
+    pub fn attack_strength_scale(&self, partial_tick: f32) -> f32 {
+        let attack_strength_delay = self.current_item_attack_strength_delay();
+        self.attack_strength_scale_for_delay(partial_tick, attack_strength_delay)
+    }
+
+    fn attack_strength_scale_for_delay(
+        &self,
+        partial_tick: f32,
+        attack_strength_delay: f32,
+    ) -> f32 {
+        let ticker = self.tick_state.lock().attack_strength_ticker() as f32;
+        ((ticker + partial_tick) / attack_strength_delay).clamp(0.0, 1.0)
+    }
+
+    fn base_damage_scale_factor(attack_strength_scale: f32) -> f32 {
+        0.2 + attack_strength_scale * attack_strength_scale * 0.8
+    }
+
+    fn get_knockback(
+        attack_knockback: f64,
+        weapon: &ItemStack,
+        enchantment_context: &EnchantmentDamageContext<'_>,
+    ) -> f64 {
+        let modified = enchantment_helper::modify_knockback(
+            weapon,
+            enchantment_context,
+            attack_knockback as f32,
+        );
+        f64::from(modified) / 2.0
+    }
+
+    fn cause_extra_knockback(
+        &self,
+        entity: &dyn Entity,
+        knockback_amount: f64,
+        old_movement: DVec3,
+    ) {
+        if knockback_amount > 0.0 {
+            let yaw_radians = self.rotation().0.to_radians();
+            let yaw_sin = f64::from(yaw_radians.sin());
+            let yaw_cos = f64::from(yaw_radians.cos());
+            if let Some(living_target) = entity.as_living_entity() {
+                living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
+            } else {
+                entity.push_impulse(DVec3::new(
+                    -yaw_sin * knockback_amount,
+                    0.1,
+                    yaw_cos * knockback_amount,
+                ));
+            }
+
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
+            self.set_sprinting(false);
+        }
+
+        if entity.entity_type() == &vanilla_entities::PLAYER
+            && entity.hurt_marked()
+            && let Some(player) = self.get_world().players.get_by_entity_id(entity.id())
+        {
+            let velocity = entity.velocity();
+            player.send_packet(CSetEntityMotion::new(entity.id(), velocity));
+            entity.clear_hurt_mark();
+            entity.set_velocity(old_movement);
+        }
+    }
+
+    fn entity_interaction_range(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .required_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
+    }
+
+    /// Returns true if the target box is within the player's attack range for `item_stack`.
+    #[must_use]
+    pub fn is_within_attack_range_with_buffer(
+        &self,
+        item_stack: &ItemStack,
+        aabb: WorldAabb,
+        buffer: f64,
+    ) -> bool {
+        let distance = aabb.distance_to_sqr(self.eye_position()).sqrt();
+        let (min_reach, max_reach, hitbox_margin) =
+            if let Some(attack_range) = item_stack.get_attack_range() {
+                if self.game_mode() == GameType::Creative {
+                    (
+                        attack_range.min_creative_reach,
+                        attack_range.max_creative_reach,
+                        attack_range.hitbox_margin,
+                    )
+                } else {
+                    (
+                        attack_range.min_reach,
+                        attack_range.max_reach,
+                        attack_range.hitbox_margin,
+                    )
+                }
+            } else {
+                (0.0, self.entity_interaction_range() as f32, 0.0)
+            };
+        let min_reach = f64::from(min_reach) - f64::from(hitbox_margin) - buffer;
+        let max_reach = f64::from(max_reach) + f64::from(hitbox_margin) + buffer;
+        distance >= min_reach && distance <= max_reach
+    }
+
+    /// Returns true if the target box is within the player's entity interaction range.
+    #[must_use]
+    pub fn is_within_entity_interaction_range_with_buffer(
+        &self,
+        aabb: WorldAabb,
+        buffer: f64,
+    ) -> bool {
+        let max_range = self.entity_interaction_range() + buffer;
+        aabb.distance_to_sqr(self.eye_position()) <= max_range * max_range
+    }
+
+    fn attack_range_for_item(&self, item_stack: &ItemStack) -> (f64, f64, f64) {
+        let Some(attack_range) = item_stack.get_attack_range() else {
+            return (0.0, self.entity_interaction_range(), 0.0);
+        };
+
+        let (min_reach, max_reach) = if self.game_mode() == GameType::Creative {
+            (
+                attack_range.min_creative_reach,
+                attack_range.max_creative_reach,
+            )
+        } else {
+            (attack_range.min_reach, attack_range.max_reach)
+        };
+        (
+            f64::from(min_reach),
+            f64::from(max_reach),
+            f64::from(attack_range.hitbox_margin),
+        )
+    }
+
+    fn piercing_hit_entities(&self, item_stack: &ItemStack, world: &World) -> Vec<SharedEntity> {
+        let look = self.look_angle();
+        if look.length_squared() <= f64::EPSILON {
+            return Vec::new();
+        }
+
+        let (min_reach, max_reach, hitbox_margin) = self.attack_range_for_item(item_stack);
+        let eye_position = self.eye_position();
+        let from = eye_position + look * min_reach;
+        let movement_extension = self.known_movement().dot(look).max(0.0);
+        let mut to = eye_position + look * (max_reach + movement_extension);
+
+        let block_hit = world.clip(eye_position, to, ClipBlockShape::Collider, ClipFluid::None);
+        if !block_hit.is_miss() {
+            to = block_hit.location;
+            if eye_position.distance_squared(to) < eye_position.distance_squared(from) {
+                return Vec::new();
+            }
+        }
+
+        let search_area = WorldAabb::new(from.x, from.y, from.z, from.x, from.y, from.z)
+            .inflate_xyz(hitbox_margin, hitbox_margin, hitbox_margin)
+            .expand_towards(to - from)
+            .inflate(1.0);
+        let mut hits = world
+            .get_entities_in_aabb_matching(&search_area, |entity| {
+                self.can_piercing_hit_entity(entity)
+            })
+            .into_iter()
+            .filter_map(|entity| {
+                piercing_ray_hit_t(world, entity.bounding_box(), from, to, hitbox_margin)
+                    .map(|hit_t| (hit_t, entity))
+            })
+            .collect::<Vec<_>>();
+        hits.sort_by(|(left, _), (right, _)| left.total_cmp(right));
+        hits.into_iter().map(|(_, entity)| entity).collect()
+    }
+
+    fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {
+        target.id() != self.id()
+            && !target.is_invulnerable()
+            && target.is_alive()
+            && target.can_be_hit_by_projectile()
+            && !self.is_passenger_of_same_vehicle(target)
+    }
+
+    fn piercing_attack(&self, item_stack: &ItemStack, piercing_weapon: &PiercingWeapon) {
+        let world = self.get_world();
+        LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
+        let base_damage = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
+        let mut hit_something = false;
+        for target in self.piercing_hit_entities(item_stack, &world) {
+            hit_something |= self.stab_attack(
+                &target,
+                base_damage,
+                true,
+                piercing_weapon.deals_knockback,
+                piercing_weapon.dismounts,
+            );
+        }
+
+        self.reset_attack_strength_ticker();
+        enchantment_helper::do_post_piercing_attack_effects(self);
+        if hit_something {
+            self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
+        }
+        self.play_sound_holder(piercing_weapon.sound.as_ref());
+        self.swing(InteractionHand::MainHand, false);
+    }
+
+    fn stab_attack(
+        &self,
+        target: &SharedEntity,
+        base_damage: f32,
+        deals_damage: bool,
+        deals_knockback: bool,
+        dismounts: bool,
+    ) -> bool {
+        let entity = target.as_ref();
+        if self.cannot_attack(entity) {
+            return false;
+        }
+
+        let attacking_item = {
+            let inventory = self.inventory.lock();
+            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            stack.copy_with_count(stack.count())
+        };
+        let damage_source = self.attack_damage_source(&attacking_item);
+        let enchantment_context = EnchantmentDamageContext::new(
+            entity.entity_type(),
+            Some(self.entity_type()),
+            Some(self.entity_type()),
+            &damage_source,
+        );
+        let enchanted_damage =
+            enchantment_helper::modify_damage(&attacking_item, &enchantment_context, base_damage);
+        let attack_strength_scale = self.attack_strength_scale(0.5);
+        let magic_boost = attack_strength_scale * (enchanted_damage - base_damage);
+        let base_damage = base_damage * Self::base_damage_scale_factor(attack_strength_scale);
+        let damage = base_damage + magic_boost;
+        let old_movement = entity.velocity();
+        let mut affected = deals_knockback;
+        let damage_dealt = deals_damage && entity.hurt(&damage_source, damage);
+        affected |= damage_dealt;
+        if deals_knockback {
+            self.cause_extra_knockback(
+                entity,
+                0.4 + Self::get_knockback(0.0, &attacking_item, &enchantment_context),
+                old_movement,
+            );
+        }
+        if dismounts && entity.is_passenger() {
+            affected = true;
+            entity.stop_riding();
+        }
+
+        if !affected {
+            return false;
+        }
+
+        self.item_attack_interaction(entity, &damage_source, damage_dealt);
+        self.set_last_hurt_mob(Some(target));
+        self.cause_food_exhaustion(0.1);
+        true
+    }
+
+    fn play_sound_holder(&self, holder: Option<&SoundEventHolder>) {
+        let Some(sound) = holder.and_then(sound_holder_ref) else {
+            return;
+        };
+        self.play_sound(sound, 1.0, 1.0);
+    }
+
+    fn cannot_attack(&self, entity: &dyn Entity) -> bool {
+        !entity.attackable() || entity.skip_attack_interaction(self)
+    }
+
+    /// Attacks an entity with the player's main-hand base damage.
+    ///
+    /// Returns `true` if the target accepted damage.
+    #[must_use]
+    pub fn attack(&self, target: &SharedEntity) -> bool {
+        let entity = target.as_ref();
+        if self.cannot_attack(entity) {
+            return false;
+        }
+
+        LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
+        let attacking_item = {
+            let inventory = self.inventory.lock();
+            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            stack.copy_with_count(stack.count())
+        };
+        let (attack_damage, attack_speed, attack_knockback) = {
+            let attributes = self.attributes().lock();
+            (
+                attributes.required_value(vanilla_attributes::ATTACK_DAMAGE) as f32,
+                attributes.required_value(vanilla_attributes::ATTACK_SPEED),
+                attributes.required_value(vanilla_attributes::ATTACK_KNOCKBACK),
+            )
+        };
+        let attack_strength_delay = Self::attack_strength_delay_from_speed(attack_speed);
+        let attack_strength_scale =
+            self.attack_strength_scale_for_delay(0.5, attack_strength_delay);
+        let damage_source = self.attack_damage_source(&attacking_item);
+        let enchantment_context = EnchantmentDamageContext::new(
+            entity.entity_type(),
+            Some(self.entity_type()),
+            Some(self.entity_type()),
+            &damage_source,
+        );
+        let enchanted_damage =
+            enchantment_helper::modify_damage(&attacking_item, &enchantment_context, attack_damage);
+        let magic_boost = attack_strength_scale * (enchanted_damage - attack_damage);
+        let mut base_damage = attack_damage * Self::base_damage_scale_factor(attack_strength_scale);
+        base_damage += ITEM_BEHAVIORS
+            .get_behavior(attacking_item.item())
+            .get_attack_damage_bonus(self, entity, base_damage, &damage_source);
+        let total_damage = base_damage + magic_boost;
+        let full_strength_attack = attack_strength_scale > 0.9;
+        let knockback_attack = self.is_sprinting() && full_strength_attack;
+        self.reset_attack_strength_ticker();
+
+        if total_damage <= 0.0 {
+            return false;
+        }
+
+        // TODO: Apply crits, sweep attacks, damage stats, and sounds.
+        let old_movement = entity.velocity();
+        let was_hurt = entity.hurt(&damage_source, total_damage);
+        if was_hurt {
+            self.set_last_hurt_mob(Some(target));
+            let sprint_knockback = if knockback_attack { 0.5 } else { 0.0 };
+            self.cause_extra_knockback(
+                entity,
+                Self::get_knockback(attack_knockback, &attacking_item, &enchantment_context)
+                    + sprint_knockback,
+                old_movement,
+            );
+            self.item_attack_interaction(entity, &damage_source, true);
+            self.cause_food_exhaustion(0.1);
+        }
+
+        enchantment_helper::do_post_piercing_attack_effects(self);
+        was_hurt
+    }
+
+    fn item_attack_interaction(
+        &self,
+        entity: &dyn Entity,
+        damage_source: &DamageSource,
+        apply_to_target: bool,
+    ) {
+        let post_attack_context =
+            EnchantmentPostAttackContext::new(entity, Some(self), Some(self), damage_source);
+        let (source_item, item_hurt_enemy) = {
+            let mut inventory = self.inventory.lock();
+            inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+                if stack.is_empty() {
+                    return (ItemStack::empty(), false);
+                }
+                let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+                if let Some(living_target) = entity.as_living_entity() {
+                    behavior.hurt_enemy(stack, living_target, self);
+                }
+                let source_item = stack.copy_with_count(stack.count());
+                (source_item, stack.get_weapon().is_some())
+            })
+        };
+
+        if apply_to_target {
+            enchantment_helper::do_post_attack_effects_with_item_source(
+                entity,
+                &source_item,
+                &post_attack_context,
+            );
+        }
+
+        if !item_hurt_enemy {
+            return;
+        }
+
+        let Some(living_target) = entity.as_living_entity() else {
+            return;
+        };
+        let has_infinite_materials = self.has_infinite_materials();
+        let mut inventory = self.inventory.lock();
+        inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+            if stack.is_empty() {
+                return;
+            }
+            let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+            behavior.post_hurt_enemy(stack, living_target, self);
+            if let Some(damage) = behavior.item_damage_per_attack(stack) {
+                stack.hurt_and_break(damage, has_infinite_materials);
+            }
+        });
+    }
+
+    /// Interacts with an entity using the held item.
+    pub fn interact_on(
+        &self,
+        entity: &dyn Entity,
+        hand: InteractionHand,
+        location: DVec3,
+    ) -> InteractionResult {
+        if self.is_spectator() {
+            // TODO: Open entity menu providers in spectator once that foundation exists.
+            return InteractionResult::Pass;
+        }
+
+        let inventory_access = InventoryAccess::new(self.inventory.clone(), hand);
+        let original_count = inventory_access.with_item(|item| item.count);
+        let result = entity.interact(self, hand, location);
+
+        if self.has_infinite_materials() {
+            inventory_access.with_item(|item| {
+                if item.count < original_count {
+                    item.count = original_count;
+                }
+            });
+        }
+
+        if result.consumes_action() {
+            return result;
+        }
+
+        if inventory_access.with_item(|item| item.is_empty()) {
+            return InteractionResult::Pass;
+        }
+        let Some(living_entity) = entity.as_living_entity() else {
+            return InteractionResult::Pass;
+        };
+        let result = living_entity.interact_living_entity_with_equippable(self, hand);
+        if self.has_infinite_materials() {
+            inventory_access.with_item(|item| {
+                if item.count < original_count {
+                    item.count = original_count;
+                }
+            });
+        }
+        if result.consumes_action() {
+            return result;
+        }
+
+        let item_ref = inventory_access.with_item(|item| item.item());
+        let item_behavior = ITEM_BEHAVIORS.get_behavior(item_ref);
+        let result = inventory_access.with_item(|item| {
+            item_behavior.interact_living_entity(item, self, living_entity, hand)
+        });
+        if self.has_infinite_materials() {
+            inventory_access.with_item(|item| {
+                if item.count < original_count {
+                    item.count = original_count;
+                }
+            });
+        }
+        result
+    }
+
+    /// Handles a client request to attack an entity.
+    pub fn handle_attack(&self, packet: SAttack) {
+        if !self.has_client_loaded() || self.is_spectator() {
+            return;
+        }
+
+        let world = self.get_world();
+        let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
+            return;
+        };
+
+        let target_pos = target.block_position();
+        if !world.world_border_snapshot().is_within_bounds_with_margin(
+            f64::from(target_pos.x()),
+            f64::from(target_pos.z()),
+            0.0,
+        ) {
+            return;
+        }
+
+        let main_hand_item = {
+            let inventory = self.inventory.lock();
+            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            stack.copy_with_count(stack.count())
+        };
+
+        if !self.is_within_attack_range_with_buffer(
+            &main_hand_item,
+            target.bounding_box(),
+            ATTACK_RANGE_BUFFER,
+        ) {
+            return;
+        }
+
+        if main_hand_item.get_piercing_weapon().is_some() {
+            return;
+        }
+
+        if Self::is_invalid_attack_target(self.id(), target.id(), target.entity_type()) {
+            self.disconnect(Self::invalid_entity_attacked_message());
+            log::warn!(
+                "Player {} tried to attack an invalid entity",
+                self.gameprofile.name
+            );
+            return;
+        }
+
+        if self.cannot_attack_with_item(&main_hand_item, 5) {
+            return;
+        }
+
+        let _ = self.attack(&target);
+    }
+
+    fn cannot_attack_with_item(&self, item_stack: &ItemStack, tolerance: i32) -> bool {
+        let required_strength = item_stack.minimum_attack_charge();
+        if required_strength <= 0.0 {
+            return false;
+        }
+
+        let optimistic_strength = {
+            let ticker = self.tick_state.lock().attack_strength_ticker() + tolerance;
+            ticker as f32 / self.current_item_attack_strength_delay()
+        };
+        optimistic_strength < required_strength
+    }
+
+    fn is_invalid_attack_target(
+        player_id: i32,
+        target_id: i32,
+        target_type: EntityTypeRef,
+    ) -> bool {
+        target_id == player_id
+            || target_type == &vanilla_entities::ITEM
+            || target_type == &vanilla_entities::EXPERIENCE_ORB
+    }
+
+    /// Handles a client request to interact with an entity.
+    pub fn handle_interact(&self, packet: SInteract) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
+        let world = self.get_world();
+        let target = world.get_accessible_entity_by_id(packet.entity_id);
+        self.set_crouching(packet.using_secondary_action);
+        let Some(target) = target else {
+            return;
+        };
+
+        let target_pos = target.block_position();
+        if !world.world_border_snapshot().is_within_bounds_with_margin(
+            f64::from(target_pos.x()),
+            f64::from(target_pos.z()),
+            0.0,
+        ) {
+            return;
+        }
+
+        if !self.is_within_entity_interaction_range_with_buffer(
+            target.bounding_box(),
+            ENTITY_INTERACTION_RANGE_BUFFER,
+        ) {
+            return;
+        }
+
+        let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
+        if result.should_swing_server() {
+            self.swing(packet.hand, true);
+        }
+        self.broadcast_inventory_changes();
+    }
+
     /// Sets the player's game mode and notifies the client.
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
@@ -201,7 +976,17 @@ impl Player {
         }
 
         // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
-        self.abilities.lock().update_for_game_mode(gamemode);
+        let flying_after_update = {
+            let mut abilities = self.abilities.lock();
+            abilities.update_for_game_mode(gamemode);
+            abilities.flying
+        };
+        if flying_after_update
+            && gamemode != GameType::Spectator
+            && self.is_in_range_of_ground_for_flight_disable()
+        {
+            self.set_flying(false);
+        }
         self.send_abilities();
 
         self.send_packet(CGameEvent {
@@ -213,6 +998,10 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.get_world().broadcast_to_all(update_packet);
 
+        if gamemode == GameType::Creative {
+            self.reset_current_impulse_context();
+        }
+
         self.send_message(
             &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
                 .message([get_gamemode_translation(gamemode)])
@@ -220,6 +1009,37 @@ impl Player {
         );
 
         true
+    }
+
+    fn is_in_range_of_ground_for_flight_disable(&self) -> bool {
+        let world = self.get_world();
+        let collision_world = WorldCollisionProvider::for_entity(&world, self);
+        let bounding_box = self.bounding_box();
+        let collision_context =
+            BlockCollisionContext::entity(self.position().y, self.is_descending())
+                .with_fall_distance(self.fall_distance())
+                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow());
+
+        if collision_world.has_collision_with_context(&bounding_box, collision_context) {
+            return false;
+        }
+
+        let below = WorldAabb::new(
+            bounding_box.min_x(),
+            bounding_box.min_y() - FLIGHT_DISABLE_RANGE,
+            bounding_box.min_z(),
+            bounding_box.max_x(),
+            bounding_box.min_y(),
+            bounding_box.max_z(),
+        );
+        let colliders = collision_world.get_collisions_with_context(&below, collision_context);
+        if colliders.is_empty() {
+            return false;
+        }
+
+        let available_space_below =
+            -shapes::collide(Axis::Y, &bounding_box, &colliders, -FLIGHT_DISABLE_RANGE);
+        available_space_below < FLIGHT_DISABLE_RANGE
     }
 
     /// Sends the current world difficulty to the client.
@@ -265,6 +1085,8 @@ impl Player {
     /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
     /// range modifiers every tick.
     pub(super) fn update_player_attributes(&self) {
+        LivingEntity::refresh_all_equipment_attribute_modifiers(self);
+
         let is_creative = self.game_mode() == GameType::Creative;
         let mut attrs = self.attributes().lock();
 
@@ -398,7 +1220,7 @@ impl Player {
         };
 
         let world = self.get_world();
-        let Some(target) = world.entity_manager().get_by_id(entity_id) else {
+        let Some(target) = world.get_accessible_entity_by_id(entity_id) else {
             return;
         };
 
@@ -438,17 +1260,9 @@ impl Player {
         });
     }
 
-    /// Triggers arm swing animation and broadcasts it to nearby players.
+    /// Triggers arm swing animation and broadcasts it to tracking players.
     pub fn swing(&self, hand: InteractionHand, update_self: bool) {
-        let action = match hand {
-            InteractionHand::MainHand => AnimateAction::SwingMainHand,
-            InteractionHand::OffHand => AnimateAction::SwingOffHand,
-        };
-        let packet = CAnimate::new(self.id(), action);
-
-        let chunk = *self.last_chunk_pos.lock();
-        let exclude = if update_self { None } else { Some(self.id()) };
-        self.get_world().broadcast_to_nearby(chunk, packet, exclude);
+        LivingEntity::swing(self, hand, update_self);
     }
 
     /// Handles the use of an item on a block.
@@ -509,8 +1323,7 @@ impl Player {
 
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
 
-        if let InteractionResult::Success = result {
-            // TODO: Trigger arm swing animation if needed
+        if result.should_swing_server() {
             self.swing(packet.hand, true);
         }
 
@@ -520,6 +1333,10 @@ impl Player {
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
     pub fn handle_player_action(&self, packet: SPlayerAction) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
         let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
@@ -563,17 +1380,43 @@ impl Player {
                 log::debug!("Player {} released use item", self.gameprofile.name);
             }
             PlayerAction::SwapItemWithOffhand => {
-                // TODO: Implement swap item with offhand (F key)
-                log::debug!("Player {} wants to swap items", self.gameprofile.name);
+                if self.game_mode() == GameType::Spectator {
+                    return;
+                }
+
+                let changed = self.inventory.lock().swap_hands();
+                if changed {
+                    self.broadcast_entity_event(EntityStatus::SwapHands);
+                    self.broadcast_inventory_changes();
+                }
+                // TODO: Stop active item use once the using-item foundation exists.
             }
             PlayerAction::Stab => {
-                log::debug!("Player {} performed stab action", self.gameprofile.name);
+                if self.game_mode() == GameType::Spectator {
+                    return;
+                }
+
+                let main_hand_item = {
+                    let inventory = self.inventory.lock();
+                    let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+                    stack.copy_with_count(stack.count())
+                };
+                if self.cannot_attack_with_item(&main_hand_item, 5) {
+                    return;
+                }
+                if let Some(piercing_weapon) = main_hand_item.get_piercing_weapon() {
+                    self.piercing_attack(&main_hand_item, piercing_weapon);
+                }
             }
         }
     }
 
     /// Handles the use of an item.
     pub fn handle_use_item(&self, packet: SUseItem) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
         log::info!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
             self.gameprofile.name,
@@ -588,7 +1431,7 @@ impl Player {
         let world = self.get_world();
         let result = use_item(self, &world, packet.hand);
 
-        if let InteractionResult::Success = result {
+        if result.should_swing_server() {
             self.swing(packet.hand, true);
         }
 
@@ -746,4 +1589,35 @@ fn strip_formatting_codes(text: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::vanilla_entities;
+
+    use super::Player;
+
+    #[test]
+    fn invalid_attack_targets_include_xp_orbs() {
+        assert!(Player::is_invalid_attack_target(
+            1,
+            1,
+            &vanilla_entities::PLAYER
+        ));
+        assert!(Player::is_invalid_attack_target(
+            1,
+            2,
+            &vanilla_entities::ITEM
+        ));
+        assert!(Player::is_invalid_attack_target(
+            1,
+            2,
+            &vanilla_entities::EXPERIENCE_ORB
+        ));
+        assert!(!Player::is_invalid_attack_target(
+            1,
+            2,
+            &vanilla_entities::PIG
+        ));
+    }
 }

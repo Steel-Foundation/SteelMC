@@ -1207,7 +1207,7 @@ pub(crate) fn build() -> TokenStream {
                         frequency: #freq,
                         frequency_reduction_method: #freq_method,
                         exclusion_zone: #exclusion,
-                        locate_offset: [#locate_x, #locate_y, #locate_z],
+                        locate_offset: IVec3::new(#locate_x, #locate_y, #locate_z),
                     }
                 }
             }
@@ -1261,7 +1261,7 @@ pub(crate) fn build() -> TokenStream {
                         salt: #salt,
                         frequency: #freq,
                         frequency_reduction_method: #freq_method,
-                        locate_offset: [#locate_x, #locate_y, #locate_z],
+                        locate_offset: IVec3::new(#locate_x, #locate_y, #locate_z),
                     }
                 }
             }
@@ -1283,6 +1283,7 @@ pub(crate) fn build() -> TokenStream {
             SpreadTypeData, FrequencyMethodData, ExclusionZoneData,
         };
         use steel_utils::Identifier;
+        use glam::IVec3;
 
         /// Returns all vanilla structure sets parsed from the datapack.
         pub fn vanilla_structure_sets() -> Vec<StructureSetData> {

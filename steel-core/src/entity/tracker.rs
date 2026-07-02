@@ -9,17 +9,18 @@ use std::sync::Arc;
 use glam::DVec3;
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetPassengers,
-    CUpdateAttributes, to_angle_byte,
+    AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetEntityLink,
+    CSetEntityMotion, CSetEquipment, CSetPassengers, CUpdateAttributes, EquipmentSlotItem,
+    to_angle_byte,
 };
-use steel_registry::RegistryEntry;
 use steel_registry::entity_data::DataValue;
+use steel_registry::{RegistryEntry, vanilla_entities};
 use steel_utils::ChunkPos;
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::{
-    Entity, EntityMovementSyncPacket, ServerEntityMovementSyncState,
+    Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
     ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
 };
 use crate::player::Player;
@@ -32,6 +33,35 @@ pub struct EntityTracker {
     entities: scc::HashMap<i32, TrackedEntity>,
 }
 
+/// Packet sinks used by [`EntityTracker::send_changes`].
+pub struct EntityChangeSenders<
+    Movement,
+    SelfMovement,
+    EntityData,
+    Attributes,
+    MobEffects,
+    Equipment,
+    Passengers,
+    EntityLink,
+> {
+    /// Broadcasts movement and velocity sync packets.
+    pub movement: Movement,
+    /// Sends vanilla self-inclusive hurt motion sync to one player.
+    pub self_movement: SelfMovement,
+    /// Broadcasts entity data watcher changes.
+    pub entity_data: EntityData,
+    /// Broadcasts dirty syncable attributes.
+    pub attributes: Attributes,
+    /// Sends mob-effect add/remove packets to a specific player.
+    pub mob_effects: MobEffects,
+    /// Broadcasts dirty equipment slots.
+    pub equipment: Equipment,
+    /// Sends passenger updates to a specific player.
+    pub passengers: Passengers,
+    /// Broadcasts leash/link holder updates.
+    pub entity_link: EntityLink,
+}
+
 /// Tracking data for a single entity.
 struct TrackedEntity {
     /// Weak reference to the entity. When this fails to upgrade, entity is dead.
@@ -40,6 +70,8 @@ struct TrackedEntity {
     server_entity: SyncMutex<ServerEntityMovementSyncState>,
     /// Last direct passenger ids sent to tracking clients.
     last_passenger_ids: SyncMutex<Vec<i32>>,
+    /// Last leash holder id sent to tracking clients.
+    last_leash_holder_id: SyncMutex<Option<i32>>,
     /// Vanilla client tracking range converted to blocks.
     tracking_range: EntityTrackingRange,
     /// Current chunk used by the player-view predicate.
@@ -136,11 +168,12 @@ impl EntityTracker {
                 entity.velocity(),
                 entity.on_ground(),
                 entity.rotation(),
-                entity.rotation().0,
+                entity.head_yaw(),
                 entity.entity_type().update_interval,
                 entity.entity_type().track_deltas,
             )),
             last_passenger_ids: SyncMutex::new(self.direct_tracked_passenger_ids(entity.as_ref())),
+            last_leash_holder_id: SyncMutex::new(leash_holder_id(entity.as_ref())),
             tracking_range,
             registered_chunk,
             seen_by: SyncRwLock::new(players_to_notify),
@@ -183,7 +216,12 @@ impl EntityTracker {
     /// Mirrors vanilla `TrackedEntity.updatePlayer`: each tracked entity checks
     /// whether the player tracks the entity chunk, passes the entity-specific
     /// broadcast predicate, and is inside the effective horizontal range.
-    pub fn update_player(&self, player: &Player, view: &PlayerChunkView) {
+    pub fn update_player(
+        &self,
+        player: &Player,
+        view: &PlayerChunkView,
+        is_chunk_sent: impl Fn(ChunkPos) -> bool,
+    ) {
         let player_id = player.id();
         let player_pos = player.position();
         let player_view_distance = view.view_distance;
@@ -202,6 +240,7 @@ impl EntityTracker {
             let visible = !entity.is_removed()
                 && entity_id != player_id
                 && view.contains(tracked.registered_chunk)
+                && is_chunk_sent(tracked.registered_chunk)
                 && entity.broadcast_to_player(player)
                 && is_within_tracking_distance(
                     entity.position(),
@@ -251,21 +290,53 @@ impl EntityTracker {
     /// Sends tracker-owned movement changes for all tracked entities.
     ///
     /// Mirrors vanilla `ChunkMap.tick` driving `ServerEntity.sendChanges`.
-    pub fn send_changes(
+    #[expect(
+        clippy::too_many_lines,
+        reason = "entity tracker fanout mirrors vanilla sendChanges ordering"
+    )]
+    pub fn send_changes<
+        Movement,
+        SelfMovement,
+        EntityData,
+        Attributes,
+        MobEffects,
+        Equipment,
+        Passengers,
+        EntityLink,
+    >(
         &self,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
-        mut broadcast_movement: impl FnMut(i32, EntityMovementSyncPacket),
-        mut broadcast_entity_data: impl FnMut(i32, Vec<DataValue>),
-        mut broadcast_attributes: impl FnMut(i32, Vec<AttributeSnapshot>),
-        mut send_passengers: impl FnMut(i32, CSetPassengers),
-    ) {
+        mut senders: EntityChangeSenders<
+            Movement,
+            SelfMovement,
+            EntityData,
+            Attributes,
+            MobEffects,
+            Equipment,
+            Passengers,
+            EntityLink,
+        >,
+    ) where
+        Movement: FnMut(i32, EntityMovementSyncPacket),
+        SelfMovement: FnMut(i32, EntityMovementSyncPacket),
+        EntityData: FnMut(i32, Vec<DataValue>),
+        Attributes: FnMut(i32, Vec<AttributeSnapshot>),
+        MobEffects: FnMut(i32, MobEffectSyncPacket),
+        Equipment: FnMut(i32, CSetEquipment),
+        Passengers: FnMut(i32, CSetPassengers),
+        EntityLink: FnMut(i32, CSetEntityLink),
+    {
         let mut dead_entities = Vec::new();
         let mut entities_to_refresh = Vec::new();
         let mut passenger_packets_to_send = Vec::new();
         let mut packets_to_broadcast = Vec::new();
+        let mut self_movement_packets = Vec::new();
         let mut entity_data_to_broadcast = Vec::new();
         let mut attributes_to_broadcast = Vec::new();
+        let mut mob_effect_packets_to_send = Vec::new();
+        let mut equipment_to_broadcast = Vec::new();
+        let mut entity_links_to_broadcast = Vec::new();
 
         self.entities.iter_sync(|entity_id, tracked| {
             let entity_id = *entity_id;
@@ -277,6 +348,8 @@ impl EntityTracker {
             if entity.is_removed() {
                 return true;
             }
+
+            entity.update_data_before_sync();
 
             let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
             {
@@ -320,7 +393,7 @@ impl EntityTracker {
                         position: entity.position(),
                         velocity: entity.velocity(),
                         body_rotation: entity.rotation(),
-                        head_yaw: entity.rotation().0,
+                        head_yaw: entity.head_yaw(),
                         on_ground: entity.on_ground(),
                         needs_velocity_sync: entity.needs_velocity_sync(),
                         has_dirty_entity_data,
@@ -330,12 +403,67 @@ impl EntityTracker {
                 entity.clear_velocity_sync();
             }
             result.for_each_packet(|packet| packets_to_broadcast.push((entity_id, packet)));
+            if entity.hurt_marked() {
+                let velocity = entity.velocity();
+                packets_to_broadcast.push((
+                    entity_id,
+                    EntityMovementSyncPacket::from(CSetEntityMotion::new(entity_id, velocity)),
+                ));
+                if entity.entity_type() == &vanilla_entities::PLAYER {
+                    self_movement_packets.push((
+                        entity_id,
+                        EntityMovementSyncPacket::from(CSetEntityMotion::new(entity_id, velocity)),
+                    ));
+                }
+                entity.clear_hurt_mark();
+            }
             if let Some(dirty_entity_data) = dirty_entity_data {
                 entity_data_to_broadcast.push((entity_id, dirty_entity_data));
             }
             let dirty_attributes = entity.drain_dirty_syncable_attributes();
             if !dirty_attributes.is_empty() {
                 attributes_to_broadcast.push((entity_id, dirty_attributes));
+            }
+            let dirty_mob_effects = entity.drain_dirty_mob_effects();
+            if !dirty_mob_effects.is_empty() {
+                let mut recipient_ids = FxHashSet::default();
+                if entity.entity_type() == &vanilla_entities::PLAYER
+                    && get_player(entity_id).is_some()
+                {
+                    recipient_ids.insert(entity_id);
+                }
+                for passenger in entity.passengers() {
+                    let passenger_id = passenger.id();
+                    if passenger.entity_type() == &vanilla_entities::PLAYER
+                        && get_player(passenger_id).is_some()
+                    {
+                        recipient_ids.insert(passenger_id);
+                    }
+                }
+                for recipient_id in recipient_ids {
+                    for change in &dirty_mob_effects {
+                        mob_effect_packets_to_send.push((
+                            recipient_id,
+                            change.packet(entity_id, recipient_id == entity_id),
+                        ));
+                    }
+                }
+            }
+            let dirty_equipment = entity.drain_dirty_equipment();
+            if !dirty_equipment.is_empty() {
+                equipment_to_broadcast.push((entity_id, dirty_equipment));
+            }
+
+            let leash_holder_id = leash_holder_id(entity.as_ref());
+            {
+                let mut last_leash_holder_id = tracked.last_leash_holder_id.lock();
+                if *last_leash_holder_id != leash_holder_id {
+                    entity_links_to_broadcast.push((
+                        entity_id,
+                        CSetEntityLink::new(entity_id, leash_holder_id.unwrap_or_default()),
+                    ));
+                    *last_leash_holder_id = leash_holder_id;
+                }
             }
 
             true
@@ -346,7 +474,7 @@ impl EntityTracker {
         }
 
         for (player_id, packet) in passenger_packets_to_send {
-            send_passengers(player_id, packet);
+            (senders.passengers)(player_id, packet);
         }
 
         for entity_id in entities_to_refresh {
@@ -354,15 +482,31 @@ impl EntityTracker {
         }
 
         for (entity_id, packet) in packets_to_broadcast {
-            broadcast_movement(entity_id, packet);
+            (senders.movement)(entity_id, packet);
+        }
+
+        for (player_id, packet) in self_movement_packets {
+            (senders.self_movement)(player_id, packet);
         }
 
         for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
-            broadcast_entity_data(entity_id, dirty_entity_data);
+            (senders.entity_data)(entity_id, dirty_entity_data);
         }
 
         for (entity_id, dirty_attributes) in attributes_to_broadcast {
-            broadcast_attributes(entity_id, dirty_attributes);
+            (senders.attributes)(entity_id, dirty_attributes);
+        }
+
+        for (player_id, packet) in mob_effect_packets_to_send {
+            (senders.mob_effects)(player_id, packet);
+        }
+
+        for (entity_id, dirty_equipment) in equipment_to_broadcast {
+            (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
+        }
+
+        for (entity_id, packet) in entity_links_to_broadcast {
+            (senders.entity_link)(entity_id, packet);
         }
     }
 
@@ -647,6 +791,13 @@ impl EntityTracker {
     }
 }
 
+fn leash_holder_id(entity: &dyn Entity) -> Option<i32> {
+    entity
+        .as_mob()
+        .and_then(super::mob::Mob::leash_holder)
+        .map(|holder| holder.id())
+}
+
 fn is_within_tracking_distance(
     entity_pos: DVec3,
     player_pos: DVec3,
@@ -691,40 +842,45 @@ struct EntitySpawnPairing {
     spawn_packet: CAddEntity,
     entity_data: Vec<DataValue>,
     attributes: Vec<AttributeSnapshot>,
+    equipment: Vec<EquipmentSlotItem>,
     passenger_packets: Vec<CSetPassengers>,
+    entity_link_packet: Option<CSetEntityLink>,
 }
 
 impl EntitySpawnPairing {
     fn from_entity(entity: &SharedEntity, passenger_packets: Vec<CSetPassengers>) -> Self {
-        let pos = entity.position();
+        entity.update_data_before_sync();
+
+        let pos = entity.spawn_position();
         let vel = entity.velocity();
         let (yaw, pitch) = entity.rotation();
+        let head_yaw = entity.head_yaw();
         let entity_type_id = entity.entity_type().id() as i32;
 
         // Convert rotation from degrees to protocol byte format (256th of a full rotation)
         // Uses to_angle_byte which matches vanilla's Mth.packDegrees
         let x_rot = to_angle_byte(pitch);
         let y_rot = to_angle_byte(yaw);
+        let head_y_rot = to_angle_byte(head_yaw);
 
         Self {
             spawn_packet: CAddEntity {
                 id: entity.id(),
                 uuid: entity.uuid(),
                 entity_type: entity_type_id,
-                x: pos.x,
-                y: pos.y,
-                z: pos.z,
-                velocity_x: vel.x,
-                velocity_y: vel.y,
-                velocity_z: vel.z,
+                position: pos,
+                velocity: vel,
                 x_rot,
                 y_rot,
-                head_y_rot: y_rot,
+                head_y_rot,
                 data: entity.spawn_data(),
             },
             entity_data: entity.pack_all_entity_data(),
             attributes: entity.pack_syncable_attributes(),
+            equipment: entity.pack_all_equipment(),
             passenger_packets,
+            entity_link_packet: leash_holder_id(entity.as_ref())
+                .map(|holder_id| CSetEntityLink::new(entity.id(), holder_id)),
         }
     }
 
@@ -740,12 +896,17 @@ impl EntitySpawnPairing {
                 bundle.add(CUpdateAttributes::new(entity_id, self.attributes));
             }
 
+            if !self.equipment.is_empty() {
+                bundle.add(CSetEquipment::new(entity_id, self.equipment));
+            }
+
             for packet in self.passenger_packets {
                 bundle.add(packet);
             }
 
-            // TODO: Add SetEquipment and leash/link packets when those runtime
-            // systems exist with a complete serialization contract.
+            if let Some(packet) = self.entity_link_packet {
+                bundle.add(packet);
+            }
         });
     }
 }
@@ -771,17 +932,27 @@ mod tests {
         sync::{Arc, Weak},
     };
 
-    use steel_protocol::packets::game::AttributeSnapshot;
-    use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities};
+    use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{
+        entity_type::EntityTypeRef, test_support, vanilla_entities, vanilla_items,
+    };
+    use steel_utils::BlockPos;
 
     use super::*;
-    use crate::entity::EntityBase;
+    use crate::entity::{
+        EntityBase, Mob,
+        entities::{LeashFenceKnotEntity, PigEntity},
+    };
+    use crate::inventory::equipment::EquipmentSlot;
 
     struct PairingTestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
         attributes: Vec<AttributeSnapshot>,
         dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
+        equipment: SyncMutex<Vec<EquipmentSlotItem>>,
+        dirty_equipment: SyncMutex<Vec<EquipmentSlotItem>>,
         passengers: SyncMutex<Vec<WeakEntity>>,
         vehicle: SyncMutex<Option<WeakEntity>>,
     }
@@ -801,6 +972,8 @@ mod tests {
                 entity_type,
                 attributes,
                 dirty_attributes: SyncMutex::new(Vec::new()),
+                equipment: SyncMutex::new(Vec::new()),
+                dirty_equipment: SyncMutex::new(Vec::new()),
                 passengers: SyncMutex::new(Vec::new()),
                 vehicle: SyncMutex::new(None),
             })
@@ -825,6 +998,14 @@ mod tests {
         fn set_dirty_attributes(&self, attributes: Vec<AttributeSnapshot>) {
             *self.dirty_attributes.lock() = attributes;
         }
+
+        fn set_equipment(&self, equipment: Vec<EquipmentSlotItem>) {
+            *self.equipment.lock() = equipment;
+        }
+
+        fn set_dirty_equipment(&self, equipment: Vec<EquipmentSlotItem>) {
+            *self.dirty_equipment.lock() = equipment;
+        }
     }
 
     impl Entity for PairingTestEntity {
@@ -842,6 +1023,14 @@ mod tests {
 
         fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
             mem::take(&mut *self.dirty_attributes.lock())
+        }
+
+        fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+            self.equipment.lock().clone()
+        }
+
+        fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+            mem::take(&mut *self.dirty_equipment.lock())
         }
 
         fn vehicle(&self) -> Option<SharedEntity> {
@@ -872,13 +1061,14 @@ mod tests {
                 entity.velocity(),
                 entity.on_ground(),
                 entity.rotation(),
-                entity.rotation().0,
+                entity.head_yaw(),
                 entity.entity_type().update_interval,
                 entity.entity_type().track_deltas,
             )),
             last_passenger_ids: SyncMutex::new(
                 tracker.direct_tracked_passenger_ids(entity.as_ref()),
             ),
+            last_leash_holder_id: SyncMutex::new(leash_holder_id(entity.as_ref())),
             tracking_range: EntityTrackingRange::from_client_chunk_range(
                 entity.entity_type().client_tracking_range,
             ),
@@ -897,6 +1087,27 @@ mod tests {
         tracker.entities.update_sync(&entity_id, |_, tracked| {
             tracked.seen_by.write().insert(player_id);
         });
+    }
+
+    fn assert_has_velocity_packet(
+        updates: &[(i32, EntityMovementSyncPacket)],
+        entity_id: i32,
+        velocity: DVec3,
+    ) {
+        let has_packet = updates.iter().any(|(sent_entity_id, packet)| {
+            let EntityMovementSyncPacket::Velocity(packet) = packet else {
+                return false;
+            };
+            *sent_entity_id == entity_id
+                && packet.entity_id == entity_id
+                && packet.vel.x.to_bits() == velocity.x.to_bits()
+                && packet.vel.y.to_bits() == velocity.y.to_bits()
+                && packet.vel.z.to_bits() == velocity.z.to_bits()
+        });
+        assert!(
+            has_packet,
+            "expected velocity packet for entity {entity_id} with velocity {velocity:?}, got {updates:?}"
+        );
     }
 
     #[test]
@@ -1006,6 +1217,48 @@ mod tests {
     }
 
     #[test]
+    fn spawn_pairing_includes_non_empty_equipment() {
+        test_support::init_test_registry();
+
+        let entity_typed = PairingTestEntity::new(1, Vec::new());
+        let stack = ItemStack::new(&vanilla_items::ITEMS.elytra);
+        entity_typed.set_equipment(vec![EquipmentSlotItem {
+            slot: EquipmentSlot::Chest,
+            item_stack: stack.clone(),
+        }]);
+        let entity: SharedEntity = entity_typed;
+        let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
+
+        assert_eq!(pairing.spawn_packet.id, entity.id());
+        assert_eq!(pairing.equipment.len(), 1);
+        assert_eq!(pairing.equipment[0].slot, EquipmentSlot::Chest);
+        assert_eq!(pairing.equipment[0].item_stack, stack);
+    }
+
+    #[test]
+    fn spawn_pairing_uses_entity_spawn_packet_position() {
+        test_support::init_test_registry();
+
+        let entity: SharedEntity = Arc::new(LeashFenceKnotEntity::new_attached(
+            &vanilla_entities::LEASH_KNOT,
+            1,
+            BlockPos::new(4, 65, -9),
+            Weak::new(),
+        ));
+        let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
+
+        assert_eq!(pairing.spawn_packet.position.x.to_bits(), 4.0_f64.to_bits());
+        assert_eq!(
+            pairing.spawn_packet.position.y.to_bits(),
+            65.0_f64.to_bits()
+        );
+        assert_eq!(
+            pairing.spawn_packet.position.z.to_bits(),
+            (-9.0_f64).to_bits()
+        );
+    }
+
+    #[test]
     fn send_changes_broadcasts_dirty_attributes_once() {
         test_support::init_test_registry();
 
@@ -1024,10 +1277,16 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |entity_id, attributes| updates.push((entity_id, attributes)),
-            |_, _| {},
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |entity_id, attributes| updates.push((entity_id, attributes)),
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
         );
 
         assert_eq!(updates.len(), 1);
@@ -1040,12 +1299,155 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |entity_id, attributes| updates.push((entity_id, attributes)),
-            |_, _| {},
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |entity_id, attributes| updates.push((entity_id, attributes)),
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
         );
         assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn send_changes_broadcasts_dirty_equipment_once() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let entity_typed = PairingTestEntity::new(1, Vec::new());
+        let entity: SharedEntity = entity_typed.clone();
+        tracker.add(&entity, |_| Vec::new(), |_| None);
+
+        let stack = ItemStack::new(&vanilla_items::ITEMS.elytra);
+        entity_typed.set_dirty_equipment(vec![EquipmentSlotItem {
+            slot: EquipmentSlot::Chest,
+            item_stack: stack.clone(),
+        }]);
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |entity_id, packet| updates.push((entity_id, packet)),
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
+        );
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, 1);
+        assert_eq!(updates[0].1.entity_id, 1);
+        assert_eq!(updates[0].1.slots.len(), 1);
+        assert_eq!(updates[0].1.slots[0].slot, EquipmentSlot::Chest);
+        assert_eq!(updates[0].1.slots[0].item_stack, stack);
+
+        updates.clear();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |entity_id, packet| updates.push((entity_id, packet)),
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
+        );
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn send_changes_syncs_hurt_marked_player_motion_to_self() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let entity_typed =
+            PairingTestEntity::new_with_type(1, &vanilla_entities::PLAYER, Vec::new());
+        let entity: SharedEntity = entity_typed.clone();
+        track_entity_for_player(&tracker, &entity, 99);
+
+        entity_typed.set_velocity(DVec3::new(0.25, 0.4, -0.125));
+        entity_typed.mark_hurt();
+
+        let mut tracker_updates = Vec::new();
+        let mut self_updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |entity_id, packet| tracker_updates.push((entity_id, packet)),
+                self_movement: |player_id, packet| self_updates.push((player_id, packet)),
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
+        );
+
+        assert_has_velocity_packet(&tracker_updates, 1, DVec3::new(0.25, 0.4, -0.125));
+
+        assert_eq!(self_updates.len(), 1);
+        assert_eq!(self_updates[0].0, 1);
+        let EntityMovementSyncPacket::Velocity(packet) = &self_updates[0].1 else {
+            panic!(
+                "expected velocity self-motion packet, got {:?}",
+                self_updates[0].1
+            );
+        };
+        assert_eq!(packet.entity_id, 1);
+        assert_eq!(packet.vel.x.to_bits(), 0.25_f64.to_bits());
+        assert_eq!(packet.vel.y.to_bits(), 0.4_f64.to_bits());
+        assert_eq!(packet.vel.z.to_bits(), (-0.125_f64).to_bits());
+        assert!(!entity_typed.hurt_marked());
+    }
+
+    #[test]
+    fn send_changes_broadcasts_hurt_marked_non_player_motion() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let entity_typed = PairingTestEntity::new(1, Vec::new());
+        let entity: SharedEntity = entity_typed.clone();
+        track_entity_for_player(&tracker, &entity, 99);
+
+        entity_typed.set_velocity(DVec3::new(-0.25, 0.2, 0.125));
+        entity_typed.mark_hurt();
+
+        let mut tracker_updates = Vec::new();
+        let mut self_updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |entity_id, packet| tracker_updates.push((entity_id, packet)),
+                self_movement: |player_id, packet| self_updates.push((player_id, packet)),
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |_, _| {},
+            },
+        );
+
+        assert_has_velocity_packet(&tracker_updates, 1, DVec3::new(-0.25, 0.2, 0.125));
+        assert!(self_updates.is_empty());
+        assert!(!entity_typed.hurt_marked());
     }
 
     #[test]
@@ -1122,6 +1524,112 @@ mod tests {
     }
 
     #[test]
+    fn spawn_pairing_includes_live_mob_leash_link_packet() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let pig_typed = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
+        assert!(pig_typed.set_leashed_to(&holder));
+        let pig: SharedEntity = pig_typed;
+
+        let pairing = tracker.spawn_pairing(&pig, 99);
+
+        assert_eq!(pairing.entity_link_packet, Some(CSetEntityLink::new(1, 2)));
+    }
+
+    #[test]
+    fn send_changes_broadcasts_leash_link_changes_once() {
+        test_support::init_test_registry();
+
+        let tracker = EntityTracker::new();
+        let pig: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
+        track_entity_for_player(&tracker, &pig, 99);
+        let Some(pig_mob) = pig.as_mob() else {
+            panic!("pig should expose mob behavior");
+        };
+
+        let mut updates = Vec::new();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |entity_id, packet| updates.push((entity_id, packet)),
+            },
+        );
+        assert!(updates.is_empty());
+
+        assert!(pig_mob.set_leashed_to(&holder));
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |entity_id, packet| updates.push((entity_id, packet)),
+            },
+        );
+        assert_eq!(updates, vec![(1, CSetEntityLink::new(1, 2))]);
+
+        updates.clear();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |entity_id, packet| updates.push((entity_id, packet)),
+            },
+        );
+        assert!(updates.is_empty());
+
+        pig_mob.remove_leash_state();
+        tracker.send_changes(
+            |_| Vec::new(),
+            |_| None,
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |_, _| {},
+                entity_link: |entity_id, packet| updates.push((entity_id, packet)),
+            },
+        );
+        assert_eq!(updates, vec![(1, CSetEntityLink::new(1, 0))]);
+    }
+
+    #[test]
     fn send_changes_broadcasts_passenger_changes_once() {
         test_support::init_test_registry();
 
@@ -1137,11 +1645,17 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |_, _| {},
-            |player_id, packet| {
-                updates.push((player_id, packet));
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |player_id, packet| {
+                    updates.push((player_id, packet));
+                },
+                entity_link: |_, _| {},
             },
         );
         assert!(updates.is_empty());
@@ -1150,11 +1664,17 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |_, _| {},
-            |player_id, packet| {
-                updates.push((player_id, packet));
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |player_id, packet| {
+                    updates.push((player_id, packet));
+                },
+                entity_link: |_, _| {},
             },
         );
         assert_eq!(updates.len(), 1);
@@ -1166,11 +1686,17 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |_, _| {},
-            |player_id, packet| {
-                updates.push((player_id, packet));
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |player_id, packet| {
+                    updates.push((player_id, packet));
+                },
+                entity_link: |_, _| {},
             },
         );
         assert!(updates.is_empty());
@@ -1180,11 +1706,17 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |_, _| {},
-            |player_id, packet| {
-                updates.push((player_id, packet));
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |player_id, packet| {
+                    updates.push((player_id, packet));
+                },
+                entity_link: |_, _| {},
             },
         );
         assert_eq!(updates.len(), 1);
@@ -1212,11 +1744,17 @@ mod tests {
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,
-            |_, _| {},
-            |_, _| {},
-            |_, _| {},
-            |player_id, packet| {
-                updates.push((player_id, packet));
+            EntityChangeSenders {
+                movement: |_, _| {},
+                self_movement: |_, _| {},
+                entity_data: |_, _| {},
+                attributes: |_, _| {},
+                mob_effects: |_, _| {},
+                equipment: |_, _| {},
+                passengers: |player_id, packet| {
+                    updates.push((player_id, packet));
+                },
+                entity_link: |_, _| {},
             },
         );
 

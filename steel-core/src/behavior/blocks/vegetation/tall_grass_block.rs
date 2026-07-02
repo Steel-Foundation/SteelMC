@@ -19,7 +19,7 @@ use crate::{
             bonemealable::Bonemealable,
             default_surviving_state,
             vegetation_block::{
-                double_plant_can_survive, vegetation_can_survive, vegetation_update_shape,
+                double_plant_can_survive, survival_update_shape, vegetation_can_survive,
             },
         },
     },
@@ -58,7 +58,7 @@ impl BlockBehavior for TallGrassBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        vegetation_update_shape(self, state, world, pos)
+        survival_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

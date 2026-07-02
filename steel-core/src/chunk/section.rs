@@ -4,7 +4,7 @@ use std::{fmt::Debug, io::Cursor, sync::LazyLock};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
 use steel_registry::{REGISTRY, RegistryEntry};
-use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
@@ -126,14 +126,15 @@ impl Sections {
         debug_assert!(z < BlockPalette::SIZE);
 
         let total = self.sections.len() * 16;
-        buf.clear();
-        buf.resize(total, BlockStateId(0));
+        if buf.len() != total {
+            buf.resize(total, BlockStateId::default());
+        }
         for (i, holder) in self.sections.iter().enumerate() {
             let guard = holder.read();
             let base = i * 16;
-            for ly in 0..16 {
-                buf[base + ly] = guard.states.get(x, ly, z);
-            }
+            guard
+                .states
+                .copy_column_into(x, z, &mut buf[base..base + 16]);
         }
     }
 
@@ -174,20 +175,56 @@ impl Sections {
         }
     }
 
+    /// Returns whether each real chunk section contains no non-air blocks.
+    #[must_use]
+    pub fn section_emptiness_map(&self) -> Box<[bool]> {
+        self.sections
+            .iter()
+            .map(|section| section.read().is_empty())
+            .collect()
+    }
+
+    /// Returns block-light source positions in `ScalableLux` section/local-index order.
+    #[must_use]
+    pub fn block_light_sources(&self, chunk_pos: ChunkPos, min_y: i32) -> Vec<BlockPos> {
+        let mut sources = Vec::new();
+        let chunk_min_x = chunk_pos.0.x * BlockPalette::SIZE as i32;
+        let chunk_min_z = chunk_pos.0.y * BlockPalette::SIZE as i32;
+
+        for (section_index, section) in self.sections.iter().enumerate() {
+            let section_min_y = min_y + (section_index * BlockPalette::SIZE) as i32;
+            section.read().append_block_light_sources(
+                chunk_min_x,
+                section_min_y,
+                chunk_min_z,
+                &mut sources,
+            );
+        }
+
+        sources
+    }
+
     /// Writes multiple blocks in one column, holding each section's write guard
     /// across all writes to that section. Most efficient when blocks are grouped
     /// by section (e.g. descending `relative_y` from a top-to-bottom scan).
     pub fn write_column_blocks(&self, x: usize, z: usize, blocks: &[(usize, BlockStateId)]) {
-        debug_assert!(x < BlockPalette::SIZE);
-        debug_assert!(z < BlockPalette::SIZE);
+        const DIM: usize = BlockPalette::SIZE;
+        debug_assert!(x < DIM);
+        debug_assert!(z < DIM);
 
         let mut i = 0;
         while i < blocks.len() {
-            let section_idx = blocks[i].0 / BlockPalette::SIZE;
+            let section_idx = blocks[i].0 / DIM;
             let mut guard = self.sections[section_idx].write();
-            while i < blocks.len() && blocks[i].0 / BlockPalette::SIZE == section_idx {
+            guard.states.enter_building_mode();
+            let Some(cube) = guard.states.as_building_slice_mut() else {
+                unreachable!("just entered building mode")
+            };
+            let xz_base = z * DIM + x;
+            while i < blocks.len() && blocks[i].0 / DIM == section_idx {
                 let (rel_y, value) = blocks[i];
-                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                let local_y = rel_y % DIM;
+                cube[local_y * DIM * DIM + xz_base] = value;
                 i += 1;
             }
         }
@@ -196,20 +233,33 @@ impl Sections {
     /// Writes a batch of blocks at arbitrary positions, holding each section's
     /// write guard across consecutive entries in the same section. Blocks should
     /// be roughly grouped by section index for best performance.
+    ///
+    /// Each touched section enters worldgen Building mode (raw cube, no palette
+    /// tracking) so writes are O(1) stores. Per-write goes through a flat
+    /// `&mut [V]` view of the cube — bypasses the 3-arm `set` match and the
+    /// unused old-value load. `recalculate_counts_with` finalizes.
     pub fn write_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
+        const DIM: usize = BlockPalette::SIZE;
         let mut i = 0;
         while i < blocks.len() {
-            let section_idx = blocks[i].1 / BlockPalette::SIZE;
+            let section_idx = blocks[i].1 / DIM;
             let mut guard = self.sections[section_idx].write();
-            while i < blocks.len() && blocks[i].1 / BlockPalette::SIZE == section_idx {
+            guard.states.enter_building_mode();
+            let Some(cube) = guard.states.as_building_slice_mut() else {
+                // enter_building_mode just transitioned to Building.
+                unreachable!("just entered building mode")
+            };
+            while i < blocks.len() && blocks[i].1 / DIM == section_idx {
                 let (x, rel_y, z, value) = blocks[i];
-                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                let local_y = rel_y % DIM;
+                cube[local_y * DIM * DIM + z * DIM + x] = value;
                 i += 1;
             }
         }
     }
 
-    /// Sets a block at a relative position in the chunk.
+    /// Sets a block at a relative position in the chunk and keeps section
+    /// counters/palette serialization ready.
     pub fn set_relative_block(
         &self,
         relative_x: usize,
@@ -222,10 +272,28 @@ impl Sections {
 
         let idx = relative_y / BlockPalette::SIZE;
         let relative_y = relative_y % BlockPalette::SIZE;
-        self.sections[idx]
-            .write()
-            .states
-            .set(relative_x, relative_y, relative_z, value);
+        let mut guard = self.sections[idx].write();
+        guard.set_block_state(relative_x, relative_y, relative_z, value);
+    }
+
+    /// Sets a block during worldgen using the raw building palette path.
+    ///
+    /// Callers must finalize by recounting touched sections before save,
+    /// promotion, or packet serialization.
+    pub(crate) fn set_relative_block_for_generation(
+        &self,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+        value: BlockStateId,
+    ) {
+        debug_assert!(relative_x < BlockPalette::SIZE);
+        debug_assert!(relative_z < BlockPalette::SIZE);
+
+        let idx = relative_y / BlockPalette::SIZE;
+        let relative_y = relative_y % BlockPalette::SIZE;
+        let mut guard = self.sections[idx].write();
+        guard.set_block_state_for_generation(relative_x, relative_y, relative_z, value);
     }
 }
 
@@ -290,6 +358,41 @@ impl ChunkSection {
         self.ticking_block_count > 0
     }
 
+    /// Returns true if this section's palette may contain block-light sources.
+    #[must_use]
+    pub fn maybe_has_block_light_sources(&self) -> bool {
+        !self.is_empty()
+            && self
+                .states
+                .maybe_has(|state| state.get_light_emission() > 0)
+    }
+
+    /// Appends block-light source positions in `ScalableLux` local-index order.
+    pub fn append_block_light_sources(
+        &self,
+        chunk_min_x: i32,
+        section_min_y: i32,
+        chunk_min_z: i32,
+        sources: &mut Vec<BlockPos>,
+    ) {
+        if !self.maybe_has_block_light_sources() {
+            return;
+        }
+
+        for local_index in 0..BlockPalette::VOLUME {
+            let state = self.states.get_at_index(local_index);
+            if state.get_light_emission() == 0 {
+                continue;
+            }
+
+            sources.push(BlockPos::new(
+                chunk_min_x + (local_index & 15) as i32,
+                section_min_y + (local_index >> 8) as i32,
+                chunk_min_z + ((local_index >> 4) & 15) as i32,
+            ));
+        }
+    }
+
     /// Returns the number of non-air blocks in this section.
     #[must_use]
     pub const fn non_empty_block_count(&self) -> u16 {
@@ -326,6 +429,13 @@ impl ChunkSection {
     }
 
     /// Recalculates all cached counters using the provided behavior registry.
+    ///
+    /// Iterates the palette (`O(palette_size)`) rather than every cube cell
+    /// (`O(4096)`): each block-state appears at most once in the palette and
+    /// carries its own occurrence count, so we just classify each unique state
+    /// and multiply by its count. Mirrors Moonrise's `BlockCountingBitStorage`.
+    /// For a `Homogeneous` section that's a single classify; for typical
+    /// `Heterogeneous` sections palette is well under 16 entries.
     pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
         self.recalculate_counts_from_palette(|state| {
             Self::block_state_section_counts_with(state, block_behaviors)
@@ -336,6 +446,8 @@ impl ChunkSection {
         &mut self,
         mut counts_for_state: impl FnMut(BlockStateId) -> BlockStateSectionCounts,
     ) {
+        self.states.finalize_building();
+
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
         let mut ticking: u16 = 0;
@@ -363,6 +475,7 @@ impl ChunkSection {
                     );
                 }
             }
+            BlockPalette::Building(_) => unreachable!("finalize_building was just called"),
         }
 
         self.non_empty_block_count = non_empty;
@@ -385,6 +498,27 @@ impl ChunkSection {
         }
         if counts.randomly_ticking {
             *ticking += block_count;
+        }
+    }
+
+    /// Whether this section's palette contains any POI-type block state.
+    ///
+    /// Lets the Full-stage POI populate skip the full 4096-block
+    /// `scan_and_populate` for the overwhelming majority of sections
+    /// (stone/dirt/air) that hold no POI blocks — a palette scan of `O(≤16)`
+    /// instead of `O(4096)`. Mirrors vanilla's `LevelChunkSection.maybeHas`.
+    #[must_use]
+    pub fn contains_poi(&self) -> bool {
+        let poi = &REGISTRY.poi_types;
+        match &self.states {
+            BlockPalette::Homogeneous(state) => poi.is_poi_state(*state),
+            BlockPalette::Heterogeneous(data) => data
+                .palette
+                .iter()
+                .any(|(state, _)| poi.is_poi_state(*state)),
+            // Not yet finalized (only happens mid-worldgen, not at promotion);
+            // fall back to scanning rather than risk missing a POI.
+            BlockPalette::Building(_) => true,
         }
     }
 
@@ -415,6 +549,7 @@ impl ChunkSection {
         new_state: BlockStateId,
         block_behaviors: &BlockBehaviorRegistry,
     ) -> BlockStateId {
+        self.ensure_counter_ready_for_delta_with(block_behaviors);
         let old_state = self.states.set(x, y, z, new_state);
 
         if old_state != new_state {
@@ -426,23 +561,20 @@ impl ChunkSection {
         old_state
     }
 
-    /// Sets a block state and updates counters when the caller already knows
-    /// the replacement state's counter traits.
-    pub(crate) fn set_block_state_with_known_new_counts(
+    /// Sets a block state through the raw worldgen building path.
+    ///
+    /// Returns the old block state. Cached counters are intentionally not
+    /// updated; callers must recount before light, promotion, save, or packet
+    /// serialization.
+    pub(crate) fn set_block_state_for_generation(
         &mut self,
         x: usize,
         y: usize,
         z: usize,
         new_state: BlockStateId,
-        new_counts: BlockStateSectionCounts,
     ) -> BlockStateId {
-        let old_state = self.states.set(x, y, z, new_state);
-        if old_state != new_state {
-            let old_counts = Self::block_state_section_counts(old_state);
-            self.apply_count_change(old_counts, new_counts);
-        }
-
-        old_state
+        self.states.enter_building_mode();
+        self.states.set(x, y, z, new_state)
     }
 
     /// Returns the cached-counter traits for a block state using the global
@@ -452,6 +584,22 @@ impl ChunkSection {
             panic!("invalid block state id {}", state.0);
         };
         counts
+    }
+
+    pub(crate) fn finalize_generation_counts_if_needed(&mut self) {
+        if matches!(&self.states, BlockPalette::Building(_)) {
+            self.recalculate_counts();
+        }
+    }
+
+    fn ensure_counter_ready_for_delta_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
+        if matches!(&self.states, BlockPalette::Building(_)) {
+            log::debug!(
+                "finalizing worldgen Building palette before applying a counter-aware \
+                 block-state delta"
+            );
+            self.recalculate_counts_with(block_behaviors);
+        }
     }
 
     fn block_state_section_counts_with(
@@ -568,5 +716,27 @@ mod tests {
         assert_eq!(section.non_empty_block_count(), 6);
         assert_eq!(section.fluid_count(), 4);
         assert_eq!(section.ticking_block_count(), 1);
+    }
+
+    #[test]
+    fn counter_aware_write_recounts_building_palette_before_delta() {
+        init_test_behaviors();
+
+        let air = vanilla_blocks::AIR.default_state();
+        let stone = vanilla_blocks::STONE.default_state();
+        let mut section = ChunkSection::new_empty();
+
+        section.set_block_state_for_generation(0, 0, 0, stone);
+        assert_eq!(section.non_empty_block_count(), 0);
+
+        let old_state = section.set_block_state(0, 0, 0, air);
+
+        assert_eq!(old_state, stone);
+        assert_eq!(section.non_empty_block_count(), 0);
+
+        let old_state = section.set_block_state(0, 0, 0, stone);
+
+        assert_eq!(old_state, air);
+        assert_eq!(section.non_empty_block_count(), 1);
     }
 }

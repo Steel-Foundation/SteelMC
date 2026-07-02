@@ -52,12 +52,12 @@ pub mod entity_events;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;
-pub use geometry::{BlockLocalAabb, WorldAabb};
+pub use geometry::{BlockLocalAabb, BoundingBox, WorldAabb};
 pub use rotation::Rotation;
 pub use types::BlockPos;
 pub use types::BlockStateId;
-pub use types::BoundingBox;
 pub use types::ChunkPos;
+pub use types::GlobalPos;
 pub use types::Identifier;
 pub use types::PackedBlockPos;
 pub use types::PackedChunkLocalXZ;

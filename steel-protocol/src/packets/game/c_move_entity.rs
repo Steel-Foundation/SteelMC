@@ -111,7 +111,7 @@ pub struct CMoveEntityRot {
 /// Mirrors vanilla's `Mth.packDegrees()`: `(byte)floor(angle * 256.0F / 360.0F)`
 #[inline]
 #[must_use]
-pub fn to_angle_byte(degrees: f32) -> i8 {
+pub const fn to_angle_byte(degrees: f32) -> i8 {
     // Vanilla: (byte)floor(angle * 256.0F / 360.0F)
     // Cast to i32 first (safe for all angle values), then truncate to i8.
     // This matches Java's (byte) cast which truncates the low 8 bits.
@@ -125,7 +125,7 @@ pub fn to_angle_byte(degrees: f32) -> i8 {
 /// which differs from Rust's `round()` that rounds half away from zero.
 #[inline]
 #[must_use]
-pub fn encode_position(value: f64) -> i64 {
+pub const fn encode_position(value: f64) -> i64 {
     // Java Math.round() rounds half towards positive infinity:
     //   Math.round(0.5) = 1, Math.round(-0.5) = 0
     // Rust round() rounds half away from zero:

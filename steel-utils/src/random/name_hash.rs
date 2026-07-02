@@ -129,21 +129,15 @@ const fn const_md5(data: &[u8]) -> [u8; 16] {
 
     i = 0;
     while i < 64 {
-        let f;
-        let g;
-        if i < 16 {
-            f = (b & c) | (!b & d);
-            g = i;
+        let (f, g) = if i < 16 {
+            ((b & c) | (!b & d), i)
         } else if i < 32 {
-            f = (d & b) | (!d & c);
-            g = (5 * i + 1) % 16;
+            ((d & b) | (!d & c), (5 * i + 1) % 16)
         } else if i < 48 {
-            f = b ^ c ^ d;
-            g = (3 * i + 5) % 16;
+            (b ^ c ^ d, (3 * i + 5) % 16)
         } else {
-            f = c ^ (b | !d);
-            g = (7 * i) % 16;
-        }
+            (c ^ (b | !d), (7 * i) % 16)
+        };
 
         let temp = d;
         d = c;

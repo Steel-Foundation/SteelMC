@@ -20,8 +20,8 @@ use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entities};
 
 use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
-use crate::level_data::{LevelDataManager, WorldGenerationSettings};
-use crate::player::chunk_sender::ChunkSender;
+use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
@@ -37,15 +37,16 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     mem,
+    num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
+    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
-use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSetDefaultSpawnPosition, CSystemChat, CTabList,
+    CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -67,15 +68,49 @@ const CHUNK_SENDING_TPS: u64 = 20;
 /// Tick rate for the chunk scheduling loop.
 const CHUNK_SCHEDULING_TPS: u64 = 20;
 
-fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
-    let spawn = world.level_data.read().data().spawn.clone();
-    player.base().set_position_local(DVec3::new(
-        f64::from(spawn.x),
-        f64::from(spawn.y),
-        f64::from(spawn.z),
-    ));
-    player.set_rotation((spawn.angle, 0.0));
-    player.restore_game_modes(world.default_gamemode, world.default_gamemode);
+fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
+    cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn available_worker_threads() -> usize {
+    thread::available_parallelism().map_or(4, NonZero::get)
+}
+
+fn cap_positive_thread_count(
+    configured_threads: Option<usize>,
+    available_threads: usize,
+) -> Option<usize> {
+    let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
+    Some(configured_threads.min(available_threads.max(1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cap_positive_thread_count;
+
+    #[test]
+    fn positive_thread_count_is_capped_to_available_threads() {
+        assert_eq!(cap_positive_thread_count(Some(16), 8), Some(8));
+        assert_eq!(cap_positive_thread_count(Some(4), 8), Some(4));
+    }
+
+    #[test]
+    fn zero_thread_count_keeps_pool_default() {
+        assert_eq!(cap_positive_thread_count(Some(0), 8), None);
+        assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PreparedSpawn {
+    position: DVec3,
+    rotation: (f32, f32),
+}
+
+fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
+    player.base().set_position_local(spawn.position);
+    player.set_rotation(spawn.rotation);
+    player.restore_game_modes(world.default_gamemode, None);
     player
         .abilities
         .lock()
@@ -83,17 +118,28 @@ fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
 }
 
 fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
-    let spawn = world.level_data.read().data().spawn.clone();
+    let spawn = local_respawn_data_for_world(&world);
     TeleportTransition {
         target_world: world,
-        position: DVec3::new(
-            f64::from(spawn.x) + 0.5,
-            f64::from(spawn.y),
-            f64::from(spawn.z) + 0.5,
-        ),
-        rotation: (spawn.angle, 0.0),
+        position: respawn_position(&spawn),
+        rotation: (spawn.yaw, spawn.pitch),
         portal_cooldown: 0,
     }
+}
+
+fn local_respawn_data_for_world(world: &World) -> RespawnData {
+    let level_data = world.level_data.read();
+    let data = level_data.data();
+    RespawnData::of(world.key.clone(), data.spawn_pos(), data.spawn.angle, 0.0)
+}
+
+fn respawn_position(respawn_data: &RespawnData) -> DVec3 {
+    let pos = respawn_data.pos();
+    DVec3::new(
+        f64::from(pos.x()) + 0.5,
+        f64::from(pos.y()),
+        f64::from(pos.z()) + 0.5,
+    )
 }
 
 fn generation_settings_for_world(
@@ -120,14 +166,20 @@ fn world_config_registries() -> Result<(WorldGeneratorRegistry, WorldStorageRegi
 struct DomainPlayerState {
     world: Arc<World>,
     data: DomainPlayerData,
+    _spawn_chunk_request: ChunkRequestHandle,
 }
 
 enum DomainPlayerData {
-    Saved {
+    SavedRestored {
         data: Box<PersistentPlayerData>,
-        restore_location: bool,
     },
-    FirstVisit,
+    SavedWithoutLocation {
+        data: Box<PersistentPlayerData>,
+        default_spawn: PreparedSpawn,
+    },
+    FirstVisit {
+        default_spawn: PreparedSpawn,
+    },
 }
 
 struct DomainSwitchRequest {
@@ -283,10 +335,6 @@ fn restore_root_vehicle_for_player(
         return;
     };
 
-    let player_entity: SharedEntity = player.clone();
-    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-    attach_entity.position_rider(player.as_ref());
-
     if let Err(error) = world.register_loaded_entity_tree(&entities) {
         tracing::warn!(
             player = %player.gameprofile.name,
@@ -297,6 +345,11 @@ fn restore_root_vehicle_for_player(
         discard_restored_entities(&entities);
         return;
     }
+
+    let player_entity: SharedEntity = player.clone();
+    EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
+    attach_entity.position_rider(player.as_ref());
+    player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
 
     world.mark_chunk_dirty(root_chunk);
     for entity in &entities {
@@ -376,6 +429,11 @@ impl Server {
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            if let Some(chunk_generation_threads) =
+                configured_chunk_generation_threads(config.chunk_generation_threads)
+            {
+                builder = builder.num_threads(chunk_generation_threads);
+            }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
                 builder = builder.stack_size(8 * 1024 * 1024);
@@ -570,6 +628,7 @@ impl Server {
         fallback_world: Option<Arc<World>>,
         restore_saved_location: bool,
     ) -> Result<DomainPlayerState, String> {
+        let explicit_target_world = fallback_world.is_some();
         let mut world = self
             .worlds
             .default_world(target_domain)
@@ -592,13 +651,34 @@ impl Server {
                         &mut world,
                         &player.gameprofile.name,
                     );
+                let (data, spawn_position) = if restore_location {
+                    let spawn_position =
+                        DVec3::new(saved_data.pos[0], saved_data.pos[1], saved_data.pos[2]);
+                    (
+                        DomainPlayerData::SavedRestored {
+                            data: Box::new(saved_data),
+                        },
+                        spawn_position,
+                    )
+                } else {
+                    let (default_world, default_spawn) = self
+                        .prepare_domain_default_spawn(target_domain, explicit_target_world, &world)
+                        .await?;
+                    world = default_world;
+                    (
+                        DomainPlayerData::SavedWithoutLocation {
+                            data: Box::new(saved_data),
+                            default_spawn,
+                        },
+                        default_spawn.position,
+                    )
+                };
+                let spawn_chunk_request = world.prepare_player_spawn_chunks(spawn_position).await?;
                 log::info!("Loaded saved data for player {}", player.gameprofile.name);
                 Ok(DomainPlayerState {
                     world,
-                    data: DomainPlayerData::Saved {
-                        data: Box::new(saved_data),
-                        restore_location,
-                    },
+                    data,
+                    _spawn_chunk_request: spawn_chunk_request,
                 })
             }
             Ok(None) => {
@@ -607,9 +687,17 @@ impl Server {
                     player.gameprofile.name,
                     target_domain
                 );
+                let (default_world, default_spawn) = self
+                    .prepare_domain_default_spawn(target_domain, explicit_target_world, &world)
+                    .await?;
+                world = default_world;
+                let spawn_chunk_request = world
+                    .prepare_player_spawn_chunks(default_spawn.position)
+                    .await?;
                 Ok(DomainPlayerState {
                     world,
-                    data: DomainPlayerData::FirstVisit,
+                    data: DomainPlayerData::FirstVisit { default_spawn },
+                    _spawn_chunk_request: spawn_chunk_request,
                 })
             }
             Err(e) => Err(format!(
@@ -617,6 +705,51 @@ impl Server {
                 player.gameprofile.name, target_domain
             )),
         }
+    }
+
+    async fn prepare_domain_default_spawn(
+        &self,
+        target_domain: &str,
+        explicit_target_world: bool,
+        world: &Arc<World>,
+    ) -> Result<(Arc<World>, PreparedSpawn), String> {
+        if explicit_target_world {
+            return Ok((world.clone(), Self::prepare_default_spawn(world).await?));
+        }
+
+        let (world, respawn_data) = self.respawn_world_and_data_for_domain(target_domain)?;
+        let spawn = Self::prepare_respawn_spawn(&world, &respawn_data).await?;
+        Ok((world, spawn))
+    }
+
+    async fn prepare_default_spawn(world: &Arc<World>) -> Result<PreparedSpawn, String> {
+        let (spawn, spawn_pos) = {
+            let level_data = world.level_data.read();
+            (
+                level_data.data().spawn.clone(),
+                level_data.data().spawn_pos(),
+            )
+        };
+        let position = world
+            .find_adjusted_shared_spawn_pos(spawn_pos, world.default_gamemode)
+            .await?;
+        Ok(PreparedSpawn {
+            position,
+            rotation: (spawn.angle, 0.0),
+        })
+    }
+
+    async fn prepare_respawn_spawn(
+        world: &Arc<World>,
+        respawn_data: &RespawnData,
+    ) -> Result<PreparedSpawn, String> {
+        let position = world
+            .find_adjusted_shared_spawn_pos(respawn_data.pos(), world.default_gamemode)
+            .await?;
+        Ok(PreparedSpawn {
+            position,
+            rotation: (respawn_data.yaw, respawn_data.pitch),
+        })
     }
 
     fn resolve_saved_world(
@@ -650,18 +783,19 @@ impl Server {
 
     fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
         match &state.data {
-            DomainPlayerData::Saved {
-                data,
-                restore_location,
-            } => {
-                if *restore_location {
-                    data.apply_to_player(player);
-                } else {
-                    apply_first_visit_defaults(player, &state.world);
-                    data.apply_to_player_without_location(player);
-                }
+            DomainPlayerData::SavedRestored { data } => {
+                data.apply_to_player(player);
             }
-            DomainPlayerData::FirstVisit => apply_first_visit_defaults(player, &state.world),
+            DomainPlayerData::SavedWithoutLocation {
+                data,
+                default_spawn,
+            } => {
+                apply_default_spawn(player, &state.world, *default_spawn);
+                data.apply_to_player_without_location(player);
+            }
+            DomainPlayerData::FirstVisit { default_spawn } => {
+                apply_default_spawn(player, &state.world, *default_spawn);
+            }
         }
     }
 
@@ -682,11 +816,10 @@ impl Server {
 
     fn root_vehicle_to_restore(state: &DomainPlayerState) -> Option<PersistentRootVehicle> {
         match &state.data {
-            DomainPlayerData::Saved {
-                data,
-                restore_location: true,
-            } => data.root_vehicle.clone(),
-            DomainPlayerData::Saved { .. } | DomainPlayerData::FirstVisit => None,
+            DomainPlayerData::SavedRestored { data } => data.root_vehicle.clone(),
+            DomainPlayerData::SavedWithoutLocation { .. } | DomainPlayerData::FirstVisit { .. } => {
+                None
+            }
         }
     }
 
@@ -716,7 +849,7 @@ impl Server {
                 dimension: world.key.clone(),
                 seed: hashed_seed,
                 game_type: player.game_mode(),
-                previous_game_type: Some(player.previous_game_mode()),
+                previous_game_type: player.previous_game_mode(),
                 is_debug: false,
                 is_flat: world.is_flat,
                 last_death_location: None,
@@ -793,6 +926,97 @@ impl Server {
                 .next()
                 .expect("At least one world must exist")
         })
+    }
+
+    /// Resolves the default respawn world and data for a domain.
+    pub fn respawn_world_and_data_for_domain(
+        &self,
+        domain: &str,
+    ) -> Result<(Arc<World>, RespawnData), String> {
+        let default_world = self
+            .worlds
+            .default_world(domain)
+            .cloned()
+            .ok_or_else(|| format!("domain {domain} has no default world"))?;
+        let respawn_data = {
+            let level_data = default_world.level_data.read();
+            level_data.data().respawn_data_or_local(&default_world.key)
+        };
+
+        let Some(target_world) = self
+            .worlds
+            .get(respawn_data.dimension())
+            .filter(|world| world.domain() == domain)
+            .cloned()
+        else {
+            let respawn_data = default_world
+                .world_border_adjusted_respawn_data(local_respawn_data_for_world(&default_world));
+            return Ok((default_world.clone(), respawn_data));
+        };
+
+        let respawn_data = target_world.world_border_adjusted_respawn_data(respawn_data);
+        Ok((target_world, respawn_data))
+    }
+
+    /// Returns the default respawn data sent to clients in the given domain.
+    pub fn respawn_data_for_domain(&self, domain: &str) -> Result<RespawnData, String> {
+        self.respawn_world_and_data_for_domain(domain)
+            .map(|(_, respawn_data)| respawn_data)
+    }
+
+    /// Sets the default respawn data for the respawn data's domain and broadcasts it.
+    pub fn set_respawn_data(&self, respawn_data: RespawnData) -> Result<(), String> {
+        let domain = respawn_data.dimension().namespace.as_ref();
+        let default_world = self
+            .worlds
+            .default_world(domain)
+            .cloned()
+            .ok_or_else(|| format!("domain {domain} has no default world"))?;
+        let target_world = self
+            .worlds
+            .get(respawn_data.dimension())
+            .filter(|world| world.domain() == domain)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "respawn dimension {} is not loaded in domain {domain}",
+                    respawn_data.dimension()
+                )
+            })?;
+
+        if Arc::ptr_eq(&default_world, &target_world) {
+            let mut level_data = default_world.level_data.write();
+            let data = level_data.data_mut();
+            data.set_spawn_pos(respawn_data.pos());
+            data.spawn.angle = respawn_data.yaw;
+            data.set_respawn_data(respawn_data.clone());
+        } else {
+            default_world
+                .level_data
+                .write()
+                .data_mut()
+                .set_respawn_data(respawn_data.clone());
+
+            let mut level_data = target_world.level_data.write();
+            let data = level_data.data_mut();
+            data.set_spawn_pos(respawn_data.pos());
+            data.spawn.angle = respawn_data.yaw;
+        }
+
+        let packet = CSetDefaultSpawnPosition {
+            global_pos: respawn_data.global_pos.clone(),
+            yaw: respawn_data.yaw,
+            pitch: respawn_data.pitch,
+        };
+        for world in self
+            .worlds
+            .values()
+            .filter(|world| world.domain() == domain)
+        {
+            world.broadcast_to_all(packet.clone());
+        }
+
+        Ok(())
     }
 
     /// Returns the default domain's conventional nether world, if present.
@@ -991,7 +1215,7 @@ impl Server {
     fn send_chunks_for_player(
         player: &Arc<Player>,
         world: &Arc<World>,
-        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
     ) {
         let chunk_pos = *player.last_chunk_pos.lock();
         let connection = &player.connection;
@@ -1011,8 +1235,22 @@ impl Server {
         let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
 
         // Phase 3: commit (brief lock + generation check)
-        let mut sender = player.chunk_sender.lock();
-        sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch);
+        let sent_chunks = {
+            let mut sender = player.chunk_sender.lock();
+            sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
+        };
+
+        if sent_chunks.is_empty() {
+            return;
+        }
+
+        let Some(view) = *player.last_tracking_view.lock() else {
+            return;
+        };
+        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        world
+            .entity_tracker()
+            .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
     /// Executes one chunk scheduling tick across all worlds.
@@ -1244,10 +1482,11 @@ impl Server {
                 world = i,
                 elapsed = ?timings.elapsed,
                 tick_count,
-                player_tick = ?timings.player_tick,
+                entity_tick = ?timings.entity_tick,
                 broadcast_changes = ?cm.broadcast_changes,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
+                tick_block_entities = ?cm.tick_block_entities,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
                 "Game tick slow"

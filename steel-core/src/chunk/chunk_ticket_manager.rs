@@ -10,7 +10,7 @@ use steel_utils::ChunkPos;
 use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
 /// The maximum view distance for players.
-pub const MAX_VIEW_DISTANCE: u8 = 32;
+pub const MAX_VIEW_DISTANCE: u8 = 127;
 const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .get_step_to(ChunkStatus::Full)
     .accumulated_dependencies
@@ -731,6 +731,16 @@ mod tests {
                 "{status:?} request mapped to level {ticket_level:?}, which allows {allowed:?}"
             );
         }
+    }
+
+    #[test]
+    fn non_full_ticket_level_maps_to_generation_status() {
+        let ticket_level = ticket_level_for_status(ChunkStatus::StructureStarts);
+
+        assert!(!ticket_level.is_full());
+        assert!(generation_status(Some(ticket_level)).is_some_and(|status| {
+            status >= ChunkStatus::StructureStarts && status != ChunkStatus::Full
+        }));
     }
 
     #[test]

@@ -60,6 +60,10 @@ impl OverworldClimateSampler {
         // Ensure column cache is populated for this (x, z)
         cache.ensure(block_x, block_z, &self.noises);
 
+        let block_x = f64::from(block_x);
+        let block_y = f64::from(block_y);
+        let block_z = f64::from(block_z);
+
         // Density functions return f64 but vanilla truncates to float before quantizing.
         // The f64→f32→f64 round-trip through quantize_coord is intentional for parity.
         let temp =
@@ -82,6 +86,24 @@ impl OverworldClimateSampler {
             quantize_coord(f64::from(depth)),
             quantize_coord(f64::from(weirdness)),
         )
+    }
+
+    /// Pre-populate a column cache's flat-noise grid for a chunk's quart columns.
+    ///
+    /// The biome stage samples every quart cell in a chunk (1536 for the
+    /// overworld) in `section → x → y → z` order. Without a grid, the cache is a
+    /// single-entry lazy cache that misses on every cell (the innermost `z` loop
+    /// changes column each step), so the expensive flat (xz-only) climate noise
+    /// is recomputed per cell. Pre-computing the grid once — exactly as the noise
+    /// stage's `fill_from_noise` does — turns those into O(1) lookups. Bit-identical
+    /// because the grid evaluates the same functions at the same quart coordinates.
+    pub fn init_column_grid(
+        &self,
+        cache: &mut OverworldColumnCache,
+        chunk_block_x: i32,
+        chunk_block_z: i32,
+    ) {
+        cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
     }
 
     /// Finds the climate-biased overworld spawn origin.

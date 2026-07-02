@@ -4,6 +4,12 @@ use rustc_hash::FxHashSet;
 
 use super::{Entity, SharedEntity};
 
+/// Snapshots vanilla old position and rotation before an entity tick.
+pub(crate) fn snapshot_old_pos_and_rot_for_tick(entity: &dyn Entity) {
+    entity.set_old_position_to_current();
+    entity.base().set_old_rotation_to_current();
+}
+
 /// Recursively ticks vehicle passengers that are eligible in the caller's tick context.
 ///
 /// Mirrors vanilla `ServerLevel.tickPassenger`: invalid vehicle links are detached, and
@@ -54,6 +60,7 @@ fn tick_passenger(
     }
 
     if can_tick(entity) && ticked_entities.insert(entity.id()) {
+        snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
         entity.ride_tick();
         post_tick(entity);

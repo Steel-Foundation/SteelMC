@@ -140,7 +140,10 @@ impl Player {
 
         let info = ClientInformation {
             language: packet.language,
-            view_distance: packet.view_distance.clamp(2, 32) as u8,
+            view_distance: packet
+                .view_distance
+                .clamp(2, i32::from(self.config.view_distance).max(2))
+                as u8,
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
             model_customization: packet.model_customization,
@@ -156,6 +159,7 @@ impl Player {
             self.send_packet(CSetChunkCacheRadius {
                 radius: i32::from(new_view_distance),
             });
+            self.get_world().chunk_map.update_player_status(self);
         }
     }
 
