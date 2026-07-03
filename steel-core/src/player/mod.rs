@@ -1432,7 +1432,7 @@ impl Player {
                 has_death_location: false,
                 death_dimension_name: None,
                 death_location: None,
-                portal_cooldown_ticks: 0,
+                portal_cooldown_ticks: self.portal_cooldown(),
                 sea_level: new_world.sea_level,
                 data_kept,
             });
@@ -1971,6 +1971,7 @@ impl Entity for Player {
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let new_world = teleport_transition.target_world.clone();
+        self.set_portal_cooldown(teleport_transition.portal_cooldown);
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
             let rotation = teleport_transition.rotation;
@@ -1983,7 +1984,6 @@ impl Entity for Player {
             self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
-            // TODO: set portal cooldown from teleport_transition.portal_cooldown
             if !self.spawn(
                 teleport_transition.position,
                 teleport_transition.rotation,
