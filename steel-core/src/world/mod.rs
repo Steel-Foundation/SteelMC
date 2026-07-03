@@ -14,6 +14,7 @@ use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
+use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
@@ -37,7 +38,7 @@ use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
     BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, join_is_not_empty,
 };
@@ -57,7 +58,7 @@ use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_ty
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
-use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events};
+use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_poi_types};
 use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
     random::{RandomSource, legacy_random::LegacyRandom},
@@ -210,6 +211,29 @@ const fn initialize_border_packet(snapshot: WorldBorderSnapshot) -> CInitializeB
         warning_blocks: snapshot.warning_blocks,
         warning_time: snapshot.warning_time,
     }
+}
+
+fn portal_candidate_distance_sqr(candidate: BlockPos, center: BlockPos) -> i64 {
+    let dx = i64::from(candidate.x()) - i64::from(center.x());
+    let dy = i64::from(candidate.y()) - i64::from(center.y());
+    let dz = i64::from(candidate.z()) - i64::from(center.z());
+    dx * dx + dy * dy + dz * dz
+}
+
+fn closest_portal_candidate(
+    candidates: impl IntoIterator<Item = BlockPos>,
+    approximate_exit_pos: BlockPos,
+    is_valid: impl Fn(BlockPos) -> bool,
+) -> Option<BlockPos> {
+    candidates
+        .into_iter()
+        .filter(|pos| is_valid(*pos))
+        .min_by_key(|pos| {
+            (
+                portal_candidate_distance_sqr(*pos, approximate_exit_pos),
+                pos.y(),
+            )
+        })
 }
 
 const fn chunk_min_block_x(pos: ChunkPos) -> i32 {
@@ -494,6 +518,39 @@ impl World {
     #[must_use]
     pub fn clamp_to_world_border(&self, x: f64, y: f64, z: f64) -> BlockPos {
         self.world_border_snapshot().clamp_to_bounds(x, y, z)
+    }
+
+    /// Finds the closest existing Nether portal POI using vanilla `PortalForcer` ordering.
+    ///
+    /// `to_nether` selects vanilla's 16-block Nether search radius; non-Nether targets use 128.
+    #[must_use]
+    pub fn find_closest_nether_portal_position(
+        &self,
+        approximate_exit_pos: BlockPos,
+        to_nether: bool,
+    ) -> Option<BlockPos> {
+        let radius = if to_nether { 16 } else { 128 };
+        let nether_portal_type = vanilla_poi_types::NETHER_PORTAL
+            .try_id()
+            .expect("vanilla nether portal POI type should be registered");
+        let candidates = self.poi_storage.lock().get_in_horizontal_square(
+            &|type_id| type_id == nether_portal_type,
+            approximate_exit_pos,
+            radius,
+            OccupationStatus::Any,
+        );
+
+        closest_portal_candidate(
+            candidates.into_iter().map(|(pos, _)| pos),
+            approximate_exit_pos,
+            |pos| {
+                self.is_block_within_world_border(pos)
+                    && self
+                        .get_block_state(pos)
+                        .try_get_value(&BlockStateProperties::HORIZONTAL_AXIS)
+                        .is_some()
+            },
+        )
     }
 
     #[must_use]
@@ -4179,6 +4236,21 @@ mod tests {
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    #[test]
+    fn closest_portal_candidate_filters_then_tiebreaks_by_y() {
+        let center = BlockPos::new(0, 64, 0);
+        let candidates = [
+            BlockPos::new(1, 64, 0),
+            BlockPos::new(0, 67, 0),
+            BlockPos::new(0, 61, 0),
+        ];
+
+        assert_eq!(
+            closest_portal_candidate(candidates, center, |pos| pos.x() != 1),
+            Some(BlockPos::new(0, 61, 0))
+        );
+    }
 
     struct TrackerTestEntity {
         base: EntityBase,
