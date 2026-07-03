@@ -953,6 +953,7 @@ fn teleport_entity_cross_world(
         return None;
     }
 
+    remove_after_changing_dimensions(entity.as_ref());
     entity.set_removed(RemovalReason::ChangedWorld);
     if let Err(error) = teleport_transition
         .target_world
@@ -1083,6 +1084,20 @@ fn apply_post_teleport_transition(entity: &dyn Entity, teleport_transition: &Tel
                 world.place_portal_ticket(ticket_position);
             }
         }
+    }
+}
+
+fn remove_after_changing_dimensions(entity: &dyn Entity) {
+    let Some(mob) = entity.as_mob() else {
+        return;
+    };
+
+    mob.remove_leash();
+    for slot in EquipmentSlot::ALL {
+        mob.living_base()
+            .equipment()
+            .lock()
+            .set(slot, ItemStack::empty());
     }
 }
 
@@ -6981,9 +6996,9 @@ mod tests {
         block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
         fall_flying_free_fall_interval, get_input_vector, passenger_transition_position,
-        passenger_transition_rotation, should_apply_entity_cramming_damage,
-        should_apply_resolved_movement, start_riding_entities, transfer_leashables_to_holder,
-        trapdoor_usable_as_ladder_state,
+        passenger_transition_rotation, remove_after_changing_dimensions,
+        should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
+        transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -7573,6 +7588,38 @@ mod tests {
         assert_eq!(
             persistent.motion.map(f64::to_bits),
             [0.1_f64, 0.2, 0.3].map(f64::to_bits),
+        );
+    }
+
+    #[test]
+    fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
+        init_test_registry();
+
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let holder: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            2,
+            DVec3::new(1.0, 0.0, 0.0),
+            Weak::new(),
+        ));
+        let Some(mob) = pig.as_mob() else {
+            panic!("pig should expose mob behavior");
+        };
+        assert!(mob.set_leashed_to(&holder));
+        pig.living_base().equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::ITEMS.saddle),
+        );
+
+        remove_after_changing_dimensions(&pig);
+
+        assert!(!mob.is_leashed());
+        assert!(
+            pig.living_base()
+                .equipment()
+                .lock()
+                .get_ref(EquipmentSlot::Saddle)
+                .is_empty()
         );
     }
 
