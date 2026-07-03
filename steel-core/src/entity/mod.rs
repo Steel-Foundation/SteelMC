@@ -957,7 +957,7 @@ fn teleport_entity_cross_world(
     entity.set_removed(RemovalReason::ChangedWorld);
     if let Err(error) = teleport_transition
         .target_world
-        .register_loaded_entity(Arc::clone(&new_entity))
+        .try_add_entity(Arc::clone(&new_entity))
     {
         tracing::warn!(
             entity_id = entity.id(),

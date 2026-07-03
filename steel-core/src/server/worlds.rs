@@ -9,7 +9,7 @@ use steel_utils::Identifier;
 use crate::config::ResolvedDomainConfig;
 use crate::world::World;
 
-const OVERWORLD_WORLD_NAME: &str = "overworld";
+pub(crate) const OVERWORLD_WORLD_NAME: &str = "overworld";
 pub(crate) const NETHER_WORLD_NAME: &str = "the_nether";
 pub(crate) const END_WORLD_NAME: &str = "the_end";
 

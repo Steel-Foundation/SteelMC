@@ -731,12 +731,24 @@ impl Player {
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity(pos, DVec3::ZERO, yaw, pitch)
+    }
+
+    /// Sends a `CPlayerPosition` packet with explicit delta movement for vanilla
+    /// `ServerPlayer.teleport(TeleportTransition)` paths.
+    pub(crate) fn teleport_with_velocity(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), EntityMoveError> {
         let world = self.get_world();
         self.try_set_position(pos)?;
         if world.entity_manager().get_by_id(self.id()).is_some() {
             world.chunk_map.update_player_status(self);
         }
-        self.set_velocity(DVec3::ZERO);
+        self.set_velocity(velocity);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -753,7 +765,9 @@ impl Player {
             movement.reset_last_known_client_movement();
         }
 
-        self.send_packet(CPlayerPosition::absolute(new_id, pos, yaw, pitch));
+        self.send_packet(CPlayerPosition::absolute_with_velocity(
+            new_id, pos, velocity, yaw, pitch,
+        ));
         Ok(())
     }
 

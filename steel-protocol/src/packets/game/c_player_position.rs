@@ -97,10 +97,22 @@ impl CPlayerPosition {
     /// Creates a new absolute teleport packet.
     #[must_use]
     pub fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
+        Self::absolute_with_velocity(teleport_id, pos, DVec3::ZERO, yaw, pitch)
+    }
+
+    /// Creates a new absolute teleport packet with explicit delta movement.
+    #[must_use]
+    pub const fn absolute_with_velocity(
+        teleport_id: i32,
+        pos: DVec3,
+        vel: DVec3,
+        yaw: f32,
+        pitch: f32,
+    ) -> Self {
         Self {
             teleport_id,
             pos,
-            vel: DVec3::ZERO,
+            vel,
             yaw,
             pitch,
             relatives: RelativeMovement::NONE,
@@ -118,5 +130,30 @@ impl CPlayerPosition {
             pitch: 0.0,
             relatives: RelativeMovement::ALL_ROTATION,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::{CPlayerPosition, RelativeMovement};
+
+    #[test]
+    fn absolute_with_velocity_preserves_delta_movement() {
+        let packet = CPlayerPosition::absolute_with_velocity(
+            12,
+            DVec3::new(1.0, 2.0, 3.0),
+            DVec3::new(0.1, 0.2, 0.3),
+            45.0,
+            -10.0,
+        );
+
+        assert_eq!(packet.teleport_id, 12);
+        assert_eq!(packet.pos, DVec3::new(1.0, 2.0, 3.0));
+        assert_eq!(packet.vel, DVec3::new(0.1, 0.2, 0.3));
+        assert_eq!(packet.yaw, 45.0);
+        assert_eq!(packet.pitch, -10.0);
+        assert_eq!(packet.relatives, RelativeMovement::NONE);
     }
 }

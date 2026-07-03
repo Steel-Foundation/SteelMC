@@ -34,7 +34,7 @@ use crate::portal::{
 };
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
-use crate::server::worlds::{END_WORLD_NAME, NETHER_WORLD_NAME, WorldMap};
+use crate::server::worlds::{END_WORLD_NAME, NETHER_WORLD_NAME, OVERWORLD_WORLD_NAME, WorldMap};
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
@@ -55,7 +55,9 @@ use steel_protocol::packets::game::{
     CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
+use steel_registry::vanilla_game_rules::{
+    ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
+};
 use steel_registry::{REGISTRY, Registry, RegistryEntry};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
@@ -92,7 +94,12 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
-    use super::cap_positive_thread_count;
+    use steel_registry::game_rules::GameRuleValue;
+
+    use super::{
+        cap_positive_thread_count, is_allowed_to_enter_portal_target,
+        is_end_to_overworld_transition,
+    };
 
     #[test]
     fn positive_thread_count_is_capped_to_available_threads() {
@@ -104,6 +111,34 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn nether_portal_entry_obeys_allow_entering_nether_gamerule() {
+        assert!(is_allowed_to_enter_portal_target(
+            "overworld",
+            GameRuleValue::Bool(false)
+        ));
+        assert!(is_allowed_to_enter_portal_target(
+            "the_end",
+            GameRuleValue::Bool(false)
+        ));
+        assert!(is_allowed_to_enter_portal_target(
+            "the_nether",
+            GameRuleValue::Bool(true)
+        ));
+        assert!(!is_allowed_to_enter_portal_target(
+            "the_nether",
+            GameRuleValue::Bool(false)
+        ));
+    }
+
+    #[test]
+    fn can_teleport_passenger_gate_only_applies_to_end_return() {
+        assert!(is_end_to_overworld_transition("the_end", "overworld"));
+        assert!(!is_end_to_overworld_transition("the_end", "the_nether"));
+        assert!(!is_end_to_overworld_transition("overworld", "overworld"));
+        assert!(!is_end_to_overworld_transition("overworld", "the_end"));
     }
 }
 
@@ -136,6 +171,64 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         as_passenger: false,
         post_transition: TeleportPostTransition::do_nothing(),
     }
+}
+
+fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
+    is_allowed_to_enter_portal_target(
+        target_world.key.path.as_ref(),
+        source_world.get_game_rule(&ALLOW_ENTERING_NETHER_USING_PORTALS),
+    )
+}
+
+fn is_allowed_to_enter_portal_target(
+    target_world_name: &str,
+    allow_entering_nether_using_portals: GameRuleValue,
+) -> bool {
+    if target_world_name != NETHER_WORLD_NAME {
+        return true;
+    }
+
+    match allow_entering_nether_using_portals {
+        GameRuleValue::Bool(allowed) => allowed,
+        value @ GameRuleValue::Int(_) => {
+            panic!(
+                "gamerule {} should be a bool, got {value:?}",
+                ALLOW_ENTERING_NETHER_USING_PORTALS.key
+            )
+        }
+    }
+}
+
+fn can_teleport_between_worlds(
+    entity: &dyn Entity,
+    source_world: &World,
+    target_world: &World,
+) -> bool {
+    if is_end_to_overworld_transition(
+        source_world.key.path.as_ref(),
+        target_world.key.path.as_ref(),
+    ) {
+        return direct_passengers_allow_end_return(entity);
+    }
+
+    true
+}
+
+fn is_end_to_overworld_transition(source_world_name: &str, target_world_name: &str) -> bool {
+    source_world_name == END_WORLD_NAME && target_world_name == OVERWORLD_WORLD_NAME
+}
+
+fn direct_passengers_allow_end_return(entity: &dyn Entity) -> bool {
+    for passenger in entity.passengers() {
+        if passenger
+            .as_player()
+            .is_some_and(|player| !player.has_seen_credits())
+        {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn local_respawn_data_for_world(world: &World) -> RespawnData {
@@ -1760,6 +1853,11 @@ impl Server {
             );
             return;
         };
+        if !is_allowed_to_enter_portal(&source_world, &target_world)
+            || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+        {
+            return;
+        }
         let to_nether = target_world.key.path.as_ref() == NETHER_WORLD_NAME;
         let approximate_exit_pos = nether_portal::approximate_exit_position(
             &source_world,
@@ -1786,6 +1884,11 @@ impl Server {
                 );
                 return;
             };
+            if !is_allowed_to_enter_portal(&source_world, &target_world)
+                || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            {
+                return;
+            }
             self.jobs.spawn(EndPortalTeleportJob::entry_to_end(
                 entity,
                 source_world,
@@ -1806,6 +1909,11 @@ impl Server {
                         return;
                     }
                 };
+            if !is_allowed_to_enter_portal(&source_world, &target_world)
+                || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            {
+                return;
+            }
             match EndPortalTeleportJob::returning_player(
                 entity,
                 source_world,
@@ -1831,6 +1939,11 @@ impl Server {
                     return;
                 }
             };
+        if !is_allowed_to_enter_portal(&source_world, &target_world)
+            || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+        {
+            return;
+        }
         self.jobs.spawn(EndPortalTeleportJob::returning_entity(
             entity,
             source_world,

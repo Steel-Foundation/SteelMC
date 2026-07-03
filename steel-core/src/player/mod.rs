@@ -1456,6 +1456,17 @@ impl Player {
         rotation: (f32, f32),
         reason: ResetReason,
     ) -> bool {
+        self.spawn_with_velocity(position, rotation, DVec3::ZERO, reason)
+    }
+
+    #[must_use]
+    pub(crate) fn spawn_with_velocity(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+        velocity: DVec3,
+        reason: ResetReason,
+    ) -> bool {
         let world = self.get_world();
 
         // Set position and rotation
@@ -1465,7 +1476,8 @@ impl Player {
         self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        if let Err(error) = self.teleport(position, rotation.0, rotation.1) {
+        if let Err(error) = self.teleport_with_velocity(position, velocity, rotation.0, rotation.1)
+        {
             panic!(
                 "failed to synchronize player {} spawn position: {error}",
                 self.id()
@@ -2006,24 +2018,23 @@ impl Entity for Player {
         }
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
-            if let Err(error) = self.teleport(pos, rotation.0, rotation.1) {
+            if let Err(error) = self.teleport_with_velocity(pos, velocity, rotation.0, rotation.1) {
                 panic!(
                     "failed to commit same-world portal teleport for player {}: {error}",
                     self.id()
                 );
             }
-            self.set_velocity(velocity);
             self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
-            if !self.spawn(
+            if !self.spawn_with_velocity(
                 teleport_transition.position,
                 rotation,
+                velocity,
                 ResetReason::WorldChange,
             ) {
                 return;
             }
-            self.set_velocity(velocity);
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
         }
