@@ -1772,6 +1772,26 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 .is_some_and(|living| living.is_sleeping())
     }
 
+    /// Returns vanilla's dimension-changing portal cooldown delay in ticks.
+    ///
+    /// Mirrors vanilla `getDimensionChangingDelay` overrides for players,
+    /// vehicle entities, projectiles, and base entities with a player passenger.
+    fn dimension_changing_delay(&self) -> i32 {
+        let entity_type = self.entity_type();
+        if self.as_player().is_some() || entity_type.is_vehicle_entity {
+            return 10;
+        }
+        if entity_type.is_projectile {
+            return 2;
+        }
+        if let Some(first_passenger) = self.first_passenger()
+            && first_passenger.as_player().is_some()
+        {
+            return first_passenger.dimension_changing_delay();
+        }
+        300
+    }
+
     /// Returns why this entity was removed, if it has been removed.
     fn removal_reason(&self) -> Option<RemovalReason> {
         self.base().removal_reason()
@@ -6616,6 +6636,30 @@ mod tests {
         }
     }
 
+    struct TypedTestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+    }
+
+    impl TypedTestEntity {
+        fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+            Self {
+                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+            }
+        }
+    }
+
+    impl Entity for TypedTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+    }
+
     struct LeashNotificationTestEntity {
         base: EntityBase,
         holder_notifications: SyncMutex<Vec<i32>>,
@@ -7066,6 +7110,18 @@ mod tests {
         entity.set_sleeping_pos(BlockPos::ZERO);
 
         assert!(!entity.can_use_portal(false));
+    }
+
+    #[test]
+    fn dimension_changing_delay_uses_vanilla_class_overrides() {
+        let base = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+        assert_eq!(base.dimension_changing_delay(), 300);
+
+        let minecart = TypedTestEntity::new(2, &vanilla_entities::MINECART);
+        assert_eq!(minecart.dimension_changing_delay(), 10);
+
+        let arrow = TypedTestEntity::new(3, &vanilla_entities::ARROW);
+        assert_eq!(arrow.dimension_changing_delay(), 2);
     }
 
     #[test]
