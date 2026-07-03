@@ -419,6 +419,10 @@ impl BlockPos {
     }
 
     /// Returns vanilla `BlockPos.spiralAround`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `radius` is negative or if both directions are on the same axis.
     #[must_use]
     pub fn spiral_around(
         center: Self,

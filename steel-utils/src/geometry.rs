@@ -284,7 +284,7 @@ impl<I> Aabb<DVec3, I> {
     ///
     /// Mirrors the per-box clamp used by vanilla `VoxelShape.closestPointTo`.
     #[must_use]
-    pub fn closest_point_to(self, point: DVec3) -> DVec3 {
+    pub const fn closest_point_to(self, point: DVec3) -> DVec3 {
         DVec3::new(
             point.x.clamp(self.min.x, self.max.x),
             point.y.clamp(self.min.y, self.max.y),

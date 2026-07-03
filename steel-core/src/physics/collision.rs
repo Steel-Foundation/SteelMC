@@ -797,6 +797,8 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use super::*;
     use steel_registry::test_support;
     use steel_utils::BlockLocalAabb;
@@ -890,7 +892,7 @@ mod tests {
         let preferred = DVec3::new(2.0, 0.5, 0.5);
 
         assert_eq!(
-            closest_free_position(&allowed, preferred, std::iter::empty()),
+            closest_free_position(&allowed, preferred, iter::empty()),
             Some(preferred)
         );
     }

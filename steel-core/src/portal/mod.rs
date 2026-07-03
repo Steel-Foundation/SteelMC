@@ -151,7 +151,7 @@ impl PortalProcessor {
     }
 
     /// Marks this process as touched by the entity for the current tick.
-    pub fn set_as_inside_portal(&mut self, entry_position: BlockPos) {
+    pub const fn set_as_inside_portal(&mut self, entry_position: BlockPos) {
         if !self.inside_portal_this_tick {
             self.entry_position = entry_position;
             self.inside_portal_this_tick = true;

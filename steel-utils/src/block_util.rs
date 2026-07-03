@@ -20,6 +20,10 @@ struct IntBounds {
 }
 
 /// Returns vanilla `BlockUtil.getLargestRectangleAround`.
+///
+/// # Panics
+///
+/// Panics if either scan limit is negative.
 #[must_use]
 pub fn get_largest_rectangle_around(
     center: BlockPos,

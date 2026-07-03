@@ -195,11 +195,12 @@ mod tests {
             axis2_size: 5,
         };
 
-        assert_eq!(
+        assert!(
             minecart
                 .get_relative_portal_position(Axis::X, portal_area)
-                .z,
-            0.0
+                .z
+                .abs()
+                < f64::EPSILON
         );
     }
 }

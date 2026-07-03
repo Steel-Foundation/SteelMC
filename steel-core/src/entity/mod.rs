@@ -534,7 +534,7 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
 
 /// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
 #[must_use]
-pub(crate) fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
+pub(crate) const fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
     DVec3::new(offsets.x, offsets.y, 0.0)
 }
 
@@ -715,7 +715,7 @@ mod ticking;
 mod tracker;
 
 use crate::portal::{
-    PortalKind, PortalProcessResult, TeleportTransition, WorldChangeRequest,
+    PortalKind, PortalProcessResult, PortalProcessor, TeleportTransition, WorldChangeRequest,
     portal_shape::PortalShape,
 };
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
@@ -1671,16 +1671,15 @@ pub trait Entity: EntityEventSource + Send + Sync {
                     },
                 );
             }
-            Some(PortalProcessResult::Waiting) => {
+            Some(PortalProcessResult::Waiting)
                 if self
                     .base()
                     .portal_process()
-                    .is_some_and(|process| process.has_expired())
-                {
-                    self.base().clear_portal_process();
-                }
+                    .is_some_and(PortalProcessor::has_expired) =>
+            {
+                self.base().clear_portal_process();
             }
-            None => {}
+            Some(PortalProcessResult::Waiting) | None => {}
         }
     }
 
@@ -1835,7 +1834,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             && self.is_alive()
             && !self
                 .as_living_entity()
-                .is_some_and(|living| living.is_sleeping())
+                .is_some_and(LivingEntity::is_sleeping)
     }
 
     /// Returns vanilla's dimension-changing portal cooldown delay in ticks.

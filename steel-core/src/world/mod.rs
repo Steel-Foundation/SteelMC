@@ -38,7 +38,7 @@ use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
     BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, join_is_not_empty,
 };
@@ -59,6 +59,7 @@ use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_poi_types};
+use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
     random::{RandomSource, legacy_random::LegacyRandom},
@@ -234,6 +235,30 @@ fn closest_portal_candidate(
                 pos.y(),
             )
         })
+}
+
+const NETHER_PORTAL_CREATE_RADIUS: i32 = 16;
+const NETHER_PORTAL_FALLBACK_MIN_Y: i32 = 70;
+const NETHER_PORTAL_FALLBACK_MAX_Y_OFFSET: i32 = 9;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MissingPortalCreationChunk;
+
+const fn nether_portal_frame_offset_pos(
+    origin: BlockPos,
+    direction: Direction,
+    width: i32,
+    height: i32,
+    offset: i32,
+) -> BlockPos {
+    let clockwise = direction.rotate_y_clockwise();
+    let (direction_x, _, direction_z) = direction.offset();
+    let (clockwise_x, _, clockwise_z) = clockwise.offset();
+    origin.offset(
+        direction_x * width + clockwise_x * offset,
+        height,
+        direction_z * width + clockwise_z * offset,
+    )
 }
 
 const fn chunk_min_block_x(pos: ChunkPos) -> i32 {
@@ -523,6 +548,10 @@ impl World {
     /// Finds the closest existing Nether portal POI using vanilla `PortalForcer` ordering.
     ///
     /// `to_nether` selects vanilla's 16-block Nether search radius; non-Nether targets use 128.
+    ///
+    /// # Panics
+    ///
+    /// Panics if vanilla POI registries were not initialized before portal lookup.
     #[must_use]
     pub fn find_closest_nether_portal_position(
         &self,
@@ -551,6 +580,308 @@ impl World {
                         .is_some()
             },
         )
+    }
+
+    /// Creates a Nether portal using vanilla `PortalForcer.createPortal` placement rules.
+    ///
+    /// The caller must keep the target search area loaded as full chunks before calling. Steel
+    /// returns `None` if any required chunk read or write is unavailable, rather than treating
+    /// unloaded chunks as replaceable air.
+    #[must_use]
+    pub fn create_nether_portal(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        portal_axis: Axis,
+    ) -> Option<FoundRectangle> {
+        if portal_axis == Axis::Y {
+            return None;
+        }
+
+        let direction = Direction::positive_for_axis(portal_axis);
+        let max_placeable_y = self
+            .get_max_y()
+            .min(self.get_min_y() + self.dimension_type.logical_height - 1);
+
+        let portal_origin =
+            match self.find_nether_portal_creation_position(origin, direction, max_placeable_y) {
+                Ok(Some(pos)) => pos,
+                Ok(None) => {
+                    let fallback =
+                        self.fallback_nether_portal_position(origin, direction, max_placeable_y)?;
+                    if !self.can_write_nether_portal_fallback_box(fallback, direction) {
+                        return None;
+                    }
+                    if !self.clear_nether_portal_fallback_box(fallback, direction) {
+                        return None;
+                    }
+                    fallback
+                }
+                Err(MissingPortalCreationChunk) => return None,
+            };
+
+        if !self.can_write_nether_portal_rectangle(portal_origin, direction) {
+            return None;
+        }
+        if !self.place_nether_portal_frame_and_blocks(portal_origin, direction, portal_axis) {
+            return None;
+        }
+
+        Some(FoundRectangle {
+            min_corner: portal_origin,
+            axis1_size: 2,
+            axis2_size: 3,
+        })
+    }
+
+    fn find_nether_portal_creation_position(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        max_placeable_y: i32,
+    ) -> Result<Option<BlockPos>, MissingPortalCreationChunk> {
+        let mut closest_full_position: Option<(i64, BlockPos)> = None;
+        let mut closest_partial_position: Option<(i64, BlockPos)> = None;
+        let border = self.world_border_snapshot();
+
+        for column_pos in BlockPos::spiral_around(
+            origin,
+            NETHER_PORTAL_CREATE_RADIUS,
+            Direction::East,
+            Direction::South,
+        ) {
+            let height = self
+                .height_at(
+                    HeightmapType::MotionBlocking,
+                    column_pos.x(),
+                    column_pos.z(),
+                )
+                .ok_or(MissingPortalCreationChunk)?
+                .min(max_placeable_y);
+            if !border.is_block_within_bounds(column_pos)
+                || !border.is_block_within_bounds(column_pos.relative(direction))
+            {
+                continue;
+            }
+
+            let mut column_pos = column_pos.at_y(height);
+            let mut y = height;
+            while y >= self.get_min_y() {
+                column_pos = column_pos.at_y(y);
+                if self.can_nether_portal_replace_block(column_pos)? {
+                    let first_empty_y = y;
+
+                    while y > self.get_min_y()
+                        && self.can_nether_portal_replace_block(column_pos.below())?
+                    {
+                        y -= 1;
+                        column_pos = column_pos.below();
+                    }
+
+                    if y + 4 <= max_placeable_y {
+                        let delta_y = first_empty_y - y;
+                        if (delta_y <= 0 || delta_y >= 3)
+                            && self.can_host_nether_portal_frame(column_pos, direction, 0)?
+                        {
+                            let distance = portal_candidate_distance_sqr(column_pos, origin);
+                            let full_frame = self
+                                .can_host_nether_portal_frame(column_pos, direction, -1)?
+                                && self.can_host_nether_portal_frame(column_pos, direction, 1)?;
+
+                            if full_frame
+                                && closest_full_position
+                                    .is_none_or(|(closest_distance, _)| closest_distance > distance)
+                            {
+                                closest_full_position = Some((distance, column_pos));
+                            }
+
+                            if closest_full_position.is_none()
+                                && closest_partial_position
+                                    .is_none_or(|(closest_distance, _)| closest_distance > distance)
+                            {
+                                closest_partial_position = Some((distance, column_pos));
+                            }
+                        }
+                    }
+                }
+
+                y -= 1;
+            }
+        }
+
+        if closest_full_position.is_none() {
+            closest_full_position = closest_partial_position;
+        }
+
+        Ok(closest_full_position.map(|(_, pos)| pos))
+    }
+
+    fn can_nether_portal_replace_block(
+        &self,
+        pos: BlockPos,
+    ) -> Result<bool, MissingPortalCreationChunk> {
+        let state = self
+            .loaded_block_state(pos)
+            .ok_or(MissingPortalCreationChunk)?;
+        Ok(state.is_replaceable() && state.get_fluid_state().is_empty())
+    }
+
+    fn can_host_nether_portal_frame(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        offset: i32,
+    ) -> Result<bool, MissingPortalCreationChunk> {
+        for width in -1..3 {
+            for height in -1..4 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, offset);
+                if height < 0 {
+                    let state = self
+                        .loaded_block_state(pos)
+                        .ok_or(MissingPortalCreationChunk)?;
+                    if !state.is_solid() {
+                        return Ok(false);
+                    }
+                } else if !self.can_nether_portal_replace_block(pos)? {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn loaded_block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        if !self.is_in_valid_bounds(pos) {
+            return Some(REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR));
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+    }
+
+    fn fallback_nether_portal_position(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        max_placeable_y: i32,
+    ) -> Option<BlockPos> {
+        let min_start_y = (self.get_min_y() + 1).max(NETHER_PORTAL_FALLBACK_MIN_Y);
+        let max_start_y = max_placeable_y - NETHER_PORTAL_FALLBACK_MAX_Y_OFFSET;
+        if max_start_y < min_start_y {
+            return None;
+        }
+
+        let (direction_x, _, direction_z) = direction.offset();
+        let pos = BlockPos::new(
+            origin.x() - direction_x,
+            origin.y().clamp(min_start_y, max_start_y),
+            origin.z() - direction_z,
+        );
+
+        Some(self.world_border_snapshot().clamp_to_bounds(
+            f64::from(pos.x()),
+            f64::from(pos.y()),
+            f64::from(pos.z()),
+        ))
+    }
+
+    fn can_write_nether_portal_fallback_box(&self, origin: BlockPos, direction: Direction) -> bool {
+        for box_offset in -1..2 {
+            for width in 0..2 {
+                for height in -1..3 {
+                    let pos = nether_portal_frame_offset_pos(
+                        origin, direction, width, height, box_offset,
+                    );
+                    if !self.can_write_loaded_block(pos) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        self.can_write_nether_portal_rectangle(origin, direction)
+    }
+
+    fn can_write_nether_portal_rectangle(&self, origin: BlockPos, direction: Direction) -> bool {
+        for width in -1..3 {
+            for height in -1..4 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                if !self.can_write_loaded_block(pos) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn can_write_loaded_block(&self, pos: BlockPos) -> bool {
+        if !self.is_in_valid_bounds(pos) {
+            return false;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
+    }
+
+    fn clear_nether_portal_fallback_box(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        direction: Direction,
+    ) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        for box_offset in -1..2 {
+            for width in 0..2 {
+                for height in -1..3 {
+                    let state = if height < 0 { obsidian } else { air };
+                    let pos = nether_portal_frame_offset_pos(
+                        origin, direction, width, height, box_offset,
+                    );
+                    if !self.set_block(pos, state, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn place_nether_portal_frame_and_blocks(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        direction: Direction,
+        portal_axis: Axis,
+    ) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        for width in -1..3 {
+            for height in -1..4 {
+                if width == -1 || width == 2 || height == -1 || height == 3 {
+                    let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                    if !self.set_block(pos, obsidian, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        let portal_state = vanilla_blocks::NETHER_PORTAL
+            .default_state()
+            .set_value(&BlockStateProperties::HORIZONTAL_AXIS, portal_axis);
+        let portal_flags = UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE;
+        for width in 0..2 {
+            for height in 0..3 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                if !self.set_block(pos, portal_state, portal_flags) {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 
     #[must_use]
@@ -4249,6 +4580,24 @@ mod tests {
         assert_eq!(
             closest_portal_candidate(candidates, center, |pos| pos.x() != 1),
             Some(BlockPos::new(0, 61, 0))
+        );
+    }
+
+    #[test]
+    fn nether_portal_frame_offsets_match_vanilla_create_portal_axes() {
+        let origin = BlockPos::new(10, 70, 20);
+
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::East, 1, 2, -1),
+            BlockPos::new(11, 72, 19)
+        );
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::South, 1, 2, -1),
+            BlockPos::new(11, 72, 21)
+        );
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::East, 0, -1, 1),
+            BlockPos::new(10, 69, 21)
         );
     }
 
