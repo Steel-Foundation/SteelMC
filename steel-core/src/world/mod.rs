@@ -42,7 +42,8 @@ use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
-    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, join_is_not_empty,
+    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_shape_full_block,
+    join_is_not_empty,
 };
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
@@ -64,7 +65,7 @@ use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vani
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
-    random::{RandomSource, legacy_random::LegacyRandom},
+    random::{Random as _, RandomSource, legacy_random::LegacyRandom},
 };
 use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
 
@@ -82,7 +83,8 @@ pub enum RaytraceAction {
 }
 
 use steel_utils::{
-    BlockLocalAabb, BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos, WorldAabb,
+    BlockLocalAabb, BlockPos, BlockStateId, ChunkPos, Identifier, PackedBlockPos, SectionPos,
+    WorldAabb,
     types::{Difficulty, GameType, UpdateFlags},
 };
 use tokio::{runtime::Runtime, time::Instant};
@@ -91,7 +93,7 @@ use crate::{
     ChunkMap,
     behavior::BlockStateBehaviorExt,
     behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, FLUID_BEHAVIORS},
-    block_entity::SharedBlockEntity,
+    block_entity::{SharedBlockEntity, entities::EndGatewayBlockEntity},
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
@@ -221,6 +223,13 @@ fn portal_candidate_distance_sqr(candidate: BlockPos, center: BlockPos) -> i64 {
     let dy = i64::from(candidate.y()) - i64::from(center.y());
     let dz = i64::from(candidate.z()) - i64::from(center.z());
     dx * dx + dy * dy + dz * dz
+}
+
+fn dist_to_origin_center_sqr(pos: BlockPos) -> f64 {
+    let x = f64::from(pos.x()) + 0.5;
+    let y = f64::from(pos.y()) + 0.5;
+    let z = f64::from(pos.z()) + 0.5;
+    x * x + y * y + z * z
 }
 
 fn closest_portal_candidate(
@@ -871,6 +880,179 @@ impl World {
             }
         }
 
+        true
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.isChunkEmpty`.
+    pub(crate) fn is_end_gateway_chunk_empty(&self, chunk_pos: ChunkPos) -> Option<bool> {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            chunk
+                .as_full()
+                .is_some_and(|chunk| chunk.highest_filled_section_index().is_none())
+        })
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.findValidSpawnInChunk`.
+    pub(crate) fn find_end_gateway_valid_spawn_in_chunk(
+        &self,
+        chunk_pos: ChunkPos,
+    ) -> Option<BlockPos> {
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| {
+                let chunk = chunk.as_full()?;
+                let min_x = chunk_pos.0.x * 16;
+                let min_z = chunk_pos.0.y * 16;
+                let max_x = min_x + 15;
+                let max_z = min_z + 15;
+                let max_y = chunk.highest_section_position() + 16 - 1;
+                let min_y = 30.min(max_y);
+                let max_y = 30.max(max_y);
+                let mut closest = None;
+                let mut closest_dist = 0.0;
+
+                for z in min_z..=max_z {
+                    for y in min_y..=max_y {
+                        for x in min_x..=max_x {
+                            let pos = BlockPos::new(x, y, z);
+                            let state = chunk.get_block_state(pos);
+                            let above = pos.above();
+                            let above_two = pos.above_n(2);
+                            if state.get_block() != &vanilla_blocks::END_STONE
+                                || self.is_collision_shape_full_block_at(
+                                    above,
+                                    chunk.get_block_state(above),
+                                )
+                                || self.is_collision_shape_full_block_at(
+                                    above_two,
+                                    chunk.get_block_state(above_two),
+                                )
+                            {
+                                continue;
+                            }
+
+                            let dist = dist_to_origin_center_sqr(pos);
+                            if closest.is_none() || dist < closest_dist {
+                                closest = Some(pos);
+                                closest_dist = dist;
+                            }
+                        }
+                    }
+                }
+
+                closest
+            })
+            .flatten()
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.findTallestBlock`.
+    pub(crate) fn find_end_gateway_tallest_block(
+        &self,
+        around: BlockPos,
+        dist: i32,
+        allow_bedrock: bool,
+    ) -> BlockPos {
+        let mut tallest = None;
+
+        for dx in -dist..=dist {
+            for dz in -dist..=dist {
+                if dx == 0 && dz == 0 && !allow_bedrock {
+                    continue;
+                }
+
+                let min_y = tallest.map_or(self.get_min_y(), |pos: BlockPos| pos.y());
+                for y in (min_y + 1..=self.get_max_y()).rev() {
+                    let pos = BlockPos::new(around.x() + dx, y, around.z() + dz);
+                    let state = self.get_block_state(pos);
+                    if self.is_collision_shape_full_block_at(pos, state)
+                        && (allow_bedrock || state.get_block() != &vanilla_blocks::BEDROCK)
+                    {
+                        tallest = Some(pos);
+                        break;
+                    }
+                }
+            }
+        }
+
+        tallest.unwrap_or(around)
+    }
+
+    fn is_collision_shape_full_block_at(&self, pos: BlockPos, state: BlockStateId) -> bool {
+        is_shape_full_block(self.block_collision_shape(pos, state))
+    }
+
+    /// Mirrors vanilla `EndIslandFeature.place` for runtime End gateway island creation.
+    pub(crate) fn create_end_island(self: &Arc<Self>, origin: BlockPos) -> bool {
+        let end_stone = vanilla_blocks::END_STONE.default_state();
+        let mut random = LegacyRandom::from_seed(PackedBlockPos::from(origin).as_raw() as u64);
+        let mut size = random.next_i32_bounded(3) as f32 + 4.0;
+        let mut y = 0;
+
+        while size > 0.5 {
+            let min = (-size).floor() as i32;
+            let max = size.ceil() as i32;
+            for x in min..=max {
+                for z in min..=max {
+                    if (x * x + z * z) as f32 <= (size + 1.0) * (size + 1.0)
+                        && !self.set_block(
+                            origin.offset(x, y, z),
+                            end_stone,
+                            UpdateFlags::UPDATE_CLIENTS,
+                        )
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            size -= random.next_i32_bounded(2) as f32 + 0.5;
+            y -= 1;
+        }
+
+        true
+    }
+
+    /// Mirrors vanilla `EndGatewayFeature.place` for runtime End gateway creation.
+    pub(crate) fn create_end_gateway_portal(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        exit: BlockPos,
+        exact: bool,
+    ) -> bool {
+        for dy in -2_i32..=2 {
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    let same_x = dx == 0;
+                    let same_y = dy == 0;
+                    let same_z = dz == 0;
+                    let end = dy.abs() == 2;
+                    let state = if same_x && same_y && same_z {
+                        vanilla_blocks::END_GATEWAY.default_state()
+                    } else if same_y {
+                        vanilla_blocks::AIR.default_state()
+                    } else if (end && same_x && same_z) || ((same_x || same_z) && !end) {
+                        vanilla_blocks::BEDROCK.default_state()
+                    } else {
+                        vanilla_blocks::AIR.default_state()
+                    };
+
+                    if !self.set_block(origin.offset(dx, dy, dz), state, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        let Some(block_entity) = self.get_block_entity(origin) else {
+            return false;
+        };
+        let mut block_entity = block_entity.lock();
+        let Some(gateway) = block_entity
+            .as_any_mut()
+            .downcast_mut::<EndGatewayBlockEntity>()
+        else {
+            return false;
+        };
+        gateway.set_exit_position(exit, exact);
         true
     }
 

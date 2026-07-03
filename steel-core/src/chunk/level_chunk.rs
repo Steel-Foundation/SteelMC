@@ -816,6 +816,22 @@ impl LevelChunk {
         section_guard.states.get(local_x, local_y, local_z)
     }
 
+    /// Mirrors vanilla `ChunkAccess.getHighestFilledSectionIndex`.
+    #[must_use]
+    pub fn highest_filled_section_index(&self) -> Option<usize> {
+        self.sections
+            .sections
+            .iter()
+            .rposition(|section| !section.read().is_empty())
+    }
+
+    /// Mirrors vanilla `ChunkAccess.getHighestSectionPosition`.
+    #[must_use]
+    pub fn highest_section_position(&self) -> i32 {
+        self.highest_filled_section_index()
+            .map_or(self.min_y, |index| self.min_y + index as i32 * 16)
+    }
+
     /// Extracts the chunk data for sending to the client.
     #[must_use]
     pub fn extract_chunk_data(&self) -> ChunkPacketData {

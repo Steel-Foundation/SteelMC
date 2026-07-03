@@ -13,7 +13,7 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::{
     chunk_access::ChunkStatus,
-    chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+    chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
@@ -28,7 +28,7 @@ use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
-    TeleportVelocityMode, WorldChangeRequest, end_portal, nether_portal,
+    TeleportVelocityMode, WorldChangeRequest, end_gateway, end_portal, nether_portal,
 };
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
@@ -583,6 +583,123 @@ impl ServerJob for EndPortalTeleportJob {
             EndPortalTeleportPhase::SearchingPlayerRespawn { .. } => {}
         }
     }
+}
+
+struct EndGatewayTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    portal_pos: BlockPos,
+    source_is_end: bool,
+    phase: EndGatewayTeleportPhase,
+}
+
+enum EndGatewayTeleportPhase {
+    LoadingReady { request: ChunkRequestHandle },
+    LoadingSearchPath { request: ChunkRequestHandle },
+}
+
+impl EndGatewayTeleportJob {
+    fn new(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+        source_is_end: bool,
+    ) -> Option<Self> {
+        let preparation = end_gateway::initial_chunks(&source_world, portal_pos, source_is_end)?;
+        let phase = match preparation {
+            end_gateway::EndGatewayChunkPreparation::Ready(chunks) => {
+                EndGatewayTeleportPhase::LoadingReady {
+                    request: request_end_gateway_chunks(&source_world, chunks),
+                }
+            }
+            end_gateway::EndGatewayChunkPreparation::SearchPath(chunks) => {
+                EndGatewayTeleportPhase::LoadingSearchPath {
+                    request: request_end_gateway_chunks(&source_world, chunks),
+                }
+            }
+        };
+        Some(Self {
+            entity,
+            source_world,
+            portal_pos,
+            source_is_end,
+            phase,
+        })
+    }
+
+    fn still_valid(&self) -> bool {
+        !self.entity.is_removed()
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+    }
+}
+
+impl ServerJob for EndGatewayTeleportJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if !self.still_valid() {
+            return JobPoll::Finished;
+        }
+
+        loop {
+            match &mut self.phase {
+                EndGatewayTeleportPhase::LoadingReady { request } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let Some(transition) = end_gateway::calculate_transition(
+                            &self.source_world,
+                            self.entity.as_ref(),
+                            self.portal_pos,
+                            self.source_is_end,
+                        ) else {
+                            return JobPoll::Finished;
+                        };
+                        self.entity.clone().change_world(&transition);
+                        return JobPoll::Finished;
+                    }
+                },
+                EndGatewayTeleportPhase::LoadingSearchPath { request } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let Some(chunks) = end_gateway::final_chunks_after_search(
+                            &self.source_world,
+                            self.portal_pos,
+                            self.source_is_end,
+                        ) else {
+                            return JobPoll::Finished;
+                        };
+                        self.phase = EndGatewayTeleportPhase::LoadingReady {
+                            request: request_end_gateway_chunks(&self.source_world, chunks),
+                        };
+                    }
+                },
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        match &mut self.phase {
+            EndGatewayTeleportPhase::LoadingReady { request }
+            | EndGatewayTeleportPhase::LoadingSearchPath { request } => request.cancel(),
+        }
+    }
+}
+
+fn request_end_gateway_chunks(world: &Arc<World>, chunks: Vec<ChunkPos>) -> ChunkRequestHandle {
+    world.chunk_map.request_chunks(ChunkRequest {
+        status: ChunkStatus::Full,
+        positions: chunks,
+        ticket_kind: ChunkTicketKind::Portal,
+    })
 }
 
 fn root_vehicle_chunk(root_vehicle: &PersistentRootVehicle) -> Option<ChunkPos> {
@@ -1616,11 +1733,12 @@ impl Server {
                 } => {
                     self.queue_end_portal_change(entity, source_world);
                 }
-                WorldChangeRequest::Portal { portal, .. } => {
-                    tracing::debug!(
-                        ?portal,
-                        "Portal world change ignored until this portal kind has a destination calculator"
-                    );
+                WorldChangeRequest::Portal {
+                    portal: PortalKind::EndGateway,
+                    source_world,
+                    portal_pos,
+                } => {
+                    self.queue_end_gateway_change(entity, source_world, portal_pos);
                 }
             }
         }
@@ -1716,6 +1834,21 @@ impl Server {
             target_world,
             respawn_data,
         ));
+    }
+
+    fn queue_end_gateway_change(
+        &self,
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+    ) {
+        let source_is_end = source_world.key.path.as_ref() == END_WORLD_NAME;
+        let Some(job) = EndGatewayTeleportJob::new(entity, source_world, portal_pos, source_is_end)
+        else {
+            tracing::debug!("End gateway world change ignored because no destination is available");
+            return;
+        };
+        self.jobs.spawn(job);
     }
 
     fn strict_respawn_world_and_data_for_domain(

@@ -15,6 +15,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_utils::BlockPos;
 
+pub(crate) mod end_gateway;
 pub(crate) mod end_portal;
 pub(crate) mod nether_portal;
 pub mod portal_shape;
