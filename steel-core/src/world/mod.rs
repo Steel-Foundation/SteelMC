@@ -851,6 +851,29 @@ impl World {
         self.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
     }
 
+    /// Mirrors vanilla `EndPlatformFeature.createEndPlatform` for runtime End portal travel.
+    pub(crate) fn create_end_platform(self: &Arc<Self>, origin: BlockPos) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        for dz in -2..=2 {
+            for dx in -2..=2 {
+                for dy in -1..3 {
+                    let pos = origin.offset(dx, dy, dz);
+                    let state = if dy == -1 { obsidian } else { air };
+                    if self.get_block_state(pos).get_block() != state.get_block() {
+                        let _ = self.destroy_block(pos, true);
+                        if !self.set_block(pos, state, UpdateFlags::UPDATE_ALL) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
     fn clear_nether_portal_fallback_box(
         self: &Arc<Self>,
         origin: BlockPos,
@@ -1305,6 +1328,12 @@ impl World {
             self.level_height_at(heightmap_type, pos.x(), pos.z()),
             pos.z(),
         )
+    }
+
+    /// Mirrors vanilla `Entity.adjustSpawnLocation` for cross-world returns.
+    #[must_use]
+    pub(crate) fn adjust_spawn_location(&self, spawn_suggestion: BlockPos) -> BlockPos {
+        self.heightmap_pos(HeightmapType::MotionBlockingNoLeaves, spawn_suggestion)
     }
 
     fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {

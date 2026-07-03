@@ -15,6 +15,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_utils::BlockPos;
 
+pub(crate) mod end_portal;
 pub(crate) mod nether_portal;
 pub mod portal_shape;
 
@@ -298,6 +299,8 @@ pub enum TeleportRotationMode {
     Absolute,
     /// Transition yaw/pitch are added to the entity's current rotation.
     Relative,
+    /// Transition yaw replaces the entity's yaw, while pitch is added to current pitch.
+    PitchRelative,
 }
 
 /// How a teleport transition applies velocity.
@@ -342,12 +345,19 @@ fn resolve_rotation(
     current_rotation: (f32, f32),
 ) -> (f32, f32) {
     match mode {
-        TeleportRotationMode::Absolute => rotation,
+        TeleportRotationMode::Absolute => (rotation.0, clamp_pitch(rotation.1)),
         TeleportRotationMode::Relative => (
             current_rotation.0 + rotation.0,
-            current_rotation.1 + rotation.1,
+            clamp_pitch(current_rotation.1 + rotation.1),
         ),
+        TeleportRotationMode::PitchRelative => {
+            (rotation.0, clamp_pitch(current_rotation.1 + rotation.1))
+        }
     }
+}
+
+const fn clamp_pitch(pitch: f32) -> f32 {
+    pitch.clamp(-90.0, 90.0)
 }
 
 fn resolve_velocity(
@@ -518,6 +528,30 @@ mod tests {
 
         assert_eq!(resolved_rotation, (90.0, 0.0));
         assert!((velocity - DVec3::new(0.0, 0.0, 1.0)).length_squared() < 1.0e-12);
+    }
+
+    #[test]
+    fn pitch_relative_transition_uses_absolute_yaw_and_relative_pitch() {
+        assert_eq!(
+            resolve_rotation(
+                (90.0, 0.0),
+                TeleportRotationMode::PitchRelative,
+                (30.0, 15.0),
+            ),
+            (90.0, 15.0)
+        );
+    }
+
+    #[test]
+    fn resolved_rotation_clamps_pitch_like_vanilla() {
+        assert_eq!(
+            resolve_rotation((0.0, 30.0), TeleportRotationMode::Relative, (0.0, 80.0),),
+            (0.0, 90.0)
+        );
+        assert_eq!(
+            resolve_rotation((0.0, -120.0), TeleportRotationMode::Absolute, (0.0, 0.0)),
+            (0.0, -90.0)
+        );
     }
 
     #[test]
