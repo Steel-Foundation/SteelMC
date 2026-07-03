@@ -35,19 +35,32 @@ impl PortalKind {
     /// Returns vanilla `Portal.getPortalTransitionTime`.
     #[must_use]
     pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
+        let player_invulnerable = entity
+            .as_player()
+            .map(|player| player.abilities.lock().invulnerable);
+        self.transition_time_for_player_state(world, player_invulnerable)
+    }
+
+    /// Returns vanilla `Portal.getPortalTransitionTime` from object-safe entity state.
+    #[must_use]
+    pub fn transition_time_for_player_state(
+        self,
+        world: &World,
+        player_invulnerable: Option<bool>,
+    ) -> i32 {
         match self {
-            Self::Nether => nether_portal_transition_time(world, entity),
+            Self::Nether => nether_portal_transition_time(world, player_invulnerable),
             Self::End | Self::EndGateway => 0,
         }
     }
 }
 
-fn nether_portal_transition_time(world: &World, entity: &dyn Entity) -> i32 {
-    let Some(player) = entity.as_player() else {
+fn nether_portal_transition_time(world: &World, player_invulnerable: Option<bool>) -> i32 {
+    let Some(player_invulnerable) = player_invulnerable else {
         return 0;
     };
 
-    let rule = nether_portal_transition_rule(player.abilities.lock().invulnerable);
+    let rule = nether_portal_transition_rule(player_invulnerable);
     let delay = portal_transition_game_rule(world, rule);
     clamped_portal_transition_time(delay)
 }

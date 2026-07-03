@@ -705,7 +705,7 @@ mod synced_data;
 mod ticking;
 mod tracker;
 
-use crate::portal::{PortalKind, TeleportTransition};
+use crate::portal::{PortalKind, PortalProcessResult, TeleportTransition, WorldChangeRequest};
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
 pub(crate) use animal::{Animal, AnimalBase};
 pub use base::{
@@ -1616,6 +1616,45 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
     fn handle_portal(&self) {
         self.base().process_portal_cooldown();
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(process) = self.base().portal_process() else {
+            return;
+        };
+
+        let player_invulnerable = self
+            .as_player()
+            .map(|player| player.abilities.lock().invulnerable);
+        let transition_time = process
+            .portal()
+            .transition_time_for_player_state(&world, player_invulnerable);
+        match self
+            .base()
+            .process_portal_teleportation(self.can_use_portal(false), transition_time)
+        {
+            Some(PortalProcessResult::Ready) => {
+                self.reset_portal_cooldown();
+                world.queue_world_change(
+                    self.id(),
+                    WorldChangeRequest::Portal {
+                        portal: process.portal(),
+                        source_world: world.clone(),
+                        portal_pos: process.entry_position(),
+                    },
+                );
+            }
+            Some(PortalProcessResult::Waiting) => {
+                if self
+                    .base()
+                    .portal_process()
+                    .is_some_and(|process| process.has_expired())
+                {
+                    self.base().clear_portal_process();
+                }
+            }
+            None => {}
+        }
     }
 
     /// Runs only vanilla `Entity.baseTick` behavior.
