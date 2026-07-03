@@ -11,11 +11,13 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
+use crate::saved_data::{SavedDataManager, names as saved_data_names};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
@@ -363,6 +365,8 @@ pub struct World {
     pub dimension_type: DimensionTypeRef,
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
+    /// Per-world saved data storage.
+    saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Server view distance (maximum chunk radius).
@@ -439,12 +443,17 @@ impl World {
         // Create or skip level data based on config
 
         let path = config.level_data_path.as_deref().map(Path::new);
+        let saved_data = SavedDataManager::new(path);
         let mut level_data =
             LevelDataManager::new(path, seed, config.difficulty, config.generation_settings)
                 .await?;
         if level_data.is_dirty() {
             level_data.save().await?;
         }
+        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
+            .load_or_default(saved_data_names::CHUNK_TICKETS)
+            .await?;
+        let timed_chunk_tickets = TimedChunkTickets::from_persistent(persistent_chunk_tickets);
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -466,7 +475,7 @@ impl World {
         }
 
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
-            let chunk_map = Arc::new(ChunkMap::new_with_storage(
+            let chunk_map = Arc::new(ChunkMap::new_with_storage_and_timed_tickets(
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
@@ -474,6 +483,7 @@ impl World {
                 storage,
                 config.generator,
                 generation_pool,
+                timed_chunk_tickets,
             ));
             chunk_map.start_generation_refill_loop();
 
@@ -484,6 +494,7 @@ impl World {
                 key,
                 dimension_type,
                 level_data: SyncRwLock::new(level_data),
+                saved_data,
                 world_border: SyncMutex::new(world_border),
                 view_distance,
                 simulation_distance,
@@ -514,6 +525,16 @@ impl World {
         match self.level_data.write().save().await {
             Ok(()) => log::info!("World {} level data saved successfully", self.key),
             Err(e) => log::error!("Failed to save world level data: {e}"),
+        }
+
+        let chunk_tickets = self.chunk_map.persistent_chunk_tickets();
+        match self
+            .saved_data
+            .save(saved_data_names::CHUNK_TICKETS, &chunk_tickets)
+            .await
+        {
+            Ok(()) => log::info!("World {} saved chunk ticket data successfully", self.key),
+            Err(e) => log::error!("Failed to save world chunk ticket data: {e}"),
         }
 
         match self.save_all_chunks().await {

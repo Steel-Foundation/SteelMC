@@ -127,6 +127,8 @@ pub struct ChunkHolder {
     simulation_level: AtomicU8,
     /// The highest status that has started work.
     started_work: AtomicUsize,
+    /// Number of save dependencies that have not completed yet.
+    active_save_dependencies: AtomicUsize,
     /// The highest status that generation is allowed to reach.
     highest_allowed_status: AtomicU8,
     /// The minimum Y coordinate of the world.
@@ -160,6 +162,18 @@ impl StatusWorkClaim {
 impl Drop for StatusWorkClaim {
     fn drop(&mut self) {
         self.holder.release_status_work_claim(self.status);
+    }
+}
+
+pub(crate) struct ChunkSaveDependency {
+    holder: Arc<ChunkHolder>,
+}
+
+impl Drop for ChunkSaveDependency {
+    fn drop(&mut self) {
+        self.holder
+            .active_save_dependencies
+            .fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -207,6 +221,7 @@ impl ChunkHolder {
             load_level: AtomicU8::new(load_level.raw()),
             simulation_level: AtomicU8::new(optional_ticket_level_raw(simulation_level)),
             started_work: AtomicUsize::new(usize::MAX),
+            active_save_dependencies: AtomicUsize::new(0),
             highest_allowed_status: AtomicU8::new(highest_allowed_status),
             min_y,
             height,
@@ -575,6 +590,19 @@ impl ChunkHolder {
         match &*chunk_result {
             ChunkResult::Ok(s) => Some(*s),
             ChunkResult::Unloaded => None,
+        }
+    }
+
+    /// Returns whether vanilla timed tickets may age for this chunk.
+    #[must_use]
+    pub fn is_ready_for_saving(&self) -> bool {
+        self.active_save_dependencies.load(Ordering::Acquire) == 0
+    }
+
+    pub(crate) fn add_save_dependency(self: &Arc<Self>) -> ChunkSaveDependency {
+        self.active_save_dependencies.fetch_add(1, Ordering::AcqRel);
+        ChunkSaveDependency {
+            holder: Arc::clone(self),
         }
     }
 
@@ -1297,5 +1325,21 @@ mod tests {
         drop(claim);
 
         assert!(waiter.await.is_none());
+    }
+
+    #[test]
+    fn save_dependency_controls_ready_for_saving() {
+        let holder = test_holder();
+        assert!(holder.is_ready_for_saving());
+
+        let first = holder.add_save_dependency();
+        let second = holder.add_save_dependency();
+        assert!(!holder.is_ready_for_saving());
+
+        drop(first);
+        assert!(!holder.is_ready_for_saving());
+
+        drop(second);
+        assert!(holder.is_ready_for_saving());
     }
 }
