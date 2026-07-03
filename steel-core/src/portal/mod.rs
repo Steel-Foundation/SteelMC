@@ -442,8 +442,7 @@ pub enum WorldChangeRequest {
         /// The target world to teleport into.
         target_world: Arc<World>,
     },
-    /// Portal position — server computes destination at processing time.
-    /// TODO: implement portal destination calculation (`nether_portal::calculate_destination`)
+    /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {
         /// The portal behavior that produced this request.
         portal: PortalKind,

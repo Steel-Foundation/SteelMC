@@ -2001,6 +2001,9 @@ impl Entity for Player {
         let velocity =
             teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
         self.set_portal_cooldown(teleport_transition.portal_cooldown);
+        if !teleport_transition.as_passenger {
+            self.stop_riding();
+        }
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
             if let Err(error) = self.teleport(pos, rotation.0, rotation.1) {
