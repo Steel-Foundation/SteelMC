@@ -10,7 +10,7 @@ use crate::config::ResolvedDomainConfig;
 use crate::world::World;
 
 const OVERWORLD_WORLD_NAME: &str = "overworld";
-const NETHER_WORLD_NAME: &str = "the_nether";
+pub(crate) const NETHER_WORLD_NAME: &str = "the_nether";
 const END_WORLD_NAME: &str = "the_end";
 
 /// Loaded worlds plus domain defaults.

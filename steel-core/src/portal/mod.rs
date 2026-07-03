@@ -14,6 +14,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_utils::BlockPos;
 
+pub(crate) mod nether_portal;
 pub mod portal_shape;
 
 /// Vanilla portal behavior kind tracked by an entity while it is inside a portal.
@@ -204,10 +205,108 @@ pub struct TeleportTransition {
     pub target_world: Arc<World>,
     /// The position in the target world.
     pub position: DVec3,
-    /// The rotation (yaw, pitch) in the target world.
+    /// The rotation (yaw, pitch) in the target world, interpreted by `rotation_mode`.
     pub rotation: (f32, f32),
+    /// Whether `rotation` is absolute or relative to the entity's current rotation.
+    pub rotation_mode: TeleportRotationMode,
+    /// The velocity component carried by this transition.
+    pub velocity: DVec3,
+    /// How `velocity` combines with the entity's current velocity.
+    pub velocity_mode: TeleportVelocityMode,
     /// Portal cooldown in ticks (prevents immediate re-entry).
     pub portal_cooldown: i32,
+}
+
+/// How a teleport transition applies rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeleportRotationMode {
+    /// Transition yaw/pitch replace the entity's current rotation.
+    Absolute,
+    /// Transition yaw/pitch are added to the entity's current rotation.
+    Relative,
+}
+
+/// How a teleport transition applies velocity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeleportVelocityMode {
+    /// Transition velocity replaces the entity's current velocity.
+    Absolute,
+    /// Transition velocity is added to the entity's current velocity.
+    Relative,
+    /// Current velocity is rotated by the rotation delta, then transition velocity is added.
+    RelativeRotated,
+}
+
+impl TeleportTransition {
+    /// Resolves this transition's yaw and pitch against the entity's current rotation.
+    #[must_use]
+    pub fn resolved_rotation(&self, current_rotation: (f32, f32)) -> (f32, f32) {
+        resolve_rotation(self.rotation, self.rotation_mode, current_rotation)
+    }
+
+    /// Resolves this transition's velocity against the entity's current motion and rotation.
+    #[must_use]
+    pub fn resolved_velocity(
+        &self,
+        current_velocity: DVec3,
+        current_rotation: (f32, f32),
+        resolved_rotation: (f32, f32),
+    ) -> DVec3 {
+        resolve_velocity(
+            self.velocity,
+            self.velocity_mode,
+            current_velocity,
+            current_rotation,
+            resolved_rotation,
+        )
+    }
+}
+
+fn resolve_rotation(
+    rotation: (f32, f32),
+    mode: TeleportRotationMode,
+    current_rotation: (f32, f32),
+) -> (f32, f32) {
+    match mode {
+        TeleportRotationMode::Absolute => rotation,
+        TeleportRotationMode::Relative => (
+            current_rotation.0 + rotation.0,
+            current_rotation.1 + rotation.1,
+        ),
+    }
+}
+
+fn resolve_velocity(
+    velocity: DVec3,
+    mode: TeleportVelocityMode,
+    current_velocity: DVec3,
+    current_rotation: (f32, f32),
+    resolved_rotation: (f32, f32),
+) -> DVec3 {
+    match mode {
+        TeleportVelocityMode::Absolute => velocity,
+        TeleportVelocityMode::Relative => current_velocity + velocity,
+        TeleportVelocityMode::RelativeRotated => {
+            let diff_yaw = current_rotation.0 - resolved_rotation.0;
+            let diff_pitch = current_rotation.1 - resolved_rotation.1;
+            rotate_y(
+                rotate_x(current_velocity, diff_pitch.to_radians()),
+                diff_yaw.to_radians(),
+            ) + velocity
+        }
+    }
+}
+
+fn rotate_x(vec: DVec3, radians: f32) -> DVec3 {
+    let cos = f64::from(radians.cos());
+    let sin = f64::from(radians.sin());
+    DVec3::new(vec.x, vec.y * cos + vec.z * sin, vec.z * cos - vec.y * sin)
+}
+
+fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
+    let cos = f64::from(radians.cos());
+    let sin = f64::from(radians.sin());
+    DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
 }
 
 /// A queued request to move an entity between loaded worlds.
@@ -237,14 +336,16 @@ pub enum WorldChangeRequest {
 
 #[cfg(test)]
 mod tests {
+    use glam::DVec3;
     use steel_registry::vanilla_game_rules::{
         PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
     };
     use steel_utils::BlockPos;
 
     use super::{
-        PortalKind, PortalProcessResult, PortalProcessor, clamped_portal_transition_time,
-        nether_portal_transition_rule,
+        PortalKind, PortalProcessResult, PortalProcessor, TeleportRotationMode,
+        TeleportVelocityMode, clamped_portal_transition_time, nether_portal_transition_rule,
+        resolve_rotation, resolve_velocity,
     };
 
     #[test]
@@ -326,5 +427,39 @@ mod tests {
         assert_eq!(clamped_portal_transition_time(-12), 0);
         assert_eq!(clamped_portal_transition_time(0), 0);
         assert_eq!(clamped_portal_transition_time(80), 80);
+    }
+
+    #[test]
+    fn relative_portal_transition_rotates_velocity_by_yaw_delta() {
+        let resolved_rotation =
+            resolve_rotation((90.0, 0.0), TeleportRotationMode::Relative, (0.0, 0.0));
+        let velocity = resolve_velocity(
+            DVec3::ZERO,
+            TeleportVelocityMode::RelativeRotated,
+            DVec3::new(1.0, 0.0, 0.0),
+            (0.0, 0.0),
+            resolved_rotation,
+        );
+
+        assert_eq!(resolved_rotation, (90.0, 0.0));
+        assert!((velocity - DVec3::new(0.0, 0.0, 1.0)).length_squared() < 1.0e-12);
+    }
+
+    #[test]
+    fn absolute_transition_replaces_velocity_and_rotation() {
+        let resolved_rotation =
+            resolve_rotation((45.0, 10.0), TeleportRotationMode::Absolute, (90.0, 20.0));
+
+        assert_eq!(resolved_rotation, (45.0, 10.0));
+        assert_eq!(
+            resolve_velocity(
+                DVec3::new(0.0, -0.1, 0.0),
+                TeleportVelocityMode::Absolute,
+                DVec3::new(1.0, 2.0, 3.0),
+                (90.0, 20.0),
+                resolved_rotation
+            ),
+            DVec3::new(0.0, -0.1, 0.0)
+        );
     }
 }

@@ -1971,26 +1971,32 @@ impl Entity for Player {
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let new_world = teleport_transition.target_world.clone();
+        let current_rotation = self.rotation();
+        let current_velocity = self.velocity();
+        let rotation = teleport_transition.resolved_rotation(current_rotation);
+        let velocity =
+            teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
         self.set_portal_cooldown(teleport_transition.portal_cooldown);
         if Arc::ptr_eq(&self.get_world(), &new_world) {
             let pos = teleport_transition.position;
-            let rotation = teleport_transition.rotation;
             if let Err(error) = self.teleport(pos, rotation.0, rotation.1) {
                 panic!(
                     "failed to commit same-world portal teleport for player {}: {error}",
                     self.id()
                 );
             }
+            self.set_velocity(velocity);
             self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
             if !self.spawn(
                 teleport_transition.position,
-                teleport_transition.rotation,
+                rotation,
                 ResetReason::WorldChange,
             ) {
                 return;
             }
+            self.set_velocity(velocity);
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
         }

@@ -26,10 +26,13 @@ use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
-use crate::portal::{TeleportTransition, WorldChangeRequest};
+use crate::portal::{
+    PortalKind, TeleportRotationMode, TeleportTransition, TeleportVelocityMode, WorldChangeRequest,
+    nether_portal,
+};
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
-use crate::server::worlds::WorldMap;
+use crate::server::worlds::{NETHER_WORLD_NAME, WorldMap};
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
@@ -52,7 +55,7 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, RegistryEntry};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -123,6 +126,9 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         target_world: world,
         position: respawn_position(&spawn),
         rotation: (spawn.yaw, spawn.pitch),
+        rotation_mode: TeleportRotationMode::Absolute,
+        velocity: DVec3::ZERO,
+        velocity_mode: TeleportVelocityMode::Absolute,
         portal_cooldown: 0,
     }
 }
@@ -275,6 +281,82 @@ impl ServerJob for RootVehicleRestoreJob {
                 ) {
                     restore_root_vehicle_for_player(&self.player, &self.world, root_vehicle);
                 }
+                JobPoll::Finished
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.request.cancel();
+    }
+}
+
+struct NetherPortalTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    target_world: Arc<World>,
+    portal_pos: BlockPos,
+    approximate_exit_pos: BlockPos,
+    to_nether: bool,
+    request: ChunkRequestHandle,
+}
+
+impl NetherPortalTeleportJob {
+    fn new(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+        portal_pos: BlockPos,
+        approximate_exit_pos: BlockPos,
+        to_nether: bool,
+    ) -> Self {
+        let request = target_world.chunk_map.request_square(
+            nether_portal::prewarm_center(approximate_exit_pos),
+            nether_portal::prewarm_chunk_radius(to_nether),
+            ChunkStatus::Full,
+            ChunkTicketKind::Portal,
+        );
+        Self {
+            entity,
+            source_world,
+            target_world,
+            portal_pos,
+            approximate_exit_pos,
+            to_nether,
+            request,
+        }
+    }
+}
+
+impl ServerJob for NetherPortalTeleportJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if self.entity.is_removed() {
+            return JobPoll::Finished;
+        }
+        if let Some(player) = self.entity.as_player()
+            && !Arc::ptr_eq(&player.get_world(), &self.source_world)
+        {
+            return JobPoll::Finished;
+        }
+
+        match self.request.poll() {
+            ChunkRequestState::Pending { .. } => JobPoll::Pending,
+            ChunkRequestState::Cancelled => JobPoll::Finished,
+            ChunkRequestState::Ready => {
+                let Some(_ready) = self.request.ready_chunks() else {
+                    return JobPoll::Pending;
+                };
+                let Some(transition) = nether_portal::calculate_transition(
+                    &self.source_world,
+                    &self.target_world,
+                    self.entity.as_ref(),
+                    self.portal_pos,
+                    self.approximate_exit_pos,
+                    self.to_nether,
+                ) else {
+                    return JobPoll::Finished;
+                };
+                self.entity.clone().change_world(&transition);
                 JobPoll::Finished
             }
         }
@@ -1301,11 +1383,50 @@ impl Server {
                     let transition = world_spawn_transition(target_world);
                     entity.change_world(&transition);
                 }
-                WorldChangeRequest::Portal { .. } => {
-                    // TODO: portal destination calculation + async chunk pre-warming
+                WorldChangeRequest::Portal {
+                    portal: PortalKind::Nether,
+                    source_world,
+                    portal_pos,
+                } => {
+                    self.queue_nether_portal_change(entity, source_world, portal_pos);
+                }
+                WorldChangeRequest::Portal { portal, .. } => {
+                    tracing::debug!(
+                        ?portal,
+                        "Portal world change ignored until this portal kind has a destination calculator"
+                    );
                 }
             }
         }
+    }
+
+    fn queue_nether_portal_change(
+        &self,
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+    ) {
+        let Some(target_world) = self.worlds.resolve_nether_portal_target(&source_world) else {
+            log::warn!(
+                "No Nether portal target world loaded for source world {}",
+                source_world.key
+            );
+            return;
+        };
+        let to_nether = target_world.key.path.as_ref() == NETHER_WORLD_NAME;
+        let approximate_exit_pos = nether_portal::approximate_exit_position(
+            &source_world,
+            &target_world,
+            entity.position(),
+        );
+        self.jobs.spawn(NetherPortalTeleportJob::new(
+            entity,
+            source_world,
+            target_world,
+            portal_pos,
+            approximate_exit_pos,
+            to_nether,
+        ));
     }
 
     /// Queues a player domain switch for processing at the server tick safe point.

@@ -12,8 +12,10 @@ use steel_registry::vanilla_blocks;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, Direction, WorldAabb};
 
+use crate::entity::Entity;
+use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
 /// A detected portal shape with axis, position, and dimensions.
@@ -375,6 +377,31 @@ impl PortalShape {
         let relative_forward = vec_axis(position, forward_axis)
             - (f64::from(block_pos_axis(bottom_min, forward_axis)) + 0.5);
         DVec3::new(relative_right, relative_up, relative_forward)
+    }
+
+    /// Returns vanilla `PortalShape.findCollisionFreePosition`.
+    #[must_use]
+    pub fn find_collision_free_position(
+        bottom_center: DVec3,
+        world: &Arc<World>,
+        entity: &dyn Entity,
+        dimensions: EntityDimensions,
+    ) -> DVec3 {
+        if dimensions.width > 4.0 || dimensions.height > 4.0 {
+            return bottom_center;
+        }
+
+        let width = f64::from(dimensions.width);
+        let height = f64::from(dimensions.height);
+        let half_height = height / 2.0;
+        let center = bottom_center + DVec3::new(0.0, half_height, 0.0);
+        let allowed_centers = [WorldAabb::of_size(center, width, 0.0, width)
+            .expand_towards(DVec3::Y)
+            .inflate(1.0E-6)];
+
+        WorldCollisionProvider::for_entity(world, entity)
+            .find_free_position(&allowed_centers, center, width, height, width)
+            .map_or(bottom_center, |pos| pos - DVec3::new(0.0, half_height, 0.0))
     }
 }
 
