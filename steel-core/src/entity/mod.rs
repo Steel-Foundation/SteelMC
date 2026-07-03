@@ -705,7 +705,7 @@ mod synced_data;
 mod ticking;
 mod tracker;
 
-use crate::portal::TeleportTransition;
+use crate::portal::{PortalKind, TeleportTransition};
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
 pub(crate) use animal::{Animal, AnimalBase};
 pub use base::{
@@ -3233,6 +3233,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns whether the entity is on vanilla portal cooldown.
     fn is_on_portal_cooldown(&self) -> bool {
         self.base().is_on_portal_cooldown()
+    }
+
+    /// Resets vanilla portal cooldown to this entity's dimension-changing delay.
+    ///
+    /// Mirrors vanilla `Entity.setPortalCooldown()`.
+    fn reset_portal_cooldown(&self) {
+        self.set_portal_cooldown(self.dimension_changing_delay());
+    }
+
+    /// Marks this entity as inside a vanilla portal during the current tick.
+    ///
+    /// Mirrors vanilla `Entity.setAsInsidePortal`.
+    fn set_as_inside_portal(&self, portal: PortalKind, entry_position: BlockPos) {
+        if self.is_on_portal_cooldown() {
+            self.reset_portal_cooldown();
+            return;
+        }
+
+        self.base().set_as_inside_portal(portal, entry_position);
     }
 
     /// Returns this entity's optional vanilla custom name.
@@ -6595,6 +6614,7 @@ mod tests {
     use crate::entity::entities::PigEntity;
     use crate::entity::mob::Mob;
     use crate::inventory::equipment::EquipmentSlot;
+    use crate::portal::PortalKind;
     use crate::world::LevelReader;
 
     use super::{
@@ -7122,6 +7142,29 @@ mod tests {
 
         let arrow = TypedTestEntity::new(3, &vanilla_entities::ARROW);
         assert_eq!(arrow.dimension_changing_delay(), 2);
+    }
+
+    #[test]
+    fn set_as_inside_portal_starts_portal_process_when_not_on_cooldown() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+        let entry_position = BlockPos::new(2, 64, 2);
+
+        entity.set_as_inside_portal(PortalKind::Nether, entry_position);
+
+        let process = entity.base().portal_process().expect("portal process");
+        assert_eq!(process.portal(), PortalKind::Nether);
+        assert_eq!(process.entry_position(), entry_position);
+    }
+
+    #[test]
+    fn set_as_inside_portal_resets_cooldown_without_starting_process() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::ARROW);
+        entity.set_portal_cooldown(1);
+
+        entity.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
+
+        assert_eq!(entity.portal_cooldown(), 2);
+        assert_eq!(entity.base().portal_process(), None);
     }
 
     #[test]
