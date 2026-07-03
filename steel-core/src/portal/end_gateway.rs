@@ -251,6 +251,7 @@ fn gateway_transition(
             TeleportVelocityMode::RelativeRotated
         },
         portal_cooldown: entity.dimension_changing_delay(),
+        as_passenger: false,
         post_transition: TeleportPostTransition::place_portal_ticket(
             PortalTicketTarget::Destination,
         ),

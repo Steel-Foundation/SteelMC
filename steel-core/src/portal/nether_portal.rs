@@ -214,6 +214,7 @@ fn create_dimension_transition(
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::RelativeRotated,
         portal_cooldown: entity.dimension_changing_delay(),
+        as_passenger: false,
         post_transition,
     }
 }

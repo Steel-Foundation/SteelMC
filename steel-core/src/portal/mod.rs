@@ -203,6 +203,7 @@ impl PortalProcessor {
 /// Vanilla names loaded worlds "dimensions" in packets and saves. Steel uses
 /// "world" for runtime loaded world instances, reserving "dimension type" for
 /// the vanilla registry entry that defines height, skylight, ceiling, etc.
+#[derive(Clone)]
 pub struct TeleportTransition {
     /// The target world to teleport into.
     pub target_world: Arc<World>,
@@ -218,6 +219,8 @@ pub struct TeleportTransition {
     pub velocity_mode: TeleportVelocityMode,
     /// Portal cooldown in ticks (prevents immediate re-entry).
     pub portal_cooldown: i32,
+    /// Whether this transition is being applied recursively to a passenger.
+    pub as_passenger: bool,
     /// Side effects vanilla runs after the entity has reached the target world.
     pub post_transition: TeleportPostTransition,
 }
@@ -316,6 +319,38 @@ pub enum TeleportVelocityMode {
 }
 
 impl TeleportTransition {
+    /// Returns this transition with a new target position.
+    #[must_use]
+    pub fn with_position(&self, position: DVec3) -> Self {
+        Self {
+            target_world: self.target_world.clone(),
+            position,
+            rotation: self.rotation,
+            rotation_mode: self.rotation_mode,
+            velocity: self.velocity,
+            velocity_mode: self.velocity_mode,
+            portal_cooldown: self.portal_cooldown,
+            as_passenger: self.as_passenger,
+            post_transition: self.post_transition.clone(),
+        }
+    }
+
+    /// Marks this transition as the recursive passenger variant.
+    #[must_use]
+    pub fn transition_as_passenger(&self) -> Self {
+        Self {
+            target_world: self.target_world.clone(),
+            position: self.position,
+            rotation: self.rotation,
+            rotation_mode: self.rotation_mode,
+            velocity: self.velocity,
+            velocity_mode: self.velocity_mode,
+            portal_cooldown: self.portal_cooldown,
+            as_passenger: true,
+            post_transition: self.post_transition.clone(),
+        }
+    }
+
     /// Resolves this transition's yaw and pitch against the entity's current rotation.
     #[must_use]
     pub fn resolved_rotation(&self, current_rotation: (f32, f32)) -> (f32, f32) {

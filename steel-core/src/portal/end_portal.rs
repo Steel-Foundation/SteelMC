@@ -60,6 +60,7 @@ pub(crate) fn calculate_entry_transition(
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::RelativeRotated,
         portal_cooldown: entity.dimension_changing_delay(),
+        as_passenger: false,
         post_transition: portal_sound_then_destination_ticket(),
     })
 }
@@ -80,6 +81,7 @@ pub(crate) fn calculate_entity_return_transition(
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::RelativeRotated,
         portal_cooldown: entity.dimension_changing_delay(),
+        as_passenger: false,
         post_transition: portal_sound_then_destination_ticket(),
     }
 }
@@ -100,6 +102,7 @@ pub(crate) fn calculate_player_return_transition(
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::Absolute,
         portal_cooldown: entity.dimension_changing_delay(),
+        as_passenger: false,
         post_transition: TeleportPostTransition::do_nothing(),
     }
 }

@@ -1705,6 +1705,11 @@ impl EntityBase {
         self.movement_trace.lock().remove_latest_recording();
     }
 
+    /// Clears movement segments recorded for the current tick.
+    pub fn clear_movement_this_tick(&self) {
+        self.movement_trace.lock().reset();
+    }
+
     /// Takes and finalizes this tick's movement segments for block-contact effects.
     pub fn take_movements_for_block_effects(&self) -> Vec<EntityMovement> {
         let (old_position, position) = {

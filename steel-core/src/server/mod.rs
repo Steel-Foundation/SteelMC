@@ -17,7 +17,9 @@ use crate::chunk::{
 };
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entities};
+use crate::entity::{
+    Entity, EntityBase, RemovalReason, SharedEntity, change_entity_world, init_entities,
+};
 
 use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -131,6 +133,7 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::Absolute,
         portal_cooldown: 0,
+        as_passenger: false,
         post_transition: TeleportPostTransition::do_nothing(),
     }
 }
@@ -358,7 +361,7 @@ impl ServerJob for NetherPortalTeleportJob {
                 ) else {
                     return JobPoll::Finished;
                 };
-                self.entity.clone().change_world(&transition);
+                change_entity_world(Arc::clone(&self.entity), &transition);
                 JobPoll::Finished
             }
         }
@@ -503,7 +506,7 @@ impl ServerJob for EndPortalTeleportJob {
                         ) else {
                             return JobPoll::Finished;
                         };
-                        self.entity.clone().change_world(&transition);
+                        change_entity_world(Arc::clone(&self.entity), &transition);
                         return JobPoll::Finished;
                     }
                 },
@@ -523,7 +526,7 @@ impl ServerJob for EndPortalTeleportJob {
                             self.entity.as_ref(),
                             respawn_data,
                         );
-                        self.entity.clone().change_world(&transition);
+                        change_entity_world(Arc::clone(&self.entity), &transition);
                         return JobPoll::Finished;
                     }
                 },
@@ -567,7 +570,7 @@ impl ServerJob for EndPortalTeleportJob {
                             spawn.position,
                             spawn.rotation,
                         );
-                        self.entity.clone().change_world(&transition);
+                        change_entity_world(Arc::clone(&self.entity), &transition);
                         return JobPoll::Finished;
                     }
                 },
@@ -659,7 +662,7 @@ impl ServerJob for EndGatewayTeleportJob {
                         ) else {
                             return JobPoll::Finished;
                         };
-                        self.entity.clone().change_world(&transition);
+                        change_entity_world(Arc::clone(&self.entity), &transition);
                         return JobPoll::Finished;
                     }
                 },
@@ -1713,11 +1716,11 @@ impl Server {
             }
             match request {
                 WorldChangeRequest::Computed(transition) => {
-                    entity.change_world(&transition);
+                    change_entity_world(entity, &transition);
                 }
                 WorldChangeRequest::WorldSpawn { target_world } => {
                     let transition = world_spawn_transition(target_world);
-                    entity.change_world(&transition);
+                    change_entity_world(entity, &transition);
                 }
                 WorldChangeRequest::Portal {
                     portal: PortalKind::Nether,
