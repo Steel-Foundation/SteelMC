@@ -4,8 +4,8 @@
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-use std::ptr;
 use std::sync::LazyLock;
+use std::{array, ptr};
 
 use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -249,7 +249,7 @@ fn cached_runtime_rotated_jigsaws<'cache>(
     let idx = rotation_index(rotation);
     let by_rotation = cache
         .entry(location.clone())
-        .or_insert_with(|| std::array::from_fn(|_| None));
+        .or_insert_with(|| array::from_fn(|_| None));
     by_rotation[idx].get_or_insert_with(|| transform_template_jigsaws(template, rotation))
 }
 
@@ -444,7 +444,7 @@ fn append_shuffled_templates_cached<'a>(
 }
 
 #[cfg(feature = "jigsaw-pool-deduplicate-list")]
-fn dedupe_shuffled_templates_in_place<'a>(out: &mut Vec<&'a PoolElement>, start: usize) {
+fn dedupe_shuffled_templates_in_place(out: &mut Vec<&PoolElement>, start: usize) {
     let mut seen = FxHashSet::default();
     let mut write = start;
     for read in start..out.len() {
