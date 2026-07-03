@@ -9,6 +9,10 @@ use steel_utils::Identifier;
 use crate::config::ResolvedDomainConfig;
 use crate::world::World;
 
+const OVERWORLD_WORLD_NAME: &str = "overworld";
+const NETHER_WORLD_NAME: &str = "the_nether";
+const END_WORLD_NAME: &str = "the_end";
+
 /// Loaded worlds plus domain defaults.
 pub struct WorldMap {
     worlds: FxSmallMap<8, Identifier, Arc<World>>,
@@ -122,5 +126,65 @@ impl WorldMap {
             target_world_name.to_owned(),
         );
         self.worlds.get(&key).cloned()
+    }
+
+    /// Resolves the vanilla Nether portal target in the source world's domain.
+    #[must_use]
+    pub fn resolve_nether_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
+        self.resolve_portal_target(
+            source_world,
+            nether_portal_target_world_name(source_world.key.path.as_ref()),
+        )
+    }
+
+    /// Resolves the vanilla End portal target for non-End source worlds.
+    ///
+    /// End-to-respawn-world transitions depend on the source world's respawn data,
+    /// so that branch is intentionally left to the destination calculator.
+    #[must_use]
+    pub fn resolve_end_entry_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
+        end_entry_portal_target_world_name(source_world.key.path.as_ref())
+            .and_then(|target| self.resolve_portal_target(source_world, target))
+    }
+}
+
+fn nether_portal_target_world_name(source_world_name: &str) -> &'static str {
+    if source_world_name == NETHER_WORLD_NAME {
+        OVERWORLD_WORLD_NAME
+    } else {
+        NETHER_WORLD_NAME
+    }
+}
+
+fn end_entry_portal_target_world_name(source_world_name: &str) -> Option<&'static str> {
+    if source_world_name == END_WORLD_NAME {
+        None
+    } else {
+        Some(END_WORLD_NAME)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{end_entry_portal_target_world_name, nether_portal_target_world_name};
+
+    #[test]
+    fn nether_portal_target_names_follow_vanilla_level_keys() {
+        assert_eq!(nether_portal_target_world_name("overworld"), "the_nether");
+        assert_eq!(nether_portal_target_world_name("the_end"), "the_nether");
+        assert_eq!(nether_portal_target_world_name("the_nether"), "overworld");
+    }
+
+    #[test]
+    fn end_entry_portal_target_name_is_only_for_non_end_sources() {
+        assert_eq!(
+            end_entry_portal_target_world_name("overworld"),
+            Some("the_end")
+        );
+        assert_eq!(
+            end_entry_portal_target_world_name("the_nether"),
+            Some("the_end")
+        );
+        assert_eq!(end_entry_portal_target_world_name("the_end"), None);
     }
 }
