@@ -678,7 +678,7 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        for block in &palette.blocks {
+        Self::palette_blocks_for_placement(&palette.blocks, position, settings, |block, world_pos| {
             let original = ProcessedBlockInfo {
                 template_pos: block.pos,
                 world_pos: block.pos,
@@ -687,7 +687,7 @@ impl StructureTemplate {
             };
             let processed = ProcessedBlockInfo {
                 template_pos: block.pos,
-                world_pos: Self::transformed_position(position, block.pos, settings),
+                world_pos,
                 state: block.state,
                 nbt: block.nbt.clone(),
             };
@@ -704,7 +704,7 @@ impl StructureTemplate {
                 original_blocks.push(original);
                 processed_blocks.push(processed);
             }
-        }
+        });
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -729,6 +729,8 @@ impl StructureTemplate {
         let mut locked_fluids = Vec::new();
         let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
+            // Always guard placement: the vanilla fallback may enqueue a block outside
+            // `bounding_box` for processor/finalize parity without intending a write here.
             if !settings.bounding_box.contains_blockpos(processed.world_pos) {
                 continue;
             }
@@ -1194,6 +1196,47 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
+    }
+
+    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
+    /// Disabled when a `Capped` processor is present — it needs the full block list
+    /// in `finalize_processing` (Trail Ruins).
+    fn pre_filters_placement_bounds(processors: &[StructureProcessorKind]) -> bool {
+        !processors
+            .iter()
+            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
+    }
+
+    fn palette_blocks_for_placement<F: FnMut(&StructureBlockInfo, BlockPos)>(
+        blocks: &[StructureBlockInfo],
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        mut f: F,
+    ) {
+        if !Self::pre_filters_placement_bounds(settings.processors) {
+            for block in blocks {
+                f(block, Self::transformed_position(position, block.pos, settings));
+            }
+            return;
+        }
+
+        let mut placed_any = false;
+
+        for block in blocks {
+            let world_pos = Self::transformed_position(position, block.pos, settings);
+            if settings.bounding_box.contains_blockpos(world_pos) {
+                placed_any = true;
+                f(block, world_pos);
+            }
+        }
+
+        // Empty list makes vanilla drop the piece from multi-chunk placement.
+        if !placed_any && let Some(first) = blocks.first() {
+            f(
+                first,
+                Self::transformed_position(position, first.pos, settings),
+            );
+        }
     }
 
     const fn transformed_position(

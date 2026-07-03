@@ -3,6 +3,7 @@
 //! Parsed at build time from vanilla datapack JSONs and structure NBT files.
 //! Used by the jigsaw placement system to assemble structures from pools.
 
+use glam::IVec3;
 use steel_utils::{Direction, Identifier, Rotation};
 
 /// Orientation of a jigsaw block, encoding both facing direction and up direction.
@@ -142,6 +143,25 @@ pub struct JigsawBlock {
     pub selection_priority: i32,
     /// Priority for BFS queue ordering when placing children (higher = processed first).
     pub placement_priority: i32,
+}
+
+impl JigsawBlock {
+    /// Returns a copy of this jigsaw with its position and orientation rotated.
+    #[must_use]
+    pub fn rotated(block: &Self, rotation: Rotation) -> Self {
+        let pos = rotation.transform_pos(IVec3::from(block.pos), IVec3::ZERO);
+        Self {
+            pos: [pos.x, pos.y, pos.z],
+            orientation: block.orientation.rotate(rotation),
+            name: block.name.clone(),
+            target: block.target.clone(),
+            pool: block.pool.clone(),
+            joint: block.joint,
+            final_state: block.final_state.clone(),
+            selection_priority: block.selection_priority,
+            placement_priority: block.placement_priority,
+        }
+    }
 }
 
 /// Extracted data from a structure template NBT file.
