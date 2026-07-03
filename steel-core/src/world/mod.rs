@@ -484,6 +484,18 @@ impl World {
         self.world_border.lock().snapshot()
     }
 
+    /// Returns whether a block position is inside this world's vanilla world border.
+    #[must_use]
+    pub fn is_block_within_world_border(&self, pos: BlockPos) -> bool {
+        self.world_border_snapshot().is_block_within_bounds(pos)
+    }
+
+    /// Clamps a world-space position to this world's vanilla world border and floors it to a block position.
+    #[must_use]
+    pub fn clamp_to_world_border(&self, x: f64, y: f64, z: f64) -> BlockPos {
+        self.world_border_snapshot().clamp_to_bounds(x, y, z)
+    }
+
     #[must_use]
     pub(crate) fn initialize_border_packet(&self) -> CInitializeBorder {
         initialize_border_packet(self.world_border_snapshot())
@@ -495,11 +507,11 @@ impl World {
         respawn_data: RespawnData,
     ) -> RespawnData {
         let pos = respawn_data.pos();
-        let border = self.world_border_snapshot();
-        if border.is_within_bounds_with_margin(f64::from(pos.x()), f64::from(pos.z()), 0.0) {
+        if self.is_block_within_world_border(pos) {
             return respawn_data;
         }
 
+        let border = self.world_border_snapshot();
         let center_pos = BlockPos::containing(border.center_x, 0.0, border.center_z);
         let new_pos = self.heightmap_pos(HeightmapType::MotionBlocking, center_pos);
         RespawnData::of(

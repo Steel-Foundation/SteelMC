@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use steel_utils::WorldAabb;
+use steel_utils::{BlockPos, WorldAabb};
 
 use crate::level_data::WorldBorderData;
 
@@ -37,11 +37,26 @@ pub(crate) struct WorldBorderSnapshot {
 
 impl WorldBorderSnapshot {
     #[must_use]
+    pub(crate) fn is_block_within_bounds(self, pos: BlockPos) -> bool {
+        self.is_within_bounds_with_margin(f64::from(pos.x()), f64::from(pos.z()), 0.0)
+    }
+
+    #[must_use]
     pub(crate) fn is_within_bounds_with_margin(self, x: f64, z: f64, margin: f64) -> bool {
         x >= self.min_x - margin
             && x < self.max_x + margin
             && z >= self.min_z - margin
             && z < self.max_z + margin
+    }
+
+    #[must_use]
+    pub(crate) fn clamp_to_bounds(self, x: f64, y: f64, z: f64) -> BlockPos {
+        let epsilon = f64::from(1.0E-5_f32);
+        BlockPos::containing(
+            clamp_f64(x, self.min_x, self.max_x - epsilon),
+            y,
+            clamp_f64(z, self.min_z, self.max_z - epsilon),
+        )
     }
 
     #[must_use]
@@ -481,6 +496,34 @@ mod tests {
 
         assert_f64_eq(snapshot.max_x, f64::from(DEFAULT_ABSOLUTE_MAX_SIZE));
         assert_f64_eq(snapshot.max_z, f64::from(DEFAULT_ABSOLUTE_MAX_SIZE));
+    }
+
+    #[test]
+    fn block_position_bounds_use_vanilla_inclusive_min_exclusive_max() {
+        let mut border = default_border();
+        border.set_size(10.0).expect("valid border size");
+        let snapshot = border.snapshot();
+
+        assert!(snapshot.is_block_within_bounds(BlockPos::new(-5, 64, -5)));
+        assert!(snapshot.is_block_within_bounds(BlockPos::new(4, 64, 4)));
+        assert!(!snapshot.is_block_within_bounds(BlockPos::new(5, 64, 0)));
+        assert!(!snapshot.is_block_within_bounds(BlockPos::new(0, 64, 5)));
+    }
+
+    #[test]
+    fn clamp_to_bounds_matches_vanilla_blockpos_containing() {
+        let mut border = default_border();
+        border.set_size(10.0).expect("valid border size");
+        let snapshot = border.snapshot();
+
+        assert_eq!(
+            snapshot.clamp_to_bounds(12.7, 64.9, 5.5),
+            BlockPos::new(4, 64, 4)
+        );
+        assert_eq!(
+            snapshot.clamp_to_bounds(-8.1, -1.2, -9.3),
+            BlockPos::new(-5, -2, -5)
+        );
     }
 
     #[test]
