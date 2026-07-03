@@ -4,9 +4,14 @@
 //! loaded runtime worlds and reserves "dimension type" for the vanilla registry
 //! entry that defines world rules.
 
+use crate::entity::Entity;
 use crate::world::World;
 use glam::DVec3;
 use std::sync::Arc;
+use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::vanilla_game_rules::{
+    PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
+};
 use steel_utils::BlockPos;
 
 pub mod portal_shape;
@@ -24,6 +29,48 @@ pub enum PortalKind {
     End,
     /// Vanilla end gateway block.
     EndGateway,
+}
+
+impl PortalKind {
+    /// Returns vanilla `Portal.getPortalTransitionTime`.
+    #[must_use]
+    pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
+        match self {
+            Self::Nether => nether_portal_transition_time(world, entity),
+            Self::End | Self::EndGateway => 0,
+        }
+    }
+}
+
+fn nether_portal_transition_time(world: &World, entity: &dyn Entity) -> i32 {
+    let Some(player) = entity.as_player() else {
+        return 0;
+    };
+
+    let rule = nether_portal_transition_rule(player.abilities.lock().invulnerable);
+    let delay = portal_transition_game_rule(world, rule);
+    clamped_portal_transition_time(delay)
+}
+
+fn nether_portal_transition_rule(player_invulnerable: bool) -> GameRuleRef {
+    if player_invulnerable {
+        &PLAYERS_NETHER_PORTAL_CREATIVE_DELAY
+    } else {
+        &PLAYERS_NETHER_PORTAL_DEFAULT_DELAY
+    }
+}
+
+fn clamped_portal_transition_time(delay: i32) -> i32 {
+    delay.max(0)
+}
+
+fn portal_transition_game_rule(world: &World, rule: GameRuleRef) -> i32 {
+    match world.get_game_rule(rule) {
+        GameRuleValue::Int(value) => value,
+        value @ GameRuleValue::Bool(_) => {
+            panic!("gamerule {} should be an integer, got {value:?}", rule.key)
+        }
+    }
 }
 
 /// Result of advancing an entity's active portal process for one server tick.
@@ -166,6 +213,8 @@ pub enum WorldChangeRequest {
     /// Portal position — server computes destination at processing time.
     /// TODO: implement portal destination calculation (`nether_portal::calculate_destination`)
     Portal {
+        /// The portal behavior that produced this request.
+        portal: PortalKind,
         /// The world the entity is currently in.
         source_world: Arc<World>,
         /// The portal block position.
@@ -175,9 +224,15 @@ pub enum WorldChangeRequest {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::vanilla_game_rules::{
+        PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
+    };
     use steel_utils::BlockPos;
 
-    use super::{PortalKind, PortalProcessResult, PortalProcessor};
+    use super::{
+        PortalKind, PortalProcessResult, PortalProcessor, clamped_portal_transition_time,
+        nether_portal_transition_rule,
+    };
 
     #[test]
     fn portal_processor_reaches_transition_after_vanilla_threshold() {
@@ -239,5 +294,24 @@ mod tests {
         processor.process_portal_teleportation(true, 80);
         processor.set_as_inside_portal(BlockPos::new(2, 64, 2));
         assert_eq!(processor.entry_position(), BlockPos::new(2, 64, 2));
+    }
+
+    #[test]
+    fn nether_portal_transition_rule_matches_player_invulnerability() {
+        assert_eq!(
+            nether_portal_transition_rule(false).key,
+            PLAYERS_NETHER_PORTAL_DEFAULT_DELAY.key
+        );
+        assert_eq!(
+            nether_portal_transition_rule(true).key,
+            PLAYERS_NETHER_PORTAL_CREATIVE_DELAY.key
+        );
+    }
+
+    #[test]
+    fn portal_transition_time_is_clamped_non_negative() {
+        assert_eq!(clamped_portal_transition_time(-12), 0);
+        assert_eq!(clamped_portal_transition_time(0), 0);
+        assert_eq!(clamped_portal_transition_time(80), 80);
     }
 }
