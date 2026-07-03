@@ -54,7 +54,7 @@ use steel_registry::loot_table::LootContext;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
-    BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
+    BLOCK_DROPS, GLOBAL_SOUND_EVENTS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
 };
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
@@ -122,6 +122,18 @@ static BIOME_INFO_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(2345));
     PerlinSimplexNoise::new(&mut random, &[0])
 });
+
+fn global_sound_events_enabled(value: GameRuleValue) -> bool {
+    match value {
+        GameRuleValue::Bool(enabled) => enabled,
+        value @ GameRuleValue::Int(_) => {
+            panic!(
+                "gamerule {} should be a bool, got {value:?}",
+                GLOBAL_SOUND_EVENTS.key
+            )
+        }
+    }
+}
 
 /// Block shape channel used by vanilla-style world clipping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3780,14 +3792,19 @@ impl World {
 
     /// Broadcasts a global level event to all players in the world.
     ///
-    /// Unlike `level_event`, this sends the event to all players regardless of distance.
-    /// Used for events like the ender dragon death or wither spawn.
+    /// When `global_sound_events` is disabled, vanilla falls back to a normal
+    /// nearby level event with the packet's global flag unset.
     ///
     /// # Arguments
     /// * `event_type` - The event type ID from `steel_registry::level_events`
     /// * `pos` - The position where the event occurs
     /// * `data` - Event-specific data
     pub fn global_level_event(&self, event_type: i32, pos: BlockPos, data: i32) {
+        if !global_sound_events_enabled(self.get_game_rule(&GLOBAL_SOUND_EVENTS)) {
+            self.level_event(event_type, pos, data, None);
+            return;
+        }
+
         let packet = CLevelEvent::new(event_type, pos, data, true);
         self.players.iter_players(|_, player| {
             player.send_packet(packet.clone());
@@ -4804,6 +4821,12 @@ mod tests {
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    #[test]
+    fn global_sound_events_gamerule_controls_global_level_event_packet_mode() {
+        assert!(global_sound_events_enabled(GameRuleValue::Bool(true)));
+        assert!(!global_sound_events_enabled(GameRuleValue::Bool(false)));
+    }
 
     #[test]
     fn closest_portal_candidate_filters_then_tiebreaks_by_y() {

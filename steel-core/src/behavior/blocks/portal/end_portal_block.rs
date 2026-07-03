@@ -8,7 +8,10 @@ use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
 
 use crate::behavior::BlockPlaceContext;
 use crate::behavior::block::BlockBehavior;
-use crate::block_entity::{SharedBlockEntity, entities::EndGatewayBlockEntity};
+use crate::block_entity::{
+    SharedBlockEntity,
+    entities::{EndGatewayBlockEntity, EndPortalBlockEntity},
+};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::portal::PortalKind;
 use crate::world::LevelReader;
@@ -69,6 +72,21 @@ impl BlockBehavior for EndPortalBlock {
 
     fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid_block: BlockRef) -> bool {
         false
+    }
+
+    fn has_block_entity(&self) -> bool {
+        true
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> Option<SharedBlockEntity> {
+        Some(Arc::new(SyncMutex::new(EndPortalBlockEntity::new(
+            level, pos, state,
+        ))))
     }
 
     fn entity_inside(
@@ -162,7 +180,7 @@ impl BlockBehavior for EndGatewayBlock {
 mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::behavior::{BlockStateBehaviorExt, init_behaviors};
-    use crate::block_entity::entities::EndGatewayBlockEntity;
+    use crate::block_entity::entities::{EndGatewayBlockEntity, EndPortalBlockEntity};
     use crate::entity::{Entity, EntityBase};
     use crate::portal::PortalKind;
     use crate::test_support::TestLevel;
@@ -171,7 +189,8 @@ mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
-        test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types,
+        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
+        vanilla_dimension_types,
     };
 
     use super::{EndGatewayBlock, EndPortalBlock};
@@ -242,6 +261,31 @@ mod tests {
 
         assert_eq!(shape, state.get_static_outline_shape());
         assert!(!shape.is_empty());
+    }
+
+    #[test]
+    fn end_portal_creates_end_portal_block_entity() {
+        init_test_registry();
+        let behavior = EndPortalBlock::new(&vanilla_blocks::END_PORTAL);
+        let state = vanilla_blocks::END_PORTAL.default_state();
+        let pos = BlockPos::new(2, 70, -4);
+
+        assert!(behavior.has_block_entity());
+        let block_entity = behavior
+            .new_block_entity(Weak::new(), pos, state)
+            .expect("end portal block entity");
+        let guard = block_entity.lock();
+
+        assert!(
+            guard
+                .as_any()
+                .downcast_ref::<EndPortalBlockEntity>()
+                .is_some()
+        );
+        assert_eq!(guard.get_type(), &vanilla_block_entity_types::END_PORTAL);
+        assert_eq!(guard.get_block_pos(), pos);
+        assert_eq!(guard.get_block_state(), state);
+        assert!(guard.get_update_tag().is_some());
     }
 
     #[test]

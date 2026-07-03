@@ -15,6 +15,23 @@ use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::world::{LevelReader, World};
 
+const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
+const END_PORTAL_PATTERN: [[char; 5]; 5] = [
+    ['?', 'v', 'v', 'v', '?'],
+    ['>', '?', '?', '?', '<'],
+    ['>', '?', '?', '?', '<'],
+    ['>', '?', '?', '?', '<'],
+    ['?', '^', '^', '^', '?'],
+];
+const PATTERN_DIRECTIONS: [Direction; 6] = [
+    Direction::Down,
+    Direction::Up,
+    Direction::North,
+    Direction::South,
+    Direction::West,
+    Direction::East,
+];
+
 /// Behavior for the ender eye item.
 ///
 /// When used on an end portal frame without an eye, places the eye
@@ -69,11 +86,20 @@ fn find_completed_end_portal_origin(
     level: &impl LevelReader,
     clicked_pos: BlockPos,
 ) -> Option<BlockPos> {
-    for origin_x in clicked_pos.x() - 3..=clicked_pos.x() + 1 {
-        for origin_z in clicked_pos.z() - 3..=clicked_pos.z() + 1 {
-            let origin = BlockPos::new(origin_x, clicked_pos.y(), origin_z);
-            if end_portal_frame_ring_matches(level, origin) {
-                return Some(origin);
+    for z in clicked_pos.z()..clicked_pos.z() + END_PORTAL_PATTERN_DISTANCE {
+        for y in clicked_pos.y()..clicked_pos.y() + END_PORTAL_PATTERN_DISTANCE {
+            for x in clicked_pos.x()..clicked_pos.x() + END_PORTAL_PATTERN_DISTANCE {
+                let front_top_left = BlockPos::new(x, y, z);
+                for forwards in PATTERN_DIRECTIONS {
+                    for up in PATTERN_DIRECTIONS {
+                        if up == forwards || up == forwards.opposite() {
+                            continue;
+                        }
+                        if end_portal_pattern_matches(level, front_top_left, forwards, up) {
+                            return Some(front_top_left.offset(-3, 0, -3));
+                        }
+                    }
+                }
             }
         }
     }
@@ -81,23 +107,45 @@ fn find_completed_end_portal_origin(
     None
 }
 
-fn end_portal_frame_ring_matches(level: &impl LevelReader, portal_origin: BlockPos) -> bool {
-    for offset in 0..3 {
-        if !end_portal_frame_matches(level, portal_origin.offset(offset, 0, -1), Direction::North) {
-            return false;
-        }
-        if !end_portal_frame_matches(level, portal_origin.offset(offset, 0, 3), Direction::South) {
-            return false;
-        }
-        if !end_portal_frame_matches(level, portal_origin.offset(-1, 0, offset), Direction::East) {
-            return false;
-        }
-        if !end_portal_frame_matches(level, portal_origin.offset(3, 0, offset), Direction::West) {
-            return false;
+fn end_portal_pattern_matches(
+    level: &impl LevelReader,
+    front_top_left: BlockPos,
+    forwards: Direction,
+    up: Direction,
+) -> bool {
+    let forwards_vector = forwards.offset_vec();
+    let up_vector = up.offset_vec();
+    let right_vector = forwards_vector.cross(up_vector);
+
+    for right in 0..5 {
+        for down in 0..5 {
+            let pattern_pos = BlockPos(front_top_left.0 + up_vector * -down + right_vector * right);
+            if !end_portal_pattern_entry_matches(
+                level,
+                pattern_pos,
+                END_PORTAL_PATTERN[down as usize][right as usize],
+            ) {
+                return false;
+            }
         }
     }
 
     true
+}
+
+fn end_portal_pattern_entry_matches(
+    level: &impl LevelReader,
+    pos: BlockPos,
+    pattern_entry: char,
+) -> bool {
+    match pattern_entry {
+        '?' => true,
+        '^' => end_portal_frame_matches(level, pos, Direction::South),
+        '>' => end_portal_frame_matches(level, pos, Direction::West),
+        'v' => end_portal_frame_matches(level, pos, Direction::North),
+        '<' => end_portal_frame_matches(level, pos, Direction::East),
+        _ => false,
+    }
 }
 
 fn end_portal_frame_matches(level: &impl LevelReader, pos: BlockPos, facing: Direction) -> bool {
@@ -142,22 +190,22 @@ mod tests {
             .set_value(&BlockStateProperties::EYE, true)
     }
 
-    fn place_frame_ring(level: &TestLevel, origin: BlockPos) {
+    fn place_inward_frame_ring(level: &TestLevel, origin: BlockPos) {
         for offset in 0..3 {
-            level.set_test_block(origin.offset(offset, 0, -1), eye_frame(Direction::North));
-            level.set_test_block(origin.offset(offset, 0, 3), eye_frame(Direction::South));
+            level.set_test_block(origin.offset(offset, 0, -1), eye_frame(Direction::South));
+            level.set_test_block(origin.offset(offset, 0, 3), eye_frame(Direction::North));
             level.set_test_block(origin.offset(-1, 0, offset), eye_frame(Direction::East));
             level.set_test_block(origin.offset(3, 0, offset), eye_frame(Direction::West));
         }
     }
 
     #[test]
-    fn end_portal_pattern_matches_vanilla_stronghold_layout() {
+    fn end_portal_pattern_matches_player_built_inward_layout() {
         init_test_registry();
 
         let level = TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
-        place_frame_ring(&level, origin);
+        place_inward_frame_ring(&level, origin);
 
         assert_eq!(
             find_completed_end_portal_origin(&level, origin.offset(1, 0, -1)),
@@ -165,6 +213,14 @@ mod tests {
         );
         assert_eq!(
             find_completed_end_portal_origin(&level, origin.offset(-1, 0, 2)),
+            Some(origin)
+        );
+        assert_eq!(
+            find_completed_end_portal_origin(&level, origin.offset(2, 0, 3)),
+            Some(origin)
+        );
+        assert_eq!(
+            find_completed_end_portal_origin(&level, origin.offset(3, 0, 0)),
             Some(origin)
         );
     }
@@ -175,9 +231,27 @@ mod tests {
 
         let level = TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
-        place_frame_ring(&level, origin);
+        place_inward_frame_ring(&level, origin);
         level.set_test_block(origin.offset(-1, 0, 1), eye_frame(Direction::West));
 
         assert_eq!(find_completed_end_portal_origin(&level, origin), None);
+    }
+
+    #[test]
+    fn end_portal_pattern_uses_vanilla_front_top_left_offset() {
+        init_test_registry();
+
+        let level = TestLevel::default();
+        let origin = BlockPos::new(4, 64, 9);
+        place_inward_frame_ring(&level, origin);
+        for offset in 0..3 {
+            level.set_test_block(origin.offset(offset, 0, -1), eye_frame(Direction::North));
+            level.set_test_block(origin.offset(offset, 0, 3), eye_frame(Direction::South));
+        }
+
+        assert_eq!(
+            find_completed_end_portal_origin(&level, origin.offset(1, 0, -1)),
+            Some(origin.offset(0, 0, -4))
+        );
     }
 }
