@@ -41,7 +41,10 @@ use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vani
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis,
+    block_util::FoundRectangle,
+};
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -529,6 +532,12 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
     }
 }
 
+/// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
+#[must_use]
+pub(crate) fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
+    DVec3::new(offsets.x, offsets.y, 0.0)
+}
+
 fn record_movement_for_block_effects(
     entity: &dyn Entity,
     from: DVec3,
@@ -705,7 +714,10 @@ mod synced_data;
 mod ticking;
 mod tracker;
 
-use crate::portal::{PortalKind, PortalProcessResult, TeleportTransition, WorldChangeRequest};
+use crate::portal::{
+    PortalKind, PortalProcessResult, TeleportTransition, WorldChangeRequest,
+    portal_shape::PortalShape,
+};
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
 pub(crate) use animal::{Animal, AnimalBase};
 pub use base::{
@@ -1575,6 +1587,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
             f64::from(dimensions.half_width()),
             f64::from(dimensions.height),
         )
+    }
+
+    /// Returns vanilla `Entity.getRelativePortalPosition`.
+    fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
+        let offsets = PortalShape::get_relative_position(
+            portal_area,
+            axis,
+            self.position(),
+            self.dimensions_for_pose(self.pose()),
+        );
+        if self.as_living_entity().is_some() {
+            reset_forward_direction_of_relative_portal_position(offsets)
+        } else {
+            offsets
+        }
     }
 
     /// Default vanilla `Entity.tick()` behavior.
@@ -6645,7 +6672,10 @@ mod tests {
     };
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
-    use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, WorldAabb};
+    use steel_utils::{
+        BlockPos, BlockStateId, Direction, Identifier, WorldAabb, axis::Axis,
+        block_util::FoundRectangle,
+    };
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
@@ -7110,6 +7140,30 @@ mod tests {
         assert!(
             (left - right).abs() <= 1.0e-12,
             "expected {left} to equal {right}"
+        );
+    }
+
+    #[test]
+    fn living_relative_portal_position_resets_forward_offset() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity
+            .base()
+            .set_position_local(DVec3::new(12.0, 66.0, 20.75));
+        let portal_area = FoundRectangle {
+            min_corner: BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+        let dimensions = entity.dimensions_for_pose(entity.pose());
+
+        assert_vec3_close(
+            entity.get_relative_portal_position(Axis::X, portal_area),
+            DVec3::new(
+                0.5,
+                2.0 / (f64::from(portal_area.axis2_size) - f64::from(dimensions.height)),
+                0.0,
+            ),
         );
     }
 
