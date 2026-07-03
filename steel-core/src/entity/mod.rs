@@ -1613,12 +1613,18 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.entity_base_tick();
     }
 
+    /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
+    fn handle_portal(&self) {
+        self.base().process_portal_cooldown();
+    }
+
     /// Runs only vanilla `Entity.baseTick` behavior.
     ///
     /// Subtype base-tick chains call this from their owner trait instead of
     /// discovering subtype behavior through runtime capabilities.
     fn entity_base_tick(&self) {
         self.base().advance_base_tick_state();
+        self.handle_portal();
         self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
         self.update_swimming();
@@ -7008,10 +7014,12 @@ mod tests {
     fn default_tick_runs_vanilla_entity_base_tick() {
         let entity = PushableTestEntity::shared(1, DVec3::ZERO);
         entity.base().set_boarding_cooldown(2);
+        entity.base().set_portal_cooldown(2);
 
         entity.default_tick();
 
         assert_eq!(entity.base().boarding_cooldown(), 1);
+        assert_eq!(entity.base().portal_cooldown(), 1);
     }
 
     #[test]
