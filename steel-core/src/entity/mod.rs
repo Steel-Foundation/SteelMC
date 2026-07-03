@@ -1760,6 +1760,18 @@ pub trait Entity: EntityEventSource + Send + Sync {
         !self.is_removed()
     }
 
+    /// Returns whether this entity may enter a portal.
+    ///
+    /// Mirrors vanilla `Entity.canUsePortal`, including `LivingEntity` sleeping
+    /// suppression through exposed behavior capabilities.
+    fn can_use_portal(&self, ignore_passenger: bool) -> bool {
+        (ignore_passenger || !self.is_passenger())
+            && self.is_alive()
+            && !self
+                .as_living_entity()
+                .is_some_and(|living| living.is_sleeping())
+    }
+
     /// Returns why this entity was removed, if it has been removed.
     fn removal_reason(&self) -> Option<RemovalReason> {
         self.base().removal_reason()
@@ -7020,6 +7032,40 @@ mod tests {
 
         assert_eq!(entity.base().boarding_cooldown(), 1);
         assert_eq!(entity.base().portal_cooldown(), 1);
+    }
+
+    #[test]
+    fn can_use_portal_requires_alive_entity() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+        assert!(entity.can_use_portal(false));
+
+        entity.set_removed(RemovalReason::Discarded);
+
+        assert!(!entity.can_use_portal(true));
+    }
+
+    #[test]
+    fn can_use_portal_respects_passenger_gate() {
+        init_test_registry();
+
+        let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
+        let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
+        assert!(start_riding_entities(&passenger, &vehicle));
+
+        assert!(!passenger.can_use_portal(false));
+        assert!(passenger.can_use_portal(true));
+    }
+
+    #[test]
+    fn can_use_portal_rejects_sleeping_living_entities() {
+        init_test_registry();
+
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        assert!(entity.can_use_portal(false));
+
+        entity.set_sleeping_pos(BlockPos::ZERO);
+
+        assert!(!entity.can_use_portal(false));
     }
 
     #[test]
