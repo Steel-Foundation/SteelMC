@@ -45,7 +45,7 @@ use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::{CSetEntityData, CSetExperience},
+    packets::game::{CLevelEvent, CSetEntityData, CSetExperience},
 };
 use teleport_state::TeleportState;
 use tick_state::PlayerTickState;
@@ -74,7 +74,7 @@ use steel_registry::vanilla_game_rules::{
     KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
-    sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
+    level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
     vanilla_particle_types,
 };
 use steel_utils::entity_events::EntityStatus;
@@ -184,7 +184,9 @@ pub enum PlayerConnection {
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::networking::JavaConnection;
-use crate::portal::TeleportTransition;
+use crate::portal::{
+    PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
+};
 use crate::world::World;
 
 /// A struct representing a player.
@@ -1621,6 +1623,28 @@ impl Player {
             );
         }
     }
+
+    fn apply_post_teleport_transition(&self, post_transition: &TeleportPostTransition) {
+        for action in post_transition.actions() {
+            match *action {
+                TeleportPostAction::PlayPortalSound => {
+                    self.send_packet(CLevelEvent::new(
+                        level_events::SOUND_PORTAL_TRAVEL,
+                        BlockPos::ZERO,
+                        0,
+                        false,
+                    ));
+                }
+                TeleportPostAction::PlacePortalTicket(target) => {
+                    let ticket_position = match target {
+                        PortalTicketTarget::Destination => BlockPos::from(self.position()),
+                        PortalTicketTarget::Block(pos) => pos,
+                    };
+                    self.get_world().place_portal_ticket(ticket_position);
+                }
+            }
+        }
+    }
 }
 
 fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
@@ -2000,6 +2024,7 @@ impl Entity for Player {
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
         }
+        self.apply_post_teleport_transition(&teleport_transition.post_transition);
     }
 }
 

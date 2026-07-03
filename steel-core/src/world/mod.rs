@@ -633,6 +633,11 @@ impl World {
         })
     }
 
+    /// Adds or refreshes vanilla's portal chunk ticket for a post-teleport entity.
+    pub(crate) fn place_portal_ticket(&self, ticket_position: BlockPos) {
+        self.chunk_map.place_portal_ticket(ticket_position);
+    }
+
     fn find_nether_portal_creation_position(
         &self,
         origin: BlockPos,

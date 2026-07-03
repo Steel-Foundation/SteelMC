@@ -27,8 +27,8 @@ use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{
-    PortalKind, TeleportRotationMode, TeleportTransition, TeleportVelocityMode, WorldChangeRequest,
-    nether_portal,
+    PortalKind, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
+    TeleportVelocityMode, WorldChangeRequest, nether_portal,
 };
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
@@ -130,6 +130,7 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::Absolute,
         portal_cooldown: 0,
+        post_transition: TeleportPostTransition::do_nothing(),
     }
 }
 
@@ -1341,6 +1342,7 @@ impl Server {
     /// Executes one chunk scheduling tick across all worlds.
     fn tick_chunk_scheduling(&self) {
         for (i, world) in self.worlds.values().enumerate() {
+            world.chunk_map.tick_timed_tickets();
             let timings = world.chunk_map.tick_scheduling();
 
             let total = timings.ticket_updates

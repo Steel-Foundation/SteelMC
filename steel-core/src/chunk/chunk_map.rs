@@ -27,7 +27,8 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, TimedChunkTickets,
+    generation_status, is_ticked,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -293,6 +294,8 @@ pub struct ChunkMap {
     pub task_tracker: TaskTracker,
     /// Manager for chunk distances and tickets.
     pub chunk_tickets: SyncMutex<ChunkTicketManager>,
+    /// Timed gameplay ticket owners that expire through the scheduling tick.
+    timed_chunk_tickets: SyncMutex<TimedChunkTickets>,
     /// The world generation context.
     pub world_gen_context: Arc<WorldGenContext>,
     /// The thread pool to use for chunk generation (throughput-oriented).
@@ -388,6 +391,7 @@ impl ChunkMap {
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
+            timed_chunk_tickets: SyncMutex::new(TimedChunkTickets::default()),
             world_gen_context: Arc::new(WorldGenContext::new(
                 generator,
                 world,
@@ -518,6 +522,21 @@ impl ChunkMap {
         self.tick_scheduling();
 
         Some(result)
+    }
+
+    /// Adds or refreshes vanilla's post-portal chunk ticket.
+    pub(crate) fn place_portal_ticket(&self, ticket_position: BlockPos) {
+        let center = ChunkPos::from_block_pos(ticket_position);
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets
+            .lock()
+            .add_portal_ticket(&mut chunk_tickets, center);
+    }
+
+    /// Advances gameplay-owned timed chunk tickets by one server tick.
+    pub(crate) fn tick_timed_tickets(&self) {
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets.lock().tick(&mut chunk_tickets);
     }
 
     fn full_square_is_ready(&self, center: ChunkPos, radius: i32) -> bool {

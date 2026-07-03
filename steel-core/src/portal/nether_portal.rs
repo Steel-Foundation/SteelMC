@@ -16,7 +16,8 @@ use steel_utils::{
 use crate::{
     entity::Entity,
     portal::{
-        TeleportRotationMode, TeleportTransition, TeleportVelocityMode, portal_shape::PortalShape,
+        PortalTicketTarget, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
+        TeleportVelocityMode, portal_shape::PortalShape,
     },
     world::World,
 };
@@ -81,8 +82,11 @@ pub(crate) fn calculate_transition(
 ) -> Option<TeleportTransition> {
     let exit_portal_pos =
         target_world.find_closest_nether_portal_position(approximate_exit_pos, to_nether);
-    let exit_portal = if let Some(pos) = exit_portal_pos {
-        largest_portal_rectangle_at(target_world, pos)?
+    let (exit_portal, ticket_target) = if let Some(pos) = exit_portal_pos {
+        (
+            largest_portal_rectangle_at(target_world, pos)?,
+            PortalTicketTarget::Block(pos),
+        )
     } else {
         let source_portal_axis = source_world
             .get_block_state(portal_entry_pos)
@@ -94,8 +98,10 @@ pub(crate) fn calculate_transition(
             log::error!("Unable to create a portal, likely target out of world border");
             return None;
         };
-        created
+        (created, PortalTicketTarget::Destination)
     };
+    let post_transition = TeleportPostTransition::play_portal_sound()
+        .then(TeleportPostTransition::place_portal_ticket(ticket_target));
 
     Some(dimension_transition_from_exit(
         source_world,
@@ -103,6 +109,7 @@ pub(crate) fn calculate_transition(
         entity,
         portal_entry_pos,
         exit_portal,
+        post_transition,
     ))
 }
 
@@ -125,6 +132,7 @@ fn dimension_transition_from_exit(
     entity: &dyn Entity,
     portal_entry_pos: BlockPos,
     exit_portal: FoundRectangle,
+    post_transition: TeleportPostTransition,
 ) -> TeleportTransition {
     let source_portal_state = source_world.get_block_state(portal_entry_pos);
     let (source_axis, offset) = if let Some(axis) =
@@ -143,7 +151,14 @@ fn dimension_transition_from_exit(
         (Axis::X, DVec3::new(0.5, 0.0, 0.0))
     };
 
-    create_dimension_transition(target_world, exit_portal, source_axis, offset, entity)
+    create_dimension_transition(
+        target_world,
+        exit_portal,
+        source_axis,
+        offset,
+        entity,
+        post_transition,
+    )
 }
 
 fn create_dimension_transition(
@@ -152,6 +167,7 @@ fn create_dimension_transition(
     portal_axis: Axis,
     offset: DVec3,
     entity: &dyn Entity,
+    post_transition: TeleportPostTransition,
 ) -> TeleportTransition {
     let bottom_left = found_rectangle.min_corner;
     let target_axis = target_world
@@ -198,6 +214,7 @@ fn create_dimension_transition(
         velocity: DVec3::ZERO,
         velocity_mode: TeleportVelocityMode::RelativeRotated,
         portal_cooldown: entity.dimension_changing_delay(),
+        post_transition,
     }
 }
 

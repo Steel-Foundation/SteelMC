@@ -7,6 +7,7 @@
 use crate::entity::Entity;
 use crate::world::World;
 use glam::DVec3;
+use smallvec::SmallVec;
 use std::sync::Arc;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::vanilla_game_rules::{
@@ -215,6 +216,79 @@ pub struct TeleportTransition {
     pub velocity_mode: TeleportVelocityMode,
     /// Portal cooldown in ticks (prevents immediate re-entry).
     pub portal_cooldown: i32,
+    /// Side effects vanilla runs after the entity has reached the target world.
+    pub post_transition: TeleportPostTransition,
+}
+
+/// Vanilla post-teleport side effects, composed in transition order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeleportPostTransition {
+    actions: SmallVec<[TeleportPostAction; 2]>,
+}
+
+impl TeleportPostTransition {
+    /// No post-transition work.
+    #[must_use]
+    pub fn do_nothing() -> Self {
+        Self {
+            actions: SmallVec::new(),
+        }
+    }
+
+    /// Plays vanilla's portal travel level event for players.
+    #[must_use]
+    pub fn play_portal_sound() -> Self {
+        Self::single(TeleportPostAction::PlayPortalSound)
+    }
+
+    /// Places a portal chunk ticket after the transition.
+    #[must_use]
+    pub fn place_portal_ticket(target: PortalTicketTarget) -> Self {
+        Self::single(TeleportPostAction::PlacePortalTicket(target))
+    }
+
+    /// Appends another post-transition action sequence.
+    #[must_use]
+    pub fn then(mut self, next: Self) -> Self {
+        self.actions.extend(next.actions);
+        self
+    }
+
+    /// Returns post-transition actions in vanilla execution order.
+    #[must_use]
+    pub fn actions(&self) -> &[TeleportPostAction] {
+        self.actions.as_slice()
+    }
+
+    fn single(action: TeleportPostAction) -> Self {
+        let mut actions = SmallVec::new();
+        actions.push(action);
+        Self { actions }
+    }
+}
+
+impl Default for TeleportPostTransition {
+    fn default() -> Self {
+        Self::do_nothing()
+    }
+}
+
+/// A single post-teleport side effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeleportPostAction {
+    /// Send vanilla portal travel level event 1032 to the player.
+    PlayPortalSound,
+    /// Add a portal chunk ticket.
+    PlacePortalTicket(PortalTicketTarget),
+}
+
+/// Position used for vanilla portal ticket placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortalTicketTarget {
+    /// Use the entity's final block position after teleporting.
+    Destination,
+    /// Use a specific portal block position.
+    Block(BlockPos),
 }
 
 /// How a teleport transition applies rotation.
@@ -343,9 +417,10 @@ mod tests {
     use steel_utils::BlockPos;
 
     use super::{
-        PortalKind, PortalProcessResult, PortalProcessor, TeleportRotationMode,
-        TeleportVelocityMode, clamped_portal_transition_time, nether_portal_transition_rule,
-        resolve_rotation, resolve_velocity,
+        PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
+        TeleportPostTransition, TeleportRotationMode, TeleportVelocityMode,
+        clamped_portal_transition_time, nether_portal_transition_rule, resolve_rotation,
+        resolve_velocity,
     };
 
     #[test]
@@ -460,6 +535,25 @@ mod tests {
                 resolved_rotation
             ),
             DVec3::new(0.0, -0.1, 0.0)
+        );
+    }
+
+    #[test]
+    fn post_transition_composition_preserves_vanilla_order() {
+        let transition = TeleportPostTransition::play_portal_sound().then(
+            TeleportPostTransition::place_portal_ticket(PortalTicketTarget::Block(BlockPos::new(
+                1, 64, 2,
+            ))),
+        );
+
+        assert_eq!(
+            transition.actions(),
+            &[
+                TeleportPostAction::PlayPortalSound,
+                TeleportPostAction::PlacePortalTicket(PortalTicketTarget::Block(BlockPos::new(
+                    1, 64, 2,
+                ))),
+            ]
         );
     }
 }

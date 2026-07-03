@@ -16,6 +16,8 @@ const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .accumulated_dependencies
     .get_radius_of(ChunkStatus::Empty) as u8;
 const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
+pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
+const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
 
 /// A chunk ticket level.
 ///
@@ -193,6 +195,90 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
 
 /// Up to 4 tickets stored inline per position.
 type TicketLevels = SmallVec<[ChunkTicket; 4]>;
+
+/// Timed chunk tickets owned by vanilla gameplay systems.
+#[derive(Debug, Default)]
+pub(crate) struct TimedChunkTickets {
+    tickets: Vec<TimedChunkTicket>,
+}
+
+impl TimedChunkTickets {
+    /// Adds or refreshes vanilla's portal ticket.
+    pub(crate) fn add_portal_ticket(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        pos: ChunkPos,
+    ) {
+        self.add_or_reset(
+            ticket_manager,
+            TimedChunkTicketKind::Portal,
+            pos,
+            ChunkTicket::simulated_full_chunks(PORTAL_TICKET_RADIUS),
+            PORTAL_TICKET_TIMEOUT_TICKS,
+        );
+    }
+
+    /// Decrements timed tickets and removes expired sources from the ticket manager.
+    pub(crate) fn tick(&mut self, ticket_manager: &mut ChunkTicketManager) {
+        let mut index = 0;
+        while index < self.tickets.len() {
+            let ticket = &mut self.tickets[index];
+            ticket.ticks_left -= 1;
+            if ticket.ticks_left >= 0 {
+                index += 1;
+                continue;
+            }
+
+            let expired = self.tickets.swap_remove(index);
+            ticket_manager.remove_ticket(expired.pos, expired.ticket);
+        }
+    }
+
+    fn add_or_reset(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        kind: TimedChunkTicketKind,
+        pos: ChunkPos,
+        ticket: ChunkTicket,
+        ticks_left: i64,
+    ) {
+        if let Some(existing) = self
+            .tickets
+            .iter_mut()
+            .find(|entry| entry.kind == kind && entry.pos == pos && entry.ticket == ticket)
+        {
+            existing.ticks_left = ticks_left;
+            return;
+        }
+
+        self.tickets.push(TimedChunkTicket {
+            kind,
+            pos,
+            ticket,
+            ticks_left,
+        });
+        ticket_manager.add_ticket(pos, ticket);
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    const fn len(&self) -> usize {
+        self.tickets.len()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TimedChunkTicket {
+    kind: TimedChunkTicketKind,
+    pos: ChunkPos,
+    ticket: ChunkTicket,
+    ticks_left: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimedChunkTicketKind {
+    Portal,
+}
 
 /// A level change for a chunk position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -675,6 +761,38 @@ mod tests {
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
         assert_eq!(manager.get_level(ChunkPos::new(0, 0)), None);
+    }
+
+    #[test]
+    fn portal_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_portal_ticket(&mut manager, center);
+        timed_tickets.add_portal_ticket(&mut manager, center);
+        manager.run_all_updates();
+
+        assert_eq!(timed_tickets.len(), 1);
+        assert_eq!(manager.ticket_count(), 1);
+        assert!(is_full(
+            manager.get_level(center).expect("ticket should load")
+        ));
+        assert!(is_ticked(manager.get_simulation_level(center)));
+        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(3, 0))));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(4, 0)), None);
+
+        for _ in 0..PORTAL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        timed_tickets.tick(&mut manager);
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+        assert_eq!(manager.get_level(center), None);
+        assert_eq!(manager.get_simulation_level(center), None);
     }
 
     #[test]
