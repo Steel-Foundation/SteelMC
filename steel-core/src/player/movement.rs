@@ -204,6 +204,9 @@ impl Player {
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
             return;
         }
+        if self.has_won_game() {
+            return;
+        }
 
         let current_rotation = self.rotation();
         let target_yaw = wrap_degrees(packet.get_y_rot(current_rotation.0));

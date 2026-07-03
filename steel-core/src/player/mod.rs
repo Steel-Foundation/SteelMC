@@ -275,6 +275,9 @@ pub struct Player {
     /// Whether the player has completed the vanilla End credits flow.
     seen_credits: SyncMutex<bool>,
 
+    /// Vanilla `ServerPlayer.wonGame`; transient while the End credits screen is open.
+    won_game: SyncMutex<bool>,
+
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
@@ -300,7 +303,14 @@ struct PlayerRespawnJob {
     source_world: Arc<World>,
     target_world: Arc<World>,
     rotation: (f32, f32),
+    kind: RespawnRequestKind,
     phase: PlayerRespawnJobPhase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RespawnRequestKind {
+    Death,
+    EndCredits,
 }
 
 enum PlayerRespawnJobPhase {
@@ -317,6 +327,7 @@ impl PlayerRespawnJob {
         source_world: Arc<World>,
         target_world: Arc<World>,
         respawn_data: RespawnData,
+        kind: RespawnRequestKind,
     ) -> Result<Self, String> {
         let search = PlayerSpawnSearch::new(
             &target_world,
@@ -328,6 +339,7 @@ impl PlayerRespawnJob {
             source_world,
             target_world,
             rotation: (respawn_data.yaw, respawn_data.pitch),
+            kind,
             phase: PlayerRespawnJobPhase::Searching(search),
         })
     }
@@ -335,7 +347,12 @@ impl PlayerRespawnJob {
     fn still_valid(&self) -> bool {
         !self.player.connection.closed()
             && Arc::ptr_eq(&self.player.get_world(), &self.source_world)
-            && Player::should_process_respawn(self.player.get_health())
+            && match self.kind {
+                RespawnRequestKind::Death => {
+                    Player::should_process_respawn(self.player.get_health())
+                }
+                RespawnRequestKind::EndCredits => self.player.has_won_game(),
+            }
     }
 }
 
@@ -381,11 +398,20 @@ impl ServerJob for PlayerRespawnJob {
                                 return JobPoll::Pending;
                             }
 
-                            self.player.finish_death_respawn(
-                                &self.source_world,
-                                &self.target_world,
-                                *spawn,
-                            );
+                            match self.kind {
+                                RespawnRequestKind::Death => self.player.finish_death_respawn(
+                                    &self.source_world,
+                                    &self.target_world,
+                                    *spawn,
+                                ),
+                                RespawnRequestKind::EndCredits => {
+                                    self.player.finish_end_credits_respawn(
+                                        &self.source_world,
+                                        &self.target_world,
+                                        *spawn,
+                                    );
+                                }
+                            }
                             return JobPoll::Finished;
                         }
                     }
@@ -504,6 +530,7 @@ impl Player {
             health_sync: SyncMutex::new(HealthSyncState::new()),
             experience: SyncMutex::new(Experience::default()),
             seen_credits: SyncMutex::new(false),
+            won_game: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
             pending_root_vehicle: SyncMutex::new(None),
         }
@@ -912,7 +939,13 @@ impl Player {
                 }
             };
 
-        match PlayerRespawnJob::new(player_arc, source_world, target_world, respawn_data) {
+        match PlayerRespawnJob::new(
+            player_arc,
+            source_world,
+            target_world,
+            respawn_data,
+            RespawnRequestKind::Death,
+        ) {
             Ok(job) => server.jobs.spawn(job),
             Err(error) => {
                 self.finish_respawn_request();
@@ -972,6 +1005,28 @@ impl Player {
         let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn);
     }
 
+    fn finish_end_credits_respawn(
+        self: &Arc<Self>,
+        source_world: &Arc<World>,
+        target_world: &Arc<World>,
+        spawn: DeathRespawnSpawn,
+    ) {
+        self.finish_respawn_request();
+
+        if self.connection.closed()
+            || !Arc::ptr_eq(&self.get_world(), source_world)
+            || !self.has_won_game()
+        {
+            return;
+        }
+
+        self.set_won_game(false);
+        self.reset(target_world.clone(), ResetReason::EndCredits);
+        self.send_difficulty();
+        self.experience.lock().dirty = true;
+        let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::EndCredits);
+    }
+
     fn reset_state_for_death_respawn(&self) {
         self.close_container();
         self.detach_relationships_for_respawn();
@@ -1014,9 +1069,15 @@ impl Player {
     }
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
-    pub fn handle_client_command(&self, action: ClientCommandAction) {
+    pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
         match action {
-            ClientCommandAction::PerformRespawn => self.respawn(),
+            ClientCommandAction::PerformRespawn => {
+                if self.has_won_game() {
+                    self.respawn_after_end_credits();
+                } else {
+                    self.respawn();
+                }
+            }
             ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
                 // TODO: implement stats
             }
@@ -1046,6 +1107,85 @@ impl Player {
     /// Sets vanilla `ServerPlayer.seenCredits`.
     pub fn set_seen_credits(&self, seen_credits: bool) {
         *self.seen_credits.lock() = seen_credits;
+    }
+
+    /// Returns vanilla `ServerPlayer.wonGame`.
+    #[must_use]
+    pub(crate) fn has_won_game(&self) -> bool {
+        *self.won_game.lock()
+    }
+
+    fn set_won_game(&self, won_game: bool) {
+        *self.won_game.lock() = won_game;
+    }
+
+    /// Starts the vanilla End credits flow.
+    pub(crate) fn show_end_credits(&self) {
+        let world = self.get_world();
+        let Some(player) = world.players.get_by_entity_id(self.id()) else {
+            return;
+        };
+
+        world.remove_player_for_world_change(&player);
+        if player.has_won_game() {
+            return;
+        }
+
+        player.set_won_game(true);
+        player.send_packet(CGameEvent {
+            event: GameEventType::WinGame,
+            data: 0.0,
+        });
+        player.set_seen_credits(true);
+    }
+
+    fn respawn_after_end_credits(self: &Arc<Self>) {
+        if !self.has_won_game() {
+            return;
+        }
+
+        let source_world = self.get_world();
+        if !self.begin_respawn_request() {
+            return;
+        }
+
+        let Some(server) = self.server.upgrade() else {
+            self.finish_respawn_request();
+            log::error!(
+                "Failed to schedule End credits respawn for player {}: server is gone",
+                self.gameprofile.name
+            );
+            return;
+        };
+        let (target_world, respawn_data) =
+            match server.respawn_world_and_data_for_domain(source_world.domain()) {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    self.finish_respawn_request();
+                    log::error!(
+                        "Failed to schedule End credits respawn for player {}: {error}",
+                        self.gameprofile.name
+                    );
+                    return;
+                }
+            };
+
+        match PlayerRespawnJob::new(
+            Arc::clone(self),
+            source_world,
+            target_world,
+            respawn_data,
+            RespawnRequestKind::EndCredits,
+        ) {
+            Ok(job) => server.jobs.spawn(job),
+            Err(error) => {
+                self.finish_respawn_request();
+                log::error!(
+                    "Failed to schedule End credits respawn for player {}: {error}",
+                    self.gameprofile.name
+                );
+            }
+        }
     }
 
     /// Cleans up player resources.
@@ -1279,10 +1419,7 @@ impl Player {
 
         if reason != ResetReason::InitialJoin {
             // 0x01 = keep attributes, 0x02 = keep entity data
-            let data_kept: i8 = match reason {
-                ResetReason::WorldChange => 0x03,
-                _ => 0x00,
-            };
+            let data_kept = reason.respawn_data_kept();
 
             self.send_packet(CRespawn {
                 dimension_type: new_world.dimension_type.id() as i32,
@@ -1413,7 +1550,7 @@ impl Player {
                 }
                 world.add_player(self.clone(), reason)
             }
-            ResetReason::Respawn => {
+            ResetReason::Respawn | ResetReason::EndCredits => {
                 if world.players.get_by_entity_id(self.id()).is_none() {
                     return world.add_respawned_player(self.clone());
                 }
@@ -1499,8 +1636,20 @@ pub enum ResetReason {
     InitialJoin,
     /// Respawning after death in the same world.
     Respawn,
+    /// Respawning after the End credits screen with vanilla packet flags.
+    EndCredits,
     /// Teleporting to a different loaded world.
     WorldChange,
+}
+
+impl ResetReason {
+    const fn respawn_data_kept(self) -> i8 {
+        match self {
+            Self::InitialJoin | Self::Respawn => 0x00,
+            Self::EndCredits => 0x01,
+            Self::WorldChange => 0x03,
+        }
+    }
 }
 
 #[entity_impl(class(player))]
@@ -2041,7 +2190,7 @@ mod tests {
 
     use crate::entity::damage::DamageSource;
 
-    use super::{Player, nullable_game_mode_id};
+    use super::{Player, ResetReason, nullable_game_mode_id};
 
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
@@ -2067,6 +2216,14 @@ mod tests {
 
         assert!(input.death_processed);
         assert!(!Player::should_process_respawn(input.health));
+    }
+
+    #[test]
+    fn end_credits_respawn_keeps_vanilla_attribute_data_only() {
+        assert_eq!(ResetReason::InitialJoin.respawn_data_kept(), 0x00);
+        assert_eq!(ResetReason::Respawn.respawn_data_kept(), 0x00);
+        assert_eq!(ResetReason::EndCredits.respawn_data_kept(), 0x01);
+        assert_eq!(ResetReason::WorldChange.respawn_data_kept(), 0x03);
     }
 
     #[test]

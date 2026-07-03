@@ -104,6 +104,9 @@ impl World {
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
         let Some(player) = self.players.remove_player(&player).await else {
+            if player.has_won_game() {
+                self.remove_detached_end_credits_player(player).await;
+            }
             return;
         };
         let uuid = player.gameprofile.id;
@@ -124,10 +127,39 @@ impl World {
 
         // Save after world indexes are cleared so a fast reconnect cannot collide
         // with this player's stale entity ID/UUID cache entries.
+        Self::save_player_disconnect_data(&player, domain, &player_data).await;
+
+        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
+
+        player.cleanup();
+        log::info!("Player {uuid} removed in {:?}", start.elapsed());
+    }
+
+    async fn remove_detached_end_credits_player(self: &Arc<Self>, player: Arc<Player>) {
+        let uuid = player.gameprofile.id;
+        let domain = self.domain().to_owned();
+        let player_data = PersistentPlayerData::from_player(&player);
+        let start = Instant::now();
+
+        Self::save_player_disconnect_data(&player, domain, &player_data).await;
+        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
+        player.cleanup();
+        log::info!(
+            "Detached End credits player {uuid} removed in {:?}",
+            start.elapsed()
+        );
+    }
+
+    async fn save_player_disconnect_data(
+        player: &Player,
+        domain: String,
+        player_data: &PersistentPlayerData,
+    ) {
+        let uuid = player.gameprofile.id;
         let server = player.server();
         if let Err(e) = server
             .player_data_storage
-            .save_domain_data(&domain, uuid, &player_data)
+            .save_domain_data(&domain, uuid, player_data)
             .await
         {
             log::error!("Failed to save player domain data for {uuid}: {e}");
@@ -144,11 +176,6 @@ impl World {
         {
             log::error!("Failed to save global player data for {uuid}: {e}");
         }
-
-        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
-
-        player.cleanup();
-        log::info!("Player {uuid} removed in {:?}", start.elapsed());
     }
 
     /// Removes a player from the world during a world change.

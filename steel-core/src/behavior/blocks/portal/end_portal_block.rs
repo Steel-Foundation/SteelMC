@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
+use steel_registry::dimension_type::DimensionTypeRef;
+use steel_registry::vanilla_dimension_types;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::BlockPlaceContext;
 use crate::behavior::block::BlockBehavior;
-use crate::entity::Entity;
+use crate::entity::{Entity, InsideBlockEffectCollector};
+use crate::portal::PortalKind;
 use crate::world::LevelReader;
+use crate::world::World;
 
 /// Vanilla `EndPortalBlock` replacement behavior.
 #[block_behavior]
@@ -18,6 +24,30 @@ impl EndPortalBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
+    }
+
+    fn apply_entity_inside(world: &World, pos: BlockPos, entity: &dyn Entity) {
+        Self::apply_entity_inside_for_dimension(world.dimension_type, pos, entity);
+    }
+
+    fn apply_entity_inside_for_dimension(
+        dimension_type: DimensionTypeRef,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+        if !entity.can_use_portal(false) {
+            return;
+        }
+
+        if dimension_type == &vanilla_dimension_types::THE_END
+            && let Some(player) = entity.as_player()
+            && !player.has_seen_credits()
+        {
+            player.show_end_credits();
+            return;
+        }
+
+        entity.set_as_inside_portal(PortalKind::End, pos);
     }
 }
 
@@ -38,6 +68,18 @@ impl BlockBehavior for EndPortalBlock {
 
     fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid_block: BlockRef) -> bool {
         false
+    }
+
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
+    ) {
+        Self::apply_entity_inside(world, pos, entity);
     }
 }
 
@@ -70,12 +112,15 @@ mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::behavior::{BlockStateBehaviorExt, init_behaviors};
     use crate::entity::{Entity, EntityBase};
+    use crate::portal::PortalKind;
     use crate::test_support::TestLevel;
     use glam::DVec3;
     use std::sync::Weak;
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types,
+    };
 
     use super::EndPortalBlock;
     use steel_registry::vanilla_entities;
@@ -145,5 +190,22 @@ mod tests {
 
         assert_eq!(shape, state.get_static_outline_shape());
         assert!(!shape.is_empty());
+    }
+
+    #[test]
+    fn end_portal_marks_non_player_inside_end_portal() {
+        init_test_registry();
+        let entity = TestEntity::new();
+        let pos = BlockPos::new(3, 70, 3);
+
+        EndPortalBlock::apply_entity_inside_for_dimension(
+            &vanilla_dimension_types::THE_END,
+            pos,
+            &entity,
+        );
+
+        let process = entity.base().portal_process().expect("portal process");
+        assert_eq!(process.portal(), PortalKind::End);
+        assert_eq!(process.entry_position(), pos);
     }
 }
