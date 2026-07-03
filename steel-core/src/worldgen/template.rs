@@ -678,33 +678,38 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        Self::palette_blocks_for_placement(&palette.blocks, position, settings, |block, world_pos| {
-            let original = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos: block.pos,
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
-            let processed = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos,
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
+        Self::palette_blocks_for_placement(
+            &palette.blocks,
+            position,
+            settings,
+            |block, world_pos| {
+                let original = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos: block.pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
+                let processed = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
 
-            if let Some(processed) = Self::process_block(
-                region,
-                registry,
-                &original,
-                processed,
-                settings,
-                reference_pos,
-                random,
-            ) {
-                original_blocks.push(original);
-                processed_blocks.push(processed);
-            }
-        });
+                if let Some(processed) = Self::process_block(
+                    region,
+                    registry,
+                    &original,
+                    processed,
+                    settings,
+                    reference_pos,
+                    random,
+                ) {
+                    original_blocks.push(original);
+                    processed_blocks.push(processed);
+                }
+            },
+        );
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -1215,7 +1220,10 @@ impl StructureTemplate {
     ) {
         if !Self::pre_filters_placement_bounds(settings.processors) {
             for block in blocks {
-                f(block, Self::transformed_position(position, block.pos, settings));
+                f(
+                    block,
+                    Self::transformed_position(position, block.pos, settings),
+                );
             }
             return;
         }

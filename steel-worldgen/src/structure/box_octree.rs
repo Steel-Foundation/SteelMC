@@ -102,7 +102,11 @@ impl BoxOctree {
         Self::with_depth(boundary, DeflatedQuarters::boundary_from(boundary), 0)
     }
 
-    fn with_depth(boundary: BoundingBox, boundary_quarters: DeflatedQuarters, parent_depth: u32) -> Self {
+    fn with_depth(
+        boundary: BoundingBox,
+        boundary_quarters: DeflatedQuarters,
+        parent_depth: u32,
+    ) -> Self {
         let size = IVec3::new(
             round_away_from_zero(boundary.width()),
             round_away_from_zero(boundary.height()),
@@ -138,22 +142,29 @@ impl BoxOctree {
         self.inner_boxes.push(StoredBox::new(bbox));
     }
 
-    #[expect(dead_code, reason = "reserved for blocked-jigsaw skip when parity allows it")]
+    #[expect(
+        dead_code,
+        reason = "reserved for blocked-jigsaw skip when parity allows it"
+    )]
     pub fn boundary_contains(&self, position: IVec3) -> bool {
         self.boundary
             .contains_xyz(position.x, position.y, position.z)
     }
 
-    #[expect(dead_code, reason = "reserved for blocked-jigsaw skip when parity allows it")]
+    #[expect(
+        dead_code,
+        reason = "reserved for blocked-jigsaw skip when parity allows it"
+    )]
     pub fn within_any_box(&self, position: IVec3) -> bool {
         if !self.children.is_empty() {
-            return self.children.iter().any(|child| {
-                child.boundary_contains(position) && child.within_any_box(position)
-            });
+            return self
+                .children
+                .iter()
+                .any(|child| child.boundary_contains(position) && child.within_any_box(position));
         }
-        self.inner_boxes.iter().any(|stored| {
-            stored.bbox.contains_xyz(position.x, position.y, position.z)
-        })
+        self.inner_boxes
+            .iter()
+            .any(|stored| stored.bbox.contains_xyz(position.x, position.y, position.z))
     }
 
     /// Vanilla jigsaw placement uses `AABB.of(bb).deflate(0.25)` before collision checks.
@@ -172,9 +183,9 @@ impl BoxOctree {
                     && child.intersects_deflated(deflated, candidate)
             });
         }
-        self.inner_boxes.iter().any(|stored| {
-            candidate.intersects(stored.bbox) && deflated.intersects(stored.deflated)
-        })
+        self.inner_boxes
+            .iter()
+            .any(|stored| candidate.intersects(stored.bbox) && deflated.intersects(stored.deflated))
     }
 
     fn boundary_intersects(&self, candidate: BoundingBox) -> bool {
@@ -251,11 +262,7 @@ impl BoxOctree {
 }
 
 const fn round_away_from_zero(value: i32) -> i32 {
-    if value >= 0 {
-        value
-    } else {
-        -value
-    }
+    if value >= 0 { value } else { -value }
 }
 
 #[cfg(test)]
