@@ -1,13 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_dimension_types;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
 
 use crate::behavior::BlockPlaceContext;
 use crate::behavior::block::BlockBehavior;
+use crate::block_entity::{SharedBlockEntity, entities::EndGatewayBlockEntity};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::portal::PortalKind;
 use crate::world::LevelReader;
@@ -95,6 +96,29 @@ impl EndGatewayBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    fn apply_entity_inside(world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        if !entity.can_use_portal(false) {
+            return;
+        }
+
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return;
+        };
+        let mut block_entity = block_entity.lock();
+        let Some(gateway) = block_entity
+            .as_any_mut()
+            .downcast_mut::<EndGatewayBlockEntity>()
+        else {
+            return;
+        };
+        if gateway.is_cooling_down() {
+            return;
+        }
+
+        entity.set_as_inside_portal(PortalKind::EndGateway, pos);
+        gateway.trigger_cooldown(world);
+    }
 }
 
 impl BlockBehavior for EndGatewayBlock {
@@ -105,12 +129,40 @@ impl BlockBehavior for EndGatewayBlock {
     fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid_block: BlockRef) -> bool {
         false
     }
+
+    fn has_block_entity(&self) -> bool {
+        true
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> Option<SharedBlockEntity> {
+        Some(Arc::new(SyncMutex::new(EndGatewayBlockEntity::new(
+            level, pos, state,
+        ))))
+    }
+
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        _effect_collector: &mut InsideBlockEffectCollector,
+        _is_precise: bool,
+    ) {
+        Self::apply_entity_inside(world, pos, entity);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::behavior::{BlockStateBehaviorExt, init_behaviors};
+    use crate::block_entity::entities::EndGatewayBlockEntity;
     use crate::entity::{Entity, EntityBase};
     use crate::portal::PortalKind;
     use crate::test_support::TestLevel;
@@ -122,7 +174,7 @@ mod tests {
         test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types,
     };
 
-    use super::EndPortalBlock;
+    use super::{EndGatewayBlock, EndPortalBlock};
     use steel_registry::vanilla_entities;
     use steel_utils::BlockPos;
 
@@ -207,5 +259,28 @@ mod tests {
         let process = entity.base().portal_process().expect("portal process");
         assert_eq!(process.portal(), PortalKind::End);
         assert_eq!(process.entry_position(), pos);
+    }
+
+    #[test]
+    fn end_gateway_creates_typed_block_entity() {
+        init_test_registry();
+        let behavior = EndGatewayBlock::new(&vanilla_blocks::END_GATEWAY);
+        let state = vanilla_blocks::END_GATEWAY.default_state();
+        let pos = BlockPos::new(2, 70, -4);
+
+        assert!(behavior.has_block_entity());
+        let block_entity = behavior
+            .new_block_entity(Weak::new(), pos, state)
+            .expect("end gateway block entity");
+        let guard = block_entity.lock();
+
+        assert!(
+            guard
+                .as_any()
+                .downcast_ref::<EndGatewayBlockEntity>()
+                .is_some()
+        );
+        assert_eq!(guard.get_block_pos(), pos);
+        assert_eq!(guard.get_block_state(), state);
     }
 }
