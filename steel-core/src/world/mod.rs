@@ -1,8 +1,8 @@
 //! This module contains the `World` struct, which represents a world.
 
-use std::path::Path;
 use std::{
-    io,
+    io, mem,
+    path::Path,
     sync::{
         Arc, LazyLock, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -14,6 +14,7 @@ use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
+use crate::portal::WorldChangeRequest;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
@@ -346,6 +347,8 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// Section-indexed listeners for vanilla game events.
     game_event_listeners: GameEventListenerStorage,
+    /// World-change requests queued by world-local ticks for server safe-point processing.
+    pending_world_changes: SyncMutex<Vec<(i32, WorldChangeRequest)>>,
 }
 
 impl World {
@@ -447,6 +450,7 @@ impl World {
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
+                pending_world_changes: SyncMutex::new(Vec::new()),
             }
         }))
     }
@@ -3824,6 +3828,21 @@ impl World {
     #[must_use]
     pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
         self.entity_manager.get_by_id(id)
+    }
+
+    /// Queues a world change from world-local code for server safe-point processing.
+    pub fn queue_world_change(&self, entity_id: i32, request: WorldChangeRequest) {
+        self.pending_world_changes.lock().push((entity_id, request));
+    }
+
+    pub(crate) fn drain_world_changes(&self) -> Vec<(SharedEntity, WorldChangeRequest)> {
+        mem::take(&mut *self.pending_world_changes.lock())
+            .into_iter()
+            .filter_map(|(entity_id, request)| {
+                self.get_entity_by_id(entity_id)
+                    .map(|entity| (entity, request))
+            })
+            .collect()
     }
 
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.

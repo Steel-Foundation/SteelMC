@@ -1284,7 +1284,10 @@ impl Server {
     }
 
     fn process_world_changes(&self) {
-        let changes = mem::take(&mut *self.pending_world_changes.lock());
+        let mut changes = mem::take(&mut *self.pending_world_changes.lock());
+        for world in self.worlds.values() {
+            changes.extend(world.drain_world_changes());
+        }
 
         for (entity, request) in changes {
             if entity.is_removed() {
