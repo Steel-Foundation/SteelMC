@@ -272,6 +272,9 @@ pub struct Player {
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
 
+    /// Whether the player has completed the vanilla End credits flow.
+    seen_credits: SyncMutex<bool>,
+
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
@@ -500,6 +503,7 @@ impl Player {
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
             experience: SyncMutex::new(Experience::default()),
+            seen_credits: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
             pending_root_vehicle: SyncMutex::new(None),
         }
@@ -1031,6 +1035,17 @@ impl Player {
         let invulnerable = { self.abilities.lock().invulnerable };
         let needs_foods = { self.food_data.lock().needs_food() };
         invulnerable || can_always_eat || needs_foods
+    }
+
+    /// Returns vanilla `ServerPlayer.seenCredits`.
+    #[must_use]
+    pub fn has_seen_credits(&self) -> bool {
+        *self.seen_credits.lock()
+    }
+
+    /// Sets vanilla `ServerPlayer.seenCredits`.
+    pub fn set_seen_credits(&self, seen_credits: bool) {
+        *self.seen_credits.lock() = seen_credits;
     }
 
     /// Cleans up player resources.
