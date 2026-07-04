@@ -2,6 +2,7 @@
 
 use std::fs;
 
+use crate::generator_functions::{parse_loose_identifier, registry_entry_ident};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -54,19 +55,26 @@ use data::{
     WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
 };
 
+fn sorted_json_registry_entries(dir: &str) -> Vec<(String, String)> {
+    sorted_json_files(dir)
+        .into_iter()
+        .map(|path| {
+            let name = resource_name(&path);
+            let content = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            (name, content)
+        })
+        .collect()
+}
+
 pub(crate) fn build_configured() -> TokenStream {
     let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let kind = serde_json::from_str::<ConfiguredFeatureKind>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse configured feature {name}: {err}"));
-        entries.push((name, generate_configured_feature_kind(&kind)));
+    for (registry_id, content) in sorted_json_registry_entries(dir) {
+        let kind = parse_configured_feature_json(&registry_id, &content);
+        entries.push((registry_id, generate_configured_feature_kind(&kind)));
     }
 
     let mut stream = TokenStream::new();
@@ -82,12 +90,16 @@ pub(crate) fn build_configured() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, kind) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, kind) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = parse_loose_identifier(registry_id).unwrap_or_else(|err| {
+            panic!("invalid configured feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<ConfiguredFeature> = LazyLock::new(|| {
                 ConfiguredFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     kind: #kind,
                     id: OnceLock::new(),
                 }

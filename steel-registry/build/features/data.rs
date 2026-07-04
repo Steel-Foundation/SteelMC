@@ -5,6 +5,7 @@
 //! data in `src/feature/data.rs` can use typed registry refs because this module
 //! owns the extracted JSON decoding step.
 
+use crate::generator_functions::parse_loose_identifier;
 use crate::shared_structs::deserialize_tag_identifier;
 pub use crate::shared_structs::{BlockStateData, FluidStateData};
 use serde::{Deserialize, Deserializer, de::Error as _};
@@ -13,6 +14,83 @@ use steel_utils::{
     Direction, Identifier, Rotation,
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
+
+fn parse_loose_identifier_de<E: serde::de::Error>(raw: &str) -> Result<Identifier, E> {
+    parse_loose_identifier(raw).map_err(E::custom)
+}
+
+fn normalize_loose_identifier(raw: &str) -> String {
+    parse_loose_identifier(raw)
+        .unwrap_or_else(|error| panic!("invalid loose feature identifier {raw}: {error}"))
+        .to_string()
+}
+
+fn normalize_loose_identifier_value(value: &mut Value) {
+    if let Value::String(name) = value {
+        *name = normalize_loose_identifier(name);
+    }
+}
+
+fn normalize_loose_identifier_or_tag(raw: &str) -> String {
+    if let Some(tag) = raw.strip_prefix('#') {
+        format!("#{}", normalize_loose_identifier(tag))
+    } else {
+        normalize_loose_identifier(raw)
+    }
+}
+
+fn normalize_block_reference(value: &mut Value) {
+    match value {
+        Value::String(name) => *name = normalize_loose_identifier_or_tag(name),
+        Value::Array(items) => {
+            for item in items {
+                normalize_block_reference(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_datapack_type_fields(value: &mut Value) {
+    const TYPE_KEYS: &[&str] = &["type", "feature_type", "predicate_type", "processor_type"];
+
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if TYPE_KEYS.contains(&key.as_str()) {
+                    normalize_loose_identifier_value(child);
+                } else if key == "Name" {
+                    normalize_loose_identifier_value(child);
+                } else if matches!(key.as_str(), "blocks" | "block") {
+                    normalize_block_reference(child);
+                }
+                normalize_datapack_type_fields(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_datapack_type_fields(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn parse_configured_feature_json(registry_id: &str, content: &str) -> ConfiguredFeatureKind {
+    let mut value: Value = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"));
+    normalize_datapack_type_fields(&mut value);
+    serde_json::from_value(value)
+        .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"))
+}
+
+pub fn parse_placed_feature_json(registry_id: &str, content: &str) -> PlacedFeatureData {
+    let mut value: Value = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"));
+    normalize_datapack_type_fields(&mut value);
+    serde_json::from_value(value)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"))
+}
 
 /// A configured feature reference, either a registry key or an inline configured feature.
 #[derive(Debug, Clone, Deserialize)]
@@ -285,13 +363,18 @@ impl<'de> Deserialize<'de> for IdentifierList {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Raw {
-            Single(Identifier),
-            Many(Vec<Identifier>),
+            Single(String),
+            Many(Vec<String>),
         }
 
         Ok(match Raw::deserialize(deserializer)? {
-            Raw::Single(value) => Self(vec![value]),
-            Raw::Many(values) => Self(values),
+            Raw::Single(value) => Self(vec![parse_loose_identifier_de(&value)?]),
+            Raw::Many(values) => Self(
+                values
+                    .iter()
+                    .map(|value| parse_loose_identifier_de(value.as_str()))
+                    .collect::<Result<_, _>>()?,
+            ),
         })
     }
 }
@@ -309,20 +392,26 @@ impl<'de> Deserialize<'de> for BlockHolderSet {
         #[serde(untagged)]
         enum Raw {
             Single(String),
-            Many(Vec<Identifier>),
+            Many(Vec<String>),
         }
 
         match Raw::deserialize(deserializer)? {
             Raw::Single(value) => {
                 if let Some(tag) = value.strip_prefix('#') {
-                    let tag = tag.parse().map_err(D::Error::custom)?;
+                    let tag = parse_loose_identifier_de(tag)?;
                     Ok(Self::Tag(tag))
                 } else {
-                    let entry = value.parse().map_err(D::Error::custom)?;
+                    let entry = parse_loose_identifier_de(&value)?;
                     Ok(Self::Entries(vec![entry]))
                 }
             }
-            Raw::Many(values) => Ok(Self::Entries(values)),
+            Raw::Many(values) => {
+                let entries = values
+                    .iter()
+                    .map(|value| parse_loose_identifier_de(value))
+                    .collect::<Result<_, _>>()?;
+                Ok(Self::Entries(entries))
+            }
         }
     }
 }

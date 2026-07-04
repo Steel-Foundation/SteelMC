@@ -37,6 +37,55 @@ pub fn generate_identifier(resource: &Identifier) -> TokenStream {
     quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
 }
 
+pub fn parse_loose_identifier(raw: &str) -> Result<Identifier, String> {
+    let (namespace, path) = raw
+        .split_once(':')
+        .map_or((Identifier::VANILLA_NAMESPACE, raw), |(namespace, path)| {
+            (namespace, path)
+        });
+
+    if !Identifier::validate(namespace, path) {
+        return Err(format!("invalid identifier {raw}"));
+    }
+
+    Ok(Identifier::new(namespace.to_owned(), path.to_owned()))
+}
+
+pub fn generate_static_identifier(resource: &Identifier) -> TokenStream {
+    let namespace = resource.namespace.as_ref();
+    let path = resource.path.as_ref();
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        quote! { Identifier::vanilla_static(#path) }
+    } else {
+        quote! { Identifier::new_static(#namespace, #path) }
+    }
+}
+
+pub fn generate_static_identifier_from_str(raw: &str, context: &str) -> TokenStream {
+    let identifier = parse_loose_identifier(raw)
+        .unwrap_or_else(|error| panic!("invalid {context} identifier {raw}: {error}"));
+    generate_static_identifier(&identifier)
+}
+
+pub fn generate_owned_identifier_from_str(raw: &str, context: &str) -> TokenStream {
+    let identifier = parse_loose_identifier(raw)
+        .unwrap_or_else(|error| panic!("invalid {context} identifier {raw}: {error}"));
+    let namespace = identifier.namespace.as_ref();
+    let path = identifier.path.as_ref();
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        quote! { Identifier::vanilla(#path.to_string()) }
+    } else {
+        quote! { Identifier::new(#namespace, #path) }
+    }
+}
+
+pub fn registry_entry_ident(registry_id: &str) -> Ident {
+    Ident::new(
+        &registry_id.replace([':', '/'], "_").to_shouty_snake_case(),
+        Span::call_site(),
+    )
+}
+
 pub fn generate_sound_event_ref(resource: &Identifier) -> TokenStream {
     assert_eq!(
         resource.namespace.as_ref(),
