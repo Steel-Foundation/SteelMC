@@ -21,7 +21,7 @@ use steel_registry::shared_structs::BlockStateData;
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
-    StructureProcessorKind, StructureRuleTestData,
+    StructureProcessorHeightmap, StructureProcessorKind, StructureRuleTestData,
 };
 use steel_registry::template_pool::Projection;
 use steel_registry::vanilla_block_tags::BlockTag;
