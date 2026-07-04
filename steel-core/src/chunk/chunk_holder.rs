@@ -720,10 +720,12 @@ impl ChunkHolder {
         let context = chunk_map.world_gen_context.clone();
         let self_clone = self.clone();
         let storage = chunk_map.storage.clone();
+        let save_dependency = self.add_save_dependency();
 
         let future = chunk_map.task_tracker.spawn(async move {
             // Keep the claim alive for the producer task so Drop can roll back abandoned work.
             let _status_claim = status_claim;
+            let _save_dependency = save_dependency;
             let result = if target_status == ChunkStatus::Empty {
                 Self::apply_empty_step(self_clone, step, context, cache, storage, thread_pool).await
             } else {

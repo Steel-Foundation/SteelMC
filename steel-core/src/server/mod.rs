@@ -58,7 +58,7 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
 };
-use steel_registry::{REGISTRY, Registry, RegistryEntry};
+use steel_registry::{REGISTRY, Registry, RegistryEntry, vanilla_entities};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
@@ -94,12 +94,49 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::game_rules::GameRuleValue;
+    use steel_registry::vanilla_entities;
+
+    use crate::entity::{Entity, EntityBase};
 
     use super::{
-        cap_positive_thread_count, is_allowed_to_enter_portal_target,
-        is_end_to_overworld_transition,
+        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+        is_allowed_to_enter_portal_target, is_end_to_overworld_transition,
     };
+
+    struct TestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        ender_pearl_owner_seen_credits: Option<bool>,
+    }
+
+    impl TestEntity {
+        fn new(entity_type: EntityTypeRef, ender_pearl_owner_seen_credits: Option<bool>) -> Self {
+            Self {
+                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+                ender_pearl_owner_seen_credits,
+            }
+        }
+    }
+
+    impl Entity for TestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
+            self.ender_pearl_owner_seen_credits
+        }
+    }
 
     #[test]
     fn positive_thread_count_is_capped_to_available_threads() {
@@ -139,6 +176,21 @@ mod tests {
         assert!(!is_end_to_overworld_transition("the_end", "the_nether"));
         assert!(!is_end_to_overworld_transition("overworld", "overworld"));
         assert!(!is_end_to_overworld_transition("overworld", "the_end"));
+    }
+
+    #[test]
+    fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
+        let blocked_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(false));
+        let allowed_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(true));
+        let no_player_owner_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, None);
+        let item = TestEntity::new(&vanilla_entities::ITEM, Some(false));
+
+        assert!(!can_entity_return_from_end_to_overworld(&blocked_pearl));
+        assert!(can_entity_return_from_end_to_overworld(&allowed_pearl));
+        assert!(can_entity_return_from_end_to_overworld(
+            &no_player_owner_pearl
+        ));
+        assert!(can_entity_return_from_end_to_overworld(&item));
     }
 }
 
@@ -208,7 +260,7 @@ fn can_teleport_between_worlds(
         source_world.key.path.as_ref(),
         target_world.key.path.as_ref(),
     ) {
-        return direct_passengers_allow_end_return(entity);
+        return can_entity_return_from_end_to_overworld(entity);
     }
 
     true
@@ -216,6 +268,16 @@ fn can_teleport_between_worlds(
 
 fn is_end_to_overworld_transition(source_world_name: &str, target_world_name: &str) -> bool {
     source_world_name == END_WORLD_NAME && target_world_name == OVERWORLD_WORLD_NAME
+}
+
+fn can_entity_return_from_end_to_overworld(entity: &dyn Entity) -> bool {
+    if entity.entity_type() == &vanilla_entities::ENDER_PEARL
+        && entity.ender_pearl_owner_seen_credits() == Some(false)
+    {
+        return false;
+    }
+
+    direct_passengers_allow_end_return(entity)
 }
 
 fn direct_passengers_allow_end_return(entity: &dyn Entity) -> bool {
@@ -1772,7 +1834,6 @@ impl Server {
     /// Executes one chunk scheduling tick across all worlds.
     fn tick_chunk_scheduling(&self) {
         for (i, world) in self.worlds.values().enumerate() {
-            world.chunk_map.tick_timed_tickets();
             let timings = world.chunk_map.tick_scheduling();
 
             let total = timings.ticket_updates
@@ -1899,7 +1960,7 @@ impl Server {
 
         if entity.as_player().is_some() {
             let (target_world, respawn_data) =
-                match self.respawn_world_and_data_for_domain(source_world.domain()) {
+                match self.strict_respawn_world_and_data_for_domain(source_world.domain()) {
                     Ok(resolved) => resolved,
                     Err(error) => {
                         log::warn!(
@@ -2156,6 +2217,9 @@ impl Server {
         for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
+                if runs_normally {
+                    world_clone.chunk_map.tick_timed_tickets();
+                }
                 world_clone.tick_game(tick_count, runs_normally)
             }));
         }

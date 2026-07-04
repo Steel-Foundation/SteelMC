@@ -42,8 +42,8 @@ use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
-    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_shape_full_block,
-    join_is_not_empty,
+    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_offset_shape_full_block,
+    is_shape_full_block, join_is_not_empty,
 };
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
@@ -1814,8 +1814,10 @@ impl World {
         // Neighbor updates (when UPDATE_NEIGHBORS is set)
         if flags.contains(UpdateFlags::UPDATE_NEIGHBORS) {
             self.update_neighbors_at(pos, old_state.get_block());
-            // TODO: if block has analog output signal, update comparator neighbors
-            // via updateNeighborForOutputSignal
+            let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+            if behavior.has_analog_output_signal(block_state) {
+                self.update_neighbor_for_output_signal(pos, block_state.get_block());
+            }
         }
 
         // Shape updates (unless UPDATE_KNOWN_SHAPE is set)
@@ -1927,6 +1929,45 @@ impl World {
             let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
         }
+    }
+
+    /// Updates comparators that can read analog output from `pos`.
+    ///
+    /// Mirrors vanilla `Level.updateNeighbourForOutputSignal`.
+    pub(crate) fn update_neighbor_for_output_signal(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        changed_block: BlockRef,
+    ) {
+        for direction in Direction::HORIZONTAL {
+            let mut relative_pos = pos.relative(direction);
+            if !self.has_full_chunk(Self::chunk_pos_for_block(relative_pos)) {
+                continue;
+            }
+
+            let mut state = self.get_block_state(relative_pos);
+            if state.get_block() == &vanilla_blocks::COMPARATOR {
+                self.neighbor_changed(relative_pos, changed_block, false);
+                continue;
+            }
+
+            if !Self::is_redstone_conductor(state, relative_pos) {
+                continue;
+            }
+
+            relative_pos = relative_pos.relative(direction);
+            if !self.has_full_chunk(Self::chunk_pos_for_block(relative_pos)) {
+                continue;
+            }
+            state = self.get_block_state(relative_pos);
+            if state.get_block() == &vanilla_blocks::COMPARATOR {
+                self.neighbor_changed(relative_pos, changed_block, false);
+            }
+        }
+    }
+
+    fn is_redstone_conductor(state: BlockStateId, pos: BlockPos) -> bool {
+        is_offset_shape_full_block(state.get_collision_shape_at(pos))
     }
 
     /// Called when a neighbor's shape changes, to update this block's state.

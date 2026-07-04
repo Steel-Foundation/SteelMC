@@ -1524,6 +1524,12 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns `Some(seenCredits)` when this entity is a thrown ender pearl
+    /// whose owner is a server player.
+    fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
+        None
+    }
+
     /// Returns true for vanilla players whose abilities have `flying` set.
     fn is_flying_player(&self) -> bool {
         false
@@ -2121,6 +2127,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Mirrors vanilla `Entity.canUsePortal`, including `LivingEntity` sleeping
     /// suppression through exposed behavior capabilities.
     fn can_use_portal(&self, ignore_passenger: bool) -> bool {
+        let entity_type = self.entity_type();
+        if entity_type == &vanilla_entities::FISHING_BOBBER
+            || entity_type == &vanilla_entities::ENDER_DRAGON
+            || entity_type == &vanilla_entities::WITHER
+        {
+            return false;
+        }
+
         (ignore_passenger || !self.is_passenger())
             && self.is_alive()
             && !self
@@ -7030,6 +7044,7 @@ mod tests {
     struct TypedTestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
+        ender_pearl_owner_seen_credits: Option<bool>,
     }
 
     impl TypedTestEntity {
@@ -7037,6 +7052,20 @@ mod tests {
             Self {
                 base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
+                ender_pearl_owner_seen_credits: None,
+            }
+        }
+
+        fn ender_pearl_with_owner_seen_credits(id: i32, seen_credits: bool) -> Self {
+            Self {
+                base: EntityBase::new(
+                    id,
+                    DVec3::ZERO,
+                    vanilla_entities::ENDER_PEARL.dimensions,
+                    Weak::new(),
+                ),
+                entity_type: &vanilla_entities::ENDER_PEARL,
+                ender_pearl_owner_seen_credits: Some(seen_credits),
             }
         }
     }
@@ -7048,6 +7077,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
+        }
+
+        fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
+            self.ender_pearl_owner_seen_credits
         }
     }
 
@@ -7501,6 +7534,28 @@ mod tests {
         entity.set_removed(RemovalReason::Discarded);
 
         assert!(!entity.can_use_portal(true));
+    }
+
+    #[test]
+    fn static_vanilla_portal_overrides_reject_special_entities() {
+        let fishing_hook = TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER);
+        let dragon = TypedTestEntity::new(2, &vanilla_entities::ENDER_DRAGON);
+        let wither = TypedTestEntity::new(3, &vanilla_entities::WITHER);
+
+        assert!(!fishing_hook.can_use_portal(true));
+        assert!(!dragon.can_use_portal(true));
+        assert!(!wither.can_use_portal(true));
+    }
+
+    #[test]
+    fn ender_pearl_owner_seen_credits_reports_player_owner_gate() {
+        let blocked = TypedTestEntity::ender_pearl_with_owner_seen_credits(1, false);
+        let allowed = TypedTestEntity::ender_pearl_with_owner_seen_credits(2, true);
+        let no_player_owner = TypedTestEntity::new(3, &vanilla_entities::ENDER_PEARL);
+
+        assert_eq!(blocked.ender_pearl_owner_seen_credits(), Some(false));
+        assert_eq!(allowed.ender_pearl_owner_seen_credits(), Some(true));
+        assert_eq!(no_player_owner.ender_pearl_owner_seen_credits(), None);
     }
 
     #[test]

@@ -66,6 +66,9 @@ impl ItemBehavior for EnderEyeItem {
         {
             return InteractionResult::Pass;
         }
+        context
+            .world
+            .update_neighbor_for_output_signal(clicked_pos, &vanilla_blocks::END_PORTAL_FRAME);
 
         // Play the end portal frame fill sound effect (no exclusion, all players hear it)
         context
