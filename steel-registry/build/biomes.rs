@@ -12,7 +12,8 @@ use crate::generator_functions::{
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeError;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use steel_utils::Identifier;
 
@@ -671,7 +672,6 @@ pub(crate) fn build() -> TokenStream {
                 id: OnceLock::new(),
             });
         });
-        let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(&#biome_ident);
         });
