@@ -204,6 +204,7 @@ mod tests {
     fn overworld_sky_light_uses_generated_day_timeline() {
         init_test_registry();
 
+        assert_f32_close(sky_light_level(&OVERWORLD, 1000, 0.0, 0.0, true), 15.0);
         assert_f32_close(sky_light_level(&OVERWORLD, 6000, 0.0, 0.0, true), 15.0);
         assert_f32_close(sky_light_level(&OVERWORLD, 18000, 0.0, 0.0, true), 4.0);
     }

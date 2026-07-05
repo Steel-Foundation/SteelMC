@@ -12,20 +12,22 @@ use tokio::{fs, io};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
+use super::PlayerRespawnConfig;
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentPlayerData, PersistentRootVehicle,
     PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
+use crate::level_data::RespawnData;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
-use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
+use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 6;
+const PLAYER_STORAGE_VERSION: u16 = 7;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -79,12 +81,22 @@ struct PlayerDataFile {
     experience_total: i32,
     score: i32,
     root_vehicle: Option<RootVehicleFile>,
+    respawn_config: Option<RespawnConfigFile>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
 struct RootVehicleFile {
     attach: [u8; 16],
     entity: PersistentEntity,
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RespawnConfigFile {
+    dimension: String,
+    pos: [i32; 3],
+    yaw: f32,
+    pitch: f32,
+    forced: bool,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -367,6 +379,10 @@ impl PlayerDataFile {
                     attach: root_vehicle.attach,
                     entity: root_vehicle.entity,
                 }),
+            respawn_config: data
+                .respawn_config
+                .clone()
+                .map(RespawnConfigFile::from_runtime),
         })
     }
 
@@ -428,6 +444,40 @@ impl PlayerDataFile {
                 attach: root_vehicle.attach,
                 entity: root_vehicle.entity,
             }),
+            respawn_config: self
+                .respawn_config
+                .map(RespawnConfigFile::into_runtime)
+                .transpose()?,
+        })
+    }
+}
+
+impl RespawnConfigFile {
+    fn from_runtime(config: PlayerRespawnConfig) -> Self {
+        let pos = config.respawn_data.pos();
+        Self {
+            dimension: config.respawn_data.dimension().to_string(),
+            pos: [pos.x(), pos.y(), pos.z()],
+            yaw: config.respawn_data.yaw,
+            pitch: config.respawn_data.pitch,
+            forced: config.forced,
+        }
+    }
+
+    fn into_runtime(self) -> io::Result<PlayerRespawnConfig> {
+        Ok(PlayerRespawnConfig {
+            respawn_data: RespawnData::of(
+                self.dimension.parse().map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("invalid respawn dimension: {error}"),
+                    )
+                })?,
+                BlockPos::new(self.pos[0], self.pos[1], self.pos[2]),
+                self.yaw,
+                self.pitch,
+            ),
+            forced: self.forced,
         })
     }
 }
@@ -568,6 +618,7 @@ mod tests {
             experience_total: 32,
             score: 9,
             root_vehicle: None,
+            respawn_config: None,
         }
     }
 
@@ -675,6 +726,42 @@ mod tests {
             root_vehicle.entity.pos.map(f64::to_bits),
             [4.0_f64.to_bits(), 65.0_f64.to_bits(), 6.0_f64.to_bits()]
         );
+    }
+
+    #[test]
+    fn player_file_roundtrip_preserves_respawn_config() {
+        let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.respawn_config = Some(RespawnConfigFile {
+            dimension: "minecraft:overworld".to_owned(),
+            pos: [10, 64, -3],
+            yaw: 181.0,
+            pitch: -120.0,
+            forced: false,
+        });
+
+        let encoded = encode_player_file(&file).expect("player file should encode");
+        let decoded = decode_player_file(&encoded).expect("player file should decode");
+        let persistent = decoded
+            .into_persistent()
+            .expect("player file should convert");
+
+        let Some(respawn_config) = persistent.respawn_config else {
+            panic!("respawn config should survive roundtrip");
+        };
+        assert_eq!(
+            respawn_config.respawn_data.dimension(),
+            &Identifier::vanilla_static("overworld")
+        );
+        assert_eq!(respawn_config.respawn_data.pos(), BlockPos::new(10, 64, -3));
+        assert_eq!(
+            respawn_config.respawn_data.yaw.to_bits(),
+            (-179.0_f32).to_bits()
+        );
+        assert_eq!(
+            respawn_config.respawn_data.pitch.to_bits(),
+            (-90.0_f32).to_bits()
+        );
+        assert!(!respawn_config.forced);
     }
 
     #[test]

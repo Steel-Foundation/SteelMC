@@ -16,25 +16,29 @@ pub mod vegetation;
 pub use building::{
     AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock, CampfireBlock, DoorBlock,
     FenceBlock, FenceGateBlock, HayBlock, HoneyBlock, IronBarsBlock, LavaCauldronBlock, MagmaBlock,
-    PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock,
-    SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
-    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
-    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
-    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WetSpongeBlock,
+    PotentSulfurBlock, PowderSnowBlock, RespawnAnchorBlock, RotatedPillarBlock, ScaffoldingBlock,
+    SlabBlock, SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock,
+    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock,
+    WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
-    StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
-    WeatheringCopperChainBlock,
+    BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
+    StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock, WallSignBlock,
+    WallTorchBlock, WeatheringCopperChainBlock,
 };
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
     SoulFireBlock,
 };
-pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
+pub use redstone::{
+    ButtonBlock, PressurePlateBlock, RedstoneTorchBlock, RedstoneWallTorchBlock,
+    WeightedPressurePlateBlock,
+};
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CocoaBlock, CropBlock, DoublePlantBlock, FlowerBlock,

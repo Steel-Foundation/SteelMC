@@ -94,6 +94,7 @@ impl World {
         }
 
         self.register_respawned_player_entity(&player);
+        self.update_sleeping_player_list();
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
@@ -119,6 +120,7 @@ impl World {
 
         self.player_area_map.on_player_leave(&player);
         self.chunk_map.remove_player(&player);
+        self.update_sleeping_player_list();
 
         let start = Instant::now();
 
@@ -167,6 +169,7 @@ impl World {
         self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
         self.chunk_map.remove_player(&player);
+        self.update_sleeping_player_list();
     }
 
     /// Removes a player during a domain switch after the caller has saved
@@ -182,6 +185,7 @@ impl World {
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
         self.chunk_map.remove_player(&player);
+        self.update_sleeping_player_list();
     }
 
     /// Adds a player to the world.
@@ -204,6 +208,7 @@ impl World {
 
         self.register_player_entity(&player);
         self.chunk_map.update_player_status(&player);
+        self.update_sleeping_player_list();
 
         player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,

@@ -549,6 +549,11 @@ pub trait BlockBehavior: Send + Sync {
         true
     }
 
+    /// Returns whether this block can be occupied by a forced respawn position
+    fn is_possible_to_respawn_in_this(&self, state: BlockStateId) -> bool {
+        !state.is_solid() && !state.has_fluid()
+    }
+
     /// Returns the block state to use when placing this block.
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId>;
 

@@ -28,6 +28,7 @@ pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
+mod sleep_state;
 mod spam_throttler;
 mod teleport_state;
 mod tick_state;
@@ -43,6 +44,7 @@ use lifecycle_state::PlayerLifecycleState;
 pub use message_validator::LastSeenMessagesValidator;
 use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
+use sleep_state::PlayerSleepState;
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
     packets::game::{CSetEntityData, CSetExperience},
@@ -57,12 +59,15 @@ pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
 use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CRespawn, CSetDefaultSpawnPosition,
-    CSetHealth, CSetHeldSlot, CSetPassengers, CSetTime, ClientCommandAction, EquipmentSlotItem,
-    SoundSource,
+    AnimateAction, AttributeSnapshot, CAnimate, CEntityEvent, CPlayerCombatKill, CRespawn,
+    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, CSetTime, CSound,
+    ClientCommandAction, EquipmentSlotItem, SoundSource,
 };
 use steel_registry::RegistryEntry;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::{
+    block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
+};
+use steel_registry::dimension_type::BedRuleValue;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -74,7 +79,7 @@ use steel_registry::vanilla_game_rules::{
     KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
-    sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
+    sound_events, vanilla_attributes, vanilla_blocks, vanilla_damage_type_tags, vanilla_entities,
     vanilla_particle_types,
 };
 use steel_utils::entity_events::EntityStatus;
@@ -87,14 +92,16 @@ use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{content::Resolvable, custom::CustomData};
 
+use crate::behavior::BlockStateBehaviorExt as _;
+use crate::behavior::blocks::{BedBlock, RespawnAnchorBlock};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntitySyncedData, LivingEntity,
-    LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    equipment_items_to_packet_items, start_riding_entities,
+    LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket,
+    RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -116,7 +123,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, wrap_degrees};
 
 use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
@@ -126,6 +133,25 @@ pub type PreviousMessageEntry = PreviousMessage;
 pub use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
+const BED_INTERACTION_XZ_RANGE: f64 = 3.0;
+const BED_INTERACTION_Y_RANGE: f64 = 2.0;
+
+/// Result problem returned by sleep admission checks.
+#[derive(Debug)]
+pub(crate) enum BedSleepingProblem {
+    OtherProblem,
+    Message(Box<TextComponent>),
+}
+
+impl BedSleepingProblem {
+    #[must_use]
+    pub(crate) fn message(&self) -> Option<&TextComponent> {
+        match self {
+            Self::Message(message) => Some(message.as_ref()),
+            Self::OtherProblem => None,
+        }
+    }
+}
 
 /// Client-side settings sent via `SClientInformation` packet.
 /// This is stored separately from the packet struct to allow default initialization.
@@ -253,6 +279,12 @@ pub struct Player {
     /// Local tick and once-per-tick packet state.
     tick_state: SyncMutex<PlayerTickState>,
 
+    /// Vanilla player sleeping counters.
+    sleep_state: SyncMutex<PlayerSleepState>,
+
+    /// Vanilla per-player respawn configuration set by beds and respawn anchors.
+    respawn_config: SyncMutex<Option<PlayerRespawnConfig>>,
+
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
     pub abilities: SyncMutex<Abilities>,
 
@@ -290,17 +322,50 @@ struct PendingRootVehicleRestore {
 struct DeathRespawnSpawn {
     position: DVec3,
     rotation: (f32, f32),
+    anchor_deplete_sound_pos: Option<BlockPos>,
+}
+
+/// Vanilla per-player respawn configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerRespawnConfig {
+    /// Dimension, bed/anchor position, yaw, and pitch used for respawn.
+    pub respawn_data: RespawnData,
+    /// Whether respawning is forced even if the spawn block is unavailable.
+    pub forced: bool,
+}
+
+impl PlayerRespawnConfig {
+    #[must_use]
+    const fn new(respawn_data: RespawnData, forced: bool) -> Self {
+        Self {
+            respawn_data,
+            forced,
+        }
+    }
+
+    #[must_use]
+    fn is_same_position(&self, other: Option<&Self>) -> bool {
+        other.is_some_and(|other| self.respawn_data.global_pos == other.respawn_data.global_pos)
+    }
 }
 
 struct PlayerRespawnJob {
     player: Arc<Player>,
-    source_world: Arc<World>,
+    death_world: Arc<World>,
+    fallback_world: Arc<World>,
+    fallback_search: Option<PlayerSpawnSearch>,
+    fallback_rotation: (f32, f32),
     target_world: Arc<World>,
     rotation: (f32, f32),
     phase: PlayerRespawnJobPhase,
+    consume_spawn_block: bool,
 }
 
 enum PlayerRespawnJobPhase {
+    LoadingPersonalRespawnBlock {
+        config: PlayerRespawnConfig,
+        request: ChunkRequestHandle,
+    },
     Searching(PlayerSpawnSearch),
     LoadingSpawnChunks {
         spawn: DeathRespawnSpawn,
@@ -311,27 +376,58 @@ enum PlayerRespawnJobPhase {
 impl PlayerRespawnJob {
     fn new(
         player: Arc<Player>,
-        source_world: Arc<World>,
-        target_world: Arc<World>,
-        respawn_data: RespawnData,
+        death_world: Arc<World>,
+        fallback_world: Arc<World>,
+        fallback_respawn_data: RespawnData,
+        personal_respawn: Option<(Arc<World>, PlayerRespawnConfig)>,
+        consume_spawn_block: bool,
     ) -> Result<Self, String> {
-        let search = PlayerSpawnSearch::new(
-            &target_world,
-            respawn_data.pos(),
-            target_world.default_gamemode,
+        let fallback_search = PlayerSpawnSearch::new(
+            &fallback_world,
+            fallback_respawn_data.pos(),
+            fallback_world.default_gamemode,
         )?;
+        let fallback_rotation = (fallback_respawn_data.yaw, fallback_respawn_data.pitch);
+
+        let (target_world, rotation, phase, fallback_search) =
+            if let Some((personal_world, config)) = personal_respawn {
+                let pos = config.respawn_data.pos();
+                let request = personal_world.request_player_spawn_chunks(DVec3::new(
+                    f64::from(pos.x()) + 0.5,
+                    f64::from(pos.y()),
+                    f64::from(pos.z()) + 0.5,
+                ));
+                (
+                    personal_world,
+                    (config.respawn_data.yaw, config.respawn_data.pitch),
+                    PlayerRespawnJobPhase::LoadingPersonalRespawnBlock { config, request },
+                    Some(fallback_search),
+                )
+            } else {
+                (
+                    fallback_world.clone(),
+                    fallback_rotation,
+                    PlayerRespawnJobPhase::Searching(fallback_search),
+                    None,
+                )
+            };
+
         Ok(Self {
             player,
-            source_world,
+            death_world,
+            fallback_world,
+            fallback_search,
+            fallback_rotation,
             target_world,
-            rotation: (respawn_data.yaw, respawn_data.pitch),
-            phase: PlayerRespawnJobPhase::Searching(search),
+            rotation,
+            phase,
+            consume_spawn_block,
         })
     }
 
     fn still_valid(&self) -> bool {
         !self.player.connection.closed()
-            && Arc::ptr_eq(&self.player.get_world(), &self.source_world)
+            && Arc::ptr_eq(&self.player.get_world(), &self.death_world)
             && Player::should_process_respawn(self.player.get_health())
     }
 }
@@ -345,6 +441,47 @@ impl ServerJob for PlayerRespawnJob {
 
         loop {
             match &mut self.phase {
+                PlayerRespawnJobPhase::LoadingPersonalRespawnBlock { config, request } => {
+                    match request.poll() {
+                        ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                        ChunkRequestState::Cancelled => {
+                            self.player.finish_respawn_request();
+                            return JobPoll::Finished;
+                        }
+                        ChunkRequestState::Ready => {
+                            if request.ready_chunks().is_none() {
+                                return JobPoll::Pending;
+                            }
+
+                            if let Some(spawn) = Self::resolve_personal_respawn(
+                                &self.target_world,
+                                &self.player,
+                                config,
+                                self.consume_spawn_block,
+                            ) {
+                                let request = self
+                                    .target_world
+                                    .request_player_spawn_chunks(spawn.position);
+                                self.phase =
+                                    PlayerRespawnJobPhase::LoadingSpawnChunks { spawn, request };
+                                continue;
+                            }
+
+                            self.player.send_packet(CGameEvent {
+                                event: GameEventType::NoRespawnBlockAvailable,
+                                data: 0.0,
+                            });
+                            self.player.set_respawn_position(None, false);
+                            let Some(fallback_search) = self.fallback_search.take() else {
+                                self.player.finish_respawn_request();
+                                return JobPoll::Finished;
+                            };
+                            self.target_world = self.fallback_world.clone();
+                            self.rotation = self.fallback_rotation;
+                            self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
+                        }
+                    }
+                }
                 PlayerRespawnJobPhase::Searching(search) => {
                     match search.poll_with_ready_candidate_budget(
                         &self.target_world,
@@ -359,6 +496,7 @@ impl ServerJob for PlayerRespawnJob {
                             let spawn = DeathRespawnSpawn {
                                 position,
                                 rotation: self.rotation,
+                                anchor_deplete_sound_pos: None,
                             };
                             let request = self.target_world.request_player_spawn_chunks(position);
                             self.phase =
@@ -379,7 +517,7 @@ impl ServerJob for PlayerRespawnJob {
                             }
 
                             self.player.finish_death_respawn(
-                                &self.source_world,
+                                &self.death_world,
                                 &self.target_world,
                                 *spawn,
                             );
@@ -396,7 +534,318 @@ impl ServerJob for PlayerRespawnJob {
     }
 }
 
+impl PlayerRespawnJob {
+    fn resolve_personal_respawn(
+        world: &Arc<World>,
+        player: &Player,
+        config: &PlayerRespawnConfig,
+        consume_spawn_block: bool,
+    ) -> Option<DeathRespawnSpawn> {
+        let pos = config.respawn_data.pos();
+        let state = world.get_block_state(pos);
+        let block = state.get_block();
+
+        if RespawnAnchorBlock::can_use_for_respawn(world, pos, state, config.forced) {
+            let position = RespawnAnchorBlock::find_standup_position(world, player, pos)?;
+            if RespawnAnchorBlock::should_consume_charge_after_respawn(
+                config.forced,
+                consume_spawn_block,
+                true,
+            ) {
+                RespawnAnchorBlock::consume_charge(world, pos, state);
+            }
+
+            return Some(DeathRespawnSpawn {
+                position,
+                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                anchor_deplete_sound_pos: Some(pos),
+            });
+        }
+
+        if block.has_tag(&BlockTag::BEDS)
+            && Player::bed_rule_value_allows_in_world(
+                world,
+                world.dimension_type.bed_rule.can_set_spawn,
+            )
+        {
+            let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+            let position = BedBlock::find_standup_position_with_yaw(
+                world,
+                player,
+                facing,
+                pos,
+                config.respawn_data.yaw,
+            )?;
+            return Some(DeathRespawnSpawn {
+                position,
+                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                anchor_deplete_sound_pos: None,
+            });
+        }
+
+        if !config.forced {
+            return None;
+        }
+
+        let top_state = world.get_block_state(pos.above());
+        Self::resolve_forced_respawn_fallback(
+            pos,
+            state,
+            top_state,
+            (config.respawn_data.yaw, config.respawn_data.pitch),
+        )
+    }
+
+    fn resolve_forced_respawn_fallback(
+        pos: BlockPos,
+        state: BlockStateId,
+        top_state: BlockStateId,
+        rotation: (f32, f32),
+    ) -> Option<DeathRespawnSpawn> {
+        if !state.is_possible_to_respawn_in_this() || !top_state.is_possible_to_respawn_in_this() {
+            return None;
+        }
+
+        Some(DeathRespawnSpawn {
+            position: DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.1,
+                f64::from(pos.z()) + 0.5,
+            ),
+            rotation,
+            anchor_deplete_sound_pos: None,
+        })
+    }
+}
+
+fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -> f32 {
+    let bed_center = DVec3::new(
+        f64::from(look_at_block_pos.x()) + 0.5,
+        f64::from(look_at_block_pos.y()),
+        f64::from(look_at_block_pos.z()) + 0.5,
+    );
+    let look_direction = (bed_center - position).normalize_or_zero();
+    wrap_degrees((look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32)
+}
+
 impl Player {
+    fn bed_rule_value_allows_in_world(world: &World, value: BedRuleValue) -> bool {
+        match value {
+            BedRuleValue::Always => true,
+            BedRuleValue::WhenDark => world.is_dark_outside(),
+            BedRuleValue::Never => false,
+        }
+    }
+
+    fn bed_rule_value_allows(&self, value: BedRuleValue) -> bool {
+        Self::bed_rule_value_allows_in_world(&self.get_world(), value)
+    }
+
+    fn bed_rule_problem_message(&self) -> Option<TextComponent> {
+        self.get_world()
+            .dimension_type
+            .bed_rule
+            .error_message_key
+            .as_ref()
+            .map(|key| {
+                TranslatedMessage {
+                    key: (*key).into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component()
+            })
+    }
+
+    fn bed_sleep_problem(&self) -> BedSleepingProblem {
+        self.bed_rule_problem_message()
+            .map_or(BedSleepingProblem::OtherProblem, |message| {
+                BedSleepingProblem::Message(Box::new(message))
+            })
+    }
+
+    #[must_use]
+    fn is_reachable_bed_block_from_position(player_pos: DVec3, bed_block_pos: BlockPos) -> bool {
+        let bed_center = DVec3::new(
+            f64::from(bed_block_pos.x()) + 0.5,
+            f64::from(bed_block_pos.y()),
+            f64::from(bed_block_pos.z()) + 0.5,
+        );
+        (player_pos.x - bed_center.x).abs() <= BED_INTERACTION_XZ_RANGE
+            && (player_pos.y - bed_center.y).abs() <= BED_INTERACTION_Y_RANGE
+            && (player_pos.z - bed_center.z).abs() <= BED_INTERACTION_XZ_RANGE
+    }
+
+    #[must_use]
+    fn bed_in_range(&self, pos: BlockPos, direction: steel_utils::Direction) -> bool {
+        Self::bed_in_range_from_position(self.position(), pos, direction)
+    }
+
+    #[must_use]
+    fn bed_in_range_from_position(
+        player_pos: DVec3,
+        pos: BlockPos,
+        direction: steel_utils::Direction,
+    ) -> bool {
+        Self::is_reachable_bed_block_from_position(player_pos, pos)
+            || Self::is_reachable_bed_block_from_position(
+                player_pos,
+                direction.opposite().relative(pos),
+            )
+    }
+
+    #[must_use]
+    fn bed_blocked(&self, pos: BlockPos, direction: steel_utils::Direction) -> bool {
+        Self::bed_blocked_with_free_at(pos, direction, |pos| self.free_at(pos))
+    }
+
+    fn bed_blocked_with_free_at(
+        pos: BlockPos,
+        direction: steel_utils::Direction,
+        mut free_at: impl FnMut(BlockPos) -> bool,
+    ) -> bool {
+        let above = pos.above();
+        !free_at(above) || !free_at(direction.opposite().relative(above))
+    }
+
+    #[must_use]
+    fn free_at(&self, pos: BlockPos) -> bool {
+        !self.get_world().get_block_state(pos).is_suffocating()
+    }
+
+    /// Stops sleeping in bed.
+    pub(crate) fn stop_sleep_in_bed(&self, forceful_wakeup: bool, update_level_list: bool) {
+        if self.is_sleeping() {
+            let packet = CAnimate::new(self.id(), AnimateAction::WakeUp);
+            self.get_world()
+                .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+            self.send_packet(packet);
+        }
+
+        self.default_stop_sleeping();
+        if update_level_list {
+            self.get_world().update_sleeping_player_list();
+        }
+        self.set_sleep_counter(if forceful_wakeup { 0 } else { 100 });
+        let (yaw, pitch) = self.rotation();
+        if let Err(error) = self.teleport(self.position(), yaw, pitch) {
+            log::warn!(
+                "Failed to teleport player {} after waking up: {error}",
+                self.id()
+            );
+        }
+        self.sync_entity_data();
+    }
+
+    /// Starts sleeping in a bed after the admission checks pass.
+    pub(crate) fn start_sleep_in_bed(&self, pos: BlockPos) -> Result<(), BedSleepingProblem> {
+        let world = self.get_world();
+        let direction = world
+            .get_block_state(pos)
+            .get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        if self.is_sleeping() || !Entity::is_alive(self) {
+            return Err(BedSleepingProblem::OtherProblem);
+        }
+
+        let rule = &world.dimension_type.bed_rule;
+        let can_sleep = self.bed_rule_value_allows(rule.can_sleep);
+        let can_set_spawn = self.bed_rule_value_allows(rule.can_set_spawn);
+        if !can_set_spawn && !can_sleep {
+            return Err(self.bed_sleep_problem());
+        }
+
+        if !self.bed_in_range(pos, direction) {
+            return Err(BedSleepingProblem::Message(Box::new(
+                TranslatedMessage {
+                    key: "block.minecraft.bed.too_far_away".into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component(),
+            )));
+        }
+
+        if self.bed_blocked(pos, direction) {
+            return Err(BedSleepingProblem::Message(Box::new(
+                TranslatedMessage {
+                    key: "block.minecraft.bed.obstructed".into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component(),
+            )));
+        }
+
+        if can_set_spawn {
+            self.set_respawn_position(
+                Some(PlayerRespawnConfig::new(
+                    RespawnData::of(world.key.clone(), pos, self.rotation().0, self.rotation().1),
+                    false,
+                )),
+                true,
+            );
+        }
+
+        if !can_sleep {
+            return Err(self.bed_sleep_problem());
+        }
+
+        // TODO: Mirror vanilla Monster::isPreventingPlayerRest in the 8x5x8
+        // search box for non-creative players once Steel has a Monster
+        // capability/class foundation. Do not approximate this with entity
+        // type tags or MobCategory::Monster; vanilla queries Monster.class.
+        self.set_sleep_counter(0);
+        if self.start_sleeping(pos).is_err() {
+            return Err(BedSleepingProblem::OtherProblem);
+        }
+        // TODO: Reset Stats.CUSTOM[TIME_SINCE_REST] once player statistics exist.
+        self.sync_entity_data();
+        if !world.can_sleep_through_nights() {
+            self.send_overlay_message(
+                &TranslatedMessage {
+                    key: "sleep.not_possible".into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component(),
+            );
+        }
+        world.update_sleeping_player_list();
+        // TODO: Award Stats.SLEEP_IN_BED and trigger the slept-in-bed
+        // advancement criterion once those foundations exist.
+        Ok(())
+    }
+
+    /// Returns the player's current vanilla respawn configuration.
+    #[must_use]
+    pub fn respawn_config(&self) -> Option<PlayerRespawnConfig> {
+        self.respawn_config.lock().clone()
+    }
+
+    /// Sets the player's vanilla respawn configuration.
+    pub fn set_respawn_position(
+        &self,
+        respawn_config: Option<PlayerRespawnConfig>,
+        show_message: bool,
+    ) {
+        let mut current = self.respawn_config.lock();
+        if show_message
+            && respawn_config
+                .as_ref()
+                .is_some_and(|respawn_config| !respawn_config.is_same_position(current.as_ref()))
+        {
+            self.send_message(
+                &TranslatedMessage {
+                    key: "block.minecraft.set_spawn".into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component(),
+            );
+        }
+        *current = respawn_config;
+    }
+
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
@@ -494,6 +943,8 @@ impl Player {
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
             tick_state: SyncMutex::new(PlayerTickState::new()),
+            sleep_state: SyncMutex::new(PlayerSleepState::new()),
+            respawn_config: SyncMutex::new(None),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             living_base,
@@ -517,6 +968,7 @@ impl Player {
     )]
     pub fn tick(&self) {
         self.advance_tick();
+
         self.tick_attack_strength();
         self.tick_spam_throttlers();
         self.tick_client_load_timeout();
@@ -524,6 +976,13 @@ impl Player {
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {
             self.set_on_ground(false);
+        }
+
+        self.tick_sleep_counter();
+        if self.is_sleeping()
+            && !self.bed_rule_value_allows(self.get_world().dimension_type.bed_rule.can_sleep)
+        {
+            self.stop_sleep_in_bed(false, true);
         }
 
         let tick_position = self.position();
@@ -872,15 +1331,15 @@ impl Player {
         }
     }
 
-    /// TODO: personal respawn blocks/anchors and noRespawnBlockAvailable.
+    /// Schedules a vanilla death respawn for this player.
     pub fn respawn(&self) {
         let health = self.get_health();
         if !Self::should_process_respawn(health) {
             return;
         }
 
-        let source_world = self.get_world();
-        let Some(player_arc) = source_world.players.get_by_entity_id(self.id()) else {
+        let death_world = self.get_world();
+        let Some(player_arc) = death_world.players.get_by_entity_id(self.id()) else {
             return;
         };
         if !self.begin_respawn_request() {
@@ -895,8 +1354,8 @@ impl Player {
             );
             return;
         };
-        let (target_world, respawn_data) =
-            match server.respawn_world_and_data_for_domain(source_world.domain()) {
+        let (fallback_world, fallback_respawn_data) =
+            match server.respawn_world_and_data_for_domain(death_world.domain()) {
                 Ok(resolved) => resolved,
                 Err(error) => {
                     self.finish_respawn_request();
@@ -907,8 +1366,25 @@ impl Player {
                     return;
                 }
             };
+        let personal_respawn = self.respawn_config().and_then(|config| {
+            server
+                .worlds
+                .get(config.respawn_data.dimension())
+                .filter(|world| world.domain() == death_world.domain())
+                .cloned()
+                .map(|world| (world, config))
+        });
+        let consume_spawn_block =
+            death_world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true);
 
-        match PlayerRespawnJob::new(player_arc, source_world, target_world, respawn_data) {
+        match PlayerRespawnJob::new(
+            player_arc,
+            death_world,
+            fallback_world,
+            fallback_respawn_data,
+            personal_respawn,
+            consume_spawn_block,
+        ) {
             Ok(job) => server.jobs.spawn(job),
             Err(error) => {
                 self.finish_respawn_request();
@@ -922,14 +1398,14 @@ impl Player {
 
     fn finish_death_respawn(
         self: &Arc<Self>,
-        source_world: &Arc<World>,
+        death_world: &Arc<World>,
         target_world: &Arc<World>,
         spawn: DeathRespawnSpawn,
     ) {
         self.finish_respawn_request();
 
         if self.connection.closed()
-            || !Arc::ptr_eq(&self.get_world(), source_world)
+            || !Arc::ptr_eq(&self.get_world(), death_world)
             || !Self::should_process_respawn(self.get_health())
         {
             return;
@@ -938,10 +1414,8 @@ impl Player {
         self.reset_state_for_death_respawn();
         let was_removed = self.base.clear_removed();
 
-        // TODO: personal respawn blocks/anchors and NO_RESPAWN_BLOCK_AVAILABLE.
-
-        if !was_removed && Arc::ptr_eq(source_world, target_world) {
-            source_world.unregister_player_entity(self);
+        if !was_removed && Arc::ptr_eq(death_world, target_world) {
+            death_world.unregister_player_entity(self);
         }
 
         // Shared reset (clears transient state, sends CRespawn)
@@ -966,6 +1440,22 @@ impl Player {
 
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
         let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn);
+
+        if let Some(pos) = spawn.anchor_deplete_sound_pos
+            && target_world.get_block_state(pos).get_block() == &vanilla_blocks::RESPAWN_ANCHOR
+        {
+            self.send_block_sound(&sound_events::BLOCK_RESPAWN_ANCHOR_DEPLETE, pos, 1.0, 1.0);
+        }
+    }
+
+    fn send_block_sound(&self, sound: SoundEventRef, pos: BlockPos, volume: f32, pitch: f32) {
+        self.send_packet(CSound::block_sound(
+            sound,
+            pos,
+            volume,
+            pitch,
+            rand::random::<i64>(),
+        ));
     }
 
     fn reset_state_for_death_respawn(&self) {
@@ -1169,6 +1659,28 @@ impl Player {
     /// Sets vanilla `Player.takeXpDelay`.
     pub(crate) fn set_take_xp_delay(&self, delay: i32) {
         self.tick_state.lock().set_take_xp_delay(delay);
+    }
+
+    /// Returns vanilla `Player.sleepCounter`.
+    #[must_use]
+    pub fn sleep_counter(&self) -> i32 {
+        self.sleep_state.lock().sleep_counter()
+    }
+
+    /// Returns whether this player has slept long enough for vanilla night skip.
+    #[must_use]
+    pub fn is_sleeping_long_enough(&self) -> bool {
+        self.is_sleeping() && self.sleep_counter() >= 100
+    }
+
+    fn set_sleep_counter(&self, sleep_counter: i32) {
+        self.sleep_state.lock().set_sleep_counter(sleep_counter);
+    }
+
+    fn tick_sleep_counter(&self) {
+        self.sleep_state
+            .lock()
+            .tick_sleep_counter(self.is_sleeping());
     }
 
     /// Gives raw experience points to this player.
@@ -1834,6 +2346,10 @@ impl Entity for Player {
 }
 
 impl LivingEntity for Player {
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().living_entity().health.get()
     }
@@ -1933,6 +2449,10 @@ impl LivingEntity for Player {
         self.default_is_immobile() || self.is_sleeping()
     }
 
+    fn stop_sleeping(&self) {
+        self.stop_sleep_in_bed(true, true);
+    }
+
     fn jump_from_ground(&self) {
         self.default_jump_from_ground();
         // TODO: Award Stats.JUMP once player statistics exist.
@@ -2019,14 +2539,17 @@ impl TextResolutor for Player {
 
 #[cfg(test)]
 mod tests {
+    use glam::DVec3;
     use steel_registry::{
-        test_support::init_test_registry, vanilla_damage_types, vanilla_game_rules,
+        test_support::init_test_registry, vanilla_blocks, vanilla_damage_types, vanilla_game_rules,
     };
     use steel_utils::types::GameType;
+    use steel_utils::{BlockPos, Direction};
 
+    use crate::behavior::{BlockStateBehaviorExt as _, init_behaviors};
     use crate::entity::damage::DamageSource;
 
-    use super::{Player, nullable_game_mode_id};
+    use super::{Player, PlayerRespawnJob, nullable_game_mode_id};
 
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
@@ -2096,5 +2619,127 @@ mod tests {
     fn nullable_game_mode_id_matches_vanilla_encoding() {
         assert_eq!(nullable_game_mode_id(None), -1);
         assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
+    }
+
+    #[test]
+    fn sleep_admission_blocks_too_far_away_player() {
+        let bed_pos = BlockPos::new(0, 64, 0);
+        let direction = Direction::South;
+
+        assert!(Player::bed_in_range_from_position(
+            DVec3::new(3.5, 64.0, 0.5),
+            bed_pos,
+            direction,
+        ));
+        assert!(!Player::bed_in_range_from_position(
+            DVec3::new(4.0, 64.0, 0.5),
+            bed_pos,
+            direction,
+        ));
+    }
+
+    #[test]
+    fn sleep_admission_blocks_obstructed_bed() {
+        let bed_pos = BlockPos::new(0, 64, 0);
+        let direction = Direction::South;
+        let above_head = bed_pos.above();
+        let above_foot = direction.opposite().relative(above_head);
+
+        assert!(!Player::bed_blocked_with_free_at(
+            bed_pos,
+            direction,
+            |_| true,
+        ));
+        assert!(Player::bed_blocked_with_free_at(
+            bed_pos,
+            direction,
+            |pos| pos != above_head,
+        ));
+        assert!(Player::bed_blocked_with_free_at(
+            bed_pos,
+            direction,
+            |pos| pos != above_foot,
+        ));
+    }
+
+    #[test]
+    fn forced_respawn_allows_vanilla_non_solid_non_liquid_blocks() {
+        init_test_registry();
+        init_behaviors();
+
+        assert!(
+            vanilla_blocks::AIR
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+        assert!(
+            vanilla_blocks::OAK_SIGN
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+        assert!(
+            vanilla_blocks::WHITE_BANNER
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+        assert!(
+            vanilla_blocks::OAK_PRESSURE_PLATE
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+    }
+
+    #[test]
+    fn forced_respawn_rejects_vanilla_solid_or_liquid_blocks() {
+        init_test_registry();
+        init_behaviors();
+
+        assert!(
+            !vanilla_blocks::STONE
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+        assert!(
+            !vanilla_blocks::WATER
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+    }
+
+    #[test]
+    fn forced_respawn_fallback_uses_block_respawn_semantics() {
+        init_test_registry();
+        init_behaviors();
+
+        let pos = BlockPos::new(1, 64, 2);
+        let rotation = (45.0, 10.0);
+        let spawn = PlayerRespawnJob::resolve_forced_respawn_fallback(
+            pos,
+            vanilla_blocks::OAK_SIGN.default_state(),
+            vanilla_blocks::AIR.default_state(),
+            rotation,
+        )
+        .expect("signs override Block.isPossibleToRespawnInThis in vanilla");
+
+        assert_eq!(spawn.position, DVec3::new(1.5, 64.1, 2.5));
+        assert_eq!(spawn.rotation, rotation);
+        assert!(
+            PlayerRespawnJob::resolve_forced_respawn_fallback(
+                pos,
+                vanilla_blocks::STONE.default_state(),
+                vanilla_blocks::AIR.default_state(),
+                rotation,
+            )
+            .is_none()
+        );
+        assert!(
+            PlayerRespawnJob::resolve_forced_respawn_fallback(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                vanilla_blocks::WATER.default_state(),
+                rotation,
+            )
+            .is_none()
+        );
     }
 }

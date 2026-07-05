@@ -37,8 +37,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
-    LivingEntityBase, Mob, MobBase, MobEffectSyncChange, PathfinderMob, SharedEntity,
-    SpawnGroupData,
+    LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MobEffectSyncChange, PathfinderMob,
+    SharedEntity, SpawnGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -537,6 +537,10 @@ impl Entity for PigEntity {
 impl LivingEntity for PigEntity {
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn get_health(&self) -> f32 {

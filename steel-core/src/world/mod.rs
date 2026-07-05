@@ -16,6 +16,7 @@ use crate::chunk::light::{
 };
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
+use crate::world::sleep_status::SleepStatus;
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use glam::DVec3;
@@ -49,7 +50,8 @@ use steel_registry::loot_table::LootContext;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
-    BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
+    BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, PLAYERS_SLEEPING_PERCENTAGE,
+    RANDOM_TICK_SPEED,
 };
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
@@ -62,6 +64,7 @@ use steel_utils::{
     random::{RandomSource, legacy_random::LegacyRandom},
 };
 use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
+use text_components::{TextComponent, translation::TranslatedMessage};
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -92,7 +95,7 @@ use crate::{
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
-        InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
+        InactiveEntityCallback, LivingEntity, MobEffectSyncPacket, RemovalReason, SharedEntity,
         WorldEntityManager, entities::ItemEntity,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
@@ -176,6 +179,7 @@ mod level_reader;
 mod player_area_map;
 mod player_map;
 pub(crate) mod player_spawn_finder;
+mod sleep_status;
 pub mod tick_scheduler;
 mod weather;
 mod world_entities;
@@ -315,6 +319,8 @@ pub struct World {
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
+    /// Vanilla sleeping player counts for night-skip checks.
+    sleep_status: SyncMutex<SleepStatus>,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -433,6 +439,7 @@ impl World {
                 dimension_type,
                 level_data: SyncRwLock::new(level_data),
                 world_border: SyncMutex::new(world_border),
+                sleep_status: SyncMutex::new(SleepStatus::default()),
                 view_distance,
                 simulation_distance,
                 compression,
@@ -979,6 +986,139 @@ impl World {
             .set(rule, value, &REGISTRY.game_rules)
     }
 
+    /// Returns whether this world can skip night.
+    #[must_use]
+    pub fn can_sleep_through_nights(&self) -> bool {
+        self.players_sleeping_percentage() <= 100
+    }
+
+    fn players_sleeping_percentage(&self) -> i32 {
+        self.get_game_rule(&PLAYERS_SLEEPING_PERCENTAGE)
+            .as_int()
+            .unwrap_or(100)
+    }
+
+    fn sleeping_players(&self) -> Vec<Arc<Player>> {
+        let mut players = Vec::new();
+        self.players.iter_players(|_, player| {
+            players.push(player.clone());
+            true
+        });
+        players
+    }
+
+    /// Updates vanilla sleeping player counts and broadcasts the sleep status overlay.
+    pub fn update_sleeping_player_list(&self) {
+        let players = self.sleeping_players();
+        let mut sleep_status = self.sleep_status.lock();
+        let changed = sleep_status.update(players.iter().map(Arc::as_ref));
+        if changed && !players.is_empty() {
+            self.announce_sleep_status(*sleep_status);
+        }
+    }
+
+    fn announce_sleep_status(&self, sleep_status: SleepStatus) {
+        if !self.can_sleep_through_nights() {
+            return;
+        }
+
+        let percentage = self.players_sleeping_percentage();
+        let message = if sleep_status.are_enough_sleeping(percentage) {
+            TranslatedMessage {
+                key: "sleep.skipping_night".into(),
+                fallback: None,
+                args: None,
+            }
+            .component()
+        } else {
+            TranslatedMessage {
+                key: "sleep.players_sleeping".into(),
+                fallback: None,
+                args: Some(
+                    vec![
+                        TextComponent::from(sleep_status.amount_sleeping().to_string()),
+                        TextComponent::from(sleep_status.sleepers_needed(percentage).to_string()),
+                    ]
+                    .into(),
+                ),
+            }
+            .component()
+        };
+
+        self.broadcast_to_all_with(|player| CSystemChat::new(&message, true, player));
+    }
+
+    fn tick_sleeping_players(&self) {
+        if self.players.is_empty() {
+            return;
+        }
+
+        let percentage = self.players_sleeping_percentage();
+        let sleepers_needed = {
+            let sleep_status = self.sleep_status.lock();
+            if !sleep_status.are_enough_sleeping(percentage) {
+                return;
+            }
+            sleep_status.sleepers_needed(percentage)
+        };
+
+        let mut deep_sleepers = 0;
+
+        self.players.iter_players(|_, player| {
+            if !player.is_spectator() && player.is_sleeping_long_enough() {
+                deep_sleepers += 1;
+            }
+
+            deep_sleepers < sleepers_needed
+        });
+
+        if deep_sleepers < sleepers_needed {
+            return;
+        }
+
+        if self.get_game_rule(&ADVANCE_TIME).as_bool().unwrap_or(true) {
+            self.move_day_time_to_next_morning();
+        }
+
+        self.wake_up_all_players();
+        if self
+            .get_game_rule(&ADVANCE_WEATHER)
+            .as_bool()
+            .unwrap_or(true)
+            && self.is_raining()
+        {
+            self.reset_weather_cycle();
+        }
+    }
+
+    fn move_day_time_to_next_morning(&self) {
+        let (game_time, day_time) = {
+            let mut level_data = self.level_data.write();
+            let current_day_time = level_data.day_time();
+            let next_morning = next_morning_day_time(current_day_time);
+            level_data.set_day_time(next_morning);
+            (level_data.game_time(), next_morning)
+        };
+        self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, 1.0));
+    }
+
+    fn wake_up_all_players(&self) {
+        self.sleep_status.lock().remove_all_sleepers();
+        for player in self.sleeping_players() {
+            if player.is_sleeping() {
+                player.stop_sleep_in_bed(false, false);
+            }
+        }
+    }
+
+    fn reset_weather_cycle(&self) {
+        let mut level_data = self.level_data.write();
+        level_data.set_rain_time(0);
+        level_data.set_raining(false);
+        level_data.set_thunder_time(0);
+        level_data.set_thundering(false);
+    }
+
     /// Gets the world seed.
     #[must_use]
     pub fn seed(&self) -> i64 {
@@ -1276,6 +1416,27 @@ impl World {
         }
     }
 
+    /// Updates all neighboring shapes around `pos`.
+    pub fn update_neighbor_shapes_at(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            self.neighbor_shape_changed(
+                direction.opposite(),
+                neighbor_pos,
+                pos,
+                state,
+                flags,
+                update_limit,
+            );
+        }
+    }
+
     /// Called when a neighbor's shape changes, to update this block's state.
     ///
     /// This is the Rust equivalent of vanilla's `NeighborUpdater.executeShapeUpdate()`.
@@ -1423,6 +1584,9 @@ impl World {
         if runs_normally {
             self.tick_world_border();
             self.tick_weather();
+        }
+        self.tick_sleeping_players();
+        if runs_normally {
             self.tick_time();
         }
 
@@ -4020,6 +4184,11 @@ fn nearest_player_distance_in_range(
     max_distance < 0.0 || distance_sqr < max_distance_sqr
 }
 
+fn next_morning_day_time(current_day_time: i64) -> i64 {
+    let advanced_time = current_day_time + 24000;
+    advanced_time - advanced_time.rem_euclid(24000)
+}
+
 impl LevelReader for World {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         Self::get_block_state(self, pos)
@@ -4194,6 +4363,13 @@ mod tests {
     #[test]
     fn nearest_player_negative_range_is_unbounded() {
         assert!(nearest_player_distance_in_range(1_000_000.0, -1.0, 1.0));
+    }
+
+    #[test]
+    fn sleep_skip_day_time_matches_vanilla_next_morning() {
+        assert_eq!(next_morning_day_time(12542), 24000);
+        assert_eq!(next_morning_day_time(23999), 24000);
+        assert_eq!(next_morning_day_time(24000), 48000);
     }
 
     #[test]

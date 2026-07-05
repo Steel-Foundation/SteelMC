@@ -7,10 +7,34 @@ use crate::sound_event::SoundEventRef;
 
 #[derive(Debug)]
 pub struct BedRule {
-    pub can_set_spawn: &'static str,
-    pub can_sleep: &'static str,
+    pub can_set_spawn: BedRuleValue,
+    pub can_sleep: BedRuleValue,
     pub explodes: bool,
     pub error_message_key: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BedRuleValue {
+    Always,
+    WhenDark,
+    Never,
+}
+
+impl BedRuleValue {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::WhenDark => "when_dark",
+            Self::Never => "never",
+        }
+    }
+}
+
+impl ToNbtTag for BedRuleValue {
+    fn to_nbt_tag(self) -> NbtTag {
+        self.as_str().to_nbt_tag()
+    }
 }
 
 #[derive(Debug)]

@@ -1,3 +1,4 @@
+mod banner_block;
 mod cake_block;
 mod candle_block;
 mod candle_cake_block;
@@ -5,6 +6,7 @@ mod chain_block;
 mod sign_block;
 mod torch_block;
 
+pub use banner_block::{BannerBlock, WallBannerBlock};
 pub use cake_block::CakeBlock;
 pub use candle_block::CandleBlock;
 pub use candle_cake_block::CandleCakeBlock;

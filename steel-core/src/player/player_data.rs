@@ -11,7 +11,7 @@ use crate::{
     inventory::container::Container,
 };
 
-use super::{Player, abilities::Abilities};
+use super::{Player, PlayerRespawnConfig, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
@@ -105,6 +105,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
     pub root_vehicle: Option<PersistentRootVehicle>,
+
+    /// Vanilla per-player respawn configuration set by beds and respawn anchors.
+    pub respawn_config: Option<PlayerRespawnConfig>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -221,6 +224,7 @@ impl PersistentPlayerData {
             experience_total,
             score,
             root_vehicle,
+            respawn_config: player.respawn_config(),
         }
     }
 
@@ -327,6 +331,7 @@ impl PersistentPlayerData {
                 self.has_visual_fire,
             ));
         player.sync_base_fire_freeze_entity_data();
+        player.set_respawn_position(self.respawn_config.clone(), false);
 
         // Health
         player.set_health(self.health);

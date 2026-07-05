@@ -8,6 +8,7 @@
 pub const MC_VERSION: &str = "26.2";
 
 /// axis
+pub mod angle;
 pub mod axis;
 /// Climate system for biome selection.
 pub mod climate;
@@ -50,6 +51,7 @@ pub mod translations_registry;
 #[expect(missing_docs, warnings)]
 pub mod entity_events;
 
+pub use angle::wrap_degrees;
 pub use direction::Direction;
 pub use front_vec::FrontVec;
 pub use geometry::{BlockLocalAabb, BoundingBox, WorldAabb};

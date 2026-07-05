@@ -40,14 +40,16 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis};
+use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis, wrap_degrees,
+};
 use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
-    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
+    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult, blocks::BedBlock,
 };
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
@@ -685,6 +687,7 @@ mod base;
 mod block_effects;
 mod callback;
 pub mod damage;
+pub(crate) mod dismount_helper;
 pub mod entities;
 mod fluid_contact;
 #[expect(warnings)]
@@ -746,7 +749,7 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::EntityStorage;
-pub use synced_data::EntitySyncedData;
+pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
     snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
 };
@@ -898,6 +901,9 @@ pub struct EntityCapabilities<'a> {
     living: Option<&'a dyn LivingEntity>,
     mob: Option<&'a dyn Mob>,
     pathfinder_mob: Option<&'a dyn PathfinderMob>,
+    // TODO: Add a Monster capability for vanilla Monster.class checks such as
+    // ServerPlayer.startSleepInBed. This must be class-based, not inferred
+    // from entity type tags, MobCategory::Monster, or Enemy-like behavior.
     animal: Option<&'a dyn Animal>,
     item_steerable: Option<&'a dyn ItemSteerable>,
     item_merge_entity: Option<&'a dyn ItemMergeEntity>,
@@ -6330,11 +6336,17 @@ pub trait LivingEntity: Entity {
     /// Sets the vanilla living-entity sleeping position.
     fn set_sleeping_pos(&self, bed_position: BlockPos) {
         self.living_base().set_sleeping_pos(bed_position);
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.set_sleeping_pos(bed_position);
+        }
     }
 
     /// Clears the vanilla living-entity sleeping position.
     fn clear_sleeping_pos(&self) {
         self.living_base().clear_sleeping_pos();
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.clear_sleeping_pos();
+        }
     }
 
     /// Checks if the entity is sleeping.
@@ -6342,9 +6354,95 @@ pub trait LivingEntity: Entity {
         self.sleeping_pos().is_some()
     }
 
+    /// Returns synchronized data declared by vanilla `LivingEntity`.
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        None
+    }
+
+    /// Starts sleeping at the given bed position.
+    fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
+        if self.is_passenger() {
+            self.stop_riding();
+        }
+
+        let Some(world) = self.level() else {
+            return Err(EntityMoveError::NotLive {
+                entity_id: self.id(),
+            });
+        };
+        let block_state = world.get_block_state(bed_position);
+        if block_state.get_block().has_tag(&BlockTag::BEDS) {
+            world.set_block(
+                bed_position,
+                block_state.set_value(&BlockStateProperties::OCCUPIED, true),
+                UpdateFlags::UPDATE_ALL,
+            );
+        }
+
+        self.try_set_position(DVec3::new(
+            f64::from(bed_position.x()) + 0.5,
+            f64::from(bed_position.y()) + 0.6875,
+            f64::from(bed_position.z()) + 0.5,
+        ))?;
+        self.set_pose(EntityPose::Sleeping);
+        self.set_sleeping_pos(bed_position);
+        self.set_velocity(DVec3::ZERO);
+        Ok(())
+    }
+
+    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
+    fn default_stop_sleeping(&self) {
+        if let Some(bed_position) = self.sleeping_pos()
+            && let Some(world) = self.level()
+        {
+            let state = world.get_block_state(bed_position);
+            if state.get_block().has_tag(&BlockTag::BEDS) {
+                let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+                world.set_block(
+                    bed_position,
+                    state.set_value(&BlockStateProperties::OCCUPIED, false),
+                    UpdateFlags::UPDATE_ALL,
+                );
+                let stand_up = BedBlock::find_standup_position(
+                    &world,
+                    self.as_entity_event_source(),
+                    facing,
+                    bed_position,
+                )
+                .unwrap_or_else(|| {
+                    let above = bed_position.above();
+                    DVec3::new(
+                        f64::from(above.x()) + 0.5,
+                        f64::from(above.y()) + 0.1,
+                        f64::from(above.z()) + 0.5,
+                    )
+                });
+                let bed_center = DVec3::new(
+                    f64::from(bed_position.x()) + 0.5,
+                    f64::from(bed_position.y()),
+                    f64::from(bed_position.z()) + 0.5,
+                );
+                let look_direction = (bed_center - stand_up).normalize_or_zero();
+                let yaw = wrap_degrees(
+                    (look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32,
+                );
+                if let Err(error) = self.try_set_position(stand_up) {
+                    log::warn!(
+                        "failed to move entity {} to bed stand-up position: {error}",
+                        self.id()
+                    );
+                }
+                self.set_rotation((yaw, 0.0));
+            }
+        }
+
+        self.set_pose(EntityPose::Standing);
+        self.clear_sleeping_pos();
+    }
+
     /// Stops the entity from sleeping.
     fn stop_sleeping(&self) {
-        self.clear_sleeping_pos();
+        self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.

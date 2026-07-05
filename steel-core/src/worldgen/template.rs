@@ -35,6 +35,7 @@ use steel_utils::random::{PositionalRandom, Random, RandomSource};
 use steel_utils::value_providers::IntProvider;
 use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
+    wrap_degrees,
 };
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -578,7 +579,7 @@ impl StructureTemplate {
         mirror: StructureMirror,
         rotation: Rotation,
     ) -> (f32, f32) {
-        let yaw = Self::wrap_degrees(yaw);
+        let yaw = wrap_degrees(yaw);
         let rotated = match rotation {
             Rotation::Clockwise180 => yaw + 180.0,
             Rotation::CounterClockwise90 => yaw + 270.0,
@@ -634,17 +635,6 @@ impl StructureTemplate {
             Direction::West => 4,
             Direction::East => 5,
         }
-    }
-
-    fn wrap_degrees(mut degrees: f32) -> f32 {
-        degrees %= 360.0;
-        if degrees >= 180.0 {
-            degrees -= 360.0;
-        }
-        if degrees < -180.0 {
-            degrees += 360.0;
-        }
-        degrees
     }
 
     #[expect(
