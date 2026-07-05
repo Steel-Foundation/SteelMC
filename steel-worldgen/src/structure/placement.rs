@@ -577,7 +577,11 @@ mod tests {
     #[test]
     fn test_load_vanilla_structure_sets() {
         let sets = load_vanilla_structure_sets();
-        assert_eq!(sets.len(), 20);
+        let vanilla_sets_count = sets
+            .iter()
+            .filter(|(k, _)| k.namespace == "minecraft")
+            .count();
+        assert_eq!(vanilla_sets_count, 20);
 
         // Verify villages loaded correctly from datapack
         let (key, villages) = sets
