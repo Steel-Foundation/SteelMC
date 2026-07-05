@@ -15,16 +15,16 @@ use std::{mem, slice};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum SurfaceRuleJson {
-    #[serde(rename = "minecraft:block")]
+    #[serde(rename = "minecraft:block", alias = "block")]
     Block { result_state: ResultStateJson },
-    #[serde(rename = "minecraft:sequence")]
+    #[serde(rename = "minecraft:sequence", alias = "sequence")]
     Sequence { sequence: Vec<SurfaceRuleJson> },
-    #[serde(rename = "minecraft:condition")]
+    #[serde(rename = "minecraft:condition", alias = "condition")]
     Condition {
         if_true: SurfaceConditionJson,
         then_run: Box<SurfaceRuleJson>,
     },
-    #[serde(rename = "minecraft:bandlands")]
+    #[serde(rename = "minecraft:bandlands", alias = "bandlands")]
     Bandlands {},
 }
 
@@ -43,18 +43,21 @@ pub struct ResultStateJson {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum SurfaceConditionJson {
-    #[serde(rename = "minecraft:stone_depth")]
+    #[serde(rename = "minecraft:stone_depth", alias = "stone_depth")]
     StoneDepth {
         offset: i32,
         add_surface_depth: bool,
         secondary_depth_range: i32,
         surface_type: String,
     },
-    #[serde(rename = "minecraft:above_preliminary_surface")]
+    #[serde(
+        rename = "minecraft:above_preliminary_surface",
+        alias = "above_preliminary_surface"
+    )]
     AbovePreliminarySurface {},
-    #[serde(rename = "minecraft:biome")]
+    #[serde(rename = "minecraft:biome", alias = "biome")]
     BiomeIs { biome_is: SingleOrList<BiomeIdJson> },
-    #[serde(rename = "minecraft:noise_threshold")]
+    #[serde(rename = "minecraft:noise_threshold", alias = "noise_threshold")]
     NoiseThreshold {
         noise: String,
         #[serde(default)]
@@ -62,31 +65,31 @@ pub enum SurfaceConditionJson {
         min_threshold: f64,
         max_threshold: f64,
     },
-    #[serde(rename = "minecraft:vertical_gradient")]
+    #[serde(rename = "minecraft:vertical_gradient", alias = "vertical_gradient")]
     VerticalGradient {
         random_name: String,
         true_at_and_below: VerticalAnchorJson,
         false_at_and_above: VerticalAnchorJson,
     },
-    #[serde(rename = "minecraft:y_above")]
+    #[serde(rename = "minecraft:y_above", alias = "y_above")]
     YAbove {
         anchor: VerticalAnchorJson,
         surface_depth_multiplier: i32,
         add_stone_depth: bool,
     },
-    #[serde(rename = "minecraft:water")]
+    #[serde(rename = "minecraft:water", alias = "water")]
     Water {
         offset: i32,
         surface_depth_multiplier: i32,
         add_stone_depth: bool,
     },
-    #[serde(rename = "minecraft:temperature")]
+    #[serde(rename = "minecraft:temperature", alias = "temperature")]
     Temperature {},
-    #[serde(rename = "minecraft:steep")]
+    #[serde(rename = "minecraft:steep", alias = "steep")]
     Steep {},
-    #[serde(rename = "minecraft:hole")]
+    #[serde(rename = "minecraft:hole", alias = "hole")]
     Hole {},
-    #[serde(rename = "minecraft:not")]
+    #[serde(rename = "minecraft:not", alias = "not")]
     Not { invert: Box<SurfaceConditionJson> },
 }
 
