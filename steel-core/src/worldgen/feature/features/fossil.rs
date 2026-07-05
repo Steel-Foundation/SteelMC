@@ -11,6 +11,7 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::StructureProcessorKind;
+use steel_registry::template_pool::ProcessorList;
 
 const VANILLA_ROTATIONS: [Rotation; 4] = [
     Rotation::None,
@@ -131,13 +132,19 @@ impl FeatureDecorationRunner {
 
     fn structure_processors<'a>(
         registry: &'a Registry,
-        key: &Identifier,
+        processors: &'a ProcessorList,
         context: &str,
     ) -> &'a [StructureProcessorKind] {
-        let Some(processor_list) = registry.structure_processors.by_key(key) else {
-            panic!("{context} references unknown processor list {key}");
-        };
-        &processor_list.data.processors
+        match processors {
+            ProcessorList::Empty => &[],
+            ProcessorList::Direct(processors) => processors,
+            ProcessorList::Registry(key) => {
+                let Some(processor_list) = registry.structure_processors.by_key(key) else {
+                    panic!("{context} references unknown processor list {key}");
+                };
+                &processor_list.data.processors
+            }
+        }
     }
 
     fn lowest_fossil_surface_y(
