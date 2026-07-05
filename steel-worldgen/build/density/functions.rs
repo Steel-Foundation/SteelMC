@@ -32,25 +32,25 @@ pub enum DensityFunctionJson {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum DensityFunctionData {
-    #[serde(rename = "minecraft:constant")]
+    #[serde(rename = "minecraft:constant", alias = "constant")]
     Constant {
         #[serde(alias = "argument")]
         value: f64,
     },
-    #[serde(rename = "minecraft:y_clamped_gradient")]
+    #[serde(rename = "minecraft:y_clamped_gradient", alias = "y_clamped_gradient")]
     YClampedGradient {
         from_y: i32,
         to_y: i32,
         from_value: f64,
         to_value: f64,
     },
-    #[serde(rename = "minecraft:noise")]
+    #[serde(rename = "minecraft:noise", alias = "noise")]
     Noise {
         xz_scale: f64,
         y_scale: f64,
         noise: String,
     },
-    #[serde(rename = "minecraft:shifted_noise")]
+    #[serde(rename = "minecraft:shifted_noise", alias = "shifted_noise")]
     ShiftedNoise {
         shift_x: Box<DensityFunctionJson>,
         shift_y: Box<DensityFunctionJson>,
@@ -59,85 +59,85 @@ pub enum DensityFunctionData {
         y_scale: f64,
         noise: String,
     },
-    #[serde(rename = "minecraft:shift_a")]
+    #[serde(rename = "minecraft:shift_a", alias = "shift_a")]
     ShiftA {
         #[serde(rename = "argument")]
         noise: String,
     },
-    #[serde(rename = "minecraft:shift_b")]
+    #[serde(rename = "minecraft:shift_b", alias = "shift_b")]
     ShiftB {
         #[serde(rename = "argument")]
         noise: String,
     },
-    #[serde(rename = "minecraft:shift")]
+    #[serde(rename = "minecraft:shift", alias = "shift")]
     Shift {
         #[serde(rename = "argument")]
         noise: String,
     },
-    #[serde(rename = "minecraft:clamp")]
+    #[serde(rename = "minecraft:clamp", alias = "clamp")]
     Clamp {
         input: Box<DensityFunctionJson>,
         min: f64,
         max: f64,
     },
-    #[serde(rename = "minecraft:abs")]
+    #[serde(rename = "minecraft:abs", alias = "abs")]
     Abs {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:square")]
+    #[serde(rename = "minecraft:square", alias = "square")]
     Square {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:cube")]
+    #[serde(rename = "minecraft:cube", alias = "cube")]
     Cube {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:half_negative")]
+    #[serde(rename = "minecraft:half_negative", alias = "half_negative")]
     HalfNegative {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:quarter_negative")]
+    #[serde(rename = "minecraft:quarter_negative", alias = "quarter_negative")]
     QuarterNegative {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:invert")]
+    #[serde(rename = "minecraft:invert", alias = "invert")]
     Invert {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:squeeze")]
+    #[serde(rename = "minecraft:squeeze", alias = "squeeze")]
     Squeeze {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:add")]
+    #[serde(rename = "minecraft:add", alias = "add")]
     Add {
         argument1: Box<DensityFunctionJson>,
         argument2: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:mul")]
+    #[serde(rename = "minecraft:mul", alias = "mul")]
     Mul {
         argument1: Box<DensityFunctionJson>,
         argument2: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:min")]
+    #[serde(rename = "minecraft:min", alias = "min")]
     Min {
         argument1: Box<DensityFunctionJson>,
         argument2: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:max")]
+    #[serde(rename = "minecraft:max", alias = "max")]
     Max {
         argument1: Box<DensityFunctionJson>,
         argument2: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:spline")]
+    #[serde(rename = "minecraft:spline", alias = "spline")]
     Spline { spline: SplineJson },
-    #[serde(rename = "minecraft:range_choice")]
+    #[serde(rename = "minecraft:range_choice", alias = "range_choice")]
     RangeChoice {
         input: Box<DensityFunctionJson>,
         min_inclusive: f64,
@@ -145,42 +145,45 @@ pub enum DensityFunctionData {
         when_in_range: Box<DensityFunctionJson>,
         when_out_of_range: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:interval_select")]
+    #[serde(rename = "minecraft:interval_select", alias = "interval_select")]
     IntervalSelect {
         input: Box<DensityFunctionJson>,
         thresholds: Vec<f64>,
         functions: Vec<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:interpolated")]
+    #[serde(rename = "minecraft:interpolated", alias = "interpolated")]
     Interpolated { argument: Box<DensityFunctionJson> },
-    #[serde(rename = "minecraft:flat_cache")]
+    #[serde(rename = "minecraft:flat_cache", alias = "flat_cache")]
     FlatCache { argument: Box<DensityFunctionJson> },
-    #[serde(rename = "minecraft:cache_once")]
+    #[serde(rename = "minecraft:cache_once", alias = "cache_once")]
     CacheOnce { argument: Box<DensityFunctionJson> },
-    #[serde(rename = "minecraft:cache_2d")]
+    #[serde(rename = "minecraft:cache_2d", alias = "cache_2d")]
     Cache2d { argument: Box<DensityFunctionJson> },
-    #[serde(rename = "minecraft:cache_all_in_cell")]
+    #[serde(rename = "minecraft:cache_all_in_cell", alias = "cache_all_in_cell")]
     CacheAllInCell { argument: Box<DensityFunctionJson> },
-    #[serde(rename = "minecraft:blend_offset")]
+    #[serde(rename = "minecraft:blend_offset", alias = "blend_offset")]
     BlendOffset {},
-    #[serde(rename = "minecraft:blend_alpha")]
+    #[serde(rename = "minecraft:blend_alpha", alias = "blend_alpha")]
     BlendAlpha {},
-    #[serde(rename = "minecraft:blend_density")]
+    #[serde(rename = "minecraft:blend_density", alias = "blend_density")]
     BlendDensity {
         #[serde(rename = "argument")]
         input: Box<DensityFunctionJson>,
     },
-    #[serde(rename = "minecraft:beardifier")]
+    #[serde(rename = "minecraft:beardifier", alias = "beardifier")]
     Beardifier {},
-    #[serde(rename = "minecraft:end_islands")]
+    #[serde(rename = "minecraft:end_islands", alias = "end_islands")]
     EndIslands {},
-    #[serde(rename = "minecraft:weird_scaled_sampler")]
+    #[serde(
+        rename = "minecraft:weird_scaled_sampler",
+        alias = "weird_scaled_sampler"
+    )]
     WeirdScaledSampler {
         input: Box<DensityFunctionJson>,
         noise: String,
         rarity_value_mapper: String,
     },
-    #[serde(rename = "minecraft:old_blended_noise")]
+    #[serde(rename = "minecraft:old_blended_noise", alias = "old_blended_noise")]
     OldBlendedNoise {
         xz_scale: f64,
         y_scale: f64,
@@ -188,7 +191,7 @@ pub enum DensityFunctionData {
         y_factor: f64,
         smear_scale_multiplier: f64,
     },
-    #[serde(rename = "minecraft:find_top_surface")]
+    #[serde(rename = "minecraft:find_top_surface", alias = "find_top_surface")]
     FindTopSurface {
         density: Box<DensityFunctionJson>,
         upper_bound: Box<DensityFunctionJson>,
@@ -206,7 +209,7 @@ pub enum DensityFunctionData {
 pub enum SplineJson {
     Constant(f32),
     Multipoint {
-        coordinate: String,
+        coordinate: Box<DensityFunctionJson>,
         #[serde(default)]
         points: Vec<SplinePointJson>,
     },
