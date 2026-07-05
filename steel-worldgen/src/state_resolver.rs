@@ -7,6 +7,21 @@ use steel_utils::BlockStateId;
 /// Resolves vanilla JSON/NBT block-state data to Steel block-state ids.
 pub struct WorldgenStateResolver;
 
+fn map_block_name(name: &steel_utils::Identifier) -> steel_utils::Identifier {
+    let namespace = name.namespace.as_ref();
+    let path = name.path.as_ref();
+    if namespace == "minecraft" {
+        match path {
+            "grass" => steel_utils::Identifier::vanilla_static("short_grass"),
+            "grass_path" => steel_utils::Identifier::vanilla_static("dirt_path"),
+            "chain" => steel_utils::Identifier::vanilla_static("iron_chain"),
+            _ => name.clone(),
+        }
+    } else {
+        name.clone()
+    }
+}
+
 impl WorldgenStateResolver {
     /// Resolves a block state from data.
     ///
@@ -18,13 +33,18 @@ impl WorldgenStateResolver {
         data: &shared_structs::BlockStateData,
         context: &str,
     ) -> BlockStateId {
-        let Some(block) = registry.blocks.by_key(&data.name) else {
-            panic!("{context} references unknown block {}", data.name);
+        let name = map_block_name(&data.name);
+        let Some(block) = registry.blocks.by_key(&name) else {
+            println!(
+                "CRITICAL: WorldgenStateResolver references unknown block: {:?}",
+                name
+            );
+            panic!("{context} references unknown block {}", name);
         };
         Self::block_state_from_parts(
             registry,
             block,
-            &data.name,
+            &name,
             data.properties
                 .iter()
                 .map(|(key, value)| (key.as_str(), value.as_str())),
