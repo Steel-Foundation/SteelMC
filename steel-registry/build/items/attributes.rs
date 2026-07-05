@@ -1,14 +1,15 @@
 use super::{
-    Ident, Span, ToShoutySnakeCase, TokenStream, Value, entity_type_ref_token, identifier_token,
-    quote, split_identifier,
+    Ident, Identifier, Span, ToShoutySnakeCase, TokenStream, Value, entity_type_ref_token,
+    identifier_token, parse_identifier_or_vanilla, quote,
 };
 
 pub(super) fn attribute_ref_token(s: &str) -> Option<TokenStream> {
-    let (namespace, path) = split_identifier(s);
-    if namespace != "minecraft" {
+    let id = parse_identifier_or_vanilla(s);
+    if id.namespace != Identifier::VANILLA_NAMESPACE {
         return None;
     }
 
+    let path = id.path.as_ref();
     let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
     Some(quote! { vanilla_attributes::#ident })
 }
