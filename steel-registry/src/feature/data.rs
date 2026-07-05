@@ -84,6 +84,7 @@ pub enum ConfiguredFeatureKind {
     MultifaceGrowth(MultifaceGrowthConfiguration),
     NetherForestVegetation(NetherForestVegetationConfiguration),
     NetherrackReplaceBlobs(NetherrackReplaceBlobsConfiguration),
+    NoOp,
     Ore(OreConfiguration),
     PointedDripstone(PointedDripstoneConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
@@ -127,6 +128,33 @@ pub enum BlockHolderSet {
     Entries(Vec<BlockRef>),
 }
 
+impl BlockHolderSet {
+    /// Check if this holder set contains a block.
+    pub fn contains(&self, block: BlockRef) -> bool {
+        match self {
+            BlockHolderSet::Tag(tag) => block.has_tag(tag),
+            BlockHolderSet::Entries(entries) => entries.contains(&block),
+        }
+    }
+}
+
+/// Fluid holder set decoded from vanilla's holder-set codec shape at build time.
+#[derive(Debug, Clone)]
+pub enum FluidHolderSet {
+    Tag(Identifier),
+    Entries(Vec<FluidRef>),
+}
+
+impl FluidHolderSet {
+    /// Check if this holder set contains a fluid.
+    pub fn contains(&self, fluid: FluidRef) -> bool {
+        match self {
+            FluidHolderSet::Tag(tag) => fluid.has_tag(tag),
+            FluidHolderSet::Entries(entries) => entries.contains(&fluid),
+        }
+    }
+}
+
 /// Block state data emitted by the feature generator without baking a state id.
 #[derive(Debug, Clone)]
 pub struct BlockStateData {
@@ -166,11 +194,11 @@ pub enum BlockPredicate {
         offset: Offset,
     },
     MatchingBlocks {
-        blocks: BlockRefList,
+        blocks: BlockHolderSet,
         offset: Offset,
     },
     MatchingFluids {
-        fluids: FluidRefList,
+        fluids: FluidHolderSet,
         offset: Offset,
     },
     Solid {
@@ -565,7 +593,7 @@ pub struct MultifaceGrowthConfiguration {
     pub can_place_on_ceiling: bool,
     pub can_place_on_wall: bool,
     pub chance_of_spreading: f32,
-    pub can_be_placed_on: Vec<BlockRef>,
+    pub can_be_placed_on: BlockHolderSet,
 }
 
 #[derive(Debug, Clone)]
@@ -598,6 +626,7 @@ pub struct OreTarget {
 #[derive(Debug, Clone)]
 pub enum RuleTest {
     BlockMatch { block: BlockRef },
+    RandomBlockMatch { block: BlockRef, probability: f32 },
     TagMatch { tag: Identifier },
 }
 
@@ -892,7 +921,7 @@ pub enum RootPlacer {
 pub struct MangroveRootPlacer {
     pub trunk_offset_y: IntProvider,
     pub root_provider: BlockStateProvider,
-    pub above_root_placement: AboveRootPlacement,
+    pub above_root_placement: Option<AboveRootPlacement>,
     pub mangrove_root_placement: MangroveRootPlacement,
 }
 
@@ -904,8 +933,8 @@ pub struct AboveRootPlacement {
 
 #[derive(Debug, Clone)]
 pub struct MangroveRootPlacement {
-    pub can_grow_through: Identifier,
-    pub muddy_roots_in: Vec<Identifier>,
+    pub can_grow_through: BlockHolderSet,
+    pub muddy_roots_in: BlockHolderSet,
     pub muddy_roots_provider: BlockStateProvider,
     pub max_root_width: i32,
     pub max_root_length: i32,
