@@ -5,7 +5,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
-
 // ── JSON structures ──
 
 #[derive(Deserialize, Debug)]

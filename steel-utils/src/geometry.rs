@@ -284,48 +284,56 @@ impl<I> Aabb<DVec3, I> {
 impl<I> Aabb<IVec3, I> {
     /// Returns the minimum corner.
     #[must_use]
+    #[inline]
     pub const fn min_corner(&self) -> IVec3 {
         self.min
     }
 
     /// Returns the maximum corner.
     #[must_use]
+    #[inline]
     pub const fn max_corner(&self) -> IVec3 {
         self.max
     }
 
     /// Returns the minimum X coordinate.
     #[must_use]
+    #[inline]
     pub const fn min_x(&self) -> i32 {
         self.min.x
     }
 
     /// Returns the minimum Y coordinate.
     #[must_use]
+    #[inline]
     pub const fn min_y(&self) -> i32 {
         self.min.y
     }
 
     /// Returns the minimum Z coordinate.
     #[must_use]
+    #[inline]
     pub const fn min_z(&self) -> i32 {
         self.min.z
     }
 
     /// Returns the maximum X coordinate.
     #[must_use]
+    #[inline]
     pub const fn max_x(&self) -> i32 {
         self.max.x
     }
 
     /// Returns the maximum Y coordinate.
     #[must_use]
+    #[inline]
     pub const fn max_y(&self) -> i32 {
         self.max.y
     }
 
     /// Returns the maximum Z coordinate.
     #[must_use]
+    #[inline]
     pub const fn max_z(&self) -> i32 {
         self.max.z
     }
