@@ -5,7 +5,7 @@
 
 use std::{collections::BTreeMap, fs, str::FromStr};
 
-use crate::generator_functions::generate_sound_event_ref;
+use crate::generator_functions::{generate_sound_event_ref, parse_loose_identifier};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -136,13 +136,13 @@ fn block_ref_token(value: &str) -> TokenStream {
     quote! { &vanilla_blocks::#ident }
 }
 
-fn split_identifier(s: &str) -> (&str, &str) {
-    s.split_once(':').unwrap_or(("minecraft", s))
+fn parse_identifier_or_vanilla(s: &str) -> Identifier {
+    parse_loose_identifier(s)
+        .unwrap_or_else(|error| panic!("invalid item build identifier {s}: {error}"))
 }
 
 fn identifier_token(s: &str) -> TokenStream {
-    let id =
-        Identifier::from_str(s).unwrap_or_else(|error| panic!("invalid identifier {s:?}: {error}"));
+    let id = parse_identifier_or_vanilla(s);
     let namespace = id.namespace.as_ref();
     let path = id.path.as_ref();
     quote! { Identifier::new_static(#namespace, #path) }
