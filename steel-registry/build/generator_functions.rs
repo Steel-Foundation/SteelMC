@@ -38,17 +38,7 @@ pub fn generate_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub fn parse_loose_identifier(raw: &str) -> Result<Identifier, String> {
-    let (namespace, path) = raw
-        .split_once(':')
-        .map_or((Identifier::VANILLA_NAMESPACE, raw), |(namespace, path)| {
-            (namespace, path)
-        });
-
-    if !Identifier::validate(namespace, path) {
-        return Err(format!("invalid identifier {raw}"));
-    }
-
-    Ok(Identifier::new(namespace.to_owned(), path.to_owned()))
+    Identifier::parse_or_vanilla(raw).map_err(|error| format!("{error}: {raw}"))
 }
 
 pub fn generate_static_identifier(resource: &Identifier) -> TokenStream {
