@@ -1,6 +1,7 @@
 //! Typed structure processor-list codec data.
 
 use serde::{Deserialize, Deserializer, de::Error as _};
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::{Identifier, value_providers::IntProvider};
 
 use crate::shared_structs::{
@@ -42,8 +43,14 @@ pub enum StructureProcessorKind {
     #[serde(rename = "minecraft:block_age", alias = "block_age")]
     BlockAge { mossiness: f32 },
     /// Keeps non-full structure blocks submerged in existing lava.
-    #[serde(rename = "minecraft:lava_submerged_block", alias = "lava_submerged_block")]
+    #[serde(
+        rename = "minecraft:lava_submerged_block",
+        alias = "lava_submerged_block"
+    )]
     LavaSubmergedBlock,
+    /// Replaces jigsaw blocks with their `final_state` block state during placement.
+    #[serde(rename = "minecraft:jigsaw_replacement", alias = "jigsaw_replacement")]
+    JigsawReplacement,
     /// Replaces stone ruin blocks with blackstone variants.
     #[serde(rename = "minecraft:blackstone_replace", alias = "blackstone_replace")]
     BlackstoneReplace,
@@ -186,4 +193,67 @@ pub enum RuleBlockEntityModifierData {
     /// Appends loot table metadata to the output block entity.
     #[serde(rename = "minecraft:append_loot")]
     AppendLoot { loot_table: Identifier },
+    /// Merges static NBT into the output block entity.
+    #[serde(rename = "minecraft:append_static")]
+    AppendStatic {
+        #[serde(deserialize_with = "deserialize_static_nbt_compound")]
+        data: NbtCompound,
+    },
+}
+
+fn deserialize_static_nbt_compound<'de, D>(deserializer: D) -> Result<NbtCompound, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    json_value_to_nbt_compound(&value).map_err(D::Error::custom)
+}
+
+fn json_value_to_nbt_compound(value: &serde_json::Value) -> Result<NbtCompound, String> {
+    let serde_json::Value::Object(object) = value else {
+        return Err("append_static data must be an object".to_owned());
+    };
+
+    let mut compound = NbtCompound::new();
+    for (key, value) in object {
+        compound.insert(key.as_str(), json_value_to_nbt_tag(value)?);
+    }
+    Ok(compound)
+}
+
+fn json_value_to_nbt_tag(value: &serde_json::Value) -> Result<NbtTag, String> {
+    match value {
+        serde_json::Value::Null => Err("null is not a valid NBT tag".to_owned()),
+        serde_json::Value::Bool(value) => Ok(NbtTag::Byte(i8::from(*value))),
+        serde_json::Value::Number(value) => json_number_to_nbt_tag(value),
+        serde_json::Value::String(value) => Ok(NbtTag::String(value.clone().into())),
+        serde_json::Value::Array(values) => {
+            let values = values
+                .iter()
+                .map(json_value_to_nbt_tag)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(NbtTag::List(NbtList::from(values)))
+        }
+        serde_json::Value::Object(_) => Ok(NbtTag::Compound(json_value_to_nbt_compound(value)?)),
+    }
+}
+
+fn json_number_to_nbt_tag(value: &serde_json::Number) -> Result<NbtTag, String> {
+    if let Some(value) = value.as_i64() {
+        return i32::try_from(value)
+            .map(NbtTag::Int)
+            .or_else(|_| Ok(NbtTag::Long(value)));
+    }
+
+    if let Some(value) = value.as_u64() {
+        return i32::try_from(value)
+            .map(NbtTag::Int)
+            .or_else(|_| i64::try_from(value).map(NbtTag::Long))
+            .map_err(|_| format!("NBT integer value {value} does not fit i64"));
+    }
+
+    value
+        .as_f64()
+        .map(NbtTag::Double)
+        .ok_or_else(|| format!("invalid NBT numeric value {value}"))
 }
