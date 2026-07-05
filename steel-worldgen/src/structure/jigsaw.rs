@@ -427,6 +427,43 @@ fn feature_synthetic_jigsaw() -> TransformedJigsaw<'static> {
     }
 }
 
+fn shuffled_element_jigsaws<'a>(
+    element: &PoolElement,
+    templates: &'a FxHashMap<Identifier, TemplateData>,
+    rotation: Rotation,
+    rng: &mut LegacyRandom,
+) -> Vec<TransformedJigsaw<'a>> {
+    match element {
+        PoolElement::Single { location, .. } | PoolElement::LegacySingle { location, .. } => {
+            let Some(template) = templates.get(location) else {
+                return Vec::new();
+            };
+
+            let rotated = transform_template_jigsaws(template, rotation);
+            let mut priorities = Vec::new();
+            descending_priorities_into(template, &mut priorities);
+            let mut shuffle_indices = Vec::new();
+            let mut order_scratch = Vec::new();
+            shuffle_jigsaw_indices_into(
+                template,
+                &priorities,
+                rng,
+                &mut shuffle_indices,
+                &mut order_scratch,
+            );
+            shuffle_indices
+                .into_iter()
+                .map(|idx| rotated[idx])
+                .collect()
+        }
+        PoolElement::Feature { .. } => vec![feature_synthetic_jigsaw()],
+        PoolElement::List { elements, .. } => elements.first().map_or_else(Vec::new, |element| {
+            shuffled_element_jigsaws(element, templates, rotation, rng)
+        }),
+        PoolElement::Empty => Vec::new(),
+    }
+}
+
 /// Active source connector during jigsaw BFS.
 struct ActiveSourceJigsaw<'a> {
     block: TransformedJigsaw<'a>,
@@ -703,24 +740,9 @@ fn start_assembly(
     }
 
     let anchor_offset = if let Some(ref jigsaw_name) = config.start_jigsaw_name {
-        let location = element_location(center_element)?;
-        let template = templates.get(location)?;
-        let rotated = transform_template_jigsaws(template, center_rotation);
-        let mut priorities = Vec::new();
-        descending_priorities_into(template, &mut priorities);
-        let mut shuffle_indices = Vec::new();
-        let mut order_scratch = Vec::new();
-        shuffle_jigsaw_indices_into(
-            template,
-            &priorities,
-            rng,
-            &mut shuffle_indices,
-            &mut order_scratch,
-        );
-        shuffle_indices.iter().find_map(|&idx| {
-            let block = &rotated[idx];
-            (block.name == jigsaw_name).then_some(block.pos)
-        })?
+        shuffled_element_jigsaws(center_element, templates, center_rotation, rng)
+            .into_iter()
+            .find_map(|block| (block.name == jigsaw_name).then_some(block.pos))?
     } else {
         IVec3::ZERO
     };
@@ -1392,6 +1414,7 @@ fn try_placing_children<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::structure::DimensionPadding;
 
     fn bbox(min: IVec3, max: IVec3) -> BoundingBox {
         BoundingBox::new(min, max)
@@ -1444,5 +1467,57 @@ mod tests {
                 "collision mismatch for {candidate:?}"
             );
         }
+    }
+
+    #[test]
+    fn start_jigsaw_name_can_anchor_feature_pool_element() {
+        let pool_key = Identifier::vanilla_static("test/feature_start");
+        let mut pools = FxHashMap::default();
+        pools.insert(
+            pool_key.clone(),
+            TemplatePoolData {
+                key: pool_key.clone(),
+                fallback: Identifier::vanilla_static("empty"),
+                elements: vec![(
+                    PoolElement::Feature {
+                        feature: Identifier::vanilla_static("oak"),
+                        projection: Projection::Rigid,
+                    },
+                    1,
+                )],
+            },
+        );
+        let templates = FxHashMap::default();
+        let alias_map = FxHashMap::default();
+        let config = JigsawConfig {
+            start_pool: pool_key,
+            max_depth: 0,
+            use_expansion_hack: false,
+            project_start_to_heightmap: None,
+            start_height: StartHeight::Constant(70),
+            max_distance_from_center: 80,
+            start_jigsaw_name: Some(Identifier::vanilla_static("bottom")),
+            dimension_padding: DimensionPadding { bottom: 0, top: 0 },
+            pool_aliases: Vec::new(),
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut rng = LegacyRandom::from_seed(1);
+        let mut get_height = |_: i32, _: i32| 64;
+
+        let assembly = assemble(
+            &config,
+            &mut rng,
+            0,
+            0,
+            &pools,
+            &templates,
+            &alias_map,
+            &mut get_height,
+            -64,
+            320,
+        )
+        .expect("feature pool element exposes vanilla's synthetic bottom jigsaw");
+
+        assert_eq!(assembly.pieces.len(), 1);
     }
 }

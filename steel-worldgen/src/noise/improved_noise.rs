@@ -303,9 +303,9 @@ impl ImprovedNoise {
 
             #[cfg(not(target_feature = "avx512f"))]
             {
-                let px1 = x + 1;
-                let py1 = y + 1;
-                let pz1 = z + 1;
+                let px1 = x.wrapping_add(1);
+                let py1 = y.wrapping_add(1);
+                let pz1 = z.wrapping_add(1);
                 let xr1 = xr - 1.0;
                 let yr1 = yr - 1.0;
                 let zr1 = zr - 1.0;
@@ -663,7 +663,8 @@ impl ImprovedNoise {
     }
 }
 
-/// Help the compiler factorize read I guess
+/// Helps the compiler factor permutation reads in the scalar path.
+#[cfg(not(target_feature = "avx512f"))]
 #[inline]
 fn grad_dot_flat(p: &[u8; 256], px: i32, py: i32, pz: i32, fx: f64, fy: f64, fz: f64) -> f64 {
     let qx = (px & 0xFF) as u8;
@@ -867,6 +868,21 @@ mod tests {
         let v1 = noise1.noise(100.0, 64.0, 100.0);
         let v2 = noise2.noise(100.0, 64.0, 100.0);
         assert!((v1 - v2).abs() < 1e-15);
+    }
+
+    #[test]
+    fn scalar_noise_wraps_corner_coordinates_at_i32_max() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let mut noise = ImprovedNoise::new(&mut rng);
+        noise.xo = 0.0;
+        noise.yo = 0.0;
+        noise.zo = 0.0;
+
+        let _ = noise.noise(
+            f64::from(i32::MAX),
+            f64::from(i32::MAX),
+            f64::from(i32::MAX),
+        );
     }
 
     #[test]
