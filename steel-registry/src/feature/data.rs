@@ -8,6 +8,7 @@
 use super::{ConfiguredFeatureEntryRef, PlacedFeatureEntryRef};
 use crate::blocks::BlockRef;
 use crate::fluid::FluidRef;
+use crate::template_pool::ProcessorList;
 use glam::IVec3;
 use steel_utils::{
     Direction, Identifier, Rotation,
@@ -89,6 +90,7 @@ pub enum ConfiguredFeatureKind {
     PointedDripstone(PointedDripstoneConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
     RandomSelector(RandomSelectorConfiguration),
+    ReplaceSingleBlock(ReplaceBlockConfiguration),
     RootSystem(RootSystemConfiguration),
     ScatteredOre(OreConfiguration),
     SculkPatch(SculkPatchConfiguration),
@@ -495,8 +497,8 @@ pub struct FallenTreeConfiguration {
 pub struct FossilConfiguration {
     pub fossil_structures: Vec<Identifier>,
     pub overlay_structures: Vec<Identifier>,
-    pub fossil_processors: Identifier,
-    pub overlay_processors: Identifier,
+    pub fossil_processors: ProcessorList,
+    pub overlay_processors: ProcessorList,
     pub max_empty_corners_allowed: i32,
 }
 
@@ -618,6 +620,11 @@ pub struct OreConfiguration {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReplaceBlockConfiguration {
+    pub targets: Vec<OreTarget>,
+}
+
+#[derive(Debug, Clone)]
 pub struct OreTarget {
     pub target: RuleTest,
     pub state: BlockStateData,
@@ -626,6 +633,7 @@ pub struct OreTarget {
 #[derive(Debug, Clone)]
 pub enum RuleTest {
     BlockMatch { block: BlockRef },
+    BlockStateMatch { block_state: BlockStateData },
     RandomBlockMatch { block: BlockRef, probability: f32 },
     TagMatch { tag: Identifier },
 }
@@ -873,7 +881,7 @@ pub struct MegaPineFoliagePlacer {
 pub struct RandomSpreadFoliagePlacer {
     pub radius: IntProvider,
     pub offset: IntProvider,
-    pub foliage_height: i32,
+    pub foliage_height: IntProvider,
     pub leaf_placement_attempts: i32,
 }
 
