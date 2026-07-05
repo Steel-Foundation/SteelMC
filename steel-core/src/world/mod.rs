@@ -284,6 +284,14 @@ const fn nether_portal_frame_offset_pos(
     )
 }
 
+fn nether_portal_creation_scan_origin(
+    column_pos: BlockPos,
+    direction: Direction,
+    height: i32,
+) -> BlockPos {
+    column_pos.relative(direction.opposite()).at_y(height)
+}
+
 const fn chunk_min_block_x(pos: ChunkPos) -> i32 {
     pos.0.x << 4
 }
@@ -706,7 +714,7 @@ impl World {
                 continue;
             }
 
-            let mut column_pos = column_pos.at_y(height);
+            let mut column_pos = nether_portal_creation_scan_origin(column_pos, direction, height);
             let mut y = height;
             while y >= self.get_min_y() {
                 column_pos = column_pos.at_y(y);
@@ -4873,6 +4881,20 @@ mod tests {
         assert_eq!(
             nether_portal_frame_offset_pos(origin, Direction::East, 0, -1, 1),
             BlockPos::new(10, 69, 21)
+        );
+    }
+
+    #[test]
+    fn nether_portal_creation_scan_origin_matches_vanilla_column_shift() {
+        let column = BlockPos::new(10, 0, 20);
+
+        assert_eq!(
+            nether_portal_creation_scan_origin(column, Direction::East, 70),
+            BlockPos::new(9, 70, 20)
+        );
+        assert_eq!(
+            nether_portal_creation_scan_origin(column, Direction::South, 70),
+            BlockPos::new(10, 70, 19)
         );
     }
 

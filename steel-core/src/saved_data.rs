@@ -17,7 +17,7 @@ pub mod names {
     use super::SavedDataName;
 
     /// Vanilla `TicketStorage.TYPE`, persisted as `data/chunk_tickets.toml`.
-    pub const CHUNK_TICKETS: SavedDataName = SavedDataName::new("chunk_tickets");
+    pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
 }
 
 /// Name of a per-world saved data entry.
@@ -27,13 +27,29 @@ pub struct SavedDataName(&'static str);
 impl SavedDataName {
     /// Creates a saved-data name from a static trusted identifier.
     #[must_use]
-    pub const fn new(name: &'static str) -> Self {
+    pub(crate) const fn trusted(name: &'static str) -> Self {
         Self(name)
+    }
+
+    /// Creates a saved-data name after validating that it cannot escape `data/`.
+    pub fn try_new(name: &'static str) -> Result<Self, String> {
+        if is_valid_saved_data_name(name) {
+            Ok(Self(name))
+        } else {
+            Err(format!("invalid saved data name {name}"))
+        }
     }
 
     fn file_name(self) -> String {
         format!("{}.toml", self.0)
     }
+}
+
+fn is_valid_saved_data_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('/')
+        && !name.contains('\\')
+        && steel_utils::Identifier::validate_path(name)
 }
 
 /// Typed saved-data storage for a loaded world.
@@ -111,11 +127,20 @@ mod tests {
 
     use super::{SavedDataManager, SavedDataName};
 
-    const TEST_DATA: SavedDataName = SavedDataName::new("test_data");
+    const TEST_DATA: SavedDataName = SavedDataName::trusted("test_data");
 
     #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
     struct TestData {
         value: i32,
+    }
+
+    #[test]
+    fn saved_data_name_rejects_paths() {
+        assert!(SavedDataName::try_new("valid_name").is_ok());
+        assert!(SavedDataName::try_new("../outside").is_err());
+        assert!(SavedDataName::try_new("nested/name").is_err());
+        assert!(SavedDataName::try_new("nested\\name").is_err());
+        assert!(SavedDataName::try_new("").is_err());
     }
 
     fn temp_world_dir(test_name: &str) -> PathBuf {

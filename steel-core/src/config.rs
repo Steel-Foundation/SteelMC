@@ -4,7 +4,7 @@
 //! defines `RuntimeConfig` (the subset kept after startup) and the world/domain
 //! configuration types that both crates share.
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Deserializer, de::Error as DeError};
 use std::{
     collections::BTreeMap,
@@ -564,6 +564,10 @@ fn validate_explicit_portal_targets(
     worlds: &[ResolvedWorldConfig],
     world_names: &FxHashSet<String>,
 ) -> Result<(), String> {
+    let worlds_by_name = worlds
+        .iter()
+        .map(|world| (world.name.as_str(), world))
+        .collect::<FxHashMap<_, _>>();
     for world in worlds {
         validate_explicit_portal_target(
             domain_name,
@@ -579,6 +583,7 @@ fn validate_explicit_portal_targets(
             "end_portal_target",
             world_names,
         )?;
+        validate_end_portal_target_target_dimension(domain_name, world, &worlds_by_name)?;
     }
 
     Ok(())
@@ -601,6 +606,28 @@ fn validate_explicit_portal_target(
     Err(format!(
         "world {source_world} {field} target {} is not declared in domain {domain_name}",
         target.path
+    ))
+}
+
+fn validate_end_portal_target_target_dimension(
+    domain_name: &str,
+    source_world: &ResolvedWorldConfig,
+    worlds_by_name: &FxHashMap<&str, &ResolvedWorldConfig>,
+) -> Result<(), String> {
+    let Some(target) = &source_world.end_portal_target else {
+        return Ok(());
+    };
+    let Some(target_world) = worlds_by_name.get(target.path.as_ref()) else {
+        return Ok(());
+    };
+
+    if target_world.generator_config.dimension_type() == &vanilla_dimension_types::THE_END {
+        return Ok(());
+    }
+
+    Err(format!(
+        "world {domain_name}:{} end_portal_target {} must target an End-dimension world",
+        source_world.name, target.path
     ))
 }
 
@@ -947,6 +974,62 @@ dimension_type = "minecraft:the_end"
         .expect_err("flat End-dimension world end_portal_target should be rejected");
         assert!(error.contains("end_portal_target"));
         assert!(error.contains("End-dimension worlds"));
+    }
+
+    #[test]
+    fn rejects_end_portal_target_to_non_end_dimension_world() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+end_portal_target = "other_overworld"
+
+[[domains.minecraft.worlds]]
+name = "other_overworld"
+generator = "minecraft:overworld"
+"#,
+        )
+        .expect_err("end_portal_target should require an End-dimension target");
+        assert!(error.contains("end_portal_target"));
+        assert!(error.contains("End-dimension world"));
+    }
+
+    #[test]
+    fn accepts_end_portal_target_to_flat_end_dimension_world() {
+        let resolved = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+end_portal_target = "flat_end"
+
+[[domains.minecraft.worlds]]
+name = "flat_end"
+generator = "minecraft:flat"
+
+[domains.minecraft.worlds.config]
+dimension_type = "minecraft:the_end"
+"#,
+        )
+        .expect("flat End-dimension end_portal_target should resolve");
+        let overworld = resolved
+            .worlds
+            .iter()
+            .find(|world| world.name == "overworld")
+            .expect("overworld should exist");
+        assert_eq!(
+            overworld.end_portal_target,
+            Some(Identifier::new("minecraft", "flat_end"))
+        );
     }
 
     #[test]

@@ -1586,6 +1586,7 @@ impl Player {
 
         // Resend client context that is not fully covered by CLogin/CRespawn.
         self.server().resend_player_context(self);
+        self.send_active_effects_for_self();
 
         // Add to world / re-enter chunk tracking
         match reason {
@@ -1631,6 +1632,18 @@ impl Player {
         match packet {
             MobEffectSyncPacket::Update(packet) => self.send_packet(packet),
             MobEffectSyncPacket::Remove(packet) => self.send_packet(packet),
+        }
+    }
+
+    fn send_active_effects_for_self(&self) {
+        for effect in self.living_base.active_mob_effects() {
+            self.send_mob_effect_sync_packet(
+                MobEffectSyncChange::Update {
+                    effect,
+                    blend_for_self: false,
+                }
+                .packet(self.id(), true),
+            );
         }
     }
 

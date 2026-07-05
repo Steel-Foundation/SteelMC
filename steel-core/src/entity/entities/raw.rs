@@ -84,16 +84,12 @@ impl Entity for RawEntity {
         false
     }
 
-    fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
+    fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
         if self.entity_type != &vanilla_entities::ENDER_PEARL {
             return None;
         }
 
-        let owner_uuid = self.ender_pearl_owner_uuid()?;
-        let world = self.level()?;
-        world
-            .get_entity_by_uuid(&owner_uuid)
-            .and_then(|owner| owner.as_player().map(|player| player.has_seen_credits()))
+        self.ender_pearl_owner_uuid_from_nbt()
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -106,7 +102,7 @@ impl Entity for RawEntity {
 }
 
 impl RawEntity {
-    fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
+    fn ender_pearl_owner_uuid_from_nbt(&self) -> Option<Uuid> {
         let data = self.data.lock();
         let owner = data.int_array("Owner")?;
         Uuid::from_int_array(&owner)
@@ -122,6 +118,8 @@ mod tests {
     use steel_registry::vanilla_entities;
     use steel_utils::UuidExt;
     use uuid::Uuid;
+
+    use crate::entity::Entity;
 
     use super::RawEntity;
 

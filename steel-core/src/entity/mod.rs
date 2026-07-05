@@ -915,7 +915,6 @@ fn teleport_entity_cross_world(
         }
     }
 
-    let old_position = entity.position();
     let Some(persistent) = ChunkStorage::entity_to_dimension_transition_persistent(&entity) else {
         tracing::warn!(
             entity_id = entity.id(),
@@ -928,7 +927,7 @@ fn teleport_entity_cross_world(
     let target_level = Arc::downgrade(&teleport_transition.target_world);
     let mut new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
         &persistent,
-        ChunkPos::from_entity_pos(old_position),
+        ChunkPos::from_entity_pos(entity.position()),
         &target_level,
     );
     let Some(new_entity) = new_entities.drain(..).next() else {
@@ -954,8 +953,6 @@ fn teleport_entity_cross_world(
         return None;
     }
 
-    remove_after_changing_dimensions(entity.as_ref());
-    entity.set_removed(RemovalReason::ChangedWorld);
     if let Err(error) = teleport_transition
         .target_world
         .try_add_entity(Arc::clone(&new_entity))
@@ -971,6 +968,8 @@ fn teleport_entity_cross_world(
         return None;
     }
 
+    remove_after_changing_dimensions(entity.as_ref());
+    entity.set_removed(RemovalReason::ChangedWorld);
     for new_passenger in new_passengers {
         EntityBase::restore_passenger_relationship(&new_entity, &new_passenger);
     }
@@ -1545,9 +1544,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    /// Returns `Some(seenCredits)` when this entity is a thrown ender pearl
-    /// whose owner is a server player.
-    fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
+    /// Returns the owning player/entity UUID stored by a thrown ender pearl.
+    fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
         None
     }
 
@@ -7066,7 +7064,7 @@ mod tests {
     struct TypedTestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
-        ender_pearl_owner_seen_credits: Option<bool>,
+        ender_pearl_owner_uuid: Option<Uuid>,
     }
 
     impl TypedTestEntity {
@@ -7074,11 +7072,11 @@ mod tests {
             Self {
                 base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
-                ender_pearl_owner_seen_credits: None,
+                ender_pearl_owner_uuid: None,
             }
         }
 
-        fn ender_pearl_with_owner_seen_credits(id: i32, seen_credits: bool) -> Self {
+        fn ender_pearl_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
             Self {
                 base: EntityBase::new(
                     id,
@@ -7087,7 +7085,7 @@ mod tests {
                     Weak::new(),
                 ),
                 entity_type: &vanilla_entities::ENDER_PEARL,
-                ender_pearl_owner_seen_credits: Some(seen_credits),
+                ender_pearl_owner_uuid: Some(owner_uuid),
             }
         }
     }
@@ -7101,8 +7099,8 @@ mod tests {
             self.entity_type
         }
 
-        fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
-            self.ender_pearl_owner_seen_credits
+        fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
+            self.ender_pearl_owner_uuid
         }
     }
 
@@ -7570,14 +7568,13 @@ mod tests {
     }
 
     #[test]
-    fn ender_pearl_owner_seen_credits_reports_player_owner_gate() {
-        let blocked = TypedTestEntity::ender_pearl_with_owner_seen_credits(1, false);
-        let allowed = TypedTestEntity::ender_pearl_with_owner_seen_credits(2, true);
+    fn ender_pearl_owner_uuid_reports_pearl_owner_identity() {
+        let owner_uuid = Uuid::from_u128(42);
+        let pearl = TypedTestEntity::ender_pearl_with_owner_uuid(1, owner_uuid);
         let no_player_owner = TypedTestEntity::new(3, &vanilla_entities::ENDER_PEARL);
 
-        assert_eq!(blocked.ender_pearl_owner_seen_credits(), Some(false));
-        assert_eq!(allowed.ender_pearl_owner_seen_credits(), Some(true));
-        assert_eq!(no_player_owner.ender_pearl_owner_seen_credits(), None);
+        assert_eq!(pearl.ender_pearl_owner_uuid(), Some(owner_uuid));
+        assert_eq!(no_player_owner.ender_pearl_owner_uuid(), None);
     }
 
     #[test]

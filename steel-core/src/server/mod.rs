@@ -110,6 +110,7 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::game_rules::GameRuleValue;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use uuid::Uuid;
 
     use crate::entity::{Entity, EntityBase};
 
@@ -121,15 +122,15 @@ mod tests {
     struct TestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
-        ender_pearl_owner_seen_credits: Option<bool>,
+        ender_pearl_owner_uuid: Option<Uuid>,
     }
 
     impl TestEntity {
-        fn new(entity_type: EntityTypeRef, ender_pearl_owner_seen_credits: Option<bool>) -> Self {
+        fn new(entity_type: EntityTypeRef, ender_pearl_owner_uuid: Option<Uuid>) -> Self {
             Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
-                ender_pearl_owner_seen_credits,
+                ender_pearl_owner_uuid,
             }
         }
     }
@@ -143,8 +144,8 @@ mod tests {
             self.entity_type
         }
 
-        fn ender_pearl_owner_seen_credits(&self) -> Option<bool> {
-            self.ender_pearl_owner_seen_credits
+        fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
+            self.ender_pearl_owner_uuid
         }
     }
 
@@ -198,17 +199,41 @@ mod tests {
 
     #[test]
     fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
-        let blocked_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(false));
-        let allowed_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(true));
+        let blocked_owner = Uuid::from_u128(1);
+        let allowed_owner = Uuid::from_u128(2);
+        let unknown_owner = Uuid::from_u128(3);
+        let blocked_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(blocked_owner));
+        let allowed_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(allowed_owner));
+        let unknown_owner_pearl =
+            TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(unknown_owner));
         let no_player_owner_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, None);
-        let item = TestEntity::new(&vanilla_entities::ITEM, Some(false));
+        let item = TestEntity::new(&vanilla_entities::ITEM, Some(blocked_owner));
+        let owner_seen_credits = |uuid: &Uuid| match *uuid {
+            uuid if uuid == blocked_owner => Some(false),
+            uuid if uuid == allowed_owner => Some(true),
+            _ => None,
+        };
 
-        assert!(!can_entity_return_from_end_to_overworld(&blocked_pearl));
-        assert!(can_entity_return_from_end_to_overworld(&allowed_pearl));
-        assert!(can_entity_return_from_end_to_overworld(
-            &no_player_owner_pearl
+        assert!(!can_entity_return_from_end_to_overworld(
+            &blocked_pearl,
+            owner_seen_credits
         ));
-        assert!(can_entity_return_from_end_to_overworld(&item));
+        assert!(can_entity_return_from_end_to_overworld(
+            &allowed_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &unknown_owner_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &no_player_owner_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &item,
+            owner_seen_credits
+        ));
     }
 }
 
@@ -272,9 +297,10 @@ fn can_teleport_between_worlds(
     entity: &dyn Entity,
     source_world: &World,
     target_world: &World,
+    ender_pearl_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
 ) -> bool {
     if is_end_return_transition(source_world.dimension_type, target_world.dimension_type) {
-        return can_entity_return_from_end_to_overworld(entity);
+        return can_entity_return_from_end_to_overworld(entity, ender_pearl_owner_seen_credits);
     }
 
     true
@@ -296,9 +322,15 @@ fn is_end_dimension_type(world: &World) -> bool {
     world.dimension_type == &vanilla_dimension_types::THE_END
 }
 
-fn can_entity_return_from_end_to_overworld(entity: &dyn Entity) -> bool {
+fn can_entity_return_from_end_to_overworld(
+    entity: &dyn Entity,
+    ender_pearl_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
+) -> bool {
     if entity.entity_type() == &vanilla_entities::ENDER_PEARL
-        && entity.ender_pearl_owner_seen_credits() == Some(false)
+        && entity
+            .ender_pearl_owner_uuid()
+            .and_then(|uuid| ender_pearl_owner_seen_credits(&uuid))
+            == Some(false)
     {
         return false;
     }
@@ -518,16 +550,19 @@ impl NetherPortalTeleportJob {
             request,
         }
     }
+
+    fn still_valid(&self) -> bool {
+        !self.entity.is_removed()
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+    }
 }
 
 impl ServerJob for NetherPortalTeleportJob {
-    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        if self.entity.is_removed() {
-            return JobPoll::Finished;
-        }
-        if let Some(player) = self.entity.as_player()
-            && !Arc::ptr_eq(&player.get_world(), &self.source_world)
-        {
+    fn poll(&mut self, context: &mut ServerJobContext) -> JobPoll {
+        if !self.still_valid() {
             return JobPoll::Finished;
         }
 
@@ -538,6 +573,18 @@ impl ServerJob for NetherPortalTeleportJob {
                 let Some(_ready) = self.request.ready_chunks() else {
                     return JobPoll::Pending;
                 };
+                let Some(server) = context.server() else {
+                    return JobPoll::Finished;
+                };
+                if !is_allowed_to_enter_portal(&self.source_world, &self.target_world)
+                    || !server.can_teleport_between_worlds(
+                        self.entity.as_ref(),
+                        &self.source_world,
+                        &self.target_world,
+                    )
+                {
+                    return JobPoll::Finished;
+                }
                 let Some(transition) = nether_portal::calculate_transition(
                     &self.source_world,
                     &self.target_world,
@@ -2148,7 +2195,7 @@ impl Server {
             return;
         };
         if !is_allowed_to_enter_portal(&source_world, &target_world)
-            || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
         {
             return;
         }
@@ -2179,7 +2226,7 @@ impl Server {
                 return;
             };
             if !is_allowed_to_enter_portal(&source_world, &target_world)
-                || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+                || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
             {
                 return;
             }
@@ -2204,7 +2251,7 @@ impl Server {
                     }
                 };
             if !is_allowed_to_enter_portal(&source_world, &target_world)
-                || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+                || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
             {
                 return;
             }
@@ -2234,7 +2281,7 @@ impl Server {
                 }
             };
         if !is_allowed_to_enter_portal(&source_world, &target_world)
-            || !can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
         {
             return;
         }
@@ -2259,6 +2306,32 @@ impl Server {
             return;
         };
         self.jobs.spawn(job);
+    }
+
+    fn can_teleport_between_worlds(
+        &self,
+        entity: &dyn Entity,
+        source_world: &World,
+        target_world: &World,
+    ) -> bool {
+        can_teleport_between_worlds(entity, source_world, target_world, |uuid| {
+            self.ender_pearl_owner_seen_credits_in_domain(source_world.domain(), uuid)
+        })
+    }
+
+    fn ender_pearl_owner_seen_credits_in_domain(
+        &self,
+        domain: &str,
+        uuid: &uuid::Uuid,
+    ) -> Option<bool> {
+        self.worlds
+            .values()
+            .filter(|world| world.domain() == domain)
+            .find_map(|world| {
+                world
+                    .get_entity_by_uuid(uuid)
+                    .and_then(|entity| entity.as_player().map(|player| player.has_seen_credits()))
+            })
     }
 
     fn strict_respawn_world_and_data_for_domain(

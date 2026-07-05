@@ -82,7 +82,11 @@ pub(crate) fn calculate_entity_return_transition(
     }
 }
 
-/// Calculates vanilla's End -> respawn-world portal transition for players.
+/// Calculates the currently supported End -> respawn-world transition for players.
+///
+/// Vanilla delegates to `ServerPlayer.findRespawnPositionAndUseSpawnBlock`, which depends on
+/// personal bed/anchor respawn config. Steel does not have that player respawn foundation yet,
+/// so this only covers the default respawn branch.
 #[must_use]
 pub(crate) fn calculate_player_return_transition(
     target_world: &Arc<World>,
