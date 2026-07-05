@@ -162,10 +162,12 @@ impl StructureTemplate {
                 });
                 (!ignored).then_some(current)
             }
-            StructureProcessorKind::Gravity { heightmap, offset } => {
-                Some(Self::process_gravity(region, original, current, *heightmap, *offset))
+            StructureProcessorKind::Gravity { heightmap, offset } => Some(Self::process_gravity(
+                region, original, current, *heightmap, *offset,
+            )),
+            StructureProcessorKind::Capped { .. } | StructureProcessorKind::JigsawReplacement => {
+                Some(current)
             }
-            StructureProcessorKind::Capped { .. } => Some(current),
         }
     }
 
@@ -776,7 +778,8 @@ impl StructureTemplate {
                         registry,
                         block_state,
                         "structure processor random block-state predicate",
-                    ) && random.next_f32() < *probability
+                    )
+                    && random.next_f32() < *probability
             }
         }
     }
@@ -833,7 +836,26 @@ impl StructureTemplate {
                 nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
                 Some(nbt)
             }
+            RuleBlockEntityModifierData::AppendStatic { data } => {
+                let mut nbt = current.nbt.unwrap_or_default();
+                Self::merge_nbt_compound(&mut nbt, data);
+                Some(nbt)
+            }
         };
         current
+    }
+
+    fn merge_nbt_compound(target: &mut NbtCompound, source: &NbtCompound) {
+        for (key, source_value) in source.iter() {
+            let key = key.to_string();
+            if let Some(NbtTag::Compound(target_child)) = target.get_mut(&key)
+                && let NbtTag::Compound(source_child) = source_value
+            {
+                Self::merge_nbt_compound(target_child, source_child);
+                continue;
+            }
+            let _ = target.remove(&key);
+            target.insert(key, source_value.clone());
+        }
     }
 }
