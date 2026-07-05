@@ -1100,14 +1100,12 @@ impl Player {
         if death_time >= DEATH_DURATION && !self.is_removed() {
             let world = self.get_world();
             let chunk_pos = *self.last_chunk_pos.lock();
-            world.broadcast_to_nearby(
-                chunk_pos,
-                CEntityEvent {
-                    entity_id: self.id(),
-                    event: EntityStatus::Poof,
-                },
-                None,
-            );
+            let packet = CEntityEvent {
+                entity_id: self.id(),
+                event: EntityStatus::Poof,
+            };
+            world.broadcast_to_nearby(chunk_pos, packet.clone(), None);
+            self.send_packet(packet);
 
             world.unregister_player_entity(self);
             world.entity_tracker().on_player_leave(self.id());
@@ -1264,14 +1262,12 @@ impl Player {
 
         // Broadcast entity event 3 (death sound) to all nearby players.
         let chunk_pos = *self.last_chunk_pos.lock();
-        world.broadcast_to_nearby(
-            chunk_pos,
-            CEntityEvent {
-                entity_id: self.id(),
-                event: EntityStatus::Death,
-            },
-            None,
-        );
+        let packet = CEntityEvent {
+            entity_id: self.id(),
+            event: EntityStatus::Death,
+        };
+        world.broadcast_to_nearby(chunk_pos, packet.clone(), None);
+        self.send_packet(packet);
 
         let show_death_messages =
             world.get_game_rule(&SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
