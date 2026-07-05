@@ -4184,7 +4184,7 @@ fn nearest_player_distance_in_range(
     max_distance < 0.0 || distance_sqr < max_distance_sqr
 }
 
-fn next_morning_day_time(current_day_time: i64) -> i64 {
+const fn next_morning_day_time(current_day_time: i64) -> i64 {
     let advanced_time = current_day_time + 24000;
     advanced_time - advanced_time.rem_euclid(24000)
 }
