@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
     dimension_type::DimensionType,
@@ -16,8 +17,7 @@ use steel_utils::{
 use crate::{
     entity::Entity,
     portal::{
-        PortalTicketTarget, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
-        TeleportVelocityMode, portal_shape::PortalShape,
+        PortalTicketTarget, TeleportPostTransition, TeleportTransition, portal_shape::PortalShape,
     },
     world::World,
 };
@@ -210,9 +210,8 @@ fn create_dimension_transition(
         target_world: target_world.clone(),
         position: collision_free_pos,
         rotation: (output_rotation, 0.0),
-        rotation_mode: TeleportRotationMode::Relative,
         velocity: DVec3::ZERO,
-        velocity_mode: TeleportVelocityMode::RelativeRotated,
+        relatives: RelativeMovement::DELTA.union(RelativeMovement::ROTATION),
         portal_cooldown: entity.dimension_changing_delay(),
         as_passenger: false,
         post_transition,

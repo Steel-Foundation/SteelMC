@@ -5,8 +5,8 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CMoveVehicle, CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer,
-    SMoveVehicle, SPlayerCommand, SPlayerInput,
+    CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
+    SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
@@ -743,6 +743,32 @@ impl Player {
         yaw: f32,
         pitch: f32,
     ) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity_packet(
+            pos,
+            velocity,
+            (yaw, pitch),
+            pos,
+            velocity,
+            (yaw, pitch),
+            RelativeMovement::NONE,
+        )
+    }
+
+    /// Commits resolved server state while sending vanilla packet-relative values.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "packet-relative teleports must keep resolved and protocol values separate"
+    )]
+    pub(crate) fn teleport_with_velocity_packet(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        packet_pos: DVec3,
+        packet_velocity: DVec3,
+        packet_rotation: (f32, f32),
+        relatives: RelativeMovement,
+    ) -> Result<(), EntityMoveError> {
         let world = self.get_world();
         self.try_set_position(pos)?;
         if world.entity_manager().get_by_id(self.id()).is_some() {
@@ -758,15 +784,20 @@ impl Player {
             id
         };
 
-        self.set_rotation((yaw, pitch));
+        self.set_rotation(rotation);
         self.set_old_position_to_current();
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();
         }
 
-        self.send_packet(CPlayerPosition::absolute_with_velocity(
-            new_id, pos, velocity, yaw, pitch,
+        self.send_packet(CPlayerPosition::new(
+            new_id,
+            packet_pos,
+            packet_velocity,
+            packet_rotation.0,
+            packet_rotation.1,
+            relatives,
         ));
         Ok(())
     }

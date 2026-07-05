@@ -996,7 +996,7 @@ impl Player {
 
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.get_world().broadcast_to_all(update_packet);
+        self.server().broadcast_to_online(update_packet);
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();

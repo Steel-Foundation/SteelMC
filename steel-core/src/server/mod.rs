@@ -29,19 +29,20 @@ use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{
-    PortalKind, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
-    TeleportVelocityMode, WorldChangeRequest, end_gateway, end_portal, nether_portal,
+    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
+    end_portal, nether_portal,
 };
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::{END_WORLD_NAME, NETHER_WORLD_NAME, OVERWORLD_WORLD_NAME, WorldMap};
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
-use crate::world::{World, WorldConfig, WorldGameTickTimings};
+use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
+    collections::HashMap,
     mem,
     num::NonZero,
     path::Path,
@@ -50,10 +51,13 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetDefaultSpawnPosition, CSystemChat, CTabList,
-    CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
 };
+use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
@@ -69,6 +73,9 @@ use uuid::Uuid;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
+/// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
+/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
+const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
@@ -216,9 +223,8 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         target_world: world,
         position: respawn_position(&spawn),
         rotation: (spawn.yaw, spawn.pitch),
-        rotation_mode: TeleportRotationMode::Absolute,
         velocity: DVec3::ZERO,
-        velocity_mode: TeleportVelocityMode::Absolute,
+        relatives: RelativeMovement::NONE,
         portal_cooldown: 0,
         as_passenger: false,
         post_transition: TeleportPostTransition::do_nothing(),
@@ -358,6 +364,12 @@ struct DomainSwitchRequest {
 struct PendingPlayerJoin {
     player: Arc<Player>,
     state: Result<DomainPlayerState, String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlayerAdmissionState {
+    Joining,
+    Disconnecting,
 }
 
 struct PlayerJoinQueue {
@@ -950,6 +962,10 @@ pub struct Server {
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
     pub worlds: WorldMap,
+    /// Players currently connected to the server, independent of world membership.
+    online_players: PlayerMap,
+    /// UUIDs reserved by a join or disconnect/save lifecycle transition.
+    player_admissions: SyncMutex<HashMap<Uuid, PlayerAdmissionState>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -1096,6 +1112,8 @@ impl Server {
             cancel_token,
             key_store: KeyStore::create(),
             worlds,
+            online_players: PlayerMap::new(),
+            player_admissions: SyncMutex::new(HashMap::new()),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -1113,6 +1131,10 @@ impl Server {
     /// game tick safe point so the socket reader can enter play immediately.
     pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
         if player.connection.closed() {
+            return;
+        }
+        if !self.reserve_player_join(&player) {
+            player.disconnect("You are already connected to this server");
             return;
         }
 
@@ -1139,13 +1161,16 @@ impl Server {
 
     fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
         let PendingPlayerJoin { player, state } = join;
+        let uuid = player.gameprofile.id;
         if player.connection.closed() {
+            self.release_player_admission(uuid, PlayerAdmissionState::Joining);
             return;
         }
 
         let state = match state {
             Ok(state) => state,
             Err(error) => {
+                self.release_player_admission(uuid, PlayerAdmissionState::Joining);
                 log::error!(
                     "Failed to load player data for {}: {error}",
                     player.gameprofile.name
@@ -1154,6 +1179,11 @@ impl Server {
                 return;
             }
         };
+
+        if !self.admit_reserved_player(Arc::clone(&player)) {
+            player.disconnect("You are already connected to this server");
+            return;
+        }
 
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
@@ -1164,8 +1194,10 @@ impl Server {
         let rotation = player.rotation();
         let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
         if !admitted {
+            self.remove_online_player_sync(&player);
             return;
         }
+        self.sync_tab_list(&player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }
@@ -1174,6 +1206,181 @@ impl Server {
             tokio::spawn(async move {
                 state.world.remove_player(player).await;
             });
+        }
+    }
+
+    fn reserve_player_join(&self, player: &Player) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return false;
+        }
+        if self.online_players.get_by_uuid(&uuid).is_some() {
+            return false;
+        }
+        admissions
+            .insert(uuid, PlayerAdmissionState::Joining)
+            .is_none()
+    }
+
+    fn admit_reserved_player(&self, player: Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.get(&uuid) != Some(&PlayerAdmissionState::Joining) {
+            return false;
+        }
+
+        let admitted = self.online_players.insert(player);
+        let _ = admissions.remove(&uuid);
+        admitted
+    }
+
+    fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return false;
+        }
+        if !self
+            .online_players
+            .get_by_uuid(&uuid)
+            .is_some_and(|current| Arc::ptr_eq(&current, player))
+        {
+            return false;
+        }
+        admissions
+            .insert(uuid, PlayerAdmissionState::Disconnecting)
+            .is_none()
+    }
+
+    fn release_player_admission(&self, uuid: Uuid, state: PlayerAdmissionState) {
+        let mut admissions = self.player_admissions.lock();
+        if admissions.get(&uuid) == Some(&state) {
+            let _ = admissions.remove(&uuid);
+        }
+    }
+
+    fn remove_online_player_sync(&self, player: &Arc<Player>) {
+        let _ = self.online_players.remove_player_sync(player);
+    }
+
+    pub(crate) async fn remove_online_player_after_disconnect(
+        &self,
+        player: Arc<Player>,
+        domain: String,
+        player_data: PersistentPlayerData,
+    ) {
+        let uuid = player.gameprofile.id;
+        if !self.reserve_player_disconnect(&player) {
+            return;
+        }
+
+        self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
+        let player = self.online_players.remove_player_sync(&player);
+
+        let Some(player) = player else {
+            self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+            return;
+        };
+
+        if let Err(e) = self
+            .player_data_storage
+            .save_domain_data(&domain, uuid, &player_data)
+            .await
+        {
+            log::error!("Failed to save player domain data for {uuid}: {e}");
+        }
+        if let Err(e) = self
+            .player_data_storage
+            .save_global(
+                uuid,
+                &GlobalPlayerData {
+                    last_active_domain: domain,
+                },
+            )
+            .await
+        {
+            log::error!("Failed to save global player data for {uuid}: {e}");
+        }
+
+        player.cleanup();
+        self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+    }
+
+    /// Broadcasts a packet to every online player, regardless of world membership.
+    pub fn broadcast_to_online<P: ClientPacket>(&self, packet: P) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.config.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.online_players.iter_players(|_, player| {
+            player.connection.send_encoded(encoded.clone());
+            true
+        });
+    }
+
+    fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
+        self.online_players.iter_players(|_, player| {
+            player.send_packet(packet(player));
+            true
+        });
+    }
+
+    /// Sends full tab list synchronization for a newly joined player.
+    ///
+    /// Server membership mirrors vanilla `PlayerList`; world entity spawning remains
+    /// owned by the per-world entity tracker.
+    fn sync_tab_list(&self, player: &Arc<Player>) {
+        self.online_players.iter_players(|_, existing_player| {
+            if existing_player.gameprofile.id == player.gameprofile.id {
+                return true;
+            }
+
+            let add_existing = CPlayerInfoUpdate::create_player_initializing(
+                existing_player.gameprofile.id,
+                existing_player.gameprofile.name.clone(),
+                existing_player.gameprofile.properties.clone(),
+                existing_player.game_mode().into(),
+                existing_player.connection.latency(),
+                None,
+                true,
+            );
+            player.send_packet(add_existing);
+
+            if let Some(session) = existing_player.chat_session()
+                && let Ok(protocol_data) = session.as_data().to_protocol_data()
+            {
+                player.send_packet(CPlayerInfoUpdate::update_chat_session(
+                    existing_player.gameprofile.id,
+                    protocol_data,
+                ));
+            }
+
+            true
+        });
+
+        let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
+            player.gameprofile.id,
+            player.gameprofile.name.clone(),
+            player.gameprofile.properties.clone(),
+            player.game_mode().into(),
+            player.connection.latency(),
+            None,
+            true,
+        );
+        self.broadcast_to_online(player_info_packet);
+    }
+
+    fn broadcast_player_latency_updates(&self) {
+        let mut latency_entries = Vec::new();
+        self.online_players.iter_players(|uuid, player| {
+            latency_entries.push((*uuid, player.connection.latency()));
+            true
+        });
+
+        if !latency_entries.is_empty() {
+            self.broadcast_to_online(CPlayerInfoUpdate::update_latency(latency_entries));
         }
     }
 
@@ -1442,19 +1649,17 @@ impl Server {
     /// Gets all the players on the server
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
-        for world in self.worlds.values() {
-            world.players.iter_players(|_, p: &Arc<Player>| {
-                players.push(p.clone());
-                true
-            });
-        }
+        self.online_players.iter_players(|_, p: &Arc<Player>| {
+            players.push(p.clone());
+            true
+        });
         players
     }
 
     /// Returns the total number of players currently online across all worlds.
     #[must_use]
     pub fn player_count(&self) -> usize {
-        self.worlds.iter().map(|w| w.1.players.len()).sum()
+        self.online_players.len()
     }
 
     /// Returns a sample of up to 12 online players for the server list ping.
@@ -1632,6 +1837,7 @@ impl Server {
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
+        let mut player_info_ticks = 0_u64;
 
         loop {
             if cancel_token.is_cancelled() {
@@ -1682,6 +1888,12 @@ impl Server {
             };
 
             self.tick_worlds_game(tick_count, runs_normally).await;
+            player_info_ticks += 1;
+            if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
+                let _span = tracing::trace_span!("broadcast_latency").entered();
+                self.broadcast_player_latency_updates();
+                player_info_ticks = 0;
+            }
             self.tick_jobs(tick_count, runs_normally);
             self.process_player_joins();
 
@@ -2295,10 +2507,7 @@ impl Server {
             TextComponent::plain("\n"),
         ]);
 
-        // Broadcast to all players in all worlds
-        for world in self.worlds.values() {
-            world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
-        }
+        self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
     }
 
     /// Broadcasts a sprint completion report to all players.
@@ -2312,9 +2521,7 @@ impl Server {
             ])
             .into();
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
-        }
+        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.
@@ -2324,9 +2531,7 @@ impl Server {
         let packet = CTickingState::new(tick_manager.tick_rate(), tick_manager.is_frozen());
         drop(tick_manager);
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
-        }
+        self.broadcast_to_online(packet);
     }
 
     /// Broadcasts the current step tick count to all clients.
@@ -2336,9 +2541,7 @@ impl Server {
         let packet = CTickingStep::new(tick_manager.frozen_ticks_to_run());
         drop(tick_manager);
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
-        }
+        self.broadcast_to_online(packet);
     }
 
     /// Sends the current ticking state and step packets to a joining player.

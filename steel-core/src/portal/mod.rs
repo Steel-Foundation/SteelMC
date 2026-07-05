@@ -9,6 +9,7 @@ use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
+use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::vanilla_game_rules::{
     PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
@@ -209,14 +210,12 @@ pub struct TeleportTransition {
     pub target_world: Arc<World>,
     /// The position in the target world.
     pub position: DVec3,
-    /// The rotation (yaw, pitch) in the target world, interpreted by `rotation_mode`.
+    /// The rotation (yaw, pitch) values, interpreted by `relatives`.
     pub rotation: (f32, f32),
-    /// Whether `rotation` is absolute or relative to the entity's current rotation.
-    pub rotation_mode: TeleportRotationMode,
-    /// The velocity component carried by this transition.
+    /// The velocity component carried by this transition, interpreted by `relatives`.
     pub velocity: DVec3,
-    /// How `velocity` combines with the entity's current velocity.
-    pub velocity_mode: TeleportVelocityMode,
+    /// Vanilla relative movement flags carried through to clientbound player position packets.
+    pub relatives: RelativeMovement,
     /// Portal cooldown in ticks (prevents immediate re-entry).
     pub portal_cooldown: i32,
     /// Whether this transition is being applied recursively to a passenger.
@@ -296,28 +295,6 @@ pub enum PortalTicketTarget {
     Block(BlockPos),
 }
 
-/// How a teleport transition applies rotation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TeleportRotationMode {
-    /// Transition yaw/pitch replace the entity's current rotation.
-    Absolute,
-    /// Transition yaw/pitch are added to the entity's current rotation.
-    Relative,
-    /// Transition yaw replaces the entity's yaw, while pitch is added to current pitch.
-    PitchRelative,
-}
-
-/// How a teleport transition applies velocity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TeleportVelocityMode {
-    /// Transition velocity replaces the entity's current velocity.
-    Absolute,
-    /// Transition velocity is added to the entity's current velocity.
-    Relative,
-    /// Current velocity is rotated by the rotation delta, then transition velocity is added.
-    RelativeRotated,
-}
-
 impl TeleportTransition {
     /// Returns this transition with a new target position.
     #[must_use]
@@ -326,9 +303,8 @@ impl TeleportTransition {
             target_world: self.target_world.clone(),
             position,
             rotation: self.rotation,
-            rotation_mode: self.rotation_mode,
             velocity: self.velocity,
-            velocity_mode: self.velocity_mode,
+            relatives: self.relatives,
             portal_cooldown: self.portal_cooldown,
             as_passenger: self.as_passenger,
             post_transition: self.post_transition.clone(),
@@ -342,19 +318,24 @@ impl TeleportTransition {
             target_world: self.target_world.clone(),
             position: self.position,
             rotation: self.rotation,
-            rotation_mode: self.rotation_mode,
             velocity: self.velocity,
-            velocity_mode: self.velocity_mode,
+            relatives: self.relatives,
             portal_cooldown: self.portal_cooldown,
             as_passenger: true,
             post_transition: self.post_transition.clone(),
         }
     }
 
+    /// Resolves this transition's position against the entity's current position.
+    #[must_use]
+    pub fn resolved_position(&self, current_position: DVec3) -> DVec3 {
+        resolve_position(self.position, self.relatives, current_position)
+    }
+
     /// Resolves this transition's yaw and pitch against the entity's current rotation.
     #[must_use]
     pub fn resolved_rotation(&self, current_rotation: (f32, f32)) -> (f32, f32) {
-        resolve_rotation(self.rotation, self.rotation_mode, current_rotation)
+        resolve_rotation(self.rotation, self.relatives, current_rotation)
     }
 
     /// Resolves this transition's velocity against the entity's current motion and rotation.
@@ -367,7 +348,7 @@ impl TeleportTransition {
     ) -> DVec3 {
         resolve_velocity(
             self.velocity,
-            self.velocity_mode,
+            self.relatives,
             current_velocity,
             current_rotation,
             resolved_rotation,
@@ -375,21 +356,46 @@ impl TeleportTransition {
     }
 }
 
+fn resolve_position(
+    position: DVec3,
+    relatives: RelativeMovement,
+    current_position: DVec3,
+) -> DVec3 {
+    DVec3::new(
+        if relatives.is_x_relative() {
+            current_position.x + position.x
+        } else {
+            position.x
+        },
+        if relatives.is_y_relative() {
+            current_position.y + position.y
+        } else {
+            position.y
+        },
+        if relatives.is_z_relative() {
+            current_position.z + position.z
+        } else {
+            position.z
+        },
+    )
+}
+
 fn resolve_rotation(
     rotation: (f32, f32),
-    mode: TeleportRotationMode,
+    relatives: RelativeMovement,
     current_rotation: (f32, f32),
 ) -> (f32, f32) {
-    match mode {
-        TeleportRotationMode::Absolute => (rotation.0, clamp_pitch(rotation.1)),
-        TeleportRotationMode::Relative => (
-            current_rotation.0 + rotation.0,
-            clamp_pitch(current_rotation.1 + rotation.1),
-        ),
-        TeleportRotationMode::PitchRelative => {
-            (rotation.0, clamp_pitch(current_rotation.1 + rotation.1))
-        }
-    }
+    let yaw = if relatives.is_y_rot_relative() {
+        current_rotation.0 + rotation.0
+    } else {
+        rotation.0
+    };
+    let pitch = if relatives.is_x_rot_relative() {
+        current_rotation.1 + rotation.1
+    } else {
+        rotation.1
+    };
+    (yaw, clamp_pitch(pitch))
 }
 
 const fn clamp_pitch(pitch: f32) -> f32 {
@@ -398,23 +404,39 @@ const fn clamp_pitch(pitch: f32) -> f32 {
 
 fn resolve_velocity(
     velocity: DVec3,
-    mode: TeleportVelocityMode,
+    relatives: RelativeMovement,
     current_velocity: DVec3,
     current_rotation: (f32, f32),
     resolved_rotation: (f32, f32),
 ) -> DVec3 {
-    match mode {
-        TeleportVelocityMode::Absolute => velocity,
-        TeleportVelocityMode::Relative => current_velocity + velocity,
-        TeleportVelocityMode::RelativeRotated => {
-            let diff_yaw = current_rotation.0 - resolved_rotation.0;
-            let diff_pitch = current_rotation.1 - resolved_rotation.1;
-            rotate_y(
-                rotate_x(current_velocity, diff_pitch.to_radians()),
-                diff_yaw.to_radians(),
-            ) + velocity
-        }
-    }
+    let current_velocity = if relatives.rotates_delta() {
+        let diff_yaw = current_rotation.0 - resolved_rotation.0;
+        let diff_pitch = current_rotation.1 - resolved_rotation.1;
+        rotate_y(
+            rotate_x(current_velocity, diff_pitch.to_radians()),
+            diff_yaw.to_radians(),
+        )
+    } else {
+        current_velocity
+    };
+
+    DVec3::new(
+        if relatives.is_delta_x_relative() {
+            current_velocity.x + velocity.x
+        } else {
+            velocity.x
+        },
+        if relatives.is_delta_y_relative() {
+            current_velocity.y + velocity.y
+        } else {
+            velocity.y
+        },
+        if relatives.is_delta_z_relative() {
+            current_velocity.z + velocity.z
+        } else {
+            velocity.z
+        },
+    )
 }
 
 fn rotate_x(vec: DVec3, radians: f32) -> DVec3 {
@@ -456,6 +478,7 @@ pub enum WorldChangeRequest {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
+    use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::vanilla_game_rules::{
         PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
     };
@@ -463,9 +486,8 @@ mod tests {
 
     use super::{
         PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
-        TeleportPostTransition, TeleportRotationMode, TeleportVelocityMode,
-        clamped_portal_transition_time, nether_portal_transition_rule, resolve_rotation,
-        resolve_velocity,
+        TeleportPostTransition, clamped_portal_transition_time, nether_portal_transition_rule,
+        resolve_position, resolve_rotation, resolve_velocity,
     };
 
     #[test]
@@ -552,10 +574,10 @@ mod tests {
     #[test]
     fn relative_portal_transition_rotates_velocity_by_yaw_delta() {
         let resolved_rotation =
-            resolve_rotation((90.0, 0.0), TeleportRotationMode::Relative, (0.0, 0.0));
+            resolve_rotation((90.0, 0.0), RelativeMovement::ROTATION, (0.0, 0.0));
         let velocity = resolve_velocity(
             DVec3::ZERO,
-            TeleportVelocityMode::RelativeRotated,
+            RelativeMovement::DELTA,
             DVec3::new(1.0, 0.0, 0.0),
             (0.0, 0.0),
             resolved_rotation,
@@ -566,11 +588,23 @@ mod tests {
     }
 
     #[test]
+    fn relative_position_transition_resolves_only_flagged_axes() {
+        assert_eq!(
+            resolve_position(
+                DVec3::new(1.0, 2.0, 3.0),
+                RelativeMovement::new(RelativeMovement::X | RelativeMovement::Z),
+                DVec3::new(10.0, 20.0, 30.0),
+            ),
+            DVec3::new(11.0, 2.0, 33.0)
+        );
+    }
+
+    #[test]
     fn pitch_relative_transition_uses_absolute_yaw_and_relative_pitch() {
         assert_eq!(
             resolve_rotation(
                 (90.0, 0.0),
-                TeleportRotationMode::PitchRelative,
+                RelativeMovement::new(RelativeMovement::X_ROT),
                 (30.0, 15.0),
             ),
             (90.0, 15.0)
@@ -580,11 +614,11 @@ mod tests {
     #[test]
     fn resolved_rotation_clamps_pitch_like_vanilla() {
         assert_eq!(
-            resolve_rotation((0.0, 30.0), TeleportRotationMode::Relative, (0.0, 80.0),),
+            resolve_rotation((0.0, 30.0), RelativeMovement::ROTATION, (0.0, 80.0),),
             (0.0, 90.0)
         );
         assert_eq!(
-            resolve_rotation((0.0, -120.0), TeleportRotationMode::Absolute, (0.0, 0.0)),
+            resolve_rotation((0.0, -120.0), RelativeMovement::NONE, (0.0, 0.0)),
             (0.0, -90.0)
         );
     }
@@ -592,13 +626,13 @@ mod tests {
     #[test]
     fn absolute_transition_replaces_velocity_and_rotation() {
         let resolved_rotation =
-            resolve_rotation((45.0, 10.0), TeleportRotationMode::Absolute, (90.0, 20.0));
+            resolve_rotation((45.0, 10.0), RelativeMovement::NONE, (90.0, 20.0));
 
         assert_eq!(resolved_rotation, (45.0, 10.0));
         assert_eq!(
             resolve_velocity(
                 DVec3::new(0.0, -0.1, 0.0),
-                TeleportVelocityMode::Absolute,
+                RelativeMovement::NONE,
                 DVec3::new(1.0, 2.0, 3.0),
                 (90.0, 20.0),
                 resolved_rotation

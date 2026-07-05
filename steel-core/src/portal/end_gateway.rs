@@ -3,16 +3,14 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::vanilla_entities;
 use steel_utils::{BlockPos, ChunkPos, SectionPos};
 
 use crate::{
     block_entity::entities::EndGatewayBlockEntity,
     entity::Entity,
-    portal::{
-        PortalTicketTarget, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
-        TeleportVelocityMode,
-    },
+    portal::{PortalTicketTarget, TeleportPostTransition, TeleportTransition},
     world::World,
 };
 
@@ -239,16 +237,11 @@ fn gateway_transition(
         target_world: world.clone(),
         position: block_bottom_center(destination),
         rotation: (0.0, 0.0),
-        rotation_mode: if is_ender_pearl {
-            TeleportRotationMode::Absolute
-        } else {
-            TeleportRotationMode::Relative
-        },
         velocity: DVec3::ZERO,
-        velocity_mode: if is_ender_pearl {
-            TeleportVelocityMode::Absolute
+        relatives: if is_ender_pearl {
+            RelativeMovement::NONE
         } else {
-            TeleportVelocityMode::RelativeRotated
+            RelativeMovement::DELTA.union(RelativeMovement::ROTATION)
         },
         portal_cooldown: entity.dimension_changing_delay(),
         as_passenger: false,

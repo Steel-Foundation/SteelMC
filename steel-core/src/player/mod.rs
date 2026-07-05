@@ -59,7 +59,7 @@ use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CRespawn, CSetDefaultSpawnPosition,
     CSetHealth, CSetHeldSlot, CSetPassengers, CSetTime, ClientCommandAction, EquipmentSlotItem,
-    SoundSource,
+    RelativeMovement, SoundSource,
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -1467,6 +1467,34 @@ impl Player {
         velocity: DVec3,
         reason: ResetReason,
     ) -> bool {
+        self.spawn_with_velocity_packet(
+            position,
+            rotation,
+            velocity,
+            reason,
+            position,
+            rotation,
+            velocity,
+            RelativeMovement::NONE,
+        )
+    }
+
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "packet-relative teleports must keep resolved and protocol values separate"
+    )]
+    pub(crate) fn spawn_with_velocity_packet(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+        velocity: DVec3,
+        reason: ResetReason,
+        packet_position: DVec3,
+        packet_rotation: (f32, f32),
+        packet_velocity: DVec3,
+        relatives: RelativeMovement,
+    ) -> bool {
         let world = self.get_world();
 
         // Set position and rotation
@@ -1476,8 +1504,15 @@ impl Player {
         self.movement.lock().reset_for_position_sync(position);
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        if let Err(error) = self.teleport_with_velocity(position, velocity, rotation.0, rotation.1)
-        {
+        if let Err(error) = self.teleport_with_velocity_packet(
+            position,
+            velocity,
+            rotation,
+            packet_position,
+            packet_velocity,
+            packet_rotation,
+            relatives,
+        ) {
             panic!(
                 "failed to synchronize player {} spawn position: {error}",
                 self.id()
@@ -2015,8 +2050,10 @@ impl Entity for Player {
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let new_world = teleport_transition.target_world.clone();
+        let current_position = self.position();
         let current_rotation = self.rotation();
         let current_velocity = self.velocity();
+        let position = teleport_transition.resolved_position(current_position);
         let rotation = teleport_transition.resolved_rotation(current_rotation);
         let velocity =
             teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
@@ -2025,8 +2062,15 @@ impl Entity for Player {
             self.stop_riding();
         }
         if Arc::ptr_eq(&self.get_world(), &new_world) {
-            let pos = teleport_transition.position;
-            if let Err(error) = self.teleport_with_velocity(pos, velocity, rotation.0, rotation.1) {
+            if let Err(error) = self.teleport_with_velocity_packet(
+                position,
+                velocity,
+                rotation,
+                teleport_transition.position,
+                teleport_transition.velocity,
+                teleport_transition.rotation,
+                teleport_transition.relatives,
+            ) {
                 panic!(
                     "failed to commit same-world portal teleport for player {}: {error}",
                     self.id()
@@ -2035,11 +2079,15 @@ impl Entity for Player {
             self.reset_flying_ticks();
         } else {
             self.reset(new_world, ResetReason::WorldChange);
-            if !self.spawn_with_velocity(
-                teleport_transition.position,
+            if !self.spawn_with_velocity_packet(
+                position,
                 rotation,
                 velocity,
                 ResetReason::WorldChange,
+                teleport_transition.position,
+                teleport_transition.rotation,
+                teleport_transition.velocity,
+                teleport_transition.relatives,
             ) {
                 return;
             }

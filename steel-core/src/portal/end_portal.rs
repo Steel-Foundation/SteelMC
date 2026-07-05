@@ -3,15 +3,13 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_protocol::packets::game::RelativeMovement;
 use steel_utils::{BlockPos, ChunkPos, Direction, SectionPos};
 
 use crate::{
     entity::Entity,
     level_data::RespawnData,
-    portal::{
-        PortalTicketTarget, TeleportPostTransition, TeleportRotationMode, TeleportTransition,
-        TeleportVelocityMode,
-    },
+    portal::{PortalTicketTarget, TeleportPostTransition, TeleportTransition},
     world::World,
 };
 
@@ -56,9 +54,8 @@ pub(crate) fn calculate_entry_transition(
         target_world: target_world.clone(),
         position: end_entry_position(entity.as_player().is_some()),
         rotation: (Direction::West.to_yaw(), 0.0),
-        rotation_mode: TeleportRotationMode::PitchRelative,
         velocity: DVec3::ZERO,
-        velocity_mode: TeleportVelocityMode::RelativeRotated,
+        relatives: RelativeMovement::DELTA.union(RelativeMovement::new(RelativeMovement::X_ROT)),
         portal_cooldown: entity.dimension_changing_delay(),
         as_passenger: false,
         post_transition: portal_sound_then_destination_ticket(),
@@ -77,9 +74,8 @@ pub(crate) fn calculate_entity_return_transition(
         target_world: target_world.clone(),
         position: block_bottom_center(spawn_pos),
         rotation: (respawn_data.yaw, respawn_data.pitch),
-        rotation_mode: TeleportRotationMode::Relative,
         velocity: DVec3::ZERO,
-        velocity_mode: TeleportVelocityMode::RelativeRotated,
+        relatives: RelativeMovement::DELTA.union(RelativeMovement::ROTATION),
         portal_cooldown: entity.dimension_changing_delay(),
         as_passenger: false,
         post_transition: portal_sound_then_destination_ticket(),
@@ -98,9 +94,8 @@ pub(crate) fn calculate_player_return_transition(
         target_world: target_world.clone(),
         position,
         rotation,
-        rotation_mode: TeleportRotationMode::Absolute,
         velocity: DVec3::ZERO,
-        velocity_mode: TeleportVelocityMode::Absolute,
+        relatives: RelativeMovement::NONE,
         portal_cooldown: entity.dimension_changing_delay(),
         as_passenger: false,
         post_transition: TeleportPostTransition::do_nothing(),

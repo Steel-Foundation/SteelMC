@@ -26,9 +26,9 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CPlayerChat,
-    CPlayerInfoUpdate, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
-    CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
-    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
+    CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
+    CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
+    CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -310,10 +310,6 @@ pub struct WorldGameTickTimings {
     /// Time spent ticking entities.
     pub entity_tick: Duration,
 }
-
-/// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
-/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
-const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
 /// Configuration for creating a new world.
 #[derive(Clone)]
@@ -2225,11 +2221,6 @@ impl World {
             );
         }
 
-        if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
-            let _span = tracing::trace_span!("broadcast_latency").entered();
-            self.broadcast_player_latency_updates();
-        }
-
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
@@ -2680,23 +2671,6 @@ impl World {
         if game_time % 20 == 0 {
             let rate = if advance_time { 1.0 } else { 0.0 };
             self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
-        }
-    }
-
-    /// Broadcasts latency updates for all players to all players.
-    /// This is called every `SEND_PLAYER_INFO_INTERVAL` ticks to update the ping display.
-    fn broadcast_player_latency_updates(&self) {
-        // Collect all player latencies
-        let mut latency_entries = Vec::new();
-        self.players.iter_players(|uuid, player| {
-            latency_entries.push((*uuid, player.connection.latency()));
-            true
-        });
-
-        // Only broadcast if there are players
-        if !latency_entries.is_empty() {
-            let packet = CPlayerInfoUpdate::update_latency(latency_entries);
-            self.broadcast_to_all(packet);
         }
     }
 

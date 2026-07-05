@@ -9,7 +9,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
-    EquipmentSlotItem, SoundSource,
+    EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -717,7 +717,7 @@ mod tracker;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
-    TeleportRotationMode, TeleportTransition, WorldChangeRequest, portal_shape::PortalShape,
+    TeleportTransition, WorldChangeRequest, portal_shape::PortalShape,
 };
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
 pub(crate) use animal::{Animal, AnimalBase};
@@ -889,7 +889,8 @@ fn teleport_entity_cross_world(
     entity: SharedEntity,
     teleport_transition: &TeleportTransition,
 ) -> Option<SharedEntity> {
-    let target_chunk = ChunkPos::from_entity_pos(teleport_transition.position);
+    let position = teleport_transition.resolved_position(entity.position());
+    let target_chunk = ChunkPos::from_entity_pos(position);
     if !teleport_transition
         .target_world
         .has_full_chunk(target_chunk)
@@ -989,6 +990,7 @@ fn teleport_set_position(
     teleport_transition: &TeleportTransition,
     commit: TeleportPositionCommit,
 ) -> Result<(), EntityMoveError> {
+    let position = teleport_transition.resolved_position(entity.position());
     let current_rotation = entity.rotation();
     let current_velocity = entity.velocity();
     let rotation = teleport_transition.resolved_rotation(current_rotation);
@@ -996,10 +998,8 @@ fn teleport_set_position(
         teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
 
     match commit {
-        TeleportPositionCommit::Managed => entity.try_set_position(teleport_transition.position)?,
-        TeleportPositionCommit::Local => entity
-            .base()
-            .set_position_local(teleport_transition.position),
+        TeleportPositionCommit::Managed => entity.try_set_position(position)?,
+        TeleportPositionCommit::Local => entity.base().set_position_local(position),
     }
     entity.set_rotation(rotation);
     if let Some(living) = entity.as_living_entity() {
@@ -1019,12 +1019,13 @@ fn passenger_transition(
 ) -> TeleportTransition {
     let rotation = passenger_transition_rotation(
         teleport_transition.rotation,
-        teleport_transition.rotation_mode,
+        teleport_transition.relatives,
         vehicle.rotation(),
         passenger.rotation(),
     );
     let position = passenger_transition_position(
         teleport_transition.position,
+        teleport_transition.relatives,
         vehicle.position(),
         passenger.position(),
     );
@@ -1033,9 +1034,8 @@ fn passenger_transition(
         target_world: teleport_transition.target_world.clone(),
         position,
         rotation,
-        rotation_mode: teleport_transition.rotation_mode,
         velocity: teleport_transition.velocity,
-        velocity_mode: teleport_transition.velocity_mode,
+        relatives: teleport_transition.relatives,
         portal_cooldown: teleport_transition.portal_cooldown,
         as_passenger: true,
         post_transition: teleport_transition.post_transition.clone(),
@@ -1044,29 +1044,50 @@ fn passenger_transition(
 
 fn passenger_transition_rotation(
     transition_rotation: (f32, f32),
-    rotation_mode: TeleportRotationMode,
+    relatives: RelativeMovement,
     vehicle_rotation: (f32, f32),
     passenger_rotation: (f32, f32),
 ) -> (f32, f32) {
-    match rotation_mode {
-        TeleportRotationMode::Absolute => (
-            transition_rotation.0 + passenger_rotation.0 - vehicle_rotation.0,
-            transition_rotation.1 + passenger_rotation.1 - vehicle_rotation.1,
-        ),
-        TeleportRotationMode::Relative => transition_rotation,
-        TeleportRotationMode::PitchRelative => (
-            transition_rotation.0 + passenger_rotation.0 - vehicle_rotation.0,
-            transition_rotation.1,
-        ),
-    }
+    let yaw = transition_rotation.0
+        + if relatives.is_y_rot_relative() {
+            0.0
+        } else {
+            passenger_rotation.0 - vehicle_rotation.0
+        };
+    let pitch = transition_rotation.1
+        + if relatives.is_x_rot_relative() {
+            0.0
+        } else {
+            passenger_rotation.1 - vehicle_rotation.1
+        };
+    (yaw, pitch)
 }
 
 fn passenger_transition_position(
     transition_position: DVec3,
+    relatives: RelativeMovement,
     vehicle_position: DVec3,
     passenger_position: DVec3,
 ) -> DVec3 {
-    transition_position + passenger_position - vehicle_position
+    let offset = passenger_position - vehicle_position;
+    transition_position
+        + DVec3::new(
+            if relatives.is_x_relative() {
+                0.0
+            } else {
+                offset.x
+            },
+            if relatives.is_y_relative() {
+                0.0
+            } else {
+                offset.y
+            },
+            if relatives.is_z_relative() {
+                0.0
+            } else {
+                offset.z
+            },
+        )
 }
 
 fn apply_post_teleport_transition(entity: &dyn Entity, teleport_transition: &TeleportTransition) {
@@ -6970,6 +6991,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
+    use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::blocks::{
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, Direction as BlockDirection},
@@ -6998,7 +7020,7 @@ mod tests {
     use crate::entity::entities::PigEntity;
     use crate::entity::mob::Mob;
     use crate::inventory::equipment::EquipmentSlot;
-    use crate::portal::{PortalKind, TeleportRotationMode};
+    use crate::portal::PortalKind;
     use crate::world::LevelReader;
 
     use super::{
@@ -7578,7 +7600,7 @@ mod tests {
         assert_eq!(
             passenger_transition_rotation(
                 (90.0, 20.0),
-                TeleportRotationMode::Absolute,
+                RelativeMovement::NONE,
                 vehicle_rotation,
                 passenger_rotation,
             ),
@@ -7587,7 +7609,7 @@ mod tests {
         assert_eq!(
             passenger_transition_rotation(
                 (15.0, -3.0),
-                TeleportRotationMode::Relative,
+                RelativeMovement::ROTATION,
                 vehicle_rotation,
                 passenger_rotation,
             ),
@@ -7596,7 +7618,7 @@ mod tests {
         assert_eq!(
             passenger_transition_rotation(
                 (-90.0, 0.0),
-                TeleportRotationMode::PitchRelative,
+                RelativeMovement::new(RelativeMovement::X_ROT),
                 vehicle_rotation,
                 passenger_rotation,
             ),
@@ -7609,6 +7631,7 @@ mod tests {
         assert_eq!(
             passenger_transition_position(
                 DVec3::new(100.0, 70.0, -40.0),
+                RelativeMovement::NONE,
                 DVec3::new(10.0, 64.0, 20.0),
                 DVec3::new(12.5, 65.0, 17.0),
             ),
