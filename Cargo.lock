@@ -2941,6 +2941,7 @@ dependencies = [
 name = "steel-worldgen"
 version = "0.12.2+mc26.2"
 dependencies = [
+ "criterion",
  "glam",
  "proc-macro2",
  "quote",

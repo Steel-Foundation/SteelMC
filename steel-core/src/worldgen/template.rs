@@ -678,35 +678,38 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        for block in &palette.blocks {
-            let original = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos: block.pos,
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
-            let processed = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos: Self::transformed_position(position, block.pos, settings),
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
+        Self::palette_blocks_for_placement(
+            &palette.blocks,
+            position,
+            settings,
+            |block, world_pos| {
+                let original = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos: block.pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
+                let processed = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
 
-            let Some(processed) = Self::process_block(
-                region,
-                registry,
-                &original,
-                processed,
-                settings,
-                reference_pos,
-                random,
-            ) else {
-                continue;
-            };
-
-            original_blocks.push(original);
-            processed_blocks.push(processed);
-        }
+                if let Some(processed) = Self::process_block(
+                    region,
+                    registry,
+                    &original,
+                    processed,
+                    settings,
+                    reference_pos,
+                    random,
+                ) {
+                    original_blocks.push(original);
+                    processed_blocks.push(processed);
+                }
+            },
+        );
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -731,6 +734,8 @@ impl StructureTemplate {
         let mut locked_fluids = Vec::new();
         let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
+            // Always guard placement: the vanilla fallback may enqueue a block outside
+            // `bounding_box` for processor/finalize parity without intending a write here.
             if !settings.bounding_box.contains_blockpos(processed.world_pos) {
                 continue;
             }
@@ -1196,6 +1201,39 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
+    }
+
+    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
+    /// Disabled when a `Capped` processor is present — it needs the full block list
+    /// in `finalize_processing` (Trail Ruins).
+    fn pre_filters_placement_bounds(processors: &[StructureProcessorKind]) -> bool {
+        !processors
+            .iter()
+            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
+    }
+
+    fn palette_blocks_for_placement<F: FnMut(&StructureBlockInfo, BlockPos)>(
+        blocks: &[StructureBlockInfo],
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        mut f: F,
+    ) {
+        if !Self::pre_filters_placement_bounds(settings.processors) {
+            for block in blocks {
+                f(
+                    block,
+                    Self::transformed_position(position, block.pos, settings),
+                );
+            }
+            return;
+        }
+
+        for block in blocks {
+            let world_pos = Self::transformed_position(position, block.pos, settings);
+            if settings.bounding_box.contains_blockpos(world_pos) {
+                f(block, world_pos);
+            }
+        }
     }
 
     const fn transformed_position(
@@ -2388,6 +2426,8 @@ impl StructureTemplate {
 
 #[cfg(test)]
 mod tests {
+    use std::slice;
+
     use super::*;
     use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
     use steel_registry::test_support::init_test_registry;
@@ -2396,6 +2436,81 @@ mod tests {
     fn test_registry() -> Registry {
         init_test_registry();
         Registry::new_vanilla()
+    }
+
+    #[test]
+    fn palette_blocks_skips_all_out_of_bounds_for_current_chunk_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: &[],
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, _| {
+                processed += 1;
+            },
+        );
+
+        assert_eq!(processed, 0);
+    }
+
+    #[test]
+    fn palette_blocks_keeps_out_of_bounds_for_capped_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let capped = StructureProcessorKind::Capped {
+            delegate: Box::new(StructureProcessorKind::LavaSubmergedBlock),
+            limit: IntProvider::Constant(1),
+        };
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: slice::from_ref(&capped),
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+        let mut processed_pos = None;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, pos| {
+                processed += 1;
+                processed_pos = Some(pos);
+            },
+        );
+
+        assert_eq!(processed, 1);
+        assert_eq!(processed_pos, Some(BlockPos::new(32, 0, 0)));
     }
 
     #[test]
