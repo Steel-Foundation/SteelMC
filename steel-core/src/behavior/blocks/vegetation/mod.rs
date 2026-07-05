@@ -53,6 +53,7 @@ mod sapling_block;
 mod sculk_vein_block;
 mod sea_pickle_block;
 mod seagrass_block;
+mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod snow_layer_block;
