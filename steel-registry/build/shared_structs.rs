@@ -10,6 +10,8 @@ pub struct BlockStateData {
     pub name: Identifier,
     #[serde(rename = "Properties", default)]
     pub properties: BTreeMap<String, String>,
+    #[serde(default, rename = "Properites")]
+    pub _properites: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
