@@ -92,9 +92,9 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntitySyncedData, LivingEntity,
-    LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    equipment_items_to_packet_items, start_riding_entities,
+    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission,
+    EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
+    RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -1780,6 +1780,14 @@ impl Entity for Player {
             } else {
                 self.play_block_step_sound(primary_state);
             }
+        }
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        if self.is_flying() || self.on_ground() && self.is_discrete() {
+            EntityMovementEmission::None
+        } else {
+            EntityMovementEmission::All
         }
     }
 

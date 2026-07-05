@@ -97,7 +97,7 @@ impl BlockBehavior for PotentSulfurBlock {
         Some(Self::valid_state(
             self.block.default_state(),
             context.world,
-            context.relative_pos,
+            context.place_pos,
         ))
     }
 

@@ -83,7 +83,7 @@ impl BlockBehavior for TallSeagrassBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context.is_full_water() {
@@ -91,7 +91,7 @@ impl BlockBehavior for TallSeagrassBlock {
         }
 
         let above_fluid =
-            get_fluid_state_from_block(context.world.get_block_state(context.relative_pos.above()));
+            get_fluid_state_from_block(context.world.get_block_state(context.place_pos.above()));
         if !above_fluid.is_water() || !above_fluid.is_full() {
             return None;
         }
@@ -100,7 +100,7 @@ impl BlockBehavior for TallSeagrassBlock {
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Lower,
         );
-        self.can_survive(state, context.world, context.relative_pos)
+        self.can_survive(state, context.world, context.place_pos)
             .then_some(state)
     }
 

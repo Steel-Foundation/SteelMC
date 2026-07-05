@@ -107,7 +107,7 @@ impl BlockBehavior for CactusBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = self.block.default_state();
-        if self.can_survive(default_state, context.world, context.relative_pos) {
+        if self.can_survive(default_state, context.world, context.place_pos) {
             Some(default_state)
         } else {
             None

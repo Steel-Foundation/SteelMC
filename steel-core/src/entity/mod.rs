@@ -71,6 +71,13 @@ const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
 const IN_WALL_EYE_BOX_HEIGHT: f64 = 1.0e-6;
 const WATER_ENTITY_FLOW_SCALE: f64 = 0.014;
+const BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED: f64 = -0.3;
+const BUBBLE_COLUMN_INSIDE_UP_MAX_SPEED: f64 = 0.7;
+const BUBBLE_COLUMN_ABOVE_DOWN_MIN_SPEED: f64 = -0.9;
+const BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED: f64 = 1.8;
+const BUBBLE_COLUMN_DOWN_ACCELERATION: f64 = 0.03;
+const BUBBLE_COLUMN_INSIDE_UP_ACCELERATION: f64 = 0.06;
+const BUBBLE_COLUMN_ABOVE_UP_ACCELERATION: f64 = 0.1;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
 const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
@@ -1140,6 +1147,38 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns whether vanilla fluid currents can push this entity.
     fn is_pushed_by_fluid(&self) -> bool {
         true
+    }
+
+    /// Applies vanilla `Entity.onAboveBubbleColumn`.
+    fn on_above_bubble_column(&self, drag_down: bool, _pos: BlockPos) {
+        if self.is_flying_player() {
+            return;
+        }
+
+        let velocity = self.velocity();
+        let y = if drag_down {
+            (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_ABOVE_DOWN_MIN_SPEED)
+        } else {
+            (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
+        };
+        self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+    }
+
+    /// Applies vanilla `Entity.onInsideBubbleColumn`.
+    fn on_inside_bubble_column(&self, drag_down: bool) {
+        if self.is_flying_player() {
+            return;
+        }
+
+        let velocity = self.velocity();
+        let y = if drag_down {
+            (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED)
+        } else {
+            (velocity.y + BUBBLE_COLUMN_INSIDE_UP_ACCELERATION)
+                .min(BUBBLE_COLUMN_INSIDE_UP_MAX_SPEED)
+        };
+        self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+        self.reset_fall_distance();
     }
 
     /// Returns whether this entity is invisible to normal entity selectors.
@@ -6717,6 +6756,7 @@ mod tests {
         vehicle: bool,
         on_non_air_block_for_frost: bool,
         in_wall_for_base_tick: bool,
+        flying_player: bool,
     }
 
     impl LivingFluidTestEntity {
@@ -6745,6 +6785,7 @@ mod tests {
                 vehicle: false,
                 on_non_air_block_for_frost: false,
                 in_wall_for_base_tick: false,
+                flying_player: false,
             }
         }
 
@@ -6770,6 +6811,11 @@ mod tests {
 
         const fn with_in_wall_for_base_tick(mut self) -> Self {
             self.in_wall_for_base_tick = true;
+            self
+        }
+
+        const fn with_flying_player(mut self) -> Self {
+            self.flying_player = true;
             self
         }
 
@@ -6828,6 +6874,10 @@ mod tests {
 
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
             Some(&self.entity_data)
+        }
+
+        fn is_flying_player(&self) -> bool {
+            self.flying_player
         }
     }
 
@@ -7792,6 +7842,71 @@ mod tests {
         entity.float_in_water_while_ridden();
 
         assert_vec3_close(entity.velocity(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn inside_bubble_column_pushes_up_and_resets_fall_distance() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_velocity(DVec3::new(0.1, 0.68, 0.2));
+        entity.set_fall_distance(4.0);
+
+        entity.on_inside_bubble_column(false);
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, 0.7, 0.2));
+        assert_f64_close(entity.fall_distance(), 0.0);
+    }
+
+    #[test]
+    fn inside_bubble_column_drags_down_and_resets_fall_distance() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_velocity(DVec3::new(0.1, -0.28, 0.2));
+        entity.set_fall_distance(4.0);
+
+        entity.on_inside_bubble_column(true);
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, -0.3, 0.2));
+        assert_f64_close(entity.fall_distance(), 0.0);
+    }
+
+    #[test]
+    fn above_bubble_column_uses_vanilla_stronger_velocity_limits() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_velocity(DVec3::new(0.1, 1.75, 0.2));
+        entity.set_fall_distance(4.0);
+
+        entity.on_above_bubble_column(false, BlockPos::ZERO);
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, 1.8, 0.2));
+        assert_f64_close(entity.fall_distance(), 4.0);
+    }
+
+    #[test]
+    fn above_bubble_column_drag_down_uses_vanilla_stronger_velocity_limit() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_velocity(DVec3::new(0.1, -0.88, 0.2));
+
+        entity.on_above_bubble_column(true, BlockPos::ZERO);
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, -0.9, 0.2));
+    }
+
+    #[test]
+    fn flying_players_ignore_bubble_column_entity_hooks() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_flying_player();
+        let velocity = DVec3::new(0.1, 0.2, 0.3);
+        entity.set_velocity(velocity);
+        entity.set_fall_distance(4.0);
+
+        entity.on_inside_bubble_column(false);
+        entity.on_above_bubble_column(false, BlockPos::ZERO);
+
+        assert_vec3_close(entity.velocity(), velocity);
+        assert_f64_close(entity.fall_distance(), 4.0);
     }
 
     #[test]

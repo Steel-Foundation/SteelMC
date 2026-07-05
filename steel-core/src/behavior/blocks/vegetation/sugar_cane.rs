@@ -37,7 +37,7 @@ impl SugarCaneBlock {
 
 impl BlockBehavior for SugarCaneBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = context.relative_pos;
+        let pos = context.place_pos;
         if self.can_survive(
             vanilla_blocks::SUGAR_CANE.default_state(), // state argument is unused
             context.world,

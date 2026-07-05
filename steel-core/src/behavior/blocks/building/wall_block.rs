@@ -71,7 +71,7 @@ impl WallBlock {
 impl BlockBehavior for WallBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let world = context.world;
-        let pos = context.relative_pos;
+        let pos = context.place_pos;
 
         let north_pos = Direction::North.relative(pos);
         let east_pos = Direction::East.relative(pos);

@@ -55,19 +55,35 @@ impl InteractionResult {
 }
 
 /// Context for placing a block.
+///
+/// Vanilla porting map:
+/// - `UseOnContext.getClickedPos()` is `hit_pos`.
+/// - `BlockPlaceContext.getClickedPos()` is `place_pos`.
+/// - `BlockPlaceContext.replacingClickedOnBlock()` is `replaces_clicked_block`.
+///
+/// When translating vanilla block placement code, do not map
+/// `BlockPlaceContext.getClickedPos()` to `hit_pos`.
 pub struct BlockPlaceContext<'a> {
-    /// The position that was clicked.
-    pub clicked_pos: BlockPos,
+    /// Raw block position from the hit result.
+    ///
+    /// Vanilla equivalent: `UseOnContext.getClickedPos()`.
+    pub hit_pos: BlockPos,
     /// The face of the block that was clicked.
     pub clicked_face: Direction,
     /// The exact location where the click occurred.
     pub click_location: DVec3,
     /// Whether the click was inside the block.
     pub inside: bool,
-    /// The position where the block will be placed.
-    pub relative_pos: BlockPos,
-    /// Whether the clicked block is being replaced.
-    pub replace_clicked: bool,
+    /// Position where the block will be placed.
+    ///
+    /// Vanilla equivalent: `BlockPlaceContext.getClickedPos()`. Vanilla returns
+    /// the raw hit position only when replacing the clicked block; otherwise it
+    /// returns the adjacent block position in the clicked-face direction.
+    pub place_pos: BlockPos,
+    /// Whether placement replaces the hit block itself.
+    ///
+    /// Vanilla equivalent: `BlockPlaceContext.replacingClickedOnBlock()`.
+    pub replaces_clicked_block: bool,
     /// The horizontal direction the player is facing.
     pub horizontal_direction: Direction,
     /// The player's rotation (yaw).
@@ -114,7 +130,7 @@ impl BlockPlaceContext<'_> {
         let mut directions = Direction::ordered_by_nearest(self.rotation, self.pitch);
 
         // If not replacing the clicked block, prioritize the opposite of clicked face
-        if !self.replace_clicked {
+        if !self.replaces_clicked_block {
             let clicked_opposite = self.clicked_face.opposite();
             if let Some(index) = directions.iter().position(|&d| d == clicked_opposite)
                 && index > 0
@@ -127,19 +143,19 @@ impl BlockPlaceContext<'_> {
         directions
     }
 
-    /// Returns true if the block at the relative position is a water source
+    /// Returns true if the block at the placement position is a water source.
     #[must_use]
     pub fn is_water_source(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, self.relative_pos);
+        let fluid_state = get_fluid_state(self.world, self.place_pos);
         fluid_state.is_source() && fluid_state.is_water()
     }
 
-    /// Returns true if the block at the relative position contains full water.
+    /// Returns true if the block at the placement position contains full water.
     #[must_use]
     pub fn is_full_water(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, self.relative_pos);
+        let fluid_state = get_fluid_state(self.world, self.place_pos);
         fluid_state.is_full() && fluid_state.is_water()
     }
 }
@@ -226,15 +242,15 @@ impl<'a> UseOnContext<'a> {
     /// This is the common prefix of vanilla's `BlockItem.useOn`.
     #[must_use]
     pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
-        let clicked_pos = self.hit_result.block_pos;
-        let clicked_state = self.world.get_block_state(clicked_pos);
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
+        let hit_pos = self.hit_result.block_pos;
+        let hit_state = self.world.get_block_state(hit_pos);
+        let hit_block = REGISTRY.blocks.by_state_id(hit_state);
+        let hit_block_replaceable = hit_block.is_some_and(|b| b.config.replaceable);
 
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
+        let (place_pos, replaces_clicked_block) = if hit_block_replaceable {
+            (hit_pos, true)
         } else {
-            (self.hit_result.direction.relative(clicked_pos), false)
+            (self.hit_result.direction.relative(hit_pos), false)
         };
 
         if !self.world.is_in_valid_bounds(place_pos) {
@@ -250,12 +266,12 @@ impl<'a> UseOnContext<'a> {
         let (yaw, pitch) = self.player.rotation();
 
         Some(BlockPlaceContext {
-            clicked_pos,
+            hit_pos,
             clicked_face: self.hit_result.direction,
             click_location: self.hit_result.location,
             inside: self.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
+            place_pos,
+            replaces_clicked_block,
             horizontal_direction: Direction::from_yaw(yaw),
             rotation: yaw,
             pitch,

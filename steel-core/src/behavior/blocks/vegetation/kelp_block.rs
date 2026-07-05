@@ -75,12 +75,12 @@ impl BlockBehavior for KelpBlock {
             return None;
         }
 
-        let above = context.world.get_block_state(context.relative_pos.above());
+        let above = context.world.get_block_state(context.place_pos.above());
         let above_block = above.get_block();
         if above_block == self.block || above_block == &vanilla_blocks::KELP_PLANT {
             let state = Self::body_state();
             return self
-                .can_survive(state, context.world, context.relative_pos)
+                .can_survive(state, context.world, context.place_pos)
                 .then_some(state);
         }
 
@@ -90,7 +90,7 @@ impl BlockBehavior for KelpBlock {
             .block
             .default_state()
             .set_value(&BlockStateProperties::AGE_25, age);
-        self.can_survive(state, context.world, context.relative_pos)
+        self.can_survive(state, context.world, context.place_pos)
             .then_some(state)
     }
 

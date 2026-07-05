@@ -174,7 +174,7 @@ pub(super) fn default_surviving_state(
 ) -> Option<BlockStateId> {
     let state = block.default_state();
     behavior
-        .can_survive(state, context.world, context.relative_pos)
+        .can_survive(state, context.world, context.place_pos)
         .then_some(state)
 }
 

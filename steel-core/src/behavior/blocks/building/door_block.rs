@@ -83,7 +83,7 @@ impl DoorBlock {
     }
 
     fn hinge_for_placement(context: &BlockPlaceContext<'_>) -> DoorHingeSide {
-        let pos = context.relative_pos;
+        let pos = context.place_pos;
         let above_pos = pos.above();
         let place_direction = context.horizontal_direction;
 
@@ -187,7 +187,7 @@ impl DoorBlock {
 
 impl BlockBehavior for DoorBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = context.relative_pos;
+        let pos = context.place_pos;
         if pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }

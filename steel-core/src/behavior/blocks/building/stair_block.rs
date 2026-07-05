@@ -101,7 +101,7 @@ impl BlockBehavior for StairBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let half = if context.clicked_face != Direction::Down
             && (context.clicked_face == Direction::Up
-                || context.click_location.y - f64::from(context.relative_pos.y()) <= 0.5)
+                || context.click_location.y - f64::from(context.place_pos.y()) <= 0.5)
         {
             Half::Bottom
         } else {
@@ -120,7 +120,7 @@ impl BlockBehavior for StairBlock {
         Some(Self::update_stair_shape(
             state,
             context.world.as_ref(),
-            context.relative_pos,
+            context.place_pos,
         ))
     }
 

@@ -44,9 +44,9 @@ impl NetherWartBlock {
 impl BlockBehavior for NetherWartBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.relative_pos.below()),
+            context.world.get_block_state(context.place_pos.below()),
             context.world,
-            context.relative_pos.below(),
+            context.place_pos.below(),
         ) {
             Some(self.block.default_state())
         } else {
