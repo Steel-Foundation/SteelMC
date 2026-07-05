@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use small_map::FxSmallMap;
 use steel_utils::Identifier;
 
-use crate::config::ResolvedDomainConfig;
+use crate::config::{ResolvedDomainConfig, ResolvedWorldConfig};
 use crate::world::World;
 
 pub(crate) const OVERWORLD_WORLD_NAME: &str = "overworld";
@@ -18,20 +18,38 @@ pub struct WorldMap {
     worlds: FxSmallMap<8, Identifier, Arc<World>>,
     default_domain: String,
     default_worlds: FxHashMap<String, Identifier>,
+    nether_portal_targets: FxHashMap<Identifier, Identifier>,
+    end_portal_targets: FxHashMap<Identifier, Identifier>,
 }
 
 impl WorldMap {
     /// Creates a world map from resolved domain config.
     #[must_use]
-    pub fn new(default_domain: String, domains: &[ResolvedDomainConfig]) -> Self {
+    pub fn new(
+        default_domain: String,
+        domains: &[ResolvedDomainConfig],
+        world_configs: &[ResolvedWorldConfig],
+    ) -> Self {
         let mut default_worlds = FxHashMap::default();
         for domain in domains {
             default_worlds.insert(domain.name.clone(), domain.default_world.clone());
+        }
+        let mut nether_portal_targets = FxHashMap::default();
+        let mut end_portal_targets = FxHashMap::default();
+        for world in world_configs {
+            if let Some(target) = &world.nether_portal_target {
+                nether_portal_targets.insert(world.key.clone(), target.clone());
+            }
+            if let Some(target) = &world.end_portal_target {
+                end_portal_targets.insert(world.key.clone(), target.clone());
+            }
         }
         Self {
             worlds: FxSmallMap::default(),
             default_domain,
             default_worlds,
+            nether_portal_targets,
+            end_portal_targets,
         }
     }
 
@@ -131,6 +149,10 @@ impl WorldMap {
     /// Resolves the vanilla Nether portal target in the source world's domain.
     #[must_use]
     pub fn resolve_nether_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
+        if let Some(target) = self.nether_portal_targets.get(&source_world.key) {
+            return self.worlds.get(target).cloned();
+        }
+
         self.resolve_portal_target(
             source_world,
             nether_portal_target_world_name(source_world.key.path.as_ref()),
@@ -143,6 +165,10 @@ impl WorldMap {
     /// so that branch is intentionally left to the destination calculator.
     #[must_use]
     pub fn resolve_end_entry_portal_target(&self, source_world: &World) -> Option<Arc<World>> {
+        if let Some(target) = self.end_portal_targets.get(&source_world.key) {
+            return self.worlds.get(target).cloned();
+        }
+
         end_entry_portal_target_world_name(source_world.key.path.as_ref())
             .and_then(|target| self.resolve_portal_target(source_world, target))
     }

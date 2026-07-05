@@ -34,7 +34,7 @@ use crate::portal::{
 };
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
-use crate::server::worlds::{END_WORLD_NAME, NETHER_WORLD_NAME, OVERWORLD_WORLD_NAME, WorldMap};
+use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
@@ -62,7 +62,10 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
 };
-use steel_registry::{REGISTRY, Registry, RegistryEntry, vanilla_entities};
+use steel_registry::{
+    REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
+    vanilla_entities,
+};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
@@ -106,13 +109,13 @@ mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::game_rules::GameRuleValue;
-    use steel_registry::vanilla_entities;
+    use steel_registry::{vanilla_dimension_types, vanilla_entities};
 
     use crate::entity::{Entity, EntityBase};
 
     use super::{
         can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-        is_allowed_to_enter_portal_target, is_end_to_overworld_transition,
+        is_allowed_to_enter_portal_target, is_end_return_transition,
     };
 
     struct TestEntity {
@@ -160,29 +163,37 @@ mod tests {
     #[test]
     fn nether_portal_entry_obeys_allow_entering_nether_gamerule() {
         assert!(is_allowed_to_enter_portal_target(
-            "overworld",
+            false,
             GameRuleValue::Bool(false)
         ));
         assert!(is_allowed_to_enter_portal_target(
-            "the_end",
-            GameRuleValue::Bool(false)
-        ));
-        assert!(is_allowed_to_enter_portal_target(
-            "the_nether",
+            true,
             GameRuleValue::Bool(true)
         ));
         assert!(!is_allowed_to_enter_portal_target(
-            "the_nether",
+            true,
             GameRuleValue::Bool(false)
         ));
     }
 
     #[test]
     fn can_teleport_passenger_gate_only_applies_to_end_return() {
-        assert!(is_end_to_overworld_transition("the_end", "overworld"));
-        assert!(!is_end_to_overworld_transition("the_end", "the_nether"));
-        assert!(!is_end_to_overworld_transition("overworld", "overworld"));
-        assert!(!is_end_to_overworld_transition("overworld", "the_end"));
+        assert!(is_end_return_transition(
+            &vanilla_dimension_types::THE_END,
+            &vanilla_dimension_types::OVERWORLD
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::THE_END,
+            &vanilla_dimension_types::THE_NETHER
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::OVERWORLD,
+            &vanilla_dimension_types::OVERWORLD
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::OVERWORLD,
+            &vanilla_dimension_types::THE_END
+        ));
     }
 
     #[test]
@@ -233,16 +244,16 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
 
 fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
     is_allowed_to_enter_portal_target(
-        target_world.key.path.as_ref(),
+        is_nether_dimension_type(target_world),
         source_world.get_game_rule(&ALLOW_ENTERING_NETHER_USING_PORTALS),
     )
 }
 
 fn is_allowed_to_enter_portal_target(
-    target_world_name: &str,
+    target_is_nether: bool,
     allow_entering_nether_using_portals: GameRuleValue,
 ) -> bool {
-    if target_world_name != NETHER_WORLD_NAME {
+    if !target_is_nether {
         return true;
     }
 
@@ -262,18 +273,27 @@ fn can_teleport_between_worlds(
     source_world: &World,
     target_world: &World,
 ) -> bool {
-    if is_end_to_overworld_transition(
-        source_world.key.path.as_ref(),
-        target_world.key.path.as_ref(),
-    ) {
+    if is_end_return_transition(source_world.dimension_type, target_world.dimension_type) {
         return can_entity_return_from_end_to_overworld(entity);
     }
 
     true
 }
 
-fn is_end_to_overworld_transition(source_world_name: &str, target_world_name: &str) -> bool {
-    source_world_name == END_WORLD_NAME && target_world_name == OVERWORLD_WORLD_NAME
+fn is_end_return_transition(
+    source_dimension_type: DimensionTypeRef,
+    target_dimension_type: DimensionTypeRef,
+) -> bool {
+    source_dimension_type == &vanilla_dimension_types::THE_END
+        && target_dimension_type == &vanilla_dimension_types::OVERWORLD
+}
+
+fn is_nether_dimension_type(world: &World) -> bool {
+    world.dimension_type == &vanilla_dimension_types::THE_NETHER
+}
+
+fn is_end_dimension_type(world: &World) -> bool {
+    world.dimension_type == &vanilla_dimension_types::THE_END
 }
 
 fn can_entity_return_from_end_to_overworld(entity: &dyn Entity) -> bool {
@@ -1046,6 +1066,7 @@ impl Server {
         let mut worlds = WorldMap::new(
             resolved_worlds.default_domain.clone(),
             &resolved_worlds.domains,
+            &resolved_worlds.worlds,
         );
 
         for world_entry in &resolved_worlds.worlds {
@@ -2131,7 +2152,7 @@ impl Server {
         {
             return;
         }
-        let to_nether = target_world.key.path.as_ref() == NETHER_WORLD_NAME;
+        let to_nether = is_nether_dimension_type(&target_world);
         let approximate_exit_pos = nether_portal::approximate_exit_position(
             &source_world,
             &target_world,
@@ -2148,7 +2169,7 @@ impl Server {
     }
 
     fn queue_end_portal_change(&self, entity: SharedEntity, source_world: Arc<World>) {
-        if source_world.key.path.as_ref() != END_WORLD_NAME {
+        if !is_end_dimension_type(&source_world) {
             let Some(target_world) = self.worlds.resolve_end_entry_portal_target(&source_world)
             else {
                 log::warn!(
@@ -2231,7 +2252,7 @@ impl Server {
         source_world: Arc<World>,
         portal_pos: BlockPos,
     ) {
-        let source_is_end = source_world.key.path.as_ref() == END_WORLD_NAME;
+        let source_is_end = is_end_dimension_type(&source_world);
         let Some(job) = EndGatewayTeleportJob::new(entity, source_world, portal_pos, source_is_end)
         else {
             tracing::debug!("End gateway world change ignored because no destination is available");
