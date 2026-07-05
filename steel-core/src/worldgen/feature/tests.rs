@@ -98,11 +98,13 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
     let underground_decoration =
         FeatureDecorationRunner::structures_for_decoration_step(&registry, 7);
 
+    let underground_paths: Vec<_> = underground
+        .iter()
+        .filter(|s| s.key.namespace == "minecraft")
+        .map(|structure| structure.key.path.as_ref())
+        .collect();
     assert_eq!(
-        underground
-            .iter()
-            .map(|structure| structure.key.path.as_ref())
-            .collect::<Vec<_>>(),
+        underground_paths,
         [
             "buried_treasure",
             "mineshaft",
@@ -111,45 +113,55 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             "trial_chambers",
         ]
     );
+
+    let surface_paths: Vec<_> = surface
+        .iter()
+        .filter(|s| s.key.namespace == "minecraft")
+        .map(|structure| structure.key.path.as_ref())
+        .collect();
+    let mut expected_surface = vec![
+        "bastion_remnant",
+        "desert_pyramid",
+        "end_city",
+        "igloo",
+        "jungle_pyramid",
+        "mansion",
+        "monument",
+        "ocean_ruin_cold",
+        "ocean_ruin_warm",
+        "pillager_outpost",
+        "ruined_portal",
+        "ruined_portal_desert",
+        "ruined_portal_jungle",
+        "ruined_portal_mountain",
+        "ruined_portal_nether",
+        "ruined_portal_ocean",
+        "ruined_portal_swamp",
+        "shipwreck",
+        "shipwreck_beached",
+        "stronghold",
+        "swamp_hut",
+        "village_desert",
+        "village_plains",
+        "village_savanna",
+        "village_snowy",
+        "village_taiga",
+    ];
+    if matches!(
+        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
+        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
+    ) {
+        expected_surface.retain(|&s| s != "end_city");
+    }
+    assert_eq!(surface_paths, expected_surface);
+
+    let underground_decoration_paths: Vec<_> = underground_decoration
+        .iter()
+        .filter(|s| s.key.namespace == "minecraft")
+        .map(|structure| structure.key.path.as_ref())
+        .collect();
     assert_eq!(
-        surface
-            .iter()
-            .map(|structure| structure.key.path.as_ref())
-            .collect::<Vec<_>>(),
-        [
-            "bastion_remnant",
-            "desert_pyramid",
-            "end_city",
-            "igloo",
-            "jungle_pyramid",
-            "mansion",
-            "monument",
-            "ocean_ruin_cold",
-            "ocean_ruin_warm",
-            "pillager_outpost",
-            "ruined_portal",
-            "ruined_portal_desert",
-            "ruined_portal_jungle",
-            "ruined_portal_mountain",
-            "ruined_portal_nether",
-            "ruined_portal_ocean",
-            "ruined_portal_swamp",
-            "shipwreck",
-            "shipwreck_beached",
-            "stronghold",
-            "swamp_hut",
-            "village_desert",
-            "village_plains",
-            "village_savanna",
-            "village_snowy",
-            "village_taiga",
-        ]
-    );
-    assert_eq!(
-        underground_decoration
-            .iter()
-            .map(|structure| structure.key.path.as_ref())
-            .collect::<Vec<_>>(),
+        underground_decoration_paths,
         ["ancient_city", "fortress", "nether_fossil"]
     );
 
@@ -168,10 +180,20 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .iter()
             .all(|structure| structure.step.decoration_ordinal() == 7)
     );
-    assert_eq!(
-        FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).len(),
-        0
-    );
+    if matches!(
+        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
+        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
+    ) {
+        assert_eq!(
+            FeatureDecorationRunner::structures_for_decoration_step(&registry, 0)
+                .iter()
+                .map(|s| s.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["end_city"]
+        );
+    } else {
+        assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
+    }
 }
 
 #[test]
