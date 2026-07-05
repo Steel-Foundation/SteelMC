@@ -113,26 +113,47 @@ impl crate::RegistryEntry for StructureData {
 /// Structure generation step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructureGenerationStep {
-    /// `surface_structures`.
-    SurfaceStructures,
+    /// `raw_generation`.
+    RawGeneration,
+    /// `lakes`.
+    Lakes,
+    /// `local_modifications`.
+    LocalModifications,
     /// `underground_structures`.
     UndergroundStructures,
+    /// `surface_structures`.
+    SurfaceStructures,
+    /// `strongholds`.
+    Strongholds,
+    /// `underground_ores`.
+    UndergroundOres,
     /// `underground_decoration`.
     UndergroundDecoration,
+    /// `fluid_springs`.
+    FluidSprings,
+    /// `vegetal_decoration`.
+    VegetalDecoration,
+    /// `top_layer_modification`.
+    TopLayerModification,
 }
 
 impl StructureGenerationStep {
     /// Decoration-stage ordinal used by vanilla `GenerationStep.Decoration`.
     ///
-    /// Structure JSON only names the three structure-capable decoration stages;
-    /// feature generation still runs all eleven decoration stages, so these
-    /// values intentionally leave the vanilla gaps intact.
     #[must_use]
     pub const fn decoration_ordinal(self) -> usize {
         match self {
+            Self::RawGeneration => 0,
+            Self::Lakes => 1,
+            Self::LocalModifications => 2,
             Self::UndergroundStructures => 3,
             Self::SurfaceStructures => 4,
+            Self::Strongholds => 5,
+            Self::UndergroundOres => 6,
             Self::UndergroundDecoration => 7,
+            Self::FluidSprings => 8,
+            Self::VegetalDecoration => 9,
+            Self::TopLayerModification => 10,
         }
     }
 }
@@ -195,6 +216,15 @@ mod tests {
     #[test]
     fn structure_generation_steps_use_vanilla_decoration_ordinals() {
         assert_eq!(
+            StructureGenerationStep::RawGeneration.decoration_ordinal(),
+            0
+        );
+        assert_eq!(StructureGenerationStep::Lakes.decoration_ordinal(), 1);
+        assert_eq!(
+            StructureGenerationStep::LocalModifications.decoration_ordinal(),
+            2
+        );
+        assert_eq!(
             StructureGenerationStep::UndergroundStructures.decoration_ordinal(),
             3
         );
@@ -202,9 +232,26 @@ mod tests {
             StructureGenerationStep::SurfaceStructures.decoration_ordinal(),
             4
         );
+        assert_eq!(StructureGenerationStep::Strongholds.decoration_ordinal(), 5);
+        assert_eq!(
+            StructureGenerationStep::UndergroundOres.decoration_ordinal(),
+            6
+        );
         assert_eq!(
             StructureGenerationStep::UndergroundDecoration.decoration_ordinal(),
             7
+        );
+        assert_eq!(
+            StructureGenerationStep::FluidSprings.decoration_ordinal(),
+            8
+        );
+        assert_eq!(
+            StructureGenerationStep::VegetalDecoration.decoration_ordinal(),
+            9
+        );
+        assert_eq!(
+            StructureGenerationStep::TopLayerModification.decoration_ordinal(),
+            10
         );
     }
 }
@@ -291,13 +338,16 @@ pub struct JigsawConfig {
     pub liquid_settings: LiquidSettingsData,
 }
 
-/// Start height configuration used by currently-generated jigsaw structures.
+/// Start height configuration for jigsaw structures.
 #[derive(Debug, Clone)]
 pub enum StartHeight {
-    /// Fixed absolute Y.
-    Constant(i32),
-    /// Uniform random between min and max (inclusive).
-    Uniform { min: i32, max: i32 },
+    /// Fixed vertical anchor.
+    Constant(VerticalAnchorData),
+    /// Uniform random between resolved anchors, inclusive.
+    Uniform {
+        min: VerticalAnchorData,
+        max: VerticalAnchorData,
+    },
 }
 
 /// Dimension padding (how close pieces can be to world height limits).
