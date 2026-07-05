@@ -98,6 +98,7 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntitySyncedData, LivingEntity,
     LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket,
@@ -1426,10 +1427,18 @@ impl Player {
         // Handle XP loss on death
         {
             let mut experience = self.experience.lock();
-            if target_world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
-                && self.game_mode() != GameType::Spectator
+            let is_spectator = self.game_mode() == GameType::Spectator;
+            if death_world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
+                && !is_spectator
             {
-                // TODO: drop XP orbs (min(level * 7, 100))
+                let reward = experience.death_xp_reward();
+                if reward > 0 {
+                    ExperienceOrbEntity::award(death_world, self.position(), reward);
+                }
+            }
+            if target_world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
+                && !is_spectator
+            {
                 experience.set_total_points(0);
             }
             // Re-send XP to client after respawn regardless of keepInventory
