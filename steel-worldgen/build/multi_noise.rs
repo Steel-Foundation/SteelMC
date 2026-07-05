@@ -34,15 +34,22 @@ impl<'de> Deserialize<'de> for ParameterRange {
     }
 }
 
+impl std::ops::Deref for ParameterRange {
+    type Target = [f64; 2];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// Climate parameters for a biome entry.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct BiomeParameters {
-    temperature: [f64; 2],
-    humidity: [f64; 2],
-    continentalness: [f64; 2],
-    erosion: [f64; 2],
-    depth: [f64; 2],
-    weirdness: [f64; 2],
+    temperature: ParameterRange,
+    humidity: ParameterRange,
+    continentalness: ParameterRange,
+    erosion: ParameterRange,
+    depth: ParameterRange,
+    weirdness: ParameterRange,
     offset: f64,
 }
 
