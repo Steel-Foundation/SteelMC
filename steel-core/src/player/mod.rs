@@ -100,7 +100,7 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntitySyncedData, LivingEntity,
+    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission, EntitySyncedData, LivingEntity,
     LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket,
     RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
 };
@@ -2444,6 +2444,14 @@ impl Entity for Player {
             } else {
                 self.play_block_step_sound(primary_state);
             }
+        }
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        if self.is_flying() || self.on_ground() && self.is_discrete() {
+            EntityMovementEmission::None
+        } else {
+            EntityMovementEmission::All
         }
     }
 
