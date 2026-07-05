@@ -1494,6 +1494,7 @@ impl Player {
         if !self.add_to_respawned_world_after_level_info(target_world) {
             return;
         }
+        self.sync_entity_data();
         self.send_inventory_to_remote();
         self.send_current_health();
 
