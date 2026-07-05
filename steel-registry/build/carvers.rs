@@ -188,8 +188,8 @@ fn parse_replaceable_tag(s: &str) -> Identifier {
     let stripped = s
         .strip_prefix('#')
         .unwrap_or_else(|| panic!("carver `replaceable` must be a `#tag` reference, got `{s}`"));
-    let (ns, path) = stripped.split_once(':').unwrap_or(("minecraft", stripped));
-    Identifier::new(ns.to_owned(), path.to_owned())
+    Identifier::parse_or_vanilla(stripped)
+        .unwrap_or_else(|error| panic!("invalid carver replaceable tag {s}: {error}"))
 }
 
 fn generate_base(base: &CarverConfigBaseJson) -> TokenStream {
@@ -318,8 +318,16 @@ pub(crate) fn build() -> TokenStream {
 
     let mut register = TokenStream::new();
     for (name, kind) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
-        let key = quote! { Identifier::vanilla_static(#name) };
+        let identifier = crate::generator_functions::parse_loose_identifier(name)
+            .unwrap_or_else(|e| panic!("invalid configured carver name {name}: {e}"));
+        let key = crate::generator_functions::generate_static_identifier(&identifier);
+        let ident_str = if identifier.namespace == steel_utils::Identifier::VANILLA_NAMESPACE {
+            identifier.path.to_shouty_snake_case()
+        } else {
+            name.replace([':', '/'], "_").to_shouty_snake_case()
+        };
+        let ident = Ident::new(&ident_str, Span::call_site());
+
         stream.extend(quote! {
             pub static #ident: LazyLock<ConfiguredCarver> = LazyLock::new(|| ConfiguredCarver {
                 key: #key,
