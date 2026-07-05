@@ -29,7 +29,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Acacia(_) => 0,
             FoliagePlacer::DarkOak(_) => 4,
             FoliagePlacer::Jungle(placer) => placer.height.sample(random),
-            FoliagePlacer::RandomSpread(placer) => placer.foliage_height,
+            FoliagePlacer::RandomSpread(placer) => placer.foliage_height.sample(random),
             FoliagePlacer::Cherry(placer) => placer.height.sample(random),
         }
     }
