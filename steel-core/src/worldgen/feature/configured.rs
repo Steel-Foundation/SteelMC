@@ -111,6 +111,7 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::PointedDripstone(_) => place_pointed_dripstone,
             ConfiguredFeatureKind::RandomBooleanSelector(_) => place_random_boolean_selector,
             ConfiguredFeatureKind::RandomSelector(_) => place_random_selector,
+            ConfiguredFeatureKind::ReplaceSingleBlock(_) => place_replace_single_block,
             ConfiguredFeatureKind::WeightedRandomSelector(_) => place_weighted_random_selector,
             ConfiguredFeatureKind::RootSystem(_) => place_root_system,
             ConfiguredFeatureKind::ScatteredOre(_) => place_scattered_ore,
@@ -137,6 +138,53 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::WeepingVines => place_weeping_vines,
             ConfiguredFeatureKind::NoOp => place_no_op,
         }
+    }
+}
+
+fn place_replace_single_block(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::ReplaceSingleBlock(config) = kind else {
+        panic!("replace_single_block placer received wrong configured feature kind");
+    };
+    for target in &config.targets {
+        if rule_test_matches(
+            context.region,
+            context.registry,
+            context.random,
+            &target.target,
+            context.origin,
+        ) {
+            let state =
+                FeatureDecorationRunner::block_state_from_data(context.registry, &target.state);
+            let _ =
+                context
+                    .region
+                    .set_block_state(context.origin, state, UpdateFlags::UPDATE_CLIENTS);
+            break;
+        }
+    }
+    true
+}
+
+fn rule_test_matches(
+    region: &WorldGenRegion<'_>,
+    registry: &Registry,
+    random: &mut WorldgenRandom,
+    rule: &RuleTest,
+    pos: BlockPos,
+) -> bool {
+    let state = region.block_state(pos);
+    match rule {
+        RuleTest::BlockMatch { block } => state.get_block() == *block,
+        RuleTest::BlockStateMatch { block_state } => {
+            state == FeatureDecorationRunner::block_state_from_data(registry, block_state)
+        }
+        RuleTest::RandomBlockMatch { block, probability } => {
+            state.get_block() == *block && random.next_f32() < *probability
+        }
+        RuleTest::TagMatch { tag } => registry.blocks.is_in_tag(state.get_block(), tag),
     }
 }
 

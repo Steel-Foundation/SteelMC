@@ -6,10 +6,32 @@ use quote::quote;
 use serde::Deserialize;
 
 /// A biome entry from the extracted multi-noise biome source parameter list.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct BiomeEntry {
     biome: String,
     parameters: BiomeParameters,
+}
+
+/// A climate parameter range, which can be deserialized from either a single number or a pair.
+#[derive(Clone, Debug)]
+struct ParameterRange([f64; 2]);
+
+impl<'de> Deserialize<'de> for ParameterRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RawRange {
+            Single(f64),
+            Pair([f64; 2]),
+        }
+        match RawRange::deserialize(deserializer)? {
+            RawRange::Single(val) => Ok(ParameterRange([val, val])),
+            RawRange::Pair(pair) => Ok(ParameterRange(pair)),
+        }
+    }
 }
 
 /// Climate parameters for a biome entry.
