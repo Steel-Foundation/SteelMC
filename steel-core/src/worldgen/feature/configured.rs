@@ -135,8 +135,16 @@ impl FeatureDecorationRunner {
                 place_waterlogged_vegetation_patch
             }
             ConfiguredFeatureKind::WeepingVines => place_weeping_vines,
+            ConfiguredFeatureKind::NoOp => place_no_op,
         }
     }
+}
+
+const fn place_no_op(
+    _context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    _kind: &ConfiguredFeatureKind,
+) -> bool {
+    true
 }
 
 fn place_random_boolean_selector(
