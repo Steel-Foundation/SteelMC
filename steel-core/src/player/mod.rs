@@ -1419,12 +1419,7 @@ impl Player {
             death_world.unregister_player_entity(self);
         }
 
-        // Shared reset (clears transient state, sends CRespawn)
-        self.reset(target_world.clone(), ResetReason::Respawn);
-
-        self.send_difficulty();
-
-        // Handle XP loss on death
+        // Handle XP loss on death before sending respawn packet
         {
             let mut experience = self.experience.lock();
             let is_spectator = self.game_mode() == GameType::Spectator;
@@ -1441,8 +1436,45 @@ impl Player {
             {
                 experience.set_total_points(0);
             }
-            // Re-send XP to client after respawn regardless of keepInventory
-            experience.dirty = true;
+        }
+
+        self.reset(target_world.clone(), ResetReason::Respawn);
+
+        if let Err(error) = self.teleport(spawn.position, spawn.rotation.0, spawn.rotation.1) {
+            panic!(
+                "failed to synchronize player {} respawn position: {error}",
+                self.id()
+            );
+        }
+        self.reset_flying_ticks();
+
+        if let Some(server) = self.server.upgrade() {
+            match server.respawn_data_for_domain(target_world.domain()) {
+                Ok(respawn_data) => {
+                    self.send_packet(CSetDefaultSpawnPosition {
+                        global_pos: respawn_data.global_pos,
+                        yaw: respawn_data.yaw,
+                        pitch: respawn_data.pitch,
+                    });
+                }
+                Err(error) => {
+                    log::error!(
+                        "Failed to send default spawn position to player {}: {error}",
+                        self.gameprofile.name
+                    );
+                }
+            }
+        }
+        self.send_difficulty();
+
+        {
+            let mut experience = self.experience.lock();
+            self.send_packet(CSetExperience {
+                progress: experience.progress() as f32,
+                level: experience.level(),
+                total_experience: experience.total_points(),
+            });
+            experience.dirty = false;
         }
 
         for effect in self.living_base.active_mob_effects() {
@@ -1455,14 +1487,120 @@ impl Player {
             );
         }
 
-        // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
-        let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn);
+        self.send_respawn_level_info(target_world);
+
+        // TODO: Set permissions level to match the player actual operator when 4lve merges command_refacotr
+        self.send_packet(CEntityEvent {
+            entity_id: self.id(),
+            event: EntityStatus::PermissionLevelOwners,
+        });
+
+        if !self.add_to_respawned_world_after_level_info(target_world) {
+            return;
+        }
+        self.send_inventory_to_remote();
+        self.send_current_health();
 
         if let Some(pos) = spawn.anchor_deplete_sound_pos
             && target_world.get_block_state(pos).get_block() == &vanilla_blocks::RESPAWN_ANCHOR
         {
             self.send_block_sound(&sound_events::BLOCK_RESPAWN_ANCHOR_DEPLETE, pos, 1.0, 1.0);
         }
+    }
+
+    fn send_respawn_level_info(&self, world: &Arc<World>) {
+        self.send_packet(world.initialize_border_packet());
+
+        {
+            let level_data = world.level_data.read();
+            let game_time = level_data.game_time();
+            let day_time = level_data.day_time();
+            drop(level_data);
+
+            let advance_time = world
+                .get_game_rule(&ADVANCE_TIME)
+                .as_bool()
+                .expect("gamerule advance_time should always be a bool.");
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
+        }
+
+        if let Some(server) = self.server.upgrade() {
+            match server.respawn_data_for_domain(world.domain()) {
+                Ok(respawn_data) => {
+                    self.send_packet(CSetDefaultSpawnPosition {
+                        global_pos: respawn_data.global_pos,
+                        yaw: respawn_data.yaw,
+                        pitch: respawn_data.pitch,
+                    });
+                }
+                Err(error) => {
+                    log::error!(
+                        "Failed to send level-info spawn position to player {}: {error}",
+                        self.gameprofile.name
+                    );
+                }
+            }
+        }
+
+        if world.can_have_weather() && world.is_raining() {
+            let (rain_level, thunder_level) = {
+                let weather = world.weather.lock();
+                (weather.rain_level, weather.thunder_level)
+            };
+
+            self.send_packet(CGameEvent {
+                event: GameEventType::StartRaining,
+                data: 0.0,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::RainLevelChange,
+                data: rain_level,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::ThunderLevelChange,
+                data: thunder_level,
+            });
+        }
+
+        self.send_packet(CGameEvent {
+            event: GameEventType::LevelChunksLoadStart,
+            data: 0.0,
+        });
+        self.server().send_ticking_state_to_player(self);
+    }
+
+    fn add_to_respawned_world_after_level_info(self: &Arc<Self>, world: &Arc<World>) -> bool {
+        if world.players.get_by_entity_id(self.id()).is_none() {
+            if !world.players.insert(self.clone()) {
+                self.connection.close();
+                return false;
+            }
+        } else {
+            world.player_area_map.remove_by_entity_id(self.id());
+            world.chunk_map.remove_player(self);
+            world.entity_tracker().on_player_leave(self.id());
+        }
+
+        world.register_respawned_player_entity(self);
+        world.update_sleeping_player_list();
+        true
+    }
+
+    fn send_current_health(&self) {
+        let health = self.get_health();
+        let (food, saturation) = {
+            let food_data = self.food_data.lock();
+            (food_data.food_level, food_data.saturation_level)
+        };
+        self.send_packet(CSetHealth {
+            health,
+            food,
+            food_saturation: saturation,
+        });
+        self.health_sync
+            .lock()
+            .record_sent(health, food, saturation == 0.0);
     }
 
     fn send_block_sound(&self, sound: SoundEventRef, pos: BlockPos, volume: f32, pitch: f32) {
