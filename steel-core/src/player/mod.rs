@@ -100,9 +100,10 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission, EntitySyncedData, LivingEntity,
-    LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
+    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission,
+    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
+    MobEffectSyncPacket, RemovalReason, SharedEntity, equipment_items_to_packet_items,
+    start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
