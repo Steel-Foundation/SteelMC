@@ -7,7 +7,10 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::test_support::init_test_registry;
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
-use steel_registry::{REGISTRY, RegistryExt, structure::StructureData};
+use steel_registry::{
+    REGISTRY, RegistryExt,
+    structure::{JigsawConfig, StartHeight, StructureData},
+};
 use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
@@ -72,6 +75,13 @@ fn jigsaw_assets() -> (
     (pools, templates)
 }
 
+fn sample_start_height(config: &JigsawConfig, rng: &mut impl Random) -> i32 {
+    match config.start_height {
+        StartHeight::Constant(y) => y,
+        StartHeight::Uniform { min, max } => rng.next_i32_between(min, max),
+    }
+}
+
 fn run_assembly(
     case: &JigsawBenchCase,
     pools: &rustc_hash::FxHashMap<Identifier, TemplatePoolData>,
@@ -85,14 +95,17 @@ fn run_assembly(
         .as_jigsaw()
         .unwrap_or_else(|| panic!("{} is not a jigsaw structure", case.structure_key));
 
-    let mut rng = LegacyRandom::from_seed(SEED as u64);
+    let mut rng = LegacyRandom::from_seed(0);
     rng.set_large_feature_seed(SEED, case.chunk_x, case.chunk_z);
 
-    let mut alias_rng = LegacyRandom::from_seed(SEED as u64).next_positional().at(
-        case.chunk_x << 4,
-        64,
-        case.chunk_z << 4,
-    );
+    let mut alias_position_rng = LegacyRandom::from_seed(0);
+    alias_position_rng.set_large_feature_seed(SEED, case.chunk_x, case.chunk_z);
+    let start_y = sample_start_height(config, &mut alias_position_rng);
+    let mut alias_source = LegacyRandom::from_seed(SEED as u64);
+    let mut alias_rng =
+        alias_source
+            .next_positional()
+            .at(case.chunk_x << 4, start_y, case.chunk_z << 4);
     let alias_map = resolve_aliases(&config.pool_aliases, &mut alias_rng);
 
     let mut get_height = |_: i32, _: i32| 64i32;

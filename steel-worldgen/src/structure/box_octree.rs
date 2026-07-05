@@ -14,7 +14,7 @@ const MAXIMUM_DEPTH: u32 = 3;
 /// Piece AABB uses `[min, max + 1)`; deflate shrinks each axis by `0.25` on both
 /// sides → `[min + 0.25, max + 0.75]`, encoded as `[min * 4 + 1, max * 4 + 3]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct DeflatedQuarters {
+pub(crate) struct DeflatedQuarters {
     min_x: i32,
     min_y: i32,
     min_z: i32,
@@ -24,7 +24,8 @@ struct DeflatedQuarters {
 }
 
 impl DeflatedQuarters {
-    const fn from_piece(bbox: BoundingBox) -> Self {
+    #[inline]
+    pub(crate) const fn from_piece(bbox: BoundingBox) -> Self {
         Self {
             min_x: bbox.min_x() * 4 + 1,
             min_y: bbox.min_y() * 4 + 1,
@@ -36,7 +37,8 @@ impl DeflatedQuarters {
     }
 
     /// Vanilla boundary AABB is `[min, max + 1)` without deflate.
-    const fn boundary_from(bbox: BoundingBox) -> Self {
+    #[inline]
+    pub(crate) const fn boundary_from(bbox: BoundingBox) -> Self {
         Self {
             min_x: bbox.min_x() * 4,
             min_y: bbox.min_y() * 4,
@@ -47,11 +49,13 @@ impl DeflatedQuarters {
         }
     }
 
-    const fn is_empty(self) -> bool {
+    #[inline]
+    pub(crate) const fn is_empty(self) -> bool {
         self.min_x >= self.max_x || self.min_y >= self.max_y || self.min_z >= self.max_z
     }
 
-    const fn contains(self, inner: Self) -> bool {
+    #[inline]
+    pub(crate) const fn contains(self, inner: Self) -> bool {
         self.min_x <= inner.min_x
             && self.min_y <= inner.min_y
             && self.min_z <= inner.min_z
@@ -60,7 +64,8 @@ impl DeflatedQuarters {
             && self.max_z >= inner.max_z
     }
 
-    const fn intersects(self, other: Self) -> bool {
+    #[inline]
+    pub(crate) const fn intersects(self, other: Self) -> bool {
         self.min_x < other.max_x
             && self.max_x > other.min_x
             && self.min_y < other.max_y
@@ -122,6 +127,7 @@ impl BoxOctree {
         }
     }
 
+    #[inline]
     pub fn add_box(&mut self, bbox: BoundingBox) {
         if self.depth < MAXIMUM_DEPTH && self.inner_boxes.len() > SUBDIVIDE_THRESHOLD {
             self.subdivide();
@@ -143,6 +149,7 @@ impl BoxOctree {
     }
 
     /// Vanilla jigsaw placement uses `AABB.of(bb).deflate(0.25)` before collision checks.
+    #[inline]
     pub fn within_bounds_but_not_intersecting_children(&self, candidate: BoundingBox) -> bool {
         let deflated = DeflatedQuarters::from_piece(candidate);
         if deflated.is_empty() {
@@ -151,6 +158,7 @@ impl BoxOctree {
         self.boundary_quarters.contains(deflated) && !self.intersects_deflated(deflated, candidate)
     }
 
+    #[inline]
     fn intersects_deflated(&self, deflated: DeflatedQuarters, candidate: BoundingBox) -> bool {
         if !self.children.is_empty() {
             return self.children.iter().any(|child| {
@@ -163,6 +171,7 @@ impl BoxOctree {
             .any(|stored| candidate.intersects(stored.bbox) && deflated.intersects(stored.deflated))
     }
 
+    #[inline]
     fn boundary_intersects(&self, candidate: BoundingBox) -> bool {
         self.boundary.intersects(candidate)
     }

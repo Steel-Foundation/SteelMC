@@ -1228,22 +1228,11 @@ impl StructureTemplate {
             return;
         }
 
-        let mut placed_any = false;
-
         for block in blocks {
             let world_pos = Self::transformed_position(position, block.pos, settings);
             if settings.bounding_box.contains_blockpos(world_pos) {
-                placed_any = true;
                 f(block, world_pos);
             }
-        }
-
-        // Empty list makes vanilla drop the piece from multi-chunk placement.
-        if !placed_any && let Some(first) = blocks.first() {
-            f(
-                first,
-                Self::transformed_position(position, first.pos, settings),
-            );
         }
     }
 
@@ -2437,6 +2426,8 @@ impl StructureTemplate {
 
 #[cfg(test)]
 mod tests {
+    use std::slice;
+
     use super::*;
     use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
     use steel_registry::test_support::init_test_registry;
@@ -2445,6 +2436,81 @@ mod tests {
     fn test_registry() -> Registry {
         init_test_registry();
         Registry::new_vanilla()
+    }
+
+    #[test]
+    fn palette_blocks_skips_all_out_of_bounds_for_current_chunk_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: &[],
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, _| {
+                processed += 1;
+            },
+        );
+
+        assert_eq!(processed, 0);
+    }
+
+    #[test]
+    fn palette_blocks_keeps_out_of_bounds_for_capped_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let capped = StructureProcessorKind::Capped {
+            delegate: Box::new(StructureProcessorKind::LavaSubmergedBlock),
+            limit: IntProvider::Constant(1),
+        };
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: slice::from_ref(&capped),
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+        let mut processed_pos = None;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, pos| {
+                processed += 1;
+                processed_pos = Some(pos);
+            },
+        );
+
+        assert_eq!(processed, 1);
+        assert_eq!(processed_pos, Some(BlockPos::new(32, 0, 0)));
     }
 
     #[test]

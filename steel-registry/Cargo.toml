@@ -46,7 +46,6 @@ proc-macro2.workspace = true
 quote.workspace = true
 
 # Data structures
-glam.workspace = true
 rustc-hash.workspace = true
 
 # Utilities

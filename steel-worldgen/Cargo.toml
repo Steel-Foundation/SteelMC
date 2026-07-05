@@ -45,5 +45,3 @@ workspace = true
 
 [features]
 fmt = []
-# Remove duplicate pool entries from the shuffled list before placement (faster, breaks layout parity).
-jigsaw-pool-deduplicate-list = []

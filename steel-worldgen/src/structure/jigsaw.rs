@@ -4,8 +4,7 @@
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-use std::sync::LazyLock;
-use std::{array, ptr};
+use std::{array, mem, ptr};
 
 use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -13,8 +12,7 @@ use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
 };
 use steel_registry::template_pool::{
-    JigsawBlock, JigsawOrientation, JointType, PoolElement, Projection, TemplateData,
-    TemplatePoolData,
+    JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
@@ -133,38 +131,37 @@ const fn java_center(min: i32, max: i32) -> i32 {
 
 static SYNTHETIC_BOTTOM_JIGSAW: Identifier = Identifier::new_static("minecraft", "bottom");
 static SYNTHETIC_EMPTY_POOL: Identifier = Identifier::new_static("minecraft", "empty");
-static FEATURE_SYNTHETIC_JIGSAW: LazyLock<JigsawBlock> = LazyLock::new(|| JigsawBlock {
-    pos: [0, 0, 0],
-    orientation: JigsawOrientation::DownSouth,
-    name: SYNTHETIC_BOTTOM_JIGSAW.clone(),
-    target: SYNTHETIC_EMPTY_POOL.clone(),
-    pool: SYNTHETIC_EMPTY_POOL.clone(),
-    joint: JointType::Rollable,
-    final_state: SYNTHETIC_EMPTY_POOL.clone(),
-    selection_priority: 0,
-    placement_priority: 0,
-});
 
 type PoolTemplateCache<'a> = FxHashMap<Identifier, Vec<&'a PoolElement>>;
-type JigsawRotationCache = FxHashMap<Identifier, [Option<Vec<JigsawBlock>>; 4]>;
+type JigsawRotationCache<'a> = FxHashMap<Identifier, [Option<Vec<TransformedJigsaw<'a>>>; 4]>;
+const CANDIDATE_DEDUPE_THRESHOLD: usize = 16;
+const JIGSAW_PRIORITY_CACHE_THRESHOLD: usize = 16;
+const QUEUE_HEAP_THRESHOLD: usize = 512;
+const FREE_SPACE_OCTREE_THRESHOLD: usize = 512;
 
-struct AssemblyScratch {
+struct AssemblyScratch<'a> {
     parsed_candidates: FxHashSet<*const PoolElement>,
     source_jigsaw_indices: Vec<usize>,
     candidate_jigsaw_indices: Vec<usize>,
+    jigsaw_order_scratch: Vec<usize>,
+    jigsaw_priority_scratch: Vec<i32>,
     pool_max_y_cache: FxHashMap<Identifier, i32>,
-    jigsaw_rotation_cache: JigsawRotationCache,
+    jigsaw_rotation_cache: JigsawRotationCache<'a>,
+    jigsaw_priority_cache: FxHashMap<Identifier, Vec<i32>>,
     queue_order: u64,
 }
 
-impl AssemblyScratch {
+impl AssemblyScratch<'_> {
     fn new() -> Self {
         Self {
             parsed_candidates: FxHashSet::default(),
             source_jigsaw_indices: Vec::new(),
             candidate_jigsaw_indices: Vec::new(),
+            jigsaw_order_scratch: Vec::new(),
+            jigsaw_priority_scratch: Vec::new(),
             pool_max_y_cache: FxHashMap::default(),
             jigsaw_rotation_cache: JigsawRotationCache::default(),
+            jigsaw_priority_cache: FxHashMap::default(),
             queue_order: 0,
         }
     }
@@ -191,6 +188,47 @@ impl Ord for PieceQueueEntry {
 impl PartialOrd for PieceQueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+enum PieceQueue {
+    Small(Vec<PieceQueueEntry>),
+    Large(BinaryHeap<PieceQueueEntry>),
+}
+
+impl PieceQueue {
+    const fn new() -> Self {
+        Self::Small(Vec::new())
+    }
+
+    fn push(&mut self, entry: PieceQueueEntry) {
+        match self {
+            Self::Small(entries) if entries.len() < QUEUE_HEAP_THRESHOLD => {
+                entries.push(entry);
+            }
+            Self::Small(entries) => {
+                let mut heap = BinaryHeap::from(mem::take(entries));
+                heap.push(entry);
+                *self = Self::Large(heap);
+            }
+            Self::Large(heap) => {
+                heap.push(entry);
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<PieceQueueEntry> {
+        match self {
+            Self::Small(entries) => {
+                let best_idx = entries
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.cmp(b))
+                    .map(|(idx, _)| idx)?;
+                Some(entries.swap_remove(best_idx))
+            }
+            Self::Large(heap) => heap.pop(),
+        }
     }
 }
 
@@ -227,9 +265,9 @@ fn vanilla_shuffle<T>(list: &mut [T], rng: &mut LegacyRandom) {
     }
 }
 
-fn descending_priorities(jigsaws: &[JigsawBlock]) -> Vec<i32> {
-    let mut unique = Vec::new();
-    for jigsaw in jigsaws {
+fn descending_priorities_into(template: &TemplateData, unique: &mut Vec<i32>) {
+    unique.clear();
+    for jigsaw in &template.jigsaws {
         if !unique.contains(&jigsaw.selection_priority) {
             unique.push(jigsaw.selection_priority);
         }
@@ -237,15 +275,30 @@ fn descending_priorities(jigsaws: &[JigsawBlock]) -> Vec<i32> {
     if unique.len() > 1 {
         unique.sort_unstable_by_key(|priority| Reverse(*priority));
     }
+}
+
+fn descending_priorities(template: &TemplateData) -> Vec<i32> {
+    let mut unique = Vec::new();
+    descending_priorities_into(template, &mut unique);
     unique
 }
 
-fn cached_runtime_rotated_jigsaws<'cache>(
+fn cached_descending_priorities<'cache>(
     location: &Identifier,
     template: &TemplateData,
+    cache: &'cache mut FxHashMap<Identifier, Vec<i32>>,
+) -> &'cache [i32] {
+    cache
+        .entry(location.clone())
+        .or_insert_with(|| descending_priorities(template))
+}
+
+fn cached_runtime_rotated_jigsaws<'cache, 'a>(
+    location: &Identifier,
+    template: &'a TemplateData,
     rotation: Rotation,
-    cache: &'cache mut JigsawRotationCache,
-) -> &'cache [JigsawBlock] {
+    cache: &'cache mut JigsawRotationCache<'a>,
+) -> &'cache [TransformedJigsaw<'a>] {
     let idx = rotation_index(rotation);
     let by_rotation = cache
         .entry(location.clone())
@@ -253,18 +306,34 @@ fn cached_runtime_rotated_jigsaws<'cache>(
     by_rotation[idx].get_or_insert_with(|| transform_template_jigsaws(template, rotation))
 }
 
-fn transform_template_jigsaws(template: &TemplateData, rotation: Rotation) -> Vec<JigsawBlock> {
+fn transform_template_jigsaws(
+    template: &TemplateData,
+    rotation: Rotation,
+) -> Vec<TransformedJigsaw<'_>> {
     template
         .jigsaws
         .iter()
-        .map(|jigsaw| JigsawBlock::rotated(jigsaw, rotation))
+        .map(|jigsaw| {
+            let pos = rotation.transform_pos(IVec3::from(jigsaw.pos), IVec3::ZERO);
+            TransformedJigsaw {
+                pos,
+                orientation: jigsaw.orientation.rotate(rotation),
+                name: &jigsaw.name,
+                target: &jigsaw.target,
+                pool: &jigsaw.pool,
+                joint: jigsaw.joint,
+                placement_priority: jigsaw.placement_priority,
+            }
+        })
         .collect()
 }
 
 fn shuffle_jigsaw_indices_into(
     template: &TemplateData,
+    priorities: &[i32],
     rng: &mut LegacyRandom,
     out: &mut Vec<usize>,
+    order_scratch: &mut Vec<usize>,
 ) {
     out.clear();
     if template.jigsaws.is_empty() {
@@ -272,19 +341,24 @@ fn shuffle_jigsaw_indices_into(
     }
     out.extend(0..template.jigsaws.len());
     vanilla_shuffle(out, rng);
-    order_jigsaw_indices_by_priorities(template, out);
+    order_jigsaw_indices_by_priorities(template, priorities, out, order_scratch);
 }
 
-fn order_jigsaw_indices_by_priorities(template: &TemplateData, out: &mut Vec<usize>) {
-    let priorities = descending_priorities(&template.jigsaws);
+fn order_jigsaw_indices_by_priorities(
+    template: &TemplateData,
+    priorities: &[i32],
+    out: &mut Vec<usize>,
+    scratch: &mut Vec<usize>,
+) {
     if priorities.len() <= 1 {
         return;
     }
-    let shuffled = out.clone();
+    scratch.clear();
+    scratch.extend_from_slice(out);
     out.clear();
-    for &priority in &priorities {
+    for &priority in priorities {
         out.extend(
-            shuffled
+            scratch
                 .iter()
                 .copied()
                 .filter(|&idx| template.jigsaws[idx].selection_priority == priority),
@@ -292,37 +366,75 @@ fn order_jigsaw_indices_by_priorities(template: &TemplateData, out: &mut Vec<usi
     }
 }
 
+fn shuffle_jigsaw_indices_with_priority_cache(
+    location: &Identifier,
+    template: &TemplateData,
+    rng: &mut LegacyRandom,
+    out: &mut Vec<usize>,
+    order_scratch: &mut Vec<usize>,
+    priority_scratch: &mut Vec<i32>,
+    priority_cache: &mut FxHashMap<Identifier, Vec<i32>>,
+) {
+    if template.jigsaws.len() > JIGSAW_PRIORITY_CACHE_THRESHOLD {
+        let priorities = cached_descending_priorities(location, template, priority_cache);
+        shuffle_jigsaw_indices_into(template, priorities, rng, out, order_scratch);
+    } else {
+        descending_priorities_into(template, priority_scratch);
+        shuffle_jigsaw_indices_into(template, priority_scratch, rng, out, order_scratch);
+    }
+}
+
 /// Consumes the same RNG draws as a failed placement attempt for a duplicate pool element.
+///
+/// Vanilla keeps weighted duplicates, but each attempt exhausts every rotation
+/// and target jigsaw before moving on. With unchanged free space, a later
+/// identical duplicate cannot succeed if the first one failed; only the RNG
+/// draws need to be preserved.
 fn prime_duplicate_candidate_rng(
     element: &PoolElement,
     templates: &FxHashMap<Identifier, TemplateData>,
     rotations: [Rotation; 4],
     rng: &mut LegacyRandom,
-    candidate_jigsaw_indices: &mut Vec<usize>,
+    scratch: &mut AssemblyScratch<'_>,
 ) {
-    for rotation in rotations {
+    for _rotation in rotations {
         if let Some(location) = element_location(element)
             && let Some(template) = templates.get(location)
         {
-            shuffle_jigsaw_indices_into(template, rng, candidate_jigsaw_indices);
+            shuffle_jigsaw_indices_with_priority_cache(
+                location,
+                template,
+                rng,
+                &mut scratch.candidate_jigsaw_indices,
+                &mut scratch.jigsaw_order_scratch,
+                &mut scratch.jigsaw_priority_scratch,
+                &mut scratch.jigsaw_priority_cache,
+            );
         }
-        // Feature/Empty elements do not shuffle jigsaws; no RNG to prime.
-        let _ = rotation;
+        // Feature/Empty elements do not shuffle jigsaws; no RNG to prime here.
     }
 }
 
-fn feature_synthetic_jigsaw_block() -> &'static JigsawBlock {
-    &FEATURE_SYNTHETIC_JIGSAW
+fn feature_synthetic_jigsaw() -> TransformedJigsaw<'static> {
+    TransformedJigsaw {
+        pos: IVec3::ZERO,
+        orientation: JigsawOrientation::DownSouth,
+        name: &SYNTHETIC_BOTTOM_JIGSAW,
+        target: &SYNTHETIC_EMPTY_POOL,
+        pool: &SYNTHETIC_EMPTY_POOL,
+        joint: JointType::Rollable,
+        placement_priority: 0,
+    }
 }
 
 /// Active source connector during jigsaw BFS.
-struct ActiveSourceJigsaw {
-    block: JigsawBlock,
+struct ActiveSourceJigsaw<'a> {
+    block: TransformedJigsaw<'a>,
     pos: IVec3,
 }
 
-impl ActiveSourceJigsaw {
-    fn can_attach_to(&self, target: &JigsawBlock) -> bool {
+impl ActiveSourceJigsaw<'_> {
+    fn can_attach_to(&self, target: &TransformedJigsaw<'_>) -> bool {
         if self.block.orientation.front_direction()
             != target.orientation.front_direction().opposite()
         {
@@ -335,6 +447,18 @@ impl ActiveSourceJigsaw {
         }
         self.block.target == target.name
     }
+}
+
+/// A jigsaw block with its position transformed by rotation.
+#[derive(Clone, Copy)]
+struct TransformedJigsaw<'a> {
+    pos: IVec3,
+    orientation: JigsawOrientation,
+    name: &'a Identifier,
+    target: &'a Identifier,
+    pool: &'a Identifier,
+    joint: JointType,
+    placement_priority: i32,
 }
 
 /// Gets the template location from a pool element.
@@ -416,6 +540,21 @@ fn element_bounding_box(
     }
 }
 
+fn candidate_bounding_box_at_origin(
+    element: &PoolElement,
+    templates: &FxHashMap<Identifier, TemplateData>,
+    template: Option<&TemplateData>,
+    rotation: Rotation,
+) -> Option<BoundingBox> {
+    match element {
+        PoolElement::Single { .. } | PoolElement::LegacySingle { .. } => {
+            let size = IVec3::from(template?.size);
+            Some(rotation.get_bounding_box(IVec3::ZERO, size))
+        }
+        _ => element_bounding_box(element, templates, IVec3::ZERO, rotation),
+    }
+}
+
 fn expand_pool_weights(pool: &TemplatePoolData) -> Vec<&PoolElement> {
     let mut expanded = Vec::with_capacity(pool.elements.iter().map(|(_, w)| *w as usize).sum());
     for (element, weight) in &pool.elements {
@@ -439,23 +578,6 @@ fn append_shuffled_templates_cached<'a>(
     let start = out.len();
     out.extend(expanded.iter().copied());
     vanilla_shuffle(&mut out[start..], rng);
-    #[cfg(feature = "jigsaw-pool-deduplicate-list")]
-    dedupe_shuffled_templates_in_place(out, start);
-}
-
-#[cfg(feature = "jigsaw-pool-deduplicate-list")]
-fn dedupe_shuffled_templates_in_place(out: &mut Vec<&PoolElement>, start: usize) {
-    let mut seen = FxHashSet::default();
-    let mut write = start;
-    for read in start..out.len() {
-        if seen.insert(ptr::from_ref(out[read])) {
-            if write != read {
-                out[write] = out[read];
-            }
-            write += 1;
-        }
-    }
-    out.truncate(write);
 }
 
 /// Vanilla's `StructureTemplatePool.getRandomTemplate`.
@@ -469,28 +591,70 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
     expanded[idx]
 }
 
-/// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`;
-/// SLO wraps that with `TrojanVoxelShape` + `BoxOctree`. Steel tracks occupied
-/// bounds directly via `FreeSpace` + `BoxOctree`.
-struct FreeSpace {
-    occupied: BoxOctree,
+/// Free-space tracker. Small contexts use a flat list; larger contexts switch
+/// to `BoxOctree` for nearby-box queries.
+enum FreeSpace {
+    Small {
+        boundary: BoundingBox,
+        occupied: Vec<BoundingBox>,
+    },
+    Large {
+        occupied: BoxOctree,
+    },
 }
 
 impl FreeSpace {
-    fn new(constraint: BoundingBox) -> Self {
-        Self {
-            occupied: BoxOctree::new(constraint),
+    const fn new(constraint: BoundingBox) -> Self {
+        Self::Small {
+            boundary: constraint,
+            occupied: Vec::new(),
         }
     }
 
     fn add_box(&mut self, bbox: BoundingBox) {
-        self.occupied.add_box(bbox);
+        match self {
+            Self::Small { occupied, .. } if occupied.len() < FREE_SPACE_OCTREE_THRESHOLD => {
+                occupied.push(bbox);
+            }
+            Self::Small {
+                boundary, occupied, ..
+            } => {
+                let mut octree = BoxOctree::new(*boundary);
+                for stored in occupied.drain(..) {
+                    octree.add_box(stored);
+                }
+                octree.add_box(bbox);
+                *self = Self::Large { occupied: octree };
+            }
+            Self::Large { occupied } => {
+                occupied.add_box(bbox);
+            }
+        }
     }
 
     fn collides(&self, candidate: &BoundingBox) -> bool {
-        !self
-            .occupied
-            .within_bounds_but_not_intersecting_children(*candidate)
+        match self {
+            Self::Small {
+                boundary, occupied, ..
+            } => {
+                if candidate.min_x() < boundary.min_x()
+                    || candidate.max_x() > boundary.max_x()
+                    || candidate.min_y() < boundary.min_y()
+                    || candidate.max_y() > boundary.max_y()
+                    || candidate.min_z() < boundary.min_z()
+                    || candidate.max_z() > boundary.max_z()
+                {
+                    return true;
+                }
+
+                // For integer piece boxes, vanilla's deflated AABB collision is
+                // equivalent to inclusive `BoundingBox` intersection.
+                occupied.iter().any(|stored| candidate.intersects(*stored))
+            }
+            Self::Large { occupied } => {
+                !occupied.within_bounds_but_not_intersecting_children(*candidate)
+            }
+        }
     }
 }
 
@@ -542,11 +706,20 @@ fn start_assembly(
         let location = element_location(center_element)?;
         let template = templates.get(location)?;
         let rotated = transform_template_jigsaws(template, center_rotation);
+        let mut priorities = Vec::new();
+        descending_priorities_into(template, &mut priorities);
         let mut shuffle_indices = Vec::new();
-        shuffle_jigsaw_indices_into(template, rng, &mut shuffle_indices);
+        let mut order_scratch = Vec::new();
+        shuffle_jigsaw_indices_into(
+            template,
+            &priorities,
+            rng,
+            &mut shuffle_indices,
+            &mut order_scratch,
+        );
         shuffle_indices.iter().find_map(|&idx| {
             let block = &rotated[idx];
-            (&block.name == jigsaw_name).then(|| IVec3::from(block.pos))
+            (block.name == jigsaw_name).then_some(block.pos)
         })?
     } else {
         IVec3::ZERO
@@ -661,7 +834,7 @@ fn finish_assembly<'a>(
     };
     let mut pool_template_cache = PoolTemplateCache::default();
     let mut assembly_scratch = AssemblyScratch::new();
-    let mut queue: BinaryHeap<PieceQueueEntry> = BinaryHeap::new();
+    let mut queue = PieceQueue::new();
 
     try_placing_children(
         0,
@@ -856,29 +1029,39 @@ fn try_placing_children<'a>(
     templates: &'a FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
     pool_template_cache: &mut PoolTemplateCache<'a>,
-    scratch: &mut AssemblyScratch,
+    scratch: &mut AssemblyScratch<'a>,
     pieces: &mut Vec<PlacedPiece>,
     free_spaces: &mut Vec<FreeSpace>,
-    queue: &mut BinaryHeap<PieceQueueEntry>,
+    queue: &mut PieceQueue,
     rng: &mut LegacyRandom,
     get_height: &mut dyn FnMut(i32, i32) -> i32,
 ) {
     let source_piece = &pieces[source_idx];
-    let source_element = source_piece.element.clone();
+    let source_location = element_location(&source_piece.element).cloned();
+    let source_element_empty = source_piece.element.is_empty();
     let source_rotation = source_piece.rotation;
     let origin = source_piece.position;
     let source_bb = source_piece.assembly_bb;
     let source_projection = source_piece.projection;
     let source_ground_level_delta = source_piece.ground_level_delta;
-    let source_template = element_location(&source_element)
+    let source_template = source_location
+        .as_ref()
         .and_then(|location| templates.get(location).map(|template| (location, template)));
 
-    if let Some((_, template)) = source_template {
-        shuffle_jigsaw_indices_into(template, rng, &mut scratch.source_jigsaw_indices);
+    if let Some((location, template)) = source_template {
+        shuffle_jigsaw_indices_with_priority_cache(
+            location,
+            template,
+            rng,
+            &mut scratch.source_jigsaw_indices,
+            &mut scratch.jigsaw_order_scratch,
+            &mut scratch.jigsaw_priority_scratch,
+            &mut scratch.jigsaw_priority_cache,
+        );
         if scratch.source_jigsaw_indices.is_empty() {
             return;
         }
-    } else if source_element.is_empty() {
+    } else if source_element_empty {
         return;
     }
 
@@ -901,12 +1084,12 @@ fn try_placing_children<'a>(
                 source_rotation,
                 &mut scratch.jigsaw_rotation_cache,
             );
-            let block = rotated[scratch.source_jigsaw_indices[source_jigsaw_i]].clone();
-            let pos = IVec3::from(block.pos) + origin;
+            let block = rotated[scratch.source_jigsaw_indices[source_jigsaw_i]];
+            let pos = block.pos + origin;
             ActiveSourceJigsaw { block, pos }
         } else {
             ActiveSourceJigsaw {
-                block: feature_synthetic_jigsaw_block().clone(),
+                block: feature_synthetic_jigsaw(),
                 pos: origin,
             }
         };
@@ -918,8 +1101,8 @@ fn try_placing_children<'a>(
         let source_jigsaw_local_y = source.pos.y - source_box_y;
 
         let pool_key = alias_map
-            .get(&source.block.pool)
-            .unwrap_or(&source.block.pool);
+            .get(source.block.pool)
+            .unwrap_or(source.block.pool);
         let raw_pool = pools.get(pool_key);
         let target_pool = raw_pool.filter(|p| !p.elements.is_empty());
         let fallback_pool = raw_pool
@@ -943,7 +1126,10 @@ fn try_placing_children<'a>(
 
         let placement_priority = source.block.placement_priority;
         let mut source_jigsaw_base_height: Option<i32> = None;
-        scratch.parsed_candidates.clear();
+        let dedupe_candidates = candidates.len() > CANDIDATE_DEDUPE_THRESHOLD;
+        if dedupe_candidates {
+            scratch.parsed_candidates.clear();
+        }
 
         for &candidate_element in &candidates {
             if candidate_element.is_empty() {
@@ -951,28 +1137,31 @@ fn try_placing_children<'a>(
             }
 
             let rotations = Rotation::get_shuffled(rng);
-            if !scratch
-                .parsed_candidates
-                .insert(ptr::from_ref(candidate_element))
+            if dedupe_candidates
+                && !scratch
+                    .parsed_candidates
+                    .insert(ptr::from_ref(candidate_element))
             {
                 prime_duplicate_candidate_rng(
                     candidate_element,
                     templates,
                     rotations,
                     rng,
-                    &mut scratch.candidate_jigsaw_indices,
+                    scratch,
                 );
                 continue;
             }
 
+            let candidate_location = element_location(candidate_element);
+            let candidate_template = candidate_location
+                .and_then(|location| templates.get(location).map(|template| (location, template)));
+            let candidate_template_data = candidate_template.map(|(_, template)| template);
             let candidate_projection = candidate_element.projection();
             let candidate_rigid = candidate_projection == Projection::Rigid;
 
             for candidate_rotation in rotations {
                 let expand_to = if config.use_expansion_hack {
-                    let hack_data = element_location(candidate_element)
-                        .and_then(|loc| templates.get(loc).map(|template| (loc, template)));
-                    if let Some((hack_location, template_data)) = hack_data {
+                    if let Some((hack_location, template_data)) = candidate_template {
                         let hack_box = candidate_rotation
                             .get_bounding_box(IVec3::ZERO, IVec3::from(template_data.size));
                         if hack_box.max_y() - hack_box.min_y() < 16 {
@@ -985,14 +1174,14 @@ fn try_placing_children<'a>(
                             rotated
                                 .iter()
                                 .map(|j| {
-                                    let pos = IVec3::from(j.pos);
+                                    let pos = j.pos;
                                     let front = j.orientation.front_direction();
                                     let front_pos = pos + front.offset_vec();
                                     if !hack_box.contains_xyz(front_pos.x, front_pos.y, front_pos.z)
                                     {
                                         return 0;
                                     }
-                                    let child_pool_key = alias_map.get(&j.pool).unwrap_or(&j.pool);
+                                    let child_pool_key = alias_map.get(j.pool).unwrap_or(j.pool);
                                     let child_pool_size = cached_pool_max_y_size(
                                         child_pool_key,
                                         pools,
@@ -1024,12 +1213,12 @@ fn try_placing_children<'a>(
 
                 let mut candidate_bb_at_origin: Option<BoundingBox> = None;
 
-                let mut try_target_jigsaw = |target: &JigsawBlock| -> bool {
+                let mut try_target_jigsaw = |target: &TransformedJigsaw<'_>| -> bool {
                     if !source.can_attach_to(target) {
                         return false;
                     }
 
-                    let target_jigsaw_local = IVec3::from(target.pos);
+                    let target_jigsaw_local = target.pos;
 
                     let raw_target = IVec3::new(
                         target_jigsaw_world.x - target_jigsaw_local.x,
@@ -1040,10 +1229,10 @@ fn try_placing_children<'a>(
                     let raw_bb = if let Some(bb) = candidate_bb_at_origin {
                         bb.translate(IVec3::new(raw_target.x, 0, raw_target.z))
                     } else {
-                        let Some(bb) = element_bounding_box(
+                        let Some(bb) = candidate_bounding_box_at_origin(
                             candidate_element,
                             templates,
-                            IVec3::ZERO,
+                            candidate_template_data,
                             candidate_rotation,
                         ) else {
                             return false;
@@ -1134,7 +1323,7 @@ fn try_placing_children<'a>(
                     let new_piece_idx = pieces.len();
                     let mut target_piece = PlacedPiece {
                         element: candidate_element.clone(),
-                        template_location: element_location(candidate_element).cloned(),
+                        template_location: candidate_location.cloned(),
                         position: target_position,
                         rotation: candidate_rotation,
                         bounding_box: candidate_bb,
@@ -1171,30 +1360,89 @@ fn try_placing_children<'a>(
                     true
                 };
 
-                if let Some(location) = element_location(candidate_element) {
-                    let Some(template) = templates.get(location) else {
-                        continue;
-                    };
+                if let Some((location, template)) = candidate_template {
                     let rotated = cached_runtime_rotated_jigsaws(
                         location,
                         template,
                         candidate_rotation,
                         &mut scratch.jigsaw_rotation_cache,
                     );
-                    shuffle_jigsaw_indices_into(
+                    shuffle_jigsaw_indices_with_priority_cache(
+                        location,
                         template,
                         rng,
                         &mut scratch.candidate_jigsaw_indices,
+                        &mut scratch.jigsaw_order_scratch,
+                        &mut scratch.jigsaw_priority_scratch,
+                        &mut scratch.jigsaw_priority_cache,
                     );
                     for &target_jigsaw_idx in &scratch.candidate_jigsaw_indices {
                         if try_target_jigsaw(&rotated[target_jigsaw_idx]) {
                             continue 'source_jigsaw;
                         }
                     }
-                } else if try_target_jigsaw(feature_synthetic_jigsaw_block()) {
+                } else if try_target_jigsaw(&feature_synthetic_jigsaw()) {
                     continue 'source_jigsaw;
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bbox(min: IVec3, max: IVec3) -> BoundingBox {
+        BoundingBox::new(min, max)
+    }
+
+    fn free_space_boxes() -> Vec<BoundingBox> {
+        let mut boxes = Vec::with_capacity(FREE_SPACE_OCTREE_THRESHOLD + 2);
+        boxes.push(bbox(IVec3::new(-1, -1, -1), IVec3::new(1, 1, 1)));
+
+        for y in [-50, 50] {
+            for x in 0..16 {
+                for z in 0..16 {
+                    let min = IVec3::new(-120 + x * 16, y, -120 + z * 16);
+                    boxes.push(bbox(min, min + IVec3::ONE));
+                }
+            }
+        }
+
+        boxes.push(bbox(IVec3::new(-1, -1, -1), IVec3::new(1, 1, 1)));
+        boxes
+    }
+
+    #[test]
+    fn free_space_large_matches_small_scan_after_octree_transition() {
+        let boundary = bbox(IVec3::new(-128, -64, -128), IVec3::new(128, 64, 128));
+        let boxes = free_space_boxes();
+        let small = FreeSpace::Small {
+            boundary,
+            occupied: boxes.clone(),
+        };
+        let mut large = FreeSpace::new(boundary);
+        for bbox in boxes {
+            large.add_box(bbox);
+        }
+
+        assert!(matches!(large, FreeSpace::Large { .. }));
+
+        let candidates = [
+            bbox(IVec3::new(1, 1, 1), IVec3::new(3, 3, 3)),
+            bbox(IVec3::new(2, 2, 2), IVec3::new(4, 4, 4)),
+            bbox(IVec3::new(-2, 10, -2), IVec3::new(2, 12, 2)),
+            bbox(IVec3::new(124, 0, 0), IVec3::new(128, 2, 2)),
+            bbox(IVec3::new(127, 0, 0), IVec3::new(129, 2, 2)),
+        ];
+
+        for candidate in candidates {
+            assert_eq!(
+                large.collides(&candidate),
+                small.collides(&candidate),
+                "collision mismatch for {candidate:?}"
+            );
         }
     }
 }
