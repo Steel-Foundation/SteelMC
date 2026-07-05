@@ -1104,7 +1104,7 @@ impl Player {
                 entity_id: self.id(),
                 event: EntityStatus::Poof,
             };
-            world.broadcast_to_nearby(chunk_pos, packet.clone(), None);
+            world.broadcast_to_nearby(chunk_pos, packet.clone(), Some(self.id()));
             self.send_packet(packet);
 
             world.unregister_player_entity(self);
@@ -1266,7 +1266,7 @@ impl Player {
             entity_id: self.id(),
             event: EntityStatus::Death,
         };
-        world.broadcast_to_nearby(chunk_pos, packet.clone(), None);
+        world.broadcast_to_nearby(chunk_pos, packet.clone(), Some(self.id()));
         self.send_packet(packet);
 
         let show_death_messages =
