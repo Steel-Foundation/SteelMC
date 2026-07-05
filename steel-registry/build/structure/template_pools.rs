@@ -253,7 +253,7 @@ fn gen_projection(proj: &Option<String>, context: &str) -> TokenStream {
     }
 }
 
-fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
+pub(crate) fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
     match processors {
         Some(ProcessorsJson::Registry(id)) => {
             let id = gen_identifier(id);

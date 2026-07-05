@@ -47,8 +47,9 @@ use data::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
     BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
     DualNoiseProvider, EndSpike, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
-    FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings,
-    GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement,
+    FluidHolderSet, FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings,
+    GeodeCrackSettings, GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList,
+    MangroveRootPlacement,
     NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
     PlacementModifier, RootPlacer, RuleBasedStateProviderRule, RuleTest, TemplateEntry,
     TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
@@ -80,6 +81,12 @@ pub(crate) fn build_configured() -> TokenStream {
     let mut stream = TokenStream::new();
     stream.extend(quote! {
         use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use crate::structure_processor::{
+            PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
+            StructureProcessorHeightmap, StructureProcessorKind, StructureRuleTestData,
+        };
+        use crate::template_pool::ProcessorList;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         use steel_utils::value_providers::{
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
@@ -147,12 +154,16 @@ pub(crate) fn build_placed() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, data) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, data) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = parse_loose_identifier(registry_id).unwrap_or_else(|err| {
+            panic!("invalid placed feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<PlacedFeature> = LazyLock::new(|| {
                 PlacedFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     data: #data,
                     id: OnceLock::new(),
                 }

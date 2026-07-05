@@ -97,6 +97,14 @@ pub(super) fn generate_rule_test(rule: &RuleTest) -> TokenStream {
             let block = generate_block_ref(block);
             quote! { RuleTest::BlockMatch { block: #block } }
         }
+        RuleTest::BlockStateMatch { block_state } => {
+            let block_state = generate_block_state_data(block_state);
+            quote! { RuleTest::BlockStateMatch { block_state: #block_state } }
+        }
+        RuleTest::RandomBlockMatch { block, probability } => {
+            let block = generate_block_ref(block);
+            quote! { RuleTest::RandomBlockMatch { block: #block, probability: #probability } }
+        }
         RuleTest::TagMatch { tag } => {
             let tag = generate_identifier(tag);
             quote! { RuleTest::TagMatch { tag: #tag } }
@@ -308,7 +316,7 @@ pub(super) fn generate_foliage_placer(placer: &FoliagePlacer) -> TokenStream {
         FoliagePlacer::RandomSpread(placer) => {
             let radius = generate_int_provider(&placer.radius);
             let offset = generate_int_provider(&placer.offset);
-            let foliage_height = placer.foliage_height;
+            let foliage_height = generate_int_provider(&placer.foliage_height);
             let leaf_placement_attempts = placer.leaf_placement_attempts;
             quote! {
                 FoliagePlacer::RandomSpread(RandomSpreadFoliagePlacer {
@@ -393,8 +401,8 @@ pub(super) fn generate_above_root_placement(placement: &AboveRootPlacement) -> T
 }
 
 pub(super) fn generate_mangrove_root_placement(placement: &MangroveRootPlacement) -> TokenStream {
-    let can_grow_through = generate_identifier(&placement.can_grow_through);
-    let muddy_roots_in = generate_vec(&placement.muddy_roots_in, generate_identifier);
+    let can_grow_through = super::generate_block_holder_set(&placement.can_grow_through);
+    let muddy_roots_in = super::generate_block_holder_set(&placement.muddy_roots_in);
     let muddy_roots_provider = generate_block_state_provider(&placement.muddy_roots_provider);
     let max_root_width = placement.max_root_width;
     let max_root_length = placement.max_root_length;
@@ -416,7 +424,8 @@ pub(super) fn generate_root_placer(placer: &RootPlacer) -> TokenStream {
         RootPlacer::Mangrove(placer) => {
             let trunk_offset_y = generate_int_provider(&placer.trunk_offset_y);
             let root_provider = generate_block_state_provider(&placer.root_provider);
-            let above_root_placement = generate_above_root_placement(&placer.above_root_placement);
+            let above_root_placement =
+                generate_option(&placer.above_root_placement, generate_above_root_placement);
             let mangrove_root_placement =
                 generate_mangrove_root_placement(&placer.mangrove_root_placement);
             quote! {
