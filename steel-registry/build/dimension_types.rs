@@ -46,53 +46,101 @@ pub struct DimensionTypeJson {
 #[derive(Deserialize, Debug, Default)]
 #[serde(default)]
 struct DimensionAttributes {
-    #[serde(rename = "minecraft:gameplay/respawn_anchor_works")]
+    #[serde(
+        rename = "minecraft:gameplay/respawn_anchor_works",
+        alias = "gameplay/respawn_anchor_works"
+    )]
     respawn_anchor_works: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/can_start_raid")]
+    #[serde(
+        rename = "minecraft:gameplay/can_start_raid",
+        alias = "gameplay/can_start_raid"
+    )]
     can_start_raid: Option<bool>,
-    #[serde(rename = "minecraft:visual/cloud_height")]
+    #[serde(
+        rename = "minecraft:visual/cloud_height",
+        alias = "visual/cloud_height"
+    )]
     cloud_height: Option<f64>,
-    #[serde(rename = "minecraft:visual/sky_color")]
+    #[serde(rename = "minecraft:visual/sky_color", alias = "visual/sky_color")]
     sky_color: Option<String>,
-    #[serde(rename = "minecraft:visual/fog_color")]
+    #[serde(rename = "minecraft:visual/fog_color", alias = "visual/fog_color")]
     fog_color: Option<String>,
-    #[serde(rename = "minecraft:visual/cloud_color")]
+    #[serde(rename = "minecraft:visual/cloud_color", alias = "visual/cloud_color")]
     cloud_color: Option<String>,
 
     // New visual attributes
-    #[serde(rename = "minecraft:visual/ambient_light_color")]
+    #[serde(
+        rename = "minecraft:visual/ambient_light_color",
+        alias = "visual/ambient_light_color"
+    )]
     ambient_light_color: Option<String>,
-    #[serde(rename = "minecraft:visual/sky_light_color")]
+    #[serde(
+        rename = "minecraft:visual/sky_light_color",
+        alias = "visual/sky_light_color"
+    )]
     sky_light_color: Option<String>,
-    #[serde(rename = "minecraft:visual/sky_light_factor")]
+    #[serde(
+        rename = "minecraft:visual/sky_light_factor",
+        alias = "visual/sky_light_factor"
+    )]
     sky_light_factor: Option<f32>,
-    #[serde(rename = "minecraft:visual/fog_start_distance")]
+    #[serde(
+        rename = "minecraft:visual/fog_start_distance",
+        alias = "visual/fog_start_distance"
+    )]
     fog_start_distance: Option<f32>,
-    #[serde(rename = "minecraft:visual/fog_end_distance")]
+    #[serde(
+        rename = "minecraft:visual/fog_end_distance",
+        alias = "visual/fog_end_distance"
+    )]
     fog_end_distance: Option<f32>,
-    #[serde(rename = "minecraft:visual/default_dripstone_particle")]
+    #[serde(
+        rename = "minecraft:visual/default_dripstone_particle",
+        alias = "visual/default_dripstone_particle"
+    )]
     default_dripstone_particle: Option<DripstoneParticleJson>,
 
     // New gameplay attributes
-    #[serde(rename = "minecraft:gameplay/fast_lava")]
+    #[serde(rename = "minecraft:gameplay/fast_lava", alias = "gameplay/fast_lava")]
     fast_lava: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/piglins_zombify")]
+    #[serde(
+        rename = "minecraft:gameplay/piglins_zombify",
+        alias = "gameplay/piglins_zombify"
+    )]
     piglins_zombify: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/sky_light_level")]
+    #[serde(
+        rename = "minecraft:gameplay/sky_light_level",
+        alias = "gameplay/sky_light_level"
+    )]
     sky_light_level: Option<f32>,
-    #[serde(rename = "minecraft:gameplay/snow_golem_melts")]
+    #[serde(
+        rename = "minecraft:gameplay/snow_golem_melts",
+        alias = "gameplay/snow_golem_melts"
+    )]
     snow_golem_melts: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/water_evaporates")]
+    #[serde(
+        rename = "minecraft:gameplay/water_evaporates",
+        alias = "gameplay/water_evaporates"
+    )]
     water_evaporates: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/nether_portal_spawns_piglin")]
+    #[serde(
+        rename = "minecraft:gameplay/nether_portal_spawns_piglin",
+        alias = "gameplay/nether_portal_spawns_piglin"
+    )]
     nether_portal_spawns_piglin: Option<bool>,
-    #[serde(rename = "minecraft:gameplay/bed_rule")]
+    #[serde(rename = "minecraft:gameplay/bed_rule", alias = "gameplay/bed_rule")]
     bed_rule: Option<BedRuleJson>,
 
     // Audio attributes
-    #[serde(rename = "minecraft:audio/ambient_sounds")]
+    #[serde(
+        rename = "minecraft:audio/ambient_sounds",
+        alias = "audio/ambient_sounds"
+    )]
     ambient_sounds: Option<AmbientSoundsJson>,
-    #[serde(rename = "minecraft:audio/background_music")]
+    #[serde(
+        rename = "minecraft:audio/background_music",
+        alias = "audio/background_music"
+    )]
     background_music: Option<BackgroundMusicJson>,
 }
 
