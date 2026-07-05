@@ -1,7 +1,8 @@
 use super::{
-    BlockHolderSet, BlockStateData, Direction, FluidStateData, Ident, Identifier, IdentifierList,
+    BlockHolderSet, BlockStateData, Direction, FluidHolderSet, FluidStateData, Ident, Identifier,
     Rotation, Span, ToShoutySnakeCase, TokenStream, VerticalAnchor, fs, quote,
 };
+use crate::generator_functions::registry_entry_ident;
 
 pub(super) fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
     let mut files: Vec<_> = fs::read_dir(dir)
@@ -52,12 +53,22 @@ pub(super) fn generate_fluid_ref(identifier: &Identifier) -> TokenStream {
 }
 
 pub(super) fn generate_configured_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let ident = vanilla_registry_ident(identifier, "configured feature");
+    let registry_id = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
+        identifier.path.as_ref().to_string()
+    } else {
+        format!("{}:{}", identifier.namespace, identifier.path)
+    };
+    let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_configured_features::#ident }
 }
 
 pub(super) fn generate_placed_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let ident = vanilla_registry_ident(identifier, "placed feature");
+    let registry_id = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
+        identifier.path.as_ref().to_string()
+    } else {
+        format!("{}:{}", identifier.namespace, identifier.path)
+    };
+    let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_placed_features::#ident }
 }
 
@@ -85,11 +96,6 @@ pub(super) fn generate_offset(offset: &[i32; 3]) -> TokenStream {
     quote! { IVec3::new(#x, #y, #z) }
 }
 
-pub(super) fn generate_block_ref_list(list: &IdentifierList) -> TokenStream {
-    let values = generate_vec(&list.0, generate_block_ref);
-    quote! { BlockRefList(#values) }
-}
-
 pub(super) fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
     match set {
         BlockHolderSet::Tag(tag) => {
@@ -103,9 +109,17 @@ pub(super) fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
     }
 }
 
-pub(super) fn generate_fluid_ref_list(list: &IdentifierList) -> TokenStream {
-    let values = generate_vec(&list.0, generate_fluid_ref);
-    quote! { FluidRefList(#values) }
+pub(super) fn generate_fluid_holder_set(set: &FluidHolderSet) -> TokenStream {
+    match set {
+        FluidHolderSet::Tag(tag) => {
+            let tag = generate_identifier(tag);
+            quote! { FluidHolderSet::Tag(#tag) }
+        }
+        FluidHolderSet::Entries(entries) => {
+            let entries = generate_vec(entries, generate_fluid_ref);
+            quote! { FluidHolderSet::Entries(#entries) }
+        }
+    }
 }
 
 pub(super) fn generate_block_state_data(data: &BlockStateData) -> TokenStream {
