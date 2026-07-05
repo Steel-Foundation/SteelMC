@@ -1445,7 +1445,15 @@ impl Player {
             experience.dirty = true;
         }
 
-        // TODO: send mob effect packets once effects are implemented
+        for effect in self.living_base.active_mob_effects() {
+            self.send_mob_effect_sync_packet(
+                MobEffectSyncChange::Update {
+                    effect,
+                    blend_for_self: false,
+                }
+                .packet(self.id(), true),
+            );
+        }
 
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
         let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn);
