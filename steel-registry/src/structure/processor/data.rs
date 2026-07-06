@@ -242,7 +242,7 @@ fn json_number_to_nbt_tag(value: &serde_json::Number) -> Result<NbtTag, String> 
     if let Some(value) = value.as_i64() {
         return i32::try_from(value)
             .map(NbtTag::Int)
-            .or_else(|_| Ok(NbtTag::Long(value)));
+            .or(Ok(NbtTag::Long(value)));
     }
 
     if let Some(value) = value.as_u64() {

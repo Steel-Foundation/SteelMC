@@ -189,7 +189,7 @@ impl StructureTemplate {
         }
     }
 
-    fn processor_heightmap_type(heightmap: StructureProcessorHeightmap) -> HeightmapType {
+    const fn processor_heightmap_type(heightmap: StructureProcessorHeightmap) -> HeightmapType {
         match heightmap {
             StructureProcessorHeightmap::WorldSurface => HeightmapType::WorldSurface,
             StructureProcessorHeightmap::MotionBlocking => HeightmapType::MotionBlocking,

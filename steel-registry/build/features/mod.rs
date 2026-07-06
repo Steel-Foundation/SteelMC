@@ -134,7 +134,7 @@ pub(crate) fn build_placed() -> TokenStream {
         let name = resource_name(&entry);
         let path = entry.as_path();
         let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<PlacedFeatureData>(&content)
             .unwrap_or_else(|err| panic!("failed to parse placed feature {name}: {err}"));
         entries.push((name, generate_placed_feature_data(&data)));

@@ -48,10 +48,9 @@ pub fn resource_name(path: &Path) -> String {
     if let Some(index) = components
         .iter()
         .position(|component| *component == "worldgen")
+        && index + 2 < components.len()
     {
-        if index + 2 < components.len() {
-            return components[index + 2..].join("/");
-        }
+        return components[index + 2..].join("/");
     }
     path_without_extension
         .file_name()

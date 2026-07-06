@@ -79,6 +79,10 @@ enum ScoreboardTargetJson {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "build-only JSON shape mirrors vanilla loot table number providers"
+)]
 enum NumberProviderRangeJson {
     Exact(f32),
     Range {

@@ -414,7 +414,7 @@ pub(crate) fn build() -> TokenStream {
         let name = resource_name(&entry);
         let path = entry.as_path();
         let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<StructureProcessorListData>(&content)
             .unwrap_or_else(|err| panic!("failed to parse structure processor list {name}: {err}"));
         entries.push((name, data));

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::ops::Deref;
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -34,7 +35,7 @@ impl<'de> Deserialize<'de> for ParameterRange {
     }
 }
 
-impl std::ops::Deref for ParameterRange {
+impl Deref for ParameterRange {
     type Target = [f64; 2];
     fn deref(&self) -> &Self::Target {
         &self.0

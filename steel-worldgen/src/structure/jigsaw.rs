@@ -117,7 +117,7 @@ pub fn resolve_aliases(
     map
 }
 
-fn resolve_vertical_anchor(anchor: &VerticalAnchorData, min_y: i32, height: i32) -> i32 {
+const fn resolve_vertical_anchor(anchor: &VerticalAnchorData, min_y: i32, height: i32) -> i32 {
     match anchor {
         VerticalAnchorData::Absolute(y) => *y,
         VerticalAnchorData::AboveBottom(offset) => min_y + *offset,
@@ -1512,7 +1512,7 @@ mod tests {
             max_depth: 0,
             use_expansion_hack: false,
             project_start_to_heightmap: None,
-            start_height: StartHeight::Constant(70),
+            start_height: StartHeight::Constant(VerticalAnchorData::Absolute(70)),
             max_distance_from_center: 80,
             start_jigsaw_name: Some(Identifier::vanilla_static("bottom")),
             dimension_padding: DimensionPadding { bottom: 0, top: 0 },

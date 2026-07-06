@@ -183,7 +183,7 @@ enum ColorJson {
 }
 
 impl ColorJson {
-    fn to_i32(self) -> i32 {
+    fn into_i32(self) -> i32 {
         match self {
             ColorJson::Int(value) => value,
             ColorJson::Hex(hex) => parse_hex_color(&hex),
@@ -214,11 +214,11 @@ impl From<BiomeEffectsJson> for BiomeEffects {
         BiomeEffects {
             fog_color: 12638463, // Default value, will be overridden from attributes
             sky_color: 8103167,  // Default value, will be overridden from attributes
-            water_color: json.water_color.to_i32(),
+            water_color: json.water_color.into_i32(),
             water_fog_color: 329011, // Default value, will be overridden from attributes
-            foliage_color: json.foliage_color.map(ColorJson::to_i32),
-            grass_color: json.grass_color.map(ColorJson::to_i32),
-            dry_foliage_color: json.dry_foliage_color.map(ColorJson::to_i32),
+            foliage_color: json.foliage_color.map(ColorJson::into_i32),
+            grass_color: json.grass_color.map(ColorJson::into_i32),
+            dry_foliage_color: json.dry_foliage_color.map(ColorJson::into_i32),
             grass_color_modifier: json.grass_color_modifier,
             music: None,           // Will be populated from attributes
             ambient_sound: None,   // Will be populated from attributes
