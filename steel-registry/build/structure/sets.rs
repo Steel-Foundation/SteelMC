@@ -561,16 +561,7 @@ fn load_structure_data(
         let structure: StructureJson = serde_json::from_str(&content)
             .unwrap_or_else(|e| panic!("Failed to parse structure {full_name}: {e}"));
 
-        let allowed_biomes = if let Some(tag_name) = structure.biomes.strip_prefix('#') {
-            biome_tags
-                .get(tag_name)
-                .unwrap_or_else(|| {
-                    panic!("Missing biome tag {tag_name} referenced by structure {full_name}")
-                })
-                .clone()
-        } else {
-            vec![structure.biomes.clone()]
-        };
+        let allowed_biomes = resolve_structure_biomes(structure.biomes, biome_tags, &full_name);
 
         let spawn_overrides = structure
             .spawn_overrides
