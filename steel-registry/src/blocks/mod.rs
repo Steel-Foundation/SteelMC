@@ -723,7 +723,10 @@ impl BlockRegistry {
         properties: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Option<()> {
         for (prop_name, prop_value) in properties {
-            let Some(prop_idx) = block.properties.iter().position(|p| p.get_name() == prop_name)
+            let Some(prop_idx) = block
+                .properties
+                .iter()
+                .position(|p| p.get_name() == prop_name)
             else {
                 // Vanilla's block state codec is lenient and ignores unknown properties.
                 continue;
