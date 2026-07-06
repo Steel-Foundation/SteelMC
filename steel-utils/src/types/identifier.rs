@@ -157,24 +157,11 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (namespace, path) = match s.split_once(':') {
-            Some(("", path)) => (Self::VANILLA_NAMESPACE, path),
-            Some((namespace, path)) => (namespace, path),
-            None => (Self::VANILLA_NAMESPACE, s),
+        let Some((namespace, path)) = s.split_once(':') else {
+            return Err("Invalid resource location");
         };
 
-        if !Identifier::validate_namespace(namespace) {
-            return Err("Invalid namespace");
-        }
-
-        if !Identifier::validate_path(path) {
-            return Err("Invalid path");
-        }
-
-        Ok(Identifier {
-            namespace: Cow::Owned(namespace.to_owned()),
-            path: Cow::Owned(path.to_owned()),
-        })
+        Identifier::new_validated(namespace, path)
     }
 }
 impl Serialize for Identifier {

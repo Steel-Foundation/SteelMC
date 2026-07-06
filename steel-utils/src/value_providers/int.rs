@@ -122,6 +122,8 @@ impl<'de> Deserialize<'de> for UniformIntProvider {
             Uniform {
                 min_inclusive: i32,
                 max_inclusive: i32,
+                #[serde(default, rename = "value")]
+                _value: Option<serde_json::Value>,
             },
         }
 
@@ -358,6 +360,7 @@ impl<'de> Deserialize<'de> for IntProvider {
                 Tagged::Uniform {
                     min_inclusive,
                     max_inclusive,
+                    _value: _,
                 } => Self::Uniform {
                     min_inclusive,
                     max_inclusive,
