@@ -582,7 +582,18 @@ fn load_structure_data(
             })
             .collect();
 
-        let config = match structure.structure_type.as_str() {
+        let structure_type =
+            crate::generator_functions::parse_loose_identifier(&structure.structure_type)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "invalid structure type {} in {full_name}: {error}",
+                        structure.structure_type
+                    )
+                });
+        let structure_type = structure_type.to_string();
+        structure.structure_type = structure_type.clone();
+
+        let config = match structure_type.as_str() {
             "minecraft:jigsaw" => {
                 let start_pool = required(structure.start_pool.clone(), &full_name, "start_pool");
                 let max_depth = required(structure.max_depth, &full_name, "size");
