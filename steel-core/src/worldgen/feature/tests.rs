@@ -119,7 +119,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         .filter(|s| s.key.namespace == "minecraft")
         .map(|structure| structure.key.path.as_ref())
         .collect();
-    let mut expected_surface = vec![
+    let expected_surface = vec![
         "bastion_remnant",
         "desert_pyramid",
         "end_city",
@@ -147,12 +147,6 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         "village_snowy",
         "village_taiga",
     ];
-    if matches!(
-        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
-        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
-    ) {
-        expected_surface.retain(|&s| s != "end_city");
-    }
     assert_eq!(surface_paths, expected_surface);
 
     let underground_decoration_paths: Vec<_> = underground_decoration
@@ -180,20 +174,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .iter()
             .all(|structure| structure.step.decoration_ordinal() == 7)
     );
-    if matches!(
-        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
-        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
-    ) {
-        assert_eq!(
-            FeatureDecorationRunner::structures_for_decoration_step(&registry, 0)
-                .iter()
-                .map(|s| s.key.path.as_ref())
-                .collect::<Vec<_>>(),
-            vec!["end_city"]
-        );
-    } else {
-        assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
-    }
+    assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
 }
 
 #[test]

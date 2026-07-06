@@ -631,6 +631,10 @@ pub struct OreTarget {
 }
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror vanilla rule test names"
+)]
 pub enum RuleTest {
     BlockMatch { block: BlockRef },
     BlockStateMatch { block_state: BlockStateData },

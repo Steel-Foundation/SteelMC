@@ -68,9 +68,7 @@ fn normalize_datapack_type_fields(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                if TYPE_KEYS.contains(&key.as_str()) {
-                    normalize_loose_identifier_value(child);
-                } else if key == "Name" {
+                if TYPE_KEYS.contains(&key.as_str()) || key == "Name" {
                     normalize_loose_identifier_value(child);
                 } else if matches!(key.as_str(), "blocks" | "block") {
                     normalize_block_reference(child);
@@ -93,14 +91,6 @@ pub fn parse_configured_feature_json(registry_id: &str, content: &str) -> Config
     normalize_datapack_type_fields(&mut value);
     serde_json::from_value(value)
         .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"))
-}
-
-pub fn parse_placed_feature_json(registry_id: &str, content: &str) -> PlacedFeatureData {
-    let mut value: Value = serde_json::from_str(content)
-        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"));
-    normalize_datapack_type_fields(&mut value);
-    serde_json::from_value(value)
-        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"))
 }
 
 /// A configured feature reference, either a registry key or an inline configured feature.
@@ -1189,6 +1179,10 @@ pub struct OreTarget {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "predicate_type")]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror vanilla rule test names"
+)]
 pub enum RuleTest {
     #[serde(rename = "minecraft:block_match")]
     BlockMatch { block: Identifier },

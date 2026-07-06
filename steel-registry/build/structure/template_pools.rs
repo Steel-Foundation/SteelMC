@@ -248,12 +248,6 @@ fn gen_identifier(id: &str) -> TokenStream {
     }
 }
 
-fn identifier_parts(id: &str, context: &str) -> (String, String) {
-    let id = Identifier::parse_or_vanilla(id)
-        .unwrap_or_else(|error| panic!("invalid {context} identifier {id}: {error}"));
-    (id.namespace.into_owned(), id.path.into_owned())
-}
-
 fn required<T>(value: Option<T>, context: &str, field: &str) -> T {
     value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
 }
