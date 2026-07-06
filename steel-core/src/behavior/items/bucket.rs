@@ -67,11 +67,15 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
 
         if player.has_infinite_materials() {
             // Creative: give the result item only if the player doesn't already have one.
+            let result_stack = ItemStack::new(result_item);
             let already_has = guard.get(inv_id).is_some_and(|inv| {
-                (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
+                (0..inv.get_container_size()).any(|i| {
+                    let item = inv.get_item(i);
+                    !item.is_empty() && ItemStack::is_same_item_same_components(item, &result_stack)
+                })
             });
             if !already_has {
-                player.add_item_or_drop_with_guard(guard, ItemStack::new(result_item));
+                player.add_item_or_drop_with_guard(guard, result_stack);
             }
             return;
         }
@@ -94,6 +98,14 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
             player.add_item_or_drop_with_guard(guard, ItemStack::new(result_item));
         }
     });
+}
+
+fn filled_bucket_success_item(context: &UseItemContext) -> ItemRef {
+    if context.player.has_infinite_materials() {
+        context.inv.with_item(|item| item.item())
+    } else {
+        &vanilla_items::ITEMS.bucket
+    }
 }
 
 fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
@@ -213,9 +225,9 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     // Define fluid placement logic as a closure to reuse for primary/secondary targets.
     // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
     // recursive emptyContents passes hitResult=null for fallback, bypassing sneak check).
-    let mut try_place_fluid = |pos: BlockPos, check_sneak: bool| -> Option<InteractionResult> {
+    let try_place_fluid = |pos: BlockPos, check_sneak: bool| -> bool {
         if !context.world.is_in_valid_bounds(pos) {
-            return None;
+            return false;
         }
 
         let state = context.world.get_block_state(pos);
@@ -225,7 +237,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         // Non-air blocks redirect to the neighbor — handled by the secondary call.
         // The secondary call bypasses this check (hitResult == null in vanilla).
         if check_sneak && is_sneaking && !state.get_block().config.is_air {
-            return None;
+            return false;
         }
 
         let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
@@ -242,7 +254,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
         // Vanilla parity: block must be replaceable or liquid-container-admissible for placement.
         if !can_replace && !can_place_liquid {
-            return None;
+            return false;
         }
 
         // Vanilla parity: in worlds where water evaporates (e.g. the Nether),
@@ -252,8 +264,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             context
                 .world
                 .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
-            consume_bucket(context, &vanilla_items::ITEMS.bucket);
-            return Some(InteractionResult::Success);
+            return true;
         }
 
         // 1. Try LiquidBlockContainer handling (only if Water bucket).
@@ -261,8 +272,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             let source_water = FluidState::source(&vanilla_fluids::WATER);
             behavior.place_liquid(context.world, pos, state, source_water);
             play_empty_sound_and_event(context, pos, true);
-            consume_bucket(context, &vanilla_items::ITEMS.bucket);
-            return Some(InteractionResult::Success);
+            return true;
         }
 
         // 2. Try Standard Placement (Replaceable block)
@@ -276,8 +286,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
             if is_same_fluid && fluid_state.is_source() {
                 play_empty_sound_and_event(context, pos, is_water_bucket);
-                consume_bucket(context, &vanilla_items::ITEMS.bucket);
-                return Some(InteractionResult::Success);
+                return true;
             }
 
             // Vanilla parity: destroy non-liquid replaceable blocks first so they
@@ -306,11 +315,10 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
                 play_empty_sound_and_event(context, pos, is_water_bucket);
 
-                consume_bucket(context, &vanilla_items::ITEMS.bucket);
-                return Some(InteractionResult::Success);
+                return true;
             }
         }
-        None
+        false
     };
 
     // Vanilla parity (BucketItem.java): position selection mirrors
@@ -322,16 +330,20 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         filled_bucket_primary_pos(clicked_state, clicked_pos, direction, is_water_bucket);
 
     // Attempt Primary (with sneak check)
-    if let Some(result) = try_place_fluid(primary_pos, true) {
-        return result;
+    if try_place_fluid(primary_pos, true) {
+        let result_item = filled_bucket_success_item(context);
+        consume_bucket(context, result_item);
+        return InteractionResult::Success;
     }
 
     // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null).
     // Vanilla's emptyContents always recurses with hitResult=null at the offset position
     // when the primary attempt fails, regardless of bucket type.
     let secondary_pos = direction.relative(clicked_pos);
-    if let Some(result) = try_place_fluid(secondary_pos, false) {
-        return result;
+    if try_place_fluid(secondary_pos, false) {
+        let result_item = filled_bucket_success_item(context);
+        consume_bucket(context, result_item);
+        return InteractionResult::Success;
     }
 
     InteractionResult::Fail
