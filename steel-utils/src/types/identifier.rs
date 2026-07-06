@@ -75,6 +75,31 @@ impl Identifier {
         }
     }
 
+    /// Parses an identifier, using the vanilla namespace when no namespace is present.
+    ///
+    /// Minecraft datapack JSON frequently omits `minecraft:` for vanilla ids.
+    pub fn parse_or_vanilla(s: &str) -> Result<Self, &'static str> {
+        let (namespace, path) = s
+            .split_once(':')
+            .map_or((Self::VANILLA_NAMESPACE, s), |(namespace, path)| {
+                (namespace, path)
+            });
+
+        Self::new_validated(namespace, path)
+    }
+
+    fn new_validated(namespace: &str, path: &str) -> Result<Self, &'static str> {
+        if !Self::validate_namespace(namespace) {
+            return Err("Invalid namespace");
+        }
+
+        if !Self::validate_path(path) {
+            return Err("Invalid path");
+        }
+
+        Ok(Self::new(namespace.to_string(), path.to_string()))
+    }
+
     /// Returns whether the character is a valid namespace character.
     #[must_use]
     pub const fn valid_namespace_char(char: char) -> bool {
