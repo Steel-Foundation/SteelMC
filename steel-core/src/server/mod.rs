@@ -41,8 +41,8 @@ use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use rustc_hash::FxHashMap;
 use std::{
-    collections::HashMap,
     mem,
     num::NonZero,
     path::Path,
@@ -1032,7 +1032,7 @@ pub struct Server {
     /// Players currently connected to the server, independent of world membership.
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
-    player_admissions: SyncMutex<HashMap<Uuid, PlayerAdmissionState>>,
+    player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -1181,7 +1181,7 @@ impl Server {
             key_store: KeyStore::create(),
             worlds,
             online_players: PlayerMap::new(),
-            player_admissions: SyncMutex::new(HashMap::new()),
+            player_admissions: SyncMutex::new(FxHashMap::default()),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -2328,9 +2328,11 @@ impl Server {
             .values()
             .filter(|world| world.domain() == domain)
             .find_map(|world| {
-                world
-                    .get_entity_by_uuid(uuid)
-                    .and_then(|entity| entity.as_player().map(|player| player.has_seen_credits()))
+                world.get_entity_by_uuid(uuid).and_then(|entity| {
+                    entity
+                        .as_player()
+                        .map(super::player::Player::has_seen_credits)
+                })
             })
     }
 

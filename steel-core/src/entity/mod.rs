@@ -9,7 +9,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
-    EquipmentSlotItem, RelativeMovement, SoundSource,
+    CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -881,8 +881,70 @@ fn teleport_entity_same_world(
         return None;
     }
 
+    if !teleport_transition.as_passenger {
+        send_teleport_transition_to_riding_players(entity.as_ref(), teleport_transition);
+    }
     apply_post_teleport_transition(entity.as_ref(), teleport_transition);
     Some(entity)
+}
+
+fn send_teleport_transition_to_riding_players(
+    entity: &dyn Entity,
+    teleport_transition: &TeleportTransition,
+) {
+    let controller_id = entity
+        .controlling_passenger()
+        .map(|controller| controller.id());
+    for passenger in indirect_passengers(entity) {
+        let Some(player) = passenger.as_player() else {
+            continue;
+        };
+        let packet = if Some(passenger.id()) == controller_id {
+            CTeleportEntity::new(
+                entity.id(),
+                teleport_transition.position,
+                teleport_transition.velocity,
+                teleport_transition.rotation.0,
+                teleport_transition.rotation.1,
+                teleport_transition.relatives,
+                entity.on_ground(),
+            )
+        } else {
+            let rotation = entity.rotation();
+            CTeleportEntity::new(
+                entity.id(),
+                entity.position(),
+                entity.velocity(),
+                rotation.0,
+                rotation.1,
+                RelativeMovement::NONE,
+                entity.on_ground(),
+            )
+        };
+        player.send_packet(packet);
+    }
+}
+
+fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
+    fn collect(
+        passengers: Vec<SharedEntity>,
+        visited: &mut FxHashSet<i32>,
+        output: &mut Vec<SharedEntity>,
+    ) {
+        for passenger in passengers {
+            if !visited.insert(passenger.id()) {
+                continue;
+            }
+            output.push(Arc::clone(&passenger));
+            collect(passenger.passengers(), visited, output);
+        }
+    }
+
+    let mut visited = FxHashSet::default();
+    visited.insert(entity.id());
+    let mut passengers = Vec::new();
+    collect(entity.passengers(), &mut visited, &mut passengers);
+    passengers
 }
 
 fn teleport_entity_cross_world(
@@ -7029,10 +7091,11 @@ mod tests {
         LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
         block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
-        fall_flying_free_fall_interval, get_input_vector, passenger_transition_position,
-        passenger_transition_rotation, remove_after_changing_dimensions,
-        should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
-        transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
+        fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
+        passenger_transition_position, passenger_transition_rotation,
+        remove_after_changing_dimensions, should_apply_entity_cramming_damage,
+        should_apply_resolved_movement, start_riding_entities, transfer_leashables_to_holder,
+        trapdoor_usable_as_ladder_state,
     };
 
     struct PushableTestEntity {
@@ -7587,6 +7650,25 @@ mod tests {
 
         assert!(!passenger.can_use_portal(false));
         assert!(passenger.can_use_portal(true));
+    }
+
+    #[test]
+    fn indirect_passengers_match_vanilla_preorder() {
+        let vehicle = MultiPassengerTestEntity::shared(1);
+        let first = MultiPassengerTestEntity::shared(2);
+        let second = MultiPassengerTestEntity::shared(3);
+        let nested = MultiPassengerTestEntity::shared(4);
+
+        EntityBase::restore_passenger_relationship(&vehicle, &first);
+        EntityBase::restore_passenger_relationship(&vehicle, &second);
+        EntityBase::restore_passenger_relationship(&first, &nested);
+
+        let passenger_ids = indirect_passengers(vehicle.as_ref())
+            .into_iter()
+            .map(|passenger| passenger.id())
+            .collect::<Vec<_>>();
+
+        assert_eq!(passenger_ids, vec![2, 4, 3]);
     }
 
     #[test]

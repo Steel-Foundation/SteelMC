@@ -29,6 +29,10 @@ const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
 pub struct ChunkTicketLevel(u8);
 
 impl ChunkTicketLevel {
+    /// The weakest level whose full chunk may tick entities.
+    pub const ENTITY_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 2);
+    /// The weakest level whose full chunk may tick blocks.
+    pub const BLOCK_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 1);
     /// The weakest level that still permits a full chunk.
     pub const FULL_CHUNK: Self = Self(MAX_VIEW_DISTANCE);
     /// The weakest level kept by ticket propagation.
@@ -50,15 +54,45 @@ impl ChunkTicketLevel {
         Self(MAX_VIEW_DISTANCE.saturating_sub(radius))
     }
 
+    /// Builds an entity-ticking ticket level from a square radius.
+    #[must_use]
+    pub const fn for_entity_ticking_radius(radius: u8) -> Self {
+        Self(Self::ENTITY_TICKING_CHUNK.0.saturating_sub(radius))
+    }
+
     /// Returns the raw level value used for compact storage.
     #[must_use]
     pub const fn raw(self) -> u8 {
         self.0
     }
 
+    /// Returns vanilla's full-chunk status for this propagated level.
+    #[must_use]
+    pub const fn full_status(self) -> FullChunkStatus {
+        if self.0 <= Self::ENTITY_TICKING_CHUNK.0 {
+            FullChunkStatus::EntityTicking
+        } else if self.0 <= Self::BLOCK_TICKING_CHUNK.0 {
+            FullChunkStatus::BlockTicking
+        } else if self.0 <= Self::FULL_CHUNK.0 {
+            FullChunkStatus::Full
+        } else {
+            FullChunkStatus::Inaccessible
+        }
+    }
+
     #[must_use]
     pub const fn is_full(self) -> bool {
         self.0 <= Self::FULL_CHUNK.0
+    }
+
+    #[must_use]
+    pub const fn is_block_ticking(self) -> bool {
+        self.0 <= Self::BLOCK_TICKING_CHUNK.0
+    }
+
+    #[must_use]
+    pub const fn is_entity_ticking(self) -> bool {
+        self.0 <= Self::ENTITY_TICKING_CHUNK.0
     }
 
     #[must_use]
@@ -73,8 +107,26 @@ impl ChunkTicketLevel {
     }
 
     #[must_use]
-    const fn distance_to_full(self) -> u8 {
-        MAX_VIEW_DISTANCE - self.0
+    const fn distance_to_block_ticking(self) -> u8 {
+        ChunkTicketLevel::BLOCK_TICKING_CHUNK
+            .0
+            .saturating_sub(self.0)
+    }
+}
+
+/// Vanilla full-chunk accessibility and ticking status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FullChunkStatus {
+    Inaccessible,
+    Full,
+    BlockTicking,
+    EntityTicking,
+}
+
+impl FullChunkStatus {
+    #[must_use]
+    pub const fn is_or_after(self, status: Self) -> bool {
+        self as u8 >= status as u8
     }
 }
 
@@ -101,7 +153,7 @@ impl ChunkTicket {
         Self::loading(ChunkTicketLevel::for_full_chunk_radius(radius))
     }
 
-    /// Creates a ticket that loads and simulates full chunks within `radius`.
+    /// Creates a vanilla simulation ticket whose source level is `FULL - radius`.
     #[must_use]
     pub const fn simulated_full_chunks(radius: u8) -> Self {
         let level = ChunkTicketLevel::for_full_chunk_radius(radius);
@@ -111,25 +163,30 @@ impl ChunkTicket {
         }
     }
 
-    /// Creates a ticket with separate load and simulation radii.
+    /// Creates a ticket with separate full-load and entity-ticking radii.
     #[must_use]
-    pub const fn full_chunks_with_simulation(load_radius: u8, simulation_radius: u8) -> Self {
-        let simulation_radius = if simulation_radius > load_radius {
+    pub const fn full_chunks_with_entity_ticking(
+        load_radius: u8,
+        entity_ticking_radius: u8,
+    ) -> Self {
+        let entity_ticking_radius = if entity_ticking_radius > load_radius {
             load_radius
         } else {
-            simulation_radius
+            entity_ticking_radius
         };
 
         Self {
             load_level: ChunkTicketLevel::for_full_chunk_radius(load_radius),
-            simulation_level: Some(ChunkTicketLevel::for_full_chunk_radius(simulation_radius)),
+            simulation_level: Some(ChunkTicketLevel::for_entity_ticking_radius(
+                entity_ticking_radius,
+            )),
         }
     }
 
     /// Creates a player ticket, capping simulation to the loaded radius.
     #[must_use]
     pub const fn player(load_radius: u8, simulation_radius: u8) -> Self {
-        Self::full_chunks_with_simulation(load_radius, simulation_radius)
+        Self::full_chunks_with_entity_ticking(load_radius, simulation_radius)
     }
 
     #[must_use]
@@ -149,9 +206,25 @@ pub const fn is_full(level: ChunkTicketLevel) -> bool {
 }
 
 #[must_use]
-pub const fn is_ticked(level: Option<ChunkTicketLevel>) -> bool {
+pub const fn full_status(level: Option<ChunkTicketLevel>) -> FullChunkStatus {
     match level {
-        Some(level) => level.is_full(),
+        Some(level) => level.full_status(),
+        None => FullChunkStatus::Inaccessible,
+    }
+}
+
+#[must_use]
+pub const fn is_block_ticking(level: Option<ChunkTicketLevel>) -> bool {
+    match level {
+        Some(level) => level.is_block_ticking(),
+        None => false,
+    }
+}
+
+#[must_use]
+pub const fn is_entity_ticking(level: Option<ChunkTicketLevel>) -> bool {
+    match level {
+        Some(level) => level.is_entity_ticking(),
         None => false,
     }
 }
@@ -551,7 +624,7 @@ impl ChunkTicketManager {
                 continue;
             };
 
-            let radius = i32::from(simulation_level.distance_to_full());
+            let radius = i32::from(simulation_level.distance_to_block_ticking());
             for dy in -radius..=radius {
                 for dx in -radius..=radius {
                     let distance = dx.abs().max(dy.abs()) as u8;
@@ -889,9 +962,23 @@ mod tests {
         assert!(is_full(
             manager.get_level(center).expect("ticket should load")
         ));
-        assert!(is_ticked(manager.get_simulation_level(center)));
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(3, 0))));
-        assert_eq!(manager.get_simulation_level(ChunkPos::new(4, 0)), None);
+        assert!(is_entity_ticking(manager.get_simulation_level(center)));
+        assert!(is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(1, 0))
+        ));
+        assert!(is_block_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(3, 0))
+                .expect("portal ticket should load the full outer ring")
+        ));
+        assert!(!manager.get_level(ChunkPos::new(4, 0)).is_some_and(is_full));
 
         for _ in 0..PORTAL_TICKET_TIMEOUT_TICKS {
             timed_tickets.tick(&mut manager, |_| true);
@@ -1002,15 +1089,22 @@ mod tests {
     }
 
     #[test]
-    fn simulated_ticket_propagates_only_inside_loaded_full_area() {
+    fn simulated_full_ticket_propagates_simulation_only_to_block_ticking_area() {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(ChunkPos::new(0, 0), ChunkTicket::simulated_full_chunks(1));
         manager.run_all_updates();
 
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(0, 0))));
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(1, 1))));
-        assert!(!is_ticked(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
+        assert!(is_block_ticking(
+            manager.get_simulation_level(ChunkPos::new(0, 0))
+        ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(0, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(1, 1)), None);
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(1, 1))
+                .expect("ticket should load the full outer ring")
         ));
         assert_eq!(
             manager.get_level(ChunkPos::new(1, 1)),
@@ -1019,15 +1113,40 @@ mod tests {
     }
 
     #[test]
-    fn player_ticket_caps_simulation_radius_to_load_radius() {
+    fn player_ticket_caps_entity_ticking_radius_to_load_radius() {
         let mut manager = ChunkTicketManager::new();
-        manager.add_ticket(ChunkPos::new(0, 0), ChunkTicket::player(1, 3));
+        let center = ChunkPos::new(0, 0);
+        manager.add_ticket(center, ChunkTicket::player(1, 3));
         manager.run_all_updates();
 
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(1, 0))));
-        assert!(!is_ticked(
+        assert!(is_entity_ticking(manager.get_simulation_level(center)));
+        assert!(is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(1, 0))
+        ));
+        assert!(is_block_ticking(
             manager.get_simulation_level(ChunkPos::new(2, 0))
         ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+    }
+
+    #[test]
+    fn full_chunk_status_matches_vanilla_ticket_thresholds() {
+        assert_eq!(
+            ChunkTicketLevel::ENTITY_TICKING_CHUNK.full_status(),
+            FullChunkStatus::EntityTicking
+        );
+        assert_eq!(
+            ChunkTicketLevel::BLOCK_TICKING_CHUNK.full_status(),
+            FullChunkStatus::BlockTicking
+        );
+        assert_eq!(
+            ChunkTicketLevel::FULL_CHUNK.full_status(),
+            FullChunkStatus::Full
+        );
+        assert_eq!(full_status(None), FullChunkStatus::Inaccessible);
     }
 
     #[test]

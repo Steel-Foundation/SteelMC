@@ -1520,66 +1520,7 @@ impl Player {
         }
         self.reset_flying_ticks();
 
-        // Abilities and held slot
-        self.send_abilities();
-        self.send_packet(CSetHeldSlot {
-            slot: i32::from(self.inventory.lock().get_selected_slot()),
-        });
-
-        // Time sync
-        {
-            let level_data = world.level_data.read();
-            let game_time = level_data.game_time();
-            let day_time = level_data.day_time();
-            drop(level_data);
-
-            let advance_time = world
-                .get_game_rule(&ADVANCE_TIME)
-                .as_bool()
-                .expect("gamerule advance_time should always be a bool.");
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
-        }
-
-        self.send_packet(world.initialize_border_packet());
-        if let Some(server) = self.server.upgrade() {
-            match server.respawn_data_for_domain(world.domain()) {
-                Ok(respawn_data) => {
-                    self.send_packet(CSetDefaultSpawnPosition {
-                        global_pos: respawn_data.global_pos,
-                        yaw: respawn_data.yaw,
-                        pitch: respawn_data.pitch,
-                    });
-                }
-                Err(error) => {
-                    log::error!(
-                        "Failed to send default spawn position to player {}: {error}",
-                        self.gameprofile.name
-                    );
-                }
-            }
-        }
-
-        // Weather sync
-        if world.can_have_weather() && world.is_raining() {
-            let (rain_level, thunder_level) = {
-                let weather = world.weather.lock();
-                (weather.rain_level, weather.thunder_level)
-            };
-
-            self.send_packet(CGameEvent {
-                event: GameEventType::StartRaining,
-                data: 0.0,
-            });
-            self.send_packet(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: rain_level,
-            });
-            self.send_packet(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: thunder_level,
-            });
-        }
+        self.send_spawn_state_packets(&world);
 
         // Force health/xp resync on next tick
         self.reset_sent_info();
@@ -1618,6 +1559,75 @@ impl Player {
                 true
             }
         }
+    }
+
+    fn send_spawn_state_packets(&self, world: &World) {
+        self.send_abilities();
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(self.inventory.lock().get_selected_slot()),
+        });
+        self.send_time_sync(world);
+        self.send_packet(world.initialize_border_packet());
+        self.send_default_spawn_position(world);
+        self.send_weather_sync(world);
+    }
+
+    fn send_time_sync(&self, world: &World) {
+        let level_data = world.level_data.read();
+        let game_time = level_data.game_time();
+        let day_time = level_data.day_time();
+        drop(level_data);
+
+        let advance_time = world
+            .get_game_rule(&ADVANCE_TIME)
+            .as_bool()
+            .expect("gamerule advance_time should always be a bool.");
+        let rate = if advance_time { 1.0 } else { 0.0 };
+        self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
+    }
+
+    fn send_default_spawn_position(&self, world: &World) {
+        if let Some(server) = self.server.upgrade() {
+            match server.respawn_data_for_domain(world.domain()) {
+                Ok(respawn_data) => {
+                    self.send_packet(CSetDefaultSpawnPosition {
+                        global_pos: respawn_data.global_pos,
+                        yaw: respawn_data.yaw,
+                        pitch: respawn_data.pitch,
+                    });
+                }
+                Err(error) => {
+                    log::error!(
+                        "Failed to send default spawn position to player {}: {error}",
+                        self.gameprofile.name
+                    );
+                }
+            }
+        }
+    }
+
+    fn send_weather_sync(&self, world: &World) {
+        if !world.can_have_weather() || !world.is_raining() {
+            return;
+        }
+
+        let (rain_level, thunder_level) = {
+            let weather = world.weather.lock();
+            (weather.rain_level, weather.thunder_level)
+        };
+
+        self.send_packet(CGameEvent {
+            event: GameEventType::StartRaining,
+            data: 0.0,
+        });
+        self.send_packet(CGameEvent {
+            event: GameEventType::RainLevelChange,
+            data: rain_level,
+        });
+        self.send_packet(CGameEvent {
+            event: GameEventType::ThunderLevelChange,
+            data: thunder_level,
+        });
     }
 
     fn passenger_ids_for_packet(entity: &dyn Entity) -> Vec<i32> {

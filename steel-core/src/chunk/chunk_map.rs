@@ -28,7 +28,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::{ChunkHolder, ChunkSaveDependency};
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, PersistentChunkTickets,
-    TimedChunkTickets, generation_status, is_ticked,
+    TimedChunkTickets, generation_status, is_block_ticking, is_entity_ticking,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -62,10 +62,15 @@ pub struct ChunkMapGameTickTimings {
     pub tick_chunks: Duration,
     /// Time spent ticking block entities.
     pub tick_block_entities: Duration,
-    /// Number of chunks that were ticked.
+    /// Number of block-ticking chunks.
     pub tickable_count: usize,
     /// Total number of loaded chunks.
     pub total_chunks: usize,
+}
+
+struct TickableChunk {
+    holder: Arc<ChunkHolder>,
+    simulation_level: ChunkTicketLevel,
 }
 
 /// Timing information for the chunk scheduling tick operations.
@@ -1320,8 +1325,14 @@ impl ChunkMap {
             let mut tickable_chunks = Vec::with_capacity(last_len);
             self.chunks.iter_sync(|_, holder| {
                 total_chunks += 1;
-                if is_ticked(holder.simulation_level()) {
-                    tickable_chunks.push(holder.clone());
+                let Some(simulation_level) = holder.simulation_level() else {
+                    return true;
+                };
+                if simulation_level.is_block_ticking() {
+                    tickable_chunks.push(TickableChunk {
+                        holder: holder.clone(),
+                        simulation_level,
+                    });
                 }
                 true
             });
@@ -1334,13 +1345,13 @@ impl ChunkMap {
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
-                    count = tickable_chunks.len(),
+                    block_ticking_count = tickable_chunks.len(),
                     total_chunks
                 )
                 .entered();
                 let start = Instant::now();
-                for holder in &tickable_chunks {
-                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                for tickable_chunk in &tickable_chunks {
+                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
                         chunk_guard.drain_ready_scheduled_ticks(
                             &mut ready_block_ticks,
                             &mut ready_fluid_ticks,
@@ -1348,8 +1359,12 @@ impl ChunkMap {
                     }
                 }
                 Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
-                for holder in &tickable_chunks {
-                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                for tickable_chunk in &tickable_chunks {
+                    // Vanilla random chunk ticks use the entity-ticking range.
+                    if !tickable_chunk.simulation_level.is_entity_ticking() {
+                        continue;
+                    }
+                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
                         chunk_guard.tick_random_blocks(random_tick_speed);
                     }
                 }
@@ -1376,7 +1391,7 @@ impl ChunkMap {
         let _span = tracing::trace_span!("block_entities").entered();
         let start = Instant::now();
         self.chunks.iter_sync(|_, holder| {
-            if is_ticked(holder.simulation_level())
+            if is_block_ticking(holder.simulation_level())
                 && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
             {
                 chunk_guard.tick_block_entities();
@@ -1461,7 +1476,8 @@ impl ChunkMap {
     pub fn tickable_full_chunk_positions(&self) -> Vec<ChunkPos> {
         let mut chunks = Vec::new();
         self.chunks.iter_sync(|_, holder| {
-            if is_ticked(holder.simulation_level()) && holder.try_chunk(ChunkStatus::Full).is_some()
+            if is_entity_ticking(holder.simulation_level())
+                && holder.try_chunk(ChunkStatus::Full).is_some()
             {
                 chunks.push(holder.get_pos());
             }

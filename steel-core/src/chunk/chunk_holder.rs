@@ -21,7 +21,9 @@ use std::time::Duration;
 pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
-use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
+use crate::chunk::chunk_ticket_manager::{
+    ChunkTicketLevel, generation_status, is_entity_ticking, is_full,
+};
 use crate::chunk::light::{
     LightLayer, LightSectionRange, LightWorkWindowGate, LightWorkWindowReservation,
 };
@@ -268,7 +270,7 @@ impl ChunkHolder {
             return EntityVisibility::Hidden;
         }
 
-        if is_ticked(self.simulation_level()) {
+        if is_entity_ticking(self.simulation_level()) {
             EntityVisibility::Ticking
         } else {
             EntityVisibility::Tracked

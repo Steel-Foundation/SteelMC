@@ -105,7 +105,7 @@ impl RawEntity {
     fn ender_pearl_owner_uuid_from_nbt(&self) -> Option<Uuid> {
         let data = self.data.lock();
         let owner = data.int_array("Owner")?;
-        Uuid::from_int_array(&owner)
+        Uuid::from_int_array(owner)
     }
 }
 
