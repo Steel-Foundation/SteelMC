@@ -2,9 +2,14 @@
 
 use std::fs;
 
+use crate::generator_functions::{
+    generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
+    registry_entry_ident,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::{Identifier, value_providers::IntProvider};
 
 #[expect(
@@ -17,7 +22,8 @@ mod structure_processor_data;
 use crate::shared_structs::BlockStateData;
 use structure_processor_data::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
-    StructureProcessorKind, StructureProcessorListData, StructureRuleTestData,
+    StructureProcessorHeightmap, StructureProcessorKind, StructureProcessorListData,
+    StructureRuleTestData,
 };
 
 fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
@@ -44,14 +50,8 @@ fn resource_name(entry: &fs::DirEntry) -> String {
         .to_owned()
 }
 
-fn generate_identifier(identifier: &Identifier) -> TokenStream {
-    let namespace = identifier.namespace.as_ref();
-    let path = identifier.path.as_ref();
-    if namespace == Identifier::VANILLA_NAMESPACE {
-        quote! { Identifier::vanilla_static(#path) }
-    } else {
-        quote! { Identifier::new_static(#namespace, #path) }
-    }
+fn generate_registry_key(registry_id: &str) -> TokenStream {
+    generate_static_identifier_from_str(registry_id, "structure processor-list registry")
 }
 
 fn generate_option<T>(value: &Option<T>, f: impl Fn(&T) -> TokenStream) -> TokenStream {
@@ -85,7 +85,7 @@ fn generate_block_state_data(data: &BlockStateData) -> TokenStream {
     };
 
     quote! {
-        BlockStateData {
+        crate::shared_structs::BlockStateData {
             name: #name,
             properties: #properties,
         }
@@ -225,6 +225,18 @@ fn generate_rule_test(data: &StructureRuleTestData) -> TokenStream {
             let block_state = generate_block_state_data(block_state);
             quote! { StructureRuleTestData::BlockStateMatch { block_state: #block_state } }
         }
+        StructureRuleTestData::RandomBlockStateMatch {
+            block_state,
+            probability,
+        } => {
+            let block_state = generate_block_state_data(block_state);
+            quote! {
+                StructureRuleTestData::RandomBlockStateMatch {
+                    block_state: #block_state,
+                    probability: #probability,
+                }
+            }
+        }
     }
 }
 
@@ -237,6 +249,83 @@ fn generate_block_entity_modifier(data: &RuleBlockEntityModifierData) -> TokenSt
             let loot_table = generate_identifier(loot_table);
             quote! { RuleBlockEntityModifierData::AppendLoot { loot_table: #loot_table } }
         }
+        RuleBlockEntityModifierData::AppendStatic { data } => {
+            let data = generate_nbt_compound(data);
+            quote! { RuleBlockEntityModifierData::AppendStatic { data: #data } }
+        }
+    }
+}
+
+fn generate_nbt_compound(compound: &NbtCompound) -> TokenStream {
+    let entries = compound.iter().map(|(key, value)| {
+        let key = key.to_string();
+        let value = generate_nbt_tag(value);
+        quote! { (#key.into(), #value) }
+    });
+    quote! { NbtCompound::from_values(vec![#(#entries),*]) }
+}
+
+fn generate_nbt_list(list: &NbtList) -> TokenStream {
+    match list {
+        NbtList::Empty => quote! { NbtList::Empty },
+        NbtList::Byte(values) => quote! { NbtList::Byte(vec![#(#values),*]) },
+        NbtList::Short(values) => quote! { NbtList::Short(vec![#(#values),*]) },
+        NbtList::Int(values) => quote! { NbtList::Int(vec![#(#values),*]) },
+        NbtList::Long(values) => quote! { NbtList::Long(vec![#(#values),*]) },
+        NbtList::Float(values) => quote! { NbtList::Float(vec![#(#values),*]) },
+        NbtList::Double(values) => quote! { NbtList::Double(vec![#(#values),*]) },
+        NbtList::ByteArray(values) => {
+            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
+            quote! { NbtList::ByteArray(vec![#(#values),*]) }
+        }
+        NbtList::String(values) => {
+            let values = values
+                .iter()
+                .map(|value| value.as_str().to_str().into_owned());
+            quote! { NbtList::String(vec![#(#values.into()),*]) }
+        }
+        NbtList::List(values) => {
+            let values = values.iter().map(generate_nbt_list);
+            quote! { NbtList::List(vec![#(#values),*]) }
+        }
+        NbtList::Compound(values) => {
+            let values = values.iter().map(generate_nbt_compound);
+            quote! { NbtList::Compound(vec![#(#values),*]) }
+        }
+        NbtList::IntArray(values) => {
+            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
+            quote! { NbtList::IntArray(vec![#(#values),*]) }
+        }
+        NbtList::LongArray(values) => {
+            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
+            quote! { NbtList::LongArray(vec![#(#values),*]) }
+        }
+    }
+}
+
+fn generate_nbt_tag(tag: &NbtTag) -> TokenStream {
+    match tag {
+        NbtTag::Byte(value) => quote! { NbtTag::Byte(#value) },
+        NbtTag::Short(value) => quote! { NbtTag::Short(#value) },
+        NbtTag::Int(value) => quote! { NbtTag::Int(#value) },
+        NbtTag::Long(value) => quote! { NbtTag::Long(#value) },
+        NbtTag::Float(value) => quote! { NbtTag::Float(#value) },
+        NbtTag::Double(value) => quote! { NbtTag::Double(#value) },
+        NbtTag::ByteArray(value) => quote! { NbtTag::ByteArray(vec![#(#value),*]) },
+        NbtTag::String(value) => {
+            let value = value.as_str().to_str().into_owned();
+            quote! { NbtTag::String(#value.into()) }
+        }
+        NbtTag::List(value) => {
+            let value = generate_nbt_list(value);
+            quote! { NbtTag::List(#value) }
+        }
+        NbtTag::Compound(value) => {
+            let value = generate_nbt_compound(value);
+            quote! { NbtTag::Compound(#value) }
+        }
+        NbtTag::IntArray(value) => quote! { NbtTag::IntArray(vec![#(#value),*]) },
+        NbtTag::LongArray(value) => quote! { NbtTag::LongArray(vec![#(#value),*]) },
     }
 }
 
@@ -258,7 +347,30 @@ fn generate_processor_rule(data: &ProcessorRuleData) -> TokenStream {
     }
 }
 
-fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
+fn generate_processor_heightmap(heightmap: StructureProcessorHeightmap) -> TokenStream {
+    match heightmap {
+        StructureProcessorHeightmap::WorldSurface => {
+            quote! { StructureProcessorHeightmap::WorldSurface }
+        }
+        StructureProcessorHeightmap::MotionBlocking => {
+            quote! { StructureProcessorHeightmap::MotionBlocking }
+        }
+        StructureProcessorHeightmap::MotionBlockingNoLeaves => {
+            quote! { StructureProcessorHeightmap::MotionBlockingNoLeaves }
+        }
+        StructureProcessorHeightmap::OceanFloor => {
+            quote! { StructureProcessorHeightmap::OceanFloor }
+        }
+        StructureProcessorHeightmap::WorldSurfaceWg => {
+            quote! { StructureProcessorHeightmap::WorldSurfaceWg }
+        }
+        StructureProcessorHeightmap::OceanFloorWg => {
+            quote! { StructureProcessorHeightmap::OceanFloorWg }
+        }
+    }
+}
+
+pub(crate) fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
     match data {
         StructureProcessorKind::BlockRot {
             rottable_blocks,
@@ -286,8 +398,24 @@ fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
         StructureProcessorKind::LavaSubmergedBlock => {
             quote! { StructureProcessorKind::LavaSubmergedBlock }
         }
+        StructureProcessorKind::JigsawReplacement => {
+            quote! { StructureProcessorKind::JigsawReplacement }
+        }
         StructureProcessorKind::BlackstoneReplace => {
             quote! { StructureProcessorKind::BlackstoneReplace }
+        }
+        StructureProcessorKind::BlockIgnore { blocks } => {
+            let blocks = generate_vec(blocks, generate_block_state_data);
+            quote! { StructureProcessorKind::BlockIgnore { blocks: #blocks } }
+        }
+        StructureProcessorKind::Gravity { heightmap, offset } => {
+            let heightmap = generate_processor_heightmap(*heightmap);
+            quote! {
+                StructureProcessorKind::Gravity {
+                    heightmap: #heightmap,
+                    offset: #offset,
+                }
+            }
         }
         StructureProcessorKind::Capped { delegate, limit } => {
             let delegate = generate_box(delegate.as_ref(), generate_processor_kind);
@@ -331,13 +459,14 @@ pub(crate) fn build() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, data) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, data) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let key = generate_registry_key(registry_id);
         let data = generate_processor_list_data(data);
         stream.extend(quote! {
             pub static #ident: LazyLock<StructureProcessorList> = LazyLock::new(|| {
                 StructureProcessorList {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     data: #data,
                     id: OnceLock::new(),
                 }
