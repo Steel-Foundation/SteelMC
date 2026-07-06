@@ -1,27 +1,8 @@
 use super::{
     BlockHolderSet, BlockStateData, Direction, FluidHolderSet, FluidStateData, Ident, Identifier,
-    Rotation, Span, ToShoutySnakeCase, TokenStream, VerticalAnchor, fs, quote,
+    Rotation, Span, ToShoutySnakeCase, TokenStream, VerticalAnchor, quote,
 };
 use crate::generator_functions::registry_entry_ident;
-
-pub(super) fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("{dir} missing: {err}"))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    files.sort_by_key(std::fs::DirEntry::file_name);
-    files
-}
-
-pub(super) fn resource_name(entry: &fs::DirEntry) -> String {
-    entry
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_else(|| panic!("invalid feature file name: {:?}", entry.path()))
-        .to_owned()
-}
 
 pub(super) fn generate_identifier(identifier: &Identifier) -> TokenStream {
     let namespace = identifier.namespace.as_ref();

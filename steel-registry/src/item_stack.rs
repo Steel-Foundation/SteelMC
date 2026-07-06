@@ -775,6 +775,7 @@ impl ItemStack {
         _decoration: &Identifier,
         _zoom: i32,
         _skip_existing_chunks: bool,
+        _search_radius: i32,
     ) {
         // TODO: Implement exploration map creation
         // 1. Change item to filled_map

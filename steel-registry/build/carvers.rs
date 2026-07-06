@@ -318,7 +318,7 @@ pub(crate) fn build() -> TokenStream {
 
     let mut register = TokenStream::new();
     for (name, kind) in &entries {
-        let identifier = crate::generator_functions::parse_loose_identifier(name)
+        let identifier = Identifier::parse_or_vanilla(name)
             .unwrap_or_else(|e| panic!("invalid configured carver name {name}: {e}"));
         let key = crate::generator_functions::generate_static_identifier(&identifier);
         let ident_str = if identifier.namespace == steel_utils::Identifier::VANILLA_NAMESPACE {

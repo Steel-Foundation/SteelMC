@@ -5,20 +5,15 @@
 //! data in `src/feature/data.rs` can use typed registry refs because this module
 //! owns the extracted JSON decoding step.
 
-use crate::generator_functions::parse_loose_identifier;
 use crate::shared_structs::deserialize_tag_identifier;
 pub use crate::shared_structs::{BlockStateData, FluidStateData};
-use crate::template_pools::ProcessorsJson;
+use crate::structure::ProcessorsJson;
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
     Direction, Identifier, Rotation,
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
-
-fn parse_loose_identifier_de<E: serde::de::Error>(raw: &str) -> Result<Identifier, E> {
-    parse_loose_identifier(raw).map_err(E::custom)
-}
 
 fn deserialize_vanilla_i32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
     let value = Value::deserialize(deserializer)?;
@@ -36,7 +31,7 @@ fn deserialize_vanilla_i32<'de, D: Deserializer<'de>>(deserializer: D) -> Result
 }
 
 fn normalize_loose_identifier(raw: &str) -> String {
-    parse_loose_identifier(raw)
+    Identifier::parse_or_vanilla(raw)
         .unwrap_or_else(|error| panic!("invalid loose feature identifier {raw}: {error}"))
         .to_string()
 }
@@ -122,7 +117,9 @@ impl<'de> Deserialize<'de> for ConfiguredFeatureRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = Value::deserialize(deserializer)?;
         if let Some(id) = value.as_str() {
-            return parse_loose_identifier_de(id).map(Self::Reference);
+            return Identifier::parse_or_vanilla(id)
+                .map(Self::Reference)
+                .map_err(D::Error::custom);
         }
         serde_json::from_value(value)
             .map(Box::new)
@@ -143,7 +140,9 @@ impl<'de> Deserialize<'de> for PlacedFeatureRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = Value::deserialize(deserializer)?;
         if let Some(id) = value.as_str() {
-            return parse_loose_identifier_de(id).map(Self::Reference);
+            return Identifier::parse_or_vanilla(id)
+                .map(Self::Reference)
+                .map_err(D::Error::custom);
         }
         serde_json::from_value(value)
             .map(Box::new)
@@ -426,17 +425,17 @@ impl<'de> Deserialize<'de> for BlockHolderSet {
         match Raw::deserialize(deserializer)? {
             Raw::Single(value) => {
                 if let Some(tag) = value.strip_prefix('#') {
-                    let tag = parse_loose_identifier_de(tag)?;
+                    let tag = Identifier::parse_or_vanilla(tag).map_err(D::Error::custom)?;
                     Ok(Self::Tag(tag))
                 } else {
-                    let entry = parse_loose_identifier_de(&value)?;
+                    let entry = Identifier::parse_or_vanilla(&value).map_err(D::Error::custom)?;
                     Ok(Self::Entries(vec![entry]))
                 }
             }
             Raw::Many(values) => {
                 let entries = values
                     .iter()
-                    .map(|value| parse_loose_identifier_de(value))
+                    .map(|value| Identifier::parse_or_vanilla(value).map_err(D::Error::custom))
                     .collect::<Result<_, _>>()?;
                 Ok(Self::Entries(entries))
             }
@@ -456,17 +455,17 @@ impl<'de> Deserialize<'de> for FluidHolderSet {
         match Raw::deserialize(deserializer)? {
             Raw::Single(value) => {
                 if let Some(tag) = value.strip_prefix('#') {
-                    let tag = parse_loose_identifier_de(tag)?;
+                    let tag = Identifier::parse_or_vanilla(tag).map_err(D::Error::custom)?;
                     Ok(Self::Tag(tag))
                 } else {
-                    let entry = parse_loose_identifier_de(&value)?;
+                    let entry = Identifier::parse_or_vanilla(&value).map_err(D::Error::custom)?;
                     Ok(Self::Entries(vec![entry]))
                 }
             }
             Raw::Many(values) => {
                 let entries = values
                     .iter()
-                    .map(|value| parse_loose_identifier_de(value))
+                    .map(|value| Identifier::parse_or_vanilla(value).map_err(D::Error::custom))
                     .collect::<Result<_, _>>()?;
                 Ok(Self::Entries(entries))
             }

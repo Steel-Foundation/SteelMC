@@ -41,7 +41,7 @@ struct ElementJson {
 
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
-enum ProcessorsJson {
+pub(crate) enum ProcessorsJson {
     Registry(String),
     Direct { processors: Vec<Value> },
 }

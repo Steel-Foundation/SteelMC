@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use crate::generator_functions::{parse_loose_identifier, registry_entry_ident};
+use crate::generator_functions::{registry_entry_ident, resource_name, sorted_json_files};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -20,11 +20,10 @@ mod providers;
 mod structures;
 
 use common::{
-    generate_block_holder_set, generate_block_ref, generate_block_ref_list,
-    generate_block_state_data, generate_box, generate_configured_feature_entry_ref,
-    generate_direction, generate_fluid_ref_list, generate_fluid_state_data, generate_identifier,
-    generate_offset, generate_option, generate_placed_feature_entry_ref, generate_rotation,
-    generate_vec, generate_vertical_anchor, resource_name, sorted_json_files,
+    generate_block_holder_set, generate_block_ref, generate_block_state_data, generate_box,
+    generate_configured_feature_entry_ref, generate_direction, generate_fluid_holder_set,
+    generate_fluid_state_data, generate_identifier, generate_offset, generate_option,
+    generate_placed_feature_entry_ref, generate_rotation, generate_vec, generate_vertical_anchor,
 };
 use configured::generate_configured_feature_kind;
 use placement::{
@@ -99,7 +98,7 @@ pub(crate) fn build_configured() -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, kind) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = parse_loose_identifier(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid configured feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);
@@ -133,7 +132,7 @@ pub(crate) fn build_placed() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<PlacedFeatureData>(&content)
@@ -156,7 +155,7 @@ pub(crate) fn build_placed() -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, data) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = parse_loose_identifier(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid placed feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);

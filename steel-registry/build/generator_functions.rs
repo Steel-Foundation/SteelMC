@@ -7,13 +7,57 @@ use proc_macro2::{Ident, Span};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use steel_utils::Identifier;
 
 pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
     println!("cargo:rerun-if-changed={path}");
     let content = fs::read_to_string(path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
     serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
+}
+
+pub fn sorted_json_files(dir: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_json_files(Path::new(dir), &mut files);
+    files.sort();
+    files
+}
+
+fn collect_json_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    let entries = fs::read_dir(dir)
+        .unwrap_or_else(|error| panic!("Failed to read {}: {error}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_json_files(&path, files);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("json") {
+            files.push(path);
+        }
+    }
+}
+
+pub fn resource_name(path: &Path) -> String {
+    let path_without_extension = path.with_extension("");
+    let components: Vec<_> = path_without_extension
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect();
+    if let Some(index) = components
+        .iter()
+        .position(|component| *component == "worldgen")
+    {
+        if index + 2 < components.len() {
+            return components[index + 2..].join("/");
+        }
+    }
+    path_without_extension
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_else(|| panic!("invalid resource file name {}", path.display()))
+        .to_string()
 }
 
 pub fn sort_contiguous_registry_entries<T>(
@@ -37,10 +81,6 @@ pub fn generate_identifier(resource: &Identifier) -> TokenStream {
     quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
 }
 
-pub fn parse_loose_identifier(raw: &str) -> Result<Identifier, String> {
-    Identifier::parse_or_vanilla(raw).map_err(|error| format!("{error}: {raw}"))
-}
-
 pub fn generate_static_identifier(resource: &Identifier) -> TokenStream {
     let namespace = resource.namespace.as_ref();
     let path = resource.path.as_ref();
@@ -52,13 +92,13 @@ pub fn generate_static_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub fn generate_static_identifier_from_str(raw: &str, context: &str) -> TokenStream {
-    let identifier = parse_loose_identifier(raw)
+    let identifier = Identifier::parse_or_vanilla(raw)
         .unwrap_or_else(|error| panic!("invalid {context} identifier {raw}: {error}"));
     generate_static_identifier(&identifier)
 }
 
 pub fn generate_owned_identifier_from_str(raw: &str, context: &str) -> TokenStream {
-    let identifier = parse_loose_identifier(raw)
+    let identifier = Identifier::parse_or_vanilla(raw)
         .unwrap_or_else(|error| panic!("invalid {context} identifier {raw}: {error}"));
     let namespace = identifier.namespace.as_ref();
     let path = identifier.path.as_ref();
