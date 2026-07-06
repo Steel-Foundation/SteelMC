@@ -631,7 +631,7 @@ pub(crate) fn build() -> TokenStream {
     // Generate static biome definitions
     let mut register_stream = TokenStream::new();
     for (biome_name, biome) in &biomes {
-        let identifier = crate::generator_functions::parse_loose_identifier(biome_name)
+        let identifier = Identifier::parse_or_vanilla(biome_name)
             .unwrap_or_else(|e| panic!("invalid biome name {biome_name}: {e}"));
         let key = crate::generator_functions::generate_static_identifier(&identifier);
         let biome_ident_str = if identifier.namespace == steel_utils::Identifier::VANILLA_NAMESPACE

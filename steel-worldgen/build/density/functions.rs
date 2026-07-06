@@ -622,10 +622,7 @@ fn json_spline_to_cubic(spline: &SplineJson) -> CubicSpline {
             }],
         ),
         SplineJson::Multipoint { coordinate, points } => CubicSpline::new(
-            Arc::new(DensityFunction::Reference(Reference {
-                id: coordinate.clone(),
-                resolved: None,
-            })),
+            Arc::new(json_to_df(coordinate)),
             points.iter().map(json_spline_point).collect(),
         ),
     }

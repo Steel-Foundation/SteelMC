@@ -4,10 +4,9 @@ use std::fs;
 
 use crate::generator_functions::{
     generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
-    registry_entry_ident,
+    registry_entry_ident, resource_name, sorted_json_files,
 };
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::{Identifier, value_providers::IntProvider};
@@ -25,30 +24,6 @@ use structure_processor_data::{
     StructureProcessorHeightmap, StructureProcessorKind, StructureProcessorListData,
     StructureRuleTestData,
 };
-
-fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("{dir} missing: {err}"))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    files.sort_by_key(std::fs::DirEntry::file_name);
-    files
-}
-
-fn resource_name(entry: &fs::DirEntry) -> String {
-    entry
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_else(|| {
-            panic!(
-                "invalid structure processor-list file name: {:?}",
-                entry.path()
-            )
-        })
-        .to_owned()
-}
 
 fn generate_registry_key(registry_id: &str) -> TokenStream {
     generate_static_identifier_from_str(registry_id, "structure processor-list registry")
@@ -437,7 +412,7 @@ pub(crate) fn build() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<StructureProcessorListData>(&content)

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs, str::FromStr};
 
-use crate::generator_functions::{generate_sound_event_ref, parse_loose_identifier};
+use crate::generator_functions::generate_sound_event_ref;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -80,7 +80,7 @@ fn parse_block_or_tag(s: &str) -> TokenStream {
         (false, s)
     };
 
-    let id = parse_loose_identifier(rest)
+    let id = Identifier::parse_or_vanilla(rest)
         .unwrap_or_else(|error| panic!("invalid item tool rule block/tag reference {s}: {error}"));
     let namespace = id.namespace.as_ref();
     let path = id.path.as_ref();
@@ -95,7 +95,7 @@ fn parse_block_or_tag(s: &str) -> TokenStream {
 }
 
 fn parse_identifier_or_vanilla(s: &str) -> Identifier {
-    parse_loose_identifier(s)
+    Identifier::parse_or_vanilla(s)
         .unwrap_or_else(|error| panic!("invalid item build identifier {s}: {error}"))
 }
 
