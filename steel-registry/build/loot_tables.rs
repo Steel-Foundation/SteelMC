@@ -27,10 +27,8 @@ enum NumberProviderJson {
         #[serde(default)]
         value: Option<f32>,
         #[serde(default)]
-        min: Option<f32>,
         min: Option<Box<NumberProviderJson>>,
         #[serde(default)]
-        max: Option<f32>,
         max: Option<Box<NumberProviderJson>>,
         #[serde(default)]
         n: Option<f32>, // Can be float in JSON, convert to i32 later
