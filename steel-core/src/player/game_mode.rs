@@ -1435,6 +1435,14 @@ impl Player {
 
         self.ack_block_changes_up_to(packet.sequence);
 
+        let item_stack_is_empty = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(packet.hand).is_empty()
+        };
+        if item_stack_is_empty {
+            return;
+        }
+
         let target_yaw = wrap_degrees(packet.y_rot);
         let target_pitch = wrap_degrees(packet.x_rot);
         if self.rotation() != (target_yaw, target_pitch) {

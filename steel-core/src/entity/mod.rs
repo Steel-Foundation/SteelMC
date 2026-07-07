@@ -984,6 +984,7 @@ fn teleport_entity_cross_world(
         }
     }
 
+    let projectile_owner = entity.projectile_owner();
     let Some(persistent) = ChunkStorage::entity_to_dimension_transition_persistent(&entity) else {
         tracing::warn!(
             entity_id = entity.id(),
@@ -1007,6 +1008,9 @@ fn teleport_entity_cross_world(
         );
         return None;
     };
+    if let Some(owner) = &projectile_owner {
+        new_entity.restore_owner_reference(owner);
+    }
 
     if let Err(error) = teleport_set_position(
         new_entity.as_ref(),
@@ -1035,6 +1039,12 @@ fn teleport_entity_cross_world(
         );
         new_entity.set_removed(RemovalReason::Discarded);
         return None;
+    }
+    if new_entity.entity_type() == &vanilla_entities::ENDER_PEARL
+        && let Some(owner) = &projectile_owner
+        && let Some(player) = owner.as_player()
+    {
+        player.register_ender_pearl(&new_entity);
     }
 
     remove_after_changing_dimensions(entity.as_ref());
@@ -1615,6 +1625,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Returns the vanilla `Projectile` owner UUID when this entity exposes one.
     fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        None
+    }
+
+    /// Returns the live vanilla `Projectile` owner when this entity exposes one.
+    fn projectile_owner(&self) -> Option<SharedEntity> {
         None
     }
 

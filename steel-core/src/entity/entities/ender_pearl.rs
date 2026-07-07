@@ -16,7 +16,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::SoundSource;
+use steel_protocol::packets::game::{RelativeMovement, SoundSource};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -31,8 +31,10 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
     ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
+    change_entity_world,
 };
 use crate::player::Player;
+use crate::portal::{TeleportPostTransition, TeleportTransition};
 use crate::world::World;
 
 /// Fall-style damage dealt to the teleporting owner (vanilla `enderPearl()`, 5.0).
@@ -132,32 +134,54 @@ impl EnderPearlEntity {
             && world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true)
     }
 
-    /// Vanilla `ThrownEnderpearl.isAllowedToTeleportOwner` (same-dimension case).
-    // TODO: cross-dimension teleport (`canUsePortal`) is deferred.
-    fn is_allowed_to_teleport_owner(player: &Player) -> bool {
-        LivingEntity::is_alive(player) && !player.is_sleeping()
+    /// Vanilla `ThrownEnderpearl.isAllowedToTeleportOwner`.
+    fn is_allowed_to_teleport_owner(world: &Arc<World>, player: &Player) -> bool {
+        let player_world = player.get_world();
+        if Arc::ptr_eq(&player_world, world) {
+            return LivingEntity::is_alive(player) && !player.is_sleeping();
+        }
+
+        player.can_use_portal(true)
     }
 
     /// Teleports the owning player and applies the pearl's effects.
     ///
     /// Mirrors the `ServerPlayer` branch of vanilla `ThrownEnderpearl.onHit`.
-    #[expect(
-        clippy::unused_self,
-        reason = "uses self once the endermite-spawn and portal-cooldown TODOs land"
-    )]
-    fn teleport_owner(&self, world: &Arc<World>, player: &Player, teleport_pos: DVec3) {
+    fn teleport_owner(
+        &self,
+        world: &Arc<World>,
+        owner: &SharedEntity,
+        player: &Player,
+        teleport_pos: DVec3,
+    ) {
         // TODO: 5% endermite spawn (Endermite entity not implemented).
-        // TODO: portal-cooldown transfer when the pearl is on portal cooldown.
-
-        if let Err(error) = player.teleport_preserving_velocity(teleport_pos) {
-            log::debug!("failed to teleport ender pearl owner: {error}");
-            return;
+        if self.is_on_portal_cooldown() {
+            player.reset_portal_cooldown();
         }
-        player.reset_fall_distance();
-        player.reset_current_impulse_context();
+
+        let transition = TeleportTransition {
+            target_world: Arc::clone(world),
+            position: teleport_pos,
+            rotation: (0.0, 0.0),
+            velocity: DVec3::ZERO,
+            relatives: RelativeMovement::ROTATION.union(RelativeMovement::DELTA),
+            portal_cooldown: player.portal_cooldown(),
+            as_passenger: false,
+            post_transition: TeleportPostTransition::do_nothing(),
+        };
+        let Some(new_owner) = change_entity_world(Arc::clone(owner), &transition) else {
+            log::debug!("failed to teleport ender pearl owner {}", self.id());
+            return;
+        };
+        let Some(new_player) = new_owner.as_player() else {
+            return;
+        };
+
+        new_player.reset_fall_distance();
+        new_player.reset_current_impulse_context();
 
         let damage = DamageSource::environment(&vanilla_damage_types::ENDER_PEARL);
-        player.hurt(&damage, TELEPORT_DAMAGE);
+        new_player.hurt(&damage, TELEPORT_DAMAGE);
 
         world.play_sound_at(
             &sound_events::ENTITY_PLAYER_TELEPORT,
@@ -217,6 +241,14 @@ impl Entity for EnderPearlEntity {
         self.cache_owner_entity(owner);
     }
 
+    fn projectile_owner_uuid(&self) -> Option<uuid::Uuid> {
+        self.owner_uuid()
+    }
+
+    fn projectile_owner(&self) -> Option<SharedEntity> {
+        self.get_owner()
+    }
+
     fn attackable(&self) -> bool {
         false
     }
@@ -272,9 +304,9 @@ impl Projectile for EnderPearlEntity {
         let teleport_pos = self.old_position();
         if let Some(owner) = self.owner_player()
             && let Some(player) = owner.as_player()
-            && Self::is_allowed_to_teleport_owner(player)
+            && Self::is_allowed_to_teleport_owner(&world, player)
         {
-            self.teleport_owner(&world, player, teleport_pos);
+            self.teleport_owner(&world, &owner, player, teleport_pos);
         }
         self.deregister_from_owner();
         self.set_removed(RemovalReason::Discarded);
@@ -351,6 +383,7 @@ mod tests {
         let uuid = uuid::Uuid::from_u128(0x1234_5678_9abc_def0);
         pearl.set_owner_uuid(Some(uuid));
         assert_eq!(pearl.owner_uuid(), Some(uuid));
+        assert_eq!(pearl.projectile_owner_uuid(), Some(uuid));
     }
 
     #[test]
