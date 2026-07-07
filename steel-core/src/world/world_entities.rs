@@ -140,6 +140,8 @@ impl World {
         let player_data = PersistentPlayerData::from_player(&player);
         let start = Instant::now();
 
+        player.store_ender_pearls_with_player();
+
         player
             .server()
             .remove_online_player_after_disconnect(player.clone(), domain, player_data)
