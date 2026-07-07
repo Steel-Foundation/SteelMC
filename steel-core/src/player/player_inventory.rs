@@ -1154,8 +1154,8 @@ impl PlayerInventory {
     /// Applies vanilla `ItemUtils.createFilledResult` to a held item.
     ///
     /// Mutates the held stack and inventory, returning only the result stack that
-    /// should be dropped by the caller. Vanilla ignores creative inventory
-    /// overflow only in the limited creative branch.
+    /// should be dropped by the caller. Creative inventory insertion discards
+    /// leftover result items instead of dropping them.
     pub fn apply_filled_result(
         &mut self,
         hand: InteractionHand,
@@ -1180,7 +1180,7 @@ impl PlayerInventory {
         }
 
         let added = self.add(&mut result_stack);
-        if added {
+        if added || has_infinite_materials {
             ItemStack::empty()
         } else {
             result_stack
@@ -1590,7 +1590,7 @@ mod tests {
     }
 
     #[test]
-    fn filled_result_creative_unlimited_returns_unadded_result_for_caller_to_drop() {
+    fn filled_result_creative_unlimited_discards_unadded_result() {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
@@ -1606,7 +1606,7 @@ mod tests {
             false,
         );
 
-        assert_eq!(overflow, ItemStack::new(&ITEMS.water_bucket));
+        assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
             &ItemStack::new(&ITEMS.lava_bucket)
