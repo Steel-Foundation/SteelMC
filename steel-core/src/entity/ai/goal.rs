@@ -38,6 +38,7 @@ pub(crate) use random_look_around::RandomLookAroundGoal;
 pub(crate) use selector::{GoalControl, GoalSelector};
 pub(crate) use tempt_goal::TemptGoal;
 pub(crate) use water_avoiding_random_stroll::WaterAvoidingRandomStrollGoal;
+pub(crate) use random_pos::default_random_pos;
 
 pub(super) const fn reduced_tick_delay(ticks: i32) -> i32 {
     (ticks + 1) / 2
