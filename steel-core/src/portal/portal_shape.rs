@@ -1,15 +1,21 @@
 //! Portal shape detection for validating obsidian frames.
 
+use glam::DVec3;
 use std::sync::Arc;
+use steel_math::inverse_lerp;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_utils::axis::Axis;
+use steel_utils::block_util::FoundRectangle;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, Direction, WorldAabb};
 
+use crate::entity::Entity;
+use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
 /// A detected portal shape with axis, position, and dimensions.
@@ -69,6 +75,22 @@ fn is_empty(world: &dyn LevelReader, pos: BlockPos, config: &PortalFrameConfig) 
     }
     let block = state.get_block();
     block.has_tag(&BlockTag::FIRE) || block == config.portal
+}
+
+const fn block_pos_axis(pos: BlockPos, axis: Axis) -> i32 {
+    match axis {
+        Axis::X => pos.x(),
+        Axis::Y => pos.y(),
+        Axis::Z => pos.z(),
+    }
+}
+
+const fn vec_axis(pos: DVec3, axis: Axis) -> f64 {
+    match axis {
+        Axis::X => pos.x,
+        Axis::Y => pos.y,
+        Axis::Z => pos.z,
+    }
 }
 
 impl PortalShape {
@@ -319,5 +341,127 @@ impl PortalShape {
                 );
             }
         }
+    }
+
+    /// Returns vanilla `PortalShape.getRelativePosition`.
+    #[must_use]
+    pub fn get_relative_position(
+        largest_rectangle_around: FoundRectangle,
+        axis: Axis,
+        position: DVec3,
+        dimensions: EntityDimensions,
+    ) -> DVec3 {
+        let width = f64::from(largest_rectangle_around.axis1_size) - f64::from(dimensions.width);
+        let height = f64::from(largest_rectangle_around.axis2_size) - f64::from(dimensions.height);
+        let bottom_min = largest_rectangle_around.min_corner;
+        let relative_right = if width > 0.0 {
+            let bottom_start =
+                f64::from(block_pos_axis(bottom_min, axis)) + f64::from(dimensions.width) / 2.0;
+            inverse_lerp(vec_axis(position, axis) - bottom_start, 0.0, width).clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+
+        let relative_up = if height > 0.0 {
+            inverse_lerp(
+                vec_axis(position, Axis::Y) - f64::from(block_pos_axis(bottom_min, Axis::Y)),
+                0.0,
+                height,
+            )
+            .clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let forward_axis = if axis == Axis::X { Axis::Z } else { Axis::X };
+        let relative_forward = vec_axis(position, forward_axis)
+            - (f64::from(block_pos_axis(bottom_min, forward_axis)) + 0.5);
+        DVec3::new(relative_right, relative_up, relative_forward)
+    }
+
+    /// Returns vanilla `PortalShape.findCollisionFreePosition`.
+    #[must_use]
+    pub fn find_collision_free_position(
+        bottom_center: DVec3,
+        world: &Arc<World>,
+        entity: &dyn Entity,
+        dimensions: EntityDimensions,
+    ) -> DVec3 {
+        if dimensions.width > 4.0 || dimensions.height > 4.0 {
+            return bottom_center;
+        }
+
+        let width = f64::from(dimensions.width);
+        let height = f64::from(dimensions.height);
+        let half_height = height / 2.0;
+        let center = bottom_center + DVec3::new(0.0, half_height, 0.0);
+        let allowed_centers = [WorldAabb::of_size(center, width, 0.0, width)
+            .expand_towards(DVec3::Y)
+            .inflate(1.0E-6)];
+
+        WorldCollisionProvider::for_entity(world, entity)
+            .find_free_position(&allowed_centers, center, width, height, width)
+            .map_or(bottom_center, |pos| pos - DVec3::new(0.0, half_height, 0.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityDimensions;
+    use steel_utils::BlockPos;
+    use steel_utils::axis::Axis;
+    use steel_utils::block_util::FoundRectangle;
+
+    use super::PortalShape;
+
+    #[test]
+    fn relative_portal_position_matches_vanilla_axis_math() {
+        let rectangle = FoundRectangle {
+            min_corner: BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+        let position = DVec3::new(12.0, 66.0, 20.75);
+        let dimensions = EntityDimensions::new(1.0, 2.0, 1.62);
+
+        let relative = PortalShape::get_relative_position(rectangle, Axis::X, position, dimensions);
+
+        assert!((relative.x - 0.5).abs() < f64::EPSILON);
+        assert!((relative.y - (2.0 / 3.0)).abs() < f64::EPSILON);
+        assert!((relative.z - 0.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn relative_portal_position_clamps_right_and_up_offsets() {
+        let rectangle = FoundRectangle {
+            min_corner: BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+        let position = DVec3::new(8.0, 80.0, 20.5);
+        let dimensions = EntityDimensions::new(1.0, 2.0, 1.62);
+
+        let relative = PortalShape::get_relative_position(rectangle, Axis::X, position, dimensions);
+
+        assert!((relative.x - 0.0).abs() < f64::EPSILON);
+        assert!((relative.y - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn relative_portal_position_uses_vanilla_fallbacks_when_entity_fills_rectangle() {
+        let rectangle = FoundRectangle {
+            min_corner: BlockPos::new(10, 64, 20),
+            axis1_size: 2,
+            axis2_size: 3,
+        };
+        let position = DVec3::new(11.0, 65.0, 20.25);
+        let dimensions = EntityDimensions::new(3.0, 4.0, 1.62);
+
+        let relative = PortalShape::get_relative_position(rectangle, Axis::Z, position, dimensions);
+
+        assert!((relative.x - 0.5).abs() < f64::EPSILON);
+        assert!((relative.y - 0.0).abs() < f64::EPSILON);
+        assert!((relative.z - 0.5).abs() < f64::EPSILON);
     }
 }

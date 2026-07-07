@@ -6,7 +6,8 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_utils::locks::SyncMutex;
+use steel_utils::{UuidExt, locks::SyncMutex};
+use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
@@ -82,11 +83,54 @@ impl Entity for RawEntity {
         false
     }
 
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        if !self.entity_type.is_projectile {
+            return None;
+        }
+
+        self.projectile_owner_uuid_from_nbt()
+    }
+
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         *self.data.lock() = nbt.to_owned();
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         *nbt = self.data.lock().clone();
+    }
+}
+
+impl RawEntity {
+    fn projectile_owner_uuid_from_nbt(&self) -> Option<Uuid> {
+        let data = self.data.lock();
+        let owner = data.int_array("Owner")?;
+        Uuid::from_int_array(owner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use simdnbt::owned::NbtTag;
+    use steel_registry::vanilla_entities;
+    use steel_utils::UuidExt;
+    use uuid::Uuid;
+
+    use crate::entity::Entity;
+
+    use super::RawEntity;
+
+    #[test]
+    fn raw_projectile_reads_vanilla_owner_uuid() {
+        let owner = Uuid::from_u128(42);
+        let entity = RawEntity::new(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ENDER_PEARL);
+        entity
+            .data
+            .lock()
+            .insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
+
+        assert_eq!(entity.projectile_owner_uuid(), Some(owner));
     }
 }

@@ -78,6 +78,7 @@ struct PlayerDataFile {
     experience_progress: f32,
     experience_total: i32,
     score: i32,
+    seen_credits: bool,
     root_vehicle: Option<RootVehicleFile>,
     ender_pearls: Vec<EnderPearlFile>,
 }
@@ -367,6 +368,7 @@ impl PlayerDataFile {
             experience_progress: data.experience_progress,
             experience_total: data.experience_total,
             score: data.score,
+            seen_credits: data.seen_credits,
             root_vehicle: data
                 .root_vehicle
                 .clone()
@@ -439,6 +441,7 @@ impl PlayerDataFile {
             experience_progress: self.experience_progress,
             experience_total: self.experience_total,
             score: self.score,
+            seen_credits: self.seen_credits,
             root_vehicle: self.root_vehicle.map(|root_vehicle| PersistentRootVehicle {
                 attach: root_vehicle.attach,
                 entity: root_vehicle.entity,
@@ -590,6 +593,7 @@ mod tests {
             experience_progress: 0.5,
             experience_total: 32,
             score: 9,
+            seen_credits: true,
             root_vehicle: None,
             ender_pearls: Vec::new(),
         }
@@ -639,6 +643,7 @@ mod tests {
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
         assert_eq!(decoded.experience_level, 7);
+        assert!(decoded.seen_credits);
     }
 
     #[test]

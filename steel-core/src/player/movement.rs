@@ -5,8 +5,8 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CMoveVehicle, CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer,
-    SMoveVehicle, SPlayerCommand, SPlayerInput,
+    CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
+    SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
@@ -202,6 +202,9 @@ impl Player {
             packet.get_y_rot(0.0),
         ) {
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            return;
+        }
+        if self.has_won_game() {
             return;
         }
 
@@ -728,12 +731,50 @@ impl Player {
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity(pos, DVec3::ZERO, yaw, pitch)
+    }
+
+    /// Sends a `CPlayerPosition` packet with explicit delta movement for vanilla
+    /// `ServerPlayer.teleport(TeleportTransition)` paths.
+    pub(crate) fn teleport_with_velocity(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity_packet(
+            pos,
+            velocity,
+            (yaw, pitch),
+            pos,
+            velocity,
+            (yaw, pitch),
+            RelativeMovement::NONE,
+        )
+    }
+
+    /// Commits resolved server state while sending vanilla packet-relative values.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "packet-relative teleports must keep resolved and protocol values separate"
+    )]
+    pub(crate) fn teleport_with_velocity_packet(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        packet_pos: DVec3,
+        packet_velocity: DVec3,
+        packet_rotation: (f32, f32),
+        relatives: RelativeMovement,
+    ) -> Result<(), EntityMoveError> {
         let world = self.get_world();
         self.try_set_position(pos)?;
         if world.entity_manager().get_by_id(self.id()).is_some() {
             world.chunk_map.update_player_status(self);
         }
-        self.set_velocity(DVec3::ZERO);
+        self.set_velocity(velocity);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -743,14 +784,21 @@ impl Player {
             id
         };
 
-        self.set_rotation((yaw, pitch));
+        self.set_rotation(rotation);
         self.set_old_position_to_current();
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();
         }
 
-        self.send_packet(CPlayerPosition::absolute(new_id, pos, yaw, pitch));
+        self.send_packet(CPlayerPosition::new(
+            new_id,
+            packet_pos,
+            packet_velocity,
+            packet_rotation.0,
+            packet_rotation.1,
+            relatives,
+        ));
         Ok(())
     }
 

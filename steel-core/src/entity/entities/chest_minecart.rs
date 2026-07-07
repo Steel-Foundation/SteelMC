@@ -9,9 +9,14 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::Identifier;
+use steel_utils::axis::Axis;
+use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+};
+use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
 
 /// Chest minecart entity state used by mineshaft generation.
@@ -97,6 +102,15 @@ impl Entity for ChestMinecartEntity {
         true
     }
 
+    fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
+        reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
+            portal_area,
+            axis,
+            self.position(),
+            self.dimensions_for_pose(self.pose()),
+        ))
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         nbt.insert("FlippedRotation", Self::nbt_bool(false));
         let state = self.state.lock();
@@ -165,5 +179,28 @@ mod tests {
         assert!(minecart.is_pickable());
         assert!(minecart.is_pushable());
         assert!(minecart.blocks_building());
+    }
+
+    #[test]
+    fn chest_minecart_relative_portal_position_resets_forward_offset() {
+        let minecart = ChestMinecartEntity::new(
+            &vanilla_entities::CHEST_MINECART,
+            1,
+            DVec3::new(12.0, 66.0, 20.75),
+            Weak::new(),
+        );
+        let portal_area = FoundRectangle {
+            min_corner: steel_utils::BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+
+        assert!(
+            minecart
+                .get_relative_portal_position(Axis::X, portal_area)
+                .z
+                .abs()
+                < f64::EPSILON
+        );
     }
 }

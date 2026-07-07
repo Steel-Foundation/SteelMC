@@ -379,6 +379,160 @@ impl<'a> WorldCollisionProvider<'a> {
 
         main_support
     }
+
+    /// Returns vanilla `CollisionGetter.findFreePosition` for AABB-backed center shapes.
+    #[must_use]
+    pub fn find_free_position(
+        &self,
+        allowed_centers: &[WorldAabb],
+        preferred_center: DVec3,
+        size_x: f64,
+        size_y: f64,
+        size_z: f64,
+    ) -> Option<DVec3> {
+        let allowed_bounds = union_bounds(allowed_centers)?;
+        let search_area = allowed_bounds.inflate_xyz(size_x, size_y, size_z);
+        let context = self
+            .source
+            .map_or(BlockCollisionContext::empty(), |source| {
+                self.entity_collision_context(source.position().y, source.is_descending(), false)
+            });
+        let world_border = self.world.world_border_snapshot();
+        let expanded_collisions = self
+            .get_block_collisions_with_context(&search_area, context)
+            .into_iter()
+            .filter(|shape| world_border.is_within_bounds(*shape))
+            .map(|shape| shape.inflate_xyz(size_x / 2.0, size_y / 2.0, size_z / 2.0));
+
+        closest_free_position(allowed_centers, preferred_center, expanded_collisions)
+    }
+}
+
+fn union_bounds(boxes: &[WorldAabb]) -> Option<WorldAabb> {
+    let mut boxes = boxes.iter().copied().filter(|aabb| !aabb.is_empty());
+    let first = boxes.next()?;
+    Some(boxes.fold(first, |bounds, aabb| {
+        WorldAabb::encapsulating(&bounds, &aabb)
+    }))
+}
+
+fn closest_free_position(
+    allowed_centers: &[WorldAabb],
+    preferred_center: DVec3,
+    expanded_collisions: impl IntoIterator<Item = WorldAabb>,
+) -> Option<DVec3> {
+    let mut free_boxes = allowed_centers
+        .iter()
+        .copied()
+        .filter(|aabb| !aabb.is_empty())
+        .collect::<Vec<_>>();
+
+    if free_boxes.is_empty() {
+        return None;
+    }
+
+    for collision in expanded_collisions {
+        if collision.is_empty() {
+            continue;
+        }
+
+        let mut next_boxes = Vec::new();
+        for free_box in free_boxes {
+            subtract_aabb(free_box, collision, &mut next_boxes);
+        }
+        free_boxes = next_boxes;
+        if free_boxes.is_empty() {
+            return None;
+        }
+    }
+
+    closest_point_to_boxes(&free_boxes, preferred_center)
+}
+
+fn subtract_aabb(free: WorldAabb, blocked: WorldAabb, output: &mut Vec<WorldAabb>) {
+    if free.is_empty() {
+        return;
+    }
+
+    if !free.intersects(blocked) {
+        output.push(free);
+        return;
+    }
+
+    let min_x = free.min_x().max(blocked.min_x());
+    let max_x = free.max_x().min(blocked.max_x());
+    let min_y = free.min_y().max(blocked.min_y());
+    let max_y = free.max_y().min(blocked.max_y());
+    let min_z = free.min_z().max(blocked.min_z());
+    let max_z = free.max_z().min(blocked.max_z());
+
+    push_non_empty_aabb(
+        output,
+        free.min_x(),
+        free.min_y(),
+        free.min_z(),
+        min_x,
+        free.max_y(),
+        free.max_z(),
+    );
+    push_non_empty_aabb(
+        output,
+        max_x,
+        free.min_y(),
+        free.min_z(),
+        free.max_x(),
+        free.max_y(),
+        free.max_z(),
+    );
+    push_non_empty_aabb(
+        output,
+        min_x,
+        free.min_y(),
+        free.min_z(),
+        max_x,
+        min_y,
+        free.max_z(),
+    );
+    push_non_empty_aabb(
+        output,
+        min_x,
+        max_y,
+        free.min_z(),
+        max_x,
+        free.max_y(),
+        free.max_z(),
+    );
+    push_non_empty_aabb(output, min_x, min_y, free.min_z(), max_x, max_y, min_z);
+    push_non_empty_aabb(output, min_x, min_y, max_z, max_x, max_y, free.max_z());
+}
+
+fn push_non_empty_aabb(
+    output: &mut Vec<WorldAabb>,
+    min_x: f64,
+    min_y: f64,
+    min_z: f64,
+    max_x: f64,
+    max_y: f64,
+    max_z: f64,
+) {
+    let aabb = WorldAabb::new(min_x, min_y, min_z, max_x, max_y, max_z);
+    if !aabb.is_empty() {
+        output.push(aabb);
+    }
+}
+
+fn closest_point_to_boxes(boxes: &[WorldAabb], preferred_center: DVec3) -> Option<DVec3> {
+    let mut closest = None;
+    let mut closest_distance = f64::MAX;
+    for aabb in boxes {
+        let point = aabb.closest_point_to(preferred_center);
+        let distance = point.distance_squared(preferred_center);
+        if closest.is_none() || distance < closest_distance {
+            closest = Some(point);
+            closest_distance = distance;
+        }
+    }
+    closest
 }
 
 fn block_pos_center_distance_sq(pos: BlockPos, point: DVec3) -> f64 {
@@ -643,6 +797,8 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use super::*;
     use steel_registry::test_support;
     use steel_utils::BlockLocalAabb;
@@ -728,6 +884,39 @@ mod tests {
         let aabb3 = WorldAabb::new(5.0, 5.0, 5.0, 6.0, 6.0, 6.0);
 
         assert!(!aabb1.intersects(aabb3));
+    }
+
+    #[test]
+    fn closest_free_position_returns_preferred_center_without_collisions() {
+        let allowed = [WorldAabb::new(0.0, 0.0, 0.0, 4.0, 1.0, 1.0)];
+        let preferred = DVec3::new(2.0, 0.5, 0.5);
+
+        assert_eq!(
+            closest_free_position(&allowed, preferred, iter::empty()),
+            Some(preferred)
+        );
+    }
+
+    #[test]
+    fn closest_free_position_excludes_expanded_collisions() {
+        let allowed = [WorldAabb::new(0.0, 0.0, 0.0, 4.0, 1.0, 1.0)];
+        let collision = WorldAabb::new(0.0, -1.0, -1.0, 3.0, 2.0, 2.0);
+
+        assert_eq!(
+            closest_free_position(&allowed, DVec3::new(1.5, 0.5, 0.5), [collision].into_iter()),
+            Some(DVec3::new(3.0, 0.5, 0.5))
+        );
+    }
+
+    #[test]
+    fn closest_free_position_returns_none_when_fully_blocked() {
+        let allowed = [WorldAabb::new(0.0, 0.0, 0.0, 4.0, 1.0, 1.0)];
+        let collision = WorldAabb::new(-1.0, -1.0, -1.0, 5.0, 2.0, 2.0);
+
+        assert_eq!(
+            closest_free_position(&allowed, DVec3::new(1.5, 0.5, 0.5), [collision].into_iter()),
+            None
+        );
     }
 
     #[test]

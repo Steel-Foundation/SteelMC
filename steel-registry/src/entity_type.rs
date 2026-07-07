@@ -276,6 +276,10 @@ pub struct EntityType {
     pub is_abstract_boat: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractMinecart`.
     pub is_abstract_minecart: bool,
+    /// Whether vanilla class hierarchy makes this entity a `VehicleEntity`.
+    pub is_vehicle_entity: bool,
+    /// Whether vanilla class hierarchy makes this entity a `Projectile`.
+    pub is_projectile: bool,
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,
@@ -445,5 +449,14 @@ mod tests {
         assert!(vanilla_entities::CHEST_MINECART.is_abstract_minecart);
         assert!(vanilla_entities::TNT_MINECART.is_abstract_minecart);
         assert!(!vanilla_entities::ITEM.is_abstract_minecart);
+
+        assert!(vanilla_entities::OAK_BOAT.is_vehicle_entity);
+        assert!(vanilla_entities::MINECART.is_vehicle_entity);
+        assert!(!vanilla_entities::ITEM.is_vehicle_entity);
+
+        assert!(vanilla_entities::ARROW.is_projectile);
+        assert!(vanilla_entities::WIND_CHARGE.is_projectile);
+        assert!(vanilla_entities::FISHING_BOBBER.is_projectile);
+        assert!(!vanilla_entities::ITEM.is_projectile);
     }
 }

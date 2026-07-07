@@ -36,16 +36,23 @@ impl RelativeMovement {
     /// No relative flags (all values are absolute)
     pub const NONE: RelativeMovement = RelativeMovement(0);
 
-    /// All rotation flags
-    pub const ALL_ROTATION: RelativeMovement = RelativeMovement(Self::Y_ROT | Self::X_ROT);
-    /// All delta movement flags
-    pub const ALL_DELTA: RelativeMovement =
+    /// All rotation flags.
+    pub const ROTATION: RelativeMovement = RelativeMovement(Self::Y_ROT | Self::X_ROT);
+
+    /// Vanilla delta movement flags, including rotated-delta semantics.
+    pub const DELTA: RelativeMovement =
         RelativeMovement(Self::DELTA_X | Self::DELTA_Y | Self::DELTA_Z | Self::ROTATE_DELTA);
 
     /// Creates a new RelativeMovement with the given flags.
     #[must_use]
     pub const fn new(flags: i32) -> Self {
         Self(flags)
+    }
+
+    /// Returns the union of two relative movement sets.
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
     }
 
     /// Returns true if the X position is relative.
@@ -65,21 +72,41 @@ impl RelativeMovement {
     pub const fn is_z_relative(self) -> bool {
         self.0 & Self::Z != 0
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::RelativeMovement;
+    /// Returns true if yaw is relative.
+    #[must_use]
+    pub const fn is_y_rot_relative(self) -> bool {
+        self.0 & Self::Y_ROT != 0
+    }
 
-    #[test]
-    fn all_delta_matches_vanilla_relative_delta_set() {
-        assert_eq!(
-            RelativeMovement::ALL_DELTA.0,
-            RelativeMovement::DELTA_X
-                | RelativeMovement::DELTA_Y
-                | RelativeMovement::DELTA_Z
-                | RelativeMovement::ROTATE_DELTA
-        );
+    /// Returns true if pitch is relative.
+    #[must_use]
+    pub const fn is_x_rot_relative(self) -> bool {
+        self.0 & Self::X_ROT != 0
+    }
+
+    /// Returns true if delta X is relative.
+    #[must_use]
+    pub const fn is_delta_x_relative(self) -> bool {
+        self.0 & Self::DELTA_X != 0
+    }
+
+    /// Returns true if delta Y is relative.
+    #[must_use]
+    pub const fn is_delta_y_relative(self) -> bool {
+        self.0 & Self::DELTA_Y != 0
+    }
+
+    /// Returns true if delta Z is relative.
+    #[must_use]
+    pub const fn is_delta_z_relative(self) -> bool {
+        self.0 & Self::DELTA_Z != 0
+    }
+
+    /// Returns true if current delta movement is rotated by the teleport rotation delta.
+    #[must_use]
+    pub const fn rotates_delta(self) -> bool {
+        self.0 & Self::ROTATE_DELTA != 0
     }
 }
 
@@ -113,17 +140,42 @@ pub struct CPlayerPosition {
 }
 
 impl CPlayerPosition {
-    /// Creates a new absolute teleport packet.
+    /// Creates a teleport packet with explicit relative flags.
     #[must_use]
-    pub fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
+    pub const fn new(
+        teleport_id: i32,
+        pos: DVec3,
+        vel: DVec3,
+        yaw: f32,
+        pitch: f32,
+        relatives: RelativeMovement,
+    ) -> Self {
         Self {
             teleport_id,
             pos,
-            vel: DVec3::ZERO,
+            vel,
             yaw,
             pitch,
-            relatives: RelativeMovement::NONE,
+            relatives,
         }
+    }
+
+    /// Creates a new absolute teleport packet.
+    #[must_use]
+    pub fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
+        Self::absolute_with_velocity(teleport_id, pos, DVec3::ZERO, yaw, pitch)
+    }
+
+    /// Creates a new absolute teleport packet with explicit delta movement.
+    #[must_use]
+    pub const fn absolute_with_velocity(
+        teleport_id: i32,
+        pos: DVec3,
+        vel: DVec3,
+        yaw: f32,
+        pitch: f32,
+    ) -> Self {
+        Self::new(teleport_id, pos, vel, yaw, pitch, RelativeMovement::NONE)
     }
 
     /// Creates a teleport packet with relative rotation (keeps current rotation).
@@ -135,7 +187,7 @@ impl CPlayerPosition {
             vel: DVec3::ZERO,
             yaw: 0.0,
             pitch: 0.0,
-            relatives: RelativeMovement::ALL_ROTATION,
+            relatives: RelativeMovement::ROTATION,
         }
     }
 
@@ -148,9 +200,43 @@ impl CPlayerPosition {
             vel: DVec3::ZERO,
             yaw: 0.0,
             pitch: 0.0,
-            relatives: RelativeMovement::new(
-                RelativeMovement::ALL_ROTATION.0 | RelativeMovement::ALL_DELTA.0,
-            ),
+            relatives: RelativeMovement::ROTATION.union(RelativeMovement::DELTA),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::{CPlayerPosition, RelativeMovement};
+
+    #[test]
+    fn delta_matches_vanilla_relative_delta_set() {
+        assert_eq!(
+            RelativeMovement::DELTA.0,
+            RelativeMovement::DELTA_X
+                | RelativeMovement::DELTA_Y
+                | RelativeMovement::DELTA_Z
+                | RelativeMovement::ROTATE_DELTA
+        );
+    }
+
+    #[test]
+    fn absolute_with_velocity_preserves_delta_movement() {
+        let packet = CPlayerPosition::absolute_with_velocity(
+            12,
+            DVec3::new(1.0, 2.0, 3.0),
+            DVec3::new(0.1, 0.2, 0.3),
+            45.0,
+            -10.0,
+        );
+
+        assert_eq!(packet.teleport_id, 12);
+        assert_eq!(packet.pos, DVec3::new(1.0, 2.0, 3.0));
+        assert_eq!(packet.vel, DVec3::new(0.1, 0.2, 0.3));
+        assert_eq!(packet.yaw, 45.0);
+        assert_eq!(packet.pitch, -10.0);
+        assert_eq!(packet.relatives, RelativeMovement::NONE);
     }
 }
