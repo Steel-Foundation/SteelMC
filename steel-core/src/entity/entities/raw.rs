@@ -6,7 +6,6 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_entities;
 use steel_utils::{UuidExt, locks::SyncMutex};
 use uuid::Uuid;
 
@@ -84,12 +83,12 @@ impl Entity for RawEntity {
         false
     }
 
-    fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
-        if self.entity_type != &vanilla_entities::ENDER_PEARL {
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        if !self.entity_type.is_projectile {
             return None;
         }
 
-        self.ender_pearl_owner_uuid_from_nbt()
+        self.projectile_owner_uuid_from_nbt()
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -102,7 +101,7 @@ impl Entity for RawEntity {
 }
 
 impl RawEntity {
-    fn ender_pearl_owner_uuid_from_nbt(&self) -> Option<Uuid> {
+    fn projectile_owner_uuid_from_nbt(&self) -> Option<Uuid> {
         let data = self.data.lock();
         let owner = data.int_array("Owner")?;
         Uuid::from_int_array(owner)
@@ -124,7 +123,7 @@ mod tests {
     use super::RawEntity;
 
     #[test]
-    fn raw_ender_pearl_reads_vanilla_owner_uuid() {
+    fn raw_projectile_reads_vanilla_owner_uuid() {
         let owner = Uuid::from_u128(42);
         let entity = RawEntity::new(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ENDER_PEARL);
         entity
@@ -132,6 +131,6 @@ mod tests {
             .lock()
             .insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
 
-        assert_eq!(entity.ender_pearl_owner_uuid(), Some(owner));
+        assert_eq!(entity.projectile_owner_uuid(), Some(owner));
     }
 }

@@ -820,6 +820,8 @@ pub(crate) fn change_entity_world(
     }
 
     if entity.as_player().is_some() {
+        // Vanilla `ServerPlayer.teleport` keeps the live player/connection identity
+        // and sends respawn/player-position packets instead of recreating from entity NBT.
         let changed_entity = Arc::clone(&entity);
         entity.change_world(teleport_transition);
         return Some(changed_entity);
@@ -1606,8 +1608,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
-    /// Returns the owning player/entity UUID stored by a thrown ender pearl.
-    fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
+    /// Returns the vanilla `Projectile` owner UUID when this entity exposes one.
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
         None
     }
 
@@ -7127,7 +7129,7 @@ mod tests {
     struct TypedTestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
-        ender_pearl_owner_uuid: Option<Uuid>,
+        projectile_owner_uuid: Option<Uuid>,
     }
 
     impl TypedTestEntity {
@@ -7135,11 +7137,11 @@ mod tests {
             Self {
                 base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
-                ender_pearl_owner_uuid: None,
+                projectile_owner_uuid: None,
             }
         }
 
-        fn ender_pearl_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
+        fn projectile_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
             Self {
                 base: EntityBase::new(
                     id,
@@ -7148,7 +7150,7 @@ mod tests {
                     Weak::new(),
                 ),
                 entity_type: &vanilla_entities::ENDER_PEARL,
-                ender_pearl_owner_uuid: Some(owner_uuid),
+                projectile_owner_uuid: Some(owner_uuid),
             }
         }
     }
@@ -7162,8 +7164,8 @@ mod tests {
             self.entity_type
         }
 
-        fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
-            self.ender_pearl_owner_uuid
+        fn projectile_owner_uuid(&self) -> Option<Uuid> {
+            self.projectile_owner_uuid
         }
     }
 
@@ -7631,13 +7633,13 @@ mod tests {
     }
 
     #[test]
-    fn ender_pearl_owner_uuid_reports_pearl_owner_identity() {
+    fn projectile_owner_uuid_reports_projectile_owner_identity() {
         let owner_uuid = Uuid::from_u128(42);
-        let pearl = TypedTestEntity::ender_pearl_with_owner_uuid(1, owner_uuid);
+        let pearl = TypedTestEntity::projectile_with_owner_uuid(1, owner_uuid);
         let no_player_owner = TypedTestEntity::new(3, &vanilla_entities::ENDER_PEARL);
 
-        assert_eq!(pearl.ender_pearl_owner_uuid(), Some(owner_uuid));
-        assert_eq!(no_player_owner.ender_pearl_owner_uuid(), None);
+        assert_eq!(pearl.projectile_owner_uuid(), Some(owner_uuid));
+        assert_eq!(no_player_owner.projectile_owner_uuid(), None);
     }
 
     #[test]

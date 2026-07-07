@@ -122,15 +122,15 @@ mod tests {
     struct TestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
-        ender_pearl_owner_uuid: Option<Uuid>,
+        projectile_owner_uuid: Option<Uuid>,
     }
 
     impl TestEntity {
-        fn new(entity_type: EntityTypeRef, ender_pearl_owner_uuid: Option<Uuid>) -> Self {
+        fn new(entity_type: EntityTypeRef, projectile_owner_uuid: Option<Uuid>) -> Self {
             Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
-                ender_pearl_owner_uuid,
+                projectile_owner_uuid,
             }
         }
     }
@@ -144,8 +144,8 @@ mod tests {
             self.entity_type
         }
 
-        fn ender_pearl_owner_uuid(&self) -> Option<Uuid> {
-            self.ender_pearl_owner_uuid
+        fn projectile_owner_uuid(&self) -> Option<Uuid> {
+            self.projectile_owner_uuid
         }
     }
 
@@ -297,10 +297,10 @@ fn can_teleport_between_worlds(
     entity: &dyn Entity,
     source_world: &World,
     target_world: &World,
-    ender_pearl_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
+    projectile_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
 ) -> bool {
     if is_end_return_transition(source_world.dimension_type, target_world.dimension_type) {
-        return can_entity_return_from_end_to_overworld(entity, ender_pearl_owner_seen_credits);
+        return can_entity_return_from_end_to_overworld(entity, projectile_owner_seen_credits);
     }
 
     true
@@ -324,12 +324,12 @@ fn is_end_dimension_type(world: &World) -> bool {
 
 fn can_entity_return_from_end_to_overworld(
     entity: &dyn Entity,
-    ender_pearl_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
+    projectile_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
 ) -> bool {
     if entity.entity_type() == &vanilla_entities::ENDER_PEARL
         && entity
-            .ender_pearl_owner_uuid()
-            .and_then(|uuid| ender_pearl_owner_seen_credits(&uuid))
+            .projectile_owner_uuid()
+            .and_then(|uuid| projectile_owner_seen_credits(&uuid))
             == Some(false)
     {
         return false;
@@ -2315,11 +2315,11 @@ impl Server {
         target_world: &World,
     ) -> bool {
         can_teleport_between_worlds(entity, source_world, target_world, |uuid| {
-            self.ender_pearl_owner_seen_credits_in_domain(source_world.domain(), uuid)
+            self.projectile_owner_seen_credits_in_domain(source_world.domain(), uuid)
         })
     }
 
-    fn ender_pearl_owner_seen_credits_in_domain(
+    fn projectile_owner_seen_credits_in_domain(
         &self,
         domain: &str,
         uuid: &uuid::Uuid,
