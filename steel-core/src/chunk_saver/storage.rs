@@ -348,6 +348,12 @@ fn homogeneous_packed_light_value(data: &[u8; DATA_LAYER_SIZE]) -> Option<u8> {
     data.iter().all(|byte| *byte == first).then_some(value)
 }
 
+#[derive(Clone, Copy)]
+enum EntityPersistenceMode {
+    ChunkSave,
+    DimensionTransition,
+}
+
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
@@ -943,13 +949,26 @@ impl ChunkStorage {
         entities
             .iter()
             .filter(|entity| !entity.is_passenger())
-            .filter_map(|entity| Self::entity_to_persistent(entity, &mut visited))
+            .filter_map(|entity| {
+                Self::entity_to_persistent(entity, &mut visited, EntityPersistenceMode::ChunkSave)
+            })
             .collect()
     }
 
     pub(crate) fn entity_tree_to_persistent(entity: &SharedEntity) -> Option<PersistentEntity> {
         let mut visited = FxHashSet::default();
-        Self::entity_to_persistent(entity, &mut visited)
+        Self::entity_to_persistent(entity, &mut visited, EntityPersistenceMode::ChunkSave)
+    }
+
+    pub(crate) fn entity_to_dimension_transition_persistent(
+        entity: &SharedEntity,
+    ) -> Option<PersistentEntity> {
+        let mut visited = FxHashSet::default();
+        Self::entity_to_persistent(
+            entity,
+            &mut visited,
+            EntityPersistenceMode::DimensionTransition,
+        )
     }
 
     fn custom_name_to_persistent(custom_name: Option<&TextComponent>) -> Vec<u8> {
@@ -1057,8 +1076,9 @@ impl ChunkStorage {
     fn entity_to_persistent(
         entity: &SharedEntity,
         visited: &mut FxHashSet<i32>,
+        mode: EntityPersistenceMode,
     ) -> Option<PersistentEntity> {
-        if !Self::entity_should_save(entity.as_ref()) {
+        if !Self::entity_should_persist(entity.as_ref(), mode) {
             return None;
         }
 
@@ -1100,7 +1120,7 @@ impl ChunkStorage {
         let passengers = entity
             .passengers()
             .iter()
-            .filter_map(|passenger| Self::entity_to_persistent(passenger, visited))
+            .filter_map(|passenger| Self::entity_to_persistent(passenger, visited, mode))
             .collect();
 
         Some(PersistentEntity {
@@ -1137,6 +1157,13 @@ impl ChunkStorage {
                 .removal_reason()
                 .is_some_and(RemovalReason::should_save))
             && entity.entity_type().can_serialize
+    }
+
+    fn entity_should_persist(entity: &dyn Entity, mode: EntityPersistenceMode) -> bool {
+        match mode {
+            EntityPersistenceMode::ChunkSave => Self::entity_should_save(entity),
+            EntityPersistenceMode::DimensionTransition => !entity.is_removed(),
+        }
     }
 
     /// Converts a runtime section to persistent format.

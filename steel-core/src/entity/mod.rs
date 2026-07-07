@@ -9,7 +9,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
-    EquipmentSlotItem, SoundSource,
+    CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -41,7 +41,10 @@ use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vani
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis,
+    block_util::FoundRectangle,
+};
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -49,6 +52,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
     EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
 };
+use crate::chunk_saver::ChunkStorage;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::fluid::{LavaFluid, get_fluid_state, get_height};
 use crate::inventory::equipment::EquipmentSlot;
@@ -529,6 +533,12 @@ fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
     }
 }
 
+/// Matches vanilla `LivingEntity.resetForwardDirectionOfRelativePortalPosition`.
+#[must_use]
+pub(crate) const fn reset_forward_direction_of_relative_portal_position(offsets: DVec3) -> DVec3 {
+    DVec3::new(offsets.x, offsets.y, 0.0)
+}
+
 fn record_movement_for_block_effects(
     entity: &dyn Entity,
     from: DVec3,
@@ -705,7 +715,10 @@ mod synced_data;
 mod ticking;
 mod tracker;
 
-use crate::portal::TeleportTransition;
+use crate::portal::{
+    PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
+    TeleportTransition, WorldChangeRequest, portal_shape::PortalShape,
+};
 pub(crate) use ageable::{AgeableMob, AgeableMobBase};
 pub(crate) use animal::{Animal, AnimalBase};
 pub use base::{
@@ -796,6 +809,380 @@ pub(crate) fn start_riding_entities(
     EntityBase::start_riding_relationship(entity_to_ride, passenger);
     // TODO: Emit ENTITY_MOUNT game event and riding advancement trigger once those foundations exist.
     true
+}
+
+pub(crate) fn change_entity_world(
+    entity: SharedEntity,
+    teleport_transition: &TeleportTransition,
+) -> Option<SharedEntity> {
+    if entity.is_removed() {
+        return None;
+    }
+
+    if entity.as_player().is_some() {
+        // Vanilla `ServerPlayer.teleport` keeps the live player/connection identity
+        // and sends respawn/player-position packets instead of recreating from entity NBT.
+        let changed_entity = Arc::clone(&entity);
+        entity.change_world(teleport_transition);
+        return Some(changed_entity);
+    }
+
+    change_non_player_entity_world(entity, teleport_transition)
+}
+
+fn change_non_player_entity_world(
+    entity: SharedEntity,
+    teleport_transition: &TeleportTransition,
+) -> Option<SharedEntity> {
+    if entity.is_removed() {
+        return None;
+    }
+
+    let Some(source_world) = entity.level() else {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            "Ignoring world change for entity without a live world"
+        );
+        return None;
+    };
+
+    entity.set_portal_cooldown(teleport_transition.portal_cooldown);
+    if !teleport_transition.as_passenger {
+        entity.stop_riding();
+    }
+
+    if Arc::ptr_eq(&source_world, &teleport_transition.target_world) {
+        teleport_entity_same_world(entity, teleport_transition)
+    } else {
+        teleport_entity_cross_world(entity, teleport_transition)
+    }
+}
+
+fn teleport_entity_same_world(
+    entity: SharedEntity,
+    teleport_transition: &TeleportTransition,
+) -> Option<SharedEntity> {
+    for passenger in entity.passengers() {
+        let passenger_transition =
+            passenger_transition(entity.as_ref(), passenger.as_ref(), teleport_transition);
+        change_entity_world(passenger, &passenger_transition);
+    }
+
+    if let Err(error) = teleport_set_position(
+        entity.as_ref(),
+        teleport_transition,
+        TeleportPositionCommit::Managed,
+    ) {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            position = ?teleport_transition.position,
+            "Failed to commit same-world portal teleport for entity: {error}"
+        );
+        return None;
+    }
+
+    if !teleport_transition.as_passenger {
+        send_teleport_transition_to_riding_players(entity.as_ref(), teleport_transition);
+    }
+    apply_post_teleport_transition(entity.as_ref(), teleport_transition);
+    Some(entity)
+}
+
+fn send_teleport_transition_to_riding_players(
+    entity: &dyn Entity,
+    teleport_transition: &TeleportTransition,
+) {
+    let controller_id = entity
+        .controlling_passenger()
+        .map(|controller| controller.id());
+    for passenger in indirect_passengers(entity) {
+        let Some(player) = passenger.as_player() else {
+            continue;
+        };
+        let packet = if Some(passenger.id()) == controller_id {
+            CTeleportEntity::new(
+                entity.id(),
+                teleport_transition.position,
+                teleport_transition.velocity,
+                teleport_transition.rotation.0,
+                teleport_transition.rotation.1,
+                teleport_transition.relatives,
+                entity.on_ground(),
+            )
+        } else {
+            let rotation = entity.rotation();
+            CTeleportEntity::new(
+                entity.id(),
+                entity.position(),
+                entity.velocity(),
+                rotation.0,
+                rotation.1,
+                RelativeMovement::NONE,
+                entity.on_ground(),
+            )
+        };
+        player.send_packet(packet);
+    }
+}
+
+fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
+    fn collect(
+        passengers: Vec<SharedEntity>,
+        visited: &mut FxHashSet<i32>,
+        output: &mut Vec<SharedEntity>,
+    ) {
+        for passenger in passengers {
+            if !visited.insert(passenger.id()) {
+                continue;
+            }
+            output.push(Arc::clone(&passenger));
+            collect(passenger.passengers(), visited, output);
+        }
+    }
+
+    let mut visited = FxHashSet::default();
+    visited.insert(entity.id());
+    let mut passengers = Vec::new();
+    collect(entity.passengers(), &mut visited, &mut passengers);
+    passengers
+}
+
+fn teleport_entity_cross_world(
+    entity: SharedEntity,
+    teleport_transition: &TeleportTransition,
+) -> Option<SharedEntity> {
+    let position = teleport_transition.resolved_position(entity.position());
+    let target_chunk = ChunkPos::from_entity_pos(position);
+    if !teleport_transition
+        .target_world
+        .has_full_chunk(target_chunk)
+    {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            chunk = ?target_chunk,
+            "Ignoring dimension transition for entity because target chunk is not loaded"
+        );
+        return None;
+    }
+
+    let old_passengers = entity.passengers();
+    let mut new_passengers = Vec::with_capacity(old_passengers.len());
+    for passenger in old_passengers {
+        passenger.stop_riding();
+        let passenger_transition =
+            passenger_transition(entity.as_ref(), passenger.as_ref(), teleport_transition);
+        if let Some(new_passenger) = change_entity_world(passenger, &passenger_transition) {
+            new_passengers.push(new_passenger);
+        }
+    }
+
+    let Some(persistent) = ChunkStorage::entity_to_dimension_transition_persistent(&entity) else {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            "Failed to serialize entity for dimension transition"
+        );
+        return None;
+    };
+
+    let target_level = Arc::downgrade(&teleport_transition.target_world);
+    let mut new_entities = ChunkStorage::persistent_to_entity_tree_at_level(
+        &persistent,
+        ChunkPos::from_entity_pos(entity.position()),
+        &target_level,
+    );
+    let Some(new_entity) = new_entities.drain(..).next() else {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            "Failed to recreate entity for dimension transition"
+        );
+        return None;
+    };
+
+    if let Err(error) = teleport_set_position(
+        new_entity.as_ref(),
+        teleport_transition,
+        TeleportPositionCommit::Local,
+    ) {
+        tracing::warn!(
+            entity_id = entity.id(),
+            entity_type = ?entity.entity_type().key,
+            position = ?teleport_transition.position,
+            "Failed to stage dimension transition position for entity: {error}"
+        );
+        return None;
+    }
+
+    if let Err(error) = teleport_transition
+        .target_world
+        .try_add_entity(Arc::clone(&new_entity))
+    {
+        tracing::warn!(
+            entity_id = entity.id(),
+            new_entity_id = new_entity.id(),
+            entity_type = ?new_entity.entity_type().key,
+            position = ?new_entity.position(),
+            "Failed to register dimension-transition entity: {error}"
+        );
+        new_entity.set_removed(RemovalReason::Discarded);
+        return None;
+    }
+
+    remove_after_changing_dimensions(entity.as_ref());
+    entity.set_removed(RemovalReason::ChangedWorld);
+    for new_passenger in new_passengers {
+        EntityBase::restore_passenger_relationship(&new_entity, &new_passenger);
+    }
+
+    apply_post_teleport_transition(new_entity.as_ref(), teleport_transition);
+    Some(new_entity)
+}
+
+#[derive(Clone, Copy)]
+enum TeleportPositionCommit {
+    Managed,
+    Local,
+}
+
+fn teleport_set_position(
+    entity: &dyn Entity,
+    teleport_transition: &TeleportTransition,
+    commit: TeleportPositionCommit,
+) -> Result<(), EntityMoveError> {
+    let position = teleport_transition.resolved_position(entity.position());
+    let current_rotation = entity.rotation();
+    let current_velocity = entity.velocity();
+    let rotation = teleport_transition.resolved_rotation(current_rotation);
+    let velocity =
+        teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
+
+    match commit {
+        TeleportPositionCommit::Managed => entity.try_set_position(position)?,
+        TeleportPositionCommit::Local => entity.base().set_position_local(position),
+    }
+    entity.set_rotation(rotation);
+    if let Some(living) = entity.as_living_entity() {
+        living.set_y_head_rot(rotation.0);
+    }
+    entity.set_old_position_to_current();
+    entity.base().set_old_rotation_to_current();
+    entity.set_velocity(velocity);
+    entity.base().clear_movement_this_tick();
+    Ok(())
+}
+
+fn passenger_transition(
+    vehicle: &dyn Entity,
+    passenger: &dyn Entity,
+    teleport_transition: &TeleportTransition,
+) -> TeleportTransition {
+    let rotation = passenger_transition_rotation(
+        teleport_transition.rotation,
+        teleport_transition.relatives,
+        vehicle.rotation(),
+        passenger.rotation(),
+    );
+    let position = passenger_transition_position(
+        teleport_transition.position,
+        teleport_transition.relatives,
+        vehicle.position(),
+        passenger.position(),
+    );
+
+    TeleportTransition {
+        target_world: teleport_transition.target_world.clone(),
+        position,
+        rotation,
+        velocity: teleport_transition.velocity,
+        relatives: teleport_transition.relatives,
+        portal_cooldown: teleport_transition.portal_cooldown,
+        as_passenger: true,
+        post_transition: teleport_transition.post_transition.clone(),
+    }
+}
+
+fn passenger_transition_rotation(
+    transition_rotation: (f32, f32),
+    relatives: RelativeMovement,
+    vehicle_rotation: (f32, f32),
+    passenger_rotation: (f32, f32),
+) -> (f32, f32) {
+    let yaw = transition_rotation.0
+        + if relatives.is_y_rot_relative() {
+            0.0
+        } else {
+            passenger_rotation.0 - vehicle_rotation.0
+        };
+    let pitch = transition_rotation.1
+        + if relatives.is_x_rot_relative() {
+            0.0
+        } else {
+            passenger_rotation.1 - vehicle_rotation.1
+        };
+    (yaw, pitch)
+}
+
+fn passenger_transition_position(
+    transition_position: DVec3,
+    relatives: RelativeMovement,
+    vehicle_position: DVec3,
+    passenger_position: DVec3,
+) -> DVec3 {
+    let offset = passenger_position - vehicle_position;
+    transition_position
+        + DVec3::new(
+            if relatives.is_x_relative() {
+                0.0
+            } else {
+                offset.x
+            },
+            if relatives.is_y_relative() {
+                0.0
+            } else {
+                offset.y
+            },
+            if relatives.is_z_relative() {
+                0.0
+            } else {
+                offset.z
+            },
+        )
+}
+
+fn apply_post_teleport_transition(entity: &dyn Entity, teleport_transition: &TeleportTransition) {
+    for action in teleport_transition.post_transition.actions() {
+        match *action {
+            TeleportPostAction::PlayPortalSound => {}
+            TeleportPostAction::PlacePortalTicket(target) => {
+                let Some(world) = entity.level() else {
+                    continue;
+                };
+                let ticket_position = match target {
+                    PortalTicketTarget::Destination => BlockPos::from(entity.position()),
+                    PortalTicketTarget::Block(pos) => pos,
+                };
+                world.place_portal_ticket(ticket_position);
+            }
+        }
+    }
+}
+
+fn remove_after_changing_dimensions(entity: &dyn Entity) {
+    let Some(mob) = entity.as_mob() else {
+        return;
+    };
+
+    mob.remove_leash();
+    for slot in EquipmentSlot::ALL {
+        mob.living_base()
+            .equipment()
+            .lock()
+            .set(slot, ItemStack::empty());
+    }
 }
 
 /// Final state accepted from a client-authored movement packet.
@@ -1221,6 +1608,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns the vanilla `Projectile` owner UUID when this entity exposes one.
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        None
+    }
+
     /// Returns true for vanilla players whose abilities have `flying` set.
     fn is_flying_player(&self) -> bool {
         false
@@ -1577,6 +1969,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
         )
     }
 
+    /// Returns vanilla `Entity.getRelativePortalPosition`.
+    fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
+        let offsets = PortalShape::get_relative_position(
+            portal_area,
+            axis,
+            self.position(),
+            self.dimensions_for_pose(self.pose()),
+        );
+        if self.as_living_entity().is_some() {
+            reset_forward_direction_of_relative_portal_position(offsets)
+        } else {
+            offsets
+        }
+    }
+
     /// Default vanilla `Entity.tick()` behavior.
     ///
     /// Concrete entity ticks that mirror vanilla `super.tick()` should call this
@@ -1613,12 +2020,56 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.entity_base_tick();
     }
 
+    /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
+    fn handle_portal(&self) {
+        self.base().process_portal_cooldown();
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(process) = self.base().portal_process() else {
+            return;
+        };
+
+        let player_invulnerable = self
+            .as_player()
+            .map(|player| player.abilities.lock().invulnerable);
+        let transition_time = process
+            .portal()
+            .transition_time_for_player_state(&world, player_invulnerable);
+        match self
+            .base()
+            .process_portal_teleportation(self.can_use_portal(false), transition_time)
+        {
+            Some(PortalProcessResult::Ready) => {
+                self.reset_portal_cooldown();
+                world.queue_world_change(
+                    self.id(),
+                    WorldChangeRequest::Portal {
+                        portal: process.portal(),
+                        source_world: world.clone(),
+                        portal_pos: process.entry_position(),
+                    },
+                );
+            }
+            Some(PortalProcessResult::Waiting)
+                if self
+                    .base()
+                    .portal_process()
+                    .is_some_and(PortalProcessor::has_expired) =>
+            {
+                self.base().clear_portal_process();
+            }
+            Some(PortalProcessResult::Waiting) | None => {}
+        }
+    }
+
     /// Runs only vanilla `Entity.baseTick` behavior.
     ///
     /// Subtype base-tick chains call this from their owner trait instead of
     /// discovering subtype behavior through runtime capabilities.
     fn entity_base_tick(&self) {
         self.base().advance_base_tick_state();
+        self.handle_portal();
         self.base().advance_powder_snow_contact_for_base_tick();
         self.refresh_fluid_contact_for_base_tick();
         self.update_swimming();
@@ -1752,6 +2203,46 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns whether this entity is alive for vanilla generic entity checks.
     fn is_alive(&self) -> bool {
         !self.is_removed()
+    }
+
+    /// Returns whether this entity may enter a portal.
+    ///
+    /// Mirrors vanilla `Entity.canUsePortal`, including `LivingEntity` sleeping
+    /// suppression through exposed behavior capabilities.
+    fn can_use_portal(&self, ignore_passenger: bool) -> bool {
+        let entity_type = self.entity_type();
+        if entity_type == &vanilla_entities::FISHING_BOBBER
+            || entity_type == &vanilla_entities::ENDER_DRAGON
+            || entity_type == &vanilla_entities::WITHER
+        {
+            return false;
+        }
+
+        (ignore_passenger || !self.is_passenger())
+            && self.is_alive()
+            && !self
+                .as_living_entity()
+                .is_some_and(LivingEntity::is_sleeping)
+    }
+
+    /// Returns vanilla's dimension-changing portal cooldown delay in ticks.
+    ///
+    /// Mirrors vanilla `getDimensionChangingDelay` overrides for players,
+    /// vehicle entities, projectiles, and base entities with a player passenger.
+    fn dimension_changing_delay(&self) -> i32 {
+        let entity_type = self.entity_type();
+        if self.as_player().is_some() || entity_type.is_vehicle_entity {
+            return 10;
+        }
+        if entity_type.is_projectile {
+            return 2;
+        }
+        if let Some(first_passenger) = self.first_passenger()
+            && first_passenger.as_player().is_some()
+        {
+            return first_passenger.dimension_changing_delay();
+        }
+        300
     }
 
     /// Returns why this entity was removed, if it has been removed.
@@ -3197,6 +3688,25 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().is_on_portal_cooldown()
     }
 
+    /// Resets vanilla portal cooldown to this entity's dimension-changing delay.
+    ///
+    /// Mirrors vanilla `Entity.setPortalCooldown()`.
+    fn reset_portal_cooldown(&self) {
+        self.set_portal_cooldown(self.dimension_changing_delay());
+    }
+
+    /// Marks this entity as inside a vanilla portal during the current tick.
+    ///
+    /// Mirrors vanilla `Entity.setAsInsidePortal`.
+    fn set_as_inside_portal(&self, portal: PortalKind, entry_position: BlockPos) {
+        if self.is_on_portal_cooldown() {
+            self.reset_portal_cooldown();
+            return;
+        }
+
+        self.base().set_as_inside_portal(portal, entry_position);
+    }
+
     /// Returns this entity's optional vanilla custom name.
     fn custom_name(&self) -> Option<TextComponent> {
         self.base().custom_name()
@@ -3986,14 +4496,24 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Teleports an entity from one loaded world to another.
-    ///
-    /// The default implementation logs a warning — non-player entity teleportation
-    /// is not yet implemented. Override in entity types that support it.
-    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
-        log::warn!(
-            "change_world called on entity {} which does not implement world changes",
-            self.id(),
-        );
+    fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
+        let Some(world) = self.level() else {
+            tracing::warn!(
+                entity_id = self.id(),
+                entity_type = ?self.entity_type().key,
+                "Ignoring world change for entity without a live world"
+            );
+            return;
+        };
+        let Some(entity) = world.get_entity_by_id(self.id()) else {
+            tracing::warn!(
+                entity_id = self.id(),
+                entity_type = ?self.entity_type().key,
+                "Ignoring world change for entity that is not live in its world"
+            );
+            return;
+        };
+        change_non_player_entity_world(entity, teleport_transition);
     }
 }
 
@@ -6533,6 +7053,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
+    use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::blocks::{
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, Direction as BlockDirection},
@@ -6549,14 +7070,19 @@ mod tests {
     };
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
-    use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, WorldAabb};
+    use steel_utils::{
+        BlockPos, BlockStateId, Direction, Identifier, WorldAabb, axis::Axis,
+        block_util::FoundRectangle,
+    };
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
+    use crate::chunk_saver::ChunkStorage;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::PigEntity;
     use crate::entity::mob::Mob;
     use crate::inventory::equipment::EquipmentSlot;
+    use crate::portal::PortalKind;
     use crate::world::LevelReader;
 
     use super::{
@@ -6567,7 +7093,9 @@ mod tests {
         LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
         block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
-        fall_flying_free_fall_interval, get_input_vector, should_apply_entity_cramming_damage,
+        fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
+        passenger_transition_position, passenger_transition_rotation,
+        remove_after_changing_dimensions, should_apply_entity_cramming_damage,
         should_apply_resolved_movement, start_riding_entities, transfer_leashables_to_holder,
         trapdoor_usable_as_ladder_state,
     };
@@ -6595,6 +7123,49 @@ mod tests {
 
         fn is_pushable(&self) -> bool {
             true
+        }
+    }
+
+    struct TypedTestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        projectile_owner_uuid: Option<Uuid>,
+    }
+
+    impl TypedTestEntity {
+        fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+            Self {
+                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+                projectile_owner_uuid: None,
+            }
+        }
+
+        fn projectile_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
+            Self {
+                base: EntityBase::new(
+                    id,
+                    DVec3::ZERO,
+                    vanilla_entities::ENDER_PEARL.dimensions,
+                    Weak::new(),
+                ),
+                entity_type: &vanilla_entities::ENDER_PEARL,
+                projectile_owner_uuid: Some(owner_uuid),
+            }
+        }
+    }
+
+    impl Entity for TypedTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn projectile_owner_uuid(&self) -> Option<Uuid> {
+            self.projectile_owner_uuid
         }
     }
 
@@ -6992,6 +7563,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn living_relative_portal_position_resets_forward_offset() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity
+            .base()
+            .set_position_local(DVec3::new(12.0, 66.0, 20.75));
+        let portal_area = FoundRectangle {
+            min_corner: BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+        let dimensions = entity.dimensions_for_pose(entity.pose());
+
+        assert_vec3_close(
+            entity.get_relative_portal_position(Axis::X, portal_area),
+            DVec3::new(
+                0.5,
+                2.0 / (f64::from(portal_area.axis2_size) - f64::from(dimensions.height)),
+                0.0,
+            ),
+        );
+    }
+
     fn closest_direction_with_blocked_neighbors(
         fractional_position: DVec3,
         blocked_directions: &[Direction],
@@ -7008,10 +7603,230 @@ mod tests {
     fn default_tick_runs_vanilla_entity_base_tick() {
         let entity = PushableTestEntity::shared(1, DVec3::ZERO);
         entity.base().set_boarding_cooldown(2);
+        entity.base().set_portal_cooldown(2);
 
         entity.default_tick();
 
         assert_eq!(entity.base().boarding_cooldown(), 1);
+        assert_eq!(entity.base().portal_cooldown(), 1);
+    }
+
+    #[test]
+    fn can_use_portal_requires_alive_entity() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+        assert!(entity.can_use_portal(false));
+
+        entity.set_removed(RemovalReason::Discarded);
+
+        assert!(!entity.can_use_portal(true));
+    }
+
+    #[test]
+    fn static_vanilla_portal_overrides_reject_special_entities() {
+        let fishing_hook = TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER);
+        let dragon = TypedTestEntity::new(2, &vanilla_entities::ENDER_DRAGON);
+        let wither = TypedTestEntity::new(3, &vanilla_entities::WITHER);
+
+        assert!(!fishing_hook.can_use_portal(true));
+        assert!(!dragon.can_use_portal(true));
+        assert!(!wither.can_use_portal(true));
+    }
+
+    #[test]
+    fn projectile_owner_uuid_reports_projectile_owner_identity() {
+        let owner_uuid = Uuid::from_u128(42);
+        let pearl = TypedTestEntity::projectile_with_owner_uuid(1, owner_uuid);
+        let no_player_owner = TypedTestEntity::new(3, &vanilla_entities::ENDER_PEARL);
+
+        assert_eq!(pearl.projectile_owner_uuid(), Some(owner_uuid));
+        assert_eq!(no_player_owner.projectile_owner_uuid(), None);
+    }
+
+    #[test]
+    fn can_use_portal_respects_passenger_gate() {
+        init_test_registry();
+
+        let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
+        let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
+        assert!(start_riding_entities(&passenger, &vehicle));
+
+        assert!(!passenger.can_use_portal(false));
+        assert!(passenger.can_use_portal(true));
+    }
+
+    #[test]
+    fn indirect_passengers_match_vanilla_preorder() {
+        let vehicle = MultiPassengerTestEntity::shared(1);
+        let first = MultiPassengerTestEntity::shared(2);
+        let second = MultiPassengerTestEntity::shared(3);
+        let nested = MultiPassengerTestEntity::shared(4);
+
+        EntityBase::restore_passenger_relationship(&vehicle, &first);
+        EntityBase::restore_passenger_relationship(&vehicle, &second);
+        EntityBase::restore_passenger_relationship(&first, &nested);
+
+        let passenger_ids = indirect_passengers(vehicle.as_ref())
+            .into_iter()
+            .map(|passenger| passenger.id())
+            .collect::<Vec<_>>();
+
+        assert_eq!(passenger_ids, vec![2, 4, 3]);
+    }
+
+    #[test]
+    fn passenger_transition_rotation_matches_vanilla_relative_flags() {
+        let vehicle_rotation = (30.0, 10.0);
+        let passenger_rotation = (70.0, -5.0);
+
+        assert_eq!(
+            passenger_transition_rotation(
+                (90.0, 20.0),
+                RelativeMovement::NONE,
+                vehicle_rotation,
+                passenger_rotation,
+            ),
+            (130.0, 5.0),
+        );
+        assert_eq!(
+            passenger_transition_rotation(
+                (15.0, -3.0),
+                RelativeMovement::ROTATION,
+                vehicle_rotation,
+                passenger_rotation,
+            ),
+            (15.0, -3.0),
+        );
+        assert_eq!(
+            passenger_transition_rotation(
+                (-90.0, 0.0),
+                RelativeMovement::new(RelativeMovement::X_ROT),
+                vehicle_rotation,
+                passenger_rotation,
+            ),
+            (-50.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn passenger_transition_position_preserves_vehicle_offset() {
+        assert_eq!(
+            passenger_transition_position(
+                DVec3::new(100.0, 70.0, -40.0),
+                RelativeMovement::NONE,
+                DVec3::new(10.0, 64.0, 20.0),
+                DVec3::new(12.5, 65.0, 17.0),
+            ),
+            DVec3::new(102.5, 71.0, -43.0),
+        );
+    }
+
+    #[test]
+    fn dimension_transition_persistence_keeps_non_chunk_serializable_entities() {
+        let entity: SharedEntity =
+            Arc::new(TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER));
+        entity
+            .base()
+            .set_position_local(DVec3::new(12.25, 64.0, -8.75));
+        entity.set_rotation((45.0, -10.0));
+        entity.set_velocity(DVec3::new(0.1, 0.2, 0.3));
+
+        assert!(ChunkStorage::entity_tree_to_persistent(&entity).is_none());
+        let persistent = ChunkStorage::entity_to_dimension_transition_persistent(&entity).expect(
+            "dimension transitions mirror vanilla saveWithoutId without chunk-save filtering",
+        );
+
+        assert_eq!(persistent.entity_type, vanilla_entities::FISHING_BOBBER.key);
+        assert_eq!(
+            persistent.pos.map(f64::to_bits),
+            [12.25_f64, 64.0, -8.75].map(f64::to_bits),
+        );
+        assert_eq!(
+            persistent.rotation.map(f32::to_bits),
+            [45.0_f32, -10.0].map(f32::to_bits),
+        );
+        assert_eq!(
+            persistent.motion.map(f64::to_bits),
+            [0.1_f64, 0.2, 0.3].map(f64::to_bits),
+        );
+    }
+
+    #[test]
+    fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
+        init_test_registry();
+
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let holder: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            2,
+            DVec3::new(1.0, 0.0, 0.0),
+            Weak::new(),
+        ));
+        let Some(mob) = pig.as_mob() else {
+            panic!("pig should expose mob behavior");
+        };
+        assert!(mob.set_leashed_to(&holder));
+        pig.living_base().equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::ITEMS.saddle),
+        );
+
+        remove_after_changing_dimensions(&pig);
+
+        assert!(!mob.is_leashed());
+        assert!(
+            pig.living_base()
+                .equipment()
+                .lock()
+                .get_ref(EquipmentSlot::Saddle)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn can_use_portal_rejects_sleeping_living_entities() {
+        init_test_registry();
+
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        assert!(entity.can_use_portal(false));
+
+        entity.set_sleeping_pos(BlockPos::ZERO);
+
+        assert!(!entity.can_use_portal(false));
+    }
+
+    #[test]
+    fn dimension_changing_delay_uses_vanilla_class_overrides() {
+        let base = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+        assert_eq!(base.dimension_changing_delay(), 300);
+
+        let minecart = TypedTestEntity::new(2, &vanilla_entities::MINECART);
+        assert_eq!(minecart.dimension_changing_delay(), 10);
+
+        let arrow = TypedTestEntity::new(3, &vanilla_entities::ARROW);
+        assert_eq!(arrow.dimension_changing_delay(), 2);
+    }
+
+    #[test]
+    fn set_as_inside_portal_starts_portal_process_when_not_on_cooldown() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+        let entry_position = BlockPos::new(2, 64, 2);
+
+        entity.set_as_inside_portal(PortalKind::Nether, entry_position);
+
+        let process = entity.base().portal_process().expect("portal process");
+        assert_eq!(process.portal(), PortalKind::Nether);
+        assert_eq!(process.entry_position(), entry_position);
+    }
+
+    #[test]
+    fn set_as_inside_portal_resets_cooldown_without_starting_process() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::ARROW);
+        entity.set_portal_cooldown(1);
+
+        entity.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
+
+        assert_eq!(entity.portal_cooldown(), 2);
+        assert_eq!(entity.base().portal_process(), None);
     }
 
     #[test]

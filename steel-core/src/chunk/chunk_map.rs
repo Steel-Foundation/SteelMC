@@ -25,9 +25,10 @@ use tracing::instrument;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
-use crate::chunk::chunk_holder::ChunkHolder;
+use crate::chunk::chunk_holder::{ChunkHolder, ChunkSaveDependency};
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, PersistentChunkTickets,
+    TimedChunkTickets, generation_status, is_block_ticking, is_entity_ticking,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -61,10 +62,15 @@ pub struct ChunkMapGameTickTimings {
     pub tick_chunks: Duration,
     /// Time spent ticking block entities.
     pub tick_block_entities: Duration,
-    /// Number of chunks that were ticked.
+    /// Number of block-ticking chunks.
     pub tickable_count: usize,
     /// Total number of loaded chunks.
     pub total_chunks: usize,
+}
+
+struct TickableChunk {
+    holder: Arc<ChunkHolder>,
+    simulation_level: ChunkTicketLevel,
 }
 
 /// Timing information for the chunk scheduling tick operations.
@@ -293,6 +299,8 @@ pub struct ChunkMap {
     pub task_tracker: TaskTracker,
     /// Manager for chunk distances and tickets.
     pub chunk_tickets: SyncMutex<ChunkTicketManager>,
+    /// Timed gameplay ticket owners that expire through the scheduling tick.
+    timed_chunk_tickets: SyncMutex<TimedChunkTickets>,
     /// The world generation context.
     pub world_gen_context: Arc<WorldGenContext>,
     /// The thread pool to use for chunk generation (throughput-oriented).
@@ -382,12 +390,43 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
+        Self::new_with_storage_and_timed_tickets(
+            chunk_runtime,
+            world,
+            dimension_type,
+            sea_level,
+            storage,
+            generator,
+            generation_pool,
+            TimedChunkTickets::default(),
+        )
+    }
+
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "extends ChunkMap::new_with_storage with restored runtime ticket state"
+    )]
+    pub(crate) fn new_with_storage_and_timed_tickets(
+        chunk_runtime: Arc<Runtime>,
+        world: Weak<World>,
+        dimension_type: DimensionTypeRef,
+        sea_level: i32,
+        storage: Arc<ChunkStorage>,
+        generator: Arc<ChunkGeneratorType>,
+        generation_pool: Arc<ThreadPool>,
+        timed_chunk_tickets: TimedChunkTickets,
+    ) -> Self {
+        let mut chunk_tickets = ChunkTicketManager::new();
+        timed_chunk_tickets.activate_all(&mut chunk_tickets);
+
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
-            chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
+            chunk_tickets: SyncMutex::new(chunk_tickets),
+            timed_chunk_tickets: SyncMutex::new(timed_chunk_tickets),
             world_gen_context: Arc::new(WorldGenContext::new(
                 generator,
                 world,
@@ -518,6 +557,33 @@ impl ChunkMap {
         self.tick_scheduling();
 
         Some(result)
+    }
+
+    /// Adds or refreshes vanilla's post-portal chunk ticket.
+    pub(crate) fn place_portal_ticket(&self, ticket_position: BlockPos) {
+        let center = ChunkPos::from_block_pos(ticket_position);
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets
+            .lock()
+            .add_portal_ticket(&mut chunk_tickets, center);
+    }
+
+    /// Advances gameplay-owned timed chunk tickets by one server tick.
+    pub(crate) fn tick_timed_tickets(&self) {
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets
+            .lock()
+            .tick(&mut chunk_tickets, |pos| self.can_timed_ticket_expire(pos));
+    }
+
+    pub(crate) fn persistent_chunk_tickets(&self) -> PersistentChunkTickets {
+        self.timed_chunk_tickets.lock().to_persistent()
+    }
+
+    fn can_timed_ticket_expire(&self, pos: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&pos, |_, holder| holder.is_ready_for_saving())
+            .unwrap_or(true)
     }
 
     fn full_square_is_ready(&self, center: ChunkPos, radius: i32) -> bool {
@@ -1259,8 +1325,14 @@ impl ChunkMap {
             let mut tickable_chunks = Vec::with_capacity(last_len);
             self.chunks.iter_sync(|_, holder| {
                 total_chunks += 1;
-                if is_ticked(holder.simulation_level()) {
-                    tickable_chunks.push(holder.clone());
+                let Some(simulation_level) = holder.simulation_level() else {
+                    return true;
+                };
+                if simulation_level.is_block_ticking() {
+                    tickable_chunks.push(TickableChunk {
+                        holder: holder.clone(),
+                        simulation_level,
+                    });
                 }
                 true
             });
@@ -1273,13 +1345,13 @@ impl ChunkMap {
             if !tickable_chunks.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
-                    count = tickable_chunks.len(),
+                    block_ticking_count = tickable_chunks.len(),
                     total_chunks
                 )
                 .entered();
                 let start = Instant::now();
-                for holder in &tickable_chunks {
-                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                for tickable_chunk in &tickable_chunks {
+                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
                         chunk_guard.drain_ready_scheduled_ticks(
                             &mut ready_block_ticks,
                             &mut ready_fluid_ticks,
@@ -1287,8 +1359,12 @@ impl ChunkMap {
                     }
                 }
                 Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
-                for holder in &tickable_chunks {
-                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                for tickable_chunk in &tickable_chunks {
+                    // Vanilla random chunk ticks use the entity-ticking range.
+                    if !tickable_chunk.simulation_level.is_entity_ticking() {
+                        continue;
+                    }
+                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
                         chunk_guard.tick_random_blocks(random_tick_speed);
                     }
                 }
@@ -1315,7 +1391,7 @@ impl ChunkMap {
         let _span = tracing::trace_span!("block_entities").entered();
         let start = Instant::now();
         self.chunks.iter_sync(|_, holder| {
-            if is_ticked(holder.simulation_level())
+            if is_block_ticking(holder.simulation_level())
                 && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
             {
                 chunk_guard.tick_block_entities();
@@ -1400,7 +1476,8 @@ impl ChunkMap {
     pub fn tickable_full_chunk_positions(&self) -> Vec<ChunkPos> {
         let mut chunks = Vec::new();
         self.chunks.iter_sync(|_, holder| {
-            if is_ticked(holder.simulation_level()) && holder.try_chunk(ChunkStatus::Full).is_some()
+            if is_entity_ticking(holder.simulation_level())
+                && holder.try_chunk(ChunkStatus::Full).is_some()
             {
                 chunks.push(holder.get_pos());
             }
@@ -1461,8 +1538,12 @@ impl ChunkMap {
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
-    #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
-    async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
+    #[instrument(level = "trace", skip(self, chunk_holder, _save_dependency), fields(chunk = ?chunk_holder.get_pos()))]
+    async fn save_chunk(
+        &self,
+        chunk_holder: &Arc<ChunkHolder>,
+        _save_dependency: ChunkSaveDependency,
+    ) {
         let chunk_pos = chunk_holder.get_pos();
         self.flush_queued_light_changes_touching_chunk_for_save(chunk_pos)
             .await;
@@ -1553,10 +1634,11 @@ impl ChunkMap {
 
                 if is_dirty || has_save_pending_entities {
                     // Save the chunk, keep until next tick when it's clean
+                    let save_dependency = holder.add_save_dependency();
                     let holder_clone = holder.clone();
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
-                        map_clone.save_chunk(&holder_clone).await;
+                        map_clone.save_chunk(&holder_clone, save_dependency).await;
                     });
                     true // keep until clean
                 } else if holder.try_chunk(ChunkStatus::Empty).is_none() {
@@ -1755,6 +1837,7 @@ impl ChunkMap {
             let (mut prepared, status) = prepared;
             let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
             let world = self.world_gen_context.world();
+            let _save_dependency = holder.add_save_dependency();
             match self.storage.save_chunk_data(prepared, status).await {
                 Ok(true) => {
                     world

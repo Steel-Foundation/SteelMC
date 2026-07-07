@@ -9,6 +9,8 @@ pub const MC_VERSION: &str = "26.2";
 
 /// axis
 pub mod axis;
+/// Vanilla `BlockUtil` helpers.
+pub mod block_util;
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;

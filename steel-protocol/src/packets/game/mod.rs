@@ -66,6 +66,7 @@ mod c_system_chat;
 mod c_system_chat_message;
 mod c_tab_list;
 mod c_take_item_entity;
+mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
 mod c_update_attributes;
@@ -183,6 +184,7 @@ pub use c_system_chat::CSystemChat;
 pub use c_system_chat_message::CSystemChatMessage;
 pub use c_tab_list::CTabList;
 pub use c_take_item_entity::CTakeItemEntity;
+pub use c_teleport_entity::CTeleportEntity;
 pub use c_ticking_state::CTickingState;
 pub use c_ticking_step::CTickingStep;
 pub use c_update_attributes::{

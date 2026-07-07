@@ -257,6 +257,43 @@ impl PointOfInterestStorage {
         results
     }
 
+    /// Returns all matching POIs within a vanilla horizontal square centered on `center`.
+    ///
+    /// Mirrors `PoiManager.getInSquare`: X/Z are constrained by `radius`, while Y is not.
+    #[must_use]
+    pub fn get_in_horizontal_square(
+        &self,
+        type_predicate: &impl Fn(usize) -> bool,
+        center: BlockPos,
+        radius: i32,
+        status: OccupationStatus,
+    ) -> Vec<(BlockPos, usize)> {
+        let center_chunk = ChunkPos::from_block_pos(center);
+        let chunk_radius = radius.div_euclid(16) + 1;
+        let mut results = Vec::new();
+
+        for cx in center_chunk.0.x - chunk_radius..=center_chunk.0.x + chunk_radius {
+            for cz in center_chunk.0.y - chunk_radius..=center_chunk.0.y + chunk_radius {
+                let chunk_pos = ChunkPos::new(cx, cz);
+                let Some(column) = self.columns.get(&chunk_pos) else {
+                    continue;
+                };
+
+                for set in column.values() {
+                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                        let dx = (poi.pos.0.x - center.0.x).abs();
+                        let dz = (poi.pos.0.z - center.0.z).abs();
+                        if dx <= radius && dz <= radius {
+                            results.push((poi.pos, poi.poi_type_id));
+                        }
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
     /// Returns all matching POIs within a spherical region.
     #[must_use]
     pub fn get_in_circle(
@@ -470,5 +507,39 @@ impl PointOfInterestStorage {
     /// Removes all POI data for a chunk column. Called during chunk unload.
     pub fn remove_chunk(&mut self, chunk_pos: ChunkPos) {
         self.columns.remove(&chunk_pos);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OccupationStatus, PointOfInterestStorage};
+    use steel_registry::test_support::init_test_registry;
+    use steel_utils::BlockPos;
+
+    fn sorted_positions(mut positions: Vec<(BlockPos, usize)>) -> Vec<BlockPos> {
+        positions.sort_by_key(|(pos, _)| (pos.x(), pos.y(), pos.z()));
+        positions.into_iter().map(|(pos, _)| pos).collect()
+    }
+
+    #[test]
+    fn horizontal_square_query_matches_y_unbounded_vanilla_search() {
+        init_test_registry();
+        let mut storage = PointOfInterestStorage::new();
+        storage.add(BlockPos::new(0, -64, 0), 7, 0);
+        storage.add(BlockPos::new(0, 320, 0), 7, 0);
+        storage.add(BlockPos::new(2, 64, 0), 7, 0);
+        storage.add(BlockPos::new(0, 64, 2), 7, 0);
+
+        let positions = sorted_positions(storage.get_in_horizontal_square(
+            &|type_id| type_id == 7,
+            BlockPos::new(0, 64, 0),
+            1,
+            OccupationStatus::Any,
+        ));
+
+        assert_eq!(
+            positions,
+            vec![BlockPos::new(0, -64, 0), BlockPos::new(0, 320, 0)]
+        );
     }
 }

@@ -279,6 +279,18 @@ impl<I> Aabb<DVec3, I> {
         let dz = f64::max(f64::max(self.min.z - point.z, point.z - self.max.z), 0.0);
         dx * dx + dy * dy + dz * dz
     }
+
+    /// Returns the closest point inside this box to `point`.
+    ///
+    /// Mirrors the per-box clamp used by vanilla `VoxelShape.closestPointTo`.
+    #[must_use]
+    pub const fn closest_point_to(self, point: DVec3) -> DVec3 {
+        DVec3::new(
+            point.x.clamp(self.min.x, self.max.x),
+            point.y.clamp(self.min.y, self.max.y),
+            point.z.clamp(self.min.z, self.max.z),
+        )
+    }
 }
 
 impl<I> Aabb<IVec3, I> {
@@ -496,6 +508,24 @@ impl<I: Space> Aabb<DVec3, I> {
         }
     }
 
+    /// Creates a box centered at `center` with the supplied side lengths.
+    ///
+    /// Vanilla equivalent: `AABB.ofSize(center, sizeX, sizeY, sizeZ)`.
+    #[must_use]
+    pub fn of_size(center: DVec3, size_x: f64, size_y: f64, size_z: f64) -> Self {
+        let half_x = size_x / 2.0;
+        let half_y = size_y / 2.0;
+        let half_z = size_z / 2.0;
+        Self::new(
+            center.x - half_x,
+            center.y - half_y,
+            center.z - half_z,
+            center.x + half_x,
+            center.y + half_y,
+            center.z + half_z,
+        )
+    }
+
     /// Vanilla equivalent: `AABB.getSize()`.
     #[must_use]
     pub fn size(self) -> f64 {
@@ -619,6 +649,14 @@ mod tests {
     }
 
     #[test]
+    fn of_size_builds_vanilla_centered_box() {
+        let aabb = WorldAabb::of_size(DVec3::new(10.0, 64.0, -2.0), 2.0, 4.0, 6.0);
+
+        assert_eq!(aabb.min_corner(), DVec3::new(9.0, 62.0, -5.0));
+        assert_eq!(aabb.max_corner(), DVec3::new(11.0, 66.0, 1.0));
+    }
+
+    #[test]
     fn block_local_aabb_translates_to_world_space() {
         let local = BlockLocalAabb::new(0.0, 0.25, 0.0, 1.0, 0.75, 1.0);
         let world = local.at_block(BlockPos::new(10, 64, -5));
@@ -647,6 +685,20 @@ mod tests {
         assert_eq!(aabb.distance_to_sqr(DVec3::new(2.0, 3.0, 4.0)), 0.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(0.0, 1.0, 1.0)), 6.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(5.0, 7.0, 9.0)), 3.0);
+    }
+
+    #[test]
+    fn closest_point_to_clamps_to_box_bounds() {
+        let aabb = WorldAabb::new(1.0, 2.0, 3.0, 4.0, 6.0, 8.0);
+
+        assert_eq!(
+            aabb.closest_point_to(DVec3::new(0.0, 4.0, 10.0)),
+            DVec3::new(1.0, 4.0, 8.0)
+        );
+        assert_eq!(
+            aabb.closest_point_to(DVec3::new(2.0, 3.0, 4.0)),
+            DVec3::new(2.0, 3.0, 4.0)
+        );
     }
 
     #[test]

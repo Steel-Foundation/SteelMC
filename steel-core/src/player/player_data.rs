@@ -15,7 +15,7 @@ use super::{Player, abilities::Abilities};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 4;
+pub const PLAYER_DATA_VERSION: i32 = 5;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -102,6 +102,9 @@ pub struct PersistentPlayerData {
     /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
     /// this value can be negative by using (/xp add ... -x)
     pub score: i32,
+
+    /// Vanilla `ServerPlayer.seenCredits`.
+    pub seen_credits: bool,
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
     pub root_vehicle: Option<PersistentRootVehicle>,
@@ -220,6 +223,7 @@ impl PersistentPlayerData {
             experience_progress,
             experience_total,
             score,
+            seen_credits: player.has_seen_credits(),
             root_vehicle,
         }
     }
@@ -374,5 +378,6 @@ impl PersistentPlayerData {
             experience.set_progress(f64::from(self.experience_progress));
             experience.score = self.score;
         }
+        player.set_seen_credits(self.seen_credits);
     }
 }

@@ -336,7 +336,7 @@ impl Player {
 
         let update_packet =
             CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
-        self.get_world().broadcast_to_all(update_packet);
+        self.server().broadcast_to_online(update_packet);
     }
 
     /// Gets a reference to the player's chat session if present
