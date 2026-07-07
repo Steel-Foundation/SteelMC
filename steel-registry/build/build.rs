@@ -80,8 +80,9 @@ mod timeline_tags;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
-mod villager_professions;
 mod villager_types;
+mod villager_trades;
+mod villager_professions;
 mod wolf_sound_variants;
 mod wolf_variants;
 mod world_clocks;
@@ -148,6 +149,7 @@ const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
 const RECIPES: &str = "recipes";
 const VANILLA_ENTITIES: &str = "entities";
+const VILLAGER_TRADES: &str = "villager_trades";
 const ENTITY_DATA: &str = "entity_data";
 const FLUIDS: &str = "fluids";
 const FLUID_TAGS: &str = "fluid_tags";
@@ -213,6 +215,7 @@ pub fn main() {
         (painting_variants::build(), PAINTING_VARIANTS),
         (particle_types::build(), PARTICLE_TYPES),
         (villager_types::build(), VILLAGER_TYPES),
+        (villager_trades::build(), VILLAGER_TRADES),
         (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),

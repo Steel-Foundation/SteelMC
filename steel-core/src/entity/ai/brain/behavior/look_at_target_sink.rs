@@ -16,7 +16,11 @@ impl LookAtTargetSink {
     #[must_use]
     pub(crate) const fn new(min_duration: i32, max_duration: i32) -> Self {
         Self {
-            state: BehaviorState::with_min_max_duration(ENTRTY_CONDITION, min_duration, max_duration)
+            state: BehaviorState::with_min_max_duration(
+                ENTRTY_CONDITION,
+                min_duration,
+                max_duration,
+            ),
         }
     }
 }
@@ -30,13 +34,7 @@ impl Behavior for LookAtTargetSink {
         &mut self.state
     }
 
-    fn can_still_use(
-        &mut self,
-        mob: &dyn PathfinderMob,
-        memories: &Memories,
-        _time: i64,
-    ) -> bool
-    {
+    fn can_still_use(&mut self, mob: &dyn PathfinderMob, memories: &Memories, _time: i64) -> bool {
         memories
             .look_target()
             .is_some_and(|target| target.is_visivle_by(mob))
@@ -45,7 +43,11 @@ impl Behavior for LookAtTargetSink {
     fn tick(&mut self, mob: &dyn PathfinderMob, memories: &mut Memories, _time: i64) {
         if let Some(target) = memories.look_target() {
             let position = target.current_position();
-            mob.mob_base().controls().lock().look_control.set_look_at(position, DEFAULT_LOOK_Y_MAX_ROT_SPEED, DEFAULT_LOOK_X_MAX_ROT_ANGLE);
+            mob.mob_base().controls().lock().look_control.set_look_at(
+                position,
+                DEFAULT_LOOK_Y_MAX_ROT_SPEED,
+                DEFAULT_LOOK_X_MAX_ROT_ANGLE,
+            );
         }
     }
 

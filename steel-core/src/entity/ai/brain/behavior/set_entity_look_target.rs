@@ -8,7 +8,10 @@ use crate::entity::{Entity, PathfinderMob, SharedEntity};
 
 const ENTRY_CONDITION: &[(MemoryModuleType, MemoryStatus)] = &[
     (MemoryModuleType::LookTarget, MemoryStatus::ValueAbsent),
-    (MemoryModuleType::NearestVisibleLivingEntities, MemoryStatus::ValuePresent),
+    (
+        MemoryModuleType::NearestVisibleLivingEntities,
+        MemoryStatus::ValuePresent,
+    ),
 ];
 
 pub(crate) struct SetEntityLookTarget {
@@ -60,7 +63,10 @@ impl Behavior for SetEntityLookTarget {
             .nearest_visible_living_entities()
             .and_then(|entities| self.find_closest(entities, mob_position));
         if let Some(entity) = target {
-            memories.set_look_target(PositionTracker::Entity { entity, track_eye_height: true });
+            memories.set_look_target(PositionTracker::Entity {
+                entity,
+                track_eye_height: true,
+            });
         }
     }
 }

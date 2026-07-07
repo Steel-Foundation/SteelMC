@@ -3,15 +3,23 @@
 use super::memory::{Memories, MemoryModuleType, MemoryStatus};
 use crate::entity::PathfinderMob;
 
+mod acquire_bed;
+mod acquire_job_site;
+mod assign_profession;
 mod look_at_target_sink;
 mod move_to_target_sink;
 mod random_stroll;
 mod set_entity_look_target;
+mod set_walk_target_from_home;
 
+pub(crate) use acquire_job_site::AcquireJobSite;
+pub(crate) use assign_profession::AssignProfession;
 pub(crate) use look_at_target_sink::LookAtTargetSink;
 pub(crate) use move_to_target_sink::MoveToTargetSink;
 pub(crate) use random_stroll::RandomStroll;
 pub(crate) use set_entity_look_target::SetEntityLookTarget;
+pub(crate) use acquire_bed::AcquireBed;
+pub(crate) use set_walk_target_from_home::SetWalkTargetFromHome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BehaviorStatus {
@@ -100,7 +108,8 @@ pub(crate) trait Behavior: Send {
     }
 
     fn try_start(&mut self, mob: &dyn PathfinderMob, memories: &mut Memories, time: i64) -> bool {
-        if self.has_required_memories(memories) && self.check_extra_start_conditions(mob, memories) {
+        if self.has_required_memories(memories) && self.check_extra_start_conditions(mob, memories)
+        {
             {
                 let state = self.state_mut();
                 state.status = BehaviorStatus::Running;

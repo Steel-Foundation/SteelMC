@@ -41,7 +41,7 @@ impl WrappedSensor {
         self.sensor.requires()
     }
 
-    pub(crate) fn tick(&mut self, mob: &dyn PathfinderMob, memories: &mut Memories){
+    pub(crate) fn tick(&mut self, mob: &dyn PathfinderMob, memories: &mut Memories) {
         if self.should_tick() {
             self.sensor.do_tick(mob, memories);
         }
@@ -57,5 +57,3 @@ impl WrappedSensor {
         }
     }
 }
-
-

@@ -689,6 +689,7 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
 mod ageable;
 pub(crate) mod ai;
+pub mod villager;
 mod animal;
 pub mod attribute;
 mod base;
@@ -715,6 +716,7 @@ mod storage;
 mod synced_data;
 mod ticking;
 mod tracker;
+pub use villager::Villager;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,

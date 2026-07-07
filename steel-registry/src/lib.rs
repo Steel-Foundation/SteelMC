@@ -133,6 +133,7 @@ pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
 pub mod villager_profession;
+pub mod villager_trade;
 pub mod villager_type;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
@@ -263,6 +264,11 @@ pub mod vanilla_particle_types;
 #[rustfmt::skip]
 #[path = "generated/vanilla_villager_types.rs"]
 pub mod vanilla_villager_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_villager_trades.rs"]
+pub mod vanilla_villager_trades;
 
 #[expect(warnings)]
 #[rustfmt::skip]

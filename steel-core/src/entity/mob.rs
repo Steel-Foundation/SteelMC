@@ -49,6 +49,7 @@ use crate::physics::WorldCollisionProvider;
 use crate::player::Player;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{LevelReader, World};
+use crate::entity::Villager;
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
@@ -541,6 +542,10 @@ pub trait Mob: LivingEntity {
 
     fn set_xp_reward(&self, xp_reward: i32) {
         self.mob_base().set_xp_reward(xp_reward);
+    }
+
+    fn as_villager(&self) -> Option<&dyn Villager> {
+        None
     }
 
     /// Returns vanilla `Mob.getTarget`.

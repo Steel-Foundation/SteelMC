@@ -5,16 +5,22 @@ use crate::entity::PathfinderMob;
 use crate::entity::ai::brain::memory::{Memories, MemoryModuleType, MemoryStatus};
 
 const ENTRY_CONDITION: &[(MemoryModuleType, MemoryStatus)] =
-  &[(MemoryModuleType::WalkTarget, MemoryStatus::ValuePresent)];
+    &[(MemoryModuleType::WalkTarget, MemoryStatus::ValuePresent)];
 
 pub(crate) struct MoveToTargetSink {
-    state:BehaviorState,
+    state: BehaviorState,
 }
 
 impl MoveToTargetSink {
     #[must_use]
     pub(crate) const fn new(min_duration: i32, max_duration: i32) -> Self {
-        Self { state: BehaviorState::with_min_max_duration(ENTRY_CONDITION, min_duration, max_duration) }
+        Self {
+            state: BehaviorState::with_min_max_duration(
+                ENTRY_CONDITION,
+                min_duration,
+                max_duration,
+            ),
+        }
     }
 }
 
@@ -36,13 +42,7 @@ impl Behavior for MoveToTargetSink {
         mob.move_to_pos(position, speed_modifier);
     }
 
-    fn can_still_use(
-        &mut self,
-        mob: &dyn PathfinderMob,
-        memories: &Memories,
-        _time: i64,
-    ) -> bool
-    {
+    fn can_still_use(&mut self, mob: &dyn PathfinderMob, memories: &Memories, _time: i64) -> bool {
         memories.has_value(MemoryModuleType::WalkTarget)
             && !mob.has_controlling_passenger()
             && !mob.mob_base().navigation().lock().is_done()

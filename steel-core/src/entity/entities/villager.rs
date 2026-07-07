@@ -13,28 +13,37 @@ use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::VillagerEntityData;
 use steel_registry::{
-  REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_attributes, vanilla_particle_types,
+    REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_attributes, vanilla_particle_types,
 };
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
+use crate::entity::ai::brain::{
+    Activity, Brain, LookAtTargetSink, MemoryModuleType, MoveToTargetSink,
+    NearestLivingEntitiesSensor, RandomStroll, Schedule, SetEntityLookTarget,
+    AcquireBed, SetWalkTargetFromHome, AcquireJobSite, AssignProfession,
+};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-  AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
-  EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectSyncChange,
-  PathfinderMob, SharedEntity, SpawnGroupData,
+    AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
+    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectSyncChange,
+    PathfinderMob, SharedEntity, SpawnGroupData, Villager
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use crate::entity::ai::brain::{
-    Activity, Brain, LookAtTargetSink, MemoryModuleType, MoveToTargetSink,
-    NearestLivingEntitiesSensor, RandomStroll, SetEntityLookTarget,
-};
 
 const VILLAGER_BABY_SCALE: f32 = 0.5;
+
+const VILLAGER_DEFAULT_SCHEDULE: Schedule = Schedule::new(&[
+    (10, Activity::Idle),
+    (2000, Activity::Work),
+    (9000, Activity::Meet),
+    (11000, Activity::Idle),
+    (12000, Activity::Rest),
+]);
 
 #[entity_behavior(class = "Villager")]
 pub struct VillagerEntity {
@@ -122,7 +131,9 @@ impl Entity for VillagerEntity {
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
         if self.is_baby() {
-            self.entity_type.dimensions.scale(VILLAGER_BABY_SCALE * scale)
+            self.entity_type
+                .dimensions
+                .scale(VILLAGER_BABY_SCALE * scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
         } else {
@@ -244,13 +255,15 @@ impl Entity for VillagerEntity {
         let mut villager_data = NbtCompound::new();
         if let Some(villager_type) = usize::try_from(data.villager_type)
             .ok()
-            .and_then(|id| REGISTRY.villager_types.by_id(id)) {
-                villager_data.insert("type", villager_type.key.to_string());
+            .and_then(|id| REGISTRY.villager_types.by_id(id))
+        {
+            villager_data.insert("type", villager_type.key.to_string());
         }
         if let Some(profession) = usize::try_from(data.profession)
             .ok()
-            .and_then(|id| REGISTRY.villager_professions.by_id(id)) {
-                villager_data.insert("profession", profession.key.to_string());
+            .and_then(|id| REGISTRY.villager_professions.by_id(id))
+        {
+            villager_data.insert("profession", profession.key.to_string());
         }
         villager_data.insert("level", data.level);
         nbt.insert("VillagerData", NbtTag::Compound(villager_data));
@@ -264,12 +277,14 @@ impl Entity for VillagerEntity {
             let mut data = self.villager_data();
             if let Some(type_key) = villager_data.string("type")
                 && let Ok(key) = Identifier::from_str(type_key.to_str().as_ref())
-                && let Some(id) = REGISTRY.villager_types.id_from_key(&key) {
-                    data.villager_type = i32::try_from(id).unwrap_or(data.villager_type);
+                && let Some(id) = REGISTRY.villager_types.id_from_key(&key)
+            {
+                data.villager_type = i32::try_from(id).unwrap_or(data.villager_type);
             }
             if let Some(profession_key) = villager_data.string("profession")
                 && let Ok(key) = Identifier::from_str(profession_key.to_str().as_ref())
-                && let Some(id) = REGISTRY.villager_professions.id_from_key(&key) {
+                && let Some(id) = REGISTRY.villager_professions.id_from_key(&key)
+            {
                 data.profession = i32::try_from(id).unwrap_or(data.profession);
             }
             if let Some(level) = villager_data.int("level") {
@@ -295,14 +310,14 @@ impl VillagerEntity {
             return;
         };
         let display = self.living_base.mob_effect_display_state(particle_type_id);
-          
+
         {
             let mut entity_data = self.entity_data.lock();
             let living = entity_data.living_entity_mut();
             living.effect_particles.set(display.particles);
             living.effect_ambience.set(display.ambient);
-        } 
-         
+        }
+
         self.entity_data.set_base_invisible_flag(display.invisible);
         self.entity_data
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
@@ -310,21 +325,36 @@ impl VillagerEntity {
 
     fn make_brain() -> Brain {
         let mut brain = Brain::new(
-            [MemoryModuleType::LookTarget, MemoryModuleType::WalkTarget],
+            [MemoryModuleType::LookTarget, MemoryModuleType::WalkTarget, MemoryModuleType::Home, MemoryModuleType::JobSite],
             vec![Box::new(NearestLivingEntitiesSensor)],
         );
         brain.set_core_activities([Activity::Core]);
-        brain.add_activity(Activity::Core, 0, vec![
-            Box::new(MoveToTargetSink::new(150, 250)),
-            Box::new(LookAtTargetSink::new(45, 90)),
-        ]);
-        brain.add_activity(Activity::Idle, 0, vec![
-            Box::new(RandomStroll::new(0.5)),
-            Box::new(SetEntityLookTarget::new(
+        brain.add_activity(
+            Activity::Core,
+            0,
+            vec![
+                Box::new(MoveToTargetSink::new(150, 250)),
+                Box::new(LookAtTargetSink::new(45, 90)),
+                Box::new(AcquireBed::new(48)),
+                Box::new(AcquireJobSite::new(48)),
+                Box::new(AssignProfession::new()),
+            ],
+        );
+        brain.add_activity(
+            Activity::Idle,
+            0,
+            vec![
+                Box::new(RandomStroll::new(0.5)),
+                Box::new(SetEntityLookTarget::new(
                     |entity| entity.as_player().is_some(),
                     8.0,
-            )),
-        ]);
+                )),
+            ],
+        );
+        brain.add_activity(Activity::Rest, 0, vec![Box::new(SetWalkTargetFromHome::new(0.6, 1))]);
+        brain.add_activity(Activity::Work, 0, Vec::new());
+        brain.add_activity(Activity::Meet, 0, Vec::new());
+        brain.set_schedule(VILLAGER_DEFAULT_SCHEDULE);
         brain.use_default_activity();
         brain
     }
@@ -403,6 +433,10 @@ impl Mob for VillagerEntity {
         &self.mob_base
     }
 
+    fn as_villager(&self) -> Option<&dyn Villager> {
+        Some(self)
+    }
+
     fn tick_goal_selectors(&self) {
         PathfinderMob::tick_pathfinder_goal_selectors(self);
     }
@@ -424,8 +458,7 @@ impl Mob for VillagerEntity {
         world: &Arc<World>,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData>
-    {
+    ) -> Option<SpawnGroupData> {
         self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
     }
 
@@ -438,11 +471,23 @@ impl Mob for VillagerEntity {
     }
 
     fn custom_server_ai_step(&self) {
-        let time = self.level().map_or(0, |world| world.game_time());
-        self.brain.lock().tick(self, time);
+        let (game_time, day_time) = self
+            .level()
+            .map_or((0, 0), |world| (world.game_time(), world.day_time()));
+        let mut brain = self.brain.lock();
+        brain.update_activity_from_schedule(game_time, day_time);
+        brain.tick(self, game_time);
     }
 }
 
 impl PathfinderMob for VillagerEntity {}
 
+impl Vilager for VillagerEntity {
+    fn villager_data(&self) -> VillagerData {
+        *self.entity_data.lock().villager_data.get()
+    }
 
+    fn set_villager_data(&self, data:VillagerData) {
+        self.entity_data.lock().villager_data.set(data);
+    }
+}

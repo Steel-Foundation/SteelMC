@@ -6,4 +6,8 @@ pub(crate) enum Activity {
     Idle,
     Fight,
     Panic,
+    Work,
+    Rest,
+    Meet,
+    Play,
 }

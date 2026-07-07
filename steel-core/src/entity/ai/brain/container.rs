@@ -5,8 +5,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::activity::Activity;
 use super::behavior::{Behavior, BehaviorStatus};
 use super::memory::{Memories, MemoryModuleType, MemoryStatus};
+use super::schedule::Schedule;
 use super::sensor::{Sensor, WrappedSensor};
 use crate::entity::PathfinderMob;
+
+const SCHEDULE_UPDATE_DELAY: i64 = 20;
 
 struct PrioritizedBehavior {
     priority: i32,
@@ -22,6 +25,8 @@ pub(crate) struct Brain {
     active_activities: FxHashSet<Activity>,
     default_activity: Activity,
     activity_requirements: FxHashMap<Activity, Vec<(MemoryModuleType, MemoryStatus)>>,
+    schedule: Option<Schedule>,
+    last_schedule_update: i64,
 }
 
 impl Brain {
@@ -42,6 +47,8 @@ impl Brain {
             active_activities: FxHashSet::default(),
             default_activity: Activity::Idle,
             activity_requirements: FxHashMap::default(),
+            schedule: None,
+            last_schedule_update: -9999,
         }
     }
 
@@ -62,13 +69,35 @@ impl Brain {
         self.default_activity = activity;
     }
 
+    pub(crate) fn set_schedule(&mut self, schedule: Schedule) {
+        self.schedule = Some(schedule);
+    }
+
+    pub(crate) fn update_activity_from_schedule(&mut self, game_time: i64, day_time: i64) {
+        if game_time - self.last_schedule_update <= SCHEDULE_UPDATE_DELAY {
+            return;
+        }
+        self.last_schedule_update = game_time;
+        let scheduled = self
+            .schedule
+            .map_or(Activity::Idle, |schedule| schedule.activity_at(day_time));
+        if !self.active_activities.contains(&scheduled) {
+            self.set_active_activity_if_possible(scheduled);
+        }
+    }
+
     pub(crate) fn add_activity(
         &mut self,
         activity: Activity,
         priority_of_first_behavior: i32,
         behaviors: Vec<Box<dyn Behavior>>,
     ) {
-        self.add_activity_with_conditions(activity, priority_of_first_behavior, behaviors, Vec::new());
+        self.add_activity_with_conditions(
+            activity,
+            priority_of_first_behavior,
+            behaviors,
+            Vec::new(),
+        );
     }
 
     pub(crate) fn add_activity_with_conditions(
@@ -80,7 +109,11 @@ impl Brain {
     ) {
         self.activity_requirements.insert(activity, conditions);
         for (offset, behavior) in behaviors.into_iter().enumerate() {
-            self.behaviors.push(PrioritizedBehavior { priority: priority_of_first_behavior + offset as i32, activity, behavior });
+            self.behaviors.push(PrioritizedBehavior {
+                priority: priority_of_first_behavior + offset as i32,
+                activity,
+                behavior,
+            });
         }
         self.behaviors.sort_by_key(|entry| entry.priority);
     }
@@ -112,7 +145,7 @@ impl Brain {
     }
 
     fn set_active_activity(&mut self, activity: Activity) {
-        if self.is_active(activity){
+        if self.is_active(activity) {
             return;
         }
         let Self {

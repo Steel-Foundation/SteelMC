@@ -11,6 +11,8 @@ pub(crate) enum MemoryModuleType {
     WalkTarget,
     LookTarget,
     NearestVisibleLivingEntities,
+    Home,
+    JobSite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +28,7 @@ pub(crate) enum PositionTracker {
     Entity {
         entity: SharedEntity,
         track_eye_height: bool,
-    }
+    },
 }
 
 impl PositionTracker {
@@ -38,7 +40,10 @@ impl PositionTracker {
                 f64::from(pos.y()) + 0.5,
                 f64::from(pos.z()) + 0.5,
             ),
-            Self::Entity { entity, track_eye_height } => {
+            Self::Entity {
+                entity,
+                track_eye_height,
+            } => {
                 if *track_eye_height {
                     let position = entity.position();
                     DVec3::new(position.x, entity.get_eye_y(), position.y)
@@ -112,6 +117,8 @@ enum MemoryValue {
     WalkTarget(WalkTarget),
     LookTarget(PositionTracker),
     LivingEntities(Vec<SharedEntity>),
+    Home(BlockPos),
+    JobSite(BlockPos),
 }
 
 impl MemoryValue {
@@ -190,17 +197,47 @@ impl Memories {
     }
 
     #[must_use]
+    pub(crate) fn home(&self) -> Option<BlockPos> {
+        if let Some(MemoryValue::Home(pos)) = self.get(MemoryModuleType::Home) {
+            Some(*pos)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn set_home(&mut self, pos: BlockPos) {
+        self.set_internal(MemoryModuleType::Home, Some(ExpirableValue::of(MemoryValue::Home(pos))));
+    }
+
+    #[must_use]
+    pub(crate) fn job_site(&self) -> Option<BlockPos> {
+        if let Some(MemoryValue::JobSite(pos)) = self.get(MemoryModuleType::JobSite) {
+            Some(*pos)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn set_job_stite(&mut self, pos: BlockPos) {
+        self.set_internal(MemoryModuleType::JobSite, Some(ExpirableValue::of(MemoryValue::JobSite(pos))));
+    }
+
+    #[must_use]
     pub(crate) fn nearest_visible_living_entities(&self) -> Option<&[SharedEntity]> {
-        if let Some(MemoryValue::LivingEntities(entities)) = 
-            self.get(MemoryModuleType::NearestVisibleLivingEntities) {
-                Some(entities.as_slice())
+        if let Some(MemoryValue::LivingEntities(entities)) =
+            self.get(MemoryModuleType::NearestVisibleLivingEntities)
+        {
+            Some(entities.as_slice())
         } else {
             None
         }
     }
 
     pub(crate) fn set_nearest_visible_living_entities(&mut self, entities: Vec<SharedEntity>) {
-        self.set_internal(MemoryModuleType::NearestVisibleLivingEntities, Some(ExpirableValue::of(MemoryValue::LivingEntities(entities))));
+        self.set_internal(
+            MemoryModuleType::NearestVisibleLivingEntities,
+            Some(ExpirableValue::of(MemoryValue::LivingEntities(entities))),
+        );
     }
 
     pub(crate) fn forget_outdated(&mut self) {

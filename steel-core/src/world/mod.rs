@@ -1285,6 +1285,10 @@ impl World {
         self.level_data.read().game_time()
     }
 
+    pub fn day_time(&self) -> i64 {
+        self.level_data.read().day_time()
+    }
+
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
