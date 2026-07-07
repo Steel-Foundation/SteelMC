@@ -27,8 +27,9 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::{ChunkHolder, ChunkSaveDependency};
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, PersistentChunkTickets,
-    TimedChunkTickets, generation_status, is_block_ticking, is_entity_ticking,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, ENDER_PEARL_TICKET_TIMEOUT_TICKS,
+    LevelChange, PersistentChunkTickets, TimedChunkTickets, generation_status, is_block_ticking,
+    is_entity_ticking,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -54,11 +55,7 @@ const GENERATION_THREAD_MULTIPLE: usize = 2;
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
 /// `ENDER_PEARL_TICKET_TIMEOUT - 1` ticks while it flies.
-pub const ENDER_PEARL_TICKET_TIMEOUT: u32 = 40;
-
-/// Square radius, in chunks, of a thrown ender pearl's chunk ticket (vanilla
-/// `placeEnderPearlTicket` passes `2`).
-pub const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
+pub const ENDER_PEARL_TICKET_TIMEOUT: u32 = ENDER_PEARL_TICKET_TIMEOUT_TICKS;
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -1410,21 +1407,6 @@ impl ChunkMap {
         timings.tick_block_entities = start.elapsed();
     }
 
-    /// Advances timeout tickets once for a normal game tick.
-    pub fn tick_ticket_timeouts(&self) {
-        self.chunk_tickets
-            .lock()
-            .tick_timeouts_if(|pos, _| self.can_timeout_ticket_expire(pos));
-    }
-
-    fn can_timeout_ticket_expire(&self, pos: ChunkPos) -> bool {
-        self.chunks
-            .read_sync(&pos, |_, holder| {
-                holder.try_chunk(ChunkStatus::Full).is_some()
-            })
-            .unwrap_or(true)
-    }
-
     /// Scheduling tick: processes tickets, creates holders, schedules generation,
     /// runs generation tasks, and processes unloads.
     ///
@@ -1800,11 +1782,10 @@ impl ChunkMap {
     // (`resetEmptyTime`/`shouldKeepDimensionActive`); SteelMC has no idle-dimension
     // unload concept yet, so that flag has no analog here.
     pub fn place_ender_pearl_ticket(&self, chunk: ChunkPos) {
-        self.chunk_tickets.lock().add_ticket_with_timeout(
-            chunk,
-            ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS),
-            ENDER_PEARL_TICKET_TIMEOUT,
-        );
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets
+            .lock()
+            .add_ender_pearl_ticket(&mut chunk_tickets, chunk);
     }
 
     /// Saves all dirty chunks to disk.

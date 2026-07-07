@@ -19,6 +19,8 @@ const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
 const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
 pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
 const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
+pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: u32 = 40;
+const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
 
 /// A chunk ticket level.
 ///
@@ -267,21 +269,8 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
     }
 }
 
-/// A stored ticket plus its optional expiry countdown.
-///
-/// `ticks_left` is `None` for permanent tickets (e.g. player view tickets) and
-/// `Some(n)` for timeout tickets. Vanilla removes timed-out tickets after their
-/// countdown drops below zero, so a ticket is retained for the tick where this
-/// value reaches zero. Mirrors vanilla `Ticket.ticksLeft` /
-/// `TicketType.hasTimeout`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct StoredTicket {
-    ticket: ChunkTicket,
-    ticks_left: Option<u32>,
-}
-
 /// Up to 4 tickets stored inline per position.
-type TicketLevels = SmallVec<[StoredTicket; 4]>;
+type TicketLevels = SmallVec<[ChunkTicket; 4]>;
 
 /// Persistent chunk ticket saved data.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -328,7 +317,7 @@ impl TimedChunkTickets {
                 .tickets
                 .iter()
                 .copied()
-                .map(TimedChunkTicket::to_persistent)
+                .filter_map(TimedChunkTicket::to_persistent)
                 .collect(),
         }
     }
@@ -352,6 +341,21 @@ impl TimedChunkTickets {
             pos,
             portal_ticket(),
             PORTAL_TICKET_TIMEOUT_TICKS,
+        );
+    }
+
+    /// Adds or refreshes vanilla's in-flight ender pearl ticket.
+    pub(crate) fn add_ender_pearl_ticket(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        pos: ChunkPos,
+    ) {
+        self.add_or_reset(
+            ticket_manager,
+            TimedChunkTicketKind::EnderPearl,
+            pos,
+            ender_pearl_ticket(),
+            i64::from(ENDER_PEARL_TICKET_TIMEOUT_TICKS),
         );
     }
 
@@ -455,14 +459,15 @@ impl TimedChunkTicket {
         }
     }
 
-    const fn to_persistent(self) -> PersistentChunkTicket {
+    const fn to_persistent(self) -> Option<PersistentChunkTicket> {
         match self.kind {
-            TimedChunkTicketKind::Portal => PersistentChunkTicket {
+            TimedChunkTicketKind::Portal => Some(PersistentChunkTicket {
                 kind: PersistentChunkTicketKind::Portal,
                 chunk_x: self.pos.0.x,
                 chunk_z: self.pos.0.y,
                 ticks_left: self.ticks_left,
-            },
+            }),
+            TimedChunkTicketKind::EnderPearl => None,
         }
     }
 }
@@ -470,11 +475,17 @@ impl TimedChunkTicket {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TimedChunkTicketKind {
     Portal,
+    EnderPearl,
 }
 
 #[must_use]
 const fn portal_ticket() -> ChunkTicket {
     ChunkTicket::simulated_full_chunks(PORTAL_TICKET_RADIUS)
+}
+
+#[must_use]
+fn ender_pearl_ticket() -> ChunkTicket {
+    ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS)
 }
 
 /// A level change for a chunk position.
@@ -517,46 +528,16 @@ impl ChunkTicketManager {
         }
     }
 
-    /// Adds a permanent ticket. Multiple tickets can exist at the same position.
+    /// Adds a ticket source. Multiple tickets can exist at the same position.
     pub fn add_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) {
-        self.tickets.entry(pos).or_default().push(StoredTicket {
-            ticket,
-            ticks_left: None,
-        });
+        self.tickets.entry(pos).or_default().push(ticket);
         self.dirty = true;
     }
 
-    /// Adds (or refreshes) a timeout ticket that expires after `timeout` ticks.
-    ///
-    /// Mirrors vanilla `TicketStorage.addTicket`: if an equal timeout ticket
-    /// already exists at this position, its countdown is reset rather than a
-    /// duplicate being added (and the propagated levels are unchanged, so this
-    /// does not mark the manager dirty).
-    pub fn add_ticket_with_timeout(&mut self, pos: ChunkPos, ticket: ChunkTicket, timeout: u32) {
-        let tickets = self.tickets.entry(pos).or_default();
-        if let Some(existing) = tickets
-            .iter_mut()
-            .find(|stored| stored.ticket == ticket && stored.ticks_left.is_some())
-        {
-            existing.ticks_left = Some(timeout);
-            return;
-        }
-        tickets.push(StoredTicket {
-            ticket,
-            ticks_left: Some(timeout),
-        });
-        self.dirty = true;
-    }
-
-    /// Removes one permanent ticket matching `(pos, ticket)`. Returns true if found.
-    ///
-    /// Only matches permanent tickets (`ticks_left == None`); timeout tickets are
-    /// reclaimed by [`Self::tick_timeouts`].
+    /// Removes one ticket matching `(pos, ticket)`. Returns true if found.
     pub fn remove_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) -> bool {
         if let Some(tickets) = self.tickets.get_mut(&pos)
-            && let Some(idx) = tickets
-                .iter()
-                .position(|stored| stored.ticks_left.is_none() && stored.ticket == ticket)
+            && let Some(idx) = tickets.iter().position(|stored| *stored == ticket)
         {
             tickets.swap_remove(idx);
             self.dirty = true;
@@ -566,41 +547,6 @@ impl ChunkTicketManager {
             return true;
         }
         false
-    }
-
-    /// Decrements every eligible timeout ticket's countdown and removes expired ones.
-    ///
-    /// Mirrors vanilla `TicketStorage.purgeStaleTickets`; call once per normal
-    /// game tick before the next [`Self::run_all_updates`] propagation.
-    pub fn tick_timeouts(&mut self) {
-        self.tick_timeouts_if(|_, _| true);
-    }
-
-    pub(crate) fn tick_timeouts_if(
-        &mut self,
-        mut can_expire: impl FnMut(ChunkPos, ChunkTicket) -> bool,
-    ) {
-        self.tickets.retain(|pos, tickets| {
-            let pos = *pos;
-            let before = tickets.len();
-            tickets.retain_mut(|stored| {
-                let Some(ticks_left) = stored.ticks_left.as_mut() else {
-                    return true;
-                };
-                if !can_expire(pos, stored.ticket) {
-                    return true;
-                }
-                if *ticks_left == 0 {
-                    return false;
-                }
-                *ticks_left -= 1;
-                true
-            });
-            if tickets.len() != before {
-                self.dirty = true;
-            }
-            !tickets.is_empty()
-        });
     }
 
     /// Removes all tickets at position. Returns true if any were present.
@@ -615,12 +561,9 @@ impl ChunkTicketManager {
     /// Returns the minimum ticket level at position.
     #[must_use]
     pub fn get_ticket(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        self.tickets.get(&pos).and_then(|tickets| {
-            tickets
-                .iter()
-                .map(|stored| stored.ticket.load_level())
-                .min()
-        })
+        self.tickets
+            .get(&pos)
+            .and_then(|tickets| tickets.iter().map(|ticket| ticket.load_level()).min())
     }
 
     /// Iterator over the tickets currently held at `pos`.
@@ -628,7 +571,7 @@ impl ChunkTicketManager {
         self.tickets
             .get(&pos)
             .into_iter()
-            .flat_map(|tickets| tickets.iter().map(|stored| stored.ticket))
+            .flat_map(|tickets| tickets.iter().copied())
     }
 
     /// Iterator over (position, `min_level`) for all ticket sources.
@@ -636,7 +579,7 @@ impl ChunkTicketManager {
         self.tickets.iter().filter_map(|(&pos, tickets)| {
             tickets
                 .iter()
-                .map(|stored| stored.ticket.load_level())
+                .map(|ticket| ticket.load_level())
                 .min()
                 .map(|level| (pos, level))
         })
@@ -677,11 +620,7 @@ impl ChunkTicketManager {
 
         // Propagate each ticket source
         for (&source_pos, tickets) in &self.tickets {
-            let Some(source_level) = tickets
-                .iter()
-                .map(|stored| stored.ticket.load_level())
-                .min()
-            else {
+            let Some(source_level) = tickets.iter().map(|ticket| ticket.load_level()).min() else {
                 continue;
             };
 
@@ -706,7 +645,7 @@ impl ChunkTicketManager {
 
             let Some(simulation_level) = tickets
                 .iter()
-                .filter_map(|stored| stored.ticket.simulation_level())
+                .filter_map(|ticket| ticket.simulation_level())
                 .min()
             else {
                 continue;
@@ -1279,103 +1218,81 @@ mod tests {
     }
 
     #[test]
-    fn timeout_ticket_expires_after_its_countdown() {
+    fn ender_pearl_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
         let mut manager = ChunkTicketManager::new();
-        let pos = ChunkPos::new(0, 0);
-        manager.add_ticket_with_timeout(pos, ChunkTicket::simulated_full_chunks(2), 3);
-        manager.run_all_updates();
-        assert!(manager.get_level(pos).is_some());
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
 
-        // Vanilla removes after the countdown drops below zero:
-        // 3 -> 2 -> 1 -> 0 -> removed.
-        manager.tick_timeouts();
-        assert!(!manager.is_dirty(), "no removal yet, levels unchanged");
-        manager.tick_timeouts();
-        manager.tick_timeouts();
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        manager.run_all_updates();
+
+        assert_eq!(timed_tickets.len(), 1);
+        assert_eq!(manager.ticket_count(), 1);
+        assert!(is_full(
+            manager.get_level(center).expect("ticket should load")
+        ));
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(i32::from(ENDER_PEARL_TICKET_RADIUS), 0))
+                .expect("ender pearl ticket should load the full outer ring")
+        ));
         assert!(
-            !manager.is_dirty(),
-            "zero is retained until the next timeout tick"
+            !manager
+                .get_level(ChunkPos::new(i32::from(ENDER_PEARL_TICKET_RADIUS) + 1, 0))
+                .is_some_and(is_full)
         );
-        manager.tick_timeouts();
-        assert!(manager.is_dirty(), "expiry marks the manager dirty");
 
+        for _ in 0..ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
         manager.run_all_updates();
-        assert_eq!(manager.get_level(pos), None);
+        assert_eq!(manager.ticket_count(), 1);
+
+        timed_tickets.tick(&mut manager, |_| true);
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+        assert_eq!(manager.get_level(center), None);
+        assert_eq!(manager.get_simulation_level(center), None);
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_does_not_age_until_chunk_can_expire() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| false);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
+        manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
     }
 
     #[test]
-    fn re_adding_timeout_ticket_resets_countdown_without_duplicating() {
-        let mut manager = ChunkTicketManager::new();
-        let pos = ChunkPos::new(0, 0);
-        let ticket = ChunkTicket::simulated_full_chunks(2);
-        manager.add_ticket_with_timeout(pos, ticket, 3);
-        manager.run_all_updates();
-
-        // Run the countdown down to 1, then refresh back to 3.
-        manager.tick_timeouts();
-        manager.tick_timeouts();
-        manager.add_ticket_with_timeout(pos, ticket, 3);
-        assert_eq!(manager.ticket_count(), 1, "refresh must not duplicate");
-
-        // Would have reached zero after one more tick; instead it survives the full reset.
-        manager.tick_timeouts();
-        manager.tick_timeouts();
-        manager.tick_timeouts();
-        manager.run_all_updates();
-        assert!(manager.get_level(pos).is_some());
-    }
-
-    #[test]
-    fn timeout_ticket_does_not_age_while_ineligible_to_expire() {
-        let mut manager = ChunkTicketManager::new();
-        let pos = ChunkPos::new(0, 0);
-        let ticket = ChunkTicket::simulated_full_chunks(2);
-        manager.add_ticket_with_timeout(pos, ticket, 1);
-        manager.run_all_updates();
-
-        manager.tick_timeouts_if(|_, _| false);
-        manager.tick_timeouts_if(|_, _| false);
-        manager.run_all_updates();
-        assert!(manager.get_level(pos).is_some());
-
-        manager.tick_timeouts_if(|_, _| true);
-        manager.tick_timeouts_if(|_, _| true);
-        manager.run_all_updates();
-        assert_eq!(manager.get_level(pos), None);
-    }
-
-    #[test]
-    fn permanent_tickets_never_expire() {
-        let mut manager = ChunkTicketManager::new();
-        let pos = ChunkPos::new(0, 0);
-        manager.add_ticket(pos, ChunkTicket::full_chunks(MAX_VIEW_DISTANCE));
-        manager.run_all_updates();
-
-        for _ in 0..100 {
-            manager.tick_timeouts();
-        }
-        manager.run_all_updates();
-        assert_eq!(
-            manager.get_level(pos),
-            ChunkTicketLevel::new(0),
-            "player-style permanent tickets are never reclaimed by timeouts"
-        );
-    }
-
-    #[test]
-    fn timeout_ticket_propagates_like_a_manual_simulated_ticket() {
+    fn ender_pearl_timed_ticket_propagates_like_a_manual_simulated_ticket() {
         let mut timed = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
         let mut manual = ChunkTicketManager::new();
         let pos = ChunkPos::new(0, 0);
-        timed.add_ticket_with_timeout(pos, ChunkTicket::simulated_full_chunks(2), 40);
-        manual.add_ticket(pos, ChunkTicket::simulated_full_chunks(2));
+        timed_tickets.add_ender_pearl_ticket(&mut timed, pos);
+        manual.add_ticket(
+            pos,
+            ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS),
+        );
         timed.run_all_updates();
         manual.run_all_updates();
 
-        for dx in -2..=2 {
-            for dy in -2..=2 {
-                let p = ChunkPos::new(dx, dy);
+        for dx in -i32::from(ENDER_PEARL_TICKET_RADIUS)..=i32::from(ENDER_PEARL_TICKET_RADIUS) {
+            for dz in -i32::from(ENDER_PEARL_TICKET_RADIUS)..=i32::from(ENDER_PEARL_TICKET_RADIUS) {
+                let p = ChunkPos::new(dx, dz);
                 assert_eq!(timed.get_level(p), manual.get_level(p));
                 assert_eq!(
                     timed.get_simulation_level(p),
@@ -1383,5 +1300,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_is_not_persisted() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+
+        timed_tickets.add_portal_ticket(&mut manager, ChunkPos::new(0, 0));
+        timed_tickets.add_ender_pearl_ticket(&mut manager, ChunkPos::new(1, 0));
+
+        assert_eq!(
+            timed_tickets.to_persistent(),
+            PersistentChunkTickets {
+                tickets: vec![PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: 0,
+                    chunk_z: 0,
+                    ticks_left: PORTAL_TICKET_TIMEOUT_TICKS,
+                }],
+            }
+        );
     }
 }
