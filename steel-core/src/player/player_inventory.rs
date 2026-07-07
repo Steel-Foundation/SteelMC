@@ -1154,8 +1154,8 @@ impl PlayerInventory {
     /// Applies vanilla `ItemUtils.createFilledResult` to a held item.
     ///
     /// Mutates the held stack and inventory, returning only the result stack that
-    /// should be dropped by the caller. Creative inventory overflow is swallowed
-    /// by vanilla `Inventory.add`, so this returns empty for infinite-materials players.
+    /// should be dropped by the caller. Vanilla ignores creative inventory
+    /// overflow only in the limited creative branch.
     pub fn apply_filled_result(
         &mut self,
         hand: InteractionHand,
@@ -1163,10 +1163,6 @@ impl PlayerInventory {
         has_infinite_materials: bool,
         limit_creative_stack_size: bool,
     ) -> ItemStack {
-        if result_stack.is_empty() {
-            return ItemStack::empty();
-        }
-
         if limit_creative_stack_size && has_infinite_materials {
             if !self.contains_stack(&result_stack) {
                 let _ = self.add(&mut result_stack);
@@ -1184,7 +1180,7 @@ impl PlayerInventory {
         }
 
         let added = self.add(&mut result_stack);
-        if has_infinite_materials || (added && result_stack.is_empty()) {
+        if added {
             ItemStack::empty()
         } else {
             result_stack
@@ -1573,6 +1569,48 @@ mod tests {
             &ItemStack::with_count(&ITEMS.bucket, 16)
         );
         assert_eq!(inventory.get_item(1), &ItemStack::new(&ITEMS.water_bucket));
+    }
+
+    #[test]
+    fn filled_result_empty_result_still_consumes_survival_hand_stack() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.bucket));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::empty(),
+            false,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert!(inventory.get_selected_item().is_empty());
+    }
+
+    #[test]
+    fn filled_result_creative_unlimited_returns_unadded_result_for_caller_to_drop() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.lava_bucket));
+        for slot in 1..PlayerInventory::INVENTORY_SIZE {
+            inventory.items[slot] = ItemStack::with_count(&ITEMS.oak_log, 64);
+        }
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.water_bucket),
+            true,
+            false,
+        );
+
+        assert_eq!(overflow, ItemStack::new(&ITEMS.water_bucket));
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::new(&ITEMS.lava_bucket)
+        );
     }
 
     #[test]
