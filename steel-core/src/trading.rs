@@ -75,6 +75,33 @@ impl MerchantOffer {
     pub const fn increment_uses(&mut self) {
         self.uses += 1;
     }
+
+    #[must_use]
+    pub fn satisfied_by(&self, a: &ItemStack, b: &ItemStack) -> bool {
+        if !ItemStack::is_same_item(a, &self.cost_a) || a.count() < self.cost_a.count() {
+            return false;
+        }
+        match &self.cost_b {
+            Some(cost_b) => ItemStack::is_same_item(b, cost_b) && b.count() >= cost_b.count(),
+            None => b.is_empty(),
+        }
+    }
+
+    #[must_use]
+    pub fn assemble(&self) -> ItemStack {
+        self.result.clone()
+    }
+
+    pub fn take(&self, a: &mut ItemStack, b: &mut ItemStack) -> bool {
+        if !self.satisfied_by(a, b) {
+            return false;
+        }
+        a.shrink(self.cost_a.count());
+        if let Some(cost_b) = &self.cost_b {
+            b.shrink(cost_b.count());
+        }
+        true
+    }
 }
 
 pub type MerchantOffers = Vec<MerchantOffer>;

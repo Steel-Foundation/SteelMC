@@ -12,6 +12,8 @@ pub mod inventory_menu;
 pub mod lock;
 pub mod menu;
 pub mod menu_provider;
+pub mod merchant;
+pub mod merchant_menu;
 pub mod recipe_manager;
 pub mod slot;
 
@@ -19,3 +21,4 @@ pub use chest_menu::{ChestMenu, ChestMenuProvider};
 pub use crafting_menu::{CraftingMenu, CraftingMenuProvider};
 pub use lock::SyncPlayerInv;
 pub use menu_provider::{MenuInstance, MenuProvider};
+pub use merchant_menu::{MerchantMenu, MerchantMenuProvider};

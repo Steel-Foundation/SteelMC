@@ -16,6 +16,7 @@ use steel_utils::locks::SyncMutex;
 use crate::inventory::SyncPlayerInv;
 use crate::inventory::container::Container;
 use crate::inventory::crafting::{CraftingContainer, ResultContainer};
+use crate::inventory::merchant::{MerchantContainer, RESULT_SLOT};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
 use crate::inventory::recipe_manager;
@@ -26,6 +27,9 @@ pub type SyncCraftingContainer = Arc<SyncMutex<CraftingContainer>>;
 
 /// A synchronized result container.
 pub type SyncResultContainer = Arc<SyncMutex<ResultContainer>>;
+
+/// A synchronized trading container.
+pub type SyncMerchantContainer = Arc<SyncMutex<MerchantContainer>>;
 
 /// A slot is a view into a single position in a container.
 /// Slots require a `ContainerLockGuard` to access items, ensuring proper locking.
@@ -748,6 +752,93 @@ impl Slot for CraftingResultSlot {
     }
 }
 
+pub struct MerchantResultSlot {
+    container: SyncMerchantContainer,
+}
+
+impl MerchantResultSlot {
+    #[must_use]
+    pub const fn new(container: SyncMerchantContainer) -> Self {
+        Self { container }
+    }
+
+    #[must_use]
+    pub fn container_ref(&self) -> ContainerRef {
+        ContainerRef::MerchantContainer(Arc::clone(&self.container))
+    }
+
+    fn container_id(&self) -> ContainerId {
+        ContainerId::from_arc(&self.container)
+    }
+}
+
+impl Slot for MerchantResultSlot {
+    fn get_item<'a>(&self,guard: &'a ContainerLockGuard) ->  &'a ItemStack {
+        guard
+            .get(self.container_id())
+            .expect("container not locked")
+            .get_item(RESULT_SLOT)
+    }
+
+    fn get_item_mut<'a>(&self,guard: &'a mut ContainerLockGuard) ->  &'a mut ItemStack {
+        guard
+            .get_mut(self.container_id())
+            .expect("container not locked")
+            .get_item_mut(RESULT_SLOT)
+    }
+
+    fn set_item(&self,guard: &mut ContainerLockGuard,stack: ItemStack) {
+        guard
+            .get_mut(self.container_id())
+            .expect("container not locked")
+            .set_item(RESULT_SLOT, stack);
+    }
+
+    fn may_place(&self,_stack: &ItemStack) -> bool {
+        false
+    }
+
+    fn may_pickup(&self,guard: &ContainerLockGuard,_player: &Player) -> bool {
+        guard
+            .get_merchant_container(self.container_id())
+            .is_some_and(|m| m.active_offer().is_some())
+    }
+
+    fn allow_modification(&self,guard: &ContainerLockGuard,player: &Player) -> bool {
+        false
+    }
+
+    fn remove(&self,guard: &mut ContainerLockGuard,amount: i32) -> ItemStack {
+        mem::take(self.get_item_mut(guard))
+    }
+
+    fn set_changed(&self,guard: &mut ContainerLockGuard) {
+        guard
+            .get_mut(self.container_id())
+            .expect("container not locked")
+            .set_changed();
+    }
+
+    fn get_container_slot(&self) -> usize {
+        RESULT_SLOT
+    }
+
+    fn get_max_stack_size(&self,guard: &ContainerLockGuard) -> i32 {
+        guard
+            .get(self.container_id())
+            .expect("container not locked")
+            .get_max_stack_size()
+    }
+
+    fn on_take(&self,guard: &mut ContainerLockGuard,_stack: &ItemStack,_player: &Player,) -> Option<ItemStack> {
+        if let Some(merchant) = guard.get_merchant_container_mut(self.container_id()) {
+            merchant.take_trade();
+        }
+        //TODO award xp to villager
+        None
+    }
+}
+
 /// Enum of all slot types that implement the Slot trait.
 #[enum_dispatch(Slot)]
 pub enum SlotType {
@@ -759,6 +850,8 @@ pub enum SlotType {
     CraftingGrid(CraftingGridSlot),
     /// Crafting result slot (fake, doesn't persist items).
     CraftingResult(CraftingResultSlot),
+    /// Trade result slot.
+    MerchantResult(MerchantResultSlot),
 }
 
 impl SlotType {
@@ -774,6 +867,7 @@ impl SlotType {
             SlotType::CraftingResult(s) => {
                 vec![s.result_container_ref(), s.crafting_container_ref()]
             }
+            SlotType::MerchantResult(s) => vec![s.container_ref()],
         }
     }
 

@@ -28,6 +28,7 @@ mod c_level_chunk_with_light;
 mod c_level_event;
 mod c_light_update;
 mod c_login;
+mod c_merchant_offers;
 mod c_move_entity;
 mod c_move_vehicle;
 mod c_open_screen;

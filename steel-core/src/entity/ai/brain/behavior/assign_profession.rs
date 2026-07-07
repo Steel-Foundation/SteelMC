@@ -77,6 +77,9 @@ impl Behavior for AssignProfession {
         let Some(profession_id) = REGISTRY.villager_professions.id_from_key(&poi_type.key) else {
             return;
         };
+        let Ok(profession_id) = i32::try_from(profession_id) else {
+            return;
+        };
 
         let mut data = villager.villager_data();
         data.profession = profession_id;

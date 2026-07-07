@@ -482,7 +482,7 @@ impl Mob for VillagerEntity {
 
 impl PathfinderMob for VillagerEntity {}
 
-impl Vilager for VillagerEntity {
+impl Villager for VillagerEntity {
     fn villager_data(&self) -> VillagerData {
         *self.entity_data.lock().villager_data.get()
     }
