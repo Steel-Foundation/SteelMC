@@ -39,7 +39,7 @@ use steel_utils::{
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, ENTITIES, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
@@ -678,35 +678,38 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        for block in &palette.blocks {
-            let original = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos: block.pos,
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
-            let processed = ProcessedBlockInfo {
-                template_pos: block.pos,
-                world_pos: Self::transformed_position(position, block.pos, settings),
-                state: block.state,
-                nbt: block.nbt.clone(),
-            };
+        Self::palette_blocks_for_placement(
+            &palette.blocks,
+            position,
+            settings,
+            |block, world_pos| {
+                let original = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos: block.pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
+                let processed = ProcessedBlockInfo {
+                    template_pos: block.pos,
+                    world_pos,
+                    state: block.state,
+                    nbt: block.nbt.clone(),
+                };
 
-            let Some(processed) = Self::process_block(
-                region,
-                registry,
-                &original,
-                processed,
-                settings,
-                reference_pos,
-                random,
-            ) else {
-                continue;
-            };
-
-            original_blocks.push(original);
-            processed_blocks.push(processed);
-        }
+                if let Some(processed) = Self::process_block(
+                    region,
+                    registry,
+                    &original,
+                    processed,
+                    settings,
+                    reference_pos,
+                    random,
+                ) {
+                    original_blocks.push(original);
+                    processed_blocks.push(processed);
+                }
+            },
+        );
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -731,6 +734,8 @@ impl StructureTemplate {
         let mut locked_fluids = Vec::new();
         let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
+            // Always guard placement: the vanilla fallback may enqueue a block outside
+            // `bounding_box` for processor/finalize parity without intending a write here.
             if !settings.bounding_box.contains_blockpos(processed.world_pos) {
                 continue;
             }
@@ -973,7 +978,7 @@ impl StructureTemplate {
     }
 
     fn update_shape_at_edge(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         flags: UpdateFlags,
         placed_positions: &[BlockPos],
         min: BlockPos,
@@ -1046,7 +1051,7 @@ impl StructureTemplate {
     }
 
     fn fill_neighbor_source_liquids(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         to_fill: &mut Vec<BlockPos>,
         locked_fluids: &[BlockPos],
     ) {
@@ -1078,9 +1083,8 @@ impl StructureTemplate {
 
                 if to_place.is_source() {
                     let state = region.block_state(pos);
-                    if Self::is_liquid_block_container(state)
-                        && Self::place_liquid(region, pos, state, to_place)
-                    {
+                    if Self::is_liquid_block_container(state) {
+                        let _ = Self::place_liquid(region, pos, state, to_place);
                         filled = true;
                         to_fill.remove(index);
                         continue;
@@ -1103,42 +1107,19 @@ impl StructureTemplate {
     }
 
     fn is_liquid_block_container(state: BlockStateId) -> bool {
-        state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_liquid_container(state)
     }
 
     fn place_liquid(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        if state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_none()
-        {
-            return false;
-        }
-        if !behavior.can_place_liquid(state, fluid_state.fluid_id) {
-            return false;
-        }
-
-        let waterlogged = state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        if !region.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL) {
-            return false;
-        }
-
-        let delay = region.weak_world().upgrade().map_or_else(
-            || i32::try_from(fluid_state.fluid_id.tick_delay).unwrap_or(i32::MAX),
-            |world| {
-                FLUID_BEHAVIORS
-                    .get_behavior(fluid_state.fluid_id)
-                    .tick_delay(&world)
-            },
-        );
-        region.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay)
+        behavior.place_liquid(region, pos, state, fluid_state)
     }
 
     fn for_all_shape_faces(
@@ -1220,6 +1201,39 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
+    }
+
+    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
+    /// Disabled when a `Capped` processor is present — it needs the full block list
+    /// in `finalize_processing` (Trail Ruins).
+    fn pre_filters_placement_bounds(processors: &[StructureProcessorKind]) -> bool {
+        !processors
+            .iter()
+            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
+    }
+
+    fn palette_blocks_for_placement<F: FnMut(&StructureBlockInfo, BlockPos)>(
+        blocks: &[StructureBlockInfo],
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        mut f: F,
+    ) {
+        if !Self::pre_filters_placement_bounds(settings.processors) {
+            for block in blocks {
+                f(
+                    block,
+                    Self::transformed_position(position, block.pos, settings),
+                );
+            }
+            return;
+        }
+
+        for block in blocks {
+            let world_pos = Self::transformed_position(position, block.pos, settings);
+            if settings.bounding_box.contains_blockpos(world_pos) {
+                f(block, world_pos);
+            }
+        }
     }
 
     const fn transformed_position(
@@ -2412,6 +2426,8 @@ impl StructureTemplate {
 
 #[cfg(test)]
 mod tests {
+    use std::slice;
+
     use super::*;
     use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
     use steel_registry::test_support::init_test_registry;
@@ -2420,6 +2436,81 @@ mod tests {
     fn test_registry() -> Registry {
         init_test_registry();
         Registry::new_vanilla()
+    }
+
+    #[test]
+    fn palette_blocks_skips_all_out_of_bounds_for_current_chunk_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: &[],
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, _| {
+                processed += 1;
+            },
+        );
+
+        assert_eq!(processed, 0);
+    }
+
+    #[test]
+    fn palette_blocks_keeps_out_of_bounds_for_capped_processors() {
+        let blocks = [StructureBlockInfo {
+            pos: BlockPos::new(32, 0, 0),
+            state: BlockStateId(0),
+            nbt: None,
+        }];
+        let capped = StructureProcessorKind::Capped {
+            delegate: Box::new(StructureProcessorKind::LavaSubmergedBlock),
+            limit: IntProvider::Constant(1),
+        };
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::None,
+            rotation_pivot: BlockPos::ZERO,
+            bounding_box: BoundingBox::new(IVec3::ZERO, IVec3::new(15, 255, 15)),
+            processors: slice::from_ref(&capped),
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut processed = 0;
+        let mut processed_pos = None;
+
+        StructureTemplate::palette_blocks_for_placement(
+            &blocks,
+            BlockPos::ZERO,
+            &settings,
+            |_, pos| {
+                processed += 1;
+                processed_pos = Some(pos);
+            },
+        );
+
+        assert_eq!(processed, 1);
+        assert_eq!(processed_pos, Some(BlockPos::new(32, 0, 0)));
     }
 
     #[test]

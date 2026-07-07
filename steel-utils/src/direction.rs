@@ -143,6 +143,16 @@ impl Direction {
         self.get_axis()
     }
 
+    /// Returns vanilla `Direction.get(AxisDirection.POSITIVE, axis)`.
+    #[must_use]
+    pub const fn positive_for_axis(axis: Axis) -> Direction {
+        match axis {
+            Axis::X => Direction::East,
+            Axis::Y => Direction::Up,
+            Axis::Z => Direction::South,
+        }
+    }
+
     /// Returns whether this direction is horizontal (not up or down).
     #[must_use]
     pub const fn is_horizontal(self) -> bool {
@@ -313,10 +323,25 @@ impl Direction {
             Direction::East => "east",
         }
     }
+
+    /// Returns a random direction
+    #[must_use]
+    pub fn random() -> Self {
+        match rand::random_range(0..6) {
+            1 => Self::Up,
+            2 => Self::North,
+            3 => Self::South,
+            4 => Self::West,
+            5 => Self::East,
+            _ => Self::Down,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::axis::Axis;
+
     use super::Direction;
 
     #[test]
@@ -345,5 +370,12 @@ mod tests {
                 Direction::East,
             ]
         );
+    }
+
+    #[test]
+    fn positive_for_axis_matches_vanilla_axis_direction_positive() {
+        assert_eq!(Direction::positive_for_axis(Axis::X), Direction::East);
+        assert_eq!(Direction::positive_for_axis(Axis::Y), Direction::Up);
+        assert_eq!(Direction::positive_for_axis(Axis::Z), Direction::South);
     }
 }

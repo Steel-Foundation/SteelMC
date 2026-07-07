@@ -1,5 +1,4 @@
 use glam::DVec3;
-use steel_utils::random::Random as _;
 
 use super::random_pos::default_random_pos;
 use super::reduced_tick_delay;
@@ -64,10 +63,7 @@ impl RandomStrollGoal {
                 return false;
             }
 
-            let should_skip = {
-                let mut random = mob.base().random().lock();
-                random.next_i32_bounded(reduced_tick_delay(self.interval)) != 0
-            };
+            let should_skip = rand::random_range(0..reduced_tick_delay(self.interval)) != 0;
             if should_skip {
                 return false;
             }

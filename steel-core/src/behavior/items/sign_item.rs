@@ -71,7 +71,7 @@ impl ItemBehavior for SignItem {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
         };
-        let place_pos = place_context.relative_pos;
+        let place_pos = place_context.place_pos;
 
         let Some(new_state) = self.inner.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
@@ -209,7 +209,7 @@ impl ItemBehavior for HangingSignItem {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
         };
-        let place_pos = place_context.relative_pos;
+        let place_pos = place_context.place_pos;
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
 

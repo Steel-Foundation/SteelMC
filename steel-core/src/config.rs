@@ -4,7 +4,7 @@
 //! defines `RuntimeConfig` (the subset kept after startup) and the world/domain
 //! configuration types that both crates share.
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Deserializer, de::Error as DeError};
 use std::{
     collections::BTreeMap,
@@ -12,6 +12,7 @@ use std::{
 };
 pub use steel_protocol::packet_traits::CompressionInfo;
 use steel_protocol::packets::config::{CServerLinks, Link, ServerLinksType};
+use steel_registry::vanilla_dimension_types;
 use steel_utils::Identifier;
 use steel_utils::codec::Or;
 use steel_utils::types::{Difficulty, GameType};
@@ -206,6 +207,12 @@ pub struct WorldEntryConfig {
     /// World storage override.
     #[serde(default)]
     pub storage: Option<StorageSelection>,
+    /// Same-domain world name used by Nether portals from this world.
+    #[serde(default)]
+    pub nether_portal_target: Option<String>,
+    /// Same-domain world name used by End portals from non-End worlds.
+    #[serde(default)]
+    pub end_portal_target: Option<String>,
     /// Generator-specific config. The selected generator validates this strictly.
     #[serde(default)]
     pub config: Option<toml::Value>,
@@ -298,6 +305,10 @@ pub struct ResolvedWorldConfig {
     pub difficulty: Difficulty,
     /// Resolved world storage selection.
     pub storage: StorageSelection,
+    /// Explicit same-domain Nether portal target, if configured.
+    pub nether_portal_target: Option<Identifier>,
+    /// Explicit same-domain End portal entry target, if configured.
+    pub end_portal_target: Option<Identifier>,
 }
 
 impl WorldsConfig {
@@ -424,6 +435,8 @@ fn resolve_domain_config(
         resolved_worlds.push(resolved_world);
     }
 
+    validate_explicit_portal_targets(domain_name, &resolved_worlds, &seen_world_names)?;
+
     let Some(default_world) = default_world else {
         return Err(format!(
             "domain {domain_name} must declare exactly one default world"
@@ -463,6 +476,24 @@ fn resolve_world_config(
         .clone()
         .unwrap_or_else(|| domain_storage.clone());
     storage_registry.validate_selection(&storage)?;
+    let nether_portal_target = resolve_explicit_portal_target(
+        domain_name,
+        &world.name,
+        world.nether_portal_target.as_deref(),
+        "nether_portal_target",
+    )?;
+    let end_portal_target = resolve_explicit_portal_target(
+        domain_name,
+        &world.name,
+        world.end_portal_target.as_deref(),
+        "end_portal_target",
+    )?;
+    validate_end_portal_target_dimension(
+        domain_name,
+        &world.name,
+        end_portal_target.as_ref(),
+        &generator_config,
+    )?;
 
     Ok(ResolvedWorldConfig {
         key: world_key,
@@ -477,7 +508,127 @@ fn resolve_world_config(
         default_gamemode: world.default_gamemode.unwrap_or(domain_defaults.gamemode),
         difficulty: world.difficulty.unwrap_or(domain_defaults.difficulty),
         storage,
+        nether_portal_target,
+        end_portal_target,
     })
+}
+
+fn resolve_explicit_portal_target(
+    domain_name: &str,
+    source_world_name: &str,
+    target_world_name: Option<&str>,
+    field: &str,
+) -> Result<Option<Identifier>, String> {
+    let Some(target_world_name) = target_world_name else {
+        return Ok(None);
+    };
+    if target_world_name.is_empty()
+        || target_world_name.contains('/')
+        || !Identifier::validate_path(target_world_name)
+    {
+        return Err(format!(
+            "invalid {field} {target_world_name} for world {domain_name}:{source_world_name}"
+        ));
+    }
+    if target_world_name == source_world_name {
+        return Err(format!(
+            "world {domain_name}:{source_world_name} {field} must not target itself"
+        ));
+    }
+
+    Ok(Some(Identifier::new(
+        domain_name.to_owned(),
+        target_world_name.to_owned(),
+    )))
+}
+
+fn validate_end_portal_target_dimension(
+    domain_name: &str,
+    source_world_name: &str,
+    end_portal_target: Option<&Identifier>,
+    generator_config: &ValidatedWorldGeneratorConfig,
+) -> Result<(), String> {
+    if end_portal_target.is_some()
+        && generator_config.dimension_type() == &vanilla_dimension_types::THE_END
+    {
+        return Err(format!(
+            "world {domain_name}:{source_world_name} end_portal_target is invalid on End-dimension worlds; End portal returns use respawn data"
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_explicit_portal_targets(
+    domain_name: &str,
+    worlds: &[ResolvedWorldConfig],
+    world_names: &FxHashSet<String>,
+) -> Result<(), String> {
+    let worlds_by_name = worlds
+        .iter()
+        .map(|world| (world.name.as_str(), world))
+        .collect::<FxHashMap<_, _>>();
+    for world in worlds {
+        validate_explicit_portal_target(
+            domain_name,
+            &world.key,
+            world.nether_portal_target.as_ref(),
+            "nether_portal_target",
+            world_names,
+        )?;
+        validate_explicit_portal_target(
+            domain_name,
+            &world.key,
+            world.end_portal_target.as_ref(),
+            "end_portal_target",
+            world_names,
+        )?;
+        validate_end_portal_target_target_dimension(domain_name, world, &worlds_by_name)?;
+    }
+
+    Ok(())
+}
+
+fn validate_explicit_portal_target(
+    domain_name: &str,
+    source_world: &Identifier,
+    target: Option<&Identifier>,
+    field: &str,
+    world_names: &FxHashSet<String>,
+) -> Result<(), String> {
+    let Some(target) = target else {
+        return Ok(());
+    };
+    if world_names.contains(target.path.as_ref()) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "world {source_world} {field} target {} is not declared in domain {domain_name}",
+        target.path
+    ))
+}
+
+fn validate_end_portal_target_target_dimension(
+    domain_name: &str,
+    source_world: &ResolvedWorldConfig,
+    worlds_by_name: &FxHashMap<&str, &ResolvedWorldConfig>,
+) -> Result<(), String> {
+    let Some(target) = &source_world.end_portal_target else {
+        return Ok(());
+    };
+    let Some(target_world) = worlds_by_name.get(target.path.as_ref()) else {
+        return Ok(());
+    };
+
+    if target_world.generator_config.dimension_type() == &vanilla_dimension_types::THE_END {
+        return Ok(());
+    }
+
+    Err(format!(
+        "world {domain_name}:{} end_portal_target {} must target an End-dimension world",
+        source_world.name, target.path
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -684,6 +835,219 @@ difficulty = "hard"
         assert_eq!(nether.seed, 3);
         assert_eq!(nether.default_gamemode, GameType::Creative);
         assert_eq!(nether.difficulty, Difficulty::Hard);
+    }
+
+    #[test]
+    fn resolves_explicit_portal_targets() {
+        let resolved = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld2"
+generator = "minecraft:overworld"
+default = true
+nether_portal_target = "the_nether2"
+end_portal_target = "the_end2"
+
+[[domains.minecraft.worlds]]
+name = "the_nether2"
+generator = "minecraft:the_nether"
+nether_portal_target = "overworld2"
+
+[[domains.minecraft.worlds]]
+name = "the_end2"
+generator = "minecraft:the_end"
+"#,
+        )
+        .expect("explicit portal targets should resolve");
+
+        let overworld = resolved
+            .worlds
+            .iter()
+            .find(|world| world.name == "overworld2")
+            .expect("overworld2 should exist");
+        assert_eq!(
+            overworld.nether_portal_target,
+            Some(Identifier::new("minecraft", "the_nether2"))
+        );
+        assert_eq!(
+            overworld.end_portal_target,
+            Some(Identifier::new("minecraft", "the_end2"))
+        );
+
+        let nether = resolved
+            .worlds
+            .iter()
+            .find(|world| world.name == "the_nether2")
+            .expect("the_nether2 should exist");
+        assert_eq!(
+            nether.nether_portal_target,
+            Some(Identifier::new("minecraft", "overworld2"))
+        );
+        assert_eq!(nether.end_portal_target, None);
+    }
+
+    #[test]
+    fn rejects_missing_explicit_portal_target() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+nether_portal_target = "missing"
+"#,
+        )
+        .expect_err("missing explicit portal target should be rejected");
+        assert!(error.contains("nether_portal_target"));
+        assert!(error.contains("missing"));
+    }
+
+    #[test]
+    fn rejects_self_explicit_portal_target() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+end_portal_target = "overworld"
+"#,
+        )
+        .expect_err("self explicit portal target should be rejected");
+        assert!(error.contains("end_portal_target"));
+        assert!(error.contains("must not target itself"));
+    }
+
+    #[test]
+    fn rejects_end_portal_target_on_end_dimension_world() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+
+[[domains.minecraft.worlds]]
+name = "the_end"
+generator = "minecraft:the_end"
+end_portal_target = "overworld"
+"#,
+        )
+        .expect_err("End-dimension world end_portal_target should be rejected");
+        assert!(error.contains("end_portal_target"));
+        assert!(error.contains("End-dimension worlds"));
+    }
+
+    #[test]
+    fn rejects_end_portal_target_on_flat_end_dimension_world() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+
+[[domains.minecraft.worlds]]
+name = "flat_end"
+generator = "minecraft:flat"
+end_portal_target = "overworld"
+
+[domains.minecraft.worlds.config]
+dimension_type = "minecraft:the_end"
+"#,
+        )
+        .expect_err("flat End-dimension world end_portal_target should be rejected");
+        assert!(error.contains("end_portal_target"));
+        assert!(error.contains("End-dimension worlds"));
+    }
+
+    #[test]
+    fn rejects_end_portal_target_to_non_end_dimension_world() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+end_portal_target = "other_overworld"
+
+[[domains.minecraft.worlds]]
+name = "other_overworld"
+generator = "minecraft:overworld"
+"#,
+        )
+        .expect_err("end_portal_target should require an End-dimension target");
+        assert!(error.contains("end_portal_target"));
+        assert!(error.contains("End-dimension world"));
+    }
+
+    #[test]
+    fn accepts_end_portal_target_to_flat_end_dimension_world() {
+        let resolved = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+end_portal_target = "flat_end"
+
+[[domains.minecraft.worlds]]
+name = "flat_end"
+generator = "minecraft:flat"
+
+[domains.minecraft.worlds.config]
+dimension_type = "minecraft:the_end"
+"#,
+        )
+        .expect("flat End-dimension end_portal_target should resolve");
+        let overworld = resolved
+            .worlds
+            .iter()
+            .find(|world| world.name == "overworld")
+            .expect("overworld should exist");
+        assert_eq!(
+            overworld.end_portal_target,
+            Some(Identifier::new("minecraft", "flat_end"))
+        );
+    }
+
+    #[test]
+    fn rejects_cross_domain_explicit_portal_target() {
+        let error = resolve(
+            r#"
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+nether_portal_target = "other:the_nether"
+"#,
+        )
+        .expect_err("cross-domain-looking portal target should be rejected");
+        assert!(error.contains("nether_portal_target"));
     }
 
     #[test]

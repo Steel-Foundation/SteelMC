@@ -7,6 +7,7 @@ use steel_registry::{REGISTRY, RegistryExt, vanilla_biomes};
 use steel_utils::random::RandomSource;
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::region::WorldGenRegion;

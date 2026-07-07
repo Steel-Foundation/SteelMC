@@ -23,7 +23,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Spell Check
-        uses: crate-ci/typos@v1.39.0
+        uses: crate-ci/typos@v1.48.0
 
       - name: Format
         run: cargo fmt --all --check

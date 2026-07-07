@@ -3,7 +3,7 @@ use std::f64::consts::{FRAC_PI_2, SQRT_2};
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
-use steel_utils::random::Random;
+use steel_utils::random::{Random, legacy_random::LegacyRandom};
 
 use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::PathfinderMob;
@@ -36,9 +36,9 @@ pub(super) fn default_random_pos_towards(
     let restrict = mob_restricted(mob, f64::from(horizontal_dist));
     generate_random_pos(mob, || {
         let direction = {
-            let mut random = mob.base().random().lock();
+            let mut random = LegacyRandom::from_seed(rand::random());
             generate_random_direction_within_radians(
-                &mut *random,
+                &mut random,
                 0.0,
                 f64::from(horizontal_dist),
                 vertical_dist,
@@ -62,9 +62,9 @@ pub(super) fn default_random_pos_away(
     let restrict = mob_restricted(mob, f64::from(horizontal_dist));
     generate_random_pos(mob, || {
         let direction = {
-            let mut random = mob.base().random().lock();
+            let mut random = LegacyRandom::from_seed(rand::random());
             generate_random_direction_within_radians(
-                &mut *random,
+                &mut random,
                 0.0,
                 f64::from(horizontal_dist),
                 vertical_dist,
@@ -114,15 +114,14 @@ fn generate_random_pos(
 }
 
 fn generate_random_direction(
-    mob: &dyn PathfinderMob,
+    _mob: &dyn PathfinderMob,
     horizontal_dist: i32,
     vertical_dist: i32,
 ) -> BlockPos {
-    let mut random = mob.base().random().lock();
     BlockPos::new(
-        random.next_i32_bounded(2 * horizontal_dist + 1) - horizontal_dist,
-        random.next_i32_bounded(2 * vertical_dist + 1) - vertical_dist,
-        random.next_i32_bounded(2 * horizontal_dist + 1) - horizontal_dist,
+        rand::random_range(0..(2 * horizontal_dist + 1)) - horizontal_dist,
+        rand::random_range(0..(2 * vertical_dist + 1)) - vertical_dist,
+        rand::random_range(0..(2 * horizontal_dist + 1)) - horizontal_dist,
     )
 }
 
@@ -203,17 +202,16 @@ fn generate_random_pos_toward_direction(
     let position = mob.position();
     if mob.has_home() && horizontal_dist > 1.0 {
         let center = mob.home_position();
-        let mut random = mob.base().random().lock();
         if position.x > f64::from(center.x()) {
-            xt -= random.next_f64() * horizontal_dist / 2.0;
+            xt -= rand::random::<f64>() * horizontal_dist / 2.0;
         } else {
-            xt += random.next_f64() * horizontal_dist / 2.0;
+            xt += rand::random::<f64>() * horizontal_dist / 2.0;
         }
 
         if position.z > f64::from(center.z()) {
-            zt -= random.next_f64() * horizontal_dist / 2.0;
+            zt -= rand::random::<f64>() * horizontal_dist / 2.0;
         } else {
-            zt += random.next_f64() * horizontal_dist / 2.0;
+            zt += rand::random::<f64>() * horizontal_dist / 2.0;
         }
     }
 

@@ -1,5 +1,4 @@
 use glam::DVec3;
-use steel_utils::random::Random as _;
 use steel_utils::types::InteractionHand;
 
 use super::reduced_tick_delay;
@@ -101,16 +100,12 @@ impl MeleeAttackGoal {
             return true;
         }
 
-        mob.base().random().lock().next_f32() < RANDOM_PATH_RECALC_CHANCE
+        rand::random::<f32>() < RANDOM_PATH_RECALC_CHANCE
     }
 
     fn recalculate_path(&mut self, mob: &dyn PathfinderMob, target: &SharedEntity) {
         self.pathed_target = target.position();
-        let random_delay = mob
-            .base()
-            .random()
-            .lock()
-            .next_i32_bounded(PATH_RECALC_RANDOM_TICKS);
+        let random_delay = rand::random_range(0..PATH_RECALC_RANDOM_TICKS);
         self.ticks_until_next_path_recalculation = PATH_RECALC_BASE_TICKS + random_delay;
 
         let target_distance_sqr = mob.position().distance_squared(target.position());
@@ -241,7 +236,7 @@ mod tests {
 
     use super::*;
     use crate::entity::ai::goal::selector::Goal;
-    use crate::entity::{Entity, Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::PigEntity};
 
     fn pig(id: i32, position: DVec3) -> PigEntity {
         PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
@@ -324,7 +319,6 @@ mod tests {
         init_test_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
-        mob.base().random().lock().set_seed(0);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
 

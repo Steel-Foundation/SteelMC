@@ -12,6 +12,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -130,10 +131,10 @@ impl BlockBehavior for FenceBlock {
         log::debug!(
             "FenceBlock::get_state_for_placement called for {:?} at {:?}",
             self.block.key,
-            context.relative_pos
+            context.place_pos
         );
         Some(
-            self.get_connection_state(context.world, context.relative_pos)
+            self.get_connection_state(context.world, context.place_pos)
                 .set_value(&Self::WATERLOGGED, context.is_water_source()),
         )
     }
@@ -141,12 +142,17 @@ impl BlockBehavior for FenceBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &dyn ScheduledTickAccess,
-        _pos: BlockPos,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
         direction: Direction,
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
+        if state.get_value(&Self::WATERLOGGED) {
+            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
+            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+        }
+
         // Only update for horizontal directions
         match direction {
             Direction::North => {
@@ -168,5 +174,46 @@ impl BlockBehavior for FenceBlock {
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::BlockPos;
+
+    use crate::test_support::TestLevel;
+
+    use super::*;
+
+    #[test]
+    fn waterlogged_fence_update_shape_schedules_water_tick() {
+        init_test_registry();
+
+        let behavior = FenceBlock::new(&vanilla_blocks::OAK_FENCE);
+        let state = vanilla_blocks::OAK_FENCE
+            .default_state()
+            .set_value(&FenceBlock::WATERLOGGED, true);
+        let level = TestLevel::default();
+
+        let updated = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Up,
+            Direction::Up.relative(BlockPos::ZERO),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert_eq!(updated, state);
+        assert_eq!(
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(&vanilla_fluids::WATER, 5)]
+        );
     }
 }

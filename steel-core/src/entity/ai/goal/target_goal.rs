@@ -1,9 +1,7 @@
-use steel_registry::vanilla_attributes;
-use steel_utils::random::Random as _;
-
 use super::reduced_tick_delay;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{LivingEntity, Mob, PathfinderMob, SharedEntity};
+use steel_registry::vanilla_attributes;
 
 const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
 
@@ -136,8 +134,7 @@ impl TargetGoalBase {
     }
 
     fn check_reach(&mut self, mob: &dyn PathfinderMob, target: &dyn LivingEntity) -> bool {
-        self.reach_cache_time =
-            reduced_tick_delay(10 + mob.base().random().lock().next_i32_bounded(5));
+        self.reach_cache_time = reduced_tick_delay(10 + rand::random_range(0..5));
         mob.can_reach_living_target(target)
     }
 }

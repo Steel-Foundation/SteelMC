@@ -16,8 +16,7 @@ use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::block_state_ext::FluidReplaceableExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -25,9 +24,12 @@ use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
+use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_items;
-use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
+use steel_utils::{BlockPos, BlockStateId};
+
+use crate::world::game_event_context::GameEventContext;
 
 /// Handles all bucket variants (empty, water, lava).
 #[item_behavior]
@@ -138,6 +140,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 
         // Give filled bucket
         consume_bucket(context, result.filled_bucket);
+        context.world.game_event(
+            &vanilla_game_events::FLUID_PICKUP,
+            hit_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
 
         return InteractionResult::Success;
     }
@@ -157,6 +164,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         }
 
         consume_bucket(context, result.filled_bucket);
+        context.world.game_event(
+            &vanilla_game_events::FLUID_PICKUP,
+            hit_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
 
         return InteractionResult::Success;
     }
@@ -177,13 +189,9 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     let (ray_block, ray_dir) = context.world.raytrace(start, end, |pos, world| {
         let state = world.get_block_state(pos);
         let block = state.get_block();
-        // Pass through air and all fluids
+        // Filled buckets use ClipContext.Fluid.NONE: ignore fluid shapes, but
+        // still test the block shape of waterlogged/container blocks.
         if block == &vanilla_blocks::AIR {
-            return RaytraceAction::Pass;
-        }
-        // Check fluid state for pass-through
-        let fluid_state = state.get_fluid_state();
-        if !fluid_state.is_empty() {
             return RaytraceAction::Pass;
         }
         RaytraceAction::CheckShape
@@ -222,13 +230,18 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
         let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        let can_waterlog = is_water_bucket
-            && behavior
-                .can_place_liquid(state, FluidState::source(&vanilla_fluids::WATER).fluid_id);
+        let is_liquid_container = state.is_liquid_container();
+        let can_place_liquid = is_water_bucket
+            && is_liquid_container
+            && behavior.can_place_liquid_with_player(
+                state,
+                FluidState::source(&vanilla_fluids::WATER).fluid_id,
+                Some(context.player),
+            );
         let can_replace = state.can_be_replaced_by_fluid(fluid_block);
 
-        // Vanilla parity: block must be replaceable or waterloggable for placement
-        if !can_waterlog && !can_replace {
+        // Vanilla parity: block must be replaceable or liquid-container-admissible for placement.
+        if !can_replace && !can_place_liquid {
             return None;
         }
 
@@ -243,13 +256,11 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             return Some(InteractionResult::Success);
         }
 
-        // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
-        if can_waterlog {
+        // 1. Try LiquidBlockContainer handling (only if Water bucket).
+        if is_water_bucket && is_liquid_container {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
             behavior.place_liquid(context.world, pos, state, source_water);
-            context
-                .world
-                .play_block_sound(&sound_events::ITEM_BUCKET_EMPTY, pos, 1.0, 1.0, None);
+            play_empty_sound_and_event(context, pos, true);
             consume_bucket(context, &vanilla_items::ITEMS.bucket);
             return Some(InteractionResult::Success);
         }
@@ -264,6 +275,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             };
 
             if is_same_fluid && fluid_state.is_source() {
+                play_empty_sound_and_event(context, pos, is_water_bucket);
                 consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);
             }
@@ -292,14 +304,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
                     .world
                     .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
 
-                let sound_event = if is_water_bucket {
-                    &sound_events::ITEM_BUCKET_EMPTY
-                } else {
-                    &sound_events::ITEM_BUCKET_EMPTY_LAVA
-                };
-                context
-                    .world
-                    .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+                play_empty_sound_and_event(context, pos, is_water_bucket);
 
                 consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);
@@ -308,21 +313,13 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         None
     };
 
-    // Vanilla parity (BucketItem.java line 75): position selection mirrors
+    // Vanilla parity (BucketItem.java): position selection mirrors
     // `instanceof LiquidBlockContainer && content == Fluids.WATER ? pos : directionOffsetPos`.
-    // WATERLOGGED property existence approximates the LiquidBlockContainer type check.
     // If primary fails, secondary retries at the offset pos without sneak check,
     // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
     let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
-    let clicked_is_waterloggable = clicked_state
-        .try_get_value(&BlockStateProperties::WATERLOGGED)
-        .is_some();
-
-    let primary_pos = if is_water_bucket && clicked_is_waterloggable {
-        clicked_pos
-    } else {
-        direction.relative(clicked_pos)
-    };
+    let primary_pos =
+        filled_bucket_primary_pos(clicked_state, clicked_pos, direction, is_water_bucket);
 
     // Attempt Primary (with sneak check)
     if let Some(result) = try_place_fluid(primary_pos, true) {
@@ -338,4 +335,58 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     }
 
     InteractionResult::Fail
+}
+
+fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_bucket: bool) {
+    let sound_event = if is_water_bucket {
+        &sound_events::ITEM_BUCKET_EMPTY
+    } else {
+        &sound_events::ITEM_BUCKET_EMPTY_LAVA
+    };
+    context
+        .world
+        .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+    context.world.game_event(
+        &vanilla_game_events::FLUID_PLACE,
+        pos,
+        &GameEventContext::new(Some(context.player), None),
+    );
+}
+
+fn filled_bucket_primary_pos(
+    clicked_state: BlockStateId,
+    clicked_pos: BlockPos,
+    direction: Direction,
+    is_water_bucket: bool,
+) -> BlockPos {
+    if is_water_bucket && clicked_state.is_liquid_container() {
+        clicked_pos
+    } else {
+        direction.relative(clicked_pos)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::behavior::init_behaviors;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use super::*;
+
+    #[test]
+    fn filled_water_bucket_targets_non_waterlogged_liquid_container_in_place() {
+        init_test_registry();
+        init_behaviors();
+
+        let kelp = vanilla_blocks::KELP.default_state();
+
+        assert_eq!(
+            filled_bucket_primary_pos(kelp, BlockPos::ZERO, Direction::North, true),
+            BlockPos::ZERO
+        );
+        assert_eq!(
+            filled_bucket_primary_pos(kelp, BlockPos::ZERO, Direction::North, false),
+            Direction::North.relative(BlockPos::ZERO)
+        );
+    }
 }

@@ -38,7 +38,7 @@ impl BlockItem {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
         };
-        let place_pos = place_context.relative_pos;
+        let place_pos = place_context.place_pos;
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
         let Some(new_state) = behavior.get_state_for_placement(&place_context) else {
@@ -93,7 +93,7 @@ impl BlockItem {
     fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         context
             .world
-            .set_block(context.relative_pos, state, Self::PLACE_BLOCK_FLAGS)
+            .set_block(context.place_pos, state, Self::PLACE_BLOCK_FLAGS)
     }
 }
 
@@ -133,7 +133,7 @@ impl DoubleHighBlockItem {
     }
 
     fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
-        let above = context.relative_pos.above();
+        let above = context.place_pos.above();
         let above_state = if get_fluid_state(context.world, above).is_water() {
             vanilla_blocks::WATER.default_state()
         } else {

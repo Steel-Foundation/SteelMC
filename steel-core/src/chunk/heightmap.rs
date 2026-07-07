@@ -16,6 +16,8 @@ use steel_registry::{
 };
 use steel_utils::BlockStateId;
 
+use crate::behavior::BlockStateBehaviorExt as _;
+
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeightmapType {
@@ -124,7 +126,7 @@ fn build_state_opacity_masks() -> Box<[u8]> {
                 mask |= HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK;
             }
 
-            if blocks_motion || BlockStateExt::has_fluid(&state) {
+            if blocks_motion || state.has_fluid() {
                 mask |= HeightmapType::MOTION_BLOCKING_MASK;
                 if !HeightmapType::is_leaves(block) {
                     mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;

@@ -3,7 +3,7 @@ use crate::{
     REGISTRY,
     blocks::{
         self, BlockRef,
-        properties::{BlockStateProperties, Direction, Property},
+        properties::{Direction, Property},
         shapes::{OffsetVoxelShape, SupportType},
     },
 };
@@ -68,9 +68,6 @@ pub trait BlockStateExt {
     fn is_suffocating(&self) -> bool;
     /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
-    /// Returns true if this block state contains fluid — either a liquid block or a waterlogged block.
-    /// Mirrors vanilla's `!blockState.getFluidState().isEmpty()`.
-    fn has_fluid(&self) -> bool;
 }
 
 impl BlockStateExt for BlockStateId {
@@ -229,36 +226,6 @@ impl BlockStateExt for BlockStateId {
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
     }
-
-    fn has_fluid(&self) -> bool {
-        self.get_block().config.liquid
-            || self
-                .try_get_value(&BlockStateProperties::WATERLOGGED)
-                .unwrap_or(false)
-    }
-}
-
-pub trait FluidReplaceableExt {
-    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool;
-}
-
-impl FluidReplaceableExt for BlockStateId {
-    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool {
-        let block = self.get_block();
-
-        if self.is_air() {
-            return true;
-        }
-
-        if fluid == &vanilla_blocks::WATER
-            && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
-        {
-            return true;
-        }
-
-        // Vanilla: `state.canBeReplaced() || !state.isSolid()`
-        block.config.replaceable || !self.is_solid()
-    }
 }
 
 #[cfg(test)]
@@ -321,7 +288,6 @@ mod tests {
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         assert!(!water.blocks_motion());
-        assert!(water.has_fluid());
 
         let cobweb = REGISTRY
             .blocks

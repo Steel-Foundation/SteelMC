@@ -10,6 +10,7 @@ use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
 
 use super::StructurePiecePlacer;
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::heightmap::HeightmapType;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::StructureTemplate;

@@ -11,7 +11,9 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -28,6 +30,8 @@ use crate::entity::ai::path::PathComputationType;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
 use crate::world::{ScheduledTickAccess, World};
+
+use super::BubbleColumnBlock;
 
 /// Behavior for liquid blocks (water and lava).
 ///
@@ -103,6 +107,29 @@ impl LiquidBlock {
 
         true // No interaction occurred, proceed with normal fluid tick
     }
+
+    fn should_bubble_column_occupy(state: BlockStateId) -> bool {
+        let fluid_state = state.get_fluid_state();
+        fluid_state
+            .fluid_id
+            .has_tag(&FluidTag::BUBBLE_COLUMN_CAN_OCCUPY)
+            && fluid_state.is_source()
+            && fluid_state.amount >= 8
+    }
+
+    fn try_schedule_bubble_block_column(
+        &self,
+        ticks: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        state_below: BlockStateId,
+    ) {
+        let block_below = state_below.get_block();
+        if block_below.has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_DRAG_DOWN)
+            || block_below.has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_PUSH_UP)
+        {
+            let _ = ticks.schedule_block_tick_default(pos, self.block, 20);
+        }
+    }
 }
 
 impl BlockBehavior for LiquidBlock {
@@ -126,30 +153,51 @@ impl BlockBehavior for LiquidBlock {
     /// Called when the block is placed.
     fn on_place(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
         if self.should_spread_liquid(world, pos) {
-            let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-            world.schedule_fluid_tick_default(pos, self.fluid, delay);
+            let fluid = state.get_fluid_state().fluid_id;
+            let delay = FLUID_BEHAVIORS.get_behavior(fluid).tick_delay(world);
+            world.schedule_fluid_tick_default(pos, fluid, delay);
+        }
+
+        if Self::should_bubble_column_occupy(state) {
+            self.try_schedule_bubble_block_column(world, pos, world.get_block_state(pos.below()));
+        }
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if Self::should_bubble_column_occupy(state) {
+            BubbleColumnBlock::update_column(
+                &vanilla_blocks::BUBBLE_COLUMN,
+                world,
+                pos,
+                world.get_block_state(pos.below()),
+            );
         }
     }
 
     /// Called when a neighboring block changes.
     fn handle_neighbor_changed(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
         if self.should_spread_liquid(world, pos) {
-            let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-            world.schedule_fluid_tick_default(pos, self.fluid, delay);
+            let fluid = world.get_block_state(pos).get_fluid_state().fluid_id;
+            let delay = FLUID_BEHAVIORS.get_behavior(fluid).tick_delay(world);
+            world.schedule_fluid_tick_default(pos, fluid, delay);
+        }
+
+        if Self::should_bubble_column_occupy(state) {
+            self.try_schedule_bubble_block_column(world, pos, world.get_block_state(pos.below()));
         }
     }
 
@@ -162,7 +210,7 @@ impl BlockBehavior for LiquidBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        _direction: Direction,
+        direction: Direction,
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
@@ -171,8 +219,12 @@ impl BlockBehavior for LiquidBlock {
         let neighbor_fluid = neighbor_state.get_fluid_state();
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
-            let delay = world.fluid_tick_delay(self.fluid);
-            world.schedule_fluid_tick_default(pos, self.fluid, delay);
+            let delay = world.fluid_tick_delay(fluid_state.fluid_id);
+            world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        }
+
+        if direction == Direction::Down && Self::should_bubble_column_occupy(state) {
+            self.try_schedule_bubble_block_column(world, pos, neighbor_state);
         }
 
         state
@@ -222,5 +274,100 @@ impl BlockBehavior for LiquidBlock {
             filled_bucket: bucket,
             sound: Some(sound),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::behavior::init_behaviors;
+    use steel_registry::{test_support::init_test_registry, vanilla_fluids};
+
+    use crate::test_support::TestLevel;
+
+    use super::*;
+
+    #[test]
+    fn update_shape_schedules_actual_flowing_fluid_variant() {
+        init_test_registry();
+        init_behaviors();
+
+        let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
+        let state = vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 1);
+        let neighbor_state = vanilla_blocks::WATER.default_state();
+        let level = TestLevel::default();
+
+        let updated = block.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::North,
+            Direction::North.relative(BlockPos::ZERO),
+            neighbor_state,
+        );
+
+        assert_eq!(updated, state);
+        assert_eq!(
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(&vanilla_fluids::FLOWING_WATER, 5)]
+        );
+    }
+
+    #[test]
+    fn source_water_above_soul_sand_schedules_bubble_column_tick() {
+        init_test_registry();
+        init_behaviors();
+
+        let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
+        let state = vanilla_blocks::WATER.default_state();
+        let level = TestLevel::default();
+
+        let updated = block.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::SOUL_SAND.default_state(),
+        );
+
+        assert_eq!(updated, state);
+        assert!(
+            level
+                .scheduled_block_ticks
+                .borrow()
+                .iter()
+                .any(|tick| tick.block == &vanilla_blocks::WATER && tick.delay == 20)
+        );
+    }
+
+    #[test]
+    fn flowing_water_does_not_schedule_bubble_column_tick() {
+        init_test_registry();
+        init_behaviors();
+
+        let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
+        let state = vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 1);
+        let level = TestLevel::default();
+
+        let updated = block.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::SOUL_SAND.default_state(),
+        );
+
+        assert_eq!(updated, state);
+        assert!(level.scheduled_block_ticks.borrow().is_empty());
     }
 }

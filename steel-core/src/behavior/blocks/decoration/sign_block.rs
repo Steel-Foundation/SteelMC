@@ -312,7 +312,7 @@ impl BlockBehavior for StandingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Check if we can place on the block below
-        if !can_support_standing_sign(context.world, context.relative_pos) {
+        if !can_support_standing_sign(context.world, context.place_pos) {
             return None;
         }
 
@@ -404,7 +404,7 @@ impl BlockBehavior for WallSignBlock {
             let facing = direction.opposite();
 
             // Check if sign can survive with this facing
-            if can_wall_sign_survive(context.world, context.relative_pos, facing) {
+            if can_wall_sign_survive(context.world, context.place_pos, facing) {
                 return Some(
                     self.block
                         .default_state()
@@ -482,14 +482,14 @@ impl BlockBehavior for CeilingHangingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Check if we can hang from the block above
-        if !can_ceiling_hanging_sign_survive(context.world, context.relative_pos) {
+        if !can_ceiling_hanging_sign_survive(context.world, context.place_pos) {
             return None;
         }
 
         let above_pos = BlockPos::new(
-            context.relative_pos.x(),
-            context.relative_pos.y() + 1,
-            context.relative_pos.z(),
+            context.place_pos.x(),
+            context.place_pos.y() + 1,
+            context.place_pos.z(),
         );
         let above_state = context.world.get_block_state(above_pos);
 
@@ -635,7 +635,7 @@ impl BlockBehavior for WallHangingSignBlock {
             let facing = direction.opposite();
 
             // Check if sign can survive with this facing
-            if can_wall_hanging_sign_survive(context.world, context.relative_pos, facing) {
+            if can_wall_hanging_sign_survive(context.world, context.place_pos, facing) {
                 return Some(
                     self.block
                         .default_state()

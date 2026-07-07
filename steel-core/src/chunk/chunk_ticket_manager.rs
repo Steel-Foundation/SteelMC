@@ -4,6 +4,7 @@
 use std::mem;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
 
@@ -16,6 +17,8 @@ const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .accumulated_dependencies
     .get_radius_of(ChunkStatus::Empty) as u8;
 const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
+pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
+const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
 
 /// A chunk ticket level.
 ///
@@ -26,6 +29,10 @@ const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
 pub struct ChunkTicketLevel(u8);
 
 impl ChunkTicketLevel {
+    /// The weakest level whose full chunk may tick entities.
+    pub const ENTITY_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 2);
+    /// The weakest level whose full chunk may tick blocks.
+    pub const BLOCK_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 1);
     /// The weakest level that still permits a full chunk.
     pub const FULL_CHUNK: Self = Self(MAX_VIEW_DISTANCE);
     /// The weakest level kept by ticket propagation.
@@ -47,15 +54,45 @@ impl ChunkTicketLevel {
         Self(MAX_VIEW_DISTANCE.saturating_sub(radius))
     }
 
+    /// Builds an entity-ticking ticket level from a square radius.
+    #[must_use]
+    pub const fn for_entity_ticking_radius(radius: u8) -> Self {
+        Self(Self::ENTITY_TICKING_CHUNK.0.saturating_sub(radius))
+    }
+
     /// Returns the raw level value used for compact storage.
     #[must_use]
     pub const fn raw(self) -> u8 {
         self.0
     }
 
+    /// Returns vanilla's full-chunk status for this propagated level.
+    #[must_use]
+    pub const fn full_status(self) -> FullChunkStatus {
+        if self.0 <= Self::ENTITY_TICKING_CHUNK.0 {
+            FullChunkStatus::EntityTicking
+        } else if self.0 <= Self::BLOCK_TICKING_CHUNK.0 {
+            FullChunkStatus::BlockTicking
+        } else if self.0 <= Self::FULL_CHUNK.0 {
+            FullChunkStatus::Full
+        } else {
+            FullChunkStatus::Inaccessible
+        }
+    }
+
     #[must_use]
     pub const fn is_full(self) -> bool {
         self.0 <= Self::FULL_CHUNK.0
+    }
+
+    #[must_use]
+    pub const fn is_block_ticking(self) -> bool {
+        self.0 <= Self::BLOCK_TICKING_CHUNK.0
+    }
+
+    #[must_use]
+    pub const fn is_entity_ticking(self) -> bool {
+        self.0 <= Self::ENTITY_TICKING_CHUNK.0
     }
 
     #[must_use]
@@ -70,8 +107,26 @@ impl ChunkTicketLevel {
     }
 
     #[must_use]
-    const fn distance_to_full(self) -> u8 {
-        MAX_VIEW_DISTANCE - self.0
+    const fn distance_to_block_ticking(self) -> u8 {
+        ChunkTicketLevel::BLOCK_TICKING_CHUNK
+            .0
+            .saturating_sub(self.0)
+    }
+}
+
+/// Vanilla full-chunk accessibility and ticking status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FullChunkStatus {
+    Inaccessible,
+    Full,
+    BlockTicking,
+    EntityTicking,
+}
+
+impl FullChunkStatus {
+    #[must_use]
+    pub const fn is_or_after(self, status: Self) -> bool {
+        self as u8 >= status as u8
     }
 }
 
@@ -98,7 +153,7 @@ impl ChunkTicket {
         Self::loading(ChunkTicketLevel::for_full_chunk_radius(radius))
     }
 
-    /// Creates a ticket that loads and simulates full chunks within `radius`.
+    /// Creates a vanilla simulation ticket whose source level is `FULL - radius`.
     #[must_use]
     pub const fn simulated_full_chunks(radius: u8) -> Self {
         let level = ChunkTicketLevel::for_full_chunk_radius(radius);
@@ -108,25 +163,30 @@ impl ChunkTicket {
         }
     }
 
-    /// Creates a ticket with separate load and simulation radii.
+    /// Creates a ticket with separate full-load and entity-ticking radii.
     #[must_use]
-    pub const fn full_chunks_with_simulation(load_radius: u8, simulation_radius: u8) -> Self {
-        let simulation_radius = if simulation_radius > load_radius {
+    pub const fn full_chunks_with_entity_ticking(
+        load_radius: u8,
+        entity_ticking_radius: u8,
+    ) -> Self {
+        let entity_ticking_radius = if entity_ticking_radius > load_radius {
             load_radius
         } else {
-            simulation_radius
+            entity_ticking_radius
         };
 
         Self {
             load_level: ChunkTicketLevel::for_full_chunk_radius(load_radius),
-            simulation_level: Some(ChunkTicketLevel::for_full_chunk_radius(simulation_radius)),
+            simulation_level: Some(ChunkTicketLevel::for_entity_ticking_radius(
+                entity_ticking_radius,
+            )),
         }
     }
 
     /// Creates a player ticket, capping simulation to the loaded radius.
     #[must_use]
     pub const fn player(load_radius: u8, simulation_radius: u8) -> Self {
-        Self::full_chunks_with_simulation(load_radius, simulation_radius)
+        Self::full_chunks_with_entity_ticking(load_radius, simulation_radius)
     }
 
     #[must_use]
@@ -146,9 +206,25 @@ pub const fn is_full(level: ChunkTicketLevel) -> bool {
 }
 
 #[must_use]
-pub const fn is_ticked(level: Option<ChunkTicketLevel>) -> bool {
+pub const fn full_status(level: Option<ChunkTicketLevel>) -> FullChunkStatus {
     match level {
-        Some(level) => level.is_full(),
+        Some(level) => level.full_status(),
+        None => FullChunkStatus::Inaccessible,
+    }
+}
+
+#[must_use]
+pub const fn is_block_ticking(level: Option<ChunkTicketLevel>) -> bool {
+    match level {
+        Some(level) => level.is_block_ticking(),
+        None => false,
+    }
+}
+
+#[must_use]
+pub const fn is_entity_ticking(level: Option<ChunkTicketLevel>) -> bool {
+    match level {
+        Some(level) => level.is_entity_ticking(),
         None => false,
     }
 }
@@ -193,6 +269,200 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
 
 /// Up to 4 tickets stored inline per position.
 type TicketLevels = SmallVec<[ChunkTicket; 4]>;
+
+/// Persistent chunk ticket saved data.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PersistentChunkTickets {
+    #[serde(default)]
+    tickets: Vec<PersistentChunkTicket>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct PersistentChunkTicket {
+    #[serde(rename = "type")]
+    kind: PersistentChunkTicketKind,
+    chunk_x: i32,
+    chunk_z: i32,
+    ticks_left: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PersistentChunkTicketKind {
+    Portal,
+}
+
+/// Timed chunk tickets owned by vanilla gameplay systems.
+#[derive(Debug, Default)]
+pub(crate) struct TimedChunkTickets {
+    tickets: Vec<TimedChunkTicket>,
+}
+
+impl TimedChunkTickets {
+    /// Restores timed tickets from persistent saved data.
+    pub(crate) fn from_persistent(persistent: PersistentChunkTickets) -> Self {
+        let mut timed_tickets = Self::default();
+        for ticket in persistent.tickets {
+            timed_tickets.add_loaded_persistent_ticket(ticket);
+        }
+        timed_tickets
+    }
+
+    /// Converts active timed tickets to persistent saved data.
+    pub(crate) fn to_persistent(&self) -> PersistentChunkTickets {
+        PersistentChunkTickets {
+            tickets: self
+                .tickets
+                .iter()
+                .copied()
+                .map(TimedChunkTicket::to_persistent)
+                .collect(),
+        }
+    }
+
+    /// Inserts restored timed ticket sources into the active ticket manager.
+    pub(crate) fn activate_all(&self, ticket_manager: &mut ChunkTicketManager) {
+        for ticket in &self.tickets {
+            ticket_manager.add_ticket(ticket.pos, ticket.ticket);
+        }
+    }
+
+    /// Adds or refreshes vanilla's portal ticket.
+    pub(crate) fn add_portal_ticket(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        pos: ChunkPos,
+    ) {
+        self.add_or_reset(
+            ticket_manager,
+            TimedChunkTicketKind::Portal,
+            pos,
+            portal_ticket(),
+            PORTAL_TICKET_TIMEOUT_TICKS,
+        );
+    }
+
+    /// Decrements timed tickets and removes expired sources from the ticket manager.
+    pub(crate) fn tick(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        mut can_expire: impl FnMut(ChunkPos) -> bool,
+    ) {
+        let mut index = 0;
+        while index < self.tickets.len() {
+            let ticket = &mut self.tickets[index];
+            if !can_expire(ticket.pos) {
+                index += 1;
+                continue;
+            }
+
+            ticket.ticks_left -= 1;
+            if ticket.ticks_left >= 0 {
+                index += 1;
+                continue;
+            }
+
+            let expired = self.tickets.swap_remove(index);
+            ticket_manager.remove_ticket(expired.pos, expired.ticket);
+        }
+    }
+
+    fn add_or_reset(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        kind: TimedChunkTicketKind,
+        pos: ChunkPos,
+        ticket: ChunkTicket,
+        ticks_left: i64,
+    ) {
+        if let Some(existing) = self
+            .tickets
+            .iter_mut()
+            .find(|entry| entry.kind == kind && entry.pos == pos && entry.ticket == ticket)
+        {
+            existing.ticks_left = ticks_left;
+            return;
+        }
+
+        self.tickets.push(TimedChunkTicket {
+            kind,
+            pos,
+            ticket,
+            ticks_left,
+        });
+        ticket_manager.add_ticket(pos, ticket);
+    }
+
+    fn add_loaded_persistent_ticket(&mut self, persistent: PersistentChunkTicket) {
+        match persistent.kind {
+            PersistentChunkTicketKind::Portal => {
+                self.add_loaded_portal_ticket(
+                    ChunkPos::new(persistent.chunk_x, persistent.chunk_z),
+                    persistent.ticks_left,
+                );
+            }
+        }
+    }
+
+    fn add_loaded_portal_ticket(&mut self, pos: ChunkPos, ticks_left: i64) {
+        if let Some(existing) = self.tickets.iter_mut().find(|entry| {
+            entry.kind == TimedChunkTicketKind::Portal
+                && entry.pos == pos
+                && entry.ticket == portal_ticket()
+        }) {
+            existing.ticks_left = PORTAL_TICKET_TIMEOUT_TICKS;
+            return;
+        }
+
+        self.tickets.push(TimedChunkTicket::portal(pos, ticks_left));
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    const fn len(&self) -> usize {
+        self.tickets.len()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TimedChunkTicket {
+    kind: TimedChunkTicketKind,
+    pos: ChunkPos,
+    ticket: ChunkTicket,
+    ticks_left: i64,
+}
+
+impl TimedChunkTicket {
+    const fn portal(pos: ChunkPos, ticks_left: i64) -> Self {
+        Self {
+            kind: TimedChunkTicketKind::Portal,
+            pos,
+            ticket: portal_ticket(),
+            ticks_left,
+        }
+    }
+
+    const fn to_persistent(self) -> PersistentChunkTicket {
+        match self.kind {
+            TimedChunkTicketKind::Portal => PersistentChunkTicket {
+                kind: PersistentChunkTicketKind::Portal,
+                chunk_x: self.pos.0.x,
+                chunk_z: self.pos.0.y,
+                ticks_left: self.ticks_left,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimedChunkTicketKind {
+    Portal,
+}
+
+#[must_use]
+const fn portal_ticket() -> ChunkTicket {
+    ChunkTicket::simulated_full_chunks(PORTAL_TICKET_RADIUS)
+}
 
 /// A level change for a chunk position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,7 +624,7 @@ impl ChunkTicketManager {
                 continue;
             };
 
-            let radius = i32::from(simulation_level.distance_to_full());
+            let radius = i32::from(simulation_level.distance_to_block_ticking());
             for dy in -radius..=radius {
                 for dx in -radius..=radius {
                     let distance = dx.abs().max(dy.abs()) as u8;
@@ -678,6 +948,133 @@ mod tests {
     }
 
     #[test]
+    fn portal_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_portal_ticket(&mut manager, center);
+        timed_tickets.add_portal_ticket(&mut manager, center);
+        manager.run_all_updates();
+
+        assert_eq!(timed_tickets.len(), 1);
+        assert_eq!(manager.ticket_count(), 1);
+        assert!(is_full(
+            manager.get_level(center).expect("ticket should load")
+        ));
+        assert!(is_entity_ticking(manager.get_simulation_level(center)));
+        assert!(is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(1, 0))
+        ));
+        assert!(is_block_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(3, 0))
+                .expect("portal ticket should load the full outer ring")
+        ));
+        assert!(!manager.get_level(ChunkPos::new(4, 0)).is_some_and(is_full));
+
+        for _ in 0..PORTAL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        timed_tickets.tick(&mut manager, |_| true);
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+        assert_eq!(manager.get_level(center), None);
+        assert_eq!(manager.get_simulation_level(center), None);
+    }
+
+    #[test]
+    fn timed_ticket_does_not_age_until_chunk_can_expire() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_portal_ticket(&mut manager, center);
+        for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| false);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+    }
+
+    #[test]
+    fn persistent_portal_ticket_round_trips_remaining_ticks() {
+        let persistent = PersistentChunkTickets {
+            tickets: vec![PersistentChunkTicket {
+                kind: PersistentChunkTicketKind::Portal,
+                chunk_x: -4,
+                chunk_z: 7,
+                ticks_left: 123,
+            }],
+        };
+
+        let timed_tickets = TimedChunkTickets::from_persistent(persistent);
+        let restored = timed_tickets.to_persistent();
+
+        assert_eq!(
+            restored,
+            PersistentChunkTickets {
+                tickets: vec![PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: -4,
+                    chunk_z: 7,
+                    ticks_left: 123,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_persistent_portal_ticket_resets_timeout_like_vanilla_activation() {
+        let persistent = PersistentChunkTickets {
+            tickets: vec![
+                PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: 2,
+                    chunk_z: 3,
+                    ticks_left: 10,
+                },
+                PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: 2,
+                    chunk_z: 3,
+                    ticks_left: 20,
+                },
+            ],
+        };
+
+        let restored = TimedChunkTickets::from_persistent(persistent).to_persistent();
+
+        assert_eq!(
+            restored,
+            PersistentChunkTickets {
+                tickets: vec![PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: 2,
+                    chunk_z: 3,
+                    ticks_left: PORTAL_TICKET_TIMEOUT_TICKS,
+                }],
+            }
+        );
+    }
+
+    #[test]
     fn test_no_recalculation_when_clean() {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(
@@ -692,15 +1089,22 @@ mod tests {
     }
 
     #[test]
-    fn simulated_ticket_propagates_only_inside_loaded_full_area() {
+    fn simulated_full_ticket_propagates_simulation_only_to_block_ticking_area() {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(ChunkPos::new(0, 0), ChunkTicket::simulated_full_chunks(1));
         manager.run_all_updates();
 
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(0, 0))));
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(1, 1))));
-        assert!(!is_ticked(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
+        assert!(is_block_ticking(
+            manager.get_simulation_level(ChunkPos::new(0, 0))
+        ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(0, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(1, 1)), None);
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(1, 1))
+                .expect("ticket should load the full outer ring")
         ));
         assert_eq!(
             manager.get_level(ChunkPos::new(1, 1)),
@@ -709,15 +1113,40 @@ mod tests {
     }
 
     #[test]
-    fn player_ticket_caps_simulation_radius_to_load_radius() {
+    fn player_ticket_caps_entity_ticking_radius_to_load_radius() {
         let mut manager = ChunkTicketManager::new();
-        manager.add_ticket(ChunkPos::new(0, 0), ChunkTicket::player(1, 3));
+        let center = ChunkPos::new(0, 0);
+        manager.add_ticket(center, ChunkTicket::player(1, 3));
         manager.run_all_updates();
 
-        assert!(is_ticked(manager.get_simulation_level(ChunkPos::new(1, 0))));
-        assert!(!is_ticked(
+        assert!(is_entity_ticking(manager.get_simulation_level(center)));
+        assert!(is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(1, 0))
+        ));
+        assert!(is_block_ticking(
             manager.get_simulation_level(ChunkPos::new(2, 0))
         ));
+        assert!(!is_entity_ticking(
+            manager.get_simulation_level(ChunkPos::new(2, 0))
+        ));
+        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+    }
+
+    #[test]
+    fn full_chunk_status_matches_vanilla_ticket_thresholds() {
+        assert_eq!(
+            ChunkTicketLevel::ENTITY_TICKING_CHUNK.full_status(),
+            FullChunkStatus::EntityTicking
+        );
+        assert_eq!(
+            ChunkTicketLevel::BLOCK_TICKING_CHUNK.full_status(),
+            FullChunkStatus::BlockTicking
+        );
+        assert_eq!(
+            ChunkTicketLevel::FULL_CHUNK.full_status(),
+            FullChunkStatus::Full
+        );
+        assert_eq!(full_status(None), FullChunkStatus::Inaccessible);
     }
 
     #[test]
