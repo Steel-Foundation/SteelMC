@@ -5,6 +5,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::FluidState;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
@@ -208,7 +209,7 @@ impl BlockBehavior for BubbleColumnBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         Some(PickupResult {
-            filled_bucket: &vanilla_items::ITEMS.water_bucket,
+            filled_bucket: ItemStack::new(&vanilla_items::ITEMS.water_bucket),
             sound: Some(&sound_events::ITEM_BUCKET_FILL),
         })
     }

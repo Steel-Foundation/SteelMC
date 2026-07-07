@@ -29,6 +29,7 @@ pub mod blocks;
 mod context;
 pub mod fluid;
 mod item;
+pub(crate) mod item_utils;
 pub mod items;
 
 #[expect(warnings)]

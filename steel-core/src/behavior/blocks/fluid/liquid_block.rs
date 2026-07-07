@@ -11,6 +11,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluid_tags::FluidTag;
@@ -271,7 +272,7 @@ impl BlockBehavior for LiquidBlock {
         };
 
         Some(PickupResult {
-            filled_bucket: bucket,
+            filled_bucket: ItemStack::new(bucket),
             sound: Some(sound),
         })
     }

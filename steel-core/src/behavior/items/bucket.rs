@@ -6,12 +6,12 @@
 //! `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
 //!
 use crate::behavior::context::InteractionResult;
+use crate::behavior::item_utils::create_filled_result;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
     pickup_waterlogged_block,
 };
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
@@ -19,7 +19,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::items::ItemRef;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
@@ -55,56 +54,13 @@ impl ItemBehavior for BucketItem {
     }
 }
 
-/// Consumes one bucket from the player's hand, replacing it with `result_item`.
-///
-/// Vanilla parity: `ItemUtils.createFilledResult` with `limitCreativeStackSize = true`.
-/// In creative mode the held stack is untouched, but the result item is added to the
-/// inventory if the player doesn't already have one.
-fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
-    let player = context.player;
-    context.inv.with_guard(|guard| {
-        let inv_id = ContainerId::from_arc(&player.inventory);
-
-        if player.has_infinite_materials() {
-            // Creative: give the result item only if the player doesn't already have one.
-            let result_stack = ItemStack::new(result_item);
-            let already_has = guard.get(inv_id).is_some_and(|inv| {
-                (0..inv.get_container_size()).any(|i| {
-                    let item = inv.get_item(i);
-                    !item.is_empty() && ItemStack::is_same_item_same_components(item, &result_stack)
-                })
-            });
-            if !already_has {
-                player.add_item_or_drop_with_guard(guard, result_stack);
-            }
-            return;
-        }
-
-        let should_add_result = {
-            let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
-                return;
-            };
-            let hand_item = inv.get_item_in_hand_mut(context.hand);
-            if hand_item.count() > 1 {
-                hand_item.shrink(1);
-                true
-            } else {
-                hand_item.set_item(&result_item.key);
-                false
-            }
-        };
-
-        if should_add_result {
-            player.add_item_or_drop_with_guard(guard, ItemStack::new(result_item));
-        }
-    });
-}
-
-fn filled_bucket_success_item(context: &UseItemContext) -> ItemRef {
+fn filled_bucket_success_stack(context: &UseItemContext) -> ItemStack {
     if context.player.has_infinite_materials() {
-        context.inv.with_item(|item| item.item())
+        context
+            .inv
+            .with_item(|item| item.copy_with_count(item.count()))
     } else {
-        &vanilla_items::ITEMS.bucket
+        ItemStack::new(&vanilla_items::ITEMS.bucket)
     }
 }
 
@@ -151,7 +107,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         }
 
         // Give filled bucket
-        consume_bucket(context, result.filled_bucket);
+        create_filled_result(context, result.filled_bucket, true);
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
@@ -175,7 +131,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
                 .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
         }
 
-        consume_bucket(context, result.filled_bucket);
+        create_filled_result(context, result.filled_bucket, true);
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             hit_pos,
@@ -331,8 +287,8 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
     // Attempt Primary (with sneak check)
     if try_place_fluid(primary_pos, true) {
-        let result_item = filled_bucket_success_item(context);
-        consume_bucket(context, result_item);
+        let result_stack = filled_bucket_success_stack(context);
+        create_filled_result(context, result_stack, true);
         return InteractionResult::Success;
     }
 
@@ -341,8 +297,8 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     // when the primary attempt fails, regardless of bucket type.
     let secondary_pos = direction.relative(clicked_pos);
     if try_place_fluid(secondary_pos, false) {
-        let result_item = filled_bucket_success_item(context);
-        consume_bucket(context, result_item);
+        let result_stack = filled_bucket_success_stack(context);
+        create_filled_result(context, result_stack, true);
         return InteractionResult::Success;
     }
 
