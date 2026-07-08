@@ -4,7 +4,7 @@
 //! loaded runtime worlds and reserves "dimension type" for the vanilla registry
 //! entry that defines world rules.
 
-use crate::entity::Entity;
+use crate::entity::{Entity, PendingWorldChangeToken};
 use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
@@ -472,6 +472,8 @@ pub enum WorldChangeRequest {
         source_world: Arc<World>,
         /// The portal block position.
         portal_pos: BlockPos,
+        /// Runtime token proving this request still owns the entity's pending transition.
+        pending_token: PendingWorldChangeToken,
     },
 }
 

@@ -866,15 +866,32 @@ pub struct EntityBaseLoad {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EntityLifecycleState {
     removal_reason: Option<RemovalReason>,
+    pending_world_change: Option<PendingWorldChangeToken>,
+    next_world_change_token: u64,
 }
 
 impl EntityLifecycleState {
     const fn new() -> Self {
         Self {
             removal_reason: None,
+            pending_world_change: None,
+            next_world_change_token: 1,
         }
     }
+
+    fn next_world_change_token(&mut self) -> PendingWorldChangeToken {
+        let token = PendingWorldChangeToken(self.next_world_change_token);
+        self.next_world_change_token = self.next_world_change_token.wrapping_add(1).max(1);
+        token
+    }
 }
+
+/// Runtime token for an in-flight world change request.
+///
+/// The token is intentionally not persisted. It protects async preparation jobs
+/// from completing or clearing a newer transition started by the same entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PendingWorldChangeToken(u64);
 
 /// Vanilla passenger and vehicle relationship state.
 ///
@@ -1496,6 +1513,7 @@ impl EntityBase {
 
         self.movement_trace.lock().reset();
         *self.portal_process.lock() = None;
+        self.lifecycle.lock().pending_world_change = None;
 
         let mut save_data = self.save_data.lock();
         let tags = mem::take(&mut save_data.tags);
@@ -1506,6 +1524,39 @@ impl EntityBase {
     /// Updates the world reference used by this entity.
     pub fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
+    }
+
+    /// Marks this entity as waiting for a prepared world change.
+    pub fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
+        let mut lifecycle = self.lifecycle.lock();
+        if lifecycle.removal_reason.is_some() || lifecycle.pending_world_change.is_some() {
+            return None;
+        }
+        let token = lifecycle.next_world_change_token();
+        lifecycle.pending_world_change = Some(token);
+        Some(token)
+    }
+
+    /// Clears a pending world change if it still matches the provided token.
+    pub fn finish_pending_world_change(&self, token: PendingWorldChangeToken) -> bool {
+        let mut lifecycle = self.lifecycle.lock();
+        if lifecycle.pending_world_change != Some(token) {
+            return false;
+        }
+        lifecycle.pending_world_change = None;
+        true
+    }
+
+    /// Returns true while this entity is waiting for a prepared world change.
+    #[inline]
+    pub fn is_world_change_pending(&self) -> bool {
+        self.lifecycle.lock().pending_world_change.is_some()
+    }
+
+    /// Returns true if the given world-change token is still pending.
+    #[inline]
+    pub fn is_world_change_token_pending(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().pending_world_change == Some(token)
     }
 
     /// Returns true if the entity has been marked for removal.
@@ -1530,6 +1581,7 @@ impl EntityBase {
                 None
             } else {
                 lifecycle.removal_reason = Some(reason);
+                lifecycle.pending_world_change = None;
                 Some(self.level_callback.lock().clone())
             }
         };
@@ -1615,6 +1667,7 @@ impl EntityBase {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
+        lifecycle.pending_world_change = None;
         was_removed
     }
 
@@ -2540,16 +2593,49 @@ mod tests {
         base.set_level_callback(callback.clone());
 
         assert!(!base.is_removed());
+        let Some(pending_token) = base.begin_pending_world_change() else {
+            panic!("fresh entity should accept a pending world change");
+        };
+        assert!(base.is_world_change_token_pending(pending_token));
 
         base.set_removed(RemovalReason::Discarded);
         base.set_removed(RemovalReason::Killed);
         assert!(base.is_removed());
+        assert!(!base.is_world_change_pending());
         assert_eq!(base.removal_reason(), Some(RemovalReason::Discarded));
         assert_eq!(*callback.removals.lock(), vec![RemovalReason::Discarded]);
         assert!(base.clear_removed());
         assert!(!base.clear_removed());
         assert!(!base.is_removed());
         assert_eq!(base.removal_reason(), None);
+    }
+
+    #[test]
+    fn lifecycle_state_tracks_pending_world_change_tokens() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        let Some(first) = base.begin_pending_world_change() else {
+            panic!("fresh entity should accept a pending world change");
+        };
+        assert!(base.is_world_change_pending());
+        assert!(base.is_world_change_token_pending(first));
+        assert_eq!(base.begin_pending_world_change(), None);
+        assert!(base.finish_pending_world_change(first));
+        assert!(!base.is_world_change_pending());
+
+        let Some(second) = base.begin_pending_world_change() else {
+            panic!("entity should accept a second pending world change after finishing the first");
+        };
+        assert_ne!(first, second);
+        assert!(!base.finish_pending_world_change(first));
+        assert!(base.is_world_change_token_pending(second));
+        assert!(base.finish_pending_world_change(second));
+        assert!(!base.is_world_change_pending());
     }
 
     #[test]
@@ -2828,6 +2914,7 @@ mod tests {
             DVec3::new(3.0, 64.0, 1.0),
         ));
         base.set_position_local(DVec3::new(3.0, 64.0, 1.0));
+        assert!(base.begin_pending_world_change().is_some());
 
         let reset_dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
         base.reset_for_player_respawn(reset_dimensions);
@@ -2838,6 +2925,7 @@ mod tests {
         assert_eq!(base.air_supply(), DEFAULT_MAX_AIR_SUPPLY);
         assert_eq!(base.portal_cooldown(), 0);
         assert_eq!(base.portal_process(), None);
+        assert!(!base.is_world_change_pending());
         assert!(!base.no_gravity());
         assert!(!base.invulnerable());
         assert_eq!(base.custom_name(), None);

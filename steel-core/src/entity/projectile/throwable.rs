@@ -66,6 +66,7 @@ pub trait ThrowableProjectile: Projectile {
 
         if let Some(result) = hit
             && self.is_alive()
+            && !self.is_world_change_pending()
         {
             self.hit_target_or_deflect_self(&result);
         }

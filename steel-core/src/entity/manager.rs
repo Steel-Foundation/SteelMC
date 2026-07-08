@@ -921,6 +921,20 @@ impl WorldEntityManager {
             .map(|entry| entry.entity.clone())
     }
 
+    /// Returns true if this exact entity is live or retained for chunk-unload recovery.
+    pub fn contains_live_or_unloading_entity(&self, entity: &SharedEntity) -> bool {
+        let state = self.state.read();
+        state
+            .live_by_id
+            .get(&entity.id())
+            .is_some_and(|entry| Arc::ptr_eq(&entry.entity, entity))
+            || state
+                .unloading_by_chunk
+                .values()
+                .flatten()
+                .any(|entry| Arc::ptr_eq(&entry.entity, entity))
+    }
+
     #[must_use]
     /// Gets a live entity by session network ID if it is visible to vanilla gameplay lookups.
     pub fn get_accessible_by_id(&self, entity_id: i32) -> Option<SharedEntity> {
@@ -1342,6 +1356,28 @@ impl WorldEntityManager {
             && entity.count_player_passengers() == 0
     }
 
+    fn has_pending_world_change_in_vehicle_chain(entity: &SharedEntity) -> bool {
+        if entity.is_world_change_pending() {
+            return true;
+        }
+
+        let mut visited = FxHashSet::default();
+        visited.insert(entity.id());
+        let mut vehicle = entity.vehicle();
+        while let Some(current) = vehicle {
+            assert!(
+                visited.insert(current.id()),
+                "cyclic passenger relationship involving entity {}",
+                entity.id()
+            );
+            if current.is_world_change_pending() {
+                return true;
+            }
+            vehicle = current.vehicle();
+        }
+        false
+    }
+
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {
         Self::is_accessible_at(state, entry.ownership, entry.chunk)
     }
@@ -1421,6 +1457,9 @@ impl WorldEntityManager {
         let Some(entry) = state.live_by_id.get(&entity_id) else {
             return false;
         };
+        if Self::has_pending_world_change_in_vehicle_chain(&entry.entity) {
+            return false;
+        }
 
         match entry.ownership {
             EntityOwnership::External => {
@@ -2197,6 +2236,47 @@ mod tests {
         };
         assert!(Arc::ptr_eq(&entity, &live_entity));
         assert!(!entity.is_removed());
+    }
+
+    #[test]
+    fn live_or_unloading_membership_excludes_removed_live_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(manager.contains_live_or_unloading_entity(&entity));
+
+        assert!(
+            manager
+                .remove_live_entity(entity.id(), RemovalReason::ChangedWorld)
+                .is_some()
+        );
+        assert!(!manager.contains_live_or_unloading_entity(&entity));
+    }
+
+    #[test]
+    fn live_or_unloading_membership_includes_unload_retained_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+
+        let unload = manager.begin_chunk_unload(chunk);
+        assert_eq!(unload.retained.len(), 1);
+
+        assert!(manager.contains_live_or_unloading_entity(&entity));
     }
 
     #[test]
@@ -3034,6 +3114,72 @@ mod tests {
 
         assert!(dirty_chunks.is_empty());
         assert!(!entity.is_removed());
+    }
+
+    #[test]
+    fn tick_entities_skips_pending_world_change_entities() {
+        let manager = WorldEntityManager::new();
+        let chunk = ChunkPos::new(0, 0);
+        load_chunk(&manager, chunk);
+
+        let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        assert!(
+            manager
+                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        let Some(pending_token) = entity.begin_pending_world_change() else {
+            panic!("fresh entity should accept a pending world change");
+        };
+
+        let dirty_chunks = manager.tick_entities(0, true);
+
+        assert!(dirty_chunks.is_empty());
+        assert_eq!(entity.tick_count(), 0);
+
+        assert!(entity.finish_pending_world_change(pending_token));
+        let dirty_chunks = manager.tick_entities(1, true);
+
+        assert!(dirty_chunks.contains(&chunk));
+        assert_eq!(entity.tick_count(), 1);
+    }
+
+    #[test]
+    fn tick_entities_skips_passengers_of_pending_world_change_vehicles_before_despawn() {
+        let manager = WorldEntityManager::new();
+        let vehicle_chunk = ChunkPos::new(0, 0);
+        let passenger_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, vehicle_chunk);
+        load_chunk(&manager, passenger_chunk);
+
+        let vehicle = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+        let passenger =
+            DespawnOnCheckTestEntity::shared(2, Uuid::from_u128(2), DVec3::new(17.0, 64.0, 1.0));
+        EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+        assert!(
+            manager
+                .add_live_entity(vehicle.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_live_entity(passenger.clone(), EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+        let Some(pending_token) = vehicle.begin_pending_world_change() else {
+            panic!("fresh vehicle should accept a pending world change");
+        };
+
+        let dirty_chunks = manager.tick_entities(0, true);
+
+        assert!(dirty_chunks.is_empty());
+        assert!(!passenger.is_removed());
+
+        assert!(vehicle.finish_pending_world_change(pending_token));
+        let dirty_chunks = manager.tick_entities(1, true);
+
+        assert!(dirty_chunks.contains(&passenger_chunk));
+        assert!(passenger.is_removed());
     }
 
     #[test]

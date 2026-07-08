@@ -727,6 +727,7 @@ pub use base::{
     EntityBaseLoad, EntityBaseSaveData, EntityBaseState, EntityFireFreezeState,
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
     EntityMovementProgress, EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
+    PendingWorldChangeToken,
 };
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,
@@ -2061,13 +2062,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .process_portal_teleportation(self.can_use_portal(false), transition_time)
         {
             Some(PortalProcessResult::Ready) => {
+                let Some(pending_token) = self.begin_pending_world_change() else {
+                    return;
+                };
+                let Some(entity) = world.get_entity_by_id(self.id()) else {
+                    self.finish_pending_world_change(pending_token);
+                    return;
+                };
                 self.reset_portal_cooldown();
                 world.queue_world_change(
-                    self.id(),
+                    entity,
                     WorldChangeRequest::Portal {
                         portal: process.portal(),
                         source_world: world.clone(),
                         portal_pos: process.entry_position(),
+                        pending_token,
                     },
                 );
             }
@@ -2223,6 +2232,26 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns whether this entity is alive for vanilla generic entity checks.
     fn is_alive(&self) -> bool {
         !self.is_removed()
+    }
+
+    /// Marks this entity as waiting for a prepared world change.
+    fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
+        self.base().begin_pending_world_change()
+    }
+
+    /// Clears a pending world change if it still matches the provided token.
+    fn finish_pending_world_change(&self, token: PendingWorldChangeToken) -> bool {
+        self.base().finish_pending_world_change(token)
+    }
+
+    /// Returns true while this entity is waiting for a prepared world change.
+    fn is_world_change_pending(&self) -> bool {
+        self.base().is_world_change_pending()
+    }
+
+    /// Returns true if the given world-change token is still pending.
+    fn is_world_change_token_pending(&self, token: PendingWorldChangeToken) -> bool {
+        self.base().is_world_change_token_pending(token)
     }
 
     /// Returns whether this entity may enter a portal.

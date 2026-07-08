@@ -426,7 +426,7 @@ pub struct World {
     /// Section-indexed listeners for vanilla game events.
     game_event_listeners: GameEventListenerStorage,
     /// World-change requests queued by world-local ticks for server safe-point processing.
-    pending_world_changes: SyncMutex<Vec<(i32, WorldChangeRequest)>>,
+    pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
 }
 
 impl World {
@@ -4507,19 +4507,19 @@ impl World {
         self.entity_manager.get_by_id(id)
     }
 
+    /// Returns true if this exact entity is live or retained for chunk-unload recovery.
+    pub(crate) fn contains_live_or_unloading_entity(&self, entity: &SharedEntity) -> bool {
+        self.entity_manager
+            .contains_live_or_unloading_entity(entity)
+    }
+
     /// Queues a world change from world-local code for server safe-point processing.
-    pub fn queue_world_change(&self, entity_id: i32, request: WorldChangeRequest) {
-        self.pending_world_changes.lock().push((entity_id, request));
+    pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {
+        self.pending_world_changes.lock().push((entity, request));
     }
 
     pub(crate) fn drain_world_changes(&self) -> Vec<(SharedEntity, WorldChangeRequest)> {
         mem::take(&mut *self.pending_world_changes.lock())
-            .into_iter()
-            .filter_map(|(entity_id, request)| {
-                self.get_entity_by_id(entity_id)
-                    .map(|entity| (entity, request))
-            })
-            .collect()
     }
 
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.

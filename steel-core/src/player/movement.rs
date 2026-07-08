@@ -208,6 +208,10 @@ impl Player {
             return;
         }
 
+        if self.is_world_change_pending() {
+            return;
+        }
+
         let current_rotation = self.rotation();
         let target_yaw = wrap_degrees(packet.get_y_rot(current_rotation.0));
         let target_pitch = wrap_degrees(packet.get_x_rot(current_rotation.1));
@@ -444,6 +448,10 @@ impl Player {
             return;
         }
 
+        if self.is_world_change_pending() {
+            return;
+        }
+
         if self.update_awaiting_teleport() || !self.has_client_loaded() {
             return;
         }
@@ -451,6 +459,9 @@ impl Player {
         let Some(vehicle) = self.root_vehicle() else {
             return;
         };
+        if vehicle.is_world_change_pending() {
+            return;
+        }
         let controlled_by_player = vehicle
             .controlling_passenger()
             .is_some_and(|controller| controller.id() == self.id());
