@@ -120,7 +120,6 @@ impl EnderPearlEntity {
 
     /// Vanilla `ThrownEnderpearl.tick` owner-death short-circuit: a pearl whose
     /// owner is a dead player vanishes when the gamerule is set.
-    // TODO: vanilla also exempts `serverPlayer.wonGame` (credits roll).
     fn should_vanish_on_owner_death(&self, world: &Arc<World>) -> bool {
         let Some(owner) = self.owner_player() else {
             return false;
@@ -130,8 +129,19 @@ impl EnderPearlEntity {
         };
         // Vanilla checks `!owner.isAlive()` for a dead (but still connected) player.
         // `LivingEntity::is_alive` is the health-based override vanilla dispatches to.
-        !LivingEntity::is_alive(player)
-            && world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true)
+        Self::should_vanish_for_owner_state(
+            LivingEntity::is_alive(player),
+            player.has_won_game(),
+            world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true),
+        )
+    }
+
+    fn should_vanish_for_owner_state(
+        owner_alive: bool,
+        owner_won_game: bool,
+        vanish_on_death_rule: bool,
+    ) -> bool {
+        !owner_alive && !owner_won_game && vanish_on_death_rule
     }
 
     /// Vanilla `ThrownEnderpearl.isAllowedToTeleportOwner`.
@@ -400,5 +410,21 @@ mod tests {
             pearl.get_default_item().key,
             vanilla_items::ITEMS.ender_pearl.key
         );
+    }
+
+    #[test]
+    fn owner_death_vanish_predicate_respects_won_game() {
+        assert!(EnderPearlEntity::should_vanish_for_owner_state(
+            false, false, true
+        ));
+        assert!(!EnderPearlEntity::should_vanish_for_owner_state(
+            false, true, true
+        ));
+        assert!(!EnderPearlEntity::should_vanish_for_owner_state(
+            true, false, true
+        ));
+        assert!(!EnderPearlEntity::should_vanish_for_owner_state(
+            false, false, false
+        ));
     }
 }

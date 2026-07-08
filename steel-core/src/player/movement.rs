@@ -802,34 +802,6 @@ impl Player {
         Ok(())
     }
 
-    /// Teleports while preserving the player's current rotation and velocity.
-    ///
-    /// Mirrors the relative rotation + relative delta transition used by vanilla
-    /// ender pearl teleports.
-    pub fn teleport_preserving_velocity(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        let velocity = self.velocity();
-        let world = self.get_world();
-        self.try_set_position(pos)?;
-        if world.entity_manager().get_by_id(self.id()).is_some() {
-            world.chunk_map.update_player_status(self);
-        }
-        self.set_velocity(velocity);
-
-        let new_id = {
-            let mut tp = self.teleport_state.lock();
-            tp.teleport_time = self.tick_count();
-            let id = tp.next_id();
-            tp.awaiting_position = Some(pos);
-            id
-        };
-
-        self.set_old_position_to_current();
-        self.movement.lock().reset_last_known_client_movement();
-
-        self.send_packet(CPlayerPosition::preserving_rotation_and_delta(new_id, pos));
-        Ok(())
-    }
-
     /// Resets vanilla floating violation counters after a successful high-level teleport.
     pub(crate) fn reset_flying_ticks(&self) {
         self.movement.lock().reset_flying_ticks();

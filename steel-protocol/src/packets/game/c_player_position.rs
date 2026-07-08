@@ -190,19 +190,6 @@ impl CPlayerPosition {
             relatives: RelativeMovement::ROTATION,
         }
     }
-
-    /// Creates an absolute-position teleport that preserves client rotation and velocity.
-    #[must_use]
-    pub fn preserving_rotation_and_delta(teleport_id: i32, pos: DVec3) -> Self {
-        Self {
-            teleport_id,
-            pos,
-            vel: DVec3::ZERO,
-            yaw: 0.0,
-            pitch: 0.0,
-            relatives: RelativeMovement::ROTATION.union(RelativeMovement::DELTA),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -1082,10 +1082,18 @@ fn restore_ender_pearl_for_player(
     };
     let level = Arc::downgrade(world);
     let entities = ChunkStorage::persistent_to_entity_tree_at_level(entity, chunk, &level);
-    if entities.is_empty() {
+    let Some(pearl) = entities.first().cloned() else {
         tracing::warn!(
             player = %player.gameprofile.name,
             "Persisted ender pearl did not recreate a runtime entity",
+        );
+        return false;
+    };
+    if pearl.entity_type() != &vanilla_entities::ENDER_PEARL {
+        tracing::warn!(
+            player = %player.gameprofile.name,
+            entity_type = ?pearl.entity_type().key,
+            "Persisted ender pearl recreated a non-pearl root entity",
         );
         return false;
     }
@@ -1104,9 +1112,7 @@ fn restore_ender_pearl_for_player(
         return false;
     }
 
-    for pearl in &entities {
-        player.register_ender_pearl(pearl);
-    }
+    player.register_ender_pearl(&pearl);
     world.chunk_map.place_ender_pearl_ticket(chunk);
     world.mark_chunk_dirty(chunk);
     true
