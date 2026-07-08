@@ -388,13 +388,7 @@ async fn shutdown_worlds(server: &Arc<Server>) {
 
     // Save all player data before shutdown
     log::info!("Saving player data...");
-    let mut players_to_save = Vec::new();
-    for world in server.worlds.values() {
-        world.players.iter_players(|_, player| {
-            players_to_save.push(player.clone());
-            true
-        });
-    }
+    let players_to_save = server.get_players();
     match server.player_data_storage.save_all(&players_to_save).await {
         Ok(count) => log::info!("Saved {count} players"),
         Err(e) => log::error!("Failed to save player data: {e}"),

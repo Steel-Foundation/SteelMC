@@ -13,11 +13,13 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::{
     chunk_access::ChunkStatus,
-    chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+    chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entities};
+use crate::entity::{
+    Entity, EntityBase, RemovalReason, SharedEntity, change_entity_world, init_entities,
+};
 
 use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -26,15 +28,20 @@ use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
-use crate::portal::{TeleportTransition, WorldChangeRequest};
+use crate::portal::{
+    PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
+    end_portal, nether_portal,
+};
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
-use crate::world::{World, WorldConfig, WorldGameTickTimings};
+use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
+use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use rustc_hash::FxHashMap;
 use std::{
     mem,
     num::NonZero,
@@ -44,15 +51,23 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetDefaultSpawnPosition, CSystemChat, CTabList,
-    CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
 };
+use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
-use steel_registry::{REGISTRY, Registry, RegistryEntry};
+use steel_registry::vanilla_game_rules::{
+    ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
+};
+use steel_registry::{
+    REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
+    vanilla_entities,
+};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -61,6 +76,9 @@ use uuid::Uuid;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
+/// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
+/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
+const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
@@ -86,7 +104,50 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
-    use super::cap_positive_thread_count;
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::game_rules::GameRuleValue;
+    use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use uuid::Uuid;
+
+    use crate::entity::{Entity, EntityBase};
+
+    use super::{
+        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+        is_allowed_to_enter_portal_target, is_end_return_transition,
+    };
+
+    struct TestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        projectile_owner_uuid: Option<Uuid>,
+    }
+
+    impl TestEntity {
+        fn new(entity_type: EntityTypeRef, projectile_owner_uuid: Option<Uuid>) -> Self {
+            Self {
+                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                entity_type,
+                projectile_owner_uuid,
+            }
+        }
+    }
+
+    impl Entity for TestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn projectile_owner_uuid(&self) -> Option<Uuid> {
+            self.projectile_owner_uuid
+        }
+    }
 
     #[test]
     fn positive_thread_count_is_capped_to_available_threads() {
@@ -98,6 +159,81 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn nether_portal_entry_obeys_allow_entering_nether_gamerule() {
+        assert!(is_allowed_to_enter_portal_target(
+            false,
+            GameRuleValue::Bool(false)
+        ));
+        assert!(is_allowed_to_enter_portal_target(
+            true,
+            GameRuleValue::Bool(true)
+        ));
+        assert!(!is_allowed_to_enter_portal_target(
+            true,
+            GameRuleValue::Bool(false)
+        ));
+    }
+
+    #[test]
+    fn can_teleport_passenger_gate_only_applies_to_end_return() {
+        assert!(is_end_return_transition(
+            &vanilla_dimension_types::THE_END,
+            &vanilla_dimension_types::OVERWORLD
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::THE_END,
+            &vanilla_dimension_types::THE_NETHER
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::OVERWORLD,
+            &vanilla_dimension_types::OVERWORLD
+        ));
+        assert!(!is_end_return_transition(
+            &vanilla_dimension_types::OVERWORLD,
+            &vanilla_dimension_types::THE_END
+        ));
+    }
+
+    #[test]
+    fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
+        let blocked_owner = Uuid::from_u128(1);
+        let allowed_owner = Uuid::from_u128(2);
+        let unknown_owner = Uuid::from_u128(3);
+        let blocked_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(blocked_owner));
+        let allowed_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(allowed_owner));
+        let unknown_owner_pearl =
+            TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(unknown_owner));
+        let no_player_owner_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, None);
+        let item = TestEntity::new(&vanilla_entities::ITEM, Some(blocked_owner));
+        let owner_seen_credits = |uuid: &Uuid| match *uuid {
+            uuid if uuid == blocked_owner => Some(false),
+            uuid if uuid == allowed_owner => Some(true),
+            _ => None,
+        };
+
+        assert!(!can_entity_return_from_end_to_overworld(
+            &blocked_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &allowed_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &unknown_owner_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &no_player_owner_pearl,
+            owner_seen_credits
+        ));
+        assert!(can_entity_return_from_end_to_overworld(
+            &item,
+            owner_seen_credits
+        ));
     }
 }
 
@@ -123,8 +259,96 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         target_world: world,
         position: respawn_position(&spawn),
         rotation: (spawn.yaw, spawn.pitch),
+        velocity: DVec3::ZERO,
+        relatives: RelativeMovement::NONE,
         portal_cooldown: 0,
+        as_passenger: false,
+        post_transition: TeleportPostTransition::do_nothing(),
     }
+}
+
+fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
+    is_allowed_to_enter_portal_target(
+        is_nether_dimension_type(target_world),
+        source_world.get_game_rule(&ALLOW_ENTERING_NETHER_USING_PORTALS),
+    )
+}
+
+fn is_allowed_to_enter_portal_target(
+    target_is_nether: bool,
+    allow_entering_nether_using_portals: GameRuleValue,
+) -> bool {
+    if !target_is_nether {
+        return true;
+    }
+
+    match allow_entering_nether_using_portals {
+        GameRuleValue::Bool(allowed) => allowed,
+        value @ GameRuleValue::Int(_) => {
+            panic!(
+                "gamerule {} should be a bool, got {value:?}",
+                ALLOW_ENTERING_NETHER_USING_PORTALS.key
+            )
+        }
+    }
+}
+
+fn can_teleport_between_worlds(
+    entity: &dyn Entity,
+    source_world: &World,
+    target_world: &World,
+    projectile_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
+) -> bool {
+    if is_end_return_transition(source_world.dimension_type, target_world.dimension_type) {
+        return can_entity_return_from_end_to_overworld(entity, projectile_owner_seen_credits);
+    }
+
+    true
+}
+
+fn is_end_return_transition(
+    source_dimension_type: DimensionTypeRef,
+    target_dimension_type: DimensionTypeRef,
+) -> bool {
+    source_dimension_type == &vanilla_dimension_types::THE_END
+        && target_dimension_type == &vanilla_dimension_types::OVERWORLD
+}
+
+fn is_nether_dimension_type(world: &World) -> bool {
+    world.dimension_type == &vanilla_dimension_types::THE_NETHER
+}
+
+fn is_end_dimension_type(world: &World) -> bool {
+    world.dimension_type == &vanilla_dimension_types::THE_END
+}
+
+fn can_entity_return_from_end_to_overworld(
+    entity: &dyn Entity,
+    projectile_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
+) -> bool {
+    if entity.entity_type() == &vanilla_entities::ENDER_PEARL
+        && entity
+            .projectile_owner_uuid()
+            .and_then(|uuid| projectile_owner_seen_credits(&uuid))
+            == Some(false)
+    {
+        return false;
+    }
+
+    direct_passengers_allow_end_return(entity)
+}
+
+fn direct_passengers_allow_end_return(entity: &dyn Entity) -> bool {
+    for passenger in entity.passengers() {
+        if passenger
+            .as_player()
+            .is_some_and(|player| !player.has_seen_credits())
+        {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn local_respawn_data_for_world(world: &World) -> RespawnData {
@@ -192,6 +416,12 @@ struct DomainSwitchRequest {
 struct PendingPlayerJoin {
     player: Arc<Player>,
     state: Result<DomainPlayerState, String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlayerAdmissionState {
+    Joining,
+    Disconnecting,
 }
 
 struct PlayerJoinQueue {
@@ -285,6 +515,430 @@ impl ServerJob for RootVehicleRestoreJob {
     }
 }
 
+struct NetherPortalTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    target_world: Arc<World>,
+    portal_pos: BlockPos,
+    approximate_exit_pos: BlockPos,
+    to_nether: bool,
+    request: ChunkRequestHandle,
+}
+
+impl NetherPortalTeleportJob {
+    fn new(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+        portal_pos: BlockPos,
+        approximate_exit_pos: BlockPos,
+        to_nether: bool,
+    ) -> Self {
+        let request = target_world.chunk_map.request_square(
+            nether_portal::prewarm_center(approximate_exit_pos),
+            nether_portal::prewarm_chunk_radius(to_nether),
+            ChunkStatus::Full,
+            ChunkTicketKind::Portal,
+        );
+        Self {
+            entity,
+            source_world,
+            target_world,
+            portal_pos,
+            approximate_exit_pos,
+            to_nether,
+            request,
+        }
+    }
+
+    fn still_valid(&self) -> bool {
+        !self.entity.is_removed()
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+    }
+}
+
+impl ServerJob for NetherPortalTeleportJob {
+    fn poll(&mut self, context: &mut ServerJobContext) -> JobPoll {
+        if !self.still_valid() {
+            return JobPoll::Finished;
+        }
+
+        match self.request.poll() {
+            ChunkRequestState::Pending { .. } => JobPoll::Pending,
+            ChunkRequestState::Cancelled => JobPoll::Finished,
+            ChunkRequestState::Ready => {
+                let Some(_ready) = self.request.ready_chunks() else {
+                    return JobPoll::Pending;
+                };
+                let Some(server) = context.server() else {
+                    return JobPoll::Finished;
+                };
+                if !is_allowed_to_enter_portal(&self.source_world, &self.target_world)
+                    || !server.can_teleport_between_worlds(
+                        self.entity.as_ref(),
+                        &self.source_world,
+                        &self.target_world,
+                    )
+                {
+                    return JobPoll::Finished;
+                }
+                let Some(transition) = nether_portal::calculate_transition(
+                    &self.source_world,
+                    &self.target_world,
+                    self.entity.as_ref(),
+                    self.portal_pos,
+                    self.approximate_exit_pos,
+                    self.to_nether,
+                ) else {
+                    return JobPoll::Finished;
+                };
+                change_entity_world(Arc::clone(&self.entity), &transition);
+                JobPoll::Finished
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.request.cancel();
+    }
+}
+
+const END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
+
+struct EndPortalRespawnSpawn {
+    position: DVec3,
+    rotation: (f32, f32),
+}
+
+struct EndPortalTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    phase: EndPortalTeleportPhase,
+}
+
+enum EndPortalTeleportPhase {
+    EntryToEnd {
+        target_world: Arc<World>,
+        request: ChunkRequestHandle,
+    },
+    ReturningEntity {
+        target_world: Arc<World>,
+        respawn_data: RespawnData,
+        request: ChunkRequestHandle,
+    },
+    SearchingPlayerRespawn {
+        target_world: Arc<World>,
+        respawn_data: RespawnData,
+        search: PlayerSpawnSearch,
+    },
+    LoadingPlayerRespawn {
+        target_world: Arc<World>,
+        spawn: EndPortalRespawnSpawn,
+        request: ChunkRequestHandle,
+    },
+}
+
+impl EndPortalTeleportJob {
+    fn entry_to_end(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+    ) -> Self {
+        let request = target_world.chunk_map.request_square(
+            end_portal::end_platform_prewarm_center(),
+            end_portal::end_platform_prewarm_chunk_radius(),
+            ChunkStatus::Full,
+            ChunkTicketKind::Portal,
+        );
+        Self {
+            entity,
+            source_world,
+            phase: EndPortalTeleportPhase::EntryToEnd {
+                target_world,
+                request,
+            },
+        }
+    }
+
+    fn returning_entity(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+        respawn_data: RespawnData,
+    ) -> Self {
+        let request = target_world.chunk_map.request_chunk(
+            end_portal::prewarm_center(respawn_data.pos()),
+            ChunkStatus::Full,
+            ChunkTicketKind::Portal,
+        );
+        Self {
+            entity,
+            source_world,
+            phase: EndPortalTeleportPhase::ReturningEntity {
+                target_world,
+                respawn_data,
+                request,
+            },
+        }
+    }
+
+    fn returning_player(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+        respawn_data: RespawnData,
+    ) -> Result<Self, String> {
+        let search = PlayerSpawnSearch::new(
+            &target_world,
+            respawn_data.pos(),
+            target_world.default_gamemode,
+        )?;
+        Ok(Self {
+            entity,
+            source_world,
+            phase: EndPortalTeleportPhase::SearchingPlayerRespawn {
+                target_world,
+                respawn_data,
+                search,
+            },
+        })
+    }
+
+    fn still_valid(&self) -> bool {
+        !self.entity.is_removed()
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+    }
+}
+
+impl ServerJob for EndPortalTeleportJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if !self.still_valid() {
+            return JobPoll::Finished;
+        }
+
+        loop {
+            match &mut self.phase {
+                EndPortalTeleportPhase::EntryToEnd {
+                    target_world,
+                    request,
+                } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let Some(transition) = end_portal::calculate_entry_transition(
+                            target_world,
+                            self.entity.as_ref(),
+                        ) else {
+                            return JobPoll::Finished;
+                        };
+                        change_entity_world(Arc::clone(&self.entity), &transition);
+                        return JobPoll::Finished;
+                    }
+                },
+                EndPortalTeleportPhase::ReturningEntity {
+                    target_world,
+                    respawn_data,
+                    request,
+                } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let transition = end_portal::calculate_entity_return_transition(
+                            target_world,
+                            self.entity.as_ref(),
+                            respawn_data,
+                        );
+                        change_entity_world(Arc::clone(&self.entity), &transition);
+                        return JobPoll::Finished;
+                    }
+                },
+                EndPortalTeleportPhase::SearchingPlayerRespawn {
+                    target_world,
+                    respawn_data,
+                    search,
+                } => match search.poll_with_ready_candidate_budget(
+                    target_world,
+                    END_PORTAL_RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
+                ) {
+                    PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
+                    PlayerSpawnSearchPoll::Cancelled => return JobPoll::Finished,
+                    PlayerSpawnSearchPoll::Ready(position) => {
+                        let spawn = EndPortalRespawnSpawn {
+                            position,
+                            rotation: (respawn_data.yaw, respawn_data.pitch),
+                        };
+                        let request = target_world.request_player_spawn_chunks(position);
+                        self.phase = EndPortalTeleportPhase::LoadingPlayerRespawn {
+                            target_world: target_world.clone(),
+                            spawn,
+                            request,
+                        };
+                    }
+                },
+                EndPortalTeleportPhase::LoadingPlayerRespawn {
+                    target_world,
+                    spawn,
+                    request,
+                } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        if request.ready_chunks().is_none() {
+                            return JobPoll::Pending;
+                        }
+                        let transition = end_portal::calculate_player_return_transition(
+                            target_world,
+                            self.entity.as_ref(),
+                            spawn.position,
+                            spawn.rotation,
+                        );
+                        change_entity_world(Arc::clone(&self.entity), &transition);
+                        return JobPoll::Finished;
+                    }
+                },
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        match &mut self.phase {
+            EndPortalTeleportPhase::EntryToEnd { request, .. }
+            | EndPortalTeleportPhase::ReturningEntity { request, .. }
+            | EndPortalTeleportPhase::LoadingPlayerRespawn { request, .. } => request.cancel(),
+            EndPortalTeleportPhase::SearchingPlayerRespawn { .. } => {}
+        }
+    }
+}
+
+struct EndGatewayTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    portal_pos: BlockPos,
+    source_is_end: bool,
+    phase: EndGatewayTeleportPhase,
+}
+
+enum EndGatewayTeleportPhase {
+    LoadingReady { request: ChunkRequestHandle },
+    LoadingSearchPath { request: ChunkRequestHandle },
+}
+
+impl EndGatewayTeleportJob {
+    fn new(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+        source_is_end: bool,
+    ) -> Option<Self> {
+        let preparation = end_gateway::initial_chunks(&source_world, portal_pos, source_is_end)?;
+        let phase = match preparation {
+            end_gateway::EndGatewayChunkPreparation::Ready(chunks) => {
+                EndGatewayTeleportPhase::LoadingReady {
+                    request: request_end_gateway_chunks(&source_world, chunks),
+                }
+            }
+            end_gateway::EndGatewayChunkPreparation::SearchPath(chunks) => {
+                EndGatewayTeleportPhase::LoadingSearchPath {
+                    request: request_end_gateway_chunks(&source_world, chunks),
+                }
+            }
+        };
+        Some(Self {
+            entity,
+            source_world,
+            portal_pos,
+            source_is_end,
+            phase,
+        })
+    }
+
+    fn still_valid(&self) -> bool {
+        !self.entity.is_removed()
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+    }
+}
+
+impl ServerJob for EndGatewayTeleportJob {
+    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
+        if !self.still_valid() {
+            return JobPoll::Finished;
+        }
+
+        loop {
+            match &mut self.phase {
+                EndGatewayTeleportPhase::LoadingReady { request } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let Some(transition) = end_gateway::calculate_transition(
+                            &self.source_world,
+                            self.entity.as_ref(),
+                            self.portal_pos,
+                            self.source_is_end,
+                        ) else {
+                            return JobPoll::Finished;
+                        };
+                        change_entity_world(Arc::clone(&self.entity), &transition);
+                        return JobPoll::Finished;
+                    }
+                },
+                EndGatewayTeleportPhase::LoadingSearchPath { request } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => return JobPoll::Finished,
+                    ChunkRequestState::Ready => {
+                        let Some(_ready) = request.ready_chunks() else {
+                            return JobPoll::Pending;
+                        };
+                        let Some(chunks) = end_gateway::final_chunks_after_search(
+                            &self.source_world,
+                            self.portal_pos,
+                            self.source_is_end,
+                        ) else {
+                            return JobPoll::Finished;
+                        };
+                        self.phase = EndGatewayTeleportPhase::LoadingReady {
+                            request: request_end_gateway_chunks(&self.source_world, chunks),
+                        };
+                    }
+                },
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        match &mut self.phase {
+            EndGatewayTeleportPhase::LoadingReady { request }
+            | EndGatewayTeleportPhase::LoadingSearchPath { request } => request.cancel(),
+        }
+    }
+}
+
+fn request_end_gateway_chunks(world: &Arc<World>, chunks: Vec<ChunkPos>) -> ChunkRequestHandle {
+    world.chunk_map.request_chunks(ChunkRequest {
+        status: ChunkStatus::Full,
+        positions: chunks,
+        ticket_kind: ChunkTicketKind::Portal,
+    })
+}
+
 fn root_vehicle_chunk(root_vehicle: &PersistentRootVehicle) -> Option<ChunkPos> {
     let pos = DVec3::new(
         root_vehicle.entity.pos[0],
@@ -375,6 +1029,10 @@ pub struct Server {
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
     pub worlds: WorldMap,
+    /// Players currently connected to the server, independent of world membership.
+    online_players: PlayerMap,
+    /// UUIDs reserved by a join or disconnect/save lifecycle transition.
+    player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -455,6 +1113,7 @@ impl Server {
         let mut worlds = WorldMap::new(
             resolved_worlds.default_domain.clone(),
             &resolved_worlds.domains,
+            &resolved_worlds.worlds,
         );
 
         for world_entry in &resolved_worlds.worlds {
@@ -521,6 +1180,8 @@ impl Server {
             cancel_token,
             key_store: KeyStore::create(),
             worlds,
+            online_players: PlayerMap::new(),
+            player_admissions: SyncMutex::new(FxHashMap::default()),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -538,6 +1199,10 @@ impl Server {
     /// game tick safe point so the socket reader can enter play immediately.
     pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
         if player.connection.closed() {
+            return;
+        }
+        if !self.reserve_player_join(&player) {
+            player.disconnect("You are already connected to this server");
             return;
         }
 
@@ -564,13 +1229,16 @@ impl Server {
 
     fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
         let PendingPlayerJoin { player, state } = join;
+        let uuid = player.gameprofile.id;
         if player.connection.closed() {
+            self.release_player_admission(uuid, PlayerAdmissionState::Joining);
             return;
         }
 
         let state = match state {
             Ok(state) => state,
             Err(error) => {
+                self.release_player_admission(uuid, PlayerAdmissionState::Joining);
                 log::error!(
                     "Failed to load player data for {}: {error}",
                     player.gameprofile.name
@@ -579,6 +1247,11 @@ impl Server {
                 return;
             }
         };
+
+        if !self.admit_reserved_player(Arc::clone(&player)) {
+            player.disconnect("You are already connected to this server");
+            return;
+        }
 
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
@@ -589,8 +1262,10 @@ impl Server {
         let rotation = player.rotation();
         let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
         if !admitted {
+            self.remove_online_player_sync(&player);
             return;
         }
+        self.sync_tab_list(&player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }
@@ -599,6 +1274,181 @@ impl Server {
             tokio::spawn(async move {
                 state.world.remove_player(player).await;
             });
+        }
+    }
+
+    fn reserve_player_join(&self, player: &Player) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return false;
+        }
+        if self.online_players.get_by_uuid(&uuid).is_some() {
+            return false;
+        }
+        admissions
+            .insert(uuid, PlayerAdmissionState::Joining)
+            .is_none()
+    }
+
+    fn admit_reserved_player(&self, player: Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.get(&uuid) != Some(&PlayerAdmissionState::Joining) {
+            return false;
+        }
+
+        let admitted = self.online_players.insert(player);
+        let _ = admissions.remove(&uuid);
+        admitted
+    }
+
+    fn reserve_player_disconnect(&self, player: &Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return false;
+        }
+        if !self
+            .online_players
+            .get_by_uuid(&uuid)
+            .is_some_and(|current| Arc::ptr_eq(&current, player))
+        {
+            return false;
+        }
+        admissions
+            .insert(uuid, PlayerAdmissionState::Disconnecting)
+            .is_none()
+    }
+
+    fn release_player_admission(&self, uuid: Uuid, state: PlayerAdmissionState) {
+        let mut admissions = self.player_admissions.lock();
+        if admissions.get(&uuid) == Some(&state) {
+            let _ = admissions.remove(&uuid);
+        }
+    }
+
+    fn remove_online_player_sync(&self, player: &Arc<Player>) {
+        let _ = self.online_players.remove_player_sync(player);
+    }
+
+    pub(crate) async fn remove_online_player_after_disconnect(
+        &self,
+        player: Arc<Player>,
+        domain: String,
+        player_data: PersistentPlayerData,
+    ) {
+        let uuid = player.gameprofile.id;
+        if !self.reserve_player_disconnect(&player) {
+            return;
+        }
+
+        self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
+        let player = self.online_players.remove_player_sync(&player);
+
+        let Some(player) = player else {
+            self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+            return;
+        };
+
+        if let Err(e) = self
+            .player_data_storage
+            .save_domain_data(&domain, uuid, &player_data)
+            .await
+        {
+            log::error!("Failed to save player domain data for {uuid}: {e}");
+        }
+        if let Err(e) = self
+            .player_data_storage
+            .save_global(
+                uuid,
+                &GlobalPlayerData {
+                    last_active_domain: domain,
+                },
+            )
+            .await
+        {
+            log::error!("Failed to save global player data for {uuid}: {e}");
+        }
+
+        player.cleanup();
+        self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+    }
+
+    /// Broadcasts a packet to every online player, regardless of world membership.
+    pub fn broadcast_to_online<P: ClientPacket>(&self, packet: P) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.config.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.online_players.iter_players(|_, player| {
+            player.connection.send_encoded(encoded.clone());
+            true
+        });
+    }
+
+    fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
+        self.online_players.iter_players(|_, player| {
+            player.send_packet(packet(player));
+            true
+        });
+    }
+
+    /// Sends full tab list synchronization for a newly joined player.
+    ///
+    /// Server membership mirrors vanilla `PlayerList`; world entity spawning remains
+    /// owned by the per-world entity tracker.
+    fn sync_tab_list(&self, player: &Arc<Player>) {
+        self.online_players.iter_players(|_, existing_player| {
+            if existing_player.gameprofile.id == player.gameprofile.id {
+                return true;
+            }
+
+            let add_existing = CPlayerInfoUpdate::create_player_initializing(
+                existing_player.gameprofile.id,
+                existing_player.gameprofile.name.clone(),
+                existing_player.gameprofile.properties.clone(),
+                existing_player.game_mode().into(),
+                existing_player.connection.latency(),
+                None,
+                true,
+            );
+            player.send_packet(add_existing);
+
+            if let Some(session) = existing_player.chat_session()
+                && let Ok(protocol_data) = session.as_data().to_protocol_data()
+            {
+                player.send_packet(CPlayerInfoUpdate::update_chat_session(
+                    existing_player.gameprofile.id,
+                    protocol_data,
+                ));
+            }
+
+            true
+        });
+
+        let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
+            player.gameprofile.id,
+            player.gameprofile.name.clone(),
+            player.gameprofile.properties.clone(),
+            player.game_mode().into(),
+            player.connection.latency(),
+            None,
+            true,
+        );
+        self.broadcast_to_online(player_info_packet);
+    }
+
+    fn broadcast_player_latency_updates(&self) {
+        let mut latency_entries = Vec::new();
+        self.online_players.iter_players(|uuid, player| {
+            latency_entries.push((*uuid, player.connection.latency()));
+            true
+        });
+
+        if !latency_entries.is_empty() {
+            self.broadcast_to_online(CPlayerInfoUpdate::update_latency(latency_entries));
         }
     }
 
@@ -867,19 +1717,17 @@ impl Server {
     /// Gets all the players on the server
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
-        for world in self.worlds.values() {
-            world.players.iter_players(|_, p: &Arc<Player>| {
-                players.push(p.clone());
-                true
-            });
-        }
+        self.online_players.iter_players(|_, p: &Arc<Player>| {
+            players.push(p.clone());
+            true
+        });
         players
     }
 
     /// Returns the total number of players currently online across all worlds.
     #[must_use]
     pub fn player_count(&self) -> usize {
-        self.worlds.iter().map(|w| w.1.players.len()).sum()
+        self.online_players.len()
     }
 
     /// Returns a sample of up to 12 online players for the server list ping.
@@ -1057,6 +1905,7 @@ impl Server {
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
+        let mut player_info_ticks = 0_u64;
 
         loop {
             if cancel_token.is_cancelled() {
@@ -1107,6 +1956,12 @@ impl Server {
             };
 
             self.tick_worlds_game(tick_count, runs_normally).await;
+            player_info_ticks += 1;
+            if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
+                let _span = tracing::trace_span!("broadcast_latency").entered();
+                self.broadcast_player_latency_updates();
+                player_info_ticks = 0;
+            }
             self.tick_jobs(tick_count, runs_normally);
             self.process_player_joins();
 
@@ -1284,7 +2139,10 @@ impl Server {
     }
 
     fn process_world_changes(&self) {
-        let changes = mem::take(&mut *self.pending_world_changes.lock());
+        let mut changes = mem::take(&mut *self.pending_world_changes.lock());
+        for world in self.worlds.values() {
+            changes.extend(world.drain_world_changes());
+        }
 
         for (entity, request) in changes {
             if entity.is_removed() {
@@ -1292,17 +2150,217 @@ impl Server {
             }
             match request {
                 WorldChangeRequest::Computed(transition) => {
-                    entity.change_world(&transition);
+                    change_entity_world(entity, &transition);
                 }
                 WorldChangeRequest::WorldSpawn { target_world } => {
                     let transition = world_spawn_transition(target_world);
-                    entity.change_world(&transition);
+                    change_entity_world(entity, &transition);
                 }
-                WorldChangeRequest::Portal { .. } => {
-                    // TODO: portal destination calculation + async chunk pre-warming
+                WorldChangeRequest::Portal {
+                    portal: PortalKind::Nether,
+                    source_world,
+                    portal_pos,
+                } => {
+                    self.queue_nether_portal_change(entity, source_world, portal_pos);
+                }
+                WorldChangeRequest::Portal {
+                    portal: PortalKind::End,
+                    source_world,
+                    portal_pos: _,
+                } => {
+                    self.queue_end_portal_change(entity, source_world);
+                }
+                WorldChangeRequest::Portal {
+                    portal: PortalKind::EndGateway,
+                    source_world,
+                    portal_pos,
+                } => {
+                    self.queue_end_gateway_change(entity, source_world, portal_pos);
                 }
             }
         }
+    }
+
+    fn queue_nether_portal_change(
+        &self,
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+    ) {
+        let Some(target_world) = self.worlds.resolve_nether_portal_target(&source_world) else {
+            log::warn!(
+                "No Nether portal target world loaded for source world {}",
+                source_world.key
+            );
+            return;
+        };
+        if !is_allowed_to_enter_portal(&source_world, &target_world)
+            || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+        {
+            return;
+        }
+        let to_nether = is_nether_dimension_type(&target_world);
+        let approximate_exit_pos = nether_portal::approximate_exit_position(
+            &source_world,
+            &target_world,
+            entity.position(),
+        );
+        self.jobs.spawn(NetherPortalTeleportJob::new(
+            entity,
+            source_world,
+            target_world,
+            portal_pos,
+            approximate_exit_pos,
+            to_nether,
+        ));
+    }
+
+    fn queue_end_portal_change(&self, entity: SharedEntity, source_world: Arc<World>) {
+        if !is_end_dimension_type(&source_world) {
+            let Some(target_world) = self.worlds.resolve_end_entry_portal_target(&source_world)
+            else {
+                log::warn!(
+                    "No End portal target world loaded for source world {}",
+                    source_world.key
+                );
+                return;
+            };
+            if !is_allowed_to_enter_portal(&source_world, &target_world)
+                || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            {
+                return;
+            }
+            self.jobs.spawn(EndPortalTeleportJob::entry_to_end(
+                entity,
+                source_world,
+                target_world,
+            ));
+            return;
+        }
+
+        if entity.as_player().is_some() {
+            let (target_world, respawn_data) =
+                match self.strict_respawn_world_and_data_for_domain(source_world.domain()) {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        log::warn!(
+                            "No End portal return target world loaded for source world {}: {error}",
+                            source_world.key
+                        );
+                        return;
+                    }
+                };
+            if !is_allowed_to_enter_portal(&source_world, &target_world)
+                || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+            {
+                return;
+            }
+            match EndPortalTeleportJob::returning_player(
+                entity,
+                source_world,
+                target_world,
+                respawn_data,
+            ) {
+                Ok(job) => self.jobs.spawn(job),
+                Err(error) => {
+                    log::error!("Failed to schedule End portal player return: {error}");
+                }
+            }
+            return;
+        }
+
+        let (target_world, respawn_data) =
+            match self.strict_respawn_world_and_data_for_domain(source_world.domain()) {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    log::warn!(
+                        "No End portal return target world loaded for source world {}: {error}",
+                        source_world.key
+                    );
+                    return;
+                }
+            };
+        if !is_allowed_to_enter_portal(&source_world, &target_world)
+            || !self.can_teleport_between_worlds(entity.as_ref(), &source_world, &target_world)
+        {
+            return;
+        }
+        self.jobs.spawn(EndPortalTeleportJob::returning_entity(
+            entity,
+            source_world,
+            target_world,
+            respawn_data,
+        ));
+    }
+
+    fn queue_end_gateway_change(
+        &self,
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        portal_pos: BlockPos,
+    ) {
+        let source_is_end = is_end_dimension_type(&source_world);
+        let Some(job) = EndGatewayTeleportJob::new(entity, source_world, portal_pos, source_is_end)
+        else {
+            tracing::debug!("End gateway world change ignored because no destination is available");
+            return;
+        };
+        self.jobs.spawn(job);
+    }
+
+    fn can_teleport_between_worlds(
+        &self,
+        entity: &dyn Entity,
+        source_world: &World,
+        target_world: &World,
+    ) -> bool {
+        can_teleport_between_worlds(entity, source_world, target_world, |uuid| {
+            self.projectile_owner_seen_credits_in_domain(source_world.domain(), uuid)
+        })
+    }
+
+    fn projectile_owner_seen_credits_in_domain(
+        &self,
+        domain: &str,
+        uuid: &uuid::Uuid,
+    ) -> Option<bool> {
+        self.worlds
+            .values()
+            .filter(|world| world.domain() == domain)
+            .find_map(|world| {
+                world.get_entity_by_uuid(uuid).and_then(|entity| {
+                    entity
+                        .as_player()
+                        .map(super::player::Player::has_seen_credits)
+                })
+            })
+    }
+
+    fn strict_respawn_world_and_data_for_domain(
+        &self,
+        domain: &str,
+    ) -> Result<(Arc<World>, RespawnData), String> {
+        let default_world = self
+            .worlds
+            .default_world(domain)
+            .cloned()
+            .ok_or_else(|| format!("domain {domain} has no default world"))?;
+        let respawn_data = {
+            let level_data = default_world.level_data.read();
+            level_data.data().respawn_data_or_local(&default_world.key)
+        };
+        let target_world = self
+            .worlds
+            .get(respawn_data.dimension())
+            .filter(|world| world.domain() == domain)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "respawn dimension {} is not loaded in domain {domain}",
+                    respawn_data.dimension()
+                )
+            })?;
+        Ok((target_world, respawn_data))
     }
 
     /// Queues a player domain switch for processing at the server tick safe point.
@@ -1467,6 +2525,9 @@ impl Server {
         for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
+                if runs_normally {
+                    world_clone.chunk_map.tick_timed_tickets();
+                }
                 world_clone.tick_game(tick_count, runs_normally)
             }));
         }
@@ -1542,10 +2603,7 @@ impl Server {
             TextComponent::plain("\n"),
         ]);
 
-        // Broadcast to all players in all worlds
-        for world in self.worlds.values() {
-            world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
-        }
+        self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
     }
 
     /// Broadcasts a sprint completion report to all players.
@@ -1559,9 +2617,7 @@ impl Server {
             ])
             .into();
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
-        }
+        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.
@@ -1571,9 +2627,7 @@ impl Server {
         let packet = CTickingState::new(tick_manager.tick_rate(), tick_manager.is_frozen());
         drop(tick_manager);
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
-        }
+        self.broadcast_to_online(packet);
     }
 
     /// Broadcasts the current step tick count to all clients.
@@ -1583,9 +2637,7 @@ impl Server {
         let packet = CTickingStep::new(tick_manager.frozen_ticks_to_run());
         drop(tick_manager);
 
-        for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
-        }
+        self.broadcast_to_online(packet);
     }
 
     /// Sends the current ticking state and step packets to a joining player.

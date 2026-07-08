@@ -1,13 +1,13 @@
 use rand::Rng;
 use steel_macros::block_behavior;
-use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::{BlockRef, default_surviving_state};
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::{
-    block::BlockBehavior, blocks::vegetation::vegetation_block::vegetation_can_survive,
+    block::BlockBehavior,
+    blocks::vegetation::vegetation_block::{survival_update_shape, vegetation_can_survive},
 };
 use crate::behavior::{
     blocks::vegetation::bonemealable::{
@@ -49,10 +49,7 @@ impl BlockBehavior for BushBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if !self.can_survive(state, world, pos) {
-            return vanilla_blocks::AIR.default_state();
-        }
-        state
+        survival_update_shape(self, state, world, pos)
     }
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
