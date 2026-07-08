@@ -83,7 +83,7 @@ impl ServerJobQueue {
         self.jobs.lock().push(Box::new(job));
     }
 
-    /// Polls a job immediately from a known safe point, queueing it only if it remains pending.
+    /// Polls a job immediately from a known safe point, queuing it only if it remains pending.
     pub fn poll_now_or_spawn(
         &self,
         server: Weak<Server>,
