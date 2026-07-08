@@ -484,7 +484,7 @@ const fn portal_ticket() -> ChunkTicket {
 }
 
 #[must_use]
-fn ender_pearl_ticket() -> ChunkTicket {
+const fn ender_pearl_ticket() -> ChunkTicket {
     ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS)
 }
 

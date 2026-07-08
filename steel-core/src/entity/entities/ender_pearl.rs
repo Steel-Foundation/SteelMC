@@ -136,7 +136,7 @@ impl EnderPearlEntity {
         )
     }
 
-    fn should_vanish_for_owner_state(
+    const fn should_vanish_for_owner_state(
         owner_alive: bool,
         owner_won_game: bool,
         vanish_on_death_rule: bool,
