@@ -9,7 +9,7 @@ const SYNTAX_DOUBLE_QUOTE: char = '"';
 const SYNTAX_SINGLE_QUOTE: char = '\'';
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct ReaderCursor {
+pub(super) struct ReaderCursor {
     byte: usize,
     utf16: usize,
 }
@@ -191,6 +191,23 @@ impl<'input> StringReader<'input> {
         Ok(())
     }
 
+    pub(super) fn try_read_literal(&mut self, literal: &str) -> bool {
+        let Some(remaining) = self.remaining().strip_prefix(literal) else {
+            return false;
+        };
+        if remaining
+            .chars()
+            .next()
+            .is_some_and(|character| character != ' ')
+        {
+            return false;
+        }
+
+        self.cursor.byte += literal.len();
+        self.cursor.utf16 += literal.encode_utf16().count();
+        true
+    }
+
     fn read_string_until(&mut self, terminator: char) -> Result<String, CommandSyntaxError> {
         let mut result = String::new();
         let mut escaped = false;
@@ -246,15 +263,15 @@ impl<'input> StringReader<'input> {
         }
     }
 
-    const fn checkpoint(&self) -> ReaderCursor {
+    pub(super) const fn checkpoint(&self) -> ReaderCursor {
         self.cursor
     }
 
-    const fn restore(&mut self, checkpoint: ReaderCursor) {
+    pub(super) const fn restore(&mut self, checkpoint: ReaderCursor) {
         self.cursor = checkpoint;
     }
 
-    fn error(&self, kind: CommandSyntaxErrorKind) -> CommandSyntaxError {
+    pub(super) fn error(&self, kind: CommandSyntaxErrorKind) -> CommandSyntaxError {
         CommandSyntaxError::new(kind, self.input, self.cursor.utf16, self.cursor.byte)
     }
 

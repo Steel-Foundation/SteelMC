@@ -1,13 +1,18 @@
 //! Dispatcher-owned command node arena.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use super::{
-    CommandNodeBuilder, NodeId, NodeKind, RegistrationError, RegistrationErrorKind,
-    node::{CommandNode, UnregisteredCommandNode},
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
 };
+
 #[cfg(test)]
-use super::{CommandSyntaxError, node::CommandContext};
+use super::node::CommandContext;
+use super::{
+    CommandNodeBuilder, CommandSyntaxError, CommandSyntaxErrorKind, NodeId, NodeKind, ParseError,
+    ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange,
+    StringReader,
+    node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
+};
 
 static NEXT_DISPATCHER_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -44,6 +49,13 @@ impl<S> CommandDispatcher<S> {
         self.validate_redirects(&node)?;
         self.validate_merge(self.root(), &node)?;
         Ok(self.apply_merge(self.root(), node))
+    }
+
+    /// Parses `input` into the best Brigadier command branch.
+    pub(crate) fn parse<'input>(&self, input: &'input str, source: S) -> ParseResults<'input, S> {
+        let reader = StringReader::new(input);
+        let context = ParsedCommandContext::new(Arc::new(source), self.root(), reader.cursor());
+        self.parse_nodes(self.root(), reader, context)
     }
 
     /// Returns a node if the ID belongs to this dispatcher.
@@ -133,6 +145,134 @@ impl<S> CommandDispatcher<S> {
                 .get(child.index)
                 .is_some_and(|node| node.name() == name)
         })
+    }
+
+    fn parse_nodes<'input>(
+        &self,
+        parent: NodeId,
+        original_reader: StringReader<'input>,
+        context_so_far: ParsedCommandContext<S>,
+    ) -> ParseResults<'input, S> {
+        let mut errors = Vec::new();
+        let mut potentials = Vec::new();
+
+        for child_id in self.relevant_nodes(parent, &original_reader) {
+            let child = &self.nodes[child_id.index];
+            if !child.requirement.allows(context_so_far.source()) {
+                continue;
+            }
+
+            let mut context = context_so_far.branch();
+            let mut reader = original_reader.clone();
+            if let Err(error) = self.parse_node(child_id, &mut reader, &mut context) {
+                errors.push(ParseError::new(child_id, error));
+                continue;
+            }
+            if reader.can_read() && reader.peek() != Some(' ') {
+                errors.push(ParseError::new(
+                    child_id,
+                    reader.error(CommandSyntaxErrorKind::ExpectedArgumentSeparator),
+                ));
+                continue;
+            }
+
+            context.set_command(child.command.as_ref().map(Arc::clone));
+            let redirect = child.redirect.as_ref().map(|redirect| redirect.target);
+            let required_remaining = if redirect.is_some() { 1 } else { 2 };
+            if reader.can_read_length(required_remaining) {
+                reader.skip();
+                if let Some(target) = redirect {
+                    let child_context = ParsedCommandContext::new(
+                        Arc::clone(context.source_arc()),
+                        target,
+                        reader.cursor(),
+                    );
+                    let parse = self.parse_nodes(target, reader, child_context);
+                    let (child_context, reader, errors) = parse.into_parts();
+                    context.set_child(child_context);
+                    return ParseResults::new(context, reader, errors);
+                }
+                potentials.push(self.parse_nodes(child_id, reader, context));
+            } else {
+                potentials.push(ParseResults::new(context, reader, Vec::new()));
+            }
+        }
+
+        let mut potentials = potentials.into_iter();
+        let Some(mut best) = potentials.next() else {
+            return ParseResults::new(context_so_far, original_reader, errors);
+        };
+        for potential in potentials {
+            if Self::is_better_parse(&potential, &best) {
+                best = potential;
+            }
+        }
+        best
+    }
+
+    fn parse_node(
+        &self,
+        node_id: NodeId,
+        reader: &mut StringReader<'_>,
+        context: &mut ParsedCommandContext<S>,
+    ) -> Result<(), CommandSyntaxError> {
+        let node = &self.nodes[node_id.index];
+        let start = reader.cursor();
+        match &node.data {
+            CommandNodeData::Root => {
+                unreachable!("the command graph never stores a root node as a child")
+            }
+            CommandNodeData::Literal(literal) => {
+                if !reader.try_read_literal(literal) {
+                    return Err(
+                        reader.error(CommandSyntaxErrorKind::LiteralIncorrect(literal.to_owned()))
+                    );
+                }
+                context.with_node(node_id, StringRange::between(start, reader.cursor()));
+            }
+            CommandNodeData::Argument {
+                name,
+                argument_type,
+            } => {
+                let value = argument_type.parse(reader)?;
+                let range = StringRange::between(start, reader.cursor());
+                context.with_argument(name, range, value);
+                context.with_node(node_id, range);
+            }
+        }
+        Ok(())
+    }
+
+    fn relevant_nodes(&self, parent: NodeId, reader: &StringReader<'_>) -> Vec<NodeId> {
+        let Some(parent) = self.node(parent) else {
+            return Vec::new();
+        };
+        let remaining = reader.remaining();
+        let token = remaining
+            .split_once(' ')
+            .map_or(remaining, |(token, _)| token);
+        let mut arguments = Vec::new();
+
+        for child_id in &parent.children {
+            match &self.nodes[child_id.index].data {
+                CommandNodeData::Literal(literal) if literal.as_ref() == token => {
+                    return vec![*child_id];
+                }
+                CommandNodeData::Argument { .. } => arguments.push(*child_id),
+                CommandNodeData::Root | CommandNodeData::Literal(_) => {}
+            }
+        }
+        arguments
+    }
+
+    fn is_better_parse(candidate: &ParseResults<'_, S>, current: &ParseResults<'_, S>) -> bool {
+        if !candidate.reader().can_read() && current.reader().can_read() {
+            return true;
+        }
+        if candidate.reader().can_read() && !current.reader().can_read() {
+            return false;
+        }
+        candidate.errors().is_empty() && !current.errors().is_empty()
     }
 
     #[cfg(test)]

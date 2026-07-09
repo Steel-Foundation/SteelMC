@@ -35,6 +35,14 @@ pub(crate) enum CommandSyntaxErrorKind {
     ExpectedBool,
     /// An expected symbol was not present.
     ExpectedSymbol(char),
+    /// A literal node did not match its configured text.
+    LiteralIncorrect(Box<str>),
+    /// An integer was below its configured minimum.
+    IntegerTooLow { found: i32, minimum: i32 },
+    /// An integer was above its configured maximum.
+    IntegerTooHigh { found: i32, maximum: i32 },
+    /// A parsed argument had trailing non-whitespace data.
+    ExpectedArgumentSeparator,
 }
 
 impl fmt::Display for CommandSyntaxErrorKind {
@@ -60,6 +68,17 @@ impl fmt::Display for CommandSyntaxErrorKind {
             Self::ExpectedFloat => formatter.write_str("Expected float"),
             Self::ExpectedBool => formatter.write_str("Expected bool"),
             Self::ExpectedSymbol(symbol) => write!(formatter, "Expected '{symbol}'"),
+            Self::LiteralIncorrect(expected) => write!(formatter, "Expected literal {expected}"),
+            Self::IntegerTooLow { found, minimum } => write!(
+                formatter,
+                "Integer must not be less than {minimum}, found {found}"
+            ),
+            Self::IntegerTooHigh { found, maximum } => write!(
+                formatter,
+                "Integer must not be more than {maximum}, found {found}"
+            ),
+            Self::ExpectedArgumentSeparator => formatter
+                .write_str("Expected whitespace to end one argument, but found trailing data"),
         }
     }
 }

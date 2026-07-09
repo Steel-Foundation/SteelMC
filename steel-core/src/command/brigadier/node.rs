@@ -4,9 +4,10 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use super::CommandSyntaxError;
+use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader, context::ParsedValue};
 
-type Command<S> = Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
+pub(super) type Command<S> =
+    Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
 type RequirementPredicate<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
 
 /// Identifies a node in one command dispatcher.
@@ -51,6 +52,34 @@ impl ArgumentType {
     /// Creates a bounded integer argument parser.
     pub(crate) const fn integer(minimum: i32, maximum: i32) -> Self {
         Self::Integer { minimum, maximum }
+    }
+
+    pub(super) fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+    ) -> Result<ParsedValue, CommandSyntaxError> {
+        match *self {
+            Self::Bool => reader.read_boolean().map(ParsedValue::Bool),
+            Self::Integer { minimum, maximum } => {
+                let start = reader.checkpoint();
+                let value = reader.read_int()?;
+                if value < minimum {
+                    reader.restore(start);
+                    return Err(reader.error(CommandSyntaxErrorKind::IntegerTooLow {
+                        found: value,
+                        minimum,
+                    }));
+                }
+                if value > maximum {
+                    reader.restore(start);
+                    return Err(reader.error(CommandSyntaxErrorKind::IntegerTooHigh {
+                        found: value,
+                        maximum,
+                    }));
+                }
+                Ok(ParsedValue::Integer(value))
+            }
+        }
     }
 }
 
