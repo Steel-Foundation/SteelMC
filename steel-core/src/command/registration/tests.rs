@@ -1,19 +1,29 @@
 use steel_utils::Identifier;
 
+use crate::command::execution::CommandPermissionSource;
 use crate::command::{
-    brigadier::{CommandDispatcher, CommandSyntaxError, NodeId},
+    brigadier::{CommandDispatcher, CommandRequirement, CommandSyntaxError, NodeId},
     execution::{CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, literal},
 };
+use crate::permission::{PermissionExpr, PermissionState};
 
 use super::{CommandDispatcherBuilder, CommandRegistration, CommandRegistrationError};
 
 struct TestSource {
     callback: CommandResultCallback,
+    permission: Option<PermissionState>,
+    expected_permission: Option<&'static str>,
+    context_allowed: bool,
 }
 
 impl ExecutionCommandSource for TestSource {
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
-        Self { callback }
+        Self {
+            callback,
+            permission: self.permission,
+            expected_permission: self.expected_permission,
+            context_allowed: self.context_allowed,
+        }
     }
 
     fn callback(&self) -> CommandResultCallback {
@@ -21,6 +31,18 @@ impl ExecutionCommandSource for TestSource {
     }
 
     fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
+}
+
+impl CommandPermissionSource for TestSource {
+    fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
+        if let Some(expected) = self.expected_permission {
+            let PermissionExpr::Key(permission) = permission else {
+                panic!("test command should use one derived permission key");
+            };
+            assert_eq!(permission.as_str(), expected);
+        }
+        self.permission
+    }
 }
 
 type TestDispatcher = CommandDispatcher<TestSource, SteelCommandRuntime>;
@@ -88,6 +110,15 @@ fn child_names<'a>(dispatcher: &'a TestDispatcher, root: &str) -> Vec<&'a str> {
             node.name()
         })
         .collect()
+}
+
+fn source(permission: Option<PermissionState>, expected_permission: &'static str) -> TestSource {
+    TestSource {
+        callback: CommandResultCallback::empty(),
+        permission,
+        expected_permission: Some(expected_permission),
+        context_allowed: true,
+    }
 }
 
 #[test]
@@ -217,4 +248,90 @@ fn factories_receive_the_built_dispatcher_root_for_redirects() {
         dispatcher.node(forward).and_then(|node| node.redirect()),
         Some(dispatcher.root())
     );
+}
+
+#[test]
+fn required_root_permissions_are_derived_from_stable_command_ids() {
+    let dispatcher = build([command(
+        Identifier::new_static("minecraft", "seed"),
+        "child",
+    )]);
+    let seed = child(&dispatcher, dispatcher.root(), "seed");
+    let Some(seed) = dispatcher.node(seed) else {
+        panic!("seed root should exist");
+    };
+
+    assert!(!seed.allows(&source(None, "minecraft.command.seed")));
+    assert!(seed.allows(&source(
+        Some(PermissionState::Allow),
+        "minecraft.command.seed"
+    )));
+    assert!(!seed.allows(&source(
+        Some(PermissionState::Deny),
+        "minecraft.command.seed"
+    )));
+    assert!(seed.is_restricted());
+}
+
+#[test]
+fn default_access_allows_unset_but_not_explicitly_denied_permissions() {
+    let dispatcher =
+        build([command(Identifier::new_static("minecraft", "list"), "child").default_access()]);
+    let list = child(&dispatcher, dispatcher.root(), "list");
+    let Some(list) = dispatcher.node(list) else {
+        panic!("list root should exist");
+    };
+
+    assert!(list.allows(&source(None, "minecraft.command.list")));
+    assert!(!list.allows(&source(
+        Some(PermissionState::Deny),
+        "minecraft.command.list"
+    )));
+}
+
+#[test]
+fn explicit_permission_expressions_replace_id_derivation() {
+    let permission = crate::permission::PermissionKey::parse("steel.command.inspect");
+    let Ok(permission) = permission else {
+        panic!("test permission should be valid");
+    };
+    let dispatcher = build([
+        command(Identifier::new_static("example", "inspect"), "child")
+            .permission(PermissionExpr::key(permission)),
+    ]);
+    let inspect = child(&dispatcher, dispatcher.root(), "inspect");
+    let Some(inspect) = dispatcher.node(inspect) else {
+        panic!("inspect root should exist");
+    };
+
+    assert!(inspect.allows(&source(
+        Some(PermissionState::Allow),
+        "steel.command.inspect"
+    )));
+}
+
+#[test]
+fn registration_composes_authorization_with_existing_context_requirements() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let registration =
+        CommandRegistration::new(Identifier::new_static("example", "inspect"), |_| {
+            literal("inspect").requires(CommandRequirement::contextual(|source: &TestSource| {
+                source.context_allowed
+            }))
+        });
+    assert!(builder.register(registration).is_ok());
+    let Ok(dispatcher) = builder.build() else {
+        panic!("composed requirements should build");
+    };
+    let inspect = child(&dispatcher, dispatcher.root(), "inspect");
+    let Some(inspect) = dispatcher.node(inspect) else {
+        panic!("inspect root should exist");
+    };
+    let mut allowed = source(Some(PermissionState::Allow), "example.command.inspect");
+
+    allowed.context_allowed = false;
+    assert!(!inspect.allows(&allowed));
+    allowed.context_allowed = true;
+    assert!(inspect.allows(&allowed));
+    assert!(inspect.is_restricted());
 }

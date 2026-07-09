@@ -117,6 +117,16 @@ where
         self
     }
 
+    /// Adds a requirement while preserving any predicate already on this node.
+    #[must_use]
+    pub(crate) fn also_requires(mut self, requirement: CommandRequirement<S>) -> Self
+    where
+        S: 'static,
+    {
+        self.requirement = self.requirement.and(requirement);
+        self
+    }
+
     /// Redirects parsing to an existing node without transforming the source.
     #[must_use]
     pub(crate) fn redirects(mut self, target: NodeId) -> Self {

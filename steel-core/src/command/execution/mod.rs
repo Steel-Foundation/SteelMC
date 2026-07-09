@@ -11,7 +11,9 @@ pub(crate) use runtime::{
     CustomCommandExecutor, CustomModifierExecutor, SteelCommandRuntime, SteelContextChain,
     SteelExecutor, SteelModifier, argument, literal,
 };
-pub(crate) use source::{CommandResultCallback, CommandSource, ExecutionCommandSource};
+pub(crate) use source::{
+    CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
+};
 
 #[cfg(test)]
 mod tests;

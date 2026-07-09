@@ -84,6 +84,31 @@ impl<S> CommandRequirement<S> {
         matches!(self.kind, Some(CommandRequirementKind::Authorization))
     }
 
+    pub(super) fn and(self, other: Self) -> Self
+    where
+        S: 'static,
+    {
+        let kind = match (self.kind, other.kind) {
+            (Some(CommandRequirementKind::Authorization), _)
+            | (_, Some(CommandRequirementKind::Authorization)) => {
+                Some(CommandRequirementKind::Authorization)
+            }
+            (Some(CommandRequirementKind::Context), _)
+            | (_, Some(CommandRequirementKind::Context)) => Some(CommandRequirementKind::Context),
+            (None, None) => None,
+        };
+        let predicate = match (self.predicate, other.predicate) {
+            (None, None) => None,
+            (Some(predicate), None) | (None, Some(predicate)) => Some(predicate),
+            (Some(first), Some(second)) => {
+                let combined: RequirementPredicate<S> =
+                    Arc::new(move |source| first(source) && second(source));
+                Some(combined)
+            }
+        };
+        Self { predicate, kind }
+    }
+
     pub(super) fn is_compatible_with(&self, other: &Self) -> bool {
         self.kind == other.kind
             && match (&self.predicate, &other.predicate) {

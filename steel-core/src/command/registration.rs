@@ -7,25 +7,30 @@ use steel_utils::Identifier;
 use thiserror::Error;
 
 use super::{
-    brigadier::{CommandDispatcher, CommandNodeBuilder, NodeId, RegistrationError},
-    execution::{ExecutionCommandSource, SteelCommandRuntime},
+    brigadier::{
+        CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId, RegistrationError,
+    },
+    execution::{CommandPermissionSource, SteelCommandRuntime},
 };
+use crate::permission::{PermissionExpr, PermissionKey, PermissionKeyError, PermissionState};
 
 type CommandFactory<S> = dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + 'static;
 
 /// One complete command tree and its stable owner identity.
 pub(crate) struct CommandRegistration<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     id: Identifier,
     aliases: Vec<Box<str>>,
+    permission: Option<PermissionExpr>,
+    default_access: bool,
     factory: Box<CommandFactory<S>>,
 }
 
 impl<S> CommandRegistration<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     /// Declares a command whose factory receives the target dispatcher's root.
     pub(crate) fn new(
@@ -35,6 +40,8 @@ where
         Self {
             id,
             aliases: Vec::new(),
+            permission: None,
+            default_access: false,
             factory: Box::new(factory),
         }
     }
@@ -43,6 +50,20 @@ where
     #[must_use]
     pub(crate) fn alias(mut self, alias: impl Into<Box<str>>) -> Self {
         self.aliases.push(alias.into());
+        self
+    }
+
+    /// Allows an unset root permission while still respecting an explicit deny.
+    #[must_use]
+    pub(crate) const fn default_access(mut self) -> Self {
+        self.default_access = true;
+        self
+    }
+
+    /// Replaces the permission expression derived from this command's ID.
+    #[must_use]
+    pub(crate) fn permission(mut self, permission: PermissionExpr) -> Self {
+        self.permission = Some(permission);
         self
     }
 
@@ -72,7 +93,7 @@ where
 /// Collects declarations before atomically constructing a dispatcher.
 pub(crate) struct CommandDispatcherBuilder<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     registrations: Vec<CommandRegistration<S>>,
     ids: FxHashSet<Identifier>,
@@ -80,7 +101,7 @@ where
 
 impl<S> CommandDispatcherBuilder<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     pub(crate) fn new() -> Self {
         Self {
@@ -113,7 +134,19 @@ where
         let mut resolved = Vec::with_capacity(self.registrations.len());
 
         for registration in self.registrations {
-            let root = (registration.factory)(dispatcher_root);
+            let permission = match registration.permission {
+                Some(permission) => permission,
+                None => derived_command_permission(&registration.id)?,
+            };
+            let default_access = registration.default_access;
+            let requirement = CommandRequirement::authorization(move |source: &S| {
+                match source.permission_state(&permission) {
+                    Some(PermissionState::Allow) => true,
+                    Some(PermissionState::Deny) => false,
+                    None => default_access,
+                }
+            });
+            let root = (registration.factory)(dispatcher_root).also_requires(requirement);
             let Some(root_name) = root.literal_name() else {
                 return Err(CommandRegistrationError::RootMustBeLiteral {
                     id: registration.id,
@@ -164,7 +197,7 @@ where
 
 impl<S> Default for CommandDispatcherBuilder<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     fn default() -> Self {
         Self::new()
@@ -173,7 +206,7 @@ where
 
 struct ResolvedCommand<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     id: Identifier,
     aliases: Vec<Box<str>>,
@@ -182,11 +215,22 @@ where
 
 impl<S> ResolvedCommand<S>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     fn roots(&self) -> impl Iterator<Item = &str> {
         once(self.id.path.as_ref()).chain(self.aliases.iter().map(AsRef::as_ref))
     }
+}
+
+fn derived_command_permission(id: &Identifier) -> Result<PermissionExpr, CommandRegistrationError> {
+    let permission = PermissionKey::parse(format!("{}.command.{}", id.namespace, id.path))
+        .map_err(
+            |source| CommandRegistrationError::InvalidDerivedPermission {
+                id: id.clone(),
+                source,
+            },
+        )?;
+    Ok(PermissionExpr::key(permission))
 }
 
 fn register_renamed_root<S>(
@@ -195,7 +239,7 @@ fn register_renamed_root<S>(
     name: impl Into<Box<str>>,
 ) -> Result<(), CommandRegistrationError>
 where
-    S: ExecutionCommandSource,
+    S: CommandPermissionSource,
 {
     let renamed = root
         .clone()
@@ -239,6 +283,12 @@ pub(crate) enum CommandRegistrationError {
     AliasContainsWhitespace(Box<str>),
     #[error("command alias '{0}' cannot be namespaced")]
     NamespacedAlias(Box<str>),
+    #[error("command '{id}' cannot derive a permission from its id: {source}")]
+    InvalidDerivedPermission {
+        id: Identifier,
+        #[source]
+        source: PermissionKeyError,
+    },
     #[error("a validated command root unexpectedly became an argument")]
     UnexpectedArgumentRoot,
     #[error(transparent)]

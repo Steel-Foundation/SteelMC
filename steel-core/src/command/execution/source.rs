@@ -14,6 +14,7 @@ use crate::{
         sender::CommandSender,
     },
     entity::{Entity as _, SharedEntity},
+    permission::{PermissionContext, PermissionExpr, PermissionState},
     player::Player,
     server::Server,
     world::World,
@@ -67,6 +68,11 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
     fn callback(&self) -> CommandResultCallback;
 
     fn handle_error(&self, error: &CommandSyntaxError, forked: bool);
+}
+
+/// Permission lookup required while constructing and traversing Steel command trees.
+pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
+    fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState>;
 }
 
 /// Immutable Minecraft command execution source.
@@ -263,6 +269,16 @@ impl ExecutionCommandSource for CommandSource {
             _ => TextComponent::from(error.raw_message()),
         };
         self.sender.send_message(&message.color(Color::Red));
+    }
+}
+
+impl CommandPermissionSource for CommandSource {
+    fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
+        let CommandSender::Player(player) = &self.sender else {
+            return Some(PermissionState::Allow);
+        };
+        let context = PermissionContext::for_world(self.world.domain(), self.world.key.clone());
+        player.permission_state_in(permission, &context)
     }
 }
 
