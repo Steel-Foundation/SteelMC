@@ -64,7 +64,15 @@ where
         input: &'input str,
         source: S,
     ) -> ParseResults<'input, S, R> {
-        let reader = StringReader::new(input);
+        self.parse_reader(StringReader::new(input), source)
+    }
+
+    /// Parses from an existing reader while preserving its current cursor.
+    pub(crate) fn parse_reader<'input>(
+        &self,
+        reader: StringReader<'input>,
+        source: S,
+    ) -> ParseResults<'input, S, R> {
         let context = ParsedCommandContext::new(Arc::new(source), self.root(), reader.cursor());
         self.parse_nodes(self.root(), reader, context)
     }
