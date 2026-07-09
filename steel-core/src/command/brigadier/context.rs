@@ -3,23 +3,29 @@
 use std::sync::Arc;
 
 use super::{
-    BrigadierRuntime, CommandRuntime, CommandSyntaxError, NodeId, StringRange, StringReader,
-    argument::ParsedValue, node::CommandRedirect,
+    BrigadierRuntime, CommandRuntime, CommandSyntaxError, ContainsPrimitiveArgumentValue, NodeId,
+    PrimitiveArgumentValue, StringRange, StringReader, node::CommandRedirect,
 };
 
 #[derive(Clone, Debug, PartialEq)]
-struct ParsedArgument {
+struct ParsedArgument<V> {
     range: StringRange,
-    value: ParsedValue,
+    value: V,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-struct ParsedArguments {
-    values: Vec<(Box<str>, ParsedArgument)>,
+#[derive(Clone, Debug, PartialEq)]
+struct ParsedArguments<V> {
+    values: Vec<(Box<str>, ParsedArgument<V>)>,
 }
 
-impl ParsedArguments {
-    fn insert(&mut self, name: &str, range: StringRange, value: ParsedValue) {
+impl<V> Default for ParsedArguments<V> {
+    fn default() -> Self {
+        Self { values: Vec::new() }
+    }
+}
+
+impl<V> ParsedArguments<V> {
+    fn insert(&mut self, name: &str, range: StringRange, value: V) {
         let argument = ParsedArgument { range, value };
         if let Some((_, existing)) = self
             .values
@@ -32,53 +38,86 @@ impl ParsedArguments {
         }
     }
 
+    fn argument(&self, name: &str) -> Option<&V> {
+        self.values
+            .iter()
+            .find(|(argument_name, _)| argument_name.as_ref() == name)
+            .map(|(_, argument)| &argument.value)
+    }
+}
+
+impl<V> ParsedArguments<V>
+where
+    V: ContainsPrimitiveArgumentValue,
+{
     fn boolean(&self, name: &str) -> Option<bool> {
-        let Some(ParsedValue::Bool(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::Bool(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(*value)
     }
 
     fn integer(&self, name: &str) -> Option<i32> {
-        let Some(ParsedValue::Integer(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::Integer(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(*value)
     }
 
     fn long(&self, name: &str) -> Option<i64> {
-        let Some(ParsedValue::Long(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::Long(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(*value)
     }
 
     fn float(&self, name: &str) -> Option<f32> {
-        let Some(ParsedValue::Float(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::Float(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(*value)
     }
 
     fn double(&self, name: &str) -> Option<f64> {
-        let Some(ParsedValue::Double(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::Double(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(*value)
     }
 
     fn string(&self, name: &str) -> Option<&str> {
-        let Some(ParsedValue::String(value)) = self.argument(name) else {
+        let Some(PrimitiveArgumentValue::String(value)) = self.argument(name)?.primitive_value()
+        else {
             return None;
         };
         Some(value)
     }
+}
 
-    fn argument(&self, name: &str) -> Option<&ParsedValue> {
-        self.values
-            .iter()
-            .find(|(argument_name, _)| argument_name.as_ref() == name)
-            .map(|(_, argument)| &argument.value)
+/// Parsed state available while an argument provides completions.
+pub(crate) struct ArgumentSuggestionContext<'context, S, V> {
+    source: &'context S,
+    arguments: &'context ParsedArguments<V>,
+}
+
+impl<'context, S, V> ArgumentSuggestionContext<'context, S, V> {
+    const fn new(source: &'context S, arguments: &'context ParsedArguments<V>) -> Self {
+        Self { source, arguments }
+    }
+
+    /// Returns the source requesting suggestions.
+    pub(crate) const fn source(&self) -> &S {
+        self.source
+    }
+
+    /// Returns a previously parsed argument from this context segment.
+    pub(crate) fn argument(&self, name: &str) -> Option<&V> {
+        self.arguments.argument(name)
     }
 }
 
@@ -108,7 +147,7 @@ where
 {
     source: Arc<S>,
     root: NodeId,
-    arguments: ParsedArguments,
+    arguments: ParsedArguments<R::ArgumentValue>,
     executor: Option<Arc<R::Executor>>,
     nodes: Vec<ParsedCommandNode>,
     range: StringRange,
@@ -153,6 +192,12 @@ where
         &self.source
     }
 
+    pub(super) fn argument_suggestion_context(
+        &self,
+    ) -> ArgumentSuggestionContext<'_, S, R::ArgumentValue> {
+        ArgumentSuggestionContext::new(&self.source, &self.arguments)
+    }
+
     pub(super) const fn root(&self) -> NodeId {
         self.root
     }
@@ -179,7 +224,12 @@ where
         self.forks = redirect.is_some_and(|redirect| redirect.forks);
     }
 
-    pub(super) fn with_argument(&mut self, name: &str, range: StringRange, value: ParsedValue) {
+    pub(super) fn with_argument(
+        &mut self,
+        name: &str,
+        range: StringRange,
+        value: R::ArgumentValue,
+    ) {
         self.arguments.insert(name, range, value);
     }
 
@@ -203,7 +253,10 @@ where
         })
     }
 
-    pub(super) fn find_suggestion_context(&self, cursor: usize) -> Option<SuggestionContext> {
+    pub(super) fn find_suggestion_context(
+        &self,
+        cursor: usize,
+    ) -> Option<SuggestionContext<'_, S, R>> {
         if cursor < self.range.start() {
             return None;
         }
@@ -217,12 +270,14 @@ where
                     Some(SuggestionContext {
                         parent: self.root,
                         start: self.range.start(),
+                        context: self,
                     })
                 },
                 |last| {
                     Some(SuggestionContext {
                         parent: last.node,
                         start: last.range.end() + 1,
+                        context: self,
                     })
                 },
             );
@@ -234,6 +289,7 @@ where
                 return Some(SuggestionContext {
                     parent: previous,
                     start: node.range.start(),
+                    context: self,
                 });
             }
             previous = node.node;
@@ -241,6 +297,7 @@ where
         Some(SuggestionContext {
             parent: previous,
             start: self.range.start(),
+            context: self,
         })
     }
 
@@ -259,6 +316,22 @@ where
         self.executor.is_some()
     }
 
+    /// Returns a parsed runtime argument by name.
+    pub(crate) fn argument(&self, name: &str) -> Option<&R::ArgumentValue> {
+        self.arguments.argument(name)
+    }
+
+    /// Returns the context reached through a redirect.
+    pub(crate) fn child(&self) -> Option<&Self> {
+        self.child.as_deref()
+    }
+}
+
+impl<S, R> ParsedCommandContext<S, R>
+where
+    R: CommandRuntime<S>,
+    R::ArgumentValue: ContainsPrimitiveArgumentValue,
+{
     /// Returns a parsed boolean argument.
     pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
         self.arguments.boolean(name)
@@ -288,11 +361,6 @@ where
     pub(crate) fn string(&self, name: &str) -> Option<&str> {
         self.arguments.string(name)
     }
-
-    /// Returns the context reached through a redirect.
-    pub(crate) fn child(&self) -> Option<&Self> {
-        self.child.as_deref()
-    }
 }
 
 /// Immutable parsed input supplied to commands and redirect modifiers.
@@ -303,7 +371,7 @@ where
     source: Arc<S>,
     input: Arc<str>,
     root: NodeId,
-    arguments: Arc<ParsedArguments>,
+    arguments: Arc<ParsedArguments<R::ArgumentValue>>,
     executor: Option<Arc<R::Executor>>,
     nodes: Arc<[ParsedCommandNode]>,
     range: StringRange,
@@ -341,34 +409,9 @@ where
         self.range
     }
 
-    /// Returns a parsed boolean argument.
-    pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
-        self.arguments.boolean(name)
-    }
-
-    /// Returns a parsed integer argument.
-    pub(crate) fn integer(&self, name: &str) -> Option<i32> {
-        self.arguments.integer(name)
-    }
-
-    /// Returns a parsed long argument.
-    pub(crate) fn long(&self, name: &str) -> Option<i64> {
-        self.arguments.long(name)
-    }
-
-    /// Returns a parsed float argument.
-    pub(crate) fn float(&self, name: &str) -> Option<f32> {
-        self.arguments.float(name)
-    }
-
-    /// Returns a parsed double argument.
-    pub(crate) fn double(&self, name: &str) -> Option<f64> {
-        self.arguments.double(name)
-    }
-
-    /// Returns a parsed string argument.
-    pub(crate) fn string(&self, name: &str) -> Option<&str> {
-        self.arguments.string(name)
+    /// Returns a parsed runtime argument by name.
+    pub(crate) fn argument(&self, name: &str) -> Option<&R::ArgumentValue> {
+        self.arguments.argument(name)
     }
 
     /// Returns the context reached through a redirect.
@@ -424,9 +467,49 @@ where
     }
 }
 
-pub(super) struct SuggestionContext {
+impl<S, R> CommandContext<S, R>
+where
+    R: CommandRuntime<S>,
+    R::ArgumentValue: ContainsPrimitiveArgumentValue,
+{
+    /// Returns a parsed boolean argument.
+    pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
+        self.arguments.boolean(name)
+    }
+
+    /// Returns a parsed integer argument.
+    pub(crate) fn integer(&self, name: &str) -> Option<i32> {
+        self.arguments.integer(name)
+    }
+
+    /// Returns a parsed long argument.
+    pub(crate) fn long(&self, name: &str) -> Option<i64> {
+        self.arguments.long(name)
+    }
+
+    /// Returns a parsed float argument.
+    pub(crate) fn float(&self, name: &str) -> Option<f32> {
+        self.arguments.float(name)
+    }
+
+    /// Returns a parsed double argument.
+    pub(crate) fn double(&self, name: &str) -> Option<f64> {
+        self.arguments.double(name)
+    }
+
+    /// Returns a parsed string argument.
+    pub(crate) fn string(&self, name: &str) -> Option<&str> {
+        self.arguments.string(name)
+    }
+}
+
+pub(super) struct SuggestionContext<'context, S, R>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) parent: NodeId,
     pub(super) start: usize,
+    pub(super) context: &'context ParsedCommandContext<S, R>,
 }
 
 /// One failed candidate node from a command parse.

@@ -1,9 +1,13 @@
 //! Opaque command behavior payloads stored by the Brigadier graph.
 
-use super::{CommandContext, CommandSyntaxError};
+use super::{
+    ArgumentType, CommandArgumentParser, CommandContext, CommandSyntaxError, PrimitiveArgumentValue,
+};
 
 /// Selects the executor and redirect-modifier representations stored in a graph.
 pub(crate) trait CommandRuntime<S>: 'static {
+    type Argument: CommandArgumentParser<S, Value = Self::ArgumentValue>;
+    type ArgumentValue: Clone + Send + Sync + 'static;
     type Executor: Send + Sync + ?Sized;
     type Modifier: Send + Sync + ?Sized;
 }
@@ -18,6 +22,8 @@ pub(super) type BrigadierModifier<S> = dyn Fn(&CommandContext<S, BrigadierRuntim
     + Sync;
 
 impl<S> CommandRuntime<S> for BrigadierRuntime {
+    type Argument = ArgumentType;
+    type ArgumentValue = PrimitiveArgumentValue;
     type Executor = BrigadierExecutor<S>;
     type Modifier = BrigadierModifier<S>;
 }

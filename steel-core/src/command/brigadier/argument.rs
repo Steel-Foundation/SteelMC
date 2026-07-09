@@ -1,6 +1,29 @@
 //! Built-in Brigadier argument parsing.
 
-use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder};
+use super::{
+    ArgumentSuggestionContext, CommandSyntaxError, CommandSyntaxErrorKind, StringReader,
+    SuggestionsBuilder,
+};
+
+/// A parser and parsed-value representation stored by one command runtime.
+pub(crate) trait CommandArgumentParser<S>: PartialEq + Send + Sync + 'static {
+    /// The value retained in the parsed command context.
+    type Value: Clone + Send + Sync + 'static;
+
+    /// Parses one value from the reader at its current cursor.
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &S,
+    ) -> Result<Self::Value, CommandSyntaxError>;
+
+    /// Adds completions for a partially entered value.
+    fn list_suggestions(
+        &self,
+        context: &ArgumentSuggestionContext<'_, S, Self::Value>,
+        builder: &mut SuggestionsBuilder<'_>,
+    );
+}
 
 /// The parsing mode for a string argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,12 +91,12 @@ impl ArgumentType {
         Self::String(StringType::GreedyPhrase)
     }
 
-    pub(super) fn parse(
+    pub(crate) fn parse_value(
         &self,
         reader: &mut StringReader<'_>,
-    ) -> Result<ParsedValue, CommandSyntaxError> {
+    ) -> Result<PrimitiveArgumentValue, CommandSyntaxError> {
         match *self {
-            Self::Bool => reader.read_boolean().map(ParsedValue::Bool),
+            Self::Bool => reader.read_boolean().map(PrimitiveArgumentValue::Bool),
             Self::Integer { minimum, maximum } => {
                 let start = reader.checkpoint();
                 let value = reader.read_int()?;
@@ -91,7 +114,7 @@ impl ArgumentType {
                         maximum,
                     }));
                 }
-                Ok(ParsedValue::Integer(value))
+                Ok(PrimitiveArgumentValue::Integer(value))
             }
             Self::Long { minimum, maximum } => {
                 let start = reader.checkpoint();
@@ -110,7 +133,7 @@ impl ArgumentType {
                         maximum,
                     }));
                 }
-                Ok(ParsedValue::Long(value))
+                Ok(PrimitiveArgumentValue::Long(value))
             }
             Self::Float { minimum, maximum } => {
                 let start = reader.checkpoint();
@@ -129,7 +152,7 @@ impl ArgumentType {
                         maximum,
                     }));
                 }
-                Ok(ParsedValue::Float(value))
+                Ok(PrimitiveArgumentValue::Float(value))
             }
             Self::Double { minimum, maximum } => {
                 let start = reader.checkpoint();
@@ -148,22 +171,22 @@ impl ArgumentType {
                         maximum,
                     }));
                 }
-                Ok(ParsedValue::Double(value))
+                Ok(PrimitiveArgumentValue::Double(value))
             }
-            Self::String(StringType::Word) => {
-                Ok(ParsedValue::String(reader.read_unquoted_string().into()))
-            }
+            Self::String(StringType::Word) => Ok(PrimitiveArgumentValue::String(
+                reader.read_unquoted_string().into(),
+            )),
             Self::String(StringType::QuotablePhrase) => reader
                 .read_string()
                 .map(String::into_boxed_str)
-                .map(ParsedValue::String),
-            Self::String(StringType::GreedyPhrase) => {
-                Ok(ParsedValue::String(reader.read_remaining().into()))
-            }
+                .map(PrimitiveArgumentValue::String),
+            Self::String(StringType::GreedyPhrase) => Ok(PrimitiveArgumentValue::String(
+                reader.read_remaining().into(),
+            )),
         }
     }
 
-    pub(super) fn list_suggestions(&self, builder: &mut SuggestionsBuilder<'_>) {
+    pub(crate) fn suggest(&self, builder: &mut SuggestionsBuilder<'_>) {
         if *self != Self::Bool {
             return;
         }
@@ -180,12 +203,44 @@ impl ArgumentType {
     }
 }
 
+impl<S> CommandArgumentParser<S> for ArgumentType {
+    type Value = PrimitiveArgumentValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &S,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        self.parse_value(reader)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &ArgumentSuggestionContext<'_, S, Self::Value>,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        self.suggest(builder);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum ParsedValue {
+pub(crate) enum PrimitiveArgumentValue {
     Bool(bool),
     Integer(i32),
     Long(i64),
     Float(f32),
     Double(f64),
     String(Box<str>),
+}
+
+/// Provides primitive Brigadier accessors for a runtime's parsed value.
+pub(crate) trait ContainsPrimitiveArgumentValue {
+    /// Returns the primitive value when this runtime value contains one.
+    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue>;
+}
+
+impl ContainsPrimitiveArgumentValue for PrimitiveArgumentValue {
+    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
+        Some(self)
+    }
 }

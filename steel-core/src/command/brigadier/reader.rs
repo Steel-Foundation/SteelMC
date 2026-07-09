@@ -9,7 +9,7 @@ const SYNTAX_DOUBLE_QUOTE: char = '"';
 const SYNTAX_SINGLE_QUOTE: char = '\'';
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct ReaderCursor {
+pub(crate) struct ReaderCursor {
     byte: usize,
     utf16: usize,
 }
@@ -271,15 +271,18 @@ impl<'input> StringReader<'input> {
         }
     }
 
-    pub(super) const fn checkpoint(&self) -> ReaderCursor {
+    /// Captures the current reader position for later restoration.
+    pub(crate) const fn checkpoint(&self) -> ReaderCursor {
         self.cursor
     }
 
-    pub(super) const fn restore(&mut self, checkpoint: ReaderCursor) {
+    /// Restores a position previously returned by [`Self::checkpoint`].
+    pub(crate) const fn restore(&mut self, checkpoint: ReaderCursor) {
         self.cursor = checkpoint;
     }
 
-    pub(super) fn error(&self, kind: CommandSyntaxErrorKind) -> CommandSyntaxError {
+    /// Creates a syntax error at the current reader position.
+    pub(crate) fn error(&self, kind: CommandSyntaxErrorKind) -> CommandSyntaxError {
         CommandSyntaxError::new(kind, self.input, self.cursor.utf16, self.cursor.byte)
     }
 

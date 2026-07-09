@@ -4,7 +4,7 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use super::{ArgumentType, BrigadierRuntime, CommandRuntime};
+use super::{BrigadierRuntime, CommandRuntime};
 
 type RequirementPredicate<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
 
@@ -173,16 +173,13 @@ where
     }
 }
 
-pub(super) enum CommandNodeData {
+pub(super) enum CommandNodeData<A> {
     Root,
     Literal(Box<str>),
-    Argument {
-        name: Box<str>,
-        argument_type: ArgumentType,
-    },
+    Argument { name: Box<str>, argument_type: A },
 }
 
-impl CommandNodeData {
+impl<A> CommandNodeData<A> {
     pub(super) fn name(&self) -> &str {
         match self {
             Self::Root => "",
@@ -197,7 +194,12 @@ impl CommandNodeData {
             Self::Argument { .. } => NodeKind::Argument,
         }
     }
+}
 
+impl<A> CommandNodeData<A>
+where
+    A: PartialEq,
+{
     fn collision_with(&self, other: &Self) -> Option<RegistrationErrorKind> {
         let name = other.name().into();
         match (self, other) {
@@ -231,7 +233,7 @@ pub(crate) struct CommandNode<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    pub(super) data: CommandNodeData,
+    pub(super) data: CommandNodeData<R::Argument>,
     pub(super) children: Vec<NodeId>,
     pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,
@@ -273,7 +275,7 @@ where
     }
 
     /// Returns this node's argument parser when it is an argument node.
-    pub(crate) const fn argument_type(&self) -> Option<&ArgumentType> {
+    pub(crate) const fn argument_type(&self) -> Option<&R::Argument> {
         match &self.data {
             CommandNodeData::Argument { argument_type, .. } => Some(argument_type),
             CommandNodeData::Root | CommandNodeData::Literal(_) => None,
@@ -319,7 +321,7 @@ pub(super) struct UnregisteredCommandNode<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    pub(super) data: CommandNodeData,
+    pub(super) data: CommandNodeData<R::Argument>,
     pub(super) children: Vec<Self>,
     pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,

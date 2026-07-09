@@ -14,10 +14,14 @@ mod runtime;
 mod string_range;
 mod suggestion;
 
-pub(crate) use argument::{ArgumentType, StringType};
+pub(crate) use argument::{
+    ArgumentType, CommandArgumentParser, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue,
+    StringType,
+};
 pub(crate) use builder::{CommandNodeBuilder, argument, literal};
 pub(crate) use context::{
-    CommandContext, ParseError, ParseResults, ParsedCommandContext, ParsedCommandNode,
+    ArgumentSuggestionContext, CommandContext, ParseError, ParseResults, ParsedCommandContext,
+    ParsedCommandNode,
 };
 pub(crate) use context_chain::{ContextChain, ContextChainStage};
 pub(crate) use dispatcher::CommandDispatcher;

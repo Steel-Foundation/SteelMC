@@ -8,10 +8,10 @@ use std::sync::{
 #[cfg(test)]
 use super::CommandContext;
 use super::{
-    BrigadierRuntime, CommandNodeBuilder, CommandRuntime, CommandSyntaxError,
-    CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind, ParseError, ParseResults,
-    ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange, StringReader,
-    SuggestionError, Suggestions, SuggestionsBuilder,
+    BrigadierRuntime, CommandArgumentParser, CommandNodeBuilder, CommandRuntime,
+    CommandSyntaxError, CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind, ParseError,
+    ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange,
+    StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 
@@ -114,7 +114,8 @@ where
                     }
                 }
                 CommandNodeData::Argument { argument_type, .. } => {
-                    argument_type.list_suggestions(&mut builder);
+                    let argument_context = context.context.argument_suggestion_context();
+                    argument_type.list_suggestions(&argument_context, &mut builder);
                 }
             }
             candidate_sets.push(builder.build()?);
@@ -334,7 +335,7 @@ where
                 name,
                 argument_type,
             } => {
-                let value = argument_type.parse(reader)?;
+                let value = argument_type.parse(reader, context.source())?;
                 let range = StringRange::between(start, reader.cursor());
                 context.with_argument(name, range, value);
                 context.with_node(node_id, range, node.redirect.as_ref());

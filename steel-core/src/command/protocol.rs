@@ -2,12 +2,14 @@ use rustc_hash::FxHashMap;
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType, CCommandSuggestions,
     CCommands, CommandNode as ProtocolCommandNode, CommandNodeInfo, SuggestionEntry,
+    SuggestionType,
 };
 use thiserror::Error;
 
 use super::brigadier::{
     ArgumentType, CommandDispatcher, CommandRuntime, NodeId, NodeKind, StringType, Suggestions,
 };
+use super::execution::SteelArgumentType;
 
 const MAX_COMMAND_SUGGESTIONS: usize = 1000;
 
@@ -53,6 +55,7 @@ pub(crate) fn command_tree_packet<S, R>(
 ) -> Result<CCommands, CommandTreeProjectionError>
 where
     R: CommandRuntime<S>,
+    R::Argument: CommandArgumentProtocol,
 {
     let visible = visible_nodes(dispatcher, source)?;
     let mut indices = FxHashMap::default();
@@ -116,7 +119,7 @@ where
                 ProtocolCommandNode::new_argument(
                     info,
                     node.name().to_owned(),
-                    (protocol_argument_type(argument), None),
+                    argument.protocol_argument(),
                 )
             }
         };
@@ -153,6 +156,24 @@ where
         }
     }
     Ok(visible)
+}
+
+pub(crate) trait CommandArgumentProtocol {
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<SuggestionType>);
+}
+
+impl CommandArgumentProtocol for ArgumentType {
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<SuggestionType>) {
+        (protocol_argument_type(self), None)
+    }
+}
+
+impl CommandArgumentProtocol for SteelArgumentType {
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<SuggestionType>) {
+        match self {
+            SteelArgumentType::Primitive(argument) => argument.protocol_argument(),
+        }
+    }
 }
 
 fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {

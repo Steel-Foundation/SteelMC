@@ -14,7 +14,7 @@ pub(crate) struct CommandNodeBuilder<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    data: CommandNodeData,
+    data: CommandNodeData<R::Argument>,
     children: Vec<Self>,
     executor: Option<Arc<R::Executor>>,
     requirement: CommandRequirement<S>,
@@ -50,7 +50,7 @@ where
     }
 
     /// Creates an argument for this runtime model.
-    pub(crate) fn argument(name: impl Into<Box<str>>, argument_type: ArgumentType) -> Self {
+    pub(crate) fn argument(name: impl Into<Box<str>>, argument_type: R::Argument) -> Self {
         Self {
             data: CommandNodeData::Argument {
                 name: name.into(),

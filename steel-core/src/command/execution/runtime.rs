@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use crate::command::brigadier::{
-    ArgumentType, CommandContext, CommandNodeBuilder, CommandRuntime, CommandSyntaxError,
-    ContextChain, NodeId,
+    CommandContext, CommandNodeBuilder, CommandRuntime, CommandSyntaxError, ContextChain, NodeId,
 };
 
-use super::{ChainModifiers, ExecutionCommandSource, ExecutionControl};
+use super::{
+    ChainModifiers, ExecutionCommandSource, ExecutionControl, SteelArgumentType,
+    argument::SteelArgumentValue,
+};
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
@@ -69,6 +71,8 @@ impl<S> CommandRuntime<S> for SteelCommandRuntime
 where
     S: ExecutionCommandSource,
 {
+    type Argument = SteelArgumentType;
+    type ArgumentValue = SteelArgumentValue;
     type Executor = SteelExecutor<S>;
     type Modifier = SteelModifier<S>;
 }
@@ -84,12 +88,12 @@ where
 /// Creates an argument backed by Steel's runtime model.
 pub(crate) fn argument<S>(
     name: impl Into<Box<str>>,
-    argument_type: ArgumentType,
+    argument_type: impl Into<SteelArgumentType>,
 ) -> CommandNodeBuilder<S, SteelCommandRuntime>
 where
     S: ExecutionCommandSource,
 {
-    CommandNodeBuilder::argument(name, argument_type)
+    CommandNodeBuilder::argument(name, argument_type.into())
 }
 
 impl<S> CommandNodeBuilder<S, SteelCommandRuntime>
