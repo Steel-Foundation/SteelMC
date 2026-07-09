@@ -4,6 +4,7 @@ mod context;
 mod expression;
 mod groups;
 mod key;
+mod manager;
 mod rule_expression;
 mod set;
 
@@ -17,6 +18,10 @@ pub use groups::{
     PermissionGroupsConfig,
 };
 pub use key::{PermissionKey, PermissionKeyError, PermissionSegment};
+pub use manager::{
+    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupStore,
+    PermissionGroupStoreError, PermissionGroupUpdateError,
+};
 pub use rule_expression::{PermissionRuleExpression, PermissionRuleExpressionError};
 pub use set::{
     PermissionEntry, PermissionResolution, PermissionResolutionSource, PermissionSet,
@@ -25,5 +30,7 @@ pub use set::{
 
 #[cfg(test)]
 mod group_tests;
+#[cfg(test)]
+mod manager_tests;
 #[cfg(test)]
 mod tests;
