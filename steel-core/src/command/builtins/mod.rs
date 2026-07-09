@@ -1,5 +1,6 @@
 //! Steel-owned built-in command declarations.
 
+mod difficulty;
 mod list;
 mod seed;
 mod stop;
@@ -13,6 +14,7 @@ use super::{
 pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
+    builder.register(difficulty::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
     builder.register(stop::registration())?;
@@ -41,9 +43,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(names, ["list", "seed", "stop"]);
+        assert_eq!(names, ["difficulty", "list", "seed", "stop"]);
 
-        let Some(list) = roots.first().copied() else {
+        let Some(list) = roots.get(1).copied() else {
             panic!("list root should exist");
         };
         assert!(
