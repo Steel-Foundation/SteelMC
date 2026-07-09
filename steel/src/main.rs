@@ -393,6 +393,10 @@ async fn shutdown_worlds(server: &Arc<Server>) {
 
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
+    match server.scoreboards.save(&server.worlds).await {
+        Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
+        Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
+    }
     let mut total_saved = 0;
     for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;

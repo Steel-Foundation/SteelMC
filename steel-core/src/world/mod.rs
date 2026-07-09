@@ -395,7 +395,7 @@ pub struct World {
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Per-world saved data storage.
-    saved_data: SavedDataManager,
+    pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Server view distance (maximum chunk radius).

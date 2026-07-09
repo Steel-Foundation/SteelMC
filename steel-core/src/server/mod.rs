@@ -40,6 +40,7 @@ use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
     end_portal, nether_portal,
 };
+use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
@@ -1255,6 +1256,8 @@ pub struct Server {
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// Command scoreboards isolated by Steel domain.
+    pub scoreboards: DomainScoreboards,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Command work submitted from connection and console tasks.
@@ -1404,6 +1407,10 @@ impl Server {
             worlds.insert(world_entry.key.clone(), world);
         }
 
+        let scoreboards = DomainScoreboards::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain scoreboards: {error}"))?;
+
         Ok(Server {
             config,
             permission_groups,
@@ -1414,6 +1421,7 @@ impl Server {
             player_admissions: SyncMutex::new(FxHashMap::default()),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            scoreboards,
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),

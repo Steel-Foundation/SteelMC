@@ -18,6 +18,8 @@ pub mod names {
 
     /// Vanilla `TicketStorage.TYPE`, persisted as `data/chunk_tickets.toml`.
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
+    /// Domain command scoreboard, persisted through the domain default world.
+    pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
 }
 
 /// Name of a per-world saved data entry.
