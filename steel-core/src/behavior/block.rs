@@ -549,6 +549,25 @@ pub trait BlockBehavior: Send + Sync {
         true
     }
 
+    /// Returns whether this block can be replaced by the held item during placement.
+    ///
+    /// Vanilla parity: `BlockState.canBeReplaced(BlockPlaceContext)`.
+    ///
+    /// Default behavior mirrors prior Steel behavior and only checks the
+    /// block config's `replaceable` flag.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores context-specific params"
+    )]
+    fn can_be_replaced(
+        &self,
+        state: BlockStateId,
+        held_item: ItemRef,
+        is_secondary_use_active: bool,
+    ) -> bool {
+        state.get_block().config.replaceable
+    }
+
     /// Returns the block state to use when placing this block.
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId>;
 

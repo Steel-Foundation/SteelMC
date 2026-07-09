@@ -8,6 +8,7 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt,
     properties::{BlockStateProperties, Direction},
 };
+use steel_registry::items::ItemRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Vanilla `LeafLitterBlock` uses sturdy top-face support, not the vegetation tag.
@@ -47,6 +48,15 @@ impl BlockBehavior for LeafLitterBlock {
         context: &crate::behavior::BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         self.segmentable_get_state_for_placement(context)
+    }
+
+    fn can_be_replaced(
+        &self,
+        state: BlockStateId,
+        held_item: ItemRef,
+        is_secondary_use_active: bool,
+    ) -> bool {
+        self.segmentable_can_be_replaced(state, held_item, is_secondary_use_active)
     }
 
     fn use_item_on(

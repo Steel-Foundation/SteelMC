@@ -10,6 +10,7 @@ use steel_utils::types::InteractionHand;
 
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -244,8 +245,15 @@ impl<'a> UseOnContext<'a> {
     pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
         let hit_pos = self.hit_result.block_pos;
         let hit_state = self.world.get_block_state(hit_pos);
-        let hit_block = REGISTRY.blocks.by_state_id(hit_state);
-        let hit_block_replaceable = hit_block.is_some_and(|b| b.config.replaceable);
+        let held_item = self.inv.with_item(|item| item.item);
+        let is_secondary_use_active = self.player.is_secondary_use_active();
+        let hit_block_replaceable = REGISTRY.blocks.by_state_id(hit_state).is_some_and(|block| {
+            BLOCK_BEHAVIORS.get_behavior(block).can_be_replaced(
+                hit_state,
+                held_item,
+                is_secondary_use_active,
+            )
+        });
 
         let (place_pos, replaces_clicked_block) = if hit_block_replaceable {
             (hit_pos, true)
@@ -258,8 +266,18 @@ impl<'a> UseOnContext<'a> {
         }
 
         let existing_state = self.world.get_block_state(place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        if !existing_block.is_some_and(|b| b.config.replaceable) {
+        let existing_block_replaceable =
+            REGISTRY
+                .blocks
+                .by_state_id(existing_state)
+                .is_some_and(|block| {
+                    BLOCK_BEHAVIORS.get_behavior(block).can_be_replaced(
+                        existing_state,
+                        held_item,
+                        is_secondary_use_active,
+                    )
+                });
+        if !existing_block_replaceable {
             return None;
         }
 

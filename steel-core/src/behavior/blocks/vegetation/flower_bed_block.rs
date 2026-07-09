@@ -1,4 +1,5 @@
 use steel_macros::block_behavior;
+use steel_registry::items::ItemRef;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
@@ -45,6 +46,15 @@ impl BlockBehavior for FlowerBedBlock {
         context: &crate::behavior::BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         self.segmentable_get_state_for_placement(context)
+    }
+
+    fn can_be_replaced(
+        &self,
+        state: BlockStateId,
+        held_item: ItemRef,
+        is_secondary_use_active: bool,
+    ) -> bool {
+        self.segmentable_can_be_replaced(state, held_item, is_secondary_use_active)
     }
 
     fn use_item_on(

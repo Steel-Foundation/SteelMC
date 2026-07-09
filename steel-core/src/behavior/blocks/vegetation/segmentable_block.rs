@@ -1,7 +1,7 @@
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, IntProperty};
-use steel_registry::items::Item;
+use steel_registry::items::ItemRef;
 use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
@@ -42,9 +42,7 @@ pub trait SegmentableBlock: BlockBehavior {
         _hit_result: &steel_registry::items::item::BlockHitResult,
         inv: &mut crate::behavior::InventoryAccess,
     ) -> InteractionResult {
-        if inv.with_item(|item_stack| -> bool {
-            *item_stack.item == Item::from_block(state.get_block())
-        }) {
+        if inv.with_item(|item_stack| item_stack.item().key == state.get_block().key) {
             let current_amount = state.get_value(self.segment_property());
 
             if current_amount < MAX_SEGMENT_AMOUNT {
@@ -74,12 +72,13 @@ pub trait SegmentableBlock: BlockBehavior {
                 .set_value(&FACING_PROPERTY, direction.opposite());
 
             if existing_state.get_block() == *self.block_ref() {
-                log::info!("{:?}", existing_state.get_value(self.segment_property()));
-                let new_state = existing_state.set_value(
-                    self.segment_property(),
-                    existing_state.get_value(self.segment_property()) + 1,
-                );
-                return Some(new_state);
+                let current_amount = existing_state.get_value(self.segment_property());
+                if current_amount < MAX_SEGMENT_AMOUNT {
+                    let new_state =
+                        existing_state.set_value(self.segment_property(), current_amount + 1);
+                    return Some(new_state);
+                }
+                return None;
             }
 
             if self.can_survive(state, context.world, context.place_pos) {
@@ -88,5 +87,19 @@ pub trait SegmentableBlock: BlockBehavior {
         }
 
         None
+    }
+
+    fn segmentable_can_be_replaced(
+        &self,
+        state: BlockStateId,
+        held_item: ItemRef,
+        is_secondary_use_active: bool,
+    ) -> bool {
+        if !is_secondary_use_active && held_item.key == state.get_block().key {
+            let current_amount = state.get_value(self.segment_property());
+            return current_amount < MAX_SEGMENT_AMOUNT;
+        }
+
+        state.get_block().config.replaceable
     }
 }
