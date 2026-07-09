@@ -4,6 +4,7 @@ mod difficulty;
 mod list;
 mod seed;
 mod stop;
+mod weather;
 
 use super::{
     brigadier::CommandDispatcher,
@@ -18,12 +19,14 @@ pub(crate) fn create_dispatcher()
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
     builder.register(stop::registration())?;
+    builder.register(weather::registration())?;
     builder.build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::create_dispatcher;
+    use crate::command::execution::SteelArgumentType;
 
     #[test]
     fn first_builtin_slice_has_the_expected_graph_shape() {
@@ -43,7 +46,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(names, ["difficulty", "list", "seed", "stop"]);
+        assert_eq!(names, ["difficulty", "list", "seed", "stop", "weather"]);
 
         let Some(list) = roots.get(1).copied() else {
             panic!("list root should exist");
@@ -62,5 +65,40 @@ mod tests {
                 .node(list_children[0])
                 .is_some_and(|node| { node.name() == "uuids" && node.is_executable() })
         );
+
+        let Some(weather) = roots.iter().copied().find(|root| {
+            dispatcher
+                .node(*root)
+                .is_some_and(|node| node.name() == "weather")
+        }) else {
+            panic!("weather root should exist");
+        };
+        let Some(weather_children) = dispatcher.children(weather) else {
+            panic!("weather children should exist");
+        };
+        let weather_names = weather_children
+            .iter()
+            .map(|child| {
+                let Some(node) = dispatcher.node(*child) else {
+                    panic!("weather literal should exist");
+                };
+                assert!(node.is_executable());
+                let Some(duration_children) = dispatcher.children(*child) else {
+                    panic!("weather duration child should exist");
+                };
+                assert_eq!(duration_children.len(), 1);
+                let Some(duration) = dispatcher.node(duration_children[0]) else {
+                    panic!("weather duration node should exist");
+                };
+                assert_eq!(duration.name(), "duration");
+                assert!(duration.is_executable());
+                assert!(matches!(
+                    duration.argument_type(),
+                    Some(SteelArgumentType::Time { minimum: 1 })
+                ));
+                node.name()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(weather_names, ["clear", "rain", "thunder"]);
     }
 }

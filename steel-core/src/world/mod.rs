@@ -2371,6 +2371,25 @@ impl World {
         }
     }
 
+    /// Sets this world's weather timers and flags.
+    ///
+    /// Minecraft 26.2 owns this state at server scope. Steel intentionally owns
+    /// it per world so multiple worlds in one domain can have independent weather.
+    pub(crate) fn set_weather_parameters(
+        &self,
+        clear_time: i32,
+        rain_time: i32,
+        raining: bool,
+        thundering: bool,
+    ) {
+        let mut level_data = self.level_data.write();
+        level_data.set_clear_weather_time(clear_time);
+        level_data.set_rain_time(rain_time);
+        level_data.set_thunder_time(rain_time);
+        level_data.set_raining(raining);
+        level_data.set_thundering(thundering);
+    }
+
     /// Checks whether the rain level is high enough to be considered raining.
     /// Used for both visual rendering and gameplay logic (crop growth, fire, mob behavior).
     ///
