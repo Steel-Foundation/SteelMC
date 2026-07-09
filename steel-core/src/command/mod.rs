@@ -5,7 +5,11 @@ pub mod commands;
 pub mod context;
 pub mod error;
 pub(crate) mod execution;
+mod request_queue;
 pub mod sender;
+
+pub use request_queue::CommandQueueFull;
+pub(crate) use request_queue::{COMMAND_REQUESTS_PER_TICK, CommandRequest, CommandRequestQueue};
 
 use std::sync::Arc;
 

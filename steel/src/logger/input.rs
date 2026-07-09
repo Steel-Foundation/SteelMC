@@ -374,11 +374,12 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     lock.reset().ok();
     drop(lock);
     steel_utils::console!("{}", message);
-    if let Some(server) = SERVER.get() {
-        server
-            .command_dispatcher
-            .read()
-            .handle_command(CommandSender::Console, message, server);
+    if let Some(server) = SERVER.get()
+        && server
+            .submit_command(CommandSender::Console, message)
+            .is_err()
+    {
+        log::warn!("Command queue is full");
     }
 }
 

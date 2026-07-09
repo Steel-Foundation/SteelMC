@@ -15,7 +15,11 @@ use crate::chunk::{
     chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
-use crate::command::CommandDispatcher;
+use crate::command::sender::CommandSender;
+use crate::command::{
+    COMMAND_REQUESTS_PER_TICK, CommandDispatcher, CommandQueueFull, CommandRequest,
+    CommandRequestQueue,
+};
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
@@ -1250,6 +1254,8 @@ pub struct Server {
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
+    /// Command work submitted from connection and console tasks.
+    command_requests: CommandRequestQueue,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
@@ -1398,11 +1404,35 @@ impl Server {
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
+            command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
             pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
+        })
+    }
+
+    /// Queues a command for execution at the start of the next game tick.
+    pub fn submit_command(
+        &self,
+        sender: CommandSender,
+        command: String,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests
+            .submit(CommandRequest::Execute { sender, command })
+    }
+
+    pub(crate) fn submit_command_suggestions(
+        &self,
+        player: Arc<Player>,
+        transaction_id: i32,
+        input: String,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests.submit(CommandRequest::Suggestions {
+            player,
+            transaction_id,
+            input,
         })
     }
 
@@ -2218,6 +2248,7 @@ impl Server {
                 (tick_manager.tick_count, runs_normally)
             };
 
+            self.tick_command_requests();
             self.tick_worlds_game(tick_count, runs_normally).await;
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
@@ -2255,6 +2286,50 @@ impl Server {
         }
 
         self.jobs.cancel_all();
+        self.command_requests.clear();
+    }
+
+    fn tick_command_requests(self: &Arc<Self>) {
+        let mut handled = 0;
+        for _ in 0..COMMAND_REQUESTS_PER_TICK {
+            let Some(request) = self.command_requests.pop_front() else {
+                break;
+            };
+            handled += 1;
+
+            match request {
+                CommandRequest::Execute { sender, command } => {
+                    if sender
+                        .get_player()
+                        .is_some_and(|player| player.connection.closed())
+                    {
+                        continue;
+                    }
+                    self.command_dispatcher
+                        .read()
+                        .handle_command(sender, command, self);
+                }
+                CommandRequest::Suggestions {
+                    player,
+                    transaction_id,
+                    input,
+                } => {
+                    if player.connection.closed() {
+                        continue;
+                    }
+                    self.command_dispatcher.read().handle_player_suggestions(
+                        &player,
+                        transaction_id,
+                        &input,
+                        Arc::clone(self),
+                    );
+                }
+            }
+        }
+
+        if handled == COMMAND_REQUESTS_PER_TICK {
+            tracing::debug!(handled, "Command request tick reached its processing limit");
+        }
     }
 
     /// Chunk sending tick loop — encodes and sends chunks to players independently.
