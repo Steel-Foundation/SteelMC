@@ -166,3 +166,16 @@ where
         )
     }
 }
+
+impl<S> SteelCommandContext<S>
+where
+    S: ExecutionCommandSource,
+{
+    /// Returns a parsed Minecraft time argument in ticks.
+    pub(crate) fn time(&self, name: &str) -> Option<i32> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Time(value)) => Some(*value),
+            Some(SteelArgumentValue::Primitive(_)) | None => None,
+        }
+    }
+}

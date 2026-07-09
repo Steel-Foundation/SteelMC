@@ -16,4 +16,6 @@ pub(crate) use source::{
 };
 
 #[cfg(test)]
+mod argument_tests;
+#[cfg(test)]
 mod tests;

@@ -172,6 +172,9 @@ impl CommandArgumentProtocol for SteelArgumentType {
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<SuggestionType>) {
         match self {
             SteelArgumentType::Primitive(argument) => argument.protocol_argument(),
+            SteelArgumentType::Time { minimum } => {
+                (ProtocolArgumentType::Time { min: *minimum }, None)
+            }
         }
     }
 }
@@ -208,13 +211,14 @@ fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandTreeProjectionError, MAX_COMMAND_SUGGESTIONS, command_suggestions_packet,
-        command_tree_packet, protocol_argument_type,
+        CommandArgumentProtocol, CommandTreeProjectionError, MAX_COMMAND_SUGGESTIONS,
+        command_suggestions_packet, command_tree_packet, protocol_argument_type,
     };
     use crate::command::brigadier::{
         ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId,
         StringRange, StringReader, StringType, Suggestion, Suggestions, argument, literal,
     };
+    use crate::command::execution::SteelArgumentType;
     use steel_protocol::packets::game::{
         ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
         CommandNode as ProtocolCommandNode,
@@ -475,5 +479,16 @@ mod tests {
                 behavior: ArgumentStringTypeBehavior::GreedyPhrase
             }
         ));
+    }
+
+    #[test]
+    fn steel_time_argument_projects_its_minimum() {
+        let (argument, suggestions) = SteelArgumentType::time(1).protocol_argument();
+        let ProtocolArgumentType::Time { min } = argument else {
+            panic!("Steel time parser should project as the protocol time argument");
+        };
+
+        assert_eq!(min, 1);
+        assert!(suggestions.is_none());
     }
 }
