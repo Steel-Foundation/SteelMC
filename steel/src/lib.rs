@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use steel_core::server::Server;
+use steel_core::{permission::PermissionGroupManager, server::Server};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -73,8 +73,15 @@ impl SteelServer {
     ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server");
 
+        let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
+        let permission_groups =
+            PermissionGroupManager::new(steel_config.groups, permission_group_store).map_err(
+                |error| {
+                    SteelServerError::Core(format!("failed to validate groups config: {error}"))
+                },
+            )?;
         let runtime_config = steel_config.server.into_runtime_config();
 
         let server = Server::new(
@@ -82,6 +89,7 @@ impl SteelServer {
             cancel_token.clone(),
             runtime_config,
             worlds_config,
+            permission_groups,
         )
         .await
         .map_err(SteelServerError::Core)?;

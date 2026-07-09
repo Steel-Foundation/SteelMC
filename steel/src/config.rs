@@ -5,18 +5,30 @@
 //! (consumed by the server constructor) and a `RuntimeConfig` (stored on `Server`).
 
 use serde::Deserialize;
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::filter::Directive;
 
+use futures::future::BoxFuture;
 use reqwest::Url;
 use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
+use steel_core::permission::{
+    PermissionGroupStore, PermissionGroupStoreError, PermissionGroups, PermissionGroupsConfig,
+};
+use tokio::fs as async_fs;
+use toml::ser::Error as TomlSerializeError;
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png");
 
 const DEFAULT_CONFIG: &str = include_str!("../../package-content/config.toml");
 const DEFAULT_WORLDS: &str = include_str!("../../package-content/worlds.toml");
+const DEFAULT_GROUPS: &str = include_str!("../../package-content/groups.toml");
 
 /// Top-level TOML deserialization target — used once at startup, not stored globally.
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +41,77 @@ pub struct SteelConfig {
     /// World and domain configuration from `worlds.toml`.
     #[serde(skip, default = "empty_worlds_config")]
     pub worlds: WorldsConfig,
+    /// Permission group configuration from `groups.toml`.
+    #[serde(skip, default)]
+    pub groups: PermissionGroupsConfig,
+    /// Path to the loaded `groups.toml`.
+    #[serde(skip, default)]
+    pub groups_path: Option<PathBuf>,
+}
+
+impl SteelConfig {
+    /// Builds the store used for persistence-first permission group updates.
+    #[must_use]
+    pub fn permission_group_store(&self) -> Option<Arc<dyn PermissionGroupStore>> {
+        self.groups_path.as_ref().map(|path| {
+            Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
+        })
+    }
+}
+
+/// TOML-backed permission group store.
+#[derive(Clone, Debug)]
+pub struct FilePermissionGroupStore {
+    path: PathBuf,
+}
+
+impl FilePermissionGroupStore {
+    /// Creates a file-backed group store.
+    #[must_use]
+    pub const fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl PermissionGroupStore for FilePermissionGroupStore {
+    fn save_groups(
+        &self,
+        config: PermissionGroupsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        let path = self.path.clone();
+        Box::pin(async move {
+            let serialized = serialize_groups_config(&config).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to serialize groups config: {error}"
+                ))
+            })?;
+            write_atomic_config(&path, serialized)
+                .await
+                .map_err(|error| {
+                    PermissionGroupStoreError::new(format!(
+                        "failed to write groups config {}: {error}",
+                        path.display()
+                    ))
+                })
+        })
+    }
+}
+
+fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {
+    toml::to_string_pretty(config)
+}
+
+async fn write_atomic_config(path: &Path, contents: String) -> io::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "config path has no parent",
+        ));
+    };
+    async_fs::create_dir_all(parent).await?;
+    let temp_path = path.with_extension("toml.tmp");
+    async_fs::write(&temp_path, contents).await?;
+    async_fs::rename(temp_path, path).await
 }
 
 const fn empty_worlds_config() -> WorldsConfig {
@@ -271,6 +354,12 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
         .join("worlds.toml");
     config.worlds = load_or_create_worlds(&worlds_path)?;
+    let groups_path = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
+        .join("groups.toml");
+    config.groups = load_or_create_groups(&groups_path)?;
+    config.groups_path = Some(groups_path);
 
     // If icon file doesnt exist, write it
     #[cfg(feature = "stand-alone")]
@@ -298,6 +387,28 @@ fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {
         toml::from_str(DEFAULT_WORLDS)
             .map_err(|e| format!("failed to parse default worlds config: {e}"))
     }
+}
+
+fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> {
+    let config: PermissionGroupsConfig = if path.exists() {
+        let contents = fs::read_to_string(path)
+            .map_err(|error| format!("failed to read groups config {}: {error}", path.display()))?;
+        toml::from_str(&contents)
+            .map_err(|error| format!("failed to parse groups config {}: {error}", path.display()))?
+    } else {
+        fs::write(path, DEFAULT_GROUPS).map_err(|error| {
+            format!("failed to write groups config {}: {error}", path.display())
+        })?;
+        toml::from_str(DEFAULT_GROUPS)
+            .map_err(|error| format!("failed to parse default groups config: {error}"))?
+    };
+    PermissionGroups::from_config(config.clone()).map_err(|error| {
+        format!(
+            "failed to validate groups config {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(config)
 }
 
 /// Validates the server configuration.
@@ -344,6 +455,19 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use steel_core::permission::PermissionGroupConfig;
+
+    fn temp_config_root(name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("steelmc-config-{name}-{suffix}"))
+    }
 
     #[test]
     fn packaged_configs_parse() {
@@ -354,6 +478,39 @@ mod tests {
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
         assert!(!worlds.domains.is_empty());
+        let groups: PermissionGroupsConfig =
+            toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
+        PermissionGroups::from_config(groups).expect("default groups validate");
+    }
+
+    #[tokio::test]
+    async fn file_permission_group_store_round_trips_typed_config() {
+        let root = temp_config_root("groups-store");
+        let path = root.join("groups.toml");
+        let store = FilePermissionGroupStore::new(path.clone());
+        let mut config = PermissionGroupsConfig::default();
+        config.groups.insert(
+            "builder".to_owned(),
+            PermissionGroupConfig {
+                allow: vec!["steel.build".to_owned()],
+                ..PermissionGroupConfig::default()
+            },
+        );
+
+        PermissionGroupStore::save_groups(&store, config.clone())
+            .await
+            .expect("groups config should save");
+        let written = async_fs::read_to_string(&path)
+            .await
+            .expect("groups config should be written");
+        let parsed: PermissionGroupsConfig =
+            toml::from_str(&written).expect("written config should parse");
+
+        assert_eq!(parsed, config);
+        PermissionGroups::from_config(parsed).expect("written groups should validate");
+        async_fs::remove_dir_all(root)
+            .await
+            .expect("temporary config directory should be removable");
     }
 
     #[test]

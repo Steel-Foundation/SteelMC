@@ -28,6 +28,7 @@ use crate::entity::{
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::permission::PermissionGroupManager;
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{
@@ -1238,6 +1239,8 @@ fn restore_ender_pearl_for_player(
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
+    /// Runtime permission groups and their persistence boundary.
+    pub permission_groups: PermissionGroupManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -1280,6 +1283,7 @@ impl Server {
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
+        permission_groups: PermissionGroupManager,
     ) -> Result<Self, String> {
         let config = Arc::new(config);
         let start = Instant::now();
@@ -1396,6 +1400,7 @@ impl Server {
 
         Ok(Server {
             config,
+            permission_groups,
             cancel_token,
             key_store: KeyStore::create(),
             worlds,

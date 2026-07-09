@@ -1,0 +1,16 @@
+#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/groups.schema.json
+
+# Permission groups assigned by the server.
+default_groups = ["default"]
+
+[groups.default]
+priority = 0
+inherits = []
+allow = []
+deny = []
+
+[groups.op]
+priority = 0
+inherits = []
+allow = ["*"]
+deny = []
