@@ -175,6 +175,9 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::Time { minimum } => {
                 (ProtocolArgumentType::Time { min: *minimum }, None)
             }
+            SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
+            SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
+            SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
             SteelArgumentType::WorldClock => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:world_clock",
@@ -506,6 +509,21 @@ mod tests {
 
         assert_eq!(min, 1);
         assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_coordinate_arguments_project_vanilla_parsers() {
+        let (block_pos, block_pos_suggestions) = SteelArgumentType::block_pos().protocol_argument();
+        assert!(matches!(block_pos, ProtocolArgumentType::BlockPos));
+        assert!(block_pos_suggestions.is_none());
+
+        let (vec3, vec3_suggestions) = SteelArgumentType::vec3(true).protocol_argument();
+        assert!(matches!(vec3, ProtocolArgumentType::Vec3));
+        assert!(vec3_suggestions.is_none());
+
+        let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
+        assert!(matches!(rotation, ProtocolArgumentType::Rotation));
+        assert!(rotation_suggestions.is_none());
     }
 
     #[test]

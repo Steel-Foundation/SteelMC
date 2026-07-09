@@ -11,7 +11,10 @@ use steel_utils::Identifier;
 use steel_utils::translations;
 use text_components::TextComponent;
 
-use super::ExecutionCommandSource;
+use super::{
+    Coordinates, ExecutionCommandSource,
+    coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+};
 
 /// An argument parser stored by Steel's command runtime.
 #[derive(Clone, Debug, PartialEq)]
@@ -20,6 +23,12 @@ pub(crate) enum SteelArgumentType {
     Primitive(ArgumentType),
     /// A Minecraft duration measured in ticks with an optional unit suffix.
     Time { minimum: i32 },
+    /// A three-dimensional block position.
+    BlockPos,
+    /// A three-dimensional position.
+    Vec3 { center_integers: bool },
+    /// A yaw and pitch rotation.
+    Rotation,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -35,6 +44,18 @@ pub(crate) enum SteelArgumentType {
 impl SteelArgumentType {
     pub(crate) const fn time(minimum: i32) -> Self {
         Self::Time { minimum }
+    }
+
+    pub(crate) const fn block_pos() -> Self {
+        Self::BlockPos
+    }
+
+    pub(crate) const fn vec3(center_integers: bool) -> Self {
+        Self::Vec3 { center_integers }
+    }
+
+    pub(crate) const fn rotation() -> Self {
+        Self::Rotation
     }
 
     pub(crate) const fn world_clock() -> Self {
@@ -63,6 +84,8 @@ pub(crate) enum SteelArgumentValue {
     Primitive(PrimitiveArgumentValue),
     /// A Minecraft duration resolved to ticks.
     Time(i32),
+    /// A coordinate expression retained until command execution.
+    Coordinates(Coordinates),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -75,7 +98,11 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
     fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
         match self {
             Self::Primitive(value) => Some(value),
-            Self::Time(_) | Self::Identifier(_) | Self::WorldClock(_) | Self::Timeline(_) => None,
+            Self::Time(_)
+            | Self::Coordinates(_)
+            | Self::Identifier(_)
+            | Self::WorldClock(_)
+            | Self::Timeline(_) => None,
         }
     }
 }
@@ -96,6 +123,11 @@ where
                 .parse_value(reader)
                 .map(SteelArgumentValue::Primitive),
             Self::Time { minimum } => parse_time(reader, *minimum).map(SteelArgumentValue::Time),
+            Self::BlockPos => parse_block_pos(reader).map(SteelArgumentValue::Coordinates),
+            Self::Vec3 { center_integers } => {
+                parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
+            }
+            Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -122,6 +154,11 @@ where
         match self {
             Self::Primitive(argument) => argument.suggest(builder),
             Self::Time { .. } => suggest_time_units(builder),
+            Self::BlockPos => suggest_coordinates(builder, parse_block_pos),
+            Self::Vec3 { center_integers } => {
+                suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
+            }
+            Self::Rotation => {}
             Self::WorldClock => {
                 suggest_resources(
                     REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
@@ -175,6 +212,7 @@ where
         Some(
             SteelArgumentValue::Primitive(_)
             | SteelArgumentValue::Time(_)
+            | SteelArgumentValue::Coordinates(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )

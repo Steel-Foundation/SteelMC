@@ -29,7 +29,7 @@ pub(crate) use error::{CommandSyntaxError, CommandSyntaxErrorKind};
 pub(crate) use node::{
     CommandRequirement, NodeId, NodeKind, RegistrationError, RegistrationErrorKind,
 };
-pub(crate) use reader::StringReader;
+pub(crate) use reader::{ReaderCursor, StringReader};
 pub(crate) use runtime::{BrigadierRuntime, CommandRuntime};
 pub(crate) use string_range::StringRange;
 pub(crate) use suggestion::{Suggestion, SuggestionError, Suggestions, SuggestionsBuilder};

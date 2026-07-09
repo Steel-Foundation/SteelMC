@@ -8,7 +8,7 @@ use crate::command::brigadier::{
 };
 
 use super::{
-    ChainModifiers, ExecutionCommandSource, ExecutionControl, SteelArgumentType,
+    ChainModifiers, Coordinates, ExecutionCommandSource, ExecutionControl, SteelArgumentType,
     argument::SteelArgumentValue,
 };
 
@@ -180,6 +180,22 @@ where
             Some(SteelArgumentValue::Time(value)) => Some(*value),
             Some(
                 SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    /// Returns a parsed coordinate expression without resolving it early.
+    pub(crate) fn coordinates(&self, name: &str) -> Option<Coordinates> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Coordinates(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -194,6 +210,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -207,6 +224,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -220,6 +238,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_),
             )
