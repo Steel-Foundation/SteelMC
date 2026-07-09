@@ -1,6 +1,7 @@
 //! This module contains everything needed for commands (e.g., parsing, execution, and sender handling).
 pub mod arguments;
 pub(crate) mod brigadier;
+mod builtins;
 pub mod commands;
 pub mod context;
 pub mod error;

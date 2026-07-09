@@ -230,6 +230,12 @@ impl CommandSource {
         self.silent
     }
 
+    pub(crate) fn send_success(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
+    }
+
     fn sequence_limit(&self) -> usize {
         let value = game_rule_integer(
             self.world.get_game_rule(&MAX_COMMAND_SEQUENCE_LENGTH),

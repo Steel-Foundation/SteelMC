@@ -8,8 +8,8 @@ mod source;
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use queue::{ChainModifiers, CommandExecutionContext, ExecutionControl, ExecutionStop};
 pub(crate) use runtime::{
-    CustomCommandExecutor, CustomModifierExecutor, SteelCommandRuntime, SteelContextChain,
-    SteelExecutor, SteelModifier, argument, literal,
+    CustomCommandExecutor, CustomModifierExecutor, SteelCommandContext, SteelCommandRuntime,
+    SteelContextChain, SteelExecutor, SteelModifier, argument, literal,
 };
 pub(crate) use source::{
     CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
