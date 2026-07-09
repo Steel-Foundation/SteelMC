@@ -69,6 +69,26 @@ pub struct Timeline {
     pub time_markers: &'static [TimeMarker],
 }
 
+impl Timeline {
+    /// Returns the current tick inside this timeline's period.
+    #[must_use]
+    pub fn current_ticks(&self, total_ticks: i64) -> i64 {
+        self.period_ticks
+            .map_or(total_ticks, |period| total_ticks % i64::from(period))
+    }
+
+    /// Returns the completed period count using vanilla's narrowing conversion.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "vanilla narrows the completed long period count to a signed int"
+    )]
+    pub fn period_count(&self, total_ticks: i64) -> i32 {
+        self.period_ticks
+            .map_or(0, |period| (total_ticks / i64::from(period)) as i32)
+    }
+}
+
 impl ToNbtTag for &Timeline {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -176,3 +196,20 @@ crate::impl_registry!(
     timelines
 );
 crate::impl_tagged_registry!(TimelineRegistry, timelines_by_key, "timeline");
+
+#[cfg(test)]
+mod tests {
+    use crate::vanilla_timelines::{DAY, EARLY_GAME};
+
+    #[test]
+    fn repeating_timeline_reports_current_tick_and_completed_periods() {
+        assert_eq!(DAY.current_ticks(25_000), 1_000);
+        assert_eq!(DAY.period_count(25_000), 1);
+    }
+
+    #[test]
+    fn non_repeating_timeline_uses_absolute_ticks_and_zero_periods() {
+        assert_eq!(EARLY_GAME.current_ticks(25_000), 25_000);
+        assert_eq!(EARLY_GAME.period_count(25_000), 0);
+    }
+}

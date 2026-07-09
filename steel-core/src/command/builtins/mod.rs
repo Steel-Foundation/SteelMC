@@ -6,6 +6,7 @@ mod list;
 mod seed;
 mod stop;
 mod tick;
+mod time;
 mod weather;
 
 use super::{
@@ -23,6 +24,7 @@ pub(crate) fn create_dispatcher()
     builder.register(seed::registration())?;
     builder.register(stop::registration())?;
     builder.register(tick::registration())?;
+    builder.register(time::registration())?;
     builder.register(weather::registration())?;
     builder.build()
 }
@@ -61,6 +63,7 @@ mod tests {
                 "seed",
                 "stop",
                 "tick",
+                "time",
                 "weather"
             ]
         );
