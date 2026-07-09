@@ -4,6 +4,7 @@ pub(crate) mod brigadier;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub(crate) mod execution;
 pub mod sender;
 
 use std::sync::Arc;

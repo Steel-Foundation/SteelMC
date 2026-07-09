@@ -388,11 +388,11 @@ where
         self.modifier.as_deref()
     }
 
-    pub(super) const fn is_forked(&self) -> bool {
+    pub(crate) const fn is_forked(&self) -> bool {
         self.forks
     }
 
-    pub(super) fn copy_for(&self, source: Arc<S>) -> Self {
+    pub(crate) fn copy_for(&self, source: Arc<S>) -> Self {
         Self {
             source,
             input: Arc::clone(&self.input),
