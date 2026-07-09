@@ -102,6 +102,7 @@ use crate::entity::{
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::level_data::RespawnData;
+use crate::permission::{PermissionContext, PermissionExpr, PermissionSet, PermissionState};
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
@@ -279,6 +280,9 @@ pub struct Player {
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
 
+    /// Assigned groups, direct overrides, and the effective permission set.
+    permissions: SyncMutex<PlayerPermissionState>,
+
     /// Whether the player has completed the vanilla End credits flow.
     seen_credits: SyncMutex<bool>,
 
@@ -302,6 +306,32 @@ pub struct Player {
 struct PendingRootVehicleRestore {
     world: Identifier,
     root_vehicle: PersistentRootVehicle,
+}
+
+#[derive(Clone, Debug, Default)]
+struct PlayerPermissionState {
+    groups: Vec<String>,
+    overrides: PermissionSet,
+    effective: PermissionSet,
+    version: u64,
+}
+
+impl PlayerPermissionState {
+    fn replace(
+        &mut self,
+        groups: Vec<String>,
+        overrides: PermissionSet,
+        effective: PermissionSet,
+    ) -> u64 {
+        let version = self.version.wrapping_add(1);
+        *self = Self {
+            groups,
+            overrides,
+            effective,
+            version,
+        };
+        version
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -542,6 +572,7 @@ impl Player {
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
             experience: SyncMutex::new(Experience::default()),
+            permissions: SyncMutex::new(PlayerPermissionState::default()),
             seen_credits: SyncMutex::new(false),
             won_game: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
@@ -1218,6 +1249,84 @@ impl Player {
         self.server
             .upgrade()
             .expect("player must not outlive server")
+    }
+
+    /// Replaces assigned groups, direct overrides, and effective permissions.
+    pub fn set_permission_state(
+        &self,
+        groups: Vec<String>,
+        overrides: PermissionSet,
+        effective: PermissionSet,
+    ) -> u64 {
+        self.permissions
+            .lock()
+            .replace(groups, overrides, effective)
+    }
+
+    /// Returns a snapshot of effective permissions.
+    #[must_use]
+    pub fn permissions(&self) -> PermissionSet {
+        self.permissions.lock().effective.clone()
+    }
+
+    /// Returns assigned permission groups.
+    #[must_use]
+    pub fn permission_groups(&self) -> Vec<String> {
+        self.permissions.lock().groups.clone()
+    }
+
+    /// Returns direct permission overrides.
+    #[must_use]
+    pub fn permission_overrides(&self) -> PermissionSet {
+        self.permissions.lock().overrides.clone()
+    }
+
+    /// Returns the current permission snapshot version.
+    #[must_use]
+    pub fn permission_state_version(&self) -> u64 {
+        self.permissions.lock().version
+    }
+
+    /// Returns whether the player satisfies an expression in their current world.
+    #[must_use]
+    pub fn has_permission(&self, permission: &PermissionExpr) -> bool {
+        let world = self.get_world();
+        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        self.has_permission_in(permission, &context)
+    }
+
+    /// Returns whether the player satisfies an expression in an explicit context.
+    #[must_use]
+    pub fn has_permission_in(
+        &self,
+        permission: &PermissionExpr,
+        context: &PermissionContext,
+    ) -> bool {
+        self.permissions
+            .lock()
+            .effective
+            .allows_in(permission, context)
+    }
+
+    /// Resolves an expression in the player's current world.
+    #[must_use]
+    pub fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
+        let world = self.get_world();
+        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        self.permission_state_in(permission, &context)
+    }
+
+    /// Resolves an expression in an explicit context.
+    #[must_use]
+    pub fn permission_state_in(
+        &self,
+        permission: &PermissionExpr,
+        context: &PermissionContext,
+    ) -> Option<PermissionState> {
+        self.permissions
+            .lock()
+            .effective
+            .resolve_in(permission, context)
     }
 
     /// Sets the world the player is in.
@@ -2414,8 +2523,38 @@ mod tests {
     use steel_utils::types::GameType;
 
     use crate::entity::damage::DamageSource;
+    use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
 
-    use super::{Player, ResetReason, nullable_game_mode_id};
+    use super::{Player, PlayerPermissionState, ResetReason, nullable_game_mode_id};
+
+    fn permission_key(value: &str) -> PermissionKey {
+        match PermissionKey::parse(value) {
+            Ok(key) => key,
+            Err(error) => panic!("test permission key should parse: {error}"),
+        }
+    }
+
+    #[test]
+    fn permission_state_replacement_is_versioned_and_keeps_both_rule_sets() {
+        let mut state = PlayerPermissionState::default();
+        let overrides =
+            PermissionSet::from_entries([PermissionEntry::deny(permission_key("steel.fly"))]);
+        let effective =
+            PermissionSet::from_entries([PermissionEntry::allow(permission_key("steel.build"))]);
+
+        let first = state.replace(
+            vec!["builder".to_owned()],
+            overrides.clone(),
+            effective.clone(),
+        );
+        let second = state.replace(vec!["moderator".to_owned()], overrides, effective);
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+        assert_eq!(state.groups, ["moderator"]);
+        assert!(!state.overrides.allows_key(&permission_key("steel.fly")));
+        assert!(state.effective.allows_key(&permission_key("steel.build")));
+    }
 
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {

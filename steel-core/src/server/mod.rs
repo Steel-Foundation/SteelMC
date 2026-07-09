@@ -28,7 +28,7 @@ use crate::entity::{
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
-use crate::permission::PermissionGroupManager;
+use crate::permission::{PermissionGroupManager, PermissionSubjectIndex, PermissionSubjectState};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{
@@ -1263,6 +1263,8 @@ pub struct Server {
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Persisted permission state indexed by player UUID.
+    player_permission_states: SyncRwLock<PermissionSubjectIndex>,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
     /// Queued world changes to process after the tick.
@@ -1333,6 +1335,10 @@ impl Server {
         )
         .await
         .map_err(|e| format!("failed to create player data storage: {e}"))?;
+        let player_permission_states = player_data_storage
+            .load_permission_subjects()
+            .await
+            .map_err(|error| format!("failed to load player permissions: {error}"))?;
         let mut worlds = WorldMap::new(
             resolved_worlds.default_domain.clone(),
             &resolved_worlds.domains,
@@ -1412,6 +1418,7 @@ impl Server {
             command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
+            player_permission_states: SyncRwLock::new(player_permission_states),
             pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
@@ -1501,6 +1508,7 @@ impl Server {
             return;
         }
 
+        self.apply_cached_or_default_permission_state(&player);
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
@@ -1721,6 +1729,38 @@ impl Server {
             Ok(None) => Ok(self.worlds.default_domain().to_owned()),
             Err(e) => Err(format!("failed to load global player data: {e}")),
         }
+    }
+
+    fn apply_cached_or_default_permission_state(&self, player: &Player) -> u64 {
+        let state = self
+            .player_permission_states
+            .read()
+            .get(player.gameprofile.id)
+            .cloned()
+            .unwrap_or_default();
+        self.apply_player_permission_state(player, state)
+    }
+
+    fn apply_player_permission_state(&self, player: &Player, state: PermissionSubjectState) -> u64 {
+        let (groups, overrides) = state.into_parts();
+        for group in &groups {
+            if !self.permission_groups.contains_group(group) {
+                log::warn!(
+                    "Player {} has unknown permission group {group}",
+                    player.gameprofile.name
+                );
+            }
+        }
+        let effective = self
+            .permission_groups
+            .effective_permissions(&groups, &overrides);
+        player.set_permission_state(groups, overrides, effective)
+    }
+
+    /// Returns one player's cached persisted permission state.
+    #[must_use]
+    pub fn player_permission_state(&self, uuid: Uuid) -> Option<PermissionSubjectState> {
+        self.player_permission_states.read().get(uuid).cloned()
     }
 
     async fn load_domain_player_state(
