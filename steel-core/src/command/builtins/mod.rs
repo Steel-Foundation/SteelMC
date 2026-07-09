@@ -4,6 +4,7 @@ mod difficulty;
 mod gamerule;
 mod list;
 mod seed;
+mod setworldspawn;
 mod stop;
 mod tick;
 mod time;
@@ -22,6 +23,7 @@ pub(crate) fn create_dispatcher()
     builder.register(gamerule::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
+    builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
@@ -61,6 +63,7 @@ mod tests {
                 "gamerule",
                 "list",
                 "seed",
+                "setworldspawn",
                 "stop",
                 "tick",
                 "time",
