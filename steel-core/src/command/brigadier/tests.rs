@@ -10,7 +10,7 @@ fn assert_error(
     };
 
     assert_eq!(error.kind(), &expected_kind);
-    assert_eq!(error.cursor(), expected_cursor);
+    assert_eq!(error.cursor(), Some(expected_cursor));
     error
 }
 
@@ -103,7 +103,7 @@ fn reader_unescapes_only_the_active_quote_and_backslash() {
         CommandSyntaxErrorKind::InvalidEscape('"'),
         7,
     );
-    assert_eq!(error.input(), "'hello\\\"world'");
+    assert_eq!(error.input(), Some("'hello\\\"world'"));
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn command_syntax_error_formats_brigadier_context() {
         13,
     );
     assert_eq!(error.raw_message(), "Expected '!'");
-    assert_eq!(error.context(), "...3456789abc<--[HERE]");
+    assert_eq!(error.context(), Some("...3456789abc<--[HERE]".to_owned()));
     assert_eq!(
         error.to_string(),
         "Expected '!' at position 13: ...3456789abc<--[HERE]"
@@ -309,7 +309,20 @@ fn command_syntax_error_context_does_not_split_unicode_scalars() {
         CommandSyntaxErrorKind::ExpectedSymbol('!'),
         12,
     );
-    assert_eq!(error.context(), "...3456789\u{1f600}x<--[HERE]");
+    assert_eq!(
+        error.context(),
+        Some("...3456789\u{1f600}x<--[HERE]".to_owned())
+    );
+}
+
+#[test]
+fn dynamic_command_errors_have_no_parser_context() {
+    let error = CommandSyntaxError::dynamic("runtime failure");
+
+    assert_eq!(error.input(), None);
+    assert_eq!(error.cursor(), None);
+    assert_eq!(error.context(), None);
+    assert_eq!(error.to_string(), "runtime failure");
 }
 
 #[test]

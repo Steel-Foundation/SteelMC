@@ -2,11 +2,19 @@
 
 use std::{error::Error, fmt};
 
+use text_components::TextComponent;
+
 const CONTEXT_AMOUNT: usize = 10;
 
-/// Identifies a built-in Brigadier command parsing error.
+/// Identifies a Brigadier parsing or command execution error.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CommandSyntaxErrorKind {
+    /// No executable command matched the input.
+    UnknownCommand,
+    /// A command matched, but trailing input did not.
+    UnknownArgument,
+    /// A command supplied a rich runtime failure message.
+    Dynamic(Box<TextComponent>),
     /// A quoted string did not start with a quote.
     ExpectedStartOfQuote,
     /// A quoted string reached the end of its input.
@@ -60,6 +68,9 @@ pub(crate) enum CommandSyntaxErrorKind {
 impl fmt::Display for CommandSyntaxErrorKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnknownCommand => formatter.write_str("Unknown command"),
+            Self::UnknownArgument => formatter.write_str("Incorrect argument for command"),
+            Self::Dynamic(message) => write!(formatter, "{message}"),
             Self::ExpectedStartOfQuote => formatter.write_str("Expected quote to start a string"),
             Self::ExpectedEndOfQuote => formatter.write_str("Unclosed quoted string"),
             Self::InvalidEscape(character) => write!(
@@ -126,6 +137,11 @@ impl fmt::Display for CommandSyntaxErrorKind {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CommandSyntaxError {
     kind: CommandSyntaxErrorKind,
+    context: Option<CommandErrorContext>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CommandErrorContext {
     input: Box<str>,
     cursor: usize,
     byte_cursor: usize,
@@ -140,9 +156,19 @@ impl CommandSyntaxError {
     ) -> Self {
         Self {
             kind,
-            input: input.into(),
-            cursor,
-            byte_cursor,
+            context: Some(CommandErrorContext {
+                input: input.into(),
+                cursor,
+                byte_cursor,
+            }),
+        }
+    }
+
+    /// Creates a runtime command failure without parser input context.
+    pub(crate) fn dynamic(message: impl Into<TextComponent>) -> Self {
+        Self {
+            kind: CommandSyntaxErrorKind::Dynamic(Box::new(message.into())),
+            context: None,
         }
     }
 
@@ -152,13 +178,16 @@ impl CommandSyntaxError {
     }
 
     /// Returns the command input that failed.
-    pub(crate) fn input(&self) -> &str {
-        &self.input
+    pub(crate) fn input(&self) -> Option<&str> {
+        self.context.as_ref().map(|context| context.input.as_ref())
     }
 
     /// Returns the failure position in UTF-16 code units.
-    pub(crate) const fn cursor(&self) -> usize {
-        self.cursor
+    pub(crate) const fn cursor(&self) -> Option<usize> {
+        match &self.context {
+            Some(context) => Some(context.cursor),
+            None => None,
+        }
     }
 
     /// Returns the error message without input context.
@@ -167,9 +196,10 @@ impl CommandSyntaxError {
     }
 
     /// Returns the input immediately before the error marker.
-    pub(crate) fn context(&self) -> String {
-        let input_before_cursor = &self.input[..self.byte_cursor];
-        let mut context_start = self.byte_cursor;
+    pub(crate) fn context(&self) -> Option<String> {
+        let context = self.context.as_ref()?;
+        let input_before_cursor = &context.input[..context.byte_cursor];
+        let mut context_start = context.byte_cursor;
         let mut context_length = 0;
 
         for (byte_index, character) in input_before_cursor.char_indices().rev() {
@@ -181,26 +211,30 @@ impl CommandSyntaxError {
             context_start = byte_index;
         }
 
-        let prefix = if self.cursor > CONTEXT_AMOUNT {
+        let prefix = if context.cursor > CONTEXT_AMOUNT {
             "..."
         } else {
             ""
         };
-        format!(
+        Some(format!(
             "{prefix}{}<--[HERE]",
-            &self.input[context_start..self.byte_cursor]
-        )
+            &context.input[context_start..context.byte_cursor]
+        ))
     }
 }
 
 impl fmt::Display for CommandSyntaxError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(context) = &self.context else {
+            return self.kind.fmt(formatter);
+        };
+        let Some(display_context) = self.context() else {
+            return self.kind.fmt(formatter);
+        };
         write!(
             formatter,
-            "{} at position {}: {}",
-            self.kind,
-            self.cursor,
-            self.context()
+            "{} at position {}: {display_context}",
+            self.kind, context.cursor
         )
     }
 }

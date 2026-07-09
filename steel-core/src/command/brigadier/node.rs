@@ -4,10 +4,12 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use super::{ArgumentType, CommandSyntaxError};
+use super::{ArgumentType, CommandContext, CommandSyntaxError};
 
 pub(super) type Command<S> =
     Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
+pub(super) type RedirectModifier<S> =
+    Arc<dyn Fn(&CommandContext<S>) -> Result<Vec<S>, CommandSyntaxError> + Send + Sync>;
 type RequirementPredicate<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
 
 /// Identifies a node in one command dispatcher.
@@ -32,24 +34,6 @@ pub(crate) enum NodeKind {
     Literal,
     /// A parsed argument.
     Argument,
-}
-
-/// The immutable input available to a command callback.
-pub(crate) struct CommandContext<S> {
-    source: Arc<S>,
-}
-
-impl<S> CommandContext<S> {
-    pub(super) fn new(source: S) -> Self {
-        Self {
-            source: Arc::new(source),
-        }
-    }
-
-    /// Returns the source that invoked the command.
-    pub(crate) fn source(&self) -> &S {
-        &self.source
-    }
 }
 
 /// A source predicate attached to a command node.
@@ -103,17 +87,55 @@ impl<S> fmt::Debug for CommandRequirement<S> {
     }
 }
 
-pub(super) struct CommandRedirect {
+pub(super) struct CommandRedirect<S> {
     pub(super) target: NodeId,
+    pub(super) modifier: Option<RedirectModifier<S>>,
+    pub(super) forks: bool,
 }
 
-impl CommandRedirect {
+impl<S> CommandRedirect<S> {
     pub(super) const fn identity(target: NodeId) -> Self {
-        Self { target }
+        Self {
+            target,
+            modifier: None,
+            forks: false,
+        }
+    }
+
+    pub(super) fn single(target: NodeId, modifier: RedirectModifier<S>) -> Self {
+        Self {
+            target,
+            modifier: Some(modifier),
+            forks: false,
+        }
+    }
+
+    pub(super) fn forked(target: NodeId, modifier: RedirectModifier<S>) -> Self {
+        Self {
+            target,
+            modifier: Some(modifier),
+            forks: true,
+        }
     }
 
     fn is_compatible_with(&self, other: &Self) -> bool {
         self.target == other.target
+            && self.forks == other.forks
+            && match (&self.modifier, &other.modifier) {
+                (None, None) => true,
+                (Some(first), Some(second)) => Arc::ptr_eq(first, second),
+                (None, Some(_)) | (Some(_), None) => false,
+            }
+    }
+}
+
+impl<S> Clone for CommandRedirect<S> {
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target,
+            modifier: self.modifier.as_ref().map(Arc::clone),
+            forks: self.forks,
+        }
     }
 }
 
@@ -176,7 +198,7 @@ pub(crate) struct CommandNode<S> {
     pub(super) children: Vec<NodeId>,
     pub(super) command: Option<Command<S>>,
     pub(super) requirement: CommandRequirement<S>,
-    pub(super) redirect: Option<CommandRedirect>,
+    pub(super) redirect: Option<CommandRedirect<S>>,
 }
 
 impl<S> CommandNode<S> {
@@ -235,7 +257,7 @@ pub(super) struct UnregisteredCommandNode<S> {
     pub(super) children: Vec<Self>,
     pub(super) command: Option<Command<S>>,
     pub(super) requirement: CommandRequirement<S>,
-    pub(super) redirect: Option<CommandRedirect>,
+    pub(super) redirect: Option<CommandRedirect<S>>,
 }
 
 impl<S> UnregisteredCommandNode<S> {
@@ -280,9 +302,9 @@ impl<S> UnregisteredCommandNode<S> {
     }
 }
 
-fn redirects_are_compatible(
-    first: Option<&CommandRedirect>,
-    second: Option<&CommandRedirect>,
+fn redirects_are_compatible<S>(
+    first: Option<&CommandRedirect<S>>,
+    second: Option<&CommandRedirect<S>>,
 ) -> bool {
     match (first, second) {
         (None, None) => true,

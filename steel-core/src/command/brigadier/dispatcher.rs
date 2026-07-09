@@ -6,11 +6,11 @@ use std::sync::{
 };
 
 #[cfg(test)]
-use super::node::CommandContext;
+use super::CommandContext;
 use super::{
-    CommandNodeBuilder, CommandSyntaxError, CommandSyntaxErrorKind, NodeId, NodeKind, ParseError,
-    ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange,
-    StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
+    CommandNodeBuilder, CommandSyntaxError, CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind,
+    ParseError, ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind,
+    StringRange, StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 
@@ -102,6 +102,33 @@ impl<S> CommandDispatcher<S> {
         }
 
         Suggestions::merge(input, candidate_sets)
+    }
+
+    /// Validates a parse and turns its redirect contexts into executable stages.
+    pub(crate) fn context_chain(
+        &self,
+        parse: ParseResults<'_, S>,
+    ) -> Result<ContextChain<S>, CommandSyntaxError> {
+        let (context, reader, mut errors) = parse.into_parts();
+        if reader.can_read() {
+            if errors.len() == 1 {
+                return Err(errors.remove(0).into_error());
+            }
+            let kind = if context.range().is_empty() {
+                CommandSyntaxErrorKind::UnknownCommand
+            } else {
+                CommandSyntaxErrorKind::UnknownArgument
+            };
+            return Err(reader.error(kind));
+        }
+        if context.root().dispatcher != self.id {
+            return Err(reader.error(CommandSyntaxErrorKind::UnknownCommand));
+        }
+
+        let input: Arc<str> = Arc::from(reader.input());
+        let context = context.build(input);
+        ContextChain::try_flatten(context)
+            .ok_or_else(|| reader.error(CommandSyntaxErrorKind::UnknownCommand))
     }
 
     /// Returns a node if the ID belongs to this dispatcher.
@@ -274,7 +301,11 @@ impl<S> CommandDispatcher<S> {
                         reader.error(CommandSyntaxErrorKind::LiteralIncorrect(literal.to_owned()))
                     );
                 }
-                context.with_node(node_id, StringRange::between(start, reader.cursor()));
+                context.with_node(
+                    node_id,
+                    StringRange::between(start, reader.cursor()),
+                    node.redirect.as_ref(),
+                );
             }
             CommandNodeData::Argument {
                 name,
@@ -283,7 +314,7 @@ impl<S> CommandDispatcher<S> {
                 let value = argument_type.parse(reader)?;
                 let range = StringRange::between(start, reader.cursor());
                 context.with_argument(name, range, value);
-                context.with_node(node_id, range);
+                context.with_node(node_id, range, node.redirect.as_ref());
             }
         }
         Ok(())
@@ -328,7 +359,7 @@ impl<S> CommandDispatcher<S> {
         source: S,
     ) -> Option<Result<i32, CommandSyntaxError>> {
         let command = self.node(node)?.command.as_ref()?;
-        Some(command(&CommandContext::new(source)))
+        Some(command(&CommandContext::empty(source, self.root())))
     }
 }
 

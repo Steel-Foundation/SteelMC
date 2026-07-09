@@ -35,7 +35,7 @@ fn long_bounds_reset_the_error_cursor() {
 
     let too_low = dispatcher.parse("long -11", ());
     assert_eq!(too_low.reader().cursor(), 5);
-    assert_eq!(too_low.errors()[0].error().cursor(), 5);
+    assert_eq!(too_low.errors()[0].error().cursor(), Some(5));
     assert_eq!(
         too_low.errors()[0].error().kind(),
         &CommandSyntaxErrorKind::LongTooLow {
@@ -88,7 +88,7 @@ fn float_and_double_bounds_reset_the_error_cursor() {
     );
 
     let float = dispatcher.parse("float 2", ());
-    assert_eq!(float.errors()[0].error().cursor(), 6);
+    assert_eq!(float.errors()[0].error().cursor(), Some(6));
     assert_eq!(
         float.errors()[0].error().kind(),
         &CommandSyntaxErrorKind::FloatTooHigh {
@@ -98,7 +98,7 @@ fn float_and_double_bounds_reset_the_error_cursor() {
     );
 
     let double = dispatcher.parse("double -2", ());
-    assert_eq!(double.errors()[0].error().cursor(), 7);
+    assert_eq!(double.errors()[0].error().cursor(), Some(7));
     assert_eq!(
         double.errors()[0].error().kind(),
         &CommandSyntaxErrorKind::DoubleTooLow {
@@ -150,7 +150,7 @@ fn quotable_strings_preserve_reader_escape_errors() {
     let parse = dispatcher.parse("string \"bad\\nvalue\"", ());
 
     assert_eq!(parse.reader().cursor(), 7);
-    assert_eq!(parse.errors()[0].error().cursor(), 12);
+    assert_eq!(parse.errors()[0].error().cursor(), Some(12));
     assert_eq!(
         parse.errors()[0].error().kind(),
         &CommandSyntaxErrorKind::InvalidEscape('n')

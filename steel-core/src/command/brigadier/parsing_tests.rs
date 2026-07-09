@@ -164,7 +164,7 @@ fn bounded_integer_errors_reset_to_the_argument_start() {
             maximum: 10,
         }
     );
-    assert_eq!(too_high.errors()[0].error().cursor(), 4);
+    assert_eq!(too_high.errors()[0].error().cursor(), Some(4));
 
     let too_low = dispatcher.parse("set 0", TestSource { allowed: true });
     assert_eq!(
@@ -191,7 +191,7 @@ fn argument_parsing_requires_a_space_before_trailing_data() {
         parse.errors()[0].error().kind(),
         &CommandSyntaxErrorKind::ExpectedArgumentSeparator
     );
-    assert_eq!(parse.errors()[0].error().cursor(), 5);
+    assert_eq!(parse.errors()[0].error().cursor(), Some(5));
     let error_node = parse.errors()[0].node();
     assert_eq!(
         dispatcher.node(error_node).map(CommandNode::name),

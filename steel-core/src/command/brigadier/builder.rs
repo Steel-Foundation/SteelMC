@@ -5,10 +5,11 @@ use std::sync::Arc;
 use super::{
     ArgumentType, CommandContext, CommandRequirement, CommandSyntaxError, NodeId,
     RegistrationError, RegistrationErrorKind,
-    node::{CommandNodeData, CommandRedirect, UnregisteredCommandNode, merge_or_push},
+    node::{
+        Command, CommandNodeData, CommandRedirect, RedirectModifier, UnregisteredCommandNode,
+        merge_or_push,
+    },
 };
-
-type Command<S> = Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
 
 /// Builds one literal or argument command node and its descendants.
 pub(crate) struct CommandNodeBuilder<S> {
@@ -16,7 +17,7 @@ pub(crate) struct CommandNodeBuilder<S> {
     children: Vec<Self>,
     command: Option<Command<S>>,
     requirement: CommandRequirement<S>,
-    redirect: Option<CommandRedirect>,
+    redirect: Option<CommandRedirect<S>>,
 }
 
 /// Creates a literal command node builder.
@@ -74,8 +75,36 @@ impl<S> CommandNodeBuilder<S> {
 
     /// Redirects parsing to an existing node in the same dispatcher.
     #[must_use]
-    pub(crate) const fn redirects(mut self, target: NodeId) -> Self {
+    pub(crate) fn redirects(mut self, target: NodeId) -> Self {
         self.redirect = Some(CommandRedirect::identity(target));
+        self
+    }
+
+    /// Redirects parsing and transforms the source once before continuing.
+    #[must_use]
+    pub(crate) fn redirects_with(
+        mut self,
+        target: NodeId,
+        modifier: impl Fn(&CommandContext<S>) -> Result<S, CommandSyntaxError> + Send + Sync + 'static,
+    ) -> Self {
+        let modifier: RedirectModifier<S> =
+            Arc::new(move |context| modifier(context).map(|source| vec![source]));
+        self.redirect = Some(CommandRedirect::single(target, modifier));
+        self
+    }
+
+    /// Redirects parsing and expands one source into zero or more sources.
+    #[must_use]
+    pub(crate) fn forks(
+        mut self,
+        target: NodeId,
+        modifier: impl Fn(&CommandContext<S>) -> Result<Vec<S>, CommandSyntaxError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        let modifier: RedirectModifier<S> = Arc::new(modifier);
+        self.redirect = Some(CommandRedirect::forked(target, modifier));
         self
     }
 
