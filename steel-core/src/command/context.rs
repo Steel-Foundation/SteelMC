@@ -29,7 +29,7 @@ pub struct CommandContext {
 }
 
 /// The position anchor to use for an entity.
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EntityAnchor {
     /// The feet of the entity.
     #[default]

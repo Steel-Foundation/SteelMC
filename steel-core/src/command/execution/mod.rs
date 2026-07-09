@@ -9,7 +9,7 @@ pub(crate) use runtime::{
     CustomCommandExecutor, CustomModifierExecutor, SteelCommandRuntime, SteelContextChain,
     SteelExecutor, SteelModifier, argument, literal,
 };
-pub(crate) use source::{CommandResultCallback, ExecutionCommandSource};
+pub(crate) use source::{CommandResultCallback, CommandSource, ExecutionCommandSource};
 
 #[cfg(test)]
 mod tests;
