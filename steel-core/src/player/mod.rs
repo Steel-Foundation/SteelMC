@@ -60,7 +60,7 @@ use std::sync::{Arc, Weak};
 use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CRespawn, CSetDefaultSpawnPosition,
-    CSetHealth, CSetHeldSlot, CSetPassengers, CSetTime, ClientCommandAction, EquipmentSlotItem,
+    CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction, EquipmentSlotItem,
     RelativeMovement, SoundSource,
 };
 use steel_registry::RegistryEntry;
@@ -72,8 +72,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
-    ADVANCE_TIME, DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN,
-    KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
+    DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
+    SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
@@ -1783,17 +1783,7 @@ impl Player {
     }
 
     fn send_time_sync(&self, world: &World) {
-        let level_data = world.level_data.read();
-        let game_time = level_data.game_time();
-        let day_time = level_data.day_time();
-        drop(level_data);
-
-        let advance_time = world
-            .get_game_rule(&ADVANCE_TIME)
-            .as_bool()
-            .expect("gamerule advance_time should always be a bool.");
-        let rate = if advance_time { 1.0 } else { 0.0 };
-        self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
+        self.send_packet(world.time_sync_packet());
     }
 
     fn send_default_spawn_position(&self, world: &World) {

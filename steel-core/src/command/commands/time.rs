@@ -1,7 +1,6 @@
 //! Handler for the `time` command
-use steel_protocol::packets::game::CSetTime;
-use steel_registry::vanilla_game_rules::ADVANCE_TIME;
-use steel_utils::translations;
+use steel_registry::world_clock::WorldClockRef;
+use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
 use crate::command::{
@@ -27,10 +26,10 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     )
     .then(
         literal("set")
-            .then(literal("day").executes(TimeConstSetExecutor::<1000>))
-            .then(literal("midnight").executes(TimeConstSetExecutor::<18000>))
-            .then(literal("night").executes(TimeConstSetExecutor::<13000>))
-            .then(literal("noon").executes(TimeConstSetExecutor::<6000>))
+            .then(literal("day").executes(TimeMarkerSetExecutor("day")))
+            .then(literal("midnight").executes(TimeMarkerSetExecutor("midnight")))
+            .then(literal("night").executes(TimeMarkerSetExecutor("night")))
+            .then(literal("noon").executes(TimeMarkerSetExecutor("noon")))
             .then(argument("time", TimeArgument).executes(TimeExecutor::Set)),
     )
     .then(literal("add").then(argument("time", TimeArgument).executes(TimeExecutor::Add)))
@@ -44,12 +43,21 @@ enum TimeQueryExecutor {
 
 impl CommandExecutor<()> for TimeQueryExecutor {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let number = {
-            let lock = context.world.level_data.read();
-            match self {
-                TimeQueryExecutor::Day => lock.day(),
-                TimeQueryExecutor::Daytime => lock.day_time(),
-                TimeQueryExecutor::Gametime => lock.game_time(),
+        let number = match self {
+            TimeQueryExecutor::Gametime => context.world.game_time(),
+            TimeQueryExecutor::Day | TimeQueryExecutor::Daytime => {
+                let clock = default_clock(context)?;
+                let total_ticks = context.world.clock_total_ticks(clock).ok_or_else(|| {
+                    CommandError::CommandFailed(Box::new(TextComponent::from(format!(
+                        "world clock {} is not initialized",
+                        clock.key
+                    ))))
+                })?;
+                if matches!(self, TimeQueryExecutor::Day) {
+                    total_ticks / 24_000
+                } else {
+                    total_ticks % 24_000
+                }
             }
         };
         context.sender.send_message(
@@ -68,39 +76,21 @@ enum TimeExecutor {
 
 impl CommandExecutor<((), i32)> for TimeExecutor {
     fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
-        let mut day_time_option: Option<i64> = None;
-
-        context.server.worlds.values().for_each(|world| {
-            let (game_time, new_day_time) = {
-                let mut lock = world.level_data.write();
-
-                let game_time = lock.game_time();
-                let new_day_time = match self {
-                    TimeExecutor::Add => (lock.day_time() + i64::from(args.1)) % 24000,
-                    TimeExecutor::Set => i64::from(args.1) % 24000,
-                };
-
-                lock.set_day_time(new_day_time);
-                (game_time, new_day_time)
-            };
-
-            let advance_time = { world.get_game_rule(&ADVANCE_TIME).as_bool().expect("todo") };
-
-            day_time_option = Some(new_day_time);
-
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, 0.0, rate));
-        });
-
-        let Some(new_day_time) = day_time_option else {
-            return Err(CommandError::CommandFailed(Box::new(TextComponent::from(
-                "no world to update time on",
-            ))));
+        let clock = default_clock(context)?;
+        let total_ticks = match self {
+            TimeExecutor::Add => context.world.add_clock_ticks(clock, args.1),
+            TimeExecutor::Set => context
+                .world
+                .set_clock_total_ticks(clock, i64::from(args.1))
+                .map(|()| i64::from(args.1)),
+        };
+        let Some(total_ticks) = total_ticks else {
+            return Err(missing_clock(clock));
         };
 
         context.sender.send_message(
             &translations::COMMANDS_TIME_SET
-                .message([TextComponent::from(format!("{new_day_time}"))])
+                .message([TextComponent::from(format!("{total_ticks}"))])
                 .into(),
         );
 
@@ -108,33 +98,48 @@ impl CommandExecutor<((), i32)> for TimeExecutor {
     }
 }
 
-struct TimeConstSetExecutor<const DAYTIME: i64>;
+struct TimeMarkerSetExecutor(&'static str);
 
-impl<const DAYTIME: i64> CommandExecutor<()> for TimeConstSetExecutor<DAYTIME> {
+impl CommandExecutor<()> for TimeMarkerSetExecutor {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        context.server.worlds.values().for_each(|world| {
-            let (game_time, new_day_time) = {
-                let mut lock = world.level_data.write();
-
-                let game_time = lock.game_time();
-                let new_day_time = DAYTIME;
-
-                lock.set_day_time(new_day_time);
-                (game_time, new_day_time)
-            };
-
-            let advance_time = { world.get_game_rule(&ADVANCE_TIME).as_bool().expect("todo") };
-
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, 0.0, rate));
-        });
+        let clock = default_clock(context)?;
+        let marker = Identifier::vanilla_static(self.0);
+        match context.world.move_clock_to_time_marker(clock, &marker) {
+            Some(true) => {}
+            Some(false) => {
+                let message = translations::COMMANDS_TIME_NO_TIME_MARKER_FOUND
+                    .message([clock.key.to_string(), marker.to_string()])
+                    .component();
+                return Err(CommandError::CommandFailed(Box::new(message)));
+            }
+            None => return Err(missing_clock(clock)),
+        }
+        let Some(total_ticks) = context.world.clock_total_ticks(clock) else {
+            return Err(missing_clock(clock));
+        };
 
         context.sender.send_message(
             &translations::COMMANDS_TIME_SET
-                .message([TextComponent::from(format!("{DAYTIME}"))])
+                .message([TextComponent::from(format!("{total_ticks}"))])
                 .into(),
         );
 
         Ok(())
     }
+}
+
+fn default_clock(context: &CommandContext) -> Result<WorldClockRef, CommandError> {
+    context.world.dimension_type.default_clock.ok_or_else(|| {
+        let message = translations::COMMANDS_TIME_NO_DEFAULT_CLOCK
+            .message([context.world.dimension_type.key.to_string()])
+            .component();
+        CommandError::CommandFailed(Box::new(message))
+    })
+}
+
+fn missing_clock(clock: WorldClockRef) -> CommandError {
+    CommandError::CommandFailed(Box::new(TextComponent::from(format!(
+        "world clock {} is not initialized",
+        clock.key
+    ))))
 }

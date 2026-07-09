@@ -833,6 +833,59 @@ impl Registry {
     }
 
     fn validate_references(&self) {
+        let mut time_markers = rustc_hash::FxHashSet::default();
+        for (_, timeline) in self.timelines.iter() {
+            assert!(
+                self.world_clocks.by_key(&timeline.clock.key).is_some(),
+                "timeline {} references unknown world clock {}",
+                timeline.key,
+                timeline.clock.key
+            );
+            if let Some(period_ticks) = timeline.period_ticks {
+                assert!(
+                    period_ticks > 0,
+                    "timeline {} has invalid period_ticks {}",
+                    timeline.key,
+                    period_ticks
+                );
+            }
+            for marker in timeline.time_markers {
+                assert!(
+                    marker.ticks >= 0,
+                    "time marker {} has invalid tick {}",
+                    marker.key,
+                    marker.ticks
+                );
+                if let Some(period_ticks) = timeline.period_ticks {
+                    assert!(
+                        marker.ticks < period_ticks,
+                        "time marker {} tick {} is outside timeline {} period {}",
+                        marker.key,
+                        marker.ticks,
+                        timeline.key,
+                        period_ticks
+                    );
+                }
+                assert!(
+                    time_markers.insert((timeline.clock.key.clone(), marker.key.clone())),
+                    "time marker {} is defined multiple times for world clock {}",
+                    marker.key,
+                    timeline.clock.key
+                );
+            }
+        }
+
+        for (_, dimension_type) in self.dimension_types.iter() {
+            if let Some(clock) = dimension_type.default_clock {
+                assert!(
+                    self.world_clocks.by_key(&clock.key).is_some(),
+                    "dimension type {} references unknown default world clock {}",
+                    dimension_type.key,
+                    clock.key
+                );
+            }
+        }
+
         for (_, biome) in self.biomes.iter() {
             for carver_key in &biome.carvers {
                 assert!(

@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::world_clock::WorldClockRef;
+
 #[derive(Debug, Clone)]
 pub enum KeyframeValue {
     Float(f32),
@@ -35,17 +37,34 @@ pub struct Track {
 ///                  Some(b)= serialize as compound {ticks: int, `show_in_commands`: byte}
 #[derive(Debug)]
 pub struct TimeMarker {
-    pub name: &'static str,
-    pub ticks: i64,
+    pub key: Identifier,
+    pub ticks: i32,
     pub show_in_commands: Option<bool>,
+}
+
+impl TimeMarker {
+    /// Resolves the next occurrence using vanilla's strictly-forward periodic behavior.
+    #[must_use]
+    pub fn resolve_time_to_move_to(&self, total_ticks: i64, period_ticks: Option<i32>) -> i64 {
+        let Some(period_ticks) = period_ticks else {
+            return i64::from(self.ticks);
+        };
+        let period_ticks = i64::from(period_ticks);
+        let duration = i64::from(self.ticks) - total_ticks % period_ticks;
+        total_ticks.wrapping_add(if duration > 0 {
+            duration
+        } else {
+            period_ticks + duration
+        })
+    }
 }
 
 /// Represents a timeline definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct Timeline {
     pub key: Identifier,
-    pub clock: Option<Identifier>,
-    pub period_ticks: Option<i64>,
+    pub clock: WorldClockRef,
+    pub period_ticks: Option<i32>,
     pub tracks: &'static [Track],
     pub time_markers: &'static [TimeMarker],
 }
@@ -55,11 +74,9 @@ impl ToNbtTag for &Timeline {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();
 
-        if let Some(clock) = &self.clock {
-            compound.insert("clock", clock.to_string().as_str());
-        }
+        compound.insert("clock", self.clock.key.to_string().as_str());
         if let Some(pt) = self.period_ticks {
-            compound.insert("period_ticks", pt); // i64 → Long
+            compound.insert("period_ticks", pt);
         }
 
         let mut tracks_compound = NbtCompound::new();
@@ -104,13 +121,14 @@ impl ToNbtTag for &Timeline {
         if !self.time_markers.is_empty() {
             let mut mc = NbtCompound::new();
             for marker in self.time_markers {
+                let key = marker.key.to_string();
                 match marker.show_in_commands {
-                    None => mc.insert(marker.name, marker.ticks as i32),
+                    None => mc.insert(key.as_str(), marker.ticks),
                     Some(show) => {
                         let mut mcc = NbtCompound::new();
-                        mcc.insert("ticks", marker.ticks as i32);
+                        mcc.insert("ticks", marker.ticks);
                         mcc.insert("show_in_commands", i8::from(show));
-                        mc.insert(marker.name, NbtTag::Compound(mcc));
+                        mc.insert(key.as_str(), NbtTag::Compound(mcc));
                     }
                 }
             }

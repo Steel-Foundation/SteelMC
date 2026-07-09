@@ -5,6 +5,8 @@ use steel_registry::timeline::{Ease, KeyframeValue, TimelineRef, Track};
 use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
 use steel_utils::Identifier;
 
+use super::clock::WorldClockManager;
+
 const SKY_LIGHT_LEVEL_ATTRIBUTE: &str = "minecraft:gameplay/sky_light_level";
 const DEFAULT_SKY_LIGHT_LEVEL: f32 = 15.0;
 const MIN_SKY_LIGHT_LEVEL: f32 = 0.0;
@@ -17,7 +19,7 @@ const THUNDER_SKY_LIGHT_ALPHA: f32 = 0.527_343_75;
 #[must_use]
 pub(super) fn sky_light_level(
     dimension_type: DimensionTypeRef,
-    day_time: i64,
+    clock_manager: &WorldClockManager,
     rain_level: f32,
     thunder_level: f32,
     can_have_weather: bool,
@@ -25,7 +27,7 @@ pub(super) fn sky_light_level(
     let mut value = dimension_type
         .sky_light_level
         .unwrap_or(DEFAULT_SKY_LIGHT_LEVEL);
-    value = apply_timeline_sky_light_level(value, dimension_type, day_time);
+    value = apply_timeline_sky_light_level(value, dimension_type, clock_manager);
     if can_have_weather {
         value = apply_weather_sky_light_level(value, rain_level, thunder_level);
     }
@@ -40,7 +42,7 @@ pub(super) fn sky_darkening(sky_light_level: f32) -> u8 {
 fn apply_timeline_sky_light_level(
     mut value: f32,
     dimension_type: DimensionTypeRef,
-    day_time: i64,
+    clock_manager: &WorldClockManager,
 ) -> f32 {
     let Some(timelines) = dimension_type.timelines else {
         return value;
@@ -50,7 +52,7 @@ fn apply_timeline_sky_light_level(
             return value;
         };
         for timeline in REGISTRY.timelines.iter_tag(&tag) {
-            value = apply_timeline_sky_light_level_track(value, timeline, day_time);
+            value = apply_timeline_sky_light_level_track(value, timeline, clock_manager);
         }
         return value;
     }
@@ -59,11 +61,15 @@ fn apply_timeline_sky_light_level(
         return value;
     };
     REGISTRY.timelines.by_key(&key).map_or(value, |timeline| {
-        apply_timeline_sky_light_level_track(value, timeline, day_time)
+        apply_timeline_sky_light_level_track(value, timeline, clock_manager)
     })
 }
 
-fn apply_timeline_sky_light_level_track(value: f32, timeline: TimelineRef, day_time: i64) -> f32 {
+fn apply_timeline_sky_light_level_track(
+    value: f32,
+    timeline: TimelineRef,
+    clock_manager: &WorldClockManager,
+) -> f32 {
     let Some(track) = timeline
         .tracks
         .iter()
@@ -71,7 +77,11 @@ fn apply_timeline_sky_light_level_track(value: f32, timeline: TimelineRef, day_t
     else {
         return value;
     };
-    let Some(sample) = sample_float_track(track, timeline.period_ticks, day_time) else {
+    let Some(total_ticks) = clock_manager.total_ticks(timeline.clock) else {
+        return value;
+    };
+    let Some(sample) = sample_float_track(track, timeline.period_ticks.map(i64::from), total_ticks)
+    else {
         return value;
     };
     match track.modifier {
@@ -190,6 +200,7 @@ fn lerp(alpha: f32, from: f32, to: f32) -> f32 {
 mod tests {
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_NETHER};
+    use steel_registry::vanilla_world_clocks;
 
     use super::*;
 
@@ -200,12 +211,27 @@ mod tests {
         );
     }
 
+    fn clock_manager_at(total_ticks: i64) -> WorldClockManager {
+        let mut manager = WorldClockManager::new();
+        assert_eq!(
+            manager.set_total_ticks(&vanilla_world_clocks::OVERWORLD, total_ticks),
+            Some(())
+        );
+        manager
+    }
+
     #[test]
     fn overworld_sky_light_uses_generated_day_timeline() {
         init_test_registry();
 
-        assert_f32_close(sky_light_level(&OVERWORLD, 6000, 0.0, 0.0, true), 15.0);
-        assert_f32_close(sky_light_level(&OVERWORLD, 18000, 0.0, 0.0, true), 4.0);
+        assert_f32_close(
+            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 0.0, 0.0, true),
+            15.0,
+        );
+        assert_f32_close(
+            sky_light_level(&OVERWORLD, &clock_manager_at(18000), 0.0, 0.0, true),
+            4.0,
+        );
     }
 
     #[test]
@@ -213,7 +239,7 @@ mod tests {
         init_test_registry();
 
         assert_f32_close(
-            sky_light_level(&OVERWORLD, 12_768, 0.0, 0.0, true),
+            sky_light_level(&OVERWORLD, &clock_manager_at(12_768), 0.0, 0.0, true),
             9.503_051,
         );
     }
@@ -222,15 +248,24 @@ mod tests {
     fn sky_light_level_applies_vanilla_weather_alpha_layers() {
         init_test_registry();
 
-        assert_f32_close(sky_light_level(&OVERWORLD, 6000, 1.0, 0.0, true), 11.5625);
-        assert_f32_close(sky_light_level(&OVERWORLD, 6000, 1.0, 1.0, true), 9.199_219);
+        assert_f32_close(
+            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 1.0, 0.0, true),
+            11.5625,
+        );
+        assert_f32_close(
+            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 1.0, 1.0, true),
+            9.199_219,
+        );
     }
 
     #[test]
     fn fixed_nether_sky_light_uses_dimension_attribute() {
         init_test_registry();
 
-        assert_f32_close(sky_light_level(&THE_NETHER, 6000, 0.0, 0.0, false), 4.0);
+        assert_f32_close(
+            sky_light_level(&THE_NETHER, &clock_manager_at(6000), 0.0, 0.0, false),
+            4.0,
+        );
     }
 
     #[test]
