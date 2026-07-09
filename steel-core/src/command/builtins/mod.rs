@@ -1,6 +1,7 @@
 //! Steel-owned built-in command declarations.
 
 mod difficulty;
+mod gamerule;
 mod list;
 mod seed;
 mod stop;
@@ -16,6 +17,7 @@ pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(difficulty::registration())?;
+    builder.register(gamerule::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
     builder.register(stop::registration())?;
@@ -27,9 +29,11 @@ pub(crate) fn create_dispatcher()
 mod tests {
     use super::create_dispatcher;
     use crate::command::execution::SteelArgumentType;
+    use steel_registry::test_support::init_test_registry;
 
     #[test]
     fn first_builtin_slice_has_the_expected_graph_shape() {
+        init_test_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -46,9 +50,12 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(names, ["difficulty", "list", "seed", "stop", "weather"]);
+        assert_eq!(
+            names,
+            ["difficulty", "gamerule", "list", "seed", "stop", "weather"]
+        );
 
-        let Some(list) = roots.get(1).copied() else {
+        let Some(list) = roots.get(2).copied() else {
             panic!("list root should exist");
         };
         assert!(
