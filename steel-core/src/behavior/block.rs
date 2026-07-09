@@ -541,11 +541,7 @@ pub trait BlockBehavior: Send + Sync {
     /// blocks), and when removing water from waterlogged blocks. The default
     /// returns `true`; override for blocks that require physical support
     /// (torches, buttons, candles, cactus, etc.).
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
-    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
     }
 
@@ -555,15 +551,11 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Default behavior mirrors prior Steel behavior and only checks the
     /// block config's `replaceable` flag.
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores context-specific params"
-    )]
     fn can_be_replaced(
         &self,
         state: BlockStateId,
-        held_item: ItemRef,
-        is_secondary_use_active: bool,
+        _held_item: ItemRef,
+        _is_secondary_use_active: bool,
     ) -> bool {
         state.get_block().config.replaceable
     }

@@ -1,26 +1,30 @@
+use crate::behavior::BlockPlaceContext;
+use crate::behavior::blocks::vegetation::segmentable_block::{
+    segmentable_can_be_replaced, segmentable_get_state_for_placement,
+    segmentable_is_valid_bonemeal_target, segmentable_perform_bonemeal, segmentable_update_shape,
+    segmentable_use_item_on,
+};
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
+use crate::world::{ScheduledTickAccess, World};
+use rand::prelude::Rng;
+use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::items::ItemRef;
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction, types::InteractionHand};
-use std::sync::Arc;
-use crate::behavior::BlockPlaceContext;
-use crate::behavior::{InventoryAccess, InteractionResult};
-use crate::player::Player;
-use crate::world::{World, ScheduledTickAccess};
-use rand::prelude::Rng;
 
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
-use crate::behavior::{
-    block::BlockBehavior, blocks::vegetation::segmentable_block::SegmentableBlock,
-};
 use crate::world::LevelReader;
 
 use super::{BlockRef, survives_on_tag};
 
+const SEGMENT_PROPERTY: IntProperty = BlockStateProperties::FLOWER_AMOUNT;
+
 /// Vanilla `FlowerBedBlock` survival.
-// TODO: Implement full vanilla behavior beyond can_survive.
 #[block_behavior]
 pub struct FlowerBedBlock {
     block: BlockRef,
@@ -34,16 +38,6 @@ impl FlowerBedBlock {
     }
 }
 
-impl SegmentableBlock for FlowerBedBlock {
-    fn block_ref(&self) -> &BlockRef {
-        &self.block
-    }
-
-    fn segment_property(&self) -> &IntProperty {
-        &BlockStateProperties::FLOWER_AMOUNT
-    }
-}
-
 impl BlockBehavior for FlowerBedBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &BlockTag::SUPPORTS_VEGETATION)
@@ -53,7 +47,7 @@ impl BlockBehavior for FlowerBedBlock {
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
-        self.segmentable_get_state_for_placement(context)
+        segmentable_get_state_for_placement(self, self.block, &SEGMENT_PROPERTY, context)
     }
 
     fn can_be_replaced(
@@ -62,7 +56,7 @@ impl BlockBehavior for FlowerBedBlock {
         held_item: ItemRef,
         is_secondary_use_active: bool,
     ) -> bool {
-        self.segmentable_can_be_replaced(state, held_item, is_secondary_use_active)
+        segmentable_can_be_replaced(&SEGMENT_PROPERTY, state, held_item, is_secondary_use_active)
     }
 
     fn use_item_on(
@@ -70,12 +64,12 @@ impl BlockBehavior for FlowerBedBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        player: &Player,
-        hand: InteractionHand,
-        hit_result: &BlockHitResult,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        self.segmentable_use_item_on(state, world, pos, player, hand, hit_result, inv)
+        segmentable_use_item_on(&SEGMENT_PROPERTY, state, world, pos, inv)
     }
 
     fn update_shape(
@@ -83,11 +77,11 @@ impl BlockBehavior for FlowerBedBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        direction: Direction,
-        neighbor_pos: BlockPos,
-        neighbor_state: BlockStateId,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.segmentable_update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+        segmentable_update_shape(self, state, world, pos)
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -98,20 +92,20 @@ impl BlockBehavior for FlowerBedBlock {
 impl Bonemealable for FlowerBedBlock {
     fn is_valid_bonemeal_target(
         &self,
-        state: BlockStateId,
-        world: &dyn LevelReader,
-        pos: BlockPos,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
     ) -> bool {
-        self.segmentable_is_valid_bonemeal_target(state, world, pos)
+        segmentable_is_valid_bonemeal_target(self)
     }
 
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
-        rng: &mut dyn Rng,
+        _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.segmentable_perform_bonemeal(state, world, rng, pos);
+        segmentable_perform_bonemeal(self.block, &SEGMENT_PROPERTY, state, world, pos);
     }
 }
