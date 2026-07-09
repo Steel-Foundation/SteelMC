@@ -7,6 +7,7 @@ mod key;
 mod manager;
 mod rule_expression;
 mod set;
+mod subject;
 
 pub use context::{
     PermissionContext, PermissionContextKey, PermissionContextKeyError, PermissionRuleContext,
@@ -27,6 +28,7 @@ pub use set::{
     PermissionEntry, PermissionResolution, PermissionResolutionSource, PermissionSet,
     PermissionState,
 };
+pub use subject::{PermissionSubjectIndex, PermissionSubjectState};
 
 #[cfg(test)]
 mod group_tests;

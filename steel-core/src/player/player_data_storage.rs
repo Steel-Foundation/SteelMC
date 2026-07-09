@@ -1,5 +1,7 @@
 //! Player data storage for global and domain-scoped player state.
 
+mod permissions;
+
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
@@ -12,12 +14,14 @@ use tokio::{fs, io};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
+use self::permissions::{PlayerPermissionsFile, set_permission_subject};
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
     PersistentRootVehicle, PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
+use crate::permission::{PermissionSubjectIndex, PermissionSubjectState};
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::Identifier;
@@ -183,10 +187,60 @@ impl PlayerDataStorage {
         }
     }
 
+    /// Loads all persisted player permission snapshots.
+    pub async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => storage.load_permission_subjects().await,
+        }
+    }
+
+    /// Loads one player's persisted permission snapshot.
+    pub async fn load_player_permissions(
+        &self,
+        uuid: Uuid,
+    ) -> io::Result<Option<PermissionSubjectState>> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => storage.load_player_permissions(uuid).await,
+        }
+    }
+
     /// Saves server-wide player data.
     pub async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_global(uuid, data).await,
+        }
+    }
+
+    /// Atomically loads, edits, and persists one player's permission snapshot.
+    pub async fn update_player_permissions<F, E>(
+        &self,
+        uuid: Uuid,
+        update: F,
+    ) -> Result<PermissionSubjectState, E>
+    where
+        F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
+        E: From<io::Error>,
+    {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage.update_player_permissions(uuid, update).await
+            }
+        }
+    }
+
+    /// Persists a snapshot only when it is still the caller's current version.
+    pub async fn save_player_permissions_if_current(
+        &self,
+        uuid: Uuid,
+        state: &PermissionSubjectState,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage
+                    .save_player_permissions_if_current(uuid, state, is_current)
+                    .await
+            }
         }
     }
 
@@ -266,6 +320,20 @@ impl FilePlayerDataStorage {
         }))
     }
 
+    async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
+        self.load_player_permissions_file()
+            .await?
+            .into_subject_index()
+    }
+
+    async fn load_player_permissions(
+        &self,
+        uuid: Uuid,
+    ) -> io::Result<Option<PermissionSubjectState>> {
+        let file = self.load_player_permissions_file().await?;
+        file.subject(uuid)
+    }
+
     async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         let file = GlobalPlayerDataFile {
             data_version: GLOBAL_PLAYER_DATA_VERSION,
@@ -276,8 +344,103 @@ impl FilePlayerDataStorage {
             .await
     }
 
+    async fn update_player_permissions<F, E>(
+        &self,
+        uuid: Uuid,
+        update: F,
+    ) -> Result<PermissionSubjectState, E>
+    where
+        F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
+        E: From<io::Error>,
+    {
+        let path = self.player_permissions_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        let mut file = self
+            .read_player_permissions_file_locked(&path)
+            .await
+            .map_err(E::from)?;
+        let current = file.subject(uuid).map_err(E::from)?;
+        let updated = update(current)?;
+        set_permission_subject(&mut file, uuid, &updated);
+        self.write_player_permissions_file_locked(&path, &file)
+            .await
+            .map_err(E::from)?;
+        Ok(updated)
+    }
+
+    async fn save_player_permissions_if_current(
+        &self,
+        uuid: Uuid,
+        state: &PermissionSubjectState,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        let path = self.player_permissions_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        if !is_current() {
+            return Ok(false);
+        }
+
+        let mut file = self.read_player_permissions_file_locked(&path).await?;
+        set_permission_subject(&mut file, uuid, state);
+        self.write_player_permissions_file_locked(&path, &file)
+            .await?;
+        Ok(true)
+    }
+
+    async fn load_player_permissions_file(&self) -> io::Result<PlayerPermissionsFile> {
+        let path = self.player_permissions_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        self.read_player_permissions_file_locked(&path).await
+    }
+
+    async fn read_player_permissions_file_locked(
+        &self,
+        path: &Path,
+    ) -> io::Result<PlayerPermissionsFile> {
+        if !path.exists() {
+            return Ok(PlayerPermissionsFile::default());
+        }
+        let contents = fs::read_to_string(path).await?;
+        let file = toml::from_str::<PlayerPermissionsFile>(&contents).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "invalid player permissions TOML in {}: {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        file.validate()?;
+        Ok(file)
+    }
+
+    async fn write_player_permissions_file_locked(
+        &self,
+        path: &Path,
+        file: &PlayerPermissionsFile,
+    ) -> io::Result<()> {
+        let contents = toml::to_string_pretty(file).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("failed to serialize player permissions TOML: {error}"),
+            )
+        })?;
+        Self::write_atomic_path_locked(path, contents.into_bytes()).await
+    }
+
+    fn global_dir(&self) -> PathBuf {
+        self.save_root.join("global")
+    }
+
     fn global_players_dir(&self) -> PathBuf {
-        self.save_root.join("global").join("players")
+        self.global_dir().join("players")
+    }
+
+    fn player_permissions_file(&self) -> PathBuf {
+        self.global_dir().join("player_permissions.toml")
     }
 
     fn domain_players_dir(&self, domain: &str) -> PathBuf {
@@ -320,6 +483,34 @@ impl FilePlayerDataStorage {
             fs::rename(&final_path, &backup_path).await?;
         }
         fs::rename(&temp_path, &final_path).await
+    }
+
+    async fn write_atomic_path_locked(final_path: &Path, bytes: Vec<u8>) -> io::Result<()> {
+        let Some(parent) = final_path.parent() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "atomic write path has no parent",
+            ));
+        };
+        fs::create_dir_all(parent).await?;
+        let extension = final_path.extension().and_then(|value| value.to_str());
+        let temp_path = final_path.with_extension(match extension {
+            Some(extension) => format!("{extension}.tmp"),
+            None => "tmp".to_owned(),
+        });
+        let backup_path = final_path.with_extension(match extension {
+            Some(extension) => format!("{extension}_old"),
+            None => "old".to_owned(),
+        });
+
+        fs::write(&temp_path, bytes).await?;
+        if final_path.exists() {
+            if backup_path.exists() {
+                let _ = fs::remove_file(&backup_path).await;
+            }
+            fs::rename(final_path, &backup_path).await?;
+        }
+        fs::rename(temp_path, final_path).await
     }
 }
 
@@ -556,6 +747,19 @@ fn decode_file(
 mod tests {
     use super::*;
     use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
+    use crate::permission::PermissionSet;
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_storage_root(name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("steelmc-player-storage-{name}-{suffix}"))
+    }
 
     fn sample_player_file(data_version: i32) -> PlayerDataFile {
         PlayerDataFile {
@@ -675,6 +879,97 @@ mod tests {
             GLOBAL_STORAGE_VERSION
         );
         assert_eq!(decoded.last_active_domain, "minecraft");
+    }
+
+    #[tokio::test]
+    async fn concurrent_permission_updates_preserve_both_subjects() {
+        let root = temp_storage_root("permission-updates");
+        let storage = match FilePlayerDataStorage::new(root.clone()).await {
+            Ok(storage) => Arc::new(storage),
+            Err(error) => panic!("test storage should initialize: {error}"),
+        };
+        let first_uuid = Uuid::from_u128(10);
+        let second_uuid = Uuid::from_u128(20);
+        let first = {
+            let storage = Arc::clone(&storage);
+            tokio::spawn(async move {
+                storage
+                    .update_player_permissions(first_uuid, |_| {
+                        Ok::<_, io::Error>(PermissionSubjectState::new(
+                            vec!["builder".to_owned()],
+                            PermissionSet::new(),
+                        ))
+                    })
+                    .await
+            })
+        };
+        let second = {
+            let storage = Arc::clone(&storage);
+            tokio::spawn(async move {
+                storage
+                    .update_player_permissions(second_uuid, |_| {
+                        Ok::<_, io::Error>(PermissionSubjectState::new(
+                            vec!["moderator".to_owned()],
+                            PermissionSet::new(),
+                        ))
+                    })
+                    .await
+            })
+        };
+
+        match first.await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => panic!("first update should persist: {error}"),
+            Err(error) => panic!("first update task should complete: {error}"),
+        }
+        match second.await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => panic!("second update should persist: {error}"),
+            Err(error) => panic!("second update task should complete: {error}"),
+        }
+        let subjects = match storage.load_permission_subjects().await {
+            Ok(subjects) => subjects,
+            Err(error) => panic!("permission subjects should load: {error}"),
+        };
+
+        assert_eq!(subjects.len(), 2);
+        assert_eq!(
+            subjects.get(first_uuid).map(PermissionSubjectState::groups),
+            Some(["builder".to_owned()].as_slice())
+        );
+        assert_eq!(
+            subjects
+                .get(second_uuid)
+                .map(PermissionSubjectState::groups),
+            Some(["moderator".to_owned()].as_slice())
+        );
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn stale_permission_snapshot_is_not_written() {
+        let root = temp_storage_root("stale-permissions");
+        let storage = match FilePlayerDataStorage::new(root.clone()).await {
+            Ok(storage) => storage,
+            Err(error) => panic!("test storage should initialize: {error}"),
+        };
+        let state = PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new());
+
+        let saved = storage
+            .save_player_permissions_if_current(Uuid::from_u128(30), &state, || false)
+            .await;
+
+        match saved {
+            Ok(false) => {}
+            Ok(true) => panic!("stale snapshot should not be written"),
+            Err(error) => panic!("stale snapshot check should not fail: {error}"),
+        }
+        assert!(!storage.player_permissions_file().exists());
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
     }
 
     #[test]
