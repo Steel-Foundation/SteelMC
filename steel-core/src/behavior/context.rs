@@ -8,9 +8,9 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
-use crate::behavior::BLOCK_BEHAVIORS;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;

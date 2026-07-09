@@ -1,13 +1,20 @@
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, IntProperty};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_blocks;
-use steel_utils::types::UpdateFlags;
+use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::types::{UpdateFlags, InteractionHand};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult};
-use crate::world::LevelReader;
+use std::sync::Arc;
+use rand::prelude::Rng;
+
+use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::player::Player;
 
 pub const MAX_SEGMENT_AMOUNT: u8 = 4;
 const FACING_PROPERTY: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
@@ -19,7 +26,7 @@ pub trait SegmentableBlock: BlockBehavior {
     fn segmentable_update_shape(
         &self,
         state: BlockStateId,
-        world: &dyn crate::world::ScheduledTickAccess,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -32,15 +39,16 @@ pub trait SegmentableBlock: BlockBehavior {
         }
     }
 
+    #[expect(clippy::too_many_arguments, reason = "Segmentable block uses canonical vanilla-like interaction signature; refactor would be intrusive")]
     fn segmentable_use_item_on(
         &self,
         state: BlockStateId,
-        world: &std::sync::Arc<crate::world::World>,
+        world: &Arc<World>,
         pos: BlockPos,
-        _player: &crate::player::Player,
-        _hand: steel_utils::types::InteractionHand,
-        _hit_result: &steel_registry::items::item::BlockHitResult,
-        inv: &mut crate::behavior::InventoryAccess,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         if inv.with_item(|item_stack| item_stack.item().key == state.get_block().key) {
             let current_amount = state.get_value(self.segment_property());
@@ -50,10 +58,11 @@ pub trait SegmentableBlock: BlockBehavior {
                 world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
 
                 return InteractionResult::Consume;
-            };
-        };
+            }
+        }
 
-        InteractionResult::Fail
+        // Non-matching items should fall through to item behaviors (e.g. bonemeal).
+        InteractionResult::Pass
     }
 
     fn segmentable_get_state_for_placement(
@@ -101,5 +110,31 @@ pub trait SegmentableBlock: BlockBehavior {
         }
 
         state.get_block().config.replaceable
+    }
+
+    fn segmentable_is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> bool {
+        true
+    }
+
+    fn segmentable_perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
+        let current_amount = state.get_value(self.segment_property());
+
+        if current_amount < MAX_SEGMENT_AMOUNT {
+            let block_state = state.set_value(self.segment_property(), current_amount + 1);
+            world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
+        } else if let Some(item) = REGISTRY.items.by_key(&self.block_ref().key) {
+            world.pop_resource(pos, ItemStack::new(item));
+        }
     }
 }
