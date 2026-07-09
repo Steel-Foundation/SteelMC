@@ -4,12 +4,8 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use super::{ArgumentType, CommandContext, CommandSyntaxError};
+use super::{ArgumentType, BrigadierRuntime, CommandRuntime};
 
-pub(super) type Command<S> =
-    Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
-pub(super) type RedirectModifier<S> =
-    Arc<dyn Fn(&CommandContext<S>) -> Result<Vec<S>, CommandSyntaxError> + Send + Sync>;
 type RequirementPredicate<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
 
 /// Identifies a node in one command dispatcher.
@@ -87,13 +83,19 @@ impl<S> fmt::Debug for CommandRequirement<S> {
     }
 }
 
-pub(super) struct CommandRedirect<S> {
+pub(super) struct CommandRedirect<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) target: NodeId,
-    pub(super) modifier: Option<RedirectModifier<S>>,
+    pub(super) modifier: Option<Arc<R::Modifier>>,
     pub(super) forks: bool,
 }
 
-impl<S> CommandRedirect<S> {
+impl<S, R> CommandRedirect<S, R>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) const fn identity(target: NodeId) -> Self {
         Self {
             target,
@@ -102,19 +104,15 @@ impl<S> CommandRedirect<S> {
         }
     }
 
-    pub(super) fn single(target: NodeId, modifier: RedirectModifier<S>) -> Self {
+    pub(super) const fn with_modifier(
+        target: NodeId,
+        modifier: Arc<R::Modifier>,
+        forks: bool,
+    ) -> Self {
         Self {
             target,
             modifier: Some(modifier),
-            forks: false,
-        }
-    }
-
-    pub(super) fn forked(target: NodeId, modifier: RedirectModifier<S>) -> Self {
-        Self {
-            target,
-            modifier: Some(modifier),
-            forks: true,
+            forks,
         }
     }
 
@@ -129,7 +127,10 @@ impl<S> CommandRedirect<S> {
     }
 }
 
-impl<S> Clone for CommandRedirect<S> {
+impl<S, R> Clone for CommandRedirect<S, R>
+where
+    R: CommandRuntime<S>,
+{
     fn clone(&self) -> Self {
         Self {
             target: self.target,
@@ -193,20 +194,26 @@ impl CommandNodeData {
 }
 
 /// One node stored in the dispatcher's arena.
-pub(crate) struct CommandNode<S> {
+pub(crate) struct CommandNode<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) data: CommandNodeData,
     pub(super) children: Vec<NodeId>,
-    pub(super) command: Option<Command<S>>,
+    pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,
-    pub(super) redirect: Option<CommandRedirect<S>>,
+    pub(super) redirect: Option<CommandRedirect<S, R>>,
 }
 
-impl<S> CommandNode<S> {
-    pub(super) fn root() -> Self {
+impl<S, R> CommandNode<S, R>
+where
+    R: CommandRuntime<S>,
+{
+    pub(super) const fn root() -> Self {
         Self {
             data: CommandNodeData::Root,
             children: Vec::new(),
-            command: None,
+            executor: None,
             requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
@@ -219,7 +226,7 @@ impl<S> CommandNode<S> {
 
     /// Returns whether this node has a command callback.
     pub(crate) const fn is_executable(&self) -> bool {
-        self.command.is_some()
+        self.executor.is_some()
     }
 
     /// Returns this node's redirect target.
@@ -229,7 +236,7 @@ impl<S> CommandNode<S> {
 
     pub(super) fn validate_compatible(
         &self,
-        incoming: &UnregisteredCommandNode<S>,
+        incoming: &UnregisteredCommandNode<S, R>,
     ) -> Result<(), RegistrationError> {
         if let Some(kind) = self.data.collision_with(&incoming.data) {
             return Err(RegistrationError::new(kind));
@@ -252,15 +259,21 @@ impl<S> CommandNode<S> {
     }
 }
 
-pub(super) struct UnregisteredCommandNode<S> {
+pub(super) struct UnregisteredCommandNode<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) data: CommandNodeData,
     pub(super) children: Vec<Self>,
-    pub(super) command: Option<Command<S>>,
+    pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,
-    pub(super) redirect: Option<CommandRedirect<S>>,
+    pub(super) redirect: Option<CommandRedirect<S, R>>,
 }
 
-impl<S> UnregisteredCommandNode<S> {
+impl<S, R> UnregisteredCommandNode<S, R>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) fn name(&self) -> &str {
         self.data.name()
     }
@@ -271,8 +284,8 @@ impl<S> UnregisteredCommandNode<S> {
 
     pub(super) fn merge(&mut self, mut incoming: Self) -> Result<(), RegistrationError> {
         self.validate_compatible(&incoming)?;
-        if incoming.command.is_some() {
-            self.command = incoming.command.take();
+        if incoming.executor.is_some() {
+            self.executor = incoming.executor.take();
         }
         for child in incoming.children {
             merge_or_push(&mut self.children, child)?;
@@ -302,10 +315,13 @@ impl<S> UnregisteredCommandNode<S> {
     }
 }
 
-fn redirects_are_compatible<S>(
-    first: Option<&CommandRedirect<S>>,
-    second: Option<&CommandRedirect<S>>,
-) -> bool {
+fn redirects_are_compatible<S, R>(
+    first: Option<&CommandRedirect<S, R>>,
+    second: Option<&CommandRedirect<S, R>>,
+) -> bool
+where
+    R: CommandRuntime<S>,
+{
     match (first, second) {
         (None, None) => true,
         (Some(first), Some(second)) => first.is_compatible_with(second),
@@ -313,10 +329,13 @@ fn redirects_are_compatible<S>(
     }
 }
 
-pub(super) fn merge_or_push<S>(
-    nodes: &mut Vec<UnregisteredCommandNode<S>>,
-    incoming: UnregisteredCommandNode<S>,
-) -> Result<(), RegistrationError> {
+pub(super) fn merge_or_push<S, R>(
+    nodes: &mut Vec<UnregisteredCommandNode<S, R>>,
+    incoming: UnregisteredCommandNode<S, R>,
+) -> Result<(), RegistrationError>
+where
+    R: CommandRuntime<S>,
+{
     let Some(existing) = nodes
         .iter_mut()
         .find(|existing| existing.name() == incoming.name())

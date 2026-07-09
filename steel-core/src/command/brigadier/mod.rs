@@ -10,6 +10,7 @@ mod dispatcher;
 mod error;
 mod node;
 mod reader;
+mod runtime;
 mod string_range;
 mod suggestion;
 
@@ -25,6 +26,7 @@ pub(crate) use node::{
     CommandRequirement, NodeId, NodeKind, RegistrationError, RegistrationErrorKind,
 };
 pub(crate) use reader::StringReader;
+pub(crate) use runtime::{BrigadierRuntime, CommandRuntime};
 pub(crate) use string_range::StringRange;
 pub(crate) use suggestion::{Suggestion, SuggestionError, Suggestions, SuggestionsBuilder};
 
@@ -36,6 +38,8 @@ mod context_chain_tests;
 mod parsing_tests;
 #[cfg(test)]
 mod registration_tests;
+#[cfg(test)]
+mod runtime_model_tests;
 #[cfg(test)]
 mod suggestion_tests;
 #[cfg(test)]

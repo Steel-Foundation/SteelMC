@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use super::{CommandContext, CommandSyntaxError};
+use super::{BrigadierRuntime, CommandContext, CommandRuntime, CommandSyntaxError};
 
-pub(crate) type CommandResultConsumer<S> = dyn Fn(&CommandContext<S>, bool, i32);
+pub(crate) type CommandResultConsumer<S> = dyn Fn(&CommandContext<S, BrigadierRuntime>, bool, i32);
 
 /// Whether the current context transforms sources or runs a command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,13 +14,19 @@ pub(crate) enum ContextChainStage {
 }
 
 /// A flattened sequence of redirect contexts followed by one executable context.
-pub(crate) struct ContextChain<S> {
-    contexts: Arc<[Arc<CommandContext<S>>]>,
+pub(crate) struct ContextChain<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
+    contexts: Arc<[Arc<CommandContext<S, R>>]>,
     position: usize,
 }
 
-impl<S> ContextChain<S> {
-    pub(super) fn try_flatten(root: Arc<CommandContext<S>>) -> Option<Self> {
+impl<S, R> ContextChain<S, R>
+where
+    R: CommandRuntime<S>,
+{
+    pub(super) fn try_flatten(root: Arc<CommandContext<S, R>>) -> Option<Self> {
         let mut contexts = Vec::new();
         let mut current = root;
         loop {
@@ -34,7 +40,7 @@ impl<S> ContextChain<S> {
 
         if contexts
             .last()
-            .is_none_or(|context| context.command().is_none())
+            .is_none_or(|context| context.executor().is_none())
         {
             return None;
         }
@@ -54,7 +60,7 @@ impl<S> ContextChain<S> {
     }
 
     /// Returns the parsed context at the current stage.
-    pub(crate) fn top_context(&self) -> &CommandContext<S> {
+    pub(crate) fn top_context(&self) -> &CommandContext<S, R> {
         &self.contexts[self.position]
     }
 
@@ -66,7 +72,9 @@ impl<S> ContextChain<S> {
             position,
         })
     }
+}
 
+impl<S> ContextChain<S, BrigadierRuntime> {
     /// Applies the current stage's source modifier.
     pub(crate) fn run_modifier(
         &self,
@@ -96,10 +104,10 @@ impl<S> ContextChain<S> {
         forked: bool,
     ) -> Result<i32, CommandSyntaxError> {
         let context = self.top_context().copy_for(source);
-        let Some(command) = context.command() else {
+        let Some(executor) = context.executor() else {
             unreachable!("a context chain's final stage is always executable")
         };
-        match command(&context) {
+        match executor(&context) {
             Ok(result) => {
                 consumer(&context, true, result);
                 Ok(if forked { 1 } else { result })
@@ -145,7 +153,10 @@ impl<S> ContextChain<S> {
     }
 }
 
-impl<S> Clone for ContextChain<S> {
+impl<S, R> Clone for ContextChain<S, R>
+where
+    R: CommandRuntime<S>,
+{
     fn clone(&self) -> Self {
         Self {
             contexts: Arc::clone(&self.contexts),

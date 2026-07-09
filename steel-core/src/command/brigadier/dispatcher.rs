@@ -8,21 +8,28 @@ use std::sync::{
 #[cfg(test)]
 use super::CommandContext;
 use super::{
-    CommandNodeBuilder, CommandSyntaxError, CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind,
-    ParseError, ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind,
-    StringRange, StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
+    BrigadierRuntime, CommandNodeBuilder, CommandRuntime, CommandSyntaxError,
+    CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind, ParseError, ParseResults,
+    ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange, StringReader,
+    SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 
 static NEXT_DISPATCHER_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Owns a stable arena of command nodes.
-pub(crate) struct CommandDispatcher<S> {
+pub(crate) struct CommandDispatcher<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     id: u64,
-    nodes: Vec<CommandNode<S>>,
+    nodes: Vec<CommandNode<S, R>>,
 }
 
-impl<S> CommandDispatcher<S> {
+impl<S, R> CommandDispatcher<S, R>
+where
+    R: CommandRuntime<S>,
+{
     /// Creates an empty dispatcher containing only its root node.
     pub(crate) fn new() -> Self {
         Self {
@@ -39,7 +46,7 @@ impl<S> CommandDispatcher<S> {
     /// Registers and merges a literal command tree.
     pub(crate) fn register(
         &mut self,
-        builder: CommandNodeBuilder<S>,
+        builder: CommandNodeBuilder<S, R>,
     ) -> Result<NodeId, RegistrationError> {
         let node = builder.normalize()?;
         if node.kind() != NodeKind::Literal {
@@ -52,7 +59,11 @@ impl<S> CommandDispatcher<S> {
     }
 
     /// Parses `input` into the best Brigadier command branch.
-    pub(crate) fn parse<'input>(&self, input: &'input str, source: S) -> ParseResults<'input, S> {
+    pub(crate) fn parse<'input>(
+        &self,
+        input: &'input str,
+        source: S,
+    ) -> ParseResults<'input, S, R> {
         let reader = StringReader::new(input);
         let context = ParsedCommandContext::new(Arc::new(source), self.root(), reader.cursor());
         self.parse_nodes(self.root(), reader, context)
@@ -61,7 +72,7 @@ impl<S> CommandDispatcher<S> {
     /// Returns completions for the end of a parsed command input.
     pub(crate) fn completion_suggestions(
         &self,
-        parse: &ParseResults<'_, S>,
+        parse: &ParseResults<'_, S, R>,
     ) -> Result<Suggestions, SuggestionError> {
         let input = parse.reader().input();
         let cursor = parse.reader().total_length();
@@ -107,8 +118,8 @@ impl<S> CommandDispatcher<S> {
     /// Validates a parse and turns its redirect contexts into executable stages.
     pub(crate) fn context_chain(
         &self,
-        parse: ParseResults<'_, S>,
-    ) -> Result<ContextChain<S>, CommandSyntaxError> {
+        parse: ParseResults<'_, S, R>,
+    ) -> Result<ContextChain<S, R>, CommandSyntaxError> {
         let (context, reader, mut errors) = parse.into_parts();
         if reader.can_read() {
             if errors.len() == 1 {
@@ -132,7 +143,7 @@ impl<S> CommandDispatcher<S> {
     }
 
     /// Returns a node if the ID belongs to this dispatcher.
-    pub(crate) fn node(&self, id: NodeId) -> Option<&CommandNode<S>> {
+    pub(crate) fn node(&self, id: NodeId) -> Option<&CommandNode<S, R>> {
         if id.dispatcher != self.id {
             return None;
         }
@@ -152,7 +163,7 @@ impl<S> CommandDispatcher<S> {
     fn validate_merge(
         &self,
         parent: NodeId,
-        incoming: &UnregisteredCommandNode<S>,
+        incoming: &UnregisteredCommandNode<S, R>,
     ) -> Result<(), RegistrationError> {
         let Some(existing_id) = self.find_child(parent, incoming.name()) else {
             return Ok(());
@@ -167,7 +178,7 @@ impl<S> CommandDispatcher<S> {
 
     fn validate_redirects(
         &self,
-        node: &UnregisteredCommandNode<S>,
+        node: &UnregisteredCommandNode<S, R>,
     ) -> Result<(), RegistrationError> {
         if let Some(redirect) = &node.redirect
             && self.node(redirect.target).is_none()
@@ -184,10 +195,14 @@ impl<S> CommandDispatcher<S> {
         Ok(())
     }
 
-    fn apply_merge(&mut self, parent: NodeId, mut incoming: UnregisteredCommandNode<S>) -> NodeId {
+    fn apply_merge(
+        &mut self,
+        parent: NodeId,
+        mut incoming: UnregisteredCommandNode<S, R>,
+    ) -> NodeId {
         if let Some(existing_id) = self.find_child(parent, incoming.name()) {
-            if incoming.command.is_some() {
-                self.nodes[existing_id.index].command = incoming.command.take();
+            if incoming.executor.is_some() {
+                self.nodes[existing_id.index].executor = incoming.executor.take();
             }
             for child in incoming.children {
                 self.apply_merge(existing_id, child);
@@ -200,7 +215,7 @@ impl<S> CommandDispatcher<S> {
         self.nodes.push(CommandNode {
             data: incoming.data,
             children: Vec::new(),
-            command: incoming.command,
+            executor: incoming.executor,
             requirement: incoming.requirement,
             redirect: incoming.redirect,
         });
@@ -224,8 +239,8 @@ impl<S> CommandDispatcher<S> {
         &self,
         parent: NodeId,
         original_reader: StringReader<'input>,
-        context_so_far: ParsedCommandContext<S>,
-    ) -> ParseResults<'input, S> {
+        context_so_far: ParsedCommandContext<S, R>,
+    ) -> ParseResults<'input, S, R> {
         let mut errors = Vec::new();
         let mut potentials = Vec::new();
 
@@ -249,7 +264,7 @@ impl<S> CommandDispatcher<S> {
                 continue;
             }
 
-            context.set_command(child.command.as_ref().map(Arc::clone));
+            context.set_executor(child.executor.as_ref().map(Arc::clone));
             let redirect = child.redirect.as_ref().map(|redirect| redirect.target);
             let required_remaining = if redirect.is_some() { 1 } else { 2 };
             if reader.can_read_length(required_remaining) {
@@ -287,7 +302,7 @@ impl<S> CommandDispatcher<S> {
         &self,
         node_id: NodeId,
         reader: &mut StringReader<'_>,
-        context: &mut ParsedCommandContext<S>,
+        context: &mut ParsedCommandContext<S, R>,
     ) -> Result<(), CommandSyntaxError> {
         let node = &self.nodes[node_id.index];
         let start = reader.cursor();
@@ -342,7 +357,10 @@ impl<S> CommandDispatcher<S> {
         arguments
     }
 
-    fn is_better_parse(candidate: &ParseResults<'_, S>, current: &ParseResults<'_, S>) -> bool {
+    fn is_better_parse(
+        candidate: &ParseResults<'_, S, R>,
+        current: &ParseResults<'_, S, R>,
+    ) -> bool {
         if !candidate.reader().can_read() && current.reader().can_read() {
             return true;
         }
@@ -351,19 +369,24 @@ impl<S> CommandDispatcher<S> {
         }
         candidate.errors().is_empty() && !current.errors().is_empty()
     }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
+impl<S> CommandDispatcher<S, BrigadierRuntime> {
     pub(super) fn execute_node_for_test(
         &self,
         node: NodeId,
         source: S,
     ) -> Option<Result<i32, CommandSyntaxError>> {
-        let command = self.node(node)?.command.as_ref()?;
-        Some(command(&CommandContext::empty(source, self.root())))
+        let executor = self.node(node)?.executor.as_deref()?;
+        Some(executor(&CommandContext::empty(source, self.root())))
     }
 }
 
-impl<S> Default for CommandDispatcher<S> {
+impl<S, R> Default for CommandDispatcher<S, R>
+where
+    R: CommandRuntime<S>,
+{
     fn default() -> Self {
         Self::new()
     }

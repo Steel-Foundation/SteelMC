@@ -3,10 +3,8 @@
 use std::sync::Arc;
 
 use super::{
-    CommandSyntaxError, NodeId, StringRange, StringReader,
-    argument::ParsedValue,
-    node::Command,
-    node::{CommandRedirect, RedirectModifier},
+    BrigadierRuntime, CommandRuntime, CommandSyntaxError, NodeId, StringRange, StringReader,
+    argument::ParsedValue, node::CommandRedirect,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -104,25 +102,31 @@ impl ParsedCommandNode {
 }
 
 /// The successful portion of one command parse branch.
-pub(crate) struct ParsedCommandContext<S> {
+pub(crate) struct ParsedCommandContext<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     source: Arc<S>,
     root: NodeId,
     arguments: ParsedArguments,
-    command: Option<Command<S>>,
+    executor: Option<Arc<R::Executor>>,
     nodes: Vec<ParsedCommandNode>,
     range: StringRange,
     child: Option<Box<Self>>,
-    modifier: Option<RedirectModifier<S>>,
+    modifier: Option<Arc<R::Modifier>>,
     forks: bool,
 }
 
-impl<S> ParsedCommandContext<S> {
+impl<S, R> ParsedCommandContext<S, R>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) fn new(source: Arc<S>, root: NodeId, start: usize) -> Self {
         Self {
             source,
             root,
             arguments: ParsedArguments::default(),
-            command: None,
+            executor: None,
             nodes: Vec::new(),
             range: StringRange::at(start),
             child: None,
@@ -136,7 +140,7 @@ impl<S> ParsedCommandContext<S> {
             source: Arc::clone(&self.source),
             root: self.root,
             arguments: self.arguments.clone(),
-            command: self.command.as_ref().map(Arc::clone),
+            executor: self.executor.as_ref().map(Arc::clone),
             nodes: self.nodes.clone(),
             range: self.range,
             child: self.child.as_ref().map(|child| Box::new(child.branch())),
@@ -157,15 +161,15 @@ impl<S> ParsedCommandContext<S> {
         &self.source
     }
 
-    pub(super) fn set_command(&mut self, command: Option<Command<S>>) {
-        self.command = command;
+    pub(super) fn set_executor(&mut self, executor: Option<Arc<R::Executor>>) {
+        self.executor = executor;
     }
 
     pub(super) fn with_node(
         &mut self,
         node: NodeId,
         range: StringRange,
-        redirect: Option<&CommandRedirect<S>>,
+        redirect: Option<&CommandRedirect<S, R>>,
     ) {
         self.nodes.push(ParsedCommandNode { node, range });
         self.range = StringRange::encompassing(self.range, range);
@@ -183,14 +187,14 @@ impl<S> ParsedCommandContext<S> {
         self.child = Some(Box::new(child));
     }
 
-    pub(super) fn build(self, input: Arc<str>) -> Arc<CommandContext<S>> {
+    pub(super) fn build(self, input: Arc<str>) -> Arc<CommandContext<S, R>> {
         let child = self.child.map(|child| child.build(Arc::clone(&input)));
         Arc::new(CommandContext {
             source: self.source,
             input,
             root: self.root,
             arguments: Arc::new(self.arguments),
-            command: self.command,
+            executor: self.executor,
             nodes: self.nodes.into(),
             range: self.range,
             child,
@@ -252,7 +256,7 @@ impl<S> ParsedCommandContext<S> {
 
     /// Returns whether the last parsed node has a command callback.
     pub(crate) const fn is_executable(&self) -> bool {
-        self.command.is_some()
+        self.executor.is_some()
     }
 
     /// Returns a parsed boolean argument.
@@ -292,20 +296,26 @@ impl<S> ParsedCommandContext<S> {
 }
 
 /// Immutable parsed input supplied to commands and redirect modifiers.
-pub(crate) struct CommandContext<S> {
+pub(crate) struct CommandContext<S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
     source: Arc<S>,
     input: Arc<str>,
     root: NodeId,
     arguments: Arc<ParsedArguments>,
-    command: Option<Command<S>>,
+    executor: Option<Arc<R::Executor>>,
     nodes: Arc<[ParsedCommandNode]>,
     range: StringRange,
     child: Option<Arc<Self>>,
-    modifier: Option<RedirectModifier<S>>,
+    modifier: Option<Arc<R::Modifier>>,
     forks: bool,
 }
 
-impl<S> CommandContext<S> {
+impl<S, R> CommandContext<S, R>
+where
+    R: CommandRuntime<S>,
+{
     /// Returns the source used for this execution stage.
     pub(crate) fn source(&self) -> &S {
         &self.source
@@ -370,12 +380,12 @@ impl<S> CommandContext<S> {
         self.child.as_ref()
     }
 
-    pub(super) fn command(&self) -> Option<&Command<S>> {
-        self.command.as_ref()
+    pub(crate) fn executor(&self) -> Option<&R::Executor> {
+        self.executor.as_deref()
     }
 
-    pub(super) fn modifier(&self) -> Option<&RedirectModifier<S>> {
-        self.modifier.as_ref()
+    pub(crate) fn modifier(&self) -> Option<&R::Modifier> {
+        self.modifier.as_deref()
     }
 
     pub(super) const fn is_forked(&self) -> bool {
@@ -388,7 +398,7 @@ impl<S> CommandContext<S> {
             input: Arc::clone(&self.input),
             root: self.root,
             arguments: Arc::clone(&self.arguments),
-            command: self.command.as_ref().map(Arc::clone),
+            executor: self.executor.as_ref().map(Arc::clone),
             nodes: Arc::clone(&self.nodes),
             range: self.range,
             child: self.child.as_ref().map(Arc::clone),
@@ -404,7 +414,7 @@ impl<S> CommandContext<S> {
             input: Arc::from(""),
             root,
             arguments: Arc::new(ParsedArguments::default()),
-            command: None,
+            executor: None,
             nodes: Arc::from([]),
             range: StringRange::at(0),
             child: None,
@@ -447,15 +457,21 @@ impl ParseError {
 }
 
 /// The best branch produced by parsing a command input.
-pub(crate) struct ParseResults<'input, S> {
-    context: ParsedCommandContext<S>,
+pub(crate) struct ParseResults<'input, S, R = BrigadierRuntime>
+where
+    R: CommandRuntime<S>,
+{
+    context: ParsedCommandContext<S, R>,
     reader: StringReader<'input>,
     errors: Vec<ParseError>,
 }
 
-impl<'input, S> ParseResults<'input, S> {
+impl<'input, S, R> ParseResults<'input, S, R>
+where
+    R: CommandRuntime<S>,
+{
     pub(super) const fn new(
-        context: ParsedCommandContext<S>,
+        context: ParsedCommandContext<S, R>,
         reader: StringReader<'input>,
         errors: Vec<ParseError>,
     ) -> Self {
@@ -472,7 +488,7 @@ impl<'input, S> ParseResults<'input, S> {
     }
 
     /// Returns the successfully parsed context.
-    pub(crate) const fn context(&self) -> &ParsedCommandContext<S> {
+    pub(crate) const fn context(&self) -> &ParsedCommandContext<S, R> {
         &self.context
     }
 
@@ -484,7 +500,7 @@ impl<'input, S> ParseResults<'input, S> {
     pub(super) fn into_parts(
         self,
     ) -> (
-        ParsedCommandContext<S>,
+        ParsedCommandContext<S, R>,
         StringReader<'input>,
         Vec<ParseError>,
     ) {
