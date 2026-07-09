@@ -6,6 +6,7 @@ pub mod context;
 pub mod error;
 pub(crate) mod execution;
 mod protocol;
+mod registration;
 mod request_queue;
 pub mod sender;
 

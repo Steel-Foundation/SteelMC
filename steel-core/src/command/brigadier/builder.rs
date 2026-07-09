@@ -21,6 +21,22 @@ where
     redirect: Option<CommandRedirect<S, R>>,
 }
 
+impl<S, R> Clone for CommandNodeBuilder<S, R>
+where
+    R: CommandRuntime<S>,
+    R::Argument: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            children: self.children.clone(),
+            executor: self.executor.as_ref().map(Arc::clone),
+            requirement: self.requirement.clone(),
+            redirect: self.redirect.clone(),
+        }
+    }
+}
+
 /// Creates a literal using the standard synchronous Brigadier runtime.
 pub(crate) fn literal<S>(name: impl Into<Box<str>>) -> CommandNodeBuilder<S> {
     CommandNodeBuilder::literal(name)
@@ -61,6 +77,23 @@ where
             requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
+    }
+
+    /// Returns this node's literal name, or `None` for an argument node.
+    pub(crate) fn literal_name(&self) -> Option<&str> {
+        match &self.data {
+            CommandNodeData::Literal(name) => Some(name),
+            CommandNodeData::Root | CommandNodeData::Argument { .. } => None,
+        }
+    }
+
+    /// Replaces this node's literal name, returning `None` for an argument node.
+    pub(crate) fn with_literal_name(mut self, name: impl Into<Box<str>>) -> Option<Self> {
+        let CommandNodeData::Literal(literal) = &mut self.data else {
+            return None;
+        };
+        *literal = name.into();
+        Some(self)
     }
 
     /// Adds a child while preserving registration order.

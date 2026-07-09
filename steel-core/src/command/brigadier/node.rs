@@ -173,6 +173,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub(super) enum CommandNodeData<A> {
     Root,
     Literal(Box<str>),
