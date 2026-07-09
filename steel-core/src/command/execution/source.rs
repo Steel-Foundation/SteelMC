@@ -236,6 +236,12 @@ impl CommandSource {
         }
     }
 
+    pub(crate) fn send_failure(&self, message: TextComponent) {
+        if !self.silent {
+            self.sender.send_message(&message.color(Color::Red));
+        }
+    }
+
     fn sequence_limit(&self) -> usize {
         let value = game_rule_integer(
             self.world.get_game_rule(&MAX_COMMAND_SEQUENCE_LENGTH),
@@ -274,7 +280,7 @@ impl ExecutionCommandSource for CommandSource {
             CommandSyntaxErrorKind::Dynamic(message) => message.as_ref().clone(),
             _ => TextComponent::from(error.raw_message()),
         };
-        self.sender.send_message(&message.color(Color::Red));
+        self.send_failure(message);
     }
 }
 

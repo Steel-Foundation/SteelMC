@@ -3124,7 +3124,7 @@ impl Server {
     }
 
     /// Broadcasts a sprint completion report to all players.
-    fn broadcast_sprint_report(&self, report: &SprintReport) {
+    pub(crate) fn broadcast_sprint_report(&self, report: &SprintReport) {
         use steel_utils::translations;
 
         let message: TextComponent = translations::COMMANDS_TICK_SPRINT_REPORT

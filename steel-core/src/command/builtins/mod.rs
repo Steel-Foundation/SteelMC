@@ -5,6 +5,7 @@ mod gamerule;
 mod list;
 mod seed;
 mod stop;
+mod tick;
 mod weather;
 
 use super::{
@@ -21,6 +22,7 @@ pub(crate) fn create_dispatcher()
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
     builder.register(stop::registration())?;
+    builder.register(tick::registration())?;
     builder.register(weather::registration())?;
     builder.build()
 }
@@ -52,7 +54,15 @@ mod tests {
 
         assert_eq!(
             names,
-            ["difficulty", "gamerule", "list", "seed", "stop", "weather"]
+            [
+                "difficulty",
+                "gamerule",
+                "list",
+                "seed",
+                "stop",
+                "tick",
+                "weather"
+            ]
         );
 
         let Some(list) = roots.get(2).copied() else {
