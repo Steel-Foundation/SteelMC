@@ -1,5 +1,5 @@
 use crate::command::{
-    brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind},
+    brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
     execution::{
         CommandResultCallback, Coordinates, ExecutionCommandSource, SteelArgumentType,
         SteelCommandRuntime, argument,
@@ -7,8 +7,10 @@ use crate::command::{
         literal,
     },
 };
-use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
+use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_world_clocks};
 use steel_utils::Identifier;
+
+use crate::entity::init_test_entities;
 
 struct TestSource {
     callback: CommandResultCallback,
@@ -213,6 +215,45 @@ fn domain_argument_resolves_and_suggests_only_configured_domains() {
         .map(|suggestion| suggestion.text())
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["beta"]);
+}
+
+#[test]
+fn summonable_entity_argument_resolves_only_registered_factories() {
+    init_test_entities();
+    let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
+
+    for input in ["resource pig", "resource minecraft:pig"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered summonable entity should parse");
+        };
+        assert_eq!(
+            chain.top_context().entity_type("value"),
+            Some(&vanilla_entities::PIG)
+        );
+    }
+
+    for input in ["resource player", "resource minecraft:missing"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(dispatcher.context_chain(parse).is_err());
+    }
+}
+
+#[test]
+fn summonable_entity_argument_suggests_only_registered_factories() {
+    init_test_entities();
+    let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
+    let parse = dispatcher.parse("resource minecraft:pi", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("summonable entity suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+
+    assert_eq!(suggestions, ["minecraft:pig"]);
 }
 
 #[test]

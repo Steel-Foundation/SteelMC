@@ -178,6 +178,12 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
             SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
             SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
+            SteelArgumentType::SummonableEntity => (
+                ProtocolArgumentType::Resource {
+                    identifier: "minecraft:entity_type",
+                },
+                Some(SuggestionType::SummonableEntities),
+            ),
             SteelArgumentType::WorldClock => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:world_clock",
@@ -531,6 +537,21 @@ mod tests {
         let (domain, suggestions) = SteelArgumentType::domain().protocol_argument();
         assert!(matches!(domain, ProtocolArgumentType::ResourceLocation));
         assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+    }
+
+    #[test]
+    fn summonable_entity_argument_projects_vanillas_resource_and_suggestions() {
+        let (entity, suggestions) = SteelArgumentType::summonable_entity().protocol_argument();
+        assert!(matches!(
+            entity,
+            ProtocolArgumentType::Resource {
+                identifier: "minecraft:entity_type"
+            }
+        ));
+        assert!(matches!(
+            suggestions,
+            Some(SuggestionType::SummonableEntities)
+        ));
     }
 
     #[test]

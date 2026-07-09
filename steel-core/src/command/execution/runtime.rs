@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use steel_registry::{timeline::TimelineRef, world_clock::WorldClockRef};
+use steel_registry::{
+    entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
+};
 use steel_utils::Identifier;
 
 use crate::command::brigadier::{
@@ -182,6 +184,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -198,6 +201,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -214,6 +218,23 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    pub(crate) fn entity_type(&self, name: &str) -> Option<EntityTypeRef> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::EntityType(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -230,6 +251,7 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -245,6 +267,7 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -260,6 +283,7 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_),
             )

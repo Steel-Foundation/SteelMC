@@ -4,8 +4,8 @@ use crate::command::brigadier::{
     SuggestionsBuilder,
 };
 use steel_registry::{
-    REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY, timeline::TimelineRef,
-    world_clock::WorldClockRef,
+    ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
+    entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::Identifier;
 use steel_utils::translations;
@@ -15,6 +15,7 @@ use super::{
     Coordinates, ExecutionCommandSource,
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
 };
+use crate::entity::ENTITIES;
 
 /// An argument parser stored by Steel's command runtime.
 #[derive(Clone, Debug, PartialEq)]
@@ -31,6 +32,8 @@ pub(crate) enum SteelArgumentType {
     Rotation,
     /// A configured Steel domain.
     Domain,
+    /// A summonable entity type backed by a Steel entity factory.
+    SummonableEntity,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -64,6 +67,10 @@ impl SteelArgumentType {
         Self::Domain
     }
 
+    pub(crate) const fn summonable_entity() -> Self {
+        Self::SummonableEntity
+    }
+
     pub(crate) const fn world_clock() -> Self {
         Self::WorldClock
     }
@@ -94,6 +101,8 @@ pub(crate) enum SteelArgumentValue {
     Coordinates(Coordinates),
     /// A configured Steel domain name.
     Domain(Box<str>),
+    /// A resolved summonable entity type.
+    EntityType(EntityTypeRef),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -109,6 +118,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Time(_)
             | Self::Coordinates(_)
             | Self::Domain(_)
+            | Self::EntityType(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -138,6 +148,9 @@ where
             }
             Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
+            Self::SummonableEntity => {
+                parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
+            }
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -179,6 +192,16 @@ where
                 {
                     builder.suggest(domain);
                 }
+            }
+            Self::SummonableEntity => {
+                suggest_resources(
+                    REGISTRY
+                        .entity_types
+                        .iter()
+                        .filter(|(_, entity_type)| can_summon(entity_type))
+                        .map(|(_, entity_type)| &entity_type.key),
+                    builder,
+                );
             }
             Self::WorldClock => {
                 suggest_resources(
@@ -235,11 +258,35 @@ where
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
             | SteelArgumentValue::Domain(_)
+            | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )
         | None => None,
     }
+}
+
+fn parse_summonable_entity(
+    reader: &mut StringReader<'_>,
+) -> Result<EntityTypeRef, CommandSyntaxError> {
+    let key = parse_identifier(reader)?;
+    let Some(entity_type) = REGISTRY.entity_types.by_key(&key) else {
+        return Err(unknown_resource(reader, &key, &ENTITY_TYPE_REGISTRY));
+    };
+    if can_summon(entity_type) {
+        return Ok(entity_type);
+    }
+    let message = translations::ENTITY_NOT_SUMMONABLE
+        .message([key.to_string()])
+        .component();
+    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
+}
+
+fn can_summon(entity_type: EntityTypeRef) -> bool {
+    entity_type.summonable
+        && ENTITIES
+            .get()
+            .is_some_and(|registry| registry.has_factory(entity_type))
 }
 
 fn parse_domain<S>(

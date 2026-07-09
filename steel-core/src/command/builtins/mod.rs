@@ -7,6 +7,7 @@ mod list;
 mod seed;
 mod setworldspawn;
 mod stop;
+mod summon;
 mod tick;
 mod time;
 mod weather;
@@ -27,6 +28,7 @@ pub(crate) fn create_dispatcher()
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
+    builder.register(summon::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(weather::registration())?;
@@ -68,6 +70,7 @@ mod tests {
                 "seed",
                 "setworldspawn",
                 "stop",
+                "summon",
                 "tick",
                 "time",
                 "weather"
