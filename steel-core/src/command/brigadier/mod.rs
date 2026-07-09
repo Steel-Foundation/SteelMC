@@ -10,6 +10,7 @@ mod error;
 mod node;
 mod reader;
 mod string_range;
+mod suggestion;
 
 pub(crate) use argument::ArgumentType;
 pub(crate) use builder::{CommandNodeBuilder, argument, literal};
@@ -21,6 +22,7 @@ pub(crate) use node::{
 };
 pub(crate) use reader::StringReader;
 pub(crate) use string_range::StringRange;
+pub(crate) use suggestion::{Suggestion, SuggestionError, Suggestions, SuggestionsBuilder};
 
 #[cfg(test)]
 mod argument_tests;
@@ -28,5 +30,7 @@ mod argument_tests;
 mod parsing_tests;
 #[cfg(test)]
 mod registration_tests;
+#[cfg(test)]
+mod suggestion_tests;
 #[cfg(test)]
 mod tests;

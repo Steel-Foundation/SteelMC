@@ -105,6 +105,47 @@ impl<S> ParsedCommandContext<S> {
         self.child = Some(Box::new(child));
     }
 
+    pub(super) fn find_suggestion_context(&self, cursor: usize) -> Option<SuggestionContext> {
+        if cursor < self.range.start() {
+            return None;
+        }
+
+        if self.range.end() < cursor {
+            if let Some(child) = &self.child {
+                return child.find_suggestion_context(cursor);
+            }
+            return self.nodes.last().map_or_else(
+                || {
+                    Some(SuggestionContext {
+                        parent: self.root,
+                        start: self.range.start(),
+                    })
+                },
+                |last| {
+                    Some(SuggestionContext {
+                        parent: last.node,
+                        start: last.range.end() + 1,
+                    })
+                },
+            );
+        }
+
+        let mut previous = self.root;
+        for node in &self.nodes {
+            if node.range.start() <= cursor && cursor <= node.range.end() {
+                return Some(SuggestionContext {
+                    parent: previous,
+                    start: node.range.start(),
+                });
+            }
+            previous = node.node;
+        }
+        Some(SuggestionContext {
+            parent: previous,
+            start: self.range.start(),
+        })
+    }
+
     /// Returns all nodes consumed by this parse segment.
     pub(crate) fn nodes(&self) -> &[ParsedCommandNode] {
         &self.nodes
@@ -179,6 +220,11 @@ impl<S> ParsedCommandContext<S> {
             .find(|(argument_name, _)| argument_name.as_ref() == name)
             .map(|(_, argument)| &argument.value)
     }
+}
+
+pub(super) struct SuggestionContext {
+    pub(super) parent: NodeId,
+    pub(super) start: usize,
 }
 
 /// One failed candidate node from a command parse.

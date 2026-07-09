@@ -10,7 +10,7 @@ use super::node::CommandContext;
 use super::{
     CommandNodeBuilder, CommandSyntaxError, CommandSyntaxErrorKind, NodeId, NodeKind, ParseError,
     ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange,
-    StringReader,
+    StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 
@@ -56,6 +56,52 @@ impl<S> CommandDispatcher<S> {
         let reader = StringReader::new(input);
         let context = ParsedCommandContext::new(Arc::new(source), self.root(), reader.cursor());
         self.parse_nodes(self.root(), reader, context)
+    }
+
+    /// Returns completions for the end of a parsed command input.
+    pub(crate) fn completion_suggestions(
+        &self,
+        parse: &ParseResults<'_, S>,
+    ) -> Result<Suggestions, SuggestionError> {
+        let input = parse.reader().input();
+        let cursor = parse.reader().total_length();
+        let Some(context) = parse.context().find_suggestion_context(cursor) else {
+            return Ok(Suggestions::empty());
+        };
+        let Some(children) = self.children(context.parent) else {
+            return Ok(Suggestions::empty());
+        };
+
+        let mut candidate_sets = Vec::with_capacity(children.len());
+        for child_id in children {
+            let child = &self.nodes[child_id.index];
+            // Steel filters internal command completions as an authorization
+            // boundary; Brigadier itself exposes nodes regardless of canUse.
+            if !child.requirement.allows(parse.context().source()) {
+                continue;
+            }
+
+            let mut builder = SuggestionsBuilder::new(input, context.start.min(cursor))?;
+            match &child.data {
+                CommandNodeData::Root => {
+                    unreachable!("the command graph never stores a root node as a child")
+                }
+                CommandNodeData::Literal(literal) => {
+                    if literal
+                        .to_lowercase()
+                        .starts_with(builder.remaining_lowercase())
+                    {
+                        builder.suggest(literal.as_ref());
+                    }
+                }
+                CommandNodeData::Argument { argument_type, .. } => {
+                    argument_type.list_suggestions(&mut builder);
+                }
+            }
+            candidate_sets.push(builder.build()?);
+        }
+
+        Suggestions::merge(input, candidate_sets)
     }
 
     /// Returns a node if the ID belongs to this dispatcher.

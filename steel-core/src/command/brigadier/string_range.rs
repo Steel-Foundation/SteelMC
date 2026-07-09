@@ -1,5 +1,7 @@
 //! UTF-16 command input ranges.
 
+use std::ops::Range;
+
 /// A half-open range measured in UTF-16 code units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct StringRange {
@@ -56,5 +58,25 @@ impl StringRange {
     /// Returns the range length in UTF-16 code units.
     pub(crate) const fn len(self) -> usize {
         self.end - self.start
+    }
+
+    pub(super) fn byte_range(self, input: &str) -> Option<Range<usize>> {
+        let start = Self::byte_index(input, self.start)?;
+        let end = Self::byte_index(input, self.end)?;
+        Some(start..end)
+    }
+
+    fn byte_index(input: &str, position: usize) -> Option<usize> {
+        let mut utf16_index = 0;
+        for (byte_index, character) in input.char_indices() {
+            if utf16_index == position {
+                return Some(byte_index);
+            }
+            utf16_index += character.len_utf16();
+            if utf16_index > position {
+                return None;
+            }
+        }
+        (utf16_index == position).then_some(input.len())
     }
 }

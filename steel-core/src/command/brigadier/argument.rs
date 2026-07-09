@@ -1,6 +1,6 @@
 //! Built-in Brigadier argument parsing.
 
-use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader};
+use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder};
 
 /// The parsing mode for a string argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +160,22 @@ impl ArgumentType {
             Self::String(StringType::GreedyPhrase) => {
                 Ok(ParsedValue::String(reader.read_remaining().into()))
             }
+        }
+    }
+
+    pub(super) fn list_suggestions(&self, builder: &mut SuggestionsBuilder<'_>) {
+        if *self != Self::Bool {
+            return;
+        }
+
+        let remaining = builder.remaining_lowercase();
+        let suggest_true = "true".starts_with(remaining);
+        let suggest_false = "false".starts_with(remaining);
+        if suggest_true {
+            builder.suggest("true");
+        }
+        if suggest_false {
+            builder.suggest("false");
         }
     }
 }
