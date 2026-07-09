@@ -1,6 +1,13 @@
-use steel_protocol::packets::game::{CCommandSuggestions, SuggestionEntry};
+use rustc_hash::FxHashMap;
+use steel_protocol::packets::game::{
+    ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType, CCommandSuggestions,
+    CCommands, CommandNode as ProtocolCommandNode, CommandNodeInfo, SuggestionEntry,
+};
+use thiserror::Error;
 
-use super::brigadier::Suggestions;
+use super::brigadier::{
+    ArgumentType, CommandDispatcher, CommandRuntime, NodeId, NodeKind, StringType, Suggestions,
+};
 
 const MAX_COMMAND_SUGGESTIONS: usize = 1000;
 
@@ -26,13 +33,188 @@ pub(crate) fn command_suggestions_packet(
     CCommandSuggestions::new(transaction_id, start, length, entries)
 }
 
+/// A filtered Brigadier graph could not be represented by the vanilla packet.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub(crate) enum CommandTreeProjectionError {
+    #[error("command graph contains an unknown node {0:?}")]
+    UnknownNode(NodeId),
+    #[error("command graph contains more nodes than the protocol can index")]
+    TooManyNodes,
+    #[error("argument node {0:?} has no argument parser")]
+    MissingArgumentType(NodeId),
+    #[error("visible command node {node:?} redirects to filtered node {target:?}")]
+    HiddenRedirectTarget { node: NodeId, target: NodeId },
+}
+
+/// Builds the command graph visible to one source using vanilla packet indices.
+pub(crate) fn command_tree_packet<S, R>(
+    dispatcher: &CommandDispatcher<S, R>,
+    source: &S,
+) -> Result<CCommands, CommandTreeProjectionError>
+where
+    R: CommandRuntime<S>,
+{
+    let visible = visible_nodes(dispatcher, source)?;
+    let mut indices = FxHashMap::default();
+    for (index, node) in visible.iter().copied().enumerate() {
+        let Ok(index) = i32::try_from(index) else {
+            return Err(CommandTreeProjectionError::TooManyNodes);
+        };
+        indices.insert(node, index);
+    }
+
+    let mut nodes = Vec::with_capacity(visible.len());
+    for node_id in visible {
+        let node = dispatcher
+            .node(node_id)
+            .ok_or(CommandTreeProjectionError::UnknownNode(node_id))?;
+        let children = dispatcher
+            .children(node_id)
+            .ok_or(CommandTreeProjectionError::UnknownNode(node_id))?
+            .iter()
+            .filter_map(|child| indices.get(child).copied())
+            .collect();
+        let redirect = match node.redirect() {
+            Some(target) => Some(indices.get(&target).copied().ok_or(
+                CommandTreeProjectionError::HiddenRedirectTarget {
+                    node: node_id,
+                    target,
+                },
+            )?),
+            None => None,
+        };
+
+        let mut info = CommandNodeInfo::new(children);
+        if node.is_executable() {
+            info = info.executable();
+        }
+        if node.is_restricted() {
+            info = info.restricted();
+        }
+        if let Some(target) = redirect {
+            info = info.redirect(target);
+        }
+
+        let projected = match node.kind() {
+            NodeKind::Root => {
+                let mut root = ProtocolCommandNode::new_root();
+                root.set_children(
+                    dispatcher
+                        .children(node_id)
+                        .ok_or(CommandTreeProjectionError::UnknownNode(node_id))?
+                        .iter()
+                        .filter_map(|child| indices.get(child).copied())
+                        .collect(),
+                );
+                root
+            }
+            NodeKind::Literal => ProtocolCommandNode::new_literal(info, node.name().to_owned()),
+            NodeKind::Argument => {
+                let argument = node
+                    .argument_type()
+                    .ok_or(CommandTreeProjectionError::MissingArgumentType(node_id))?;
+                ProtocolCommandNode::new_argument(
+                    info,
+                    node.name().to_owned(),
+                    (protocol_argument_type(argument), None),
+                )
+            }
+        };
+        nodes.push(projected);
+    }
+
+    Ok(CCommands {
+        nodes,
+        root_index: 0,
+    })
+}
+
+fn visible_nodes<S, R>(
+    dispatcher: &CommandDispatcher<S, R>,
+    source: &S,
+) -> Result<Vec<NodeId>, CommandTreeProjectionError>
+where
+    R: CommandRuntime<S>,
+{
+    let mut visible = Vec::new();
+    let mut pending = vec![dispatcher.root()];
+    while let Some(node_id) = pending.pop() {
+        visible.push(node_id);
+        let children = dispatcher
+            .children(node_id)
+            .ok_or(CommandTreeProjectionError::UnknownNode(node_id))?;
+        for child in children.iter().rev() {
+            let node = dispatcher
+                .node(*child)
+                .ok_or(CommandTreeProjectionError::UnknownNode(*child))?;
+            if node.allows(source) {
+                pending.push(*child);
+            }
+        }
+    }
+    Ok(visible)
+}
+
+fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {
+    match *argument {
+        ArgumentType::Bool => ProtocolArgumentType::Bool,
+        ArgumentType::Integer { minimum, maximum } => ProtocolArgumentType::Integer {
+            min: (minimum != i32::MIN).then_some(minimum),
+            max: (maximum != i32::MAX).then_some(maximum),
+        },
+        ArgumentType::Long { minimum, maximum } => ProtocolArgumentType::Long {
+            min: (minimum != i64::MIN).then_some(minimum),
+            max: (maximum != i64::MAX).then_some(maximum),
+        },
+        ArgumentType::Float { minimum, maximum } => ProtocolArgumentType::Float {
+            min: (minimum.to_bits() != (-f32::MAX).to_bits()).then_some(minimum),
+            max: (maximum.to_bits() != f32::MAX.to_bits()).then_some(maximum),
+        },
+        ArgumentType::Double { minimum, maximum } => ProtocolArgumentType::Double {
+            min: (minimum.to_bits() != (-f64::MAX).to_bits()).then_some(minimum),
+            max: (maximum.to_bits() != f64::MAX.to_bits()).then_some(maximum),
+        },
+        ArgumentType::String(string_type) => ProtocolArgumentType::String {
+            behavior: match string_type {
+                StringType::Word => ArgumentStringTypeBehavior::SingleWord,
+                StringType::QuotablePhrase => ArgumentStringTypeBehavior::QuotablePhrase,
+                StringType::GreedyPhrase => ArgumentStringTypeBehavior::GreedyPhrase,
+            },
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_COMMAND_SUGGESTIONS, command_suggestions_packet};
+    use super::{
+        CommandTreeProjectionError, MAX_COMMAND_SUGGESTIONS, command_suggestions_packet,
+        command_tree_packet, protocol_argument_type,
+    };
     use crate::command::brigadier::{
-        CommandDispatcher, StringRange, StringReader, Suggestion, Suggestions, literal,
+        ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId,
+        StringRange, StringReader, StringType, Suggestion, Suggestions, argument, literal,
+    };
+    use steel_protocol::packets::game::{
+        ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
+        CommandNode as ProtocolCommandNode,
     };
     use text_components::TextComponent;
+
+    #[derive(Clone, Copy)]
+    struct TestSource {
+        authorized: bool,
+        in_context: bool,
+    }
+
+    fn register(
+        dispatcher: &mut CommandDispatcher<TestSource>,
+        builder: CommandNodeBuilder<TestSource>,
+    ) -> NodeId {
+        let Ok(node) = dispatcher.register(builder) else {
+            panic!("test command should register");
+        };
+        node
+    }
 
     #[test]
     fn leading_slash_remains_in_the_packet_replacement_range() {
@@ -90,5 +272,187 @@ mod tests {
         assert_eq!(packet.suggestions.len(), MAX_COMMAND_SUGGESTIONS);
         assert_eq!(packet.suggestions[0].text, "0");
         assert_eq!(packet.suggestions[MAX_COMMAND_SUGGESTIONS - 1].text, "999");
+    }
+
+    #[test]
+    fn command_tree_filters_both_requirement_kinds_but_marks_only_authorization() {
+        let mut dispatcher = CommandDispatcher::new();
+        register(&mut dispatcher, literal("public").executes(|_| Ok(1)));
+        register(
+            &mut dispatcher,
+            literal("admin")
+                .requires(CommandRequirement::authorization(|source: &TestSource| {
+                    source.authorized
+                }))
+                .executes(|_| Ok(1)),
+        );
+        register(
+            &mut dispatcher,
+            literal("nearby")
+                .requires(CommandRequirement::contextual(|source: &TestSource| {
+                    source.in_context
+                }))
+                .executes(|_| Ok(1)),
+        );
+
+        let denied = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: false,
+                in_context: false,
+            },
+        );
+        let Ok(denied) = denied else {
+            panic!("denied command tree should project");
+        };
+        assert_eq!(denied.nodes.len(), 2);
+        let ProtocolCommandNode::Root { children } = &denied.nodes[0] else {
+            panic!("first projected node should be the root");
+        };
+        assert_eq!(children, &[1]);
+
+        let allowed = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: true,
+                in_context: true,
+            },
+        );
+        let Ok(allowed) = allowed else {
+            panic!("allowed command tree should project");
+        };
+        assert_eq!(allowed.nodes.len(), 4);
+        let ProtocolCommandNode::Literal {
+            name,
+            is_restricted,
+            ..
+        } = &allowed.nodes[2]
+        else {
+            panic!("authorization command should be a literal");
+        };
+        assert_eq!(name, "admin");
+        assert!(*is_restricted);
+        let ProtocolCommandNode::Literal {
+            name,
+            is_restricted,
+            ..
+        } = &allowed.nodes[3]
+        else {
+            panic!("context command should be a literal");
+        };
+        assert_eq!(name, "nearby");
+        assert!(!is_restricted);
+    }
+
+    #[test]
+    fn command_tree_remaps_redirects_after_filtering() {
+        let mut dispatcher = CommandDispatcher::new();
+        let target = register(&mut dispatcher, literal("target").executes(|_| Ok(1)));
+        register(
+            &mut dispatcher,
+            literal("hidden").requires(CommandRequirement::contextual(|source: &TestSource| {
+                source.in_context
+            })),
+        );
+        register(&mut dispatcher, literal("alias").redirects(target));
+
+        let packet = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: false,
+                in_context: false,
+            },
+        );
+        let Ok(packet) = packet else {
+            panic!("visible redirect target should project");
+        };
+        assert_eq!(packet.nodes.len(), 3);
+        let ProtocolCommandNode::Literal {
+            name, redirects_to, ..
+        } = &packet.nodes[2]
+        else {
+            panic!("alias should be a literal");
+        };
+        assert_eq!(name, "alias");
+        assert_eq!(*redirects_to, Some(1));
+    }
+
+    #[test]
+    fn command_tree_rejects_visible_redirects_to_filtered_targets() {
+        let mut dispatcher = CommandDispatcher::new();
+        let target = register(
+            &mut dispatcher,
+            literal("target").requires(CommandRequirement::contextual(|source: &TestSource| {
+                source.in_context
+            })),
+        );
+        let alias = register(&mut dispatcher, literal("alias").redirects(target));
+
+        let result = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: false,
+                in_context: false,
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(CommandTreeProjectionError::HiddenRedirectTarget {
+                node,
+                target: hidden_target,
+            }) if node == alias && hidden_target == target
+        ));
+    }
+
+    #[test]
+    fn command_tree_projects_executable_primitive_arguments() {
+        let mut dispatcher = CommandDispatcher::new();
+        register(
+            &mut dispatcher,
+            literal("number")
+                .then(argument("value", ArgumentType::integer(1, i32::MAX)).executes(|_| Ok(1))),
+        );
+
+        let packet = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: false,
+                in_context: false,
+            },
+        );
+        let Ok(packet) = packet else {
+            panic!("primitive argument tree should project");
+        };
+        let ProtocolCommandNode::Argument {
+            name,
+            is_executable,
+            parser: ProtocolArgumentType::Integer { min, max },
+            ..
+        } = &packet.nodes[2]
+        else {
+            panic!("third node should be an integer argument");
+        };
+        assert_eq!(name, "value");
+        assert!(*is_executable);
+        assert_eq!(*min, Some(1));
+        assert_eq!(*max, None);
+    }
+
+    #[test]
+    fn primitive_argument_projection_omits_default_bounds_and_maps_strings() {
+        assert!(matches!(
+            protocol_argument_type(&ArgumentType::float(-f32::MAX, f32::MAX)),
+            ProtocolArgumentType::Float {
+                min: None,
+                max: None
+            }
+        ));
+        assert!(matches!(
+            protocol_argument_type(&ArgumentType::String(StringType::GreedyPhrase)),
+            ProtocolArgumentType::String {
+                behavior: ArgumentStringTypeBehavior::GreedyPhrase
+            }
+        ));
     }
 }

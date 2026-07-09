@@ -197,7 +197,7 @@ fn completion_filters_nodes_that_fail_requirements() {
     register(&mut dispatcher, literal("public"));
     register(
         &mut dispatcher,
-        literal("secret").requires(CommandRequirement::new(|source: &TestSource| {
+        literal("secret").requires(CommandRequirement::contextual(|source: &TestSource| {
             source.allowed
         })),
     );

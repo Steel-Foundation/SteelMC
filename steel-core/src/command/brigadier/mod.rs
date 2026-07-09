@@ -14,7 +14,7 @@ mod runtime;
 mod string_range;
 mod suggestion;
 
-pub(crate) use argument::ArgumentType;
+pub(crate) use argument::{ArgumentType, StringType};
 pub(crate) use builder::{CommandNodeBuilder, argument, literal};
 pub(crate) use context::{
     CommandContext, ParseError, ParseResults, ParsedCommandContext, ParsedCommandNode,

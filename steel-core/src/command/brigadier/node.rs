@@ -35,18 +35,40 @@ pub(crate) enum NodeKind {
 /// A source predicate attached to a command node.
 pub(crate) struct CommandRequirement<S> {
     predicate: Option<RequirementPredicate<S>>,
+    kind: Option<CommandRequirementKind>,
+}
+
+/// Why a command node has a source requirement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CommandRequirementKind {
+    /// Access depends on Steel's authorization state.
+    Authorization,
+    /// Access depends on execution context rather than permission.
+    Context,
 }
 
 impl<S> CommandRequirement<S> {
     /// Creates a requirement that permits every source.
     pub(crate) const fn allow_all() -> Self {
-        Self { predicate: None }
+        Self {
+            predicate: None,
+            kind: None,
+        }
     }
 
-    /// Creates a requirement with stable identity for compatible node merging.
-    pub(crate) fn new(predicate: impl Fn(&S) -> bool + Send + Sync + 'static) -> Self {
+    /// Creates a permission-backed requirement with stable identity.
+    pub(crate) fn authorization(predicate: impl Fn(&S) -> bool + Send + Sync + 'static) -> Self {
         Self {
             predicate: Some(Arc::new(predicate)),
+            kind: Some(CommandRequirementKind::Authorization),
+        }
+    }
+
+    /// Creates a non-permission source requirement with stable identity.
+    pub(crate) fn contextual(predicate: impl Fn(&S) -> bool + Send + Sync + 'static) -> Self {
+        Self {
+            predicate: Some(Arc::new(predicate)),
+            kind: Some(CommandRequirementKind::Context),
         }
     }
 
@@ -57,12 +79,18 @@ impl<S> CommandRequirement<S> {
             .is_none_or(|predicate| predicate(source))
     }
 
+    /// Returns whether the client should treat this node as permission restricted.
+    pub(crate) const fn is_authorization(&self) -> bool {
+        matches!(self.kind, Some(CommandRequirementKind::Authorization))
+    }
+
     pub(super) fn is_compatible_with(&self, other: &Self) -> bool {
-        match (&self.predicate, &other.predicate) {
-            (None, None) => true,
-            (Some(first), Some(second)) => Arc::ptr_eq(first, second),
-            (None, Some(_)) | (Some(_), None) => false,
-        }
+        self.kind == other.kind
+            && match (&self.predicate, &other.predicate) {
+                (None, None) => true,
+                (Some(first), Some(second)) => Arc::ptr_eq(first, second),
+                (None, Some(_)) | (Some(_), None) => false,
+            }
     }
 }
 
@@ -70,6 +98,7 @@ impl<S> Clone for CommandRequirement<S> {
     fn clone(&self) -> Self {
         Self {
             predicate: self.predicate.as_ref().map(Arc::clone),
+            kind: self.kind,
         }
     }
 }
@@ -78,7 +107,11 @@ impl<S> fmt::Debug for CommandRequirement<S> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("CommandRequirement")
-            .field("restricted", &self.predicate.is_some())
+            .field(
+                "predicate",
+                &self.predicate.as_ref().map(|_| "<source predicate>"),
+            )
+            .field("kind", &self.kind)
             .finish()
     }
 }
@@ -232,6 +265,29 @@ where
     /// Returns this node's redirect target.
     pub(crate) fn redirect(&self) -> Option<NodeId> {
         self.redirect.as_ref().map(|redirect| redirect.target)
+    }
+
+    /// Returns the externally visible node category.
+    pub(crate) const fn kind(&self) -> NodeKind {
+        self.data.kind()
+    }
+
+    /// Returns this node's argument parser when it is an argument node.
+    pub(crate) const fn argument_type(&self) -> Option<&ArgumentType> {
+        match &self.data {
+            CommandNodeData::Argument { argument_type, .. } => Some(argument_type),
+            CommandNodeData::Root | CommandNodeData::Literal(_) => None,
+        }
+    }
+
+    /// Returns whether this node is available to `source`.
+    pub(crate) fn allows(&self, source: &S) -> bool {
+        self.requirement.allows(source)
+    }
+
+    /// Returns whether this node is guarded by authorization.
+    pub(crate) const fn is_restricted(&self) -> bool {
+        self.requirement.is_authorization()
     }
 
     pub(super) fn validate_compatible(

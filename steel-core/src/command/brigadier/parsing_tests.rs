@@ -77,7 +77,7 @@ fn requirements_hide_unavailable_nodes_from_parsing() {
     register(
         &mut dispatcher,
         literal("secure")
-            .requires(CommandRequirement::new(|source: &TestSource| {
+            .requires(CommandRequirement::contextual(|source: &TestSource| {
                 source.allowed
             }))
             .executes(|_| Ok(1)),

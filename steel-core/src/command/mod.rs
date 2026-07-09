@@ -9,7 +9,6 @@ mod protocol;
 mod request_queue;
 pub mod sender;
 
-pub(crate) use protocol::command_suggestions_packet;
 pub use request_queue::CommandQueueFull;
 pub(crate) use request_queue::{COMMAND_REQUESTS_PER_TICK, CommandRequest, CommandRequestQueue};
 

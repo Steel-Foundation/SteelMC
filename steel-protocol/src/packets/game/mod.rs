@@ -120,7 +120,10 @@ pub use c_change_difficulty::CChangeDifficulty;
 pub use c_chunk_batch_finished::CChunkBatchFinished;
 pub use c_chunk_batch_start::CChunkBatchStart;
 pub use c_command_suggestions::{CCommandSuggestions, SuggestionEntry};
-pub use c_commands::{ArgumentType, CCommands, CommandNode, CommandNodeInfo, SuggestionType};
+pub use c_commands::{
+    ArgumentStringTypeBehavior, ArgumentType, CCommands, CommandNode, CommandNodeInfo,
+    SuggestionType,
+};
 pub use c_container_close::CContainerClose;
 pub use c_container_set_content::CContainerSetContent;
 pub use c_container_set_data::CContainerSetData;

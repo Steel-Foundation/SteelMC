@@ -141,7 +141,7 @@ fn duplicate_children_inside_one_builder_are_normalized() {
 #[test]
 fn shared_requirement_identity_can_merge() {
     let mut dispatcher = CommandDispatcher::<TestSource>::new();
-    let requirement = CommandRequirement::new(|source: &TestSource| source.allowed);
+    let requirement = CommandRequirement::contextual(|source: &TestSource| source.allowed);
     let first = register(
         &mut dispatcher,
         literal("secure")
@@ -165,7 +165,7 @@ fn incompatible_requirement_collision_is_atomic() {
     let secure = register(
         &mut dispatcher,
         literal("secure")
-            .requires(CommandRequirement::new(|source: &TestSource| {
+            .requires(CommandRequirement::contextual(|source: &TestSource| {
                 source.allowed
             }))
             .then(literal("existing")),
@@ -175,7 +175,7 @@ fn incompatible_requirement_collision_is_atomic() {
     assert_registration_error(
         dispatcher.register(
             literal("secure")
-                .requires(CommandRequirement::new(|_: &TestSource| true))
+                .requires(CommandRequirement::contextual(|_: &TestSource| true))
                 .then(literal("new")),
         ),
         RegistrationErrorKind::RequirementCollision {
@@ -286,7 +286,7 @@ fn command_roots_must_be_literals() {
 
 #[test]
 fn requirements_remain_generic_source_predicates() {
-    let requirement = CommandRequirement::new(|source: &TestSource| source.allowed);
+    let requirement = CommandRequirement::contextual(|source: &TestSource| source.allowed);
 
     assert!(requirement.allows(&TestSource { allowed: true }));
     assert!(!requirement.allows(&TestSource { allowed: false }));
