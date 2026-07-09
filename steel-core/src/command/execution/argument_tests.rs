@@ -36,6 +36,14 @@ impl ExecutionCommandSource for TestSource {
     fn default_world_clock(&self) -> Option<steel_registry::world_clock::WorldClockRef> {
         Some(&vanilla_world_clocks::OVERWORLD)
     }
+
+    fn domain_exists(&self, domain: &str) -> bool {
+        matches!(domain, "alpha" | "beta")
+    }
+
+    fn domain_names(&self) -> Vec<&str> {
+        vec!["alpha", "beta"]
+    }
 }
 
 type TestDispatcher = CommandDispatcher<TestSource, SteelCommandRuntime>;
@@ -180,6 +188,31 @@ fn coordinate_suggestions_include_vanilla_partial_prefixes() {
         .map(|suggestion| suggestion.text())
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["^ ^", "^ ^ ^"]);
+}
+
+#[test]
+fn domain_argument_resolves_and_suggests_only_configured_domains() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::domain());
+
+    let parse = dispatcher.parse("resource alpha", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("configured domain should parse");
+    };
+    assert_eq!(chain.top_context().domain("value"), Some("alpha"));
+
+    let parse = dispatcher.parse("resource gamma", TestSource::new());
+    assert!(dispatcher.context_chain(parse).is_err());
+
+    let parse = dispatcher.parse("resource b", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("domain suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(|suggestion| suggestion.text())
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["beta"]);
 }
 
 #[test]

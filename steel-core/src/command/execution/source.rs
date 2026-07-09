@@ -73,6 +73,14 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         None
     }
+
+    fn domain_exists(&self, _domain: &str) -> bool {
+        false
+    }
+
+    fn domain_names(&self) -> Vec<&str> {
+        Vec::new()
+    }
 }
 
 /// Permission lookup required while constructing and traversing Steel command trees.
@@ -290,6 +298,14 @@ impl ExecutionCommandSource for CommandSource {
 
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         self.world.dimension_type.default_clock
+    }
+
+    fn domain_exists(&self, domain: &str) -> bool {
+        self.server.worlds.has_domain(domain)
+    }
+
+    fn domain_names(&self) -> Vec<&str> {
+        self.server.worlds.domain_names().collect()
     }
 }
 

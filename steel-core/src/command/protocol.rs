@@ -190,7 +190,7 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
-            SteelArgumentType::TimeMarker { .. } => (
+            SteelArgumentType::Domain | SteelArgumentType::TimeMarker { .. } => (
                 ProtocolArgumentType::ResourceLocation,
                 Some(SuggestionType::AskServer),
             ),
@@ -524,6 +524,13 @@ mod tests {
         let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
         assert!(matches!(rotation, ProtocolArgumentType::Rotation));
         assert!(rotation_suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_domain_argument_uses_server_resource_suggestions() {
+        let (domain, suggestions) = SteelArgumentType::domain().protocol_argument();
+        assert!(matches!(domain, ProtocolArgumentType::ResourceLocation));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
     }
 
     #[test]

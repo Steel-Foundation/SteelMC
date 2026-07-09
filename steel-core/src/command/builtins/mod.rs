@@ -1,6 +1,7 @@
 //! Steel-owned built-in command declarations.
 
 mod difficulty;
+mod domain;
 mod gamerule;
 mod list;
 mod seed;
@@ -20,6 +21,7 @@ pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(difficulty::registration())?;
+    builder.register(domain::registration())?;
     builder.register(gamerule::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
@@ -60,6 +62,7 @@ mod tests {
             names,
             [
                 "difficulty",
+                "domain",
                 "gamerule",
                 "list",
                 "seed",
@@ -71,7 +74,11 @@ mod tests {
             ]
         );
 
-        let Some(list) = roots.get(2).copied() else {
+        let Some(list) = roots.iter().copied().find(|root| {
+            dispatcher
+                .node(*root)
+                .is_some_and(|node| node.name() == "list")
+        }) else {
             panic!("list root should exist");
         };
         assert!(

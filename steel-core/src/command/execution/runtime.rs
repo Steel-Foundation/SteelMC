@@ -181,6 +181,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -196,6 +197,23 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    /// Returns a configured Steel domain name.
+    pub(crate) fn domain(&self, name: &str) -> Option<&str> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Domain(value)) => Some(value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -211,6 +229,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -225,6 +244,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -239,6 +259,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_),
             )

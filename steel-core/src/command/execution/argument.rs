@@ -29,6 +29,8 @@ pub(crate) enum SteelArgumentType {
     Vec3 { center_integers: bool },
     /// A yaw and pitch rotation.
     Rotation,
+    /// A configured Steel domain.
+    Domain,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -56,6 +58,10 @@ impl SteelArgumentType {
 
     pub(crate) const fn rotation() -> Self {
         Self::Rotation
+    }
+
+    pub(crate) const fn domain() -> Self {
+        Self::Domain
     }
 
     pub(crate) const fn world_clock() -> Self {
@@ -86,6 +92,8 @@ pub(crate) enum SteelArgumentValue {
     Time(i32),
     /// A coordinate expression retained until command execution.
     Coordinates(Coordinates),
+    /// A configured Steel domain name.
+    Domain(Box<str>),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -100,6 +108,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Primitive(value) => Some(value),
             Self::Time(_)
             | Self::Coordinates(_)
+            | Self::Domain(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -116,7 +125,7 @@ where
     fn parse(
         &self,
         reader: &mut StringReader<'_>,
-        _source: &S,
+        source: &S,
     ) -> Result<Self::Value, CommandSyntaxError> {
         match self {
             Self::Primitive(argument) => argument
@@ -128,6 +137,7 @@ where
                 parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
             }
             Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
+            Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -159,6 +169,17 @@ where
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
             Self::Rotation => {}
+            Self::Domain => {
+                let prefix = builder.remaining();
+                for domain in context
+                    .source()
+                    .domain_names()
+                    .into_iter()
+                    .filter(|domain| domain.starts_with(prefix))
+                {
+                    builder.suggest(domain);
+                }
+            }
             Self::WorldClock => {
                 suggest_resources(
                     REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
@@ -213,11 +234,28 @@ where
             SteelArgumentValue::Primitive(_)
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
+            | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )
         | None => None,
     }
+}
+
+fn parse_domain<S>(
+    reader: &mut StringReader<'_>,
+    source: &S,
+) -> Result<Box<str>, CommandSyntaxError>
+where
+    S: ExecutionCommandSource,
+{
+    let domain = reader.read_unquoted_string();
+    if source.domain_exists(domain) {
+        return Ok(domain.into());
+    }
+    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+        TextComponent::from(format!("Unknown domain {domain}")),
+    ))))
 }
 
 fn parse_identifier(reader: &mut StringReader<'_>) -> Result<Identifier, CommandSyntaxError> {
