@@ -4,6 +4,7 @@ use glam::DVec3;
 use steel_registry::{
     game_rules::GameRuleValue,
     vanilla_game_rules::{MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH},
+    world_clock::WorldClockRef,
 };
 use text_components::{Modifier, TextComponent, format::Color};
 
@@ -68,6 +69,10 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
     fn callback(&self) -> CommandResultCallback;
 
     fn handle_error(&self, error: &CommandSyntaxError, forked: bool);
+
+    fn default_world_clock(&self) -> Option<WorldClockRef> {
+        None
+    }
 }
 
 /// Permission lookup required while constructing and traversing Steel command trees.
@@ -281,6 +286,10 @@ impl ExecutionCommandSource for CommandSource {
             _ => TextComponent::from(error.raw_message()),
         };
         self.send_failure(message);
+    }
+
+    fn default_world_clock(&self) -> Option<WorldClockRef> {
+        self.world.dimension_type.default_clock
     }
 }
 

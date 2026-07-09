@@ -175,6 +175,22 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::Time { minimum } => {
                 (ProtocolArgumentType::Time { min: *minimum }, None)
             }
+            SteelArgumentType::WorldClock => (
+                ProtocolArgumentType::Resource {
+                    identifier: "minecraft:world_clock",
+                },
+                None,
+            ),
+            SteelArgumentType::Timeline { .. } => (
+                ProtocolArgumentType::Resource {
+                    identifier: "minecraft:timeline",
+                },
+                Some(SuggestionType::AskServer),
+            ),
+            SteelArgumentType::TimeMarker { .. } => (
+                ProtocolArgumentType::ResourceLocation,
+                Some(SuggestionType::AskServer),
+            ),
         }
     }
 }
@@ -221,7 +237,7 @@ mod tests {
     use crate::command::execution::SteelArgumentType;
     use steel_protocol::packets::game::{
         ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
-        CommandNode as ProtocolCommandNode,
+        CommandNode as ProtocolCommandNode, SuggestionType,
     };
     use text_components::TextComponent;
 
@@ -490,5 +506,37 @@ mod tests {
 
         assert_eq!(min, 1);
         assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_clock_arguments_project_vanilla_resource_parsers() {
+        let (clock, clock_suggestions) = SteelArgumentType::world_clock().protocol_argument();
+        assert!(matches!(
+            clock,
+            ProtocolArgumentType::Resource {
+                identifier: "minecraft:world_clock"
+            }
+        ));
+        assert!(clock_suggestions.is_none());
+
+        let (timeline, timeline_suggestions) =
+            SteelArgumentType::timeline(Some("clock")).protocol_argument();
+        assert!(matches!(
+            timeline,
+            ProtocolArgumentType::Resource {
+                identifier: "minecraft:timeline"
+            }
+        ));
+        assert!(matches!(
+            timeline_suggestions,
+            Some(SuggestionType::AskServer)
+        ));
+
+        let (marker, marker_suggestions) = SteelArgumentType::time_marker(None).protocol_argument();
+        assert!(matches!(marker, ProtocolArgumentType::ResourceLocation));
+        assert!(matches!(
+            marker_suggestions,
+            Some(SuggestionType::AskServer)
+        ));
     }
 }

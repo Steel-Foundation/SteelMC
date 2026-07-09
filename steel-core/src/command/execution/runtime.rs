@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use steel_registry::{timeline::TimelineRef, world_clock::WorldClockRef};
+use steel_utils::Identifier;
+
 use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRuntime, CommandSyntaxError, ContextChain, NodeId,
 };
@@ -175,7 +178,52 @@ where
     pub(crate) fn time(&self, name: &str) -> Option<i32> {
         match self.argument(name) {
             Some(SteelArgumentValue::Time(value)) => Some(*value),
-            Some(SteelArgumentValue::Primitive(_)) | None => None,
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    pub(crate) fn identifier(&self, name: &str) -> Option<&Identifier> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Identifier(value)) => Some(value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    pub(crate) fn world_clock(&self, name: &str) -> Option<WorldClockRef> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::WorldClock(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    pub(crate) fn timeline(&self, name: &str) -> Option<TimelineRef> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Timeline(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_),
+            )
+            | None => None,
         }
     }
 }

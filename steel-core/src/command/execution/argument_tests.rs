@@ -5,6 +5,8 @@ use crate::command::{
         argument, literal,
     },
 };
+use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
+use steel_utils::Identifier;
 
 struct TestSource {
     callback: CommandResultCallback,
@@ -28,6 +30,10 @@ impl ExecutionCommandSource for TestSource {
     }
 
     fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
+
+    fn default_world_clock(&self) -> Option<steel_registry::world_clock::WorldClockRef> {
+        Some(&vanilla_world_clocks::OVERWORLD)
+    }
 }
 
 type TestDispatcher = CommandDispatcher<TestSource, SteelCommandRuntime>;
@@ -105,4 +111,101 @@ fn time_argument_suggests_units_for_a_numeric_prefix() {
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["10d", "10s", "10t"]);
+}
+
+fn resource_dispatcher(argument_type: SteelArgumentType) -> TestDispatcher {
+    let mut dispatcher = TestDispatcher::new();
+    let command = literal("resource").then(argument("value", argument_type).executes(|_| Ok(1)));
+    assert!(dispatcher.register(command).is_ok());
+    dispatcher
+}
+
+#[test]
+fn world_clock_argument_resolves_default_and_explicit_namespaces() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::world_clock());
+
+    for input in ["resource overworld", "resource minecraft:overworld"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered world clock should parse");
+        };
+        assert_eq!(
+            chain.top_context().world_clock("value"),
+            Some(&vanilla_world_clocks::OVERWORLD)
+        );
+    }
+}
+
+#[test]
+fn world_clock_argument_rejects_unknown_resources() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::world_clock());
+    let parse = dispatcher.parse("resource missing", TestSource::new());
+    let error = dispatcher.context_chain(parse);
+
+    assert!(matches!(
+        error,
+        Err(error) if matches!(error.kind(), CommandSyntaxErrorKind::Dynamic(_))
+    ));
+}
+
+#[test]
+fn time_marker_argument_retains_default_namespace_identifier() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::time_marker(None));
+    let parse = dispatcher.parse("resource day", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("time marker identifier should parse");
+    };
+
+    assert_eq!(
+        chain.top_context().identifier("value"),
+        Some(&Identifier::vanilla_static("day"))
+    );
+}
+
+#[test]
+fn time_marker_argument_suggests_only_visible_markers_for_selected_clock() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::time_marker(None));
+    let parse = dispatcher.parse("resource d", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("time marker suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(|suggestion| suggestion.text())
+        .collect::<Vec<_>>();
+
+    assert_eq!(suggestions, ["minecraft:day"]);
+}
+
+#[test]
+fn timeline_suggestions_use_the_preceding_clock_argument() {
+    init_test_registry();
+    let mut dispatcher = TestDispatcher::new();
+    let command =
+        literal("timeline").then(argument("clock", SteelArgumentType::world_clock()).then(
+            argument("value", SteelArgumentType::timeline(Some("clock"))).executes(|_| Ok(1)),
+        ));
+    assert!(dispatcher.register(command).is_ok());
+
+    let parse = dispatcher.parse("timeline overworld d", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("overworld timeline suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(|suggestion| suggestion.text())
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["minecraft:day"]);
+
+    let parse = dispatcher.parse("timeline the_end ", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("end timeline suggestions should build");
+    };
+    assert!(suggestions.is_empty());
 }
