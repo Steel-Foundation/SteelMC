@@ -1,0 +1,374 @@
+//! Command graph nodes and registration errors.
+
+use std::{fmt, sync::Arc};
+
+use thiserror::Error;
+
+use super::CommandSyntaxError;
+
+type Command<S> = Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
+type RequirementPredicate<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
+
+/// Identifies a node in one command dispatcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct NodeId {
+    pub(super) dispatcher: u64,
+    pub(super) index: usize,
+}
+
+impl NodeId {
+    pub(super) const fn new(dispatcher: u64, index: usize) -> Self {
+        Self { dispatcher, index }
+    }
+}
+
+/// The externally relevant category of a command node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NodeKind {
+    /// The dispatcher root.
+    Root,
+    /// A literal token.
+    Literal,
+    /// A parsed argument.
+    Argument,
+}
+
+/// A built-in Brigadier argument parser configuration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ArgumentType {
+    /// A lowercase boolean.
+    Bool,
+    /// A bounded signed 32-bit integer.
+    Integer { minimum: i32, maximum: i32 },
+}
+
+impl ArgumentType {
+    /// Creates a boolean argument parser.
+    pub(crate) const fn bool() -> Self {
+        Self::Bool
+    }
+
+    /// Creates a bounded integer argument parser.
+    pub(crate) const fn integer(minimum: i32, maximum: i32) -> Self {
+        Self::Integer { minimum, maximum }
+    }
+}
+
+/// The immutable input available to a command callback.
+pub(crate) struct CommandContext<S> {
+    source: Arc<S>,
+}
+
+impl<S> CommandContext<S> {
+    pub(super) fn new(source: S) -> Self {
+        Self {
+            source: Arc::new(source),
+        }
+    }
+
+    /// Returns the source that invoked the command.
+    pub(crate) fn source(&self) -> &S {
+        &self.source
+    }
+}
+
+/// A source predicate attached to a command node.
+pub(crate) struct CommandRequirement<S> {
+    predicate: Option<RequirementPredicate<S>>,
+}
+
+impl<S> CommandRequirement<S> {
+    /// Creates a requirement that permits every source.
+    pub(crate) const fn allow_all() -> Self {
+        Self { predicate: None }
+    }
+
+    /// Creates a requirement with stable identity for compatible node merging.
+    pub(crate) fn new(predicate: impl Fn(&S) -> bool + Send + Sync + 'static) -> Self {
+        Self {
+            predicate: Some(Arc::new(predicate)),
+        }
+    }
+
+    /// Returns whether `source` can use the node.
+    pub(crate) fn allows(&self, source: &S) -> bool {
+        self.predicate
+            .as_ref()
+            .is_none_or(|predicate| predicate(source))
+    }
+
+    pub(super) fn is_compatible_with(&self, other: &Self) -> bool {
+        match (&self.predicate, &other.predicate) {
+            (None, None) => true,
+            (Some(first), Some(second)) => Arc::ptr_eq(first, second),
+            (None, Some(_)) | (Some(_), None) => false,
+        }
+    }
+}
+
+impl<S> Clone for CommandRequirement<S> {
+    fn clone(&self) -> Self {
+        Self {
+            predicate: self.predicate.as_ref().map(Arc::clone),
+        }
+    }
+}
+
+impl<S> fmt::Debug for CommandRequirement<S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CommandRequirement")
+            .field("restricted", &self.predicate.is_some())
+            .finish()
+    }
+}
+
+pub(super) struct CommandRedirect {
+    pub(super) target: NodeId,
+}
+
+impl CommandRedirect {
+    pub(super) const fn identity(target: NodeId) -> Self {
+        Self { target }
+    }
+
+    fn is_compatible_with(&self, other: &Self) -> bool {
+        self.target == other.target
+    }
+}
+
+pub(super) enum CommandNodeData {
+    Root,
+    Literal(Box<str>),
+    Argument {
+        name: Box<str>,
+        argument_type: ArgumentType,
+    },
+}
+
+impl CommandNodeData {
+    pub(super) fn name(&self) -> &str {
+        match self {
+            Self::Root => "",
+            Self::Literal(name) | Self::Argument { name, .. } => name,
+        }
+    }
+
+    pub(super) const fn kind(&self) -> NodeKind {
+        match self {
+            Self::Root => NodeKind::Root,
+            Self::Literal(_) => NodeKind::Literal,
+            Self::Argument { .. } => NodeKind::Argument,
+        }
+    }
+
+    fn collision_with(&self, other: &Self) -> Option<RegistrationErrorKind> {
+        let name = other.name().into();
+        match (self, other) {
+            (Self::Literal(first), Self::Literal(second)) if first == second => None,
+            (
+                Self::Argument {
+                    name: first_name,
+                    argument_type: first_type,
+                },
+                Self::Argument {
+                    name: second_name,
+                    argument_type: second_type,
+                },
+            ) if first_name == second_name && first_type == second_type => None,
+            (Self::Argument { name: first, .. }, Self::Argument { name: second, .. })
+                if first == second =>
+            {
+                Some(RegistrationErrorKind::ArgumentTypeCollision { name })
+            }
+            _ => Some(RegistrationErrorKind::NodeKindCollision {
+                name,
+                existing: self.kind(),
+                incoming: other.kind(),
+            }),
+        }
+    }
+}
+
+/// One node stored in the dispatcher's arena.
+pub(crate) struct CommandNode<S> {
+    pub(super) data: CommandNodeData,
+    pub(super) children: Vec<NodeId>,
+    pub(super) command: Option<Command<S>>,
+    pub(super) requirement: CommandRequirement<S>,
+    pub(super) redirect: Option<CommandRedirect>,
+}
+
+impl<S> CommandNode<S> {
+    pub(super) fn root() -> Self {
+        Self {
+            data: CommandNodeData::Root,
+            children: Vec::new(),
+            command: None,
+            requirement: CommandRequirement::allow_all(),
+            redirect: None,
+        }
+    }
+
+    /// Returns the node name.
+    pub(crate) fn name(&self) -> &str {
+        self.data.name()
+    }
+
+    /// Returns whether this node has a command callback.
+    pub(crate) const fn is_executable(&self) -> bool {
+        self.command.is_some()
+    }
+
+    /// Returns this node's redirect target.
+    pub(crate) fn redirect(&self) -> Option<NodeId> {
+        self.redirect.as_ref().map(|redirect| redirect.target)
+    }
+
+    pub(super) fn validate_compatible(
+        &self,
+        incoming: &UnregisteredCommandNode<S>,
+    ) -> Result<(), RegistrationError> {
+        if let Some(kind) = self.data.collision_with(&incoming.data) {
+            return Err(RegistrationError::new(kind));
+        }
+        if !self.requirement.is_compatible_with(&incoming.requirement) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RequirementCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        if !redirects_are_compatible(self.redirect.as_ref(), incoming.redirect.as_ref()) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RedirectCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub(super) struct UnregisteredCommandNode<S> {
+    pub(super) data: CommandNodeData,
+    pub(super) children: Vec<Self>,
+    pub(super) command: Option<Command<S>>,
+    pub(super) requirement: CommandRequirement<S>,
+    pub(super) redirect: Option<CommandRedirect>,
+}
+
+impl<S> UnregisteredCommandNode<S> {
+    pub(super) fn name(&self) -> &str {
+        self.data.name()
+    }
+
+    pub(super) const fn kind(&self) -> NodeKind {
+        self.data.kind()
+    }
+
+    pub(super) fn merge(&mut self, mut incoming: Self) -> Result<(), RegistrationError> {
+        self.validate_compatible(&incoming)?;
+        if incoming.command.is_some() {
+            self.command = incoming.command.take();
+        }
+        for child in incoming.children {
+            merge_or_push(&mut self.children, child)?;
+        }
+        Ok(())
+    }
+
+    fn validate_compatible(&self, incoming: &Self) -> Result<(), RegistrationError> {
+        if let Some(kind) = self.data.collision_with(&incoming.data) {
+            return Err(RegistrationError::new(kind));
+        }
+        if !self.requirement.is_compatible_with(&incoming.requirement) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RequirementCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        if !redirects_are_compatible(self.redirect.as_ref(), incoming.redirect.as_ref()) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RedirectCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn redirects_are_compatible(
+    first: Option<&CommandRedirect>,
+    second: Option<&CommandRedirect>,
+) -> bool {
+    match (first, second) {
+        (None, None) => true,
+        (Some(first), Some(second)) => first.is_compatible_with(second),
+        (None, Some(_)) | (Some(_), None) => false,
+    }
+}
+
+pub(super) fn merge_or_push<S>(
+    nodes: &mut Vec<UnregisteredCommandNode<S>>,
+    incoming: UnregisteredCommandNode<S>,
+) -> Result<(), RegistrationError> {
+    let Some(existing) = nodes
+        .iter_mut()
+        .find(|existing| existing.name() == incoming.name())
+    else {
+        nodes.push(incoming);
+        return Ok(());
+    };
+    existing.merge(incoming)
+}
+
+/// A command registration failure.
+#[derive(Debug, Error)]
+#[error("{kind}")]
+pub(crate) struct RegistrationError {
+    kind: RegistrationErrorKind,
+}
+
+impl RegistrationError {
+    pub(super) const fn new(kind: RegistrationErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the specific registration failure.
+    pub(crate) const fn kind(&self) -> &RegistrationErrorKind {
+        &self.kind
+    }
+}
+
+/// Identifies why command registration failed.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub(crate) enum RegistrationErrorKind {
+    /// Only literals may be registered directly under the root.
+    #[error("only literal command nodes can be registered at the root")]
+    ArgumentRoot,
+    /// The two nodes sharing a name have different categories.
+    #[error("command node '{name}' is already registered as {existing:?}, not {incoming:?}")]
+    NodeKindCollision {
+        name: Box<str>,
+        existing: NodeKind,
+        incoming: NodeKind,
+    },
+    /// Argument nodes sharing a name use different parsers.
+    #[error("argument node '{name}' is already registered with a different parser")]
+    ArgumentTypeCollision { name: Box<str> },
+    /// Nodes sharing a name use predicates with different identities.
+    #[error("command node '{name}' is already registered with a different requirement")]
+    RequirementCollision { name: Box<str> },
+    /// Nodes sharing a name have different redirects.
+    #[error("command node '{name}' is already registered with a different redirect")]
+    RedirectCollision { name: Box<str> },
+    /// A redirected node also has children.
+    #[error("redirected command node '{name}' cannot have children")]
+    RedirectWithChildren { name: Box<str> },
+    /// A redirect points outside its dispatcher.
+    #[error("redirect target {target:?} does not belong to this dispatcher")]
+    InvalidRedirectTarget { target: NodeId },
+}
