@@ -5,13 +5,16 @@ use crate::command::{
     brigadier::{CommandDispatcher, CommandRequirement, CommandSyntaxError, NodeId},
     execution::{CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, literal},
 };
-use crate::permission::{PermissionExpr, PermissionState};
+use crate::permission::{
+    PermissionEntry, PermissionExpr, PermissionKey, PermissionSet, PermissionState,
+};
 
 use super::{CommandDispatcherBuilder, CommandRegistration, CommandRegistrationError};
 
 struct TestSource {
     callback: CommandResultCallback,
     permission: Option<PermissionState>,
+    permission_set: Option<PermissionSet>,
     expected_permission: Option<&'static str>,
     context_allowed: bool,
 }
@@ -21,6 +24,7 @@ impl ExecutionCommandSource for TestSource {
         Self {
             callback,
             permission: self.permission,
+            permission_set: self.permission_set.clone(),
             expected_permission: self.expected_permission,
             context_allowed: self.context_allowed,
         }
@@ -35,6 +39,9 @@ impl ExecutionCommandSource for TestSource {
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
+        if let Some(permission_set) = &self.permission_set {
+            return permission_set.resolve(permission);
+        }
         if let Some(expected) = self.expected_permission {
             let PermissionExpr::Key(permission) = permission else {
                 panic!("test command should use one derived permission key");
@@ -116,9 +123,27 @@ fn source(permission: Option<PermissionState>, expected_permission: &'static str
     TestSource {
         callback: CommandResultCallback::empty(),
         permission,
+        permission_set: None,
         expected_permission: Some(expected_permission),
         context_allowed: true,
     }
+}
+
+fn permission_source(entries: impl IntoIterator<Item = PermissionEntry>) -> TestSource {
+    TestSource {
+        callback: CommandResultCallback::empty(),
+        permission: None,
+        permission_set: Some(PermissionSet::from_entries(entries)),
+        expected_permission: None,
+        context_allowed: true,
+    }
+}
+
+fn permission_entry(value: &str, state: PermissionState) -> PermissionEntry {
+    let Ok(key) = PermissionKey::parse(value) else {
+        panic!("test permission key should parse");
+    };
+    PermissionEntry::new(key, state)
 }
 
 #[test]
@@ -334,4 +359,161 @@ fn registration_composes_authorization_with_existing_context_requirements() {
     allowed.context_allowed = true;
     assert!(inspect.allows(&allowed));
     assert!(inspect.is_restricted());
+}
+
+#[test]
+fn derived_subcommand_permissions_are_alternatives_to_the_root() {
+    let registration =
+        CommandRegistration::new(Identifier::new_static("minecraft", "tick"), |_| {
+            literal("tick")
+                .then(literal("query").executes(|_| Ok(1)))
+                .then(literal("rate").executes(|_| Ok(1)))
+                .then(literal("freeze").executes(|_| Ok(1)))
+        })
+        .subcommand_permission(["rate"])
+        .subcommand_permission(["freeze"]);
+    let dispatcher = build([registration]);
+    let tick = child(&dispatcher, dispatcher.root(), "tick");
+    let query = child(&dispatcher, tick, "query");
+    let rate = child(&dispatcher, tick, "rate");
+    let freeze = child(&dispatcher, tick, "freeze");
+
+    let rate_only = permission_source([permission_entry(
+        "minecraft.command.tick.rate",
+        PermissionState::Allow,
+    )]);
+    assert!(
+        dispatcher
+            .node(tick)
+            .is_some_and(|node| node.allows(&rate_only))
+    );
+    assert!(
+        dispatcher
+            .node(query)
+            .is_some_and(|node| node.allows(&rate_only))
+    );
+    assert!(
+        dispatcher
+            .node(rate)
+            .is_some_and(|node| node.allows(&rate_only) && node.is_restricted())
+    );
+    assert!(
+        dispatcher
+            .node(freeze)
+            .is_some_and(|node| !node.allows(&rate_only))
+    );
+
+    let root = permission_source([permission_entry(
+        "minecraft.command.tick",
+        PermissionState::Allow,
+    )]);
+    assert!(dispatcher.node(rate).is_some_and(|node| node.allows(&root)));
+    assert!(
+        dispatcher
+            .node(freeze)
+            .is_some_and(|node| node.allows(&root))
+    );
+
+    let root_with_freeze_deny = permission_source([
+        permission_entry("minecraft.command.tick", PermissionState::Allow),
+        permission_entry("minecraft.command.tick.freeze", PermissionState::Deny),
+    ]);
+    assert!(
+        dispatcher
+            .node(rate)
+            .is_some_and(|node| node.allows(&root_with_freeze_deny))
+    );
+    assert!(
+        dispatcher
+            .node(freeze)
+            .is_some_and(|node| !node.allows(&root_with_freeze_deny))
+    );
+}
+
+#[test]
+fn default_access_still_honors_specific_subcommand_denies() {
+    let registration =
+        CommandRegistration::new(Identifier::new_static("minecraft", "inspect"), |_| {
+            literal("inspect")
+                .then(literal("query").executes(|_| Ok(1)))
+                .then(literal("write").executes(|_| Ok(1)))
+        })
+        .default_access()
+        .subcommand_permission(["write"]);
+    let dispatcher = build([registration]);
+    let inspect = child(&dispatcher, dispatcher.root(), "inspect");
+    let write = child(&dispatcher, inspect, "write");
+
+    let unset = permission_source([]);
+    assert!(
+        dispatcher
+            .node(inspect)
+            .is_some_and(|node| node.allows(&unset))
+    );
+    assert!(
+        dispatcher
+            .node(write)
+            .is_some_and(|node| !node.allows(&unset))
+    );
+
+    let denied_root_with_write = permission_source([
+        permission_entry("minecraft.command.inspect", PermissionState::Deny),
+        permission_entry("minecraft.command.inspect.write", PermissionState::Allow),
+    ]);
+    assert!(
+        dispatcher
+            .node(inspect)
+            .is_some_and(|node| node.allows(&denied_root_with_write))
+    );
+    assert!(
+        dispatcher
+            .node(write)
+            .is_some_and(|node| node.allows(&denied_root_with_write))
+    );
+
+    let denied_write = permission_source([permission_entry(
+        "minecraft.command.inspect.write",
+        PermissionState::Deny,
+    )]);
+    assert!(
+        dispatcher
+            .node(inspect)
+            .is_some_and(|node| node.allows(&denied_write))
+    );
+    assert!(
+        dispatcher
+            .node(write)
+            .is_some_and(|node| !node.allows(&denied_write))
+    );
+}
+
+#[test]
+fn missing_subcommand_permission_paths_fail_the_build() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let registration = command(Identifier::new_static("minecraft", "tick"), "query")
+        .subcommand_permission(["freeze"]);
+    assert!(builder.register(registration).is_ok());
+
+    assert!(matches!(
+        builder.build(),
+        Err(CommandRegistrationError::MissingSubcommandPermissionPath { id, path })
+            if id == Identifier::new_static("minecraft", "tick") && path == "freeze"
+    ));
+}
+
+#[test]
+fn explicit_root_permissions_cannot_mix_with_derived_subcommands() {
+    let Ok(permission) = PermissionKey::parse("steel.command.tick") else {
+        panic!("test permission should parse");
+    };
+    let registration = command(Identifier::new_static("minecraft", "tick"), "freeze")
+        .permission(PermissionExpr::key(permission))
+        .subcommand_permission(["freeze"]);
+    let mut builder = CommandDispatcherBuilder::new();
+
+    assert!(matches!(
+        builder.register(registration),
+        Err(CommandRegistrationError::SubcommandPermissionsRequireDerivedRoot { id })
+            if id == Identifier::new_static("minecraft", "tick")
+    ));
 }

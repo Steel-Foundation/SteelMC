@@ -12,7 +12,9 @@ use super::{
     },
     execution::{CommandPermissionSource, SteelCommandRuntime},
 };
-use crate::permission::{PermissionExpr, PermissionKey, PermissionKeyError, PermissionState};
+use crate::permission::{
+    PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
+};
 
 type CommandFactory<S> = dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + 'static;
 
@@ -24,6 +26,7 @@ where
     id: Identifier,
     aliases: Vec<Box<str>>,
     permission: Option<PermissionExpr>,
+    subcommand_permissions: Vec<Vec<Box<str>>>,
     default_access: bool,
     factory: Box<CommandFactory<S>>,
 }
@@ -41,6 +44,7 @@ where
             id,
             aliases: Vec::new(),
             permission: None,
+            subcommand_permissions: Vec::new(),
             default_access: false,
             factory: Box::new(factory),
         }
@@ -67,6 +71,22 @@ where
         self
     }
 
+    /// Allows a literal path through a permission derived from the command ID.
+    ///
+    /// The root permission remains a fallback grant. For example,
+    /// `minecraft.command.tick.freeze` permits only `/tick freeze`, while
+    /// `minecraft.command.tick` permits every tick subcommand.
+    #[must_use]
+    pub(crate) fn subcommand_permission<I, T>(mut self, path: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<Box<str>>,
+    {
+        self.subcommand_permissions
+            .push(path.into_iter().map(Into::into).collect());
+        self
+    }
+
     fn validate(&self) -> Result<(), CommandRegistrationError> {
         if self.id.namespace.is_empty()
             || self.id.path.is_empty()
@@ -84,6 +104,39 @@ where
                     id: self.id.clone(),
                     root: alias.clone(),
                 });
+            }
+        }
+        if self.permission.is_some() && !self.subcommand_permissions.is_empty() {
+            return Err(
+                CommandRegistrationError::SubcommandPermissionsRequireDerivedRoot {
+                    id: self.id.clone(),
+                },
+            );
+        }
+        let mut permission_paths = FxHashSet::default();
+        for path in &self.subcommand_permissions {
+            if path.is_empty() {
+                return Err(CommandRegistrationError::EmptySubcommandPermissionPath {
+                    id: self.id.clone(),
+                });
+            }
+            for segment in path {
+                PermissionSegment::parse(segment.to_string()).map_err(|source| {
+                    CommandRegistrationError::InvalidSubcommandPermissionPath {
+                        id: self.id.clone(),
+                        path: display_permission_path(path),
+                        source,
+                    }
+                })?;
+            }
+            let path = display_permission_path(path);
+            if !permission_paths.insert(path.clone()) {
+                return Err(
+                    CommandRegistrationError::DuplicateSubcommandPermissionPath {
+                        id: self.id.clone(),
+                        path,
+                    },
+                );
             }
         }
         Ok(())
@@ -134,35 +187,64 @@ where
         let mut resolved = Vec::with_capacity(self.registrations.len());
 
         for registration in self.registrations {
-            let permission = match registration.permission {
-                Some(permission) => permission,
-                None => derived_command_permission(&registration.id)?,
+            let CommandRegistration {
+                id,
+                aliases,
+                permission,
+                subcommand_permissions,
+                default_access,
+                factory,
+            } = registration;
+            let (root_permission, derived_root) = if let Some(permission) = permission {
+                (permission, None)
+            } else {
+                let key = derived_command_permission_key(&id)?;
+                (PermissionExpr::key(key.clone()), Some(key))
             };
-            let default_access = registration.default_access;
-            let requirement = CommandRequirement::authorization(move |source: &S| {
-                match source.permission_state(&permission) {
-                    Some(PermissionState::Allow) => true,
-                    Some(PermissionState::Deny) => false,
-                    None => default_access,
+            let mut root = factory(dispatcher_root);
+            let mut alternate_permissions = Vec::with_capacity(subcommand_permissions.len());
+            if let Some(derived_root) = derived_root {
+                for path in &subcommand_permissions {
+                    let permission = derived_subcommand_permission(&id, &derived_root, path)?;
+                    let requirement = permission_requirement(PermissionExpr::scoped_key(
+                        derived_root.clone(),
+                        permission.clone(),
+                    ));
+                    match root.add_requirement_at_literal_path(path, &requirement) {
+                        1 => alternate_permissions.push(permission),
+                        0 => {
+                            return Err(
+                                CommandRegistrationError::MissingSubcommandPermissionPath {
+                                    id,
+                                    path: display_permission_path(path),
+                                },
+                            );
+                        }
+                        matches => {
+                            return Err(
+                                CommandRegistrationError::AmbiguousSubcommandPermissionPath {
+                                    id,
+                                    path: display_permission_path(path),
+                                    matches,
+                                },
+                            );
+                        }
+                    }
                 }
-            });
-            let root = (registration.factory)(dispatcher_root).also_requires(requirement);
+            }
+            let requirement =
+                root_permission_requirement(root_permission, alternate_permissions, default_access);
+            root = root.also_requires(requirement);
             let Some(root_name) = root.literal_name() else {
-                return Err(CommandRegistrationError::RootMustBeLiteral {
-                    id: registration.id,
-                });
+                return Err(CommandRegistrationError::RootMustBeLiteral { id });
             };
-            if root_name != registration.id.path {
+            if root_name != id.path {
                 return Err(CommandRegistrationError::RootDoesNotMatchId {
-                    id: registration.id,
+                    id,
                     root: root_name.into(),
                 });
             }
-            resolved.push(ResolvedCommand {
-                id: registration.id,
-                aliases: registration.aliases,
-                root,
-            });
+            resolved.push(ResolvedCommand { id, aliases, root });
         }
 
         let mut claim_counts = FxHashMap::<Box<str>, usize>::default();
@@ -222,15 +304,88 @@ where
     }
 }
 
-fn derived_command_permission(id: &Identifier) -> Result<PermissionExpr, CommandRegistrationError> {
-    let permission = PermissionKey::parse(format!("{}.command.{}", id.namespace, id.path))
-        .map_err(
-            |source| CommandRegistrationError::InvalidDerivedPermission {
+fn derived_command_permission_key(
+    id: &Identifier,
+) -> Result<PermissionKey, CommandRegistrationError> {
+    PermissionKey::parse(format!("{}.command.{}", id.namespace, id.path)).map_err(|source| {
+        CommandRegistrationError::InvalidDerivedPermission {
+            id: id.clone(),
+            source,
+        }
+    })
+}
+
+fn derived_subcommand_permission(
+    id: &Identifier,
+    root: &PermissionKey,
+    path: &[Box<str>],
+) -> Result<PermissionKey, CommandRegistrationError> {
+    let mut permission = root.clone();
+    for segment in path {
+        let segment = PermissionSegment::parse(segment.to_string()).map_err(|source| {
+            CommandRegistrationError::InvalidSubcommandPermissionPath {
                 id: id.clone(),
+                path: display_permission_path(path),
                 source,
-            },
-        )?;
-    Ok(PermissionExpr::key(permission))
+            }
+        })?;
+        permission = permission.child(&segment).map_err(|source| {
+            CommandRegistrationError::InvalidSubcommandPermissionPath {
+                id: id.clone(),
+                path: display_permission_path(path),
+                source,
+            }
+        })?;
+    }
+    Ok(permission)
+}
+
+fn root_permission_requirement<S>(
+    root: PermissionExpr,
+    alternatives: Vec<PermissionKey>,
+    default_access: bool,
+) -> CommandRequirement<S>
+where
+    S: CommandPermissionSource,
+{
+    if default_access {
+        let alternatives = if alternatives.is_empty() {
+            None
+        } else {
+            Some(PermissionExpr::Any(
+                alternatives.into_iter().map(PermissionExpr::key).collect(),
+            ))
+        };
+        return CommandRequirement::authorization(move |source: &S| {
+            source.permission_state(&root) != Some(PermissionState::Deny)
+                || alternatives.as_ref().is_some_and(|alternatives| {
+                    source.permission_state(alternatives) == Some(PermissionState::Allow)
+                })
+        });
+    }
+
+    let permission = alternatives
+        .into_iter()
+        .fold(root, |permission, alternative| {
+            permission | PermissionExpr::key(alternative)
+        });
+    permission_requirement(permission)
+}
+
+fn permission_requirement<S>(permission: PermissionExpr) -> CommandRequirement<S>
+where
+    S: CommandPermissionSource,
+{
+    CommandRequirement::authorization(move |source: &S| {
+        source.permission_state(&permission) == Some(PermissionState::Allow)
+    })
+}
+
+fn display_permission_path(path: &[Box<str>]) -> String {
+    path.iter()
+        .map(AsRef::as_ref)
+        .collect::<Vec<&str>>()
+        .join(".")
 }
 
 fn register_renamed_root<S>(
@@ -288,6 +443,27 @@ pub(crate) enum CommandRegistrationError {
         id: Identifier,
         #[source]
         source: PermissionKeyError,
+    },
+    #[error("command '{id}' cannot combine explicit and derived subcommand permissions")]
+    SubcommandPermissionsRequireDerivedRoot { id: Identifier },
+    #[error("command '{id}' has an empty subcommand permission path")]
+    EmptySubcommandPermissionPath { id: Identifier },
+    #[error("command '{id}' has invalid subcommand permission path '{path}': {source}")]
+    InvalidSubcommandPermissionPath {
+        id: Identifier,
+        path: String,
+        #[source]
+        source: PermissionKeyError,
+    },
+    #[error("command '{id}' declares subcommand permission path '{path}' more than once")]
+    DuplicateSubcommandPermissionPath { id: Identifier, path: String },
+    #[error("command '{id}' has no literal at subcommand permission path '{path}'")]
+    MissingSubcommandPermissionPath { id: Identifier, path: String },
+    #[error("command '{id}' has {matches} literals at subcommand permission path '{path}'")]
+    AmbiguousSubcommandPermissionPath {
+        id: Identifier,
+        path: String,
+        matches: usize,
     },
     #[error("a validated command root unexpectedly became an argument")]
     UnexpectedArgumentRoot,

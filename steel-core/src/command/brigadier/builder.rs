@@ -127,6 +127,36 @@ where
         self
     }
 
+    /// Adds a requirement to the one literal node at `path`.
+    ///
+    /// Returns the number of matching paths so callers can reject missing or
+    /// ambiguous declarations before registration.
+    pub(crate) fn add_requirement_at_literal_path(
+        &mut self,
+        path: &[Box<str>],
+        requirement: &CommandRequirement<S>,
+    ) -> usize
+    where
+        S: 'static,
+    {
+        let Some((name, remaining)) = path.split_first() else {
+            return 0;
+        };
+        let mut matches = 0;
+        for child in &mut self.children {
+            if child.literal_name() != Some(name.as_ref()) {
+                continue;
+            }
+            if remaining.is_empty() {
+                child.requirement = child.requirement.clone().and(requirement.clone());
+                matches += 1;
+            } else {
+                matches += child.add_requirement_at_literal_path(remaining, requirement);
+            }
+        }
+        matches
+    }
+
     /// Redirects parsing to an existing node without transforming the source.
     #[must_use]
     pub(crate) fn redirects(mut self, target: NodeId) -> Self {
