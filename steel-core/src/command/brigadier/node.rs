@@ -4,7 +4,7 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringReader, context::ParsedValue};
+use super::{ArgumentType, CommandSyntaxError};
 
 pub(super) type Command<S> =
     Arc<dyn Fn(&CommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync>;
@@ -32,55 +32,6 @@ pub(crate) enum NodeKind {
     Literal,
     /// A parsed argument.
     Argument,
-}
-
-/// A built-in Brigadier argument parser configuration.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum ArgumentType {
-    /// A lowercase boolean.
-    Bool,
-    /// A bounded signed 32-bit integer.
-    Integer { minimum: i32, maximum: i32 },
-}
-
-impl ArgumentType {
-    /// Creates a boolean argument parser.
-    pub(crate) const fn bool() -> Self {
-        Self::Bool
-    }
-
-    /// Creates a bounded integer argument parser.
-    pub(crate) const fn integer(minimum: i32, maximum: i32) -> Self {
-        Self::Integer { minimum, maximum }
-    }
-
-    pub(super) fn parse(
-        &self,
-        reader: &mut StringReader<'_>,
-    ) -> Result<ParsedValue, CommandSyntaxError> {
-        match *self {
-            Self::Bool => reader.read_boolean().map(ParsedValue::Bool),
-            Self::Integer { minimum, maximum } => {
-                let start = reader.checkpoint();
-                let value = reader.read_int()?;
-                if value < minimum {
-                    reader.restore(start);
-                    return Err(reader.error(CommandSyntaxErrorKind::IntegerTooLow {
-                        found: value,
-                        minimum,
-                    }));
-                }
-                if value > maximum {
-                    reader.restore(start);
-                    return Err(reader.error(CommandSyntaxErrorKind::IntegerTooHigh {
-                        found: value,
-                        maximum,
-                    }));
-                }
-                Ok(ParsedValue::Integer(value))
-            }
-        }
-    }
 }
 
 /// The immutable input available to a command callback.

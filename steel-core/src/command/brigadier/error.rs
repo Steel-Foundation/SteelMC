@@ -5,7 +5,7 @@ use std::{error::Error, fmt};
 const CONTEXT_AMOUNT: usize = 10;
 
 /// Identifies a built-in Brigadier command parsing error.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CommandSyntaxErrorKind {
     /// A quoted string did not start with a quote.
     ExpectedStartOfQuote,
@@ -41,6 +41,18 @@ pub(crate) enum CommandSyntaxErrorKind {
     IntegerTooLow { found: i32, minimum: i32 },
     /// An integer was above its configured maximum.
     IntegerTooHigh { found: i32, maximum: i32 },
+    /// A long was below its configured minimum.
+    LongTooLow { found: i64, minimum: i64 },
+    /// A long was above its configured maximum.
+    LongTooHigh { found: i64, maximum: i64 },
+    /// A float was below its configured minimum.
+    FloatTooLow { found: f32, minimum: f32 },
+    /// A float was above its configured maximum.
+    FloatTooHigh { found: f32, maximum: f32 },
+    /// A double was below its configured minimum.
+    DoubleTooLow { found: f64, minimum: f64 },
+    /// A double was above its configured maximum.
+    DoubleTooHigh { found: f64, maximum: f64 },
     /// A parsed argument had trailing non-whitespace data.
     ExpectedArgumentSeparator,
 }
@@ -77,6 +89,30 @@ impl fmt::Display for CommandSyntaxErrorKind {
                 formatter,
                 "Integer must not be more than {maximum}, found {found}"
             ),
+            Self::LongTooLow { found, minimum } => write!(
+                formatter,
+                "Long must not be less than {minimum}, found {found}"
+            ),
+            Self::LongTooHigh { found, maximum } => write!(
+                formatter,
+                "Long must not be more than {maximum}, found {found}"
+            ),
+            Self::FloatTooLow { found, minimum } => write!(
+                formatter,
+                "Float must not be less than {minimum}, found {found}"
+            ),
+            Self::FloatTooHigh { found, maximum } => write!(
+                formatter,
+                "Float must not be more than {maximum}, found {found}"
+            ),
+            Self::DoubleTooLow { found, minimum } => write!(
+                formatter,
+                "Double must not be less than {minimum}, found {found}"
+            ),
+            Self::DoubleTooHigh { found, maximum } => write!(
+                formatter,
+                "Double must not be more than {maximum}, found {found}"
+            ),
             Self::ExpectedArgumentSeparator => formatter
                 .write_str("Expected whitespace to end one argument, but found trailing data"),
         }
@@ -84,7 +120,10 @@ impl fmt::Display for CommandSyntaxErrorKind {
 }
 
 /// A Brigadier-compatible parsing error with input context.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Dynamic floating-point values use Rust's standard display formatting; parsing and bounds
+/// behavior remain Brigadier-compatible.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CommandSyntaxError {
     kind: CommandSyntaxErrorKind,
     input: Box<str>,

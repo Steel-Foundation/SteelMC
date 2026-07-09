@@ -93,6 +93,14 @@ impl<'input> StringReader<'input> {
         &self.input[self.cursor.byte..]
     }
 
+    /// Reads all remaining input.
+    pub(crate) fn read_remaining(&mut self) -> &'input str {
+        let remaining = &self.input[self.cursor.byte..];
+        self.cursor.byte = self.input.len();
+        self.cursor.utf16 = self.total_length;
+        remaining
+    }
+
     /// Advances past whitespace recognized by Java's `Character.isWhitespace`.
     pub(crate) fn skip_whitespace(&mut self) {
         while self.peek().is_some_and(Self::is_java_whitespace) {

@@ -2,13 +2,9 @@
 
 use std::sync::Arc;
 
-use super::{CommandSyntaxError, NodeId, StringRange, StringReader, node::Command};
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum ParsedValue {
-    Bool(bool),
-    Integer(i32),
-}
+use super::{
+    CommandSyntaxError, NodeId, StringRange, StringReader, argument::ParsedValue, node::Command,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 struct ParsedArgument {
@@ -126,18 +122,50 @@ impl<S> ParsedCommandContext<S> {
 
     /// Returns a parsed boolean argument.
     pub(crate) fn boolean(&self, name: &str) -> Option<bool> {
-        match self.argument(name) {
-            Some(ParsedValue::Bool(value)) => Some(*value),
-            Some(ParsedValue::Integer(_)) | None => None,
-        }
+        let Some(ParsedValue::Bool(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(*value)
     }
 
     /// Returns a parsed integer argument.
     pub(crate) fn integer(&self, name: &str) -> Option<i32> {
-        match self.argument(name) {
-            Some(ParsedValue::Integer(value)) => Some(*value),
-            Some(ParsedValue::Bool(_)) | None => None,
-        }
+        let Some(ParsedValue::Integer(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    /// Returns a parsed long argument.
+    pub(crate) fn long(&self, name: &str) -> Option<i64> {
+        let Some(ParsedValue::Long(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    /// Returns a parsed float argument.
+    pub(crate) fn float(&self, name: &str) -> Option<f32> {
+        let Some(ParsedValue::Float(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    /// Returns a parsed double argument.
+    pub(crate) fn double(&self, name: &str) -> Option<f64> {
+        let Some(ParsedValue::Double(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(*value)
+    }
+
+    /// Returns a parsed string argument.
+    pub(crate) fn string(&self, name: &str) -> Option<&str> {
+        let Some(ParsedValue::String(value)) = self.argument(name) else {
+            return None;
+        };
+        Some(value)
     }
 
     /// Returns the context reached through a redirect.
