@@ -30,6 +30,8 @@ type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 
 pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
+    // TODO: Add bossbar after Steel has a persistent custom-bossbar manager.
+    // TODO: Add entity after live entity NBT can reload every command-visible field.
     literal(name)
         .then(
             literal("score").then(

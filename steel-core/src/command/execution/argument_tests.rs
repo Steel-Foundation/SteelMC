@@ -1181,6 +1181,55 @@ fn item_predicate_argument_suggests_items_tags_and_condition_types() {
 }
 
 #[test]
+fn item_slots_argument_resolves_exact_vanilla_ranges() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_slots());
+
+    let parse = dispatcher.parse("resource container.*", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("container wildcard slot range should parse");
+    };
+    let Some(range) = chain.top_context().item_slots("value") else {
+        panic!("item slot range should be retained");
+    };
+    assert_eq!(range.name(), "container.*");
+    assert_eq!(range.slots(), (0..54).collect::<Vec<_>>());
+
+    let parse = dispatcher.parse("resource armor.*", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("armor wildcard slot range should parse");
+    };
+    let Some(range) = chain.top_context().item_slots("value") else {
+        panic!("item slot range should be retained");
+    };
+    assert_eq!(range.slots(), [103, 102, 101, 100, 105]);
+}
+
+#[test]
+fn item_slots_argument_rejects_noncanonical_names_and_suggests_ranges() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_slots());
+    for input in ["resource container.05", "resource unknown"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should not resolve to a vanilla slot range"
+        );
+    }
+
+    let parse = dispatcher.parse("resource weapon.", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("item slot suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+    assert!(suggestions.contains(&"weapon.mainhand"));
+    assert!(suggestions.contains(&"weapon.offhand"));
+    assert!(suggestions.contains(&"weapon.*"));
+}
+
+#[test]
 fn entity_selector_argument_is_retained_for_deferred_resolution() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::players());

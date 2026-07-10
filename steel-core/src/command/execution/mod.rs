@@ -11,6 +11,7 @@ mod queue;
 mod runtime;
 mod score;
 mod selector;
+mod slot;
 mod source;
 mod world;
 
@@ -25,6 +26,7 @@ pub(crate) use runtime::{
     SteelContextChain, SteelExecutor, SteelModifier, argument, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
+pub(crate) use slot::ItemSlotRange;
 pub(crate) use source::{
     CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
 };

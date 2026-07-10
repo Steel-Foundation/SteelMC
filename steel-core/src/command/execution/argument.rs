@@ -15,7 +15,7 @@ use text_components::TextComponent;
 
 use super::{
     BiomeOrTag, BlockPredicate, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate,
-    ScoreHolderArgument, WorldArgument,
+    ItemSlotRange, ScoreHolderArgument, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_predicate, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
@@ -24,6 +24,7 @@ use super::{
     nbt::parse_nbt_path,
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    slot::{parse_item_slots, suggest_item_slots},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -109,6 +110,8 @@ pub(crate) enum SteelArgumentType {
     ItemStack,
     /// A decoded vanilla item predicate.
     ItemPredicate,
+    /// A named vanilla command item-slot range.
+    ItemSlots,
     /// A parsed vanilla NBT path.
     NbtPath,
     /// A command-storage key in the source domain.
@@ -234,6 +237,10 @@ impl SteelArgumentType {
         Self::ItemPredicate
     }
 
+    pub(crate) const fn item_slots() -> Self {
+        Self::ItemSlots
+    }
+
     pub(crate) const fn nbt_path() -> Self {
         Self::NbtPath
     }
@@ -302,6 +309,8 @@ pub(crate) enum SteelArgumentValue {
     ItemStack(ItemStack),
     /// A parsed item predicate ready for infallible matching.
     ItemPredicate(ItemPredicate),
+    /// A parsed vanilla command item-slot range.
+    ItemSlots(ItemSlotRange),
     /// A parsed NBT path.
     NbtPath(NbtPath),
     /// A parsed resource location.
@@ -334,6 +343,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Enchantment(_)
             | Self::ItemStack(_)
             | Self::ItemPredicate(_)
+            | Self::ItemSlots(_)
             | Self::NbtPath(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
@@ -400,6 +410,7 @@ where
             Self::ItemPredicate => {
                 parse_item_predicate(reader).map(SteelArgumentValue::ItemPredicate)
             }
+            Self::ItemSlots => parse_item_slots(reader).map(SteelArgumentValue::ItemSlots),
             Self::NbtPath => parse_nbt_path(reader).map(SteelArgumentValue::NbtPath),
             Self::StorageKey | Self::TimeMarker { .. } => {
                 parse_identifier(reader).map(SteelArgumentValue::Identifier)
@@ -488,6 +499,7 @@ where
             }
             Self::ItemStack => suggest_item_stack(builder),
             Self::ItemPredicate => suggest_item_predicate(builder),
+            Self::ItemSlots => suggest_item_slots(builder),
             Self::StorageKey => suggest_storage_keys(context.source(), builder),
             Self::WorldClock => {
                 suggest_resources(
@@ -559,6 +571,7 @@ where
             | SteelArgumentValue::Enchantment(_)
             | SteelArgumentValue::ItemStack(_)
             | SteelArgumentValue::ItemPredicate(_)
+            | SteelArgumentValue::ItemSlots(_)
             | SteelArgumentValue::NbtPath(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
