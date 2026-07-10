@@ -15,9 +15,12 @@ use crate::command::brigadier::{
 
 use super::{
     ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl,
-    ItemPredicate, SteelArgumentType, argument::SteelArgumentValue, selector::EntitySelector,
+    ItemPredicate, SteelArgumentType,
+    argument::{CoordinateAxes, SteelArgumentValue},
+    selector::EntitySelector,
 };
 use crate::{
+    chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
     player::Player,
 };
@@ -192,6 +195,8 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -215,6 +220,8 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -238,6 +245,8 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -253,6 +262,20 @@ where
         }
     }
 
+    pub(crate) fn swizzle(&self, name: &str) -> Option<CoordinateAxes> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Swizzle(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn heightmap(&self, name: &str) -> Option<HeightmapType> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Heightmap(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// Returns a configured Steel domain name.
     pub(crate) fn domain(&self, name: &str) -> Option<&str> {
         match self.argument(name) {
@@ -262,6 +285,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::EntityType(_)
@@ -285,6 +310,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -307,6 +334,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -329,6 +358,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
@@ -351,6 +382,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
@@ -380,6 +413,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -402,6 +437,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -424,6 +461,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -446,6 +485,8 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Swizzle(_)
+                | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)

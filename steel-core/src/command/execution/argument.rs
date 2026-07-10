@@ -3,6 +3,7 @@ use crate::command::brigadier::{
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
+use glam::DVec3;
 use steel_registry::{
     ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
     WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
@@ -19,7 +20,43 @@ use super::{
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
+use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{ENTITIES, EntityAnchor};
+
+/// Axes selected by vanilla's coordinate swizzle argument.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CoordinateAxes(u8);
+
+impl CoordinateAxes {
+    const X: u8 = 1;
+    const Y: u8 = 2;
+    const Z: u8 = 4;
+
+    pub(crate) const fn x(self) -> bool {
+        self.0 & Self::X != 0
+    }
+
+    pub(crate) const fn y(self) -> bool {
+        self.0 & Self::Y != 0
+    }
+
+    pub(crate) const fn z(self) -> bool {
+        self.0 & Self::Z != 0
+    }
+
+    pub(crate) const fn align(self, mut position: DVec3) -> DVec3 {
+        if self.x() {
+            position.x = position.x.floor();
+        }
+        if self.y() {
+            position.y = position.y.floor();
+        }
+        if self.z() {
+            position.z = position.z.floor();
+        }
+        position
+    }
+}
 
 /// An argument parser stored by Steel's command runtime.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +71,10 @@ pub(crate) enum SteelArgumentType {
     Vec3 { center_integers: bool },
     /// A yaw and pitch rotation.
     Rotation,
+    /// A unique set of coordinate axes.
+    Swizzle,
+    /// A live-world heightmap type.
+    Heightmap,
     /// An entity's feet or eyes position.
     EntityAnchor,
     /// A deferred entity selector using vanilla's entity argument flags.
@@ -77,6 +118,14 @@ impl SteelArgumentType {
 
     pub(crate) const fn rotation() -> Self {
         Self::Rotation
+    }
+
+    pub(crate) const fn swizzle() -> Self {
+        Self::Swizzle
+    }
+
+    pub(crate) const fn heightmap() -> Self {
+        Self::Heightmap
     }
 
     pub(crate) const fn entity_anchor() -> Self {
@@ -165,6 +214,10 @@ pub(crate) enum SteelArgumentValue {
     Coordinates(Coordinates),
     /// A parsed entity position anchor.
     EntityAnchor(EntityAnchor),
+    /// Axes selected by a coordinate swizzle.
+    Swizzle(CoordinateAxes),
+    /// A parsed live-world heightmap type.
+    Heightmap(HeightmapType),
     /// A source-independent entity selector retained until command execution.
     EntitySelector(Box<EntitySelector>),
     /// A parsed vanilla game mode.
@@ -194,6 +247,8 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Time(_)
             | Self::Coordinates(_)
             | Self::EntityAnchor(_)
+            | Self::Swizzle(_)
+            | Self::Heightmap(_)
             | Self::EntitySelector(_)
             | Self::GameMode(_)
             | Self::Domain(_)
@@ -229,6 +284,8 @@ where
                 parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
             }
             Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
+            Self::Swizzle => parse_swizzle(reader).map(SteelArgumentValue::Swizzle),
+            Self::Heightmap => parse_heightmap(reader).map(SteelArgumentValue::Heightmap),
             Self::EntityAnchor => parse_entity_anchor(reader).map(SteelArgumentValue::EntityAnchor),
             Self::Entity {
                 single,
@@ -282,7 +339,8 @@ where
             Self::Vec3 { center_integers } => {
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
-            Self::Rotation => {}
+            Self::Rotation | Self::Swizzle => {}
+            Self::Heightmap => suggest_heightmaps(builder),
             Self::EntityAnchor => suggest_entity_anchors(builder),
             Self::Entity {
                 single,
@@ -376,6 +434,8 @@ where
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
             | SteelArgumentValue::EntityAnchor(_)
+            | SteelArgumentValue::Swizzle(_)
+            | SteelArgumentValue::Heightmap(_)
             | SteelArgumentValue::EntitySelector(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
@@ -387,6 +447,59 @@ where
             | SteelArgumentValue::Timeline(_),
         )
         | None => None,
+    }
+}
+
+fn parse_swizzle(reader: &mut StringReader<'_>) -> Result<CoordinateAxes, CommandSyntaxError> {
+    let mut axes = CoordinateAxes::default();
+    while reader.can_read() && reader.peek() != Some(' ') {
+        let bit = match reader.read() {
+            Some('x') => CoordinateAxes::X,
+            Some('y') => CoordinateAxes::Y,
+            Some('z') => CoordinateAxes::Z,
+            Some(_) | None => return Err(invalid_swizzle(reader)),
+        };
+        if axes.0 & bit != 0 {
+            return Err(invalid_swizzle(reader));
+        }
+        axes.0 |= bit;
+    }
+    Ok(axes)
+}
+
+fn invalid_swizzle(reader: &StringReader<'_>) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+        TextComponent::from(&translations::ARGUMENTS_SWIZZLE_INVALID),
+    )))
+}
+
+fn parse_heightmap(reader: &mut StringReader<'_>) -> Result<HeightmapType, CommandSyntaxError> {
+    let raw = reader.read_unquoted_string();
+    match raw.to_ascii_lowercase().as_str() {
+        "world_surface" => Ok(HeightmapType::WorldSurface),
+        "motion_blocking" => Ok(HeightmapType::MotionBlocking),
+        "motion_blocking_no_leaves" => Ok(HeightmapType::MotionBlockingNoLeaves),
+        "ocean_floor" => Ok(HeightmapType::OceanFloor),
+        _ => {
+            let message = translations::ARGUMENT_ENUM_INVALID
+                .message([raw.to_owned()])
+                .component();
+            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
+        }
+    }
+}
+
+fn suggest_heightmaps(builder: &mut SuggestionsBuilder<'_>) {
+    const HEIGHTMAPS: &[&str] = &[
+        "world_surface",
+        "motion_blocking",
+        "motion_blocking_no_leaves",
+        "ocean_floor",
+    ];
+    for heightmap in HEIGHTMAPS {
+        if heightmap.starts_with(builder.remaining_lowercase()) {
+            builder.suggest(*heightmap);
+        }
     }
 }
 

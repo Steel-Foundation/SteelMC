@@ -178,6 +178,8 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
             SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
             SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
+            SteelArgumentType::Swizzle => (ProtocolArgumentType::Swizzle, None),
+            SteelArgumentType::Heightmap => (ProtocolArgumentType::Heightmap, None),
             SteelArgumentType::EntityAnchor => (ProtocolArgumentType::EntityAnchor, None),
             SteelArgumentType::Entity {
                 single,
@@ -559,6 +561,14 @@ mod tests {
         let (anchor, anchor_suggestions) = SteelArgumentType::entity_anchor().protocol_argument();
         assert!(matches!(anchor, ProtocolArgumentType::EntityAnchor));
         assert!(anchor_suggestions.is_none());
+
+        let (swizzle, swizzle_suggestions) = SteelArgumentType::swizzle().protocol_argument();
+        assert!(matches!(swizzle, ProtocolArgumentType::Swizzle));
+        assert!(swizzle_suggestions.is_none());
+
+        let (heightmap, heightmap_suggestions) = SteelArgumentType::heightmap().protocol_argument();
+        assert!(matches!(heightmap, ProtocolArgumentType::Heightmap));
+        assert!(heightmap_suggestions.is_none());
     }
 
     #[test]

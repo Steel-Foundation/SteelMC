@@ -4,6 +4,7 @@ mod clear;
 mod difficulty;
 mod domain;
 mod enchant;
+mod execute;
 mod experience;
 mod fly;
 pub(crate) mod gamemode;
@@ -35,6 +36,7 @@ pub(crate) fn create_dispatcher()
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
+    builder.register(execute::registration())?;
     builder.register(experience::registration())?;
     builder.register(fly::registration())?;
     builder.register(gamemode::registration()?)?;
@@ -85,6 +87,7 @@ mod tests {
                 "difficulty",
                 "domain",
                 "enchant",
+                "execute",
                 "experience",
                 "xp",
                 "fly",
@@ -161,5 +164,106 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(weather_names, ["clear", "rain", "thunder"]);
+    }
+
+    #[test]
+    fn execute_source_modifiers_redirect_to_the_execute_root() {
+        init_test_registry();
+        let Ok(dispatcher) = create_dispatcher() else {
+            panic!("built-in commands should register");
+        };
+        let Some(execute) = dispatcher.children(dispatcher.root()).and_then(|children| {
+            children.iter().copied().find(|child| {
+                dispatcher
+                    .node(*child)
+                    .is_some_and(|node| node.name() == "execute")
+            })
+        }) else {
+            panic!("execute root should exist");
+        };
+        let Some(execute_node) = dispatcher.node(execute) else {
+            panic!("execute root should exist");
+        };
+        assert!(!execute_node.is_executable());
+
+        let child = |parent, name| {
+            let Some(node) = dispatcher.children(parent).and_then(|children| {
+                children.iter().copied().find(|child| {
+                    dispatcher
+                        .node(*child)
+                        .is_some_and(|node| node.name() == name)
+                })
+            }) else {
+                panic!("{name} should exist below {parent:?}");
+            };
+            node
+        };
+
+        let run = child(execute, "run");
+        assert_eq!(
+            dispatcher.node(run).and_then(|node| node.redirect()),
+            Some(dispatcher.root())
+        );
+
+        let modifier_paths: &[&[&str]] = &[
+            &["as", "targets"],
+            &["at", "targets"],
+            &["positioned", "pos"],
+            &["positioned", "as", "targets"],
+            &["positioned", "over", "heightmap"],
+            &["rotated", "rot"],
+            &["rotated", "as", "targets"],
+            &["facing", "pos"],
+            &["facing", "entity", "targets", "anchor"],
+            &["align", "axes"],
+            &["anchored", "anchor"],
+            &["summon", "entity"],
+        ];
+        for path in modifier_paths {
+            let terminal = path
+                .iter()
+                .fold(execute, |parent, name| child(parent, name));
+            assert_eq!(
+                dispatcher.node(terminal).and_then(|node| node.redirect()),
+                Some(execute),
+                "execute {} should redirect to the execute root",
+                path.join(" ")
+            );
+        }
+
+        let argument_types: &[(&[&str], SteelArgumentType)] = &[
+            (&["as", "targets"], SteelArgumentType::entities()),
+            (&["at", "targets"], SteelArgumentType::entities()),
+            (&["positioned", "pos"], SteelArgumentType::vec3(true)),
+            (
+                &["positioned", "over", "heightmap"],
+                SteelArgumentType::heightmap(),
+            ),
+            (&["rotated", "rot"], SteelArgumentType::rotation()),
+            (&["facing", "pos"], SteelArgumentType::vec3(true)),
+            (
+                &["facing", "entity", "targets", "anchor"],
+                SteelArgumentType::entity_anchor(),
+            ),
+            (&["align", "axes"], SteelArgumentType::swizzle()),
+            (&["anchored", "anchor"], SteelArgumentType::entity_anchor()),
+            (
+                &["summon", "entity"],
+                SteelArgumentType::summonable_entity(),
+            ),
+        ];
+        for (path, expected) in argument_types {
+            let argument = path
+                .iter()
+                .fold(execute, |parent, name| child(parent, name));
+            assert_eq!(
+                dispatcher
+                    .node(argument)
+                    .and_then(|node| node.argument_type()),
+                Some(expected),
+                "execute {} should use the expected argument parser",
+                path.join(" ")
+            );
+        }
     }
 }

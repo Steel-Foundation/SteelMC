@@ -1,3 +1,4 @@
+use crate::chunk::heightmap::HeightmapType;
 use crate::command::{
     brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
     execution::{
@@ -7,6 +8,7 @@ use crate::command::{
         literal,
     },
 };
+use glam::DVec3;
 use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
@@ -116,6 +118,81 @@ fn parsed_coordinates(
         .top_context()
         .coordinates("value")
         .ok_or_else(|| CommandSyntaxError::dynamic("coordinates were not retained"))
+}
+
+#[test]
+fn swizzle_argument_retains_unique_axes_and_rejects_duplicates() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::swizzle());
+    let parse = dispatcher.parse("resource zx", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("unique swizzle axes should parse");
+    };
+    let Some(axes) = chain.top_context().swizzle("value") else {
+        panic!("swizzle axes should be retained");
+    };
+
+    assert!(axes.x());
+    assert!(!axes.y());
+    assert!(axes.z());
+    assert_eq!(
+        axes.align(DVec3::new(1.9, 2.9, -1.1)),
+        DVec3::new(1.0, 2.9, -2.0)
+    );
+
+    for input in ["resource xx", "resource q"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject an invalid swizzle"
+        );
+    }
+}
+
+#[test]
+fn heightmap_argument_accepts_vanilla_live_world_names_and_suggests_them() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::heightmap());
+    let parse = dispatcher.parse("resource MOTION_BLOCKING_NO_LEAVES", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("heightmap names should parse case-insensitively");
+    };
+    assert_eq!(
+        chain.top_context().heightmap("value"),
+        Some(HeightmapType::MotionBlockingNoLeaves)
+    );
+
+    let parse = dispatcher.parse("resource motion", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("heightmap suggestions should build");
+    };
+    assert_eq!(
+        suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["motion_blocking", "motion_blocking_no_leaves"]
+    );
+
+    let parse = dispatcher.parse("resource ", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("all kept heightmaps should be suggested");
+    };
+    assert_eq!(
+        suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        [
+            "motion_blocking",
+            "motion_blocking_no_leaves",
+            "ocean_floor",
+            "world_surface"
+        ]
+    );
+
+    let parse = dispatcher.parse("resource world_surface_wg", TestSource::new());
+    assert!(dispatcher.context_chain(parse).is_err());
 }
 
 #[test]

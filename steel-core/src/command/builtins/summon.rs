@@ -59,7 +59,7 @@ fn summon_entity(
     Ok(1)
 }
 
-fn create_entity(
+pub(super) fn create_entity(
     context: &SteelCommandContext<CommandSource>,
     entity_type: EntityTypeRef,
     position: DVec3,

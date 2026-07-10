@@ -1563,7 +1563,7 @@ impl World {
         None
     }
 
-    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
+    pub(crate) fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
         let chunk_pos = ChunkPos::new(
             SectionPos::block_to_section_coord(x),
             SectionPos::block_to_section_coord(z),
