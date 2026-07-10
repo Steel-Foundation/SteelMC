@@ -14,8 +14,10 @@ use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use super::{
-    BiomeOrTag, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate, ScoreHolderArgument,
+    BiomeOrTag, BlockPredicate, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate,
+    ScoreHolderArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
+    block::{parse_block_predicate, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -89,6 +91,8 @@ pub(crate) enum SteelArgumentType {
     IntRange,
     /// A registered biome or biome tag.
     BiomeOrTag,
+    /// A block or block tag with optional state and block-entity constraints.
+    BlockPredicate,
     /// One of vanilla's four game modes.
     GameMode,
     /// A configured Steel domain.
@@ -190,6 +194,10 @@ impl SteelArgumentType {
         Self::BiomeOrTag
     }
 
+    pub(crate) const fn block_predicate() -> Self {
+        Self::BlockPredicate
+    }
+
     pub(crate) const fn game_mode() -> Self {
         Self::GameMode
     }
@@ -258,6 +266,8 @@ pub(crate) enum SteelArgumentValue {
     IntRange(IntRange),
     /// A registered biome or biome tag.
     BiomeOrTag(BiomeOrTag),
+    /// A parsed block-state and block-entity predicate.
+    BlockPredicate(BlockPredicate),
     /// A parsed vanilla game mode.
     GameMode(GameType),
     /// A configured Steel domain name.
@@ -292,6 +302,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Objective(_)
             | Self::IntRange(_)
             | Self::BiomeOrTag(_)
+            | Self::BlockPredicate(_)
             | Self::GameMode(_)
             | Self::Domain(_)
             | Self::EntityType(_)
@@ -343,6 +354,9 @@ where
             )),
             Self::IntRange => parse_int_range(reader).map(SteelArgumentValue::IntRange),
             Self::BiomeOrTag => parse_biome_or_tag(reader).map(SteelArgumentValue::BiomeOrTag),
+            Self::BlockPredicate => {
+                parse_block_predicate(reader).map(SteelArgumentValue::BlockPredicate)
+            }
             Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
@@ -409,6 +423,7 @@ where
                 }
             }
             Self::BiomeOrTag => suggest_biomes(builder),
+            Self::BlockPredicate => suggest_blocks(builder),
             Self::GameMode => suggest_game_modes(builder),
             Self::Domain => {
                 let prefix = builder.remaining();
@@ -504,6 +519,7 @@ where
             | SteelArgumentValue::Objective(_)
             | SteelArgumentValue::IntRange(_)
             | SteelArgumentValue::BiomeOrTag(_)
+            | SteelArgumentValue::BlockPredicate(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)

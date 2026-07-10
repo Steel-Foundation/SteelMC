@@ -2,6 +2,7 @@
 
 mod argument;
 mod biome;
+mod block;
 mod coordinates;
 mod item;
 mod item_predicate;
@@ -13,6 +14,7 @@ mod source;
 
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use biome::BiomeOrTag;
+pub(crate) use block::BlockPredicate;
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use queue::{ChainModifiers, CommandExecutionContext, ExecutionControl, ExecutionStop};

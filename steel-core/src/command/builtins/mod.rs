@@ -236,6 +236,18 @@ mod tests {
                 Some(&SteelArgumentType::biome_or_tag())
             );
 
+            let block = child(child(child(execute, condition), "block"), "pos");
+            let block = child(block, "block");
+            let Some(block_node) = dispatcher.node(block) else {
+                panic!("execute block condition terminal should exist");
+            };
+            assert!(block_node.is_executable());
+            assert_eq!(block_node.redirect(), Some(execute));
+            assert_eq!(
+                block_node.argument_type(),
+                Some(&SteelArgumentType::block_predicate())
+            );
+
             let score = child(child(execute, condition), "score");
             let target = child(score, "target");
             assert_eq!(

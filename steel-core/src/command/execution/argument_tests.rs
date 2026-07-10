@@ -2,7 +2,7 @@ use crate::chunk::heightmap::HeightmapType;
 use crate::command::{
     brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
     execution::{
-        BiomeOrTag, CommandPermissionSource, CommandResultCallback, Coordinates,
+        BiomeOrTag, BlockPredicate, CommandPermissionSource, CommandResultCallback, Coordinates,
         ExecutionCommandSource, ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime,
         argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
@@ -14,8 +14,8 @@ use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
-    vanilla_attributes, vanilla_biomes, vanilla_enchantments, vanilla_entities, vanilla_items,
-    vanilla_world_clocks,
+    vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_enchantments, vanilla_entities,
+    vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::{Identifier, types::GameType};
@@ -272,6 +272,86 @@ fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
             .iter()
             .any(|suggestion| suggestion.text() == "#minecraft:is_overworld")
     );
+}
+
+#[test]
+fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::block_predicate());
+
+    let parse = dispatcher.parse(
+        "resource oak_log[axis=x]{custom:{value:3}}",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("concrete block predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().block_predicate("value") else {
+        panic!("block predicate should be retained");
+    };
+    let Some(oak_x) = steel_registry::REGISTRY
+        .blocks
+        .state_id_from_block_defaulted_properties(&vanilla_blocks::OAK_LOG, [("axis", "x")])
+    else {
+        panic!("oak log x state should exist");
+    };
+    assert!(predicate.matches_state(oak_x));
+    assert!(!predicate.matches_state(vanilla_blocks::OAK_LOG.default_state()));
+    let Some(nbt) = predicate.nbt() else {
+        panic!("block predicate NBT should be retained");
+    };
+    assert_eq!(
+        nbt.compound("custom")
+            .and_then(|custom| custom.int("value")),
+        Some(3)
+    );
+
+    let parse = dispatcher.parse(
+        "resource #c:natural_logs/overworld[axis=y]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("block tag predicate should parse");
+    };
+    let Some(BlockPredicate::Tag { .. }) = chain.top_context().block_predicate("value") else {
+        panic!("block tag predicate should be retained");
+    };
+    let Some(predicate) = chain.top_context().block_predicate("value") else {
+        panic!("block tag predicate should be retained");
+    };
+    assert!(predicate.matches_state(vanilla_blocks::OAK_LOG.default_state()));
+    assert!(!predicate.matches_state(vanilla_blocks::STONE.default_state()));
+}
+
+#[test]
+fn block_predicate_argument_validates_concrete_properties_but_defers_tag_properties() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::block_predicate());
+
+    for input in [
+        "resource oak_log[missing=value]",
+        "resource oak_log[axis=missing]",
+        "resource oak_log[axis=x,axis=y]",
+        "resource #missing",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject an invalid block predicate"
+        );
+    }
+
+    let parse = dispatcher.parse(
+        "resource #c:natural_logs/overworld[missing=value]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("vague tag properties should parse");
+    };
+    let Some(predicate) = chain.top_context().block_predicate("value") else {
+        panic!("block tag predicate should be retained");
+    };
+    assert!(!predicate.matches_state(vanilla_blocks::OAK_LOG.default_state()));
 }
 
 #[test]

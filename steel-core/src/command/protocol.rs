@@ -207,6 +207,7 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::BlockPredicate => (ProtocolArgumentType::BlockPredicate, None),
             SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
             SteelArgumentType::SummonableEntity => (
                 ProtocolArgumentType::Resource {
@@ -642,6 +643,14 @@ mod tests {
             }
         ));
         assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+    }
+
+    #[test]
+    fn steel_block_predicate_argument_projects_vanillas_parser() {
+        let (argument, suggestions) = SteelArgumentType::block_predicate().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::BlockPredicate));
+        assert!(suggestions.is_none());
     }
 
     #[test]
