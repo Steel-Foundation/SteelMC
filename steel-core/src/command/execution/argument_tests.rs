@@ -70,6 +70,10 @@ impl ExecutionCommandSource for TestSource {
         .to_vec()
     }
 
+    fn command_storage_keys(&self) -> Vec<String> {
+        vec!["minecraft:global".to_owned(), "steel:data".to_owned()]
+    }
+
     fn selector_player_names(&self) -> Vec<String> {
         vec!["Steve".to_owned()]
     }
@@ -615,6 +619,32 @@ fn world_argument_retains_relative_and_fully_qualified_names() {
         .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["alpha:arena", "alpha:overworld", "arena"]);
+}
+
+#[test]
+fn storage_key_argument_parses_and_suggests_source_domain_keys() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::storage_key());
+    let parse = dispatcher.parse("resource steel:data", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("storage key should parse");
+    };
+    assert_eq!(
+        chain.top_context().identifier("value"),
+        Some(&Identifier::new_static("steel", "data"))
+    );
+
+    let parse = dispatcher.parse("resource st", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("storage key suggestions should build");
+    };
+    assert_eq!(
+        suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["steel:data"]
+    );
 }
 
 #[test]

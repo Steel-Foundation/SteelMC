@@ -111,6 +111,8 @@ pub(crate) enum SteelArgumentType {
     ItemPredicate,
     /// A parsed vanilla NBT path.
     NbtPath,
+    /// A command-storage key in the source domain.
+    StorageKey,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -234,6 +236,10 @@ impl SteelArgumentType {
 
     pub(crate) const fn nbt_path() -> Self {
         Self::NbtPath
+    }
+
+    pub(crate) const fn storage_key() -> Self {
+        Self::StorageKey
     }
 
     pub(crate) const fn world_clock() -> Self {
@@ -395,6 +401,9 @@ where
                 parse_item_predicate(reader).map(SteelArgumentValue::ItemPredicate)
             }
             Self::NbtPath => parse_nbt_path(reader).map(SteelArgumentValue::NbtPath),
+            Self::StorageKey | Self::TimeMarker { .. } => {
+                parse_identifier(reader).map(SteelArgumentValue::Identifier)
+            }
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -409,7 +418,6 @@ where
                     |timeline| Ok(SteelArgumentValue::Timeline(timeline)),
                 )
             }
-            Self::TimeMarker { .. } => parse_identifier(reader).map(SteelArgumentValue::Identifier),
         }
     }
 
@@ -480,6 +488,7 @@ where
             }
             Self::ItemStack => suggest_item_stack(builder),
             Self::ItemPredicate => suggest_item_predicate(builder),
+            Self::StorageKey => suggest_storage_keys(context.source(), builder),
             Self::WorldClock => {
                 suggest_resources(
                     REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
@@ -775,6 +784,18 @@ fn suggest_resources<'a>(
     for suggestion in suggestions {
         builder.suggest(suggestion);
     }
+}
+
+fn suggest_storage_keys<S>(source: &S, builder: &mut SuggestionsBuilder<'_>)
+where
+    S: ExecutionCommandSource,
+{
+    let keys = source
+        .command_storage_keys()
+        .into_iter()
+        .filter_map(|key| key.parse::<Identifier>().ok())
+        .collect::<Vec<_>>();
+    suggest_resources(keys.iter(), builder);
 }
 
 pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {

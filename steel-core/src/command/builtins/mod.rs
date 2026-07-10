@@ -269,6 +269,28 @@ mod tests {
                 assert_eq!(node.redirect(), Some(execute));
             }
 
+            let data = child(child(execute, condition), "data");
+            for (provider, source_name, source_type) in [
+                ("block", "sourcePos", SteelArgumentType::block_pos()),
+                ("entity", "source", SteelArgumentType::entity()),
+                ("storage", "source", SteelArgumentType::storage_key()),
+            ] {
+                let source = child(child(data, provider), source_name);
+                assert_eq!(
+                    dispatcher
+                        .node(source)
+                        .and_then(|node| node.argument_type()),
+                    Some(&source_type)
+                );
+                let path = child(source, "path");
+                let Some(node) = dispatcher.node(path) else {
+                    panic!("execute data path terminal should exist");
+                };
+                assert!(node.is_executable());
+                assert_eq!(node.redirect(), Some(execute));
+                assert_eq!(node.argument_type(), Some(&SteelArgumentType::nbt_path()));
+            }
+
             let dimension = child(child(execute, condition), "dimension");
             let dimension = child(dimension, "dimension");
             let Some(node) = dispatcher.node(dimension) else {

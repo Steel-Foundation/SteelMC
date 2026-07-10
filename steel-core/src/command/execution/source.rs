@@ -87,6 +87,10 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
         Vec::new()
     }
 
+    fn command_storage_keys(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn selector_player_names(&self) -> Vec<String> {
         Vec::new()
     }
@@ -347,6 +351,19 @@ impl ExecutionCommandSource for CommandSource {
             }
         }
         names
+    }
+
+    fn command_storage_keys(&self) -> Vec<String> {
+        self.server
+            .command_storage
+            .get(self.world.domain())
+            .map_or_else(Vec::new, |storage| {
+                storage
+                    .keys()
+                    .into_iter()
+                    .map(|key| key.to_string())
+                    .collect()
+            })
     }
 
     fn selector_player_names(&self) -> Vec<String> {

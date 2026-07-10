@@ -246,7 +246,9 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
-            SteelArgumentType::Domain | SteelArgumentType::TimeMarker { .. } => (
+            SteelArgumentType::Domain
+            | SteelArgumentType::StorageKey
+            | SteelArgumentType::TimeMarker { .. } => (
                 ProtocolArgumentType::ResourceLocation,
                 Some(SuggestionType::AskServer),
             ),
@@ -664,6 +666,14 @@ mod tests {
 
         assert!(matches!(argument, ProtocolArgumentType::NbtPath));
         assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_storage_key_argument_projects_vanillas_identifier_parser() {
+        let (argument, suggestions) = SteelArgumentType::storage_key().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::ResourceLocation));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
     }
 
     #[test]

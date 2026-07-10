@@ -12,6 +12,7 @@ use super::super::{
     execution::{CommandSource, SteelCommandContext, SteelCommandRuntime, literal},
     registration::CommandRegistration,
 };
+use crate::command::storage::CommandStorage;
 use crate::scoreboard::{Scoreboard, ScoreboardObjective};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -51,6 +52,22 @@ fn source_scoreboard(
         .ok_or_else(|| {
             CommandSyntaxError::dynamic(format!(
                 "Domain '{}' has no command scoreboard",
+                source.world().domain()
+            ))
+        })
+}
+
+fn source_command_storage(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<&CommandStorage, CommandSyntaxError> {
+    let source = context.source();
+    source
+        .server()
+        .command_storage
+        .get(source.world().domain())
+        .ok_or_else(|| {
+            CommandSyntaxError::dynamic(format!(
+                "Domain '{}' has no command storage",
                 source.world().domain()
             ))
         })

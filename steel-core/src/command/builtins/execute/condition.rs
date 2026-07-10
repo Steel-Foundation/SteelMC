@@ -2,9 +2,12 @@
 
 use std::sync::Arc;
 
+use simdnbt::owned::NbtTag;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{
-    BlockPos, BoundingBox, ChunkPos, SectionPos, nbt::compare_nbt_compounds, translations,
+    BlockPos, BoundingBox, ChunkPos, SectionPos,
+    nbt::{NbtPath, compare_nbt_compounds},
+    translations,
 };
 use text_components::TextComponent;
 
@@ -15,7 +18,7 @@ use super::super::super::{
         literal,
     },
 };
-use super::{objective, source_scoreboard};
+use super::{objective, source_command_storage, source_scoreboard};
 use crate::{block_entity::SharedBlockEntity, world::World};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
@@ -28,10 +31,95 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(biome_condition(expected))
         .then(block_condition(expected))
         .then(blocks_condition(expected))
+        .then(data_condition(expected))
         .then(dimension_condition(expected))
         .then(entity_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))
+}
+
+fn data_condition(expected: bool) -> Builder {
+    literal("data")
+        .then(
+            literal("block").then(
+                argument("sourcePos", SteelArgumentType::block_pos())
+                    .then(data_path(DataSource::Block, expected)),
+            ),
+        )
+        .then(
+            literal("entity").then(
+                argument("source", SteelArgumentType::entity())
+                    .then(data_path(DataSource::Entity, expected)),
+            ),
+        )
+        .then(
+            literal("storage").then(
+                argument("source", SteelArgumentType::storage_key())
+                    .then(data_path(DataSource::Storage, expected)),
+            ),
+        )
+}
+
+fn data_path(source: DataSource, expected: bool) -> Builder {
+    argument("path", SteelArgumentType::nbt_path())
+        .forks(EXECUTE_ROOT, move |context| {
+            let matches = data_match_count(context, source)? > 0;
+            Ok(conditional_sources(context.source(), expected, matches))
+        })
+        .executes(move |context| {
+            let count = data_match_count(context, source)?;
+            execute_numeric_condition(context, expected, count)
+        })
+}
+
+#[derive(Clone, Copy)]
+enum DataSource {
+    Block,
+    Entity,
+    Storage,
+}
+
+fn data_match_count(
+    context: &SteelCommandContext<CommandSource>,
+    source: DataSource,
+) -> Result<i32, CommandSyntaxError> {
+    let tag = match source {
+        DataSource::Block => {
+            let position = loaded_block_position(context, "sourcePos")?;
+            let block_entity = context
+                .source()
+                .world()
+                .get_block_entity(position)
+                .ok_or_else(invalid_block_data_source)?;
+            let data = block_entity.lock().save_with_full_metadata();
+            NbtTag::Compound(data)
+        }
+        DataSource::Entity => {
+            let entity = context.entity("source")?;
+            NbtTag::Compound(entity.nbt_for_data_compare())
+        }
+        DataSource::Storage => {
+            let key = context
+                .identifier("source")
+                .ok_or_else(|| missing_argument("source"))?;
+            NbtTag::Compound(source_command_storage(context)?.get(key))
+        }
+    };
+    let path = context
+        .nbt_path("path")
+        .ok_or_else(|| missing_argument("path"))?;
+    matching_data_count(path, &tag)
+}
+
+fn matching_data_count(path: &NbtPath, tag: &NbtTag) -> Result<i32, CommandSyntaxError> {
+    i32::try_from(path.count_matching(tag))
+        .map_err(|_| CommandSyntaxError::dynamic("NBT match count exceeds the command range"))
+}
+
+fn invalid_block_data_source() -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(TextComponent::from(
+        &translations::COMMANDS_DATA_BLOCK_INVALID,
+    ))
 }
 
 fn dimension_condition(expected: bool) -> Builder {
@@ -537,7 +625,7 @@ fn missing_argument(name: &str) -> CommandSyntaxError {
 mod tests {
     use std::sync::Weak;
 
-    use simdnbt::owned::NbtCompound;
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
     use steel_registry::{
         test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
     };
@@ -570,6 +658,23 @@ mod tests {
         let region = BoundingBox::from_corners(BlockPos::new(2, 5, -1), BlockPos::new(-1, 3, 2));
 
         assert_eq!(block_region_volume(&region), 48);
+    }
+
+    #[test]
+    fn data_match_count_returns_selected_tag_count() {
+        let path = steel_utils::nbt::parse_nbt_path("items[].value").expect("path should parse");
+        let mut first = NbtCompound::new();
+        first.insert("value", 1);
+        let mut second = NbtCompound::new();
+        second.insert("value", 2);
+        let mut root = NbtCompound::new();
+        root.insert("items", NbtList::Compound(vec![first, second]));
+        let tag = NbtTag::Compound(root);
+
+        assert_eq!(
+            matching_data_count(&path, &tag).expect("count should fit"),
+            2
+        );
     }
 
     #[test]
