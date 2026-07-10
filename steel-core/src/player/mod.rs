@@ -1956,6 +1956,14 @@ impl Entity for Player {
         &vanilla_entities::PLAYER
     }
 
+    fn scoreboard_name(&self) -> String {
+        self.gameprofile.name.clone()
+    }
+
+    fn plain_text_name(&self) -> String {
+        self.gameprofile.name.clone()
+    }
+
     fn is_always_ticking(&self) -> bool {
         true
     }

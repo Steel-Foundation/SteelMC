@@ -43,7 +43,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis,
-    block_util::FoundRectangle,
+    block_util::FoundRectangle, text::DisplayResolutor, translations_registry::TRANSLATIONS,
 };
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -65,6 +65,18 @@ use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
+
+fn entity_type_plain_text_name(entity_type: EntityTypeRef) -> String {
+    let description_id = format!(
+        "entity.{}.{}",
+        entity_type.key.namespace, entity_type.key.path
+    );
+    if let Some(translation) = TRANSLATIONS.get(&description_id) {
+        (*translation).to_owned()
+    } else {
+        description_id
+    }
+}
 
 /// Global counter for allocating unique entity IDs.
 ///
@@ -1448,6 +1460,26 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Gets the UUID of the entity (persistent identifier).
     fn uuid(&self) -> Uuid {
         self.base().uuid()
+    }
+
+    /// Returns this entity's vanilla scoreboard holder name.
+    ///
+    /// Non-player entities use their UUID string. Players override this with
+    /// their game profile name.
+    fn scoreboard_name(&self) -> String {
+        self.uuid().to_string()
+    }
+
+    /// Returns this entity's plain vanilla name.
+    ///
+    /// Custom names are resolved as text components; otherwise entities use
+    /// their translated type description. Players override this with their
+    /// game profile name.
+    fn plain_text_name(&self) -> String {
+        if let Some(custom_name) = self.custom_name() {
+            return custom_name.to_plain(&DisplayResolutor);
+        }
+        entity_type_plain_text_name(self.entity_type())
     }
 
     /// Gets the entity's current position.
@@ -7127,6 +7159,7 @@ mod tests {
         BlockPos, BlockStateId, Direction, Identifier, WorldAabb, axis::Axis,
         block_util::FoundRectangle,
     };
+    use text_components::TextComponent;
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
@@ -7220,6 +7253,17 @@ mod tests {
         fn projectile_owner_uuid(&self) -> Option<Uuid> {
             self.projectile_owner_uuid
         }
+    }
+
+    #[test]
+    fn non_player_command_identity_uses_uuid_and_resolved_name() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+
+        assert_eq!(entity.scoreboard_name(), entity.uuid().to_string());
+        assert_eq!(entity.plain_text_name(), "Pig");
+
+        entity.set_custom_name(Some(TextComponent::plain("Command Pig")));
+        assert_eq!(entity.plain_text_name(), "Command Pig");
     }
 
     struct LeashNotificationTestEntity {
