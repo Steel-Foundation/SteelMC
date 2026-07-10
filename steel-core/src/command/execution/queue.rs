@@ -37,6 +37,7 @@ impl ChainModifiers {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ExecutionStop {
     Completed,
+    Suspended,
     CommandLimit,
     QueueOverflow,
 }
@@ -68,11 +69,41 @@ impl Frame {
     }
 }
 
-pub(crate) trait EntryAction<S>: 'static
+pub(crate) trait EntryAction<S>: Send + 'static
 where
     S: ExecutionCommandSource,
 {
     fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame);
+
+    fn cancel(&mut self) {}
+}
+
+/// Poll result for work that suspended a command execution.
+pub(crate) enum CommandSuspensionPoll<S>
+where
+    S: ExecutionCommandSource,
+{
+    Pending,
+    Ready(Box<dyn EntryAction<S>>),
+}
+
+impl<S> CommandSuspensionPoll<S>
+where
+    S: ExecutionCommandSource,
+{
+    pub(crate) fn resume(action: impl EntryAction<S>) -> Self {
+        Self::Ready(Box::new(action))
+    }
+}
+
+/// Cross-tick work that eventually produces the next action for the same command frame.
+pub(crate) trait CommandSuspension<S>: Send + 'static
+where
+    S: ExecutionCommandSource,
+{
+    fn poll(&mut self) -> CommandSuspensionPoll<S>;
+
+    fn cancel(&mut self) {}
 }
 
 struct CommandQueueEntry<S>
@@ -83,7 +114,15 @@ where
     action: Box<dyn EntryAction<S>>,
 }
 
-/// Vanilla-style, tick-local command action queue.
+struct ActiveSuspension<S>
+where
+    S: ExecutionCommandSource,
+{
+    frame: Frame,
+    suspension: Box<dyn CommandSuspension<S>>,
+}
+
+/// Vanilla-style command action queue retained only while explicitly suspended.
 pub(crate) struct CommandExecutionContext<S>
 where
     S: ExecutionCommandSource,
@@ -95,6 +134,7 @@ where
     queue_overflow: bool,
     command_queue: VecDeque<CommandQueueEntry<S>>,
     new_top_commands: Vec<CommandQueueEntry<S>>,
+    suspension: Option<ActiveSuspension<S>>,
     current_frame_depth: usize,
 }
 
@@ -112,6 +152,7 @@ where
             queue_overflow: false,
             command_queue: VecDeque::new(),
             new_top_commands: Vec::new(),
+            suspension: None,
             current_frame_depth: 0,
         }
     }
@@ -147,6 +188,17 @@ where
     }
 
     pub(crate) fn run(&mut self) -> ExecutionStop {
+        if self.suspension.is_some() {
+            return ExecutionStop::Suspended;
+        }
+        if self.queue_overflow {
+            log::error!(
+                "Command execution stopped due to command queue overflow (max {})",
+                self.queue_limit
+            );
+            return ExecutionStop::QueueOverflow;
+        }
+
         self.push_new_commands();
         let stop = loop {
             if self.command_quota == 0 {
@@ -169,10 +221,46 @@ where
                 );
                 break ExecutionStop::QueueOverflow;
             }
+            if self.suspension.is_some() {
+                break ExecutionStop::Suspended;
+            }
             self.push_new_commands();
         };
         self.current_frame_depth = 0;
         stop
+    }
+
+    /// Polls the active suspension once and resumes the retained queue when it is ready.
+    pub(crate) fn poll_suspension(&mut self) -> ExecutionStop {
+        let Some(mut active) = self.suspension.take() else {
+            return self.run();
+        };
+
+        match active.suspension.poll() {
+            CommandSuspensionPoll::Pending => {
+                self.suspension = Some(active);
+                ExecutionStop::Suspended
+            }
+            CommandSuspensionPoll::Ready(action) => {
+                self.queue_boxed(active.frame, action);
+                self.run()
+            }
+        }
+    }
+
+    pub(crate) const fn is_suspended(&self) -> bool {
+        self.suspension.is_some()
+    }
+
+    /// Cancels active and queued suspension work and discards the retained command queue.
+    pub(crate) fn cancel(&mut self) {
+        if let Some(mut active) = self.suspension.take() {
+            active.suspension.cancel();
+        }
+        self.cancel_command_queue();
+        self.cancel_new_top_commands();
+        self.queue_overflow = false;
+        self.current_frame_depth = 0;
     }
 
     pub(crate) const fn fork_limit(&self) -> usize {
@@ -211,7 +299,7 @@ where
         self.queue_entry(CommandQueueEntry { frame, action });
     }
 
-    fn queue_entry(&mut self, entry: CommandQueueEntry<S>) {
+    fn queue_entry(&mut self, mut entry: CommandQueueEntry<S>) {
         if self
             .new_top_commands
             .len()
@@ -219,12 +307,14 @@ where
             > self.queue_limit
         {
             self.queue_overflow = true;
-            self.new_top_commands.clear();
-            self.command_queue.clear();
+            self.cancel_new_top_commands();
+            self.cancel_command_queue();
         }
-        if !self.queue_overflow {
-            self.new_top_commands.push(entry);
+        if self.queue_overflow {
+            entry.action.cancel();
+            return;
         }
+        self.new_top_commands.push(entry);
     }
 
     fn push_new_commands(&mut self) {
@@ -235,17 +325,40 @@ where
 
     fn discard(&mut self, frame: &Frame) {
         match frame.discard {
-            FrameDiscard::All => self.command_queue.clear(),
+            FrameDiscard::All => self.cancel_command_queue(),
             FrameDiscard::AtOrAbove(depth) => {
                 while self
                     .command_queue
                     .front()
                     .is_some_and(|entry| entry.frame.depth >= depth)
                 {
-                    self.command_queue.pop_front();
+                    if let Some(mut entry) = self.command_queue.pop_front() {
+                        entry.action.cancel();
+                    }
                 }
             }
         }
+    }
+
+    fn cancel_command_queue(&mut self) {
+        for mut entry in self.command_queue.drain(..) {
+            entry.action.cancel();
+        }
+    }
+
+    fn cancel_new_top_commands(&mut self) {
+        for mut entry in self.new_top_commands.drain(..) {
+            entry.action.cancel();
+        }
+    }
+}
+
+impl<S> Drop for CommandExecutionContext<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn drop(&mut self) {
+        self.cancel();
     }
 }
 
@@ -262,7 +375,10 @@ impl<'context, S> ExecutionControl<'context, S>
 where
     S: ExecutionCommandSource,
 {
-    const fn new(context: &'context mut CommandExecutionContext<S>, frame: Frame) -> Self {
+    pub(crate) const fn new(
+        context: &'context mut CommandExecutionContext<S>,
+        frame: Frame,
+    ) -> Self {
         Self { context, frame }
     }
 
@@ -272,6 +388,13 @@ where
 
     pub(crate) fn queue_next(&mut self, action: impl EntryAction<S>) {
         self.context.queue_next(self.frame.clone(), action);
+    }
+
+    /// Suspends at this queue position until the supplied work produces a resume action.
+    pub(crate) fn suspend(&mut self, suspension: impl CommandSuspension<S>) {
+        self.queue_next(SuspendAction {
+            suspension: Box::new(suspension),
+        });
     }
 
     pub(crate) fn queue_contexts(
@@ -300,6 +423,33 @@ where
     pub(crate) fn return_failure(&mut self) {
         self.frame.return_failure();
         self.context.discard(&self.frame);
+    }
+}
+
+struct SuspendAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    suspension: Box<dyn CommandSuspension<S>>,
+}
+
+impl<S> EntryAction<S> for SuspendAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        assert!(
+            context.suspension.is_none(),
+            "a command execution cannot activate two suspensions at once"
+        );
+        context.suspension = Some(ActiveSuspension {
+            frame,
+            suspension: self.suspension,
+        });
+    }
+
+    fn cancel(&mut self) {
+        self.suspension.cancel();
     }
 }
 

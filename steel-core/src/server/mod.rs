@@ -15,11 +15,12 @@ use crate::chunk::{
     chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
+use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
-    COMMAND_REQUESTS_PER_TICK, CommandDispatcher, CommandQueueFull, CommandRequest,
-    CommandRequestQueue, client_permission_event,
+    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandDispatcher, CommandQueueFull,
+    CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue, client_permission_event,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
@@ -53,8 +54,7 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::{
-    io,
-    mem,
+    io, mem,
     num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
@@ -2265,6 +2265,7 @@ impl Server {
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
         let mut player_info_ticks = 0_u64;
+        let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -2314,6 +2315,7 @@ impl Server {
                 (tick_manager.tick_count, runs_normally)
             };
 
+            Self::tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests();
             self.tick_worlds_game(tick_count, runs_normally).await;
             player_info_ticks += 1;
@@ -2352,7 +2354,20 @@ impl Server {
         }
 
         self.jobs.cancel_all();
+        pending_command_executions.cancel_all();
         self.command_requests.clear();
+    }
+
+    fn tick_pending_command_executions(pending: &mut PendingCommandExecutionQueue<CommandSource>) {
+        let stats = pending.tick(COMMAND_RESUMPTIONS_PER_TICK);
+        if stats.polled == COMMAND_RESUMPTIONS_PER_TICK && stats.pending > 0 {
+            tracing::debug!(
+                polled = stats.polled,
+                finished = stats.finished,
+                pending = stats.pending,
+                "Command resumption tick reached per-tick processing limit"
+            );
+        }
     }
 
     fn tick_command_requests(self: &Arc<Self>) {

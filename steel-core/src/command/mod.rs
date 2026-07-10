@@ -6,6 +6,7 @@ pub mod commands;
 pub mod context;
 pub mod error;
 pub(crate) mod execution;
+mod pending_execution;
 mod protocol;
 mod registration;
 mod request_queue;
@@ -14,6 +15,7 @@ pub(crate) mod storage;
 
 pub(crate) use builtins::gamemode::handle_client_request;
 pub(crate) use builtins::player_can_change_difficulty;
+pub(crate) use pending_execution::{COMMAND_RESUMPTIONS_PER_TICK, PendingCommandExecutionQueue};
 pub use request_queue::CommandQueueFull;
 pub(crate) use request_queue::{COMMAND_REQUESTS_PER_TICK, CommandRequest, CommandRequestQueue};
 
