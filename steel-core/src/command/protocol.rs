@@ -229,6 +229,7 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 ProtocolArgumentType::ItemPredicate,
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::NbtPath => (ProtocolArgumentType::NbtPath, None),
             SteelArgumentType::World => (
                 ProtocolArgumentType::Dimension,
                 Some(SuggestionType::AskServer),
@@ -654,6 +655,14 @@ mod tests {
         let (argument, suggestions) = SteelArgumentType::block_predicate().protocol_argument();
 
         assert!(matches!(argument, ProtocolArgumentType::BlockPredicate));
+        assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_nbt_path_argument_projects_vanillas_parser() {
+        let (argument, suggestions) = SteelArgumentType::nbt_path().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::NbtPath));
         assert!(suggestions.is_none());
     }
 

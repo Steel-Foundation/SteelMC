@@ -367,6 +367,23 @@ fn block_predicate_argument_validates_concrete_properties_but_defers_tag_propert
 }
 
 #[test]
+fn nbt_path_argument_retains_vanilla_path_nodes() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::nbt_path());
+    let parse = dispatcher.parse(
+        "resource items[{id:\"minecraft:stone\"}].Count",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("NBT path should parse");
+    };
+    let Some(path) = chain.top_context().nbt_path("value") else {
+        panic!("NBT path should be retained");
+    };
+
+    assert_eq!(path.as_str(), "items[{id:\"minecraft:stone\"}].Count");
+}
+
+#[test]
 fn swizzle_argument_retains_unique_axes_and_rejects_duplicates() {
     let dispatcher = resource_dispatcher(SteelArgumentType::swizzle());
     let parse = dispatcher.parse("resource zx", TestSource::new());

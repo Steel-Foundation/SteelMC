@@ -10,7 +10,7 @@ use steel_registry::{
     item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::translations;
-use steel_utils::{Identifier, types::GameType};
+use steel_utils::{Identifier, nbt::NbtPath, types::GameType};
 use text_components::TextComponent;
 
 use super::{
@@ -21,6 +21,7 @@ use super::{
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    nbt::parse_nbt_path,
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     world::{parse_world_argument, suggest_worlds},
@@ -108,6 +109,8 @@ pub(crate) enum SteelArgumentType {
     ItemStack,
     /// A decoded vanilla item predicate.
     ItemPredicate,
+    /// A parsed vanilla NBT path.
+    NbtPath,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -229,6 +232,10 @@ impl SteelArgumentType {
         Self::ItemPredicate
     }
 
+    pub(crate) const fn nbt_path() -> Self {
+        Self::NbtPath
+    }
+
     pub(crate) const fn world_clock() -> Self {
         Self::WorldClock
     }
@@ -289,6 +296,8 @@ pub(crate) enum SteelArgumentValue {
     ItemStack(ItemStack),
     /// A parsed item predicate ready for infallible matching.
     ItemPredicate(ItemPredicate),
+    /// A parsed NBT path.
+    NbtPath(NbtPath),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -319,6 +328,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Enchantment(_)
             | Self::ItemStack(_)
             | Self::ItemPredicate(_)
+            | Self::NbtPath(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -384,6 +394,7 @@ where
             Self::ItemPredicate => {
                 parse_item_predicate(reader).map(SteelArgumentValue::ItemPredicate)
             }
+            Self::NbtPath => parse_nbt_path(reader).map(SteelArgumentValue::NbtPath),
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -414,7 +425,7 @@ where
             Self::Vec3 { center_integers } => {
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
-            Self::Rotation | Self::Swizzle | Self::IntRange => {}
+            Self::Rotation | Self::Swizzle | Self::IntRange | Self::NbtPath => {}
             Self::Heightmap => suggest_heightmaps(builder),
             Self::EntityAnchor => suggest_entity_anchors(builder),
             Self::Entity {
@@ -539,6 +550,7 @@ where
             | SteelArgumentValue::Enchantment(_)
             | SteelArgumentValue::ItemStack(_)
             | SteelArgumentValue::ItemPredicate(_)
+            | SteelArgumentValue::NbtPath(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )

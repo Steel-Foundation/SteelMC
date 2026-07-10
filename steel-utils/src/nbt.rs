@@ -1,9 +1,13 @@
 //! Vanilla-compatible NBT helpers.
 
+mod path;
 mod snbt;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 
+pub use path::{
+    NbtPath, NbtPathError, NbtPathMutationError, parse_nbt_path, parse_nbt_path_argument,
+};
 pub use snbt::{
     SnbtError, parse_snbt, parse_snbt_argument, parse_snbt_compound, parse_snbt_compound_argument,
 };

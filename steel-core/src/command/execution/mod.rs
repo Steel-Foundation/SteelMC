@@ -6,6 +6,7 @@ mod block;
 mod coordinates;
 mod item;
 mod item_predicate;
+mod nbt;
 mod queue;
 mod runtime;
 mod score;
