@@ -1754,6 +1754,11 @@ impl World {
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
+    pub(crate) fn is_entity_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
     pub(crate) fn queue_light_change_after_block_set(
         &self,
         pos: BlockPos,

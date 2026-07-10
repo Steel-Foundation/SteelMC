@@ -205,6 +205,26 @@ mod tests {
             Some(dispatcher.root())
         );
 
+        for condition in ["if", "unless"] {
+            for (path, expected_type) in [
+                (
+                    [condition, "entity", "entities"],
+                    SteelArgumentType::entities(),
+                ),
+                ([condition, "loaded", "pos"], SteelArgumentType::block_pos()),
+            ] {
+                let terminal = path
+                    .iter()
+                    .fold(execute, |parent, name| child(parent, name));
+                let Some(node) = dispatcher.node(terminal) else {
+                    panic!("execute condition terminal should exist");
+                };
+                assert!(node.is_executable());
+                assert_eq!(node.redirect(), Some(execute));
+                assert_eq!(node.argument_type(), Some(&expected_type));
+            }
+        }
+
         let modifier_paths: &[&[&str]] = &[
             &["as", "targets"],
             &["at", "targets"],

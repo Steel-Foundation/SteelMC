@@ -1,5 +1,6 @@
 //! Vanilla command execution context composition.
 
+mod condition;
 mod source;
 
 use steel_utils::Identifier;
@@ -17,6 +18,8 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("execute")
         .then(literal("run").redirects(dispatcher_root))
+        .then(condition::conditionals("if", true))
+        .then(condition::conditionals("unless", false))
         .then(source::as_operation())
         .then(source::at_operation())
         .then(source::positioned_operation())
