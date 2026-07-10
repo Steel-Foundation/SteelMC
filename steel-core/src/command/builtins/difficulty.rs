@@ -7,9 +7,28 @@ use super::super::{
     execution::{CommandSource, SteelCommandContext, SteelCommandRuntime, literal},
     registration::CommandRegistration,
 };
+use crate::permission::{PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError};
+use crate::player::Player;
+use crate::world::World;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("difficulty"), |_| command())
+}
+
+pub(crate) fn player_can_change_difficulty(player: &Player, world: &World) -> bool {
+    let permission = match difficulty_permission() {
+        Ok(permission) => permission,
+        Err(error) => {
+            log::error!("invalid built-in difficulty permission key: {error}");
+            return false;
+        }
+    };
+    let context = PermissionContext::for_world(world.domain(), world.key.clone());
+    player.has_permission_in(&permission, &context)
+}
+
+fn difficulty_permission() -> Result<PermissionExpr, PermissionKeyError> {
+    PermissionKey::parse("minecraft.command.difficulty").map(PermissionExpr::key)
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -81,5 +100,27 @@ const fn difficulty_display_name(difficulty: Difficulty) -> &'static Translation
         Difficulty::Easy => &translations::OPTIONS_DIFFICULTY_EASY,
         Difficulty::Normal => &translations::OPTIONS_DIFFICULTY_NORMAL,
         Difficulty::Hard => &translations::OPTIONS_DIFFICULTY_HARD,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::difficulty_permission;
+    use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
+
+    #[test]
+    fn client_difficulty_permission_uses_the_command_root() {
+        let permission = difficulty_permission().expect("permission should build");
+        let allowed = PermissionSet::from_entries([PermissionEntry::allow(
+            PermissionKey::parse("minecraft.command.difficulty")
+                .expect("test permission should parse"),
+        )]);
+        let gamemode_only = PermissionSet::from_entries([PermissionEntry::allow(
+            PermissionKey::parse("minecraft.command.gamemode")
+                .expect("test permission should parse"),
+        )]);
+
+        assert!(allowed.allows(&permission));
+        assert!(!gamemode_only.allows(&permission));
     }
 }

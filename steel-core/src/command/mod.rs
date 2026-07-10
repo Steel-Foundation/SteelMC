@@ -11,12 +11,15 @@ mod registration;
 mod request_queue;
 pub mod sender;
 
+pub(crate) use builtins::gamemode::handle_client_request;
+pub(crate) use builtins::player_can_change_difficulty;
 pub use request_queue::CommandQueueFull;
 pub(crate) use request_queue::{COMMAND_REQUESTS_PER_TICK, CommandRequest, CommandRequestQueue};
 
 use std::sync::Arc;
 
 use steel_protocol::packets::game::{CCommandSuggestions, CCommands, CommandNode, SuggestionEntry};
+use steel_utils::entity_events::EntityStatus;
 use text_components::{Modifier, TextComponent, format::Color};
 
 use crate::command::commands::CommandHandlerDyn;
@@ -25,6 +28,49 @@ use crate::command::error::CommandError;
 use crate::command::sender::CommandSender;
 use crate::player::Player;
 use crate::server::Server;
+use crate::world::World;
+
+/// Projects Steel capabilities onto vanilla's shared gamemaster client affordance.
+/// Packet handlers still authorize game-mode and difficulty requests independently.
+pub(crate) fn client_permission_event(player: &Player, world: &World) -> EntityStatus {
+    client_permission_event_for_capabilities(
+        builtins::gamemode::player_can_use_client_switcher(player, world),
+        builtins::player_can_change_difficulty(player, world),
+    )
+}
+
+const fn client_permission_event_for_capabilities(
+    can_change_game_mode: bool,
+    can_change_difficulty: bool,
+) -> EntityStatus {
+    if can_change_game_mode || can_change_difficulty {
+        EntityStatus::PermissionLevelGamemasters
+    } else {
+        EntityStatus::PermissionLevelAll
+    }
+}
+
+#[cfg(test)]
+mod client_permission_tests {
+    use super::client_permission_event_for_capabilities;
+    use steel_utils::entity_events::EntityStatus;
+
+    #[test]
+    fn gamemaster_projection_enables_either_supported_client_capability() {
+        assert_eq!(
+            client_permission_event_for_capabilities(true, false),
+            EntityStatus::PermissionLevelGamemasters
+        );
+        assert_eq!(
+            client_permission_event_for_capabilities(false, true),
+            EntityStatus::PermissionLevelGamemasters
+        );
+        assert_eq!(
+            client_permission_event_for_capabilities(false, false),
+            EntityStatus::PermissionLevelAll
+        );
+    }
+}
 
 /// A struct that parses and dispatches commands to their appropriate handlers.
 #[derive(Default)]

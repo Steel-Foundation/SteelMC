@@ -456,6 +456,12 @@ pub(crate) enum CommandRegistrationError {
         #[source]
         source: PermissionKeyError,
     },
+    #[error("command '{id}' has an invalid explicit permission: {source}")]
+    InvalidExplicitPermission {
+        id: Identifier,
+        #[source]
+        source: PermissionKeyError,
+    },
     #[error("command '{id}' cannot combine explicit and derived subcommand permissions")]
     SubcommandPermissionsRequireDerivedRoot { id: Identifier },
     #[error("command '{id}' has an empty subcommand permission path")]

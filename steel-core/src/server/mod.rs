@@ -18,7 +18,7 @@ use crate::chunk::{
 use crate::command::sender::CommandSender;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, CommandDispatcher, CommandQueueFull, CommandRequest,
-    CommandRequestQueue,
+    CommandRequestQueue, client_permission_event,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
@@ -76,7 +76,7 @@ use steel_registry::{
     vanilla_entities,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -3182,14 +3182,7 @@ impl Server {
         player.send_difficulty();
         player.send_inventory_to_remote();
 
-        let commands = self.command_dispatcher.read().get_commands();
-        player.send_packet(commands);
-
-        // TODO: Set permissions level to match player's level.
-        player.send_packet(CEntityEvent {
-            entity_id: player.id(),
-            event: EntityStatus::PermissionLevelOwners,
-        });
+        self.resend_player_permission_context(player);
 
         self.send_ticking_state_to_player(player);
 
@@ -3197,6 +3190,18 @@ impl Server {
             event: GameEventType::ChangeGameMode,
             data: player.game_mode().into(),
         });
+    }
+
+    /// Resends the command tree and vanilla client permission-level projection.
+    pub fn resend_player_permission_context(&self, player: &Player) {
+        let world = player.get_world();
+        player.send_packet(CEntityEvent {
+            entity_id: player.id(),
+            event: client_permission_event(player, &world),
+        });
+
+        let commands = self.command_dispatcher.read().get_commands();
+        player.send_packet(commands);
     }
     /// Queues a world change to be processed after the current tick.
     pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {

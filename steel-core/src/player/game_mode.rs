@@ -22,7 +22,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::translations;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use steel_utils::{BlockPos, Identifier, WorldAabb};
 use text_components::TextComponent;
@@ -34,7 +33,7 @@ use crate::behavior::{
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
-use crate::command::commands::gamemode::get_gamemode_translation;
+use crate::command::player_can_change_difficulty;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
@@ -987,6 +986,7 @@ impl Player {
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
     pub fn set_game_mode(&self, gamemode: GameType) -> bool {
+        let was_spectator = self.game_mode() == GameType::Spectator;
         if !self.change_game_mode_state(gamemode) {
             return false;
         }
@@ -1004,27 +1004,46 @@ impl Player {
             self.set_flying(false);
         }
         self.send_abilities();
+        self.update_game_mode_invisibility();
+
+        let update_packet =
+            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
+        self.server().broadcast_to_online(update_packet);
+
+        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+
+        if gamemode == GameType::Creative {
+            self.reset_current_impulse_context();
+        }
 
         self.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
             data: gamemode.into(),
         });
 
-        let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.server().broadcast_to_online(update_packet);
-
-        if gamemode == GameType::Creative {
-            self.reset_current_impulse_context();
+        if gamemode == GameType::Spectator {
+            self.stop_riding();
+            // TODO: Remove shoulder entities once player shoulder storage is implemented.
+            // TODO: Stop item use once living item-use state is implemented.
+            // TODO: Stop location-based enchantment effects once those effects are implemented.
+        } else if was_spectator {
+            self.send_packet(CSetCamera {
+                camera_id: self.id(),
+            });
+            // TODO: Restart location-based enchantment effects once those effects are implemented.
         }
 
-        self.send_message(
-            &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
-                .message([get_gamemode_translation(gamemode)])
-                .into(),
-        );
+        self.send_abilities();
+        self.update_game_mode_invisibility();
+        self.living_base.mark_effects_dirty();
 
         true
+    }
+
+    fn update_game_mode_invisibility(&self) {
+        self.living_base.mark_effects_dirty();
+        self.update_dirty_mob_effect_entity_data();
+        self.sync_entity_data();
     }
 
     fn is_in_range_of_ground_for_flight_disable(&self) -> bool {
@@ -1070,8 +1089,14 @@ impl Player {
 
     /// Handles a client request to change the world difficulty.
     pub fn handle_change_difficulty(&self, difficulty: Difficulty) {
-        // TODO: implement op-level permission check
         let world = self.get_world();
+        if !player_can_change_difficulty(self, &world) {
+            log::warn!(
+                "Player {} tried to change difficulty to {difficulty:?} without permission",
+                self.gameprofile.name
+            );
+            return;
+        }
         {
             let level_data = world.level_data.read();
             if level_data.data().difficulty_locked {

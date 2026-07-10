@@ -34,7 +34,7 @@ use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio_util::sync::CancellationToken;
 
-use crate::command::sender::CommandSender;
+use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
@@ -460,9 +460,8 @@ impl JavaConnection {
                 player.send_packet(CPongResponse::new(packet.time));
             }
             play::S_CHANGE_GAME_MODE => {
-                // TODO: Check player permission level (Or gamemode permission)
                 let packet = SChangeGameMode::read_packet(data)?;
-                player.set_game_mode(packet.gamemode);
+                handle_client_request(&player, &server, packet.gamemode);
             }
             play::S_CHANGE_DIFFICULTY => {
                 let packet = SChangeDifficulty::read_packet(data)?;

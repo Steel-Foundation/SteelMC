@@ -66,7 +66,7 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_data::EntityPose;
+use steel_registry::entity_data::{EntityPose, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::sound_event::SoundEventRef;
@@ -759,7 +759,11 @@ impl Player {
             log::error!("vanilla entity_effect particle type id does not fit protocol i32");
             return;
         };
-        let display = self.living_base.mob_effect_display_state(particle_type_id);
+        let mut display = self.living_base.mob_effect_display_state(particle_type_id);
+        if self.game_mode() == GameType::Spectator {
+            display.particles = ParticleList::default();
+            display.invisible = true;
+        }
 
         {
             let mut entity_data = self.entity_data.lock();
@@ -2614,7 +2618,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::config::RuntimeConfig;
-    use crate::entity::{LivingEntity, damage::DamageSource};
+    use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
@@ -2817,5 +2821,21 @@ mod tests {
     fn nullable_game_mode_id_matches_vanilla_encoding() {
         assert_eq!(nullable_game_mode_id(None), -1);
         assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
+    }
+
+    #[test]
+    fn effect_visibility_refresh_preserves_spectator_invisibility() {
+        init_test_registry();
+        let player = test_player(Arc::clone(test_world()));
+
+        player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
+        player.living_base.mark_effects_dirty();
+        player.update_dirty_mob_effect_entity_data();
+        assert!(player.entity_data.is_base_invisible_flag());
+
+        player.restore_game_modes(GameType::Survival, Some(GameType::Spectator));
+        player.living_base.mark_effects_dirty();
+        player.update_dirty_mob_effect_entity_data();
+        assert!(!player.entity_data.is_base_invisible_flag());
     }
 }

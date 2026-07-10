@@ -187,6 +187,7 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
             SteelArgumentType::SummonableEntity => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:entity_type",
@@ -556,6 +557,14 @@ mod tests {
             ));
             assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
         }
+    }
+
+    #[test]
+    fn steel_game_mode_argument_projects_vanillas_parser() {
+        let (argument, suggestions) = SteelArgumentType::game_mode().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::Gamemode));
+        assert!(suggestions.is_none());
     }
 
     #[test]

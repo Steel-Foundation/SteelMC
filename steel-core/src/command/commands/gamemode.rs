@@ -9,6 +9,8 @@ use crate::command::error::CommandError;
 use crate::entity::Entity;
 use crate::player::Player;
 use std::sync::Arc;
+use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_game_rules::SEND_COMMAND_FEEDBACK;
 use steel_utils::translations;
 use steel_utils::types::GameType;
 use text_components::TextComponent;
@@ -48,8 +50,13 @@ impl CommandExecutor<((), GameType)> for GameModeCommandExecutor {
             .get_player()
             .ok_or(CommandError::InvalidRequirement)?;
 
-        // Set the player's game mode
-        player.set_game_mode(gamemode);
+        if player.set_game_mode(gamemode) {
+            context.sender.send_message(
+                &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
+                    .message([TextComponent::from(get_gamemode_translation(gamemode))])
+                    .into(),
+            );
+        }
 
         Ok(())
     }
@@ -68,25 +75,38 @@ impl CommandExecutor<(((), GameType), Vec<Arc<Player>>)> for GameModeTargetComma
         let mode_translation = get_gamemode_translation(gamemode);
 
         for target in targets {
-            if target.set_game_mode(gamemode) {
-                // Send feedback to sender if sender is not the target
-                let sender_is_target = if let Some(sender_player) = context.sender.get_player() {
-                    sender_player.id() == target.id()
-                } else {
-                    false
-                };
-
-                if !sender_is_target {
-                    context.sender.send_message(
-                        &translations::COMMANDS_GAMEMODE_SUCCESS_OTHER
-                            .message([
-                                TextComponent::plain(target.gameprofile.name.clone()),
-                                TextComponent::from(mode_translation),
-                            ])
-                            .into(),
-                    );
-                }
+            if !target.set_game_mode(gamemode) {
+                continue;
             }
+
+            let sender_is_target = context
+                .sender
+                .get_player()
+                .is_some_and(|sender| sender.id() == target.id());
+            if sender_is_target {
+                context.sender.send_message(
+                    &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
+                        .message([TextComponent::from(mode_translation)])
+                        .into(),
+                );
+                continue;
+            }
+
+            if context.world.get_game_rule(&SEND_COMMAND_FEEDBACK) == GameRuleValue::Bool(true) {
+                target.send_message(
+                    &translations::GAME_MODE_CHANGED
+                        .message([TextComponent::from(mode_translation)])
+                        .into(),
+                );
+            }
+            context.sender.send_message(
+                &translations::COMMANDS_GAMEMODE_SUCCESS_OTHER
+                    .message([
+                        TextComponent::plain(target.plain_text_name()),
+                        TextComponent::from(mode_translation),
+                    ])
+                    .into(),
+            );
         }
 
         Ok(())

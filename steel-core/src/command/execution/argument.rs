@@ -7,8 +7,8 @@ use steel_registry::{
     ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
     entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::Identifier;
 use steel_utils::translations;
+use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use super::{
@@ -33,6 +33,8 @@ pub(crate) enum SteelArgumentType {
     Rotation,
     /// A deferred entity selector using vanilla's entity argument flags.
     Entity { single: bool, players_only: bool },
+    /// One of vanilla's four game modes.
+    GameMode,
     /// A configured Steel domain.
     Domain,
     /// A summonable entity type backed by a Steel entity factory.
@@ -94,6 +96,10 @@ impl SteelArgumentType {
         }
     }
 
+    pub(crate) const fn game_mode() -> Self {
+        Self::GameMode
+    }
+
     pub(crate) const fn domain() -> Self {
         Self::Domain
     }
@@ -132,6 +138,8 @@ pub(crate) enum SteelArgumentValue {
     Coordinates(Coordinates),
     /// A source-independent entity selector retained until command execution.
     EntitySelector(Box<EntitySelector>),
+    /// A parsed vanilla game mode.
+    GameMode(GameType),
     /// A configured Steel domain name.
     Domain(Box<str>),
     /// A resolved summonable entity type.
@@ -151,6 +159,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Time(_)
             | Self::Coordinates(_)
             | Self::EntitySelector(_)
+            | Self::GameMode(_)
             | Self::Domain(_)
             | Self::EntityType(_)
             | Self::Identifier(_)
@@ -187,6 +196,7 @@ where
             } => parse_entity_selector(reader, source, *single, *players_only)
                 .map(Box::new)
                 .map(SteelArgumentValue::EntitySelector),
+            Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
                 parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
@@ -226,6 +236,7 @@ where
                 single,
                 players_only,
             } => suggest_entity_selector(builder, context.source(), *single, *players_only),
+            Self::GameMode => suggest_game_modes(builder),
             Self::Domain => {
                 let prefix = builder.remaining();
                 for domain in context
@@ -302,12 +313,45 @@ where
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
             | SteelArgumentValue::EntitySelector(_)
+            | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )
         | None => None,
+    }
+}
+
+fn parse_game_mode(reader: &mut StringReader<'_>) -> Result<GameType, CommandSyntaxError> {
+    let name = reader.read_unquoted_string();
+    let game_mode = match name {
+        "survival" => GameType::Survival,
+        "creative" => GameType::Creative,
+        "adventure" => GameType::Adventure,
+        "spectator" => GameType::Spectator,
+        _ => {
+            let message = translations::ARGUMENT_GAMEMODE_INVALID
+                .message([name.to_owned()])
+                .component();
+            return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
+        }
+    };
+    Ok(game_mode)
+}
+
+fn suggest_game_modes(builder: &mut SuggestionsBuilder<'_>) {
+    let prefix = builder.remaining_lowercase().to_owned();
+    for game_mode in [
+        GameType::Survival,
+        GameType::Creative,
+        GameType::Adventure,
+        GameType::Spectator,
+    ] {
+        let name = game_mode.name();
+        if name.starts_with(&prefix) {
+            builder.suggest(name);
+        }
     }
 }
 

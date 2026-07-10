@@ -3,8 +3,8 @@ use std::sync::Arc;
 use steel_registry::{
     entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::Identifier;
 use steel_utils::translations;
+use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use crate::command::brigadier::{
@@ -187,6 +187,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -205,6 +206,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -224,6 +226,26 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
+                | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    /// Returns a parsed vanilla game mode.
+    pub(crate) fn game_mode(&self, name: &str) -> Option<GameType> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::GameMode(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -242,6 +264,7 @@ where
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -260,6 +283,7 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -278,6 +302,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Timeline(_),
             )
             | None => None,
@@ -295,6 +320,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_),
             )
             | None => None,
@@ -311,6 +337,7 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )

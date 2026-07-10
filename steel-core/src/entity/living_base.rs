@@ -1074,7 +1074,8 @@ impl LivingEntityBase {
         self.dirty_mob_effects.lock().push(change);
     }
 
-    fn mark_effects_dirty(&self) {
+    /// Marks synchronized effect visibility data for recomputation.
+    pub(crate) fn mark_effects_dirty(&self) {
         self.state.lock().effects_dirty = true;
     }
 

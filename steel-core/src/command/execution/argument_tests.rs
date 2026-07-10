@@ -11,7 +11,7 @@ use steel_registry::{
     test_support::init_test_registry, vanilla_entities, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
-use steel_utils::Identifier;
+use steel_utils::{Identifier, types::GameType};
 
 use crate::entity::init_test_entities;
 use crate::permission::{PermissionExpr, PermissionState};
@@ -237,6 +237,47 @@ fn domain_argument_resolves_and_suggests_only_configured_domains() {
         .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["beta"]);
+}
+
+#[test]
+fn game_mode_argument_parses_only_vanilla_names() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::game_mode());
+
+    for (name, expected) in [
+        ("survival", GameType::Survival),
+        ("creative", GameType::Creative),
+        ("adventure", GameType::Adventure),
+        ("spectator", GameType::Spectator),
+    ] {
+        let input = format!("resource {name}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("vanilla game mode name should parse");
+        };
+        assert_eq!(chain.top_context().game_mode("value"), Some(expected));
+    }
+
+    for invalid in ["0", "Creative", "missing"] {
+        let input = format!("resource {invalid}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        assert!(dispatcher.context_chain(parse).is_err());
+    }
+}
+
+#[test]
+fn game_mode_argument_suggests_vanilla_names() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::game_mode());
+    let parse = dispatcher.parse("resource s", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("game mode suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+
+    assert_eq!(suggestions, ["spectator", "survival"]);
 }
 
 #[test]

@@ -2,6 +2,7 @@
 
 mod difficulty;
 mod domain;
+pub(crate) mod gamemode;
 mod gamerule;
 mod kill;
 mod list;
@@ -12,6 +13,8 @@ mod summon;
 mod tick;
 mod time;
 mod weather;
+
+pub(crate) use difficulty::player_can_change_difficulty;
 
 use super::{
     brigadier::CommandDispatcher,
@@ -24,6 +27,7 @@ pub(crate) fn create_dispatcher()
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
+    builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
@@ -67,6 +71,7 @@ mod tests {
             [
                 "difficulty",
                 "domain",
+                "gamemode",
                 "gamerule",
                 "kill",
                 "list",
