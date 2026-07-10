@@ -23,9 +23,8 @@ use crate::player::Player;
 use crate::world::World;
 
 /// Behavior for ender chest blocks.
-///
-/// Ender chests don't store items themselves; they act as a portal to the player's
 /// persistent ender chest inventory.
+
 #[block_behavior]
 pub struct EnderChestBlock {
     block: BlockRef,
