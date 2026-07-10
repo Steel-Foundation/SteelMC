@@ -118,8 +118,11 @@ impl FireBlock {
         effect_collector.run_after(
             InsideBlockEffectType::FireIgnite,
             Box::new(move |entity| {
-                if !entity.fire_immune() {
+                if !entity.fire_immune()
+                    && let Some(world) = entity.level()
+                {
                     entity.hurt(
+                        &world,
                         &DamageSource::environment(&vanilla_damage_types::IN_FIRE),
                         fire_damage,
                     );

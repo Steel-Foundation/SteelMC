@@ -45,8 +45,10 @@ impl BlockBehavior for MagmaBlock {
     fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
         if let Some(damage) =
             Self::step_damage_amount(entity.is_stepping_carefully(), entity.is_living_entity())
+            && let Some(entity_world) = entity.level()
         {
             entity.hurt(
+                &entity_world,
                 &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR),
                 damage,
             );

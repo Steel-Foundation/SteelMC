@@ -666,7 +666,7 @@ impl Entity for ItemEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, _world: &World, _source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
         let new_health = {
             let mut state = self.item_state.lock();
@@ -792,6 +792,7 @@ mod tests {
     };
 
     use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
+    use crate::test_support::test_world;
     use crate::world::World;
 
     use super::ItemEntity;
@@ -892,6 +893,7 @@ mod tests {
         );
 
         assert!(item.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             0.75
         ));

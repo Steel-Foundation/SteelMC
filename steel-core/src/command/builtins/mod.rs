@@ -3,6 +3,7 @@
 mod difficulty;
 mod domain;
 mod gamerule;
+mod kill;
 mod list;
 mod seed;
 mod setworldspawn;
@@ -24,6 +25,7 @@ pub(crate) fn create_dispatcher()
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(gamerule::registration())?;
+    builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
@@ -66,6 +68,7 @@ mod tests {
                 "difficulty",
                 "domain",
                 "gamerule",
+                "kill",
                 "list",
                 "seed",
                 "setworldspawn",

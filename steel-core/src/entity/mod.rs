@@ -21,6 +21,7 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::{EntityAttachment, EntityDimensions, EntityTypeRef};
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
+use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::{
     DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
@@ -2259,8 +2260,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
         if self
             .base()
             .advance_fire_tick(self.fire_immune(), self.is_in_lava())
+            && let Some(world) = self.level()
         {
             self.hurt(
+                &world,
                 &DamageSource::environment(&vanilla_damage_types::ON_FIRE),
                 1.0,
             );
@@ -2455,6 +2458,37 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Marks the entity as removed with the given reason.
     fn set_removed(&self, reason: RemovalReason) {
         self.base().set_removed(reason);
+    }
+
+    /// Emits a vanilla game event from this entity's exact position.
+    fn game_event(&self, event: GameEventRef) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        world.game_event_at(
+            event,
+            self.position(),
+            &GameEventContext::new(Some(self.as_entity_event_source()), None),
+        );
+    }
+
+    /// Kills this entity using vanilla's living/non-living class split.
+    ///
+    /// `world` is vanilla's explicit `ServerLevel` argument. Living entities
+    /// use it for damage processing, while death game events use the entity's
+    /// attached world.
+    fn kill(&self, world: &World) {
+        if self.is_living_entity() {
+            self.hurt(
+                world,
+                &DamageSource::environment(&vanilla_damage_types::GENERIC_KILL),
+                f32::MAX,
+            );
+            return;
+        }
+
+        self.set_removed(RemovalReason::Killed);
+        self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
 
     /// Caches a live owner reference after restoring persisted owner-linked
@@ -3214,9 +3248,15 @@ pub trait Entity: EntityEventSource + Send + Sync {
         if self.fire_immune() {
             return;
         }
+        let Some(world) = self.level() else {
+            return;
+        };
 
-        if self.hurt(&DamageSource::environment(&vanilla_damage_types::LAVA), 4.0)
-            && self.should_play_lava_hurt_sound()
+        if self.hurt(
+            &world,
+            &DamageSource::environment(&vanilla_damage_types::LAVA),
+            4.0,
+        ) && self.should_play_lava_hurt_sound()
         {
             let pitch = 2.0 + rand::random::<f32>() * 0.4;
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
@@ -4692,12 +4732,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
     ///
     /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
     /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
-    /// and discard). Default returns `false` (entity ignores damage).
+    /// and discard). `world` must preserve vanilla's explicit `ServerLevel`
+    /// argument rather than being inferred from the target. Default returns
+    /// `false` (entity ignores damage).
     #[expect(
         unused_variables,
         reason = "default trait impl; parameters used by overrides"
     )]
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         false
     }
 
@@ -5153,7 +5195,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Resolves vanilla `LivingEntity.resolveMobResponsibleForDamage`.
-    fn resolve_mob_responsible_for_damage(&self, source: &DamageSource) {
+    fn resolve_mob_responsible_for_damage(&self, world: &World, source: &DamageSource) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_ANGER) {
             return;
         }
@@ -5169,9 +5211,6 @@ pub trait LivingEntity: Entity {
         let Some(entity_id) = source.causing_entity_id else {
             return;
         };
-        let Some(world) = self.level() else {
-            return;
-        };
         let Some(entity) = world.get_entity_by_id(entity_id) else {
             return;
         };
@@ -5181,11 +5220,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Resolves vanilla `LivingEntity.resolvePlayerResponsibleForDamage`.
-    fn resolve_player_responsible_for_damage(&self, source: &DamageSource) {
+    fn resolve_player_responsible_for_damage(&self, world: &World, source: &DamageSource) {
         let Some(entity_id) = source.causing_entity_id else {
-            return;
-        };
-        let Some(world) = self.level() else {
             return;
         };
         let Some(entity) = world.get_entity_by_id(entity_id) else {
@@ -5245,14 +5281,17 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this living entity ignores a damage source.
-    fn is_invulnerable_to(&self, source: &DamageSource) -> bool {
+    fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(self, source)
+            || enchantment_helper::is_immune_to_damage(world, self, source)
     }
 
     /// Main vanilla living-entity damage entry point.
-    fn hurt_server(&self, source: &DamageSource, amount: f32) -> bool {
-        if self.is_invulnerable_to(source) {
+    ///
+    /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
+    /// intentionally differ from the entity's attached world.
+    fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        if self.is_invulnerable_to(world, source) {
             return false;
         }
         if self.is_dead_or_dying() {
@@ -5295,15 +5334,15 @@ pub trait LivingEntity: Entity {
         };
 
         self.before_actually_hurt(source, effective_amount);
-        self.actually_hurt(source, effective_amount);
-        self.resolve_mob_responsible_for_damage(source);
-        self.resolve_player_responsible_for_damage(source);
+        self.actually_hurt(world, source, effective_amount);
+        self.resolve_mob_responsible_for_damage(world, source);
+        self.resolve_player_responsible_for_damage(world, source);
 
         if took_full_damage {
-            self.broadcast_damage_event(source);
+            self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation();
+                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -5329,7 +5368,7 @@ pub trait LivingEntity: Entity {
     fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {}
 
     /// Applies damage after vanilla reductions.
-    fn actually_hurt(&self, _source: &DamageSource, amount: f32) {
+    fn actually_hurt(&self, _world: &World, _source: &DamageSource, amount: f32) {
         if amount <= 0.0 {
             return;
         }
@@ -5405,11 +5444,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Broadcasts vanilla damage-event metadata near this entity.
-    fn broadcast_damage_event(&self, source: &DamageSource) {
-        let Some(world) = self.level() else {
-            return;
-        };
-
+    fn broadcast_damage_event(&self, world: &World, source: &DamageSource) {
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
             CDamageEvent {
@@ -5424,11 +5459,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
-
+    fn broadcast_hurt_animation(&self, world: &World) {
         let (yaw, _) = self.rotation();
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
@@ -5449,7 +5480,7 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        // TODO: emit death game event once game-event dispatch is implemented.
+        self.game_event(&vanilla_game_events::ENTITY_DIE);
         self.drop_all_death_loot(source);
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_pose(EntityPose::Dying);
@@ -5697,7 +5728,9 @@ pub trait LivingEntity: Entity {
         self.reset_current_impulse_context();
         self.play_sound(self.fall_damage_sound(damage), 1.0, 1.0);
         self.play_block_fall_sound();
-        self.hurt(source, damage as f32);
+        if let Some(world) = self.level() {
+            self.hurt(&world, source, damage as f32);
+        }
         true
     }
 
@@ -5861,10 +5894,13 @@ pub trait LivingEntity: Entity {
                 if self.should_take_drowning_damage() {
                     self.set_air_supply(0);
                     self.broadcast_entity_event(EntityStatus::DrownParticles);
-                    self.hurt(
-                        &DamageSource::environment(&vanilla_damage_types::DROWN),
-                        2.0,
-                    );
+                    if let Some(world) = self.level() {
+                        self.hurt(
+                            &world,
+                            &DamageSource::environment(&vanilla_damage_types::DROWN),
+                            2.0,
+                        );
+                    }
                 }
             } else if self.air_supply() < self.max_air_supply()
                 && self.should_effects_refill_air_supply()
@@ -5897,10 +5933,13 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        self.hurt(
-            &DamageSource::environment(&vanilla_damage_types::IN_WALL),
-            1.0,
-        );
+        if let Some(world) = self.level() {
+            self.hurt(
+                &world,
+                &DamageSource::environment(&vanilla_damage_types::IN_WALL),
+                1.0,
+            );
+        }
     }
 
     /// Applies vanilla living environmental damage in `LivingEntity.baseTick` order.
@@ -5920,6 +5959,7 @@ pub trait LivingEntity: Entity {
                 border.outside_damage_amount(position.x, position.z, self.bounding_box())
             {
                 self.hurt(
+                    &world,
                     &DamageSource::environment(&vanilla_damage_types::OUTSIDE_BORDER),
                     damage,
                 );
@@ -6214,8 +6254,13 @@ pub trait LivingEntity: Entity {
 
         self.remove_frost();
         self.try_add_frost();
-        if self.tick_count() % 40 == 0 && self.is_fully_frozen() && self.can_freeze() {
+        if self.tick_count() % 40 == 0
+            && self.is_fully_frozen()
+            && self.can_freeze()
+            && let Some(world) = self.level()
+        {
             self.hurt(
+                &world,
                 &DamageSource::environment(&vanilla_damage_types::FREEZE),
                 1.0,
             );
@@ -6682,6 +6727,7 @@ pub trait LivingEntity: Entity {
             random_roll,
         ) {
             self.hurt(
+                world,
                 &DamageSource::environment(&vanilla_damage_types::CRAMMING),
                 6.0,
             );
@@ -7083,10 +7129,13 @@ pub trait LivingEntity: Entity {
         }
 
         self.play_sound(self.fall_damage_sound(damage as i32), 1.0, 1.0);
-        self.hurt(
-            &DamageSource::environment(&vanilla_damage_types::FLY_INTO_WALL),
-            damage,
-        );
+        if let Some(world) = self.level() {
+            self.hurt(
+                &world,
+                &DamageSource::environment(&vanilla_damage_types::FLY_INTO_WALL),
+                damage,
+            );
+        }
     }
 
     /// Mirrors vanilla `LivingEntity.travelFallFlying()`.
@@ -7345,17 +7394,18 @@ mod tests {
     use steel_registry::entity_data::EntityPose;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::fluid::FluidState;
+    use steel_registry::game_events::GameEventRef;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::vanilla_entity_data::LivingEntityData as SyncedLivingEntityData;
     use steel_registry::{
         REGISTRY, sound_events, test_support::init_test_registry, vanilla_attributes,
-        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_items,
-        vanilla_loot_tables, vanilla_mob_effects,
+        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
+        vanilla_game_events, vanilla_items, vanilla_loot_tables, vanilla_mob_effects,
     };
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
     use steel_utils::{
-        BlockPos, BlockStateId, Direction, Identifier, WorldAabb, axis::Axis,
+        BlockPos, BlockStateId, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
         block_util::FoundRectangle,
     };
     use text_components::TextComponent;
@@ -7368,7 +7418,10 @@ mod tests {
     use crate::entity::mob::Mob;
     use crate::inventory::equipment::EquipmentSlot;
     use crate::portal::PortalKind;
-    use crate::world::LevelReader;
+    use crate::test_support::{cross_world_damage_test_world, test_world};
+    use crate::world::game_event_context::GameEventContext;
+    use crate::world::game_event_listener::{GameEventListener, SharedGameEventListener};
+    use crate::world::{LevelReader, World};
 
     use super::{
         ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
@@ -7574,6 +7627,151 @@ mod tests {
         );
     }
 
+    #[test]
+    fn kill_uses_vanilla_living_and_non_living_paths() {
+        let source_world = test_world();
+        let target_world = cross_world_damage_test_world();
+        assert!(!Arc::ptr_eq(source_world, target_world));
+        let non_living_position = DVec3::new(0.25, 64.75, -0.125);
+        let living_position = DVec3::new(1.25, 64.75, -0.125);
+        let listener_position = DVec3::new(0.75, 64.75, -0.125);
+        let listener_section = SectionPos::from_block_pos(BlockPos::from(listener_position));
+        let target_listener = Arc::new(RecordingGameEventListener::new(listener_position));
+        let target_shared_listener: SharedGameEventListener = target_listener.clone();
+        let _target_registration = RegisteredGameEventListener::new(
+            target_world,
+            listener_section,
+            Arc::clone(&target_shared_listener),
+        );
+        let source_listener = Arc::new(RecordingGameEventListener::new(listener_position));
+        let source_shared_listener: SharedGameEventListener = source_listener.clone();
+        let _source_registration = RegisteredGameEventListener::new(
+            source_world,
+            listener_section,
+            Arc::clone(&source_shared_listener),
+        );
+
+        let non_living = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+        non_living.base().set_world(Arc::downgrade(target_world));
+        non_living.base().set_position_local(non_living_position);
+        non_living.kill(source_world);
+        assert_eq!(non_living.removal_reason(), Some(RemovalReason::Killed));
+
+        let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, target_world);
+        living.base().set_position_local(living_position);
+        living.kill(source_world);
+        assert!(
+            living
+                .damage_types
+                .lock()
+                .iter()
+                .any(|damage_type| damage_type == &vanilla_damage_types::GENERIC_KILL.key)
+        );
+        assert_eq!(
+            living.damage_world_keys(),
+            vec![source_world.key.to_string()]
+        );
+        assert_f32_close(living.get_health(), 0.0);
+        assert_eq!(living.pose(), EntityPose::Dying);
+        let Some(last_damage_source) = living.last_damage_source() else {
+            panic!("kill damage should be timestamped in the victim world");
+        };
+        assert_eq!(
+            last_damage_source.damage_type,
+            &vanilla_damage_types::GENERIC_KILL
+        );
+
+        let events = target_listener.events.lock();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            matching_game_event_count(
+                &events,
+                &vanilla_game_events::ENTITY_DIE,
+                non_living_position,
+            ),
+            1
+        );
+        assert_eq!(
+            matching_game_event_count(&events, &vanilla_game_events::ENTITY_DIE, living_position),
+            1
+        );
+        assert!(source_listener.events.lock().is_empty());
+    }
+
+    fn matching_game_event_count(
+        events: &[(GameEventRef, DVec3)],
+        expected_event: GameEventRef,
+        expected_position: DVec3,
+    ) -> usize {
+        events
+            .iter()
+            .filter(|(event, position)| *event == expected_event && *position == expected_position)
+            .count()
+    }
+
+    struct RegisteredGameEventListener<'a> {
+        world: &'a Arc<World>,
+        section: SectionPos,
+        listener: SharedGameEventListener,
+    }
+
+    impl<'a> RegisteredGameEventListener<'a> {
+        fn new(
+            world: &'a Arc<World>,
+            section: SectionPos,
+            listener: SharedGameEventListener,
+        ) -> Self {
+            world.register_game_event_listener(section, Arc::clone(&listener));
+            Self {
+                world,
+                section,
+                listener,
+            }
+        }
+    }
+
+    impl Drop for RegisteredGameEventListener<'_> {
+        fn drop(&mut self) {
+            self.world
+                .unregister_game_event_listener(self.section, &self.listener);
+        }
+    }
+
+    struct RecordingGameEventListener {
+        position: DVec3,
+        events: SyncMutex<Vec<(GameEventRef, DVec3)>>,
+    }
+
+    impl RecordingGameEventListener {
+        fn new(position: DVec3) -> Self {
+            Self {
+                position,
+                events: SyncMutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl GameEventListener for RecordingGameEventListener {
+        fn listener_pos(&self) -> Option<DVec3> {
+            Some(self.position)
+        }
+
+        fn listener_radius(&self) -> i32 {
+            16
+        }
+
+        fn handle_game_event(
+            &self,
+            _world: &Arc<World>,
+            event: GameEventRef,
+            _context: &GameEventContext<'_>,
+            source_pos: DVec3,
+        ) -> bool {
+            self.events.lock().push((event, source_pos));
+            true
+        }
+    }
+
     struct LeashNotificationTestEntity {
         base: EntityBase,
         holder_notifications: SyncMutex<Vec<i32>>,
@@ -7726,6 +7924,7 @@ mod tests {
         entity_data: SyncMutex<SyncedLivingEntityData>,
         health: SyncMutex<f32>,
         damage_types: SyncMutex<Vec<Identifier>>,
+        damage_world_keys: SyncMutex<Vec<String>>,
         entity_type: EntityTypeRef,
         affected_by_fluids: bool,
         can_stand_on_fluid: bool,
@@ -7755,6 +7954,7 @@ mod tests {
                 entity_data: SyncMutex::new(SyncedLivingEntityData::new()),
                 health: SyncMutex::new(20.0),
                 damage_types: SyncMutex::new(Vec::new()),
+                damage_world_keys: SyncMutex::new(Vec::new()),
                 entity_type: &vanilla_entities::PLAYER,
                 affected_by_fluids,
                 can_stand_on_fluid: false,
@@ -7763,6 +7963,17 @@ mod tests {
                 in_wall_for_base_tick: false,
                 flying_player: false,
             }
+        }
+
+        fn new_in_world(
+            water_height: f64,
+            lava_height: f64,
+            affected_by_fluids: bool,
+            world: &Arc<World>,
+        ) -> Self {
+            let entity = Self::new(water_height, lava_height, affected_by_fluids);
+            entity.base.set_world(Arc::downgrade(world));
+            entity
         }
 
         const fn with_standing_on_fluid(mut self) -> Self {
@@ -7804,6 +8015,10 @@ mod tests {
             self.damage_types.lock().clone()
         }
 
+        fn damage_world_keys(&self) -> Vec<String> {
+            self.damage_world_keys.lock().clone()
+        }
+
         fn with_eye_in_water(self) -> Self {
             let contact = self.base.fluid_contact();
             self.base.set_fluid_contact(EntityFluidContact::from_parts(
@@ -7841,11 +8056,12 @@ mod tests {
             LivingEntity::get_attribute_gravity(self)
         }
 
-        fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
             self.damage_types
                 .lock()
                 .push(source.damage_type.key.clone());
-            LivingEntity::hurt_server(self, source, amount)
+            self.damage_world_keys.lock().push(world.key.to_string());
+            LivingEntity::hurt_server(self, world, source, amount)
         }
 
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -8774,7 +8990,7 @@ mod tests {
     #[test]
     fn living_freezing_damages_fully_frozen_entities_on_frequency() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
         entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
         entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
         for _ in 0..40 {
@@ -8789,7 +9005,8 @@ mod tests {
     #[test]
     fn default_ai_step_ticks_freezing_after_travel() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        init_behaviors();
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
         entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
         entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
         for _ in 0..40 {
@@ -8821,6 +9038,7 @@ mod tests {
             LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::BLAZE);
 
         assert!(entity.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::FREEZE),
             1.0,
         ));
@@ -8955,8 +9173,8 @@ mod tests {
     #[test]
     fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
         init_test_registry();
-        let entity =
-            LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::PIG);
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+            .with_entity_type(&vanilla_entities::PIG);
 
         assert!(entity.cause_fall_damage(
             8.0,
@@ -8970,7 +9188,7 @@ mod tests {
     #[test]
     fn living_fall_damage_caps_distance_from_current_impulse() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
 
         entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 4.0, 0.0));
 
@@ -9147,7 +9365,8 @@ mod tests {
     #[test]
     fn living_air_supply_drowning_damage_resets_air() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
+        let entity =
+            LivingFluidTestEntity::new_in_world(0.5, 0.0, true, test_world()).with_eye_in_water();
 
         entity.set_air_supply(-19);
         entity.tick_living_air_supply();
@@ -9208,7 +9427,8 @@ mod tests {
     #[test]
     fn living_base_tick_damages_entities_in_wall() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+            .with_in_wall_for_base_tick();
 
         entity.base_tick_living_entity();
 
@@ -9218,7 +9438,7 @@ mod tests {
     #[test]
     fn living_environmental_damage_applies_in_wall_before_drowning() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.5, 0.0, true)
+        let entity = LivingFluidTestEntity::new_in_world(0.5, 0.0, true, test_world())
             .with_eye_in_water()
             .with_in_wall_for_base_tick();
 
@@ -9251,7 +9471,7 @@ mod tests {
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert!(entity.hurt(&source, 4.0));
+        assert!(entity.hurt(test_world(), &source, 4.0));
 
         assert_f32_close(entity.get_health(), 16.0);
     }
@@ -9263,7 +9483,7 @@ mod tests {
         entity.set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
         let source = DamageSource::environment(&vanilla_damage_types::LAVA);
 
-        assert!(!entity.hurt(&source, 4.0));
+        assert!(!entity.hurt(test_world(), &source, 4.0));
 
         assert_f32_close(entity.get_health(), 20.0);
     }
@@ -9271,13 +9491,14 @@ mod tests {
     #[test]
     fn generic_living_hurt_processes_default_death_once() {
         init_test_registry();
-        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(3.0);
+        let entity =
+            LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert!(entity.hurt(&source, 4.0));
+        assert!(entity.hurt(test_world(), &source, 4.0));
         assert_f32_close(entity.get_health(), 0.0);
         assert_eq!(entity.pose(), EntityPose::Dying);
-        assert!(!entity.hurt(&source, 1.0));
+        assert!(!entity.hurt(test_world(), &source, 1.0));
     }
 
     #[test]
@@ -9288,7 +9509,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
             .with_source_position(DVec3::new(1.0, 0.0, 0.0));
 
-        assert!(entity.hurt(&source, 4.0));
+        assert!(entity.hurt(test_world(), &source, 4.0));
 
         assert_vec3_close(
             entity.velocity(),
@@ -9388,7 +9609,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::DROWN)
             .with_source_position(DVec3::new(1.0, 0.0, 0.0));
 
-        assert!(entity.hurt(&source, 4.0));
+        assert!(entity.hurt(test_world(), &source, 4.0));
 
         assert_vec3_close(entity.velocity(), initial_velocity);
         assert!(!entity.needs_velocity_sync());
@@ -9406,7 +9627,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
             .with_source_position(DVec3::new(1.0, 0.0, 0.0));
 
-        assert!(entity.hurt(&source, 4.0));
+        assert!(entity.hurt(test_world(), &source, 4.0));
 
         assert_vec3_close(
             entity.velocity(),

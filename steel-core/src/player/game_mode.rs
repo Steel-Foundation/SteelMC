@@ -602,7 +602,7 @@ impl Player {
         }
 
         self.reset_attack_strength_ticker();
-        enchantment_helper::do_post_piercing_attack_effects(self);
+        enchantment_helper::do_post_piercing_attack_effects(&world, self);
         if hit_something {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
@@ -643,7 +643,10 @@ impl Player {
         let damage = base_damage + magic_boost;
         let old_movement = entity.velocity();
         let mut affected = deals_knockback;
-        let damage_dealt = deals_damage && entity.hurt(&damage_source, damage);
+        let damage_dealt = deals_damage
+            && entity
+                .level()
+                .is_some_and(|world| entity.hurt(&world, &damage_source, damage));
         affected |= damage_dealt;
         if deals_knockback {
             self.cause_extra_knockback(
@@ -730,7 +733,10 @@ impl Player {
 
         // TODO: Apply crits, sweep attacks, damage stats, and sounds.
         let old_movement = entity.velocity();
-        let was_hurt = entity.hurt(&damage_source, total_damage);
+        let Some(target_world) = entity.level() else {
+            return false;
+        };
+        let was_hurt = entity.hurt(&target_world, &damage_source, total_damage);
         if was_hurt {
             self.set_last_hurt_mob(Some(target));
             let sprint_knockback = if knockback_attack { 0.5 } else { 0.0 };
@@ -744,7 +750,8 @@ impl Player {
             self.cause_food_exhaustion(0.1);
         }
 
-        enchantment_helper::do_post_piercing_attack_effects(self);
+        let world = self.get_world();
+        enchantment_helper::do_post_piercing_attack_effects(&world, self);
         was_hurt
     }
 
@@ -772,7 +779,9 @@ impl Player {
         };
 
         if apply_to_target {
+            let world = self.get_world();
             enchantment_helper::do_post_attack_effects_with_item_source(
+                &world,
                 entity,
                 &source_item,
                 &post_attack_context,

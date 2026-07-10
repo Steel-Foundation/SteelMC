@@ -204,7 +204,11 @@ impl BlockBehavior for CactusBlock {
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
+        let Some(world) = entity.level() else {
+            return;
+        };
         entity.hurt(
+            &world,
             &DamageSource::environment(&vanilla_damage_types::CACTUS),
             1.0,
         );

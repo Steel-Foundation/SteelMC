@@ -78,7 +78,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
-    vanilla_particle_types,
+    vanilla_game_events, vanilla_particle_types,
 };
 use steel_utils::entity_events::EntityStatus;
 use uuid::Uuid;
@@ -785,8 +785,11 @@ impl Player {
     }
 
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
-    pub fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-        if LivingEntity::is_invulnerable_to(self, source) {
+    ///
+    /// `world` is vanilla's explicit `ServerLevel` argument and controls
+    /// difficulty scaling and damage gamerules.
+    pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        if LivingEntity::is_invulnerable_to(self, world, source) {
             return false;
         }
 
@@ -805,7 +808,7 @@ impl Player {
         // Difficulty scaling (vanilla: Player.hurtServer)
         let mut amount = amount;
         if source.scales_with_difficulty() {
-            let difficulty = self.get_world().level_data.read().data().difficulty;
+            let difficulty = world.level_data.read().data().difficulty;
             match difficulty {
                 Difficulty::Peaceful => {
                     amount = 0.0;
@@ -824,7 +827,7 @@ impl Player {
             return false;
         }
 
-        LivingEntity::hurt_server(self, source, amount)
+        LivingEntity::hurt_server(self, world, source, amount)
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef> {
@@ -865,6 +868,8 @@ impl Player {
         if !self.living_base.mark_death_processed() {
             return;
         }
+
+        self.game_event(&vanilla_game_events::ENTITY_DIE);
 
         {
             let mut experience = self.experience.lock();
@@ -2339,7 +2344,9 @@ impl Entity for Player {
     }
 
     fn on_below_world(&self) {
+        let world = self.get_world();
         self.hurt(
+            &world,
             &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
             4.0,
         );
@@ -2354,10 +2361,10 @@ impl Entity for Player {
         }
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
-        Player::hurt(self, source, amount)
+        Player::hurt(self, world, source, amount)
     }
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
@@ -2435,21 +2442,21 @@ impl LivingEntity for Player {
             && self.can_be_seen_by_anyone()
     }
 
-    fn is_invulnerable_to(&self, source: &DamageSource) -> bool {
+    fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
         if self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(self, source)
+            || enchantment_helper::is_immune_to_damage(world, self, source)
         {
             return true;
         }
 
         if let Some(rule) = Self::disabled_damage_game_rule(source) {
-            return self.get_world().get_game_rule(rule) != GameRuleValue::Bool(true);
+            return world.get_game_rule(rule) != GameRuleValue::Bool(true);
         }
 
         !self.has_client_loaded()
     }
 
-    fn actually_hurt(&self, source: &DamageSource, amount: f32) {
+    fn actually_hurt(&self, _world: &World, source: &DamageSource, amount: f32) {
         Player::actually_hurt(self, source, amount);
     }
 
@@ -2596,15 +2603,99 @@ impl TextResolutor for Player {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Weak};
+
+    use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::{
         test_support::init_test_registry, vanilla_damage_types, vanilla_game_rules,
     };
-    use steel_utils::types::GameType;
+    use steel_utils::types::{Difficulty, GameType};
+    use text_components::TextComponent;
+    use uuid::Uuid;
 
-    use crate::entity::damage::DamageSource;
+    use crate::config::RuntimeConfig;
+    use crate::entity::{LivingEntity, damage::DamageSource};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
+    use crate::player::connection::NetworkConnection;
+    use crate::server::Server;
+    use crate::test_support::{hard_damage_test_world, test_world};
+    use crate::world::World;
 
-    use super::{Player, PlayerPermissionState, ResetReason, nullable_game_mode_id};
+    use super::{
+        ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
+        ResetReason, nullable_game_mode_id,
+    };
+
+    struct TestConnection;
+
+    impl NetworkConnection for TestConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, _packet: EncodedPacket) {}
+
+        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            false
+        }
+    }
+
+    fn test_runtime_config() -> Arc<RuntimeConfig> {
+        Arc::new(RuntimeConfig {
+            max_players: 1,
+            view_distance: 2,
+            simulation_distance: 2,
+            online_mode: false,
+            auth_server: None,
+            encryption: false,
+            allow_flight: false,
+            motd: String::new(),
+            use_favicon: false,
+            favicon: String::new(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: 10,
+            command_spam_threshold_seconds: 10,
+            compression: None,
+            server_links: None,
+            chunk_generation_threads: Some(1),
+        })
+    }
+
+    fn test_player(world: Arc<World>) -> Arc<Player> {
+        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
+        let config = test_runtime_config();
+        let player = Arc::new_cyclic(|weak_player| {
+            Player::new(
+                GameProfile {
+                    id: Uuid::from_u128(1),
+                    name: "TestPlayer".to_owned(),
+                    properties: Vec::new(),
+                    profile_actions: None,
+                },
+                Arc::clone(&connection),
+                Arc::clone(&world),
+                Weak::<Server>::new(),
+                Arc::clone(&config),
+                1,
+                weak_player,
+                ClientInformation::default(),
+            )
+        });
+        player.set_client_loaded(true);
+        player
+    }
 
     fn permission_key(value: &str) -> PermissionKey {
         match PermissionKey::parse(value) {
@@ -2705,6 +2796,21 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
         assert!(Player::disabled_damage_game_rule(&source).is_none());
+    }
+
+    #[test]
+    fn hurt_uses_explicit_world_difficulty() {
+        let attached_world = Arc::clone(test_world());
+        let damage_world = hard_damage_test_world();
+        let player = test_player(attached_world);
+        let source = DamageSource::environment(&vanilla_damage_types::EXPLOSION);
+
+        assert_eq!(player.get_world().difficulty(), Difficulty::Normal);
+        assert_eq!(damage_world.difficulty(), Difficulty::Hard);
+        assert_eq!(player.get_health().to_bits(), 20.0_f32.to_bits());
+
+        assert!(player.hurt(damage_world, &source, 4.0));
+        assert_eq!(player.get_health().to_bits(), 14.0_f32.to_bits());
     }
 
     #[test]

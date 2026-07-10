@@ -305,6 +305,7 @@ impl Player {
                 drop(food);
 
                 self.hurt(
+                    &world,
                     &DamageSource::environment(&vanilla_damage_types::STARVE),
                     1.0,
                 );

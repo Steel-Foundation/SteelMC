@@ -14,6 +14,7 @@ use crate::command::error::CommandError;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
+use crate::world::World;
 use steel_registry::vanilla_damage_types;
 use steel_utils::translations;
 
@@ -26,8 +27,9 @@ pub fn command_handler() -> impl CommandHandlerDyn {
 }
 
 /// `LivingEntity.kill()` — hurt with `genericKill` at `Float.MAX_VALUE`.
-fn kill_player(player: &Player) {
+fn kill_player(player: &Player, world: &World) {
     player.hurt(
+        world,
         &DamageSource::environment(&vanilla_damage_types::GENERIC_KILL),
         f32::MAX,
     );
@@ -42,7 +44,7 @@ impl CommandExecutor<()> for KillSelfExecutor {
             .get_player()
             .ok_or(CommandError::InvalidRequirement)?;
 
-        kill_player(player);
+        kill_player(player, &context.world);
 
         // TODO: use getDisplayName() (team formatting, hover event, UUID insertion)
         context.sender.send_message(
@@ -78,7 +80,7 @@ impl CommandExecutor<((), Vec<Arc<dyn LivingEntity + Send + Sync>>)> for KillTar
         for target in &targets {
             let target_uuid = target.uuid();
             if let Some(player) = players.iter().find(|p| p.uuid() == target_uuid) {
-                kill_player(player);
+                kill_player(player, &context.world);
                 victim_count += 1;
                 last_name.clone_from(&player.gameprofile.name);
             }
