@@ -11,7 +11,7 @@ use super::super::super::{
     },
 };
 use super::super::summon;
-use crate::entity::EntityAnchor;
+use crate::entity::{EntityAnchor, SharedEntity};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
@@ -205,6 +205,44 @@ pub(super) fn summon_operation() -> Builder {
             },
         ),
     )
+}
+
+pub(super) fn on_relations() -> Builder {
+    literal("on")
+        .then(literal("vehicle").forks(EXECUTE_ROOT, |context| {
+            Ok(one_relation_sources(context.source(), |entity| {
+                entity.vehicle()
+            }))
+        }))
+        .then(literal("controller").forks(EXECUTE_ROOT, |context| {
+            Ok(one_relation_sources(context.source(), |entity| {
+                entity.controlling_passenger()
+            }))
+        }))
+        .then(literal("passengers").forks(EXECUTE_ROOT, |context| {
+            Ok(passenger_sources(context.source()))
+        }))
+}
+
+fn one_relation_sources(
+    source: &CommandSource,
+    relation: impl FnOnce(&SharedEntity) -> Option<SharedEntity>,
+) -> Vec<CommandSource> {
+    let entity = source.entity().and_then(relation);
+    entity
+        .filter(|entity| !entity.is_removed())
+        .map_or_else(Vec::new, |entity| vec![source.with_entity(entity)])
+}
+
+fn passenger_sources(source: &CommandSource) -> Vec<CommandSource> {
+    source.entity().map_or_else(Vec::new, |entity| {
+        entity
+            .passengers()
+            .into_iter()
+            .filter(|passenger| !passenger.is_removed())
+            .map(|passenger| source.with_entity(passenger))
+            .collect()
+    })
 }
 
 fn required_coordinates(

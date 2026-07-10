@@ -308,6 +308,9 @@ mod tests {
             &["align", "axes"],
             &["anchored", "anchor"],
             &["summon", "entity"],
+            &["on", "vehicle"],
+            &["on", "controller"],
+            &["on", "passengers"],
         ];
         for path in modifier_paths {
             let terminal = path
