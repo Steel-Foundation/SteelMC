@@ -795,6 +795,31 @@ pub type SharedEntity = Arc<dyn Entity>;
 /// Type alias for a weak entity reference.
 pub type WeakEntity = Weak<dyn Entity>;
 
+/// Result of reading an entity through vanilla command slot IDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityCommandItemSlotResult {
+    /// The slot exists and the visitor was called.
+    Found,
+    /// Vanilla exposes no slot with this ID for the entity.
+    Missing,
+    /// The entity should expose the slot, but Steel does not model its inventory yet.
+    Unsupported,
+}
+
+pub(crate) const fn command_item_slot_to_equipment_slot(slot: i32) -> Option<EquipmentSlot> {
+    match slot {
+        98 => Some(EquipmentSlot::MainHand),
+        99 => Some(EquipmentSlot::OffHand),
+        100 => Some(EquipmentSlot::Feet),
+        101 => Some(EquipmentSlot::Legs),
+        102 => Some(EquipmentSlot::Chest),
+        103 => Some(EquipmentSlot::Head),
+        105 => Some(EquipmentSlot::Body),
+        106 => Some(EquipmentSlot::Saddle),
+        _ => None,
+    }
+}
+
 /// The point on an entity used by commands that resolve positions or facing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EntityAnchor {
@@ -2816,6 +2841,35 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// downcast through `Any`.
     fn as_player(&self) -> Option<&Player> {
         self.capabilities().player
+    }
+
+    /// Visits the item exposed through a vanilla command slot ID.
+    fn with_command_item_slot(
+        &self,
+        slot: i32,
+        visitor: &mut dyn FnMut(&ItemStack),
+    ) -> EntityCommandItemSlotResult {
+        if let Some(player) = self.as_player() {
+            return player.with_command_item_slot(slot, visitor);
+        }
+
+        if slot == 0 {
+            if let Some(item_entity) = self.as_item_merge_entity() {
+                let stack = item_entity.item_merge_stack();
+                visitor(&stack);
+                return EntityCommandItemSlotResult::Found;
+            }
+            return EntityCommandItemSlotResult::Missing;
+        }
+
+        let Some(equipment_slot) = command_item_slot_to_equipment_slot(slot) else {
+            return EntityCommandItemSlotResult::Missing;
+        };
+        let Some(living) = self.as_living_entity() else {
+            return EntityCommandItemSlotResult::Missing;
+        };
+        living.with_equipment_slot(equipment_slot, visitor);
+        EntityCommandItemSlotResult::Found
     }
 
     /// Returns true for mobs with pathfinding navigation.
@@ -7519,10 +7573,10 @@ mod tests {
     use super::{
         ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
         DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
-        EntityFluidContact, EntityLevelCallback, EntityMoveError, EntitySyncedData,
-        EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
-        LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
-        block_state_suffocates_eye_box, closest_open_space_direction,
+        EntityCommandItemSlotResult, EntityFluidContact, EntityLevelCallback, EntityMoveError,
+        EntitySyncedData, EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity,
+        LivingEntityBase, LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID,
+        SharedEntity, block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
         fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
         passenger_transition_position, passenger_transition_rotation,
@@ -9164,6 +9218,28 @@ mod tests {
         );
 
         assert!(!entity.default_living_can_walk_on_powder_snow());
+    }
+
+    #[test]
+    fn living_entity_exposes_equipment_command_slots() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::Head,
+            ItemStack::with_count(&vanilla_items::ITEMS.stone, 2),
+        );
+
+        let mut count = 0;
+        let result = entity.with_command_item_slot(103, &mut |item| {
+            count = item.count();
+        });
+
+        assert_eq!(result, EntityCommandItemSlotResult::Found);
+        assert_eq!(count, 2);
+        assert_eq!(
+            entity.with_command_item_slot(104, &mut |_| {}),
+            EntityCommandItemSlotResult::Missing
+        );
     }
 
     #[test]

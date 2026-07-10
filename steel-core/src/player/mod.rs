@@ -108,7 +108,7 @@ use crate::permission::{PermissionContext, PermissionExpr, PermissionSet, Permis
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
-use crate::player::player_inventory::PlayerInventory;
+use crate::player::player_inventory::{EnderChestInventory, PlayerInventory};
 use crate::server::{
     Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
@@ -241,6 +241,9 @@ pub struct Player {
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: SyncPlayerInv,
+
+    /// The player's ender chest inventory.
+    pub(crate) ender_chest: SyncMutex<EnderChestInventory>,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
@@ -561,6 +564,7 @@ impl Player {
             )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
+            ender_chest: SyncMutex::new(EnderChestInventory::new()),
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
