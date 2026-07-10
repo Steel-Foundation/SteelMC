@@ -78,6 +78,19 @@ where
     fn cancel(&mut self) {}
 }
 
+/// Poll result for a normal command whose result is produced across ticks.
+pub(crate) enum CommandResultSuspensionPoll {
+    Pending,
+    Ready(Result<i32, CommandSyntaxError>),
+}
+
+/// Cross-tick work that retains ordinary command result and error semantics.
+pub(crate) trait CommandResultSuspension: Send + 'static {
+    fn poll(&mut self) -> CommandResultSuspensionPoll;
+
+    fn cancel(&mut self) {}
+}
+
 /// Poll result for work that suspended a command execution.
 pub(crate) enum CommandSuspensionPoll<S>
 where
@@ -541,7 +554,7 @@ where
                     executor.run(source, &chain, modifiers, &mut control);
                 }
             }
-            SteelExecutor::Standard(_) => {
+            SteelExecutor::Standard(_) | SteelExecutor::Suspended(_) => {
                 if modifiers.is_return() {
                     let Some(source) = sources.into_iter().next() else {
                         unreachable!("empty source lists return before terminal scheduling")
@@ -638,19 +651,103 @@ impl<S> EntryAction<S> for ExecuteAction<S>
 where
     S: ExecutionCommandSource,
 {
-    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, _frame: Frame) {
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        let Self {
+            chain,
+            source,
+            modifiers,
+        } = *self;
         context.increment_cost();
-        let command_context = self.chain.top_context().copy_for(Arc::clone(&self.source));
-        let Some(SteelExecutor::Standard(executor)) = command_context.executor() else {
-            unreachable!("only standard executors are scheduled as execute actions")
+        let command_context = chain.top_context().copy_for(Arc::clone(&source));
+        let Some(executor) = command_context.executor() else {
+            unreachable!("a scheduled execute action always has a terminal executor")
         };
-        match executor(&command_context) {
-            Ok(result) => command_context.source().callback().on_result(true, result),
-            Err(error) => {
-                command_context.source().callback().on_result(false, 0);
-                if !self.modifiers.is_forked() {
-                    self.source.handle_error(&error, false);
-                }
+        match executor {
+            SteelExecutor::Standard(executor) => {
+                complete_command_result(source.as_ref(), modifiers, executor(&command_context));
+            }
+            SteelExecutor::Suspended(executor) => match executor(&command_context) {
+                Ok(suspension) => context.queue_next(
+                    frame,
+                    SuspendAction {
+                        suspension: Box::new(CommandResultSuspensionAdapter {
+                            suspension,
+                            source,
+                            modifiers,
+                        }),
+                    },
+                ),
+                Err(error) => complete_command_result(source.as_ref(), modifiers, Err(error)),
+            },
+            SteelExecutor::Custom(_) => {
+                unreachable!("custom executors run directly while building contexts")
+            }
+        }
+    }
+}
+
+struct CommandResultSuspensionAdapter<S>
+where
+    S: ExecutionCommandSource,
+{
+    suspension: Box<dyn CommandResultSuspension>,
+    source: Arc<S>,
+    modifiers: ChainModifiers,
+}
+
+impl<S> CommandSuspension<S> for CommandResultSuspensionAdapter<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn poll(&mut self) -> CommandSuspensionPoll<S> {
+        match self.suspension.poll() {
+            CommandResultSuspensionPoll::Pending => CommandSuspensionPoll::Pending,
+            CommandResultSuspensionPoll::Ready(result) => {
+                CommandSuspensionPoll::resume(CompleteCommandResultAction {
+                    source: Arc::clone(&self.source),
+                    modifiers: self.modifiers,
+                    result,
+                })
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.suspension.cancel();
+    }
+}
+
+struct CompleteCommandResultAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    source: Arc<S>,
+    modifiers: ChainModifiers,
+    result: Result<i32, CommandSyntaxError>,
+}
+
+impl<S> EntryAction<S> for CompleteCommandResultAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, _context: &mut CommandExecutionContext<S>, _frame: Frame) {
+        complete_command_result(self.source.as_ref(), self.modifiers, self.result);
+    }
+}
+
+fn complete_command_result<S>(
+    source: &S,
+    modifiers: ChainModifiers,
+    result: Result<i32, CommandSyntaxError>,
+) where
+    S: ExecutionCommandSource,
+{
+    match result {
+        Ok(result) => source.callback().on_result(true, result),
+        Err(error) => {
+            source.callback().on_result(false, 0);
+            if !modifiers.is_forked() {
+                source.handle_error(&error, false);
             }
         }
     }

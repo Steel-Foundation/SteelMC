@@ -14,9 +14,9 @@ use crate::command::brigadier::{
 };
 
 use super::{
-    BiomeOrTag, BlockPredicate, ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource,
-    ExecutionControl, IntRange, ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard,
-    SteelArgumentType, WorldArgument,
+    BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    Coordinates, ExecutionCommandSource, ExecutionControl, IntRange, ItemPredicate,
+    ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, WorldArgument,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -35,6 +35,9 @@ pub(crate) type SteelContextChain<S> = ContextChain<S, SteelCommandRuntime>;
 
 type StandardExecutor<S> =
     dyn Fn(&SteelCommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync;
+type SuspendedExecutor<S> = dyn Fn(&SteelCommandContext<S>) -> Result<Box<dyn CommandResultSuspension>, CommandSyntaxError>
+    + Send
+    + Sync;
 type StandardModifier<S> =
     dyn Fn(&SteelCommandContext<S>) -> Result<Vec<S>, CommandSyntaxError> + Send + Sync;
 
@@ -44,6 +47,7 @@ where
     S: ExecutionCommandSource,
 {
     Standard(Box<StandardExecutor<S>>),
+    Suspended(Box<SuspendedExecutor<S>>),
     Custom(Arc<dyn CustomCommandExecutor<S>>),
 }
 
@@ -128,6 +132,25 @@ where
         + 'static,
     ) -> Self {
         self.executes_with_executor(Arc::new(SteelExecutor::Standard(Box::new(executor))))
+    }
+
+    /// Attaches an ordinary executor whose command result is produced across ticks.
+    #[must_use]
+    pub(crate) fn executes_suspended<T>(
+        self,
+        executor: impl Fn(&SteelCommandContext<S>) -> Result<T, CommandSyntaxError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self
+    where
+        T: CommandResultSuspension,
+    {
+        let executor = move |context: &SteelCommandContext<S>| {
+            executor(context)
+                .map(|suspension| Box::new(suspension) as Box<dyn CommandResultSuspension>)
+        };
+        self.executes_with_executor(Arc::new(SteelExecutor::Suspended(Box::new(executor))))
     }
 
     /// Attaches an internal executor with frame and queue control.

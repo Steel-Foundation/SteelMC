@@ -11,9 +11,10 @@ use crate::permission::{PermissionExpr, PermissionState};
 
 use super::{
     ChainModifiers, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
-    CommandSuspension, CommandSuspensionPoll, CustomCommandExecutor, CustomModifierExecutor,
-    EntryAction, ExecutionCommandSource, ExecutionControl, ExecutionStop, Frame,
-    SteelCommandRuntime, SteelContextChain, argument, literal,
+    CommandResultSuspension, CommandResultSuspensionPoll, CommandSuspension, CommandSuspensionPoll,
+    CustomCommandExecutor, CustomModifierExecutor, EntryAction, ExecutionCommandSource,
+    ExecutionControl, ExecutionStop, Frame, SteelCommandRuntime, SteelContextChain, argument,
+    literal,
 };
 
 #[derive(Default)]
@@ -563,6 +564,262 @@ struct TestSuspension {
     result: i32,
     observed: Arc<Observed>,
     cancellations: Arc<SyncMutex<usize>>,
+}
+
+struct TestResultSuspension {
+    pending_polls: usize,
+    result: Option<Result<i32, CommandSyntaxError>>,
+    cancellations: Arc<SyncMutex<usize>>,
+}
+
+impl CommandResultSuspension for TestResultSuspension {
+    fn poll(&mut self) -> CommandResultSuspensionPoll {
+        if self.pending_polls > 0 {
+            self.pending_polls -= 1;
+            return CommandResultSuspensionPoll::Pending;
+        }
+
+        let Some(result) = self.result.take() else {
+            panic!("a completed result suspension must not be polled again");
+        };
+        CommandResultSuspensionPoll::Ready(result)
+    }
+
+    fn cancel(&mut self) {
+        *self.cancellations.lock() += 1;
+    }
+}
+
+#[test]
+fn suspended_normal_executor_reports_its_delayed_result() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |context| {
+            command_observed
+                .invocations
+                .lock()
+                .push(context.source().name);
+            Ok(TestResultSuspension {
+                pending_polls: 1,
+                result: Some(Ok(42)),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    assert_eq!(*observed.invocations.lock(), ["waiting"]);
+    assert!(observed.results.lock().is_empty());
+
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Suspended);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Completed);
+    assert_eq!(*observed.results.lock(), [(true, 42)]);
+    assert!(observed.errors.lock().is_empty());
+    assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
+fn suspended_normal_executor_reports_delayed_errors_like_a_standard_executor() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |_| {
+            Ok(TestResultSuspension {
+                pending_polls: 0,
+                result: Some(Err(CommandSyntaxError::dynamic("delayed failure"))),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Completed);
+    assert_eq!(*observed.results.lock(), [(false, 0)]);
+    assert_eq!(
+        *observed.errors.lock(),
+        [("delayed failure".to_owned(), false)]
+    );
+    assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
+fn suspended_normal_executor_reports_startup_errors_without_suspending() {
+    let observed = Arc::new(Observed::default());
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(
+            |_| -> Result<TestResultSuspension, CommandSyntaxError> {
+                Err(CommandSyntaxError::dynamic("startup failure"))
+            },
+        ),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Completed);
+    assert_eq!(*observed.results.lock(), [(false, 0)]);
+    assert_eq!(
+        *observed.errors.lock(),
+        [("startup failure".to_owned(), false)]
+    );
+}
+
+#[test]
+fn suspended_normal_executor_resumes_each_forked_source_and_suppresses_errors() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |context| {
+            command_observed
+                .invocations
+                .lock()
+                .push(context.source().name);
+            Ok(TestResultSuspension {
+                pending_polls: 0,
+                result: Some(Err(CommandSyntaxError::dynamic("forked failure"))),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let root = dispatcher.root();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("fork").forks(root, |context| {
+            Ok(vec![
+                context.source().with_name("first"),
+                context.source().with_name("second"),
+            ])
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "fork wait", Arc::clone(&observed)),
+        TestSource::new("original", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    assert_eq!(*observed.invocations.lock(), ["first"]);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Suspended);
+    assert_eq!(*observed.invocations.lock(), ["first", "second"]);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Completed);
+
+    assert_eq!(*observed.results.lock(), [(false, 0), (false, 0)]);
+    assert!(observed.errors.lock().is_empty());
+    assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
+fn suspended_normal_executor_preserves_forked_return_semantics() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let frame_results = Arc::new(SyncMutex::new(Vec::new()));
+    let callback_results = Arc::clone(&frame_results);
+    let command_observed = Arc::clone(&observed);
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |context| {
+            command_observed
+                .invocations
+                .lock()
+                .push(context.source().name);
+            Ok(TestResultSuspension {
+                pending_polls: 0,
+                result: Some(Ok(7)),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let root = dispatcher.root();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("returning").redirects_custom(root, ReturningModifier, false),
+    );
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("fork").forks(root, |context| {
+            Ok(vec![
+                context.source().with_name("first"),
+                context.source().with_name("second"),
+            ])
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "fork returning wait", Arc::clone(&observed)),
+        TestSource::new("original", Arc::clone(&observed)),
+        CommandResultCallback::new(move |success, result| {
+            callback_results.lock().push((success, result));
+        }),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    assert_eq!(*observed.invocations.lock(), ["first"]);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Completed);
+    assert_eq!(*observed.results.lock(), [(true, 7)]);
+    assert_eq!(*frame_results.lock(), [(true, 7)]);
+    assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
+fn cancelling_suspended_normal_execution_cancels_its_work() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |_| {
+            Ok(TestResultSuspension {
+                pending_polls: usize::MAX,
+                result: Some(Ok(1)),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", observed),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    execution.cancel();
+
+    assert_eq!(*cancellations.lock(), 1);
+    assert_eq!(execution.run(), ExecutionStop::Completed);
 }
 
 impl CommandSuspension<TestSource> for TestSuspension {

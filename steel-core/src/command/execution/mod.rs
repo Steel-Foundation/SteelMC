@@ -20,8 +20,8 @@ pub(crate) use block::BlockPredicate;
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use queue::{
-    ChainModifiers, CommandExecutionContext, CommandSuspension, CommandSuspensionPoll, EntryAction,
-    ExecutionControl, ExecutionStop, Frame,
+    ChainModifiers, CommandExecutionContext, CommandResultSuspension, CommandResultSuspensionPoll,
+    CommandSuspension, CommandSuspensionPoll, EntryAction, ExecutionControl, ExecutionStop, Frame,
 };
 pub(crate) use runtime::{
     CustomCommandExecutor, CustomModifierExecutor, SteelCommandContext, SteelCommandRuntime,
