@@ -291,7 +291,7 @@ impl ItemStack {
 
     #[must_use]
     pub fn max_stack_size(&self) -> i32 {
-        self.get(MAX_STACK_SIZE).copied().unwrap_or(64)
+        self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
     }
 
     /// Returns the equippable component if this item has one.

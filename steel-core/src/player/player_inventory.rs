@@ -4,7 +4,7 @@ use std::{
     array,
     f32::consts::TAU,
     mem,
-    sync::{LazyLock, Weak},
+    sync::{Arc, LazyLock, Weak},
 };
 
 use glam::DVec3;
@@ -19,7 +19,7 @@ use steel_registry::{REGISTRY, RegistryExt, items::ItemRef};
 use steel_utils::types::{GameType, InteractionHand};
 
 use crate::{
-    entity::Entity,
+    entity::{Entity, entities::ItemEntity},
     inventory::{
         MenuProvider,
         container::Container,
@@ -1063,7 +1063,7 @@ impl Player {
             }
         };
 
-        self.drop_item(removed, false, true);
+        let _ = self.drop_item(removed, false, true);
     }
 
     /// Drops an item into the world.
@@ -1073,9 +1073,15 @@ impl Player {
     /// - `throw_randomly`: If true, the item is thrown in a random direction.
     ///   If false, it's thrown in the direction the player is facing.
     /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
-    pub fn drop_item(&self, item: ItemStack, throw_randomly: bool, thrown_from_hand: bool) {
+    #[must_use]
+    pub fn drop_item(
+        &self,
+        item: ItemStack,
+        throw_randomly: bool,
+        thrown_from_hand: bool,
+    ) -> Option<Arc<ItemEntity>> {
         if item.is_empty() {
-            return;
+            return None;
         }
 
         let pos = self.position();
@@ -1114,15 +1120,14 @@ impl Player {
 
         let spawn_pos = DVec3::new(pos.x, spawn_y, pos.z);
 
-        if let Some(entity) = self
+        let entity = self
             .get_world()
-            .spawn_item_with_velocity(spawn_pos, item, velocity)
-        {
-            entity.set_pickup_delay(40);
-            if thrown_from_hand {
-                entity.set_thrower(self.gameprofile.id);
-            }
+            .spawn_item_with_velocity(spawn_pos, item, velocity)?;
+        entity.set_pickup_delay(40);
+        if thrown_from_hand {
+            entity.set_thrower(self.gameprofile.id);
         }
+        Some(entity)
     }
 
     /// Returns true if the player can drop items.
@@ -1145,7 +1150,7 @@ impl Player {
 
         let added = self.inventory.lock().add(&mut item);
         if !added || !item.is_empty() {
-            self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, false);
         }
     }
 
@@ -1163,11 +1168,11 @@ impl Player {
         if let Some(inv) = guard.get_mut(inv_id) {
             let added = inv.add(&mut item);
             if !added || !item.is_empty() {
-                self.drop_item(item, false, false);
+                let _ = self.drop_item(item, false, false);
             }
         } else {
             // Inventory not in guard - this shouldn't happen but drop the item to be safe
-            self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, false);
         }
     }
 }

@@ -941,10 +941,10 @@ impl MenuBehavior {
                 if button == 0 {
                     // Left click outside - drop all carried items
                     let to_drop = mem::take(&mut self.carried);
-                    player.drop_item(to_drop, false, true);
+                    let _ = player.drop_item(to_drop, false, true);
                 } else {
                     // Right click outside - drop one carried item
-                    player.drop_item(self.carried.split(1), false, true);
+                    let _ = player.drop_item(self.carried.split(1), false, true);
                 }
             }
             return;
@@ -1137,7 +1137,7 @@ impl MenuBehavior {
 
         let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
-            player.drop_item(dropped.clone(), false, true);
+            let _ = player.drop_item(dropped.clone(), false, true);
         }
 
         // Ctrl+Q: Keep dropping while the slot has the same item type
@@ -1159,7 +1159,7 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                player.drop_item(more_dropped, false, true);
+                let _ = player.drop_item(more_dropped, false, true);
             }
         }
     }

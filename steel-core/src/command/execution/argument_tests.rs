@@ -8,7 +8,9 @@ use crate::command::{
     },
 };
 use steel_registry::{
-    test_support::init_test_registry, vanilla_enchantments, vanilla_entities, vanilla_world_clocks,
+    data_components::{ComponentPatchEntry, vanilla_components},
+    test_support::init_test_registry,
+    vanilla_enchantments, vanilla_entities, vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::{Identifier, types::GameType};
@@ -375,6 +377,199 @@ fn enchantment_argument_resolves_and_suggests_registered_entries() {
         .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["minecraft:sharpness"]);
+}
+
+#[test]
+fn item_stack_argument_parses_supported_components_and_registered_removals() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[max_stack_size=16,enchantment_glint_override=true,!lore]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("supported item components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(stack.is(&vanilla_items::ITEMS.stone));
+    assert_eq!(stack.max_stack_size(), 16);
+    assert_eq!(
+        stack.get(vanilla_components::ENCHANTMENT_GLINT_OVERRIDE),
+        Some(&true)
+    );
+    assert!(matches!(
+        stack.patch().get_entry(&vanilla_components::LORE.key),
+        Some(ComponentPatchEntry::Removed)
+    ));
+}
+
+#[test]
+fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[max_stack_size=16.9d,enchantment_glint_override=2,potion_duration_scale=1]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("vanilla numeric component coercions should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(stack.max_stack_size(), 16);
+    assert_eq!(
+        stack.get(vanilla_components::ENCHANTMENT_GLINT_OVERRIDE),
+        Some(&true)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::POTION_DURATION_SCALE),
+        Some(&1.0)
+    );
+}
+
+#[test]
+fn item_stack_argument_parses_compound_component_values() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},max_stack_size=16]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("supported compound component should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+    let Some(cooldown) = stack.get(vanilla_components::USE_COOLDOWN) else {
+        panic!("use cooldown should be retained");
+    };
+
+    assert_eq!(cooldown.seconds.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(
+        cooldown.cooldown_group,
+        Some(Identifier::vanilla_static("test"))
+    );
+    assert_eq!(stack.max_stack_size(), 16);
+}
+
+#[test]
+fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+
+    for input in [
+        "resource stone[lore=[]]",
+        "resource stone[creative_slot_lock={}]",
+        "resource stone[missing={}]",
+        "resource stone[max_stack_size=16,max_stack_size=8]",
+        "resource stone[max_stack_size=0]",
+        "resource stone[max_damage=10]",
+        "resource stone[potion_duration_scale=-0.0f]",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn removing_max_stack_size_uses_vanillas_fallback_of_one() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse("resource stone[!max_stack_size]", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registered component removal should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(stack.max_stack_size(), 1);
+}
+
+#[test]
+fn item_stack_argument_suggests_items_and_supported_component_operations() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+
+    let parse = dispatcher.parse("resource minecraft:diamond_sw", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("item suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "minecraft:diamond_sword")
+    );
+
+    let parse = dispatcher.parse("resource stone[dam", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("component suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "stone[minecraft:damage=")
+    );
+
+    let parse = dispatcher.parse("resource stone[!lo", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("component removal suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "stone[!minecraft:lore")
+    );
+
+    let parse = dispatcher.parse("resource stone[  dam", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("component suggestions after whitespace should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "stone[  minecraft:damage=")
+    );
+
+    let parse = dispatcher.parse("resource stone[!lore", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("component removal delimiter suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "stone[!lore,")
+    );
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "stone[!lore]")
+    );
+
+    let input = "resource stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},wea";
+    let parse = dispatcher.parse(input, TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("component suggestions after compound values should build");
+    };
+    assert!(suggestions.list().iter().any(|suggestion| {
+        suggestion.text()
+            == "stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},minecraft:weapon="
+    }));
 }
 
 #[test]

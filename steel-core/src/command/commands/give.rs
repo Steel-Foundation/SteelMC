@@ -84,7 +84,7 @@ fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandS
             let added = target.inventory.lock().add(&mut copy);
 
             if !added || !copy.is_empty() {
-                target.drop_item(copy, false, false);
+                let _ = target.drop_item(copy, false, false);
             }
         }
     }

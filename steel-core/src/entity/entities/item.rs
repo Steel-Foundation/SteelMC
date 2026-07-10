@@ -226,6 +226,13 @@ impl ItemEntity {
         self.item_state.lock().age = INFINITE_LIFETIME;
     }
 
+    /// Makes this a one-tick visual pickup item that cannot be collected.
+    pub fn make_fake_item(&self) {
+        let mut state = self.item_state.lock();
+        state.pickup_delay = INFINITE_PICKUP_DELAY;
+        state.age = LIFETIME - 1;
+    }
+
     /// Gets the pickup delay in ticks.
     #[must_use]
     pub fn get_pickup_delay(&self) -> i32 {
@@ -848,6 +855,22 @@ mod tests {
         assert_eq!(velocity.y.to_bits(), 0.2_f64.to_bits());
         assert!(velocity.z >= -0.1);
         assert!(velocity.z < 0.1);
+    }
+
+    #[test]
+    fn fake_item_is_never_pickable_and_expires_on_its_next_tick() {
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            ItemStack::new(&vanilla_items::ITEMS.stone),
+            Weak::<World>::new(),
+        );
+
+        item.make_fake_item();
+
+        assert_eq!(item.get_pickup_delay(), 32_767);
+        assert_eq!(item.get_age(), 5_999);
     }
 
     #[test]

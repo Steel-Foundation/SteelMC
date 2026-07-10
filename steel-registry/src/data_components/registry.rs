@@ -129,6 +129,15 @@ impl ComponentEntry {
     pub fn validates(&self, data: &ComponentData) -> bool {
         data.discriminant() == self.expected_discriminant
     }
+
+    /// Decodes an owned NBT value with this component's registered persistent codec.
+    #[must_use]
+    pub fn read_nbt_owned(&self, tag: &OwnedNbtTag) -> Option<ComponentData> {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed = simdnbt::borrow::read_tag(&mut Cursor::new(bytes.as_slice())).ok()?;
+        (self.nbt_reader)(borrowed.as_tag())
+    }
 }
 
 pub type ComponentEntryRef = &'static ComponentEntry;
@@ -565,6 +574,11 @@ impl DataComponentPatch {
     pub fn remove<T>(&mut self, component: DataComponentType<T>) {
         self.entries
             .insert(component.key.clone(), ComponentPatchEntry::Removed);
+    }
+
+    /// Marks a dynamically resolved component as removed.
+    pub fn remove_raw(&mut self, key: Identifier) {
+        self.entries.insert(key, ComponentPatchEntry::Removed);
     }
 
     /// Clears any patch entry for a component.

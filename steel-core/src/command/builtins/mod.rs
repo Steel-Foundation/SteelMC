@@ -7,6 +7,7 @@ mod experience;
 mod fly;
 pub(crate) mod gamemode;
 mod gamerule;
+mod give;
 mod kill;
 mod list;
 mod seed;
@@ -36,6 +37,7 @@ pub(crate) fn create_dispatcher()
     builder.register(fly::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
+    builder.register(give::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(seed::registration())?;
@@ -85,6 +87,7 @@ mod tests {
                 "fly",
                 "gamemode",
                 "gamerule",
+                "give",
                 "kill",
                 "list",
                 "seed",

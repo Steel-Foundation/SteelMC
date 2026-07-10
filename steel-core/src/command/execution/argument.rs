@@ -6,7 +6,7 @@ use crate::command::brigadier::{
 use steel_registry::{
     ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
     WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
-    timeline::TimelineRef, world_clock::WorldClockRef,
+    item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::translations;
 use steel_utils::{Identifier, types::GameType};
@@ -15,6 +15,7 @@ use text_components::TextComponent;
 use super::{
     Coordinates, ExecutionCommandSource,
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    item::{parse_item_stack, suggest_item_stack},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
 use crate::entity::{ENTITIES, EntityAnchor};
@@ -44,6 +45,8 @@ pub(crate) enum SteelArgumentType {
     SummonableEntity,
     /// A registered enchantment.
     Enchantment,
+    /// An item and supported data-component patch.
+    ItemStack,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -121,6 +124,10 @@ impl SteelArgumentType {
         Self::Enchantment
     }
 
+    pub(crate) const fn item_stack() -> Self {
+        Self::ItemStack
+    }
+
     pub(crate) const fn world_clock() -> Self {
         Self::WorldClock
     }
@@ -161,6 +168,8 @@ pub(crate) enum SteelArgumentValue {
     EntityType(EntityTypeRef),
     /// A resolved registered enchantment.
     Enchantment(EnchantmentRef),
+    /// A parsed item stack with a count of one.
+    ItemStack(ItemStack),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -181,6 +190,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Domain(_)
             | Self::EntityType(_)
             | Self::Enchantment(_)
+            | Self::ItemStack(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -228,6 +238,7 @@ where
                     |enchantment| Ok(SteelArgumentValue::Enchantment(enchantment)),
                 )
             }
+            Self::ItemStack => parse_item_stack(reader).map(SteelArgumentValue::ItemStack),
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -295,6 +306,7 @@ where
                     builder,
                 );
             }
+            Self::ItemStack => suggest_item_stack(builder),
             Self::WorldClock => {
                 suggest_resources(
                     REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
@@ -355,6 +367,7 @@ where
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Enchantment(_)
+            | SteelArgumentValue::ItemStack(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )
@@ -458,7 +471,9 @@ where
     ))))
 }
 
-fn parse_identifier(reader: &mut StringReader<'_>) -> Result<Identifier, CommandSyntaxError> {
+pub(super) fn parse_identifier(
+    reader: &mut StringReader<'_>,
+) -> Result<Identifier, CommandSyntaxError> {
     let start = reader.checkpoint();
     let start_byte = reader.read_so_far().len();
     while reader.peek().is_some_and(is_allowed_in_identifier) {
@@ -526,7 +541,7 @@ fn suggest_resources<'a>(
     }
 }
 
-fn matches_substring(pattern: &str, input: &str) -> bool {
+pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {
     if input.starts_with(pattern) {
         return true;
     }

@@ -946,7 +946,7 @@ impl Player {
                     .collect()
             };
             for item in items {
-                self.drop_item(item, true, false);
+                let _ = self.drop_item(item, true, false);
             }
         }
 
