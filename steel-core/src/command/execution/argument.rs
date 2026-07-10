@@ -14,7 +14,8 @@ use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use super::{
-    Coordinates, ExecutionCommandSource, IntRange, ItemPredicate, ScoreHolderArgument,
+    BiomeOrTag, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate, ScoreHolderArgument,
+    biome::{parse_biome_or_tag, suggest_biomes},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -86,6 +87,8 @@ pub(crate) enum SteelArgumentType {
     Objective,
     /// An inclusive integer range.
     IntRange,
+    /// A registered biome or biome tag.
+    BiomeOrTag,
     /// One of vanilla's four game modes.
     GameMode,
     /// A configured Steel domain.
@@ -183,6 +186,10 @@ impl SteelArgumentType {
         Self::IntRange
     }
 
+    pub(crate) const fn biome_or_tag() -> Self {
+        Self::BiomeOrTag
+    }
+
     pub(crate) const fn game_mode() -> Self {
         Self::GameMode
     }
@@ -249,6 +256,8 @@ pub(crate) enum SteelArgumentValue {
     Objective(Box<str>),
     /// An inclusive integer range.
     IntRange(IntRange),
+    /// A registered biome or biome tag.
+    BiomeOrTag(BiomeOrTag),
     /// A parsed vanilla game mode.
     GameMode(GameType),
     /// A configured Steel domain name.
@@ -282,6 +291,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::ScoreHolder(_)
             | Self::Objective(_)
             | Self::IntRange(_)
+            | Self::BiomeOrTag(_)
             | Self::GameMode(_)
             | Self::Domain(_)
             | Self::EntityType(_)
@@ -332,6 +342,7 @@ where
                 reader.read_unquoted_string().into(),
             )),
             Self::IntRange => parse_int_range(reader).map(SteelArgumentValue::IntRange),
+            Self::BiomeOrTag => parse_biome_or_tag(reader).map(SteelArgumentValue::BiomeOrTag),
             Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
@@ -397,6 +408,7 @@ where
                     builder.suggest(objective);
                 }
             }
+            Self::BiomeOrTag => suggest_biomes(builder),
             Self::GameMode => suggest_game_modes(builder),
             Self::Domain => {
                 let prefix = builder.remaining();
@@ -491,6 +503,7 @@ where
             | SteelArgumentValue::ScoreHolder(_)
             | SteelArgumentValue::Objective(_)
             | SteelArgumentValue::IntRange(_)
+            | SteelArgumentValue::BiomeOrTag(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)
@@ -690,7 +703,7 @@ const fn is_allowed_in_identifier(character: char) -> bool {
         || matches!(character, '_' | ':' | '/' | '.' | '-')
 }
 
-fn unknown_resource(
+pub(super) fn unknown_resource(
     reader: &StringReader<'_>,
     key: &Identifier,
     registry: &Identifier,

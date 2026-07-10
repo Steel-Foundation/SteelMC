@@ -18,9 +18,50 @@ const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     literal(name)
+        .then(biome_condition(expected))
         .then(entity_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))
+}
+
+fn biome_condition(expected: bool) -> Builder {
+    literal("biome").then(
+        argument("pos", SteelArgumentType::block_pos()).then(
+            argument("biome", SteelArgumentType::biome_or_tag())
+                .forks(EXECUTE_ROOT, move |context| {
+                    let matches = biome_matches(context)?;
+                    Ok(conditional_sources(context.source(), expected, matches))
+                })
+                .executes(move |context| {
+                    execute_boolean_condition(context, expected, biome_matches(context)?)
+                }),
+        ),
+    )
+}
+
+fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, CommandSyntaxError> {
+    let position = context
+        .coordinates("pos")
+        .ok_or_else(|| missing_argument("pos"))?
+        .block_pos(context.source());
+    let world = context.source().world();
+    if !world.is_full_chunk_loaded_at(position) {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
+            &translations::ARGUMENT_POS_UNLOADED,
+        )));
+    }
+    if !world.is_in_valid_bounds(position) {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
+            &translations::ARGUMENT_POS_OUTOFWORLD,
+        )));
+    }
+    let biome = world.biome_at(position).ok_or_else(|| {
+        CommandSyntaxError::dynamic(TextComponent::from(&translations::ARGUMENT_POS_UNLOADED))
+    })?;
+    let expected = context
+        .biome_or_tag("biome")
+        .ok_or_else(|| missing_argument("biome"))?;
+    Ok(expected.matches(biome))
 }
 
 fn entity_condition(expected: bool) -> Builder {

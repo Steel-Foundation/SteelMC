@@ -214,6 +214,10 @@ impl ChunkGenerator for FlatChunkGenerator {
         384
     }
 
+    fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
+        &vanilla_biomes::PLAINS
+    }
+
     fn spawn_height(&self, min_y: i32, height: i32) -> i32 {
         min_y + height.min(self.layers.len() as i32)
     }

@@ -1,6 +1,7 @@
 //! Tick-owned Minecraft command execution.
 
 mod argument;
+mod biome;
 mod coordinates;
 mod item;
 mod item_predicate;
@@ -11,6 +12,7 @@ mod selector;
 mod source;
 
 pub(crate) use argument::SteelArgumentType;
+pub(crate) use biome::BiomeOrTag;
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use queue::{ChainModifiers, CommandExecutionContext, ExecutionControl, ExecutionStop};

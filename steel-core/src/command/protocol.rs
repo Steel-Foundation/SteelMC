@@ -201,6 +201,12 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 Some(SuggestionType::AskServer),
             ),
             SteelArgumentType::IntRange => (ProtocolArgumentType::IntRange, None),
+            SteelArgumentType::BiomeOrTag => (
+                ProtocolArgumentType::ResourceOrTag {
+                    identifier: "minecraft:worldgen/biome",
+                },
+                Some(SuggestionType::AskServer),
+            ),
             SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
             SteelArgumentType::SummonableEntity => (
                 ProtocolArgumentType::Resource {
@@ -623,6 +629,19 @@ mod tests {
         let (range, range_suggestions) = SteelArgumentType::int_range().protocol_argument();
         assert!(matches!(range, ProtocolArgumentType::IntRange));
         assert!(range_suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_biome_argument_projects_vanilla_resource_or_tag_parser() {
+        let (argument, suggestions) = SteelArgumentType::biome_or_tag().protocol_argument();
+
+        assert!(matches!(
+            argument,
+            ProtocolArgumentType::ResourceOrTag {
+                identifier: "minecraft:worldgen/biome"
+            }
+        ));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
     }
 
     #[test]

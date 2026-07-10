@@ -1759,6 +1759,12 @@ impl World {
             .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
     }
 
+    pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
+            .is_some()
+    }
+
     pub(crate) fn queue_light_change_after_block_set(
         &self,
         pos: BlockPos,
@@ -2596,7 +2602,7 @@ impl World {
         let local_quart_x = (quart_x & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+        if let Some(Some(biome_id)) = self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             let sections = chunk.sections();
             let (section_index, local_quart_y) =
                 Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
@@ -2607,7 +2613,16 @@ impl World {
                     .biomes
                     .get(local_quart_x, local_quart_y, local_quart_z),
             )
-        })?
+        }) {
+            return Some(biome_id);
+        }
+
+        let biome = self
+            .chunk_map
+            .world_gen_context
+            .generator
+            .noise_biome(quart_x, quart_y, quart_z);
+        u16::try_from(biome.try_id()?).ok()
     }
 
     fn biome_quart_y_indices(

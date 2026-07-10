@@ -14,8 +14,9 @@ use crate::command::brigadier::{
 };
 
 use super::{
-    ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl, IntRange,
-    ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType,
+    BiomeOrTag, ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource,
+    ExecutionControl, IntRange, ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard,
+    SteelArgumentType,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -202,6 +203,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -230,6 +232,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -258,6 +261,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -307,6 +311,13 @@ where
         }
     }
 
+    pub(crate) fn biome_or_tag(&self, name: &str) -> Option<&BiomeOrTag> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::BiomeOrTag(value)) => Some(value),
+            _ => None,
+        }
+    }
+
     /// Returns a configured Steel domain name.
     pub(crate) fn domain(&self, name: &str) -> Option<&str> {
         match self.argument(name) {
@@ -322,6 +333,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -350,6 +362,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -378,6 +391,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -406,6 +420,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
@@ -433,6 +448,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemPredicate(_)
@@ -470,6 +486,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -498,6 +515,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -525,6 +543,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_),
             )
@@ -552,6 +571,7 @@ where
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
+                | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )

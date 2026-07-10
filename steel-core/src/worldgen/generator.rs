@@ -2,6 +2,7 @@
 
 use enum_dispatch::enum_dispatch;
 use glam::IVec3;
+use steel_registry::biome::BiomeRef;
 use steel_utils::random::{
     PositionalRandom as _, Random as _, RandomSource, RandomSplitter, name_hash::NameHash,
     xoroshiro::Xoroshiro,
@@ -25,6 +26,9 @@ pub trait ChunkGenerator: Send + Sync {
 
     /// Returns the generator's vertical generation depth in blocks.
     fn gen_depth(&self) -> i32;
+
+    /// Returns the generator biome at one quart position without requiring a loaded chunk.
+    fn noise_biome(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef;
 
     /// Returns the climate-selected origin used by vanilla before searching for a safe spawn chunk.
     fn initial_spawn_search_origin(&self) -> BlockPos {

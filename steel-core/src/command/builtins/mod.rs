@@ -224,6 +224,18 @@ mod tests {
                 assert_eq!(node.argument_type(), Some(&expected_type));
             }
 
+            let biome = child(child(child(execute, condition), "biome"), "pos");
+            let biome = child(biome, "biome");
+            let Some(biome_node) = dispatcher.node(biome) else {
+                panic!("execute biome condition terminal should exist");
+            };
+            assert!(biome_node.is_executable());
+            assert_eq!(biome_node.redirect(), Some(execute));
+            assert_eq!(
+                biome_node.argument_type(),
+                Some(&SteelArgumentType::biome_or_tag())
+            );
+
             let score = child(child(execute, condition), "score");
             let target = child(score, "target");
             assert_eq!(

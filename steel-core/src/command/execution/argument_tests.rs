@@ -2,8 +2,9 @@ use crate::chunk::heightmap::HeightmapType;
 use crate::command::{
     brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
     execution::{
-        CommandPermissionSource, CommandResultCallback, Coordinates, ExecutionCommandSource,
-        ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime, argument,
+        BiomeOrTag, CommandPermissionSource, CommandResultCallback, Coordinates,
+        ExecutionCommandSource, ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime,
+        argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
@@ -13,7 +14,7 @@ use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
-    vanilla_attributes, vanilla_enchantments, vanilla_entities, vanilla_items,
+    vanilla_attributes, vanilla_biomes, vanilla_enchantments, vanilla_entities, vanilla_items,
     vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
@@ -227,6 +228,50 @@ fn objective_and_integer_range_arguments_retain_vanilla_values() {
             "{input} should reject an invalid integer range"
         );
     }
+}
+
+#[test]
+fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::biome_or_tag());
+
+    let parse = dispatcher.parse("resource plains", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registered biome should parse");
+    };
+    assert!(matches!(
+        chain.top_context().biome_or_tag("value"),
+        Some(BiomeOrTag::Biome(biome)) if *biome == &*vanilla_biomes::PLAINS
+    ));
+
+    let parse = dispatcher.parse("resource #is_overworld", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registered biome tag should parse");
+    };
+    let Some(tag) = chain.top_context().biome_or_tag("value") else {
+        panic!("biome tag should be retained");
+    };
+    assert!(tag.matches(&vanilla_biomes::PLAINS));
+    assert!(!tag.matches(&vanilla_biomes::NETHER_WASTES));
+
+    for input in ["resource missing", "resource #missing"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject an unknown biome or tag"
+        );
+    }
+
+    let parse = dispatcher.parse("resource #is_o", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("biome tag suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "#minecraft:is_overworld")
+    );
 }
 
 #[test]
