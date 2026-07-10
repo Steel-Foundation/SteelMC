@@ -10,6 +10,7 @@ mod protocol;
 mod registration;
 mod request_queue;
 pub mod sender;
+pub(crate) mod storage;
 
 pub(crate) use builtins::gamemode::handle_client_request;
 pub(crate) use builtins::player_can_change_difficulty;

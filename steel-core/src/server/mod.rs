@@ -16,6 +16,7 @@ use crate::chunk::{
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
 use crate::command::sender::CommandSender;
+use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, CommandDispatcher, CommandQueueFull, CommandRequest,
     CommandRequestQueue, client_permission_event,
@@ -52,6 +53,7 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::{
+    io,
     mem,
     num::NonZero,
     path::Path,
@@ -1258,6 +1260,8 @@ pub struct Server {
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Command scoreboards isolated by Steel domain.
     pub scoreboards: DomainScoreboards,
+    /// Command NBT storage isolated by Steel domain.
+    pub(crate) command_storage: DomainCommandStorage,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Command work submitted from connection and console tasks.
@@ -1410,6 +1414,9 @@ impl Server {
         let scoreboards = DomainScoreboards::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain scoreboards: {error}"))?;
+        let command_storage = DomainCommandStorage::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain command storage: {error}"))?;
 
         Ok(Server {
             config,
@@ -1422,6 +1429,7 @@ impl Server {
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             scoreboards,
+            command_storage,
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
@@ -1431,6 +1439,11 @@ impl Server {
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
+    }
+
+    /// Saves all dirty domain command storage through domain default worlds.
+    pub async fn save_command_storage(&self) -> io::Result<usize> {
+        self.command_storage.save(&self.worlds).await
     }
 
     /// Queues a command for execution at the start of the next game tick.

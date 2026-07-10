@@ -20,6 +20,8 @@ pub mod names {
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
     /// Domain command scoreboard, persisted through the domain default world.
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
+    /// Domain command storage, persisted through the domain default world.
+    pub const COMMAND_STORAGE: SavedDataName = SavedDataName::trusted("command_storage");
 }
 
 /// Name of a per-world saved data entry.

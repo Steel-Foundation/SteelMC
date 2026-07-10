@@ -397,6 +397,10 @@ async fn shutdown_worlds(server: &Arc<Server>) {
         Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
         Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
     }
+    match server.save_command_storage().await {
+        Ok(saved) => log::info!("Saved {saved} domain command storages"),
+        Err(error) => log::error!("Failed to save domain command storage: {error}"),
+    }
     let mut total_saved = 0;
     for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;
