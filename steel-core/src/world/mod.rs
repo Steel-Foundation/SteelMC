@@ -1741,11 +1741,11 @@ impl World {
 
     /// Gets the block state at the given position.
     ///
-    /// Returns the default block state (void air) if the position is out of bounds or the chunk is not loaded.
+    /// Returns void air out of bounds and air when the containing chunk is not loaded.
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
         let chunk_pos = Self::chunk_pos_for_block(pos);
@@ -5080,6 +5080,21 @@ mod tests {
         assert!(!World::is_in_spawnable_bounds(BlockPos::new(
             0, 20_000_000, 0
         )));
+    }
+
+    #[test]
+    fn block_state_outside_world_bounds_is_void_air() {
+        init_test_registry();
+        let world = crate::test_support::test_world();
+
+        assert_eq!(
+            world.get_block_state(BlockPos::new(0, world.get_min_y() - 1, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
+        assert_eq!(
+            world.get_block_state(BlockPos::new(BlockPos::MAX_HORIZONTAL_COORDINATE, 0, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
     }
 
     #[test]

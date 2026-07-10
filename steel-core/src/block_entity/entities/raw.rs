@@ -133,6 +133,7 @@ mod tests {
         );
 
         let saved = entity.save_with_full_metadata();
+        let custom = entity.save_custom_only();
 
         assert_eq!(
             saved.string("id").map(ToString::to_string),
@@ -142,5 +143,8 @@ mod tests {
         assert_eq!(saved.int("y"), Some(70));
         assert_eq!(saved.int("z"), Some(-4));
         assert_eq!(saved.int("custom"), Some(7));
+        assert!(!custom.contains("id"));
+        assert!(!custom.contains("x"));
+        assert_eq!(custom.int("custom"), Some(7));
     }
 }

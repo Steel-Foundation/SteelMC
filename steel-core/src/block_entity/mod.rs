@@ -140,14 +140,20 @@ pub trait BlockEntity: Send + Sync {
     /// Called when saving the block entity to disk.
     fn save_additional(&self, nbt: &mut NbtCompound);
 
-    /// Saves command-visible data together with vanilla block-entity metadata.
-    fn save_with_full_metadata(&self) -> NbtCompound {
+    /// Saves only entity-specific data, excluding vanilla type and position metadata.
+    fn save_custom_only(&self) -> NbtCompound {
         let mut nbt = NbtCompound::new();
         self.save_additional(&mut nbt);
-        let pos = self.get_block_pos();
         for key in ["id", "x", "y", "z"] {
             while nbt.remove(key).is_some() {}
         }
+        nbt
+    }
+
+    /// Saves command-visible data together with vanilla block-entity metadata.
+    fn save_with_full_metadata(&self) -> NbtCompound {
+        let mut nbt = self.save_custom_only();
+        let pos = self.get_block_pos();
         nbt.insert("id", self.get_type().key.to_string());
         nbt.insert("x", pos.x());
         nbt.insert("y", pos.y());

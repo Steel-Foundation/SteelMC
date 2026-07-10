@@ -1,6 +1,11 @@
 //! `/execute if` and `/execute unless` conditions.
 
-use steel_utils::{nbt::compare_nbt_compounds, translations};
+use std::sync::Arc;
+
+use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
+use steel_utils::{
+    BlockPos, BoundingBox, ChunkPos, SectionPos, nbt::compare_nbt_compounds, translations,
+};
 use text_components::TextComponent;
 
 use super::super::super::{
@@ -11,18 +16,194 @@ use super::super::super::{
     },
 };
 use super::{objective, source_scoreboard};
+use crate::{block_entity::SharedBlockEntity, world::World};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
 const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
+const MAX_BLOCKS_REGION: i64 = 32_768;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     literal(name)
         .then(biome_condition(expected))
         .then(block_condition(expected))
+        .then(blocks_condition(expected))
         .then(entity_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))
+}
+
+fn blocks_condition(expected: bool) -> Builder {
+    literal("blocks").then(
+        argument("start", SteelArgumentType::block_pos()).then(
+            argument("end", SteelArgumentType::block_pos()).then(
+                argument("destination", SteelArgumentType::block_pos())
+                    .then(blocks_mode("all", expected, false))
+                    .then(blocks_mode("masked", expected, true)),
+            ),
+        ),
+    )
+}
+
+fn blocks_mode(name: &'static str, expected: bool, skip_air: bool) -> Builder {
+    literal(name)
+        .forks(EXECUTE_ROOT, move |context| {
+            let matches = matching_block_region_count(context, skip_air)?.is_some();
+            Ok(conditional_sources(context.source(), expected, matches))
+        })
+        .executes(move |context| {
+            let count = matching_block_region_count(context, skip_air)?;
+            execute_blocks_condition(context, expected, count)
+        })
+}
+
+fn matching_block_region_count(
+    context: &SteelCommandContext<CommandSource>,
+    skip_air: bool,
+) -> Result<Option<i32>, CommandSyntaxError> {
+    let source_start = loaded_block_position(context, "start")?;
+    let source_end = loaded_block_position(context, "end")?;
+    let destination_start = loaded_block_position(context, "destination")?;
+    let source_region = BoundingBox::from_corners(source_start, source_end);
+    let destination_end = destination_start.offset(
+        source_region.max_x() - source_region.min_x(),
+        source_region.max_y() - source_region.min_y(),
+        source_region.max_z() - source_region.min_z(),
+    );
+    let destination_region = BoundingBox::from_corners(destination_start, destination_end);
+    let area = block_region_volume(&source_region);
+    if area > MAX_BLOCKS_REGION {
+        return Err(blocks_too_big(area));
+    }
+
+    let world = context.source().world();
+    ensure_region_chunks_loaded(world, &source_region)?;
+    ensure_region_chunks_loaded(world, &destination_region)?;
+
+    let offset_x = destination_region.min_x() - source_region.min_x();
+    let offset_y = destination_region.min_y() - source_region.min_y();
+    let offset_z = destination_region.min_z() - source_region.min_z();
+    let mut count = 0;
+    for z in source_region.min_z()..=source_region.max_z() {
+        for y in source_region.min_y()..=source_region.max_y() {
+            for x in source_region.min_x()..=source_region.max_x() {
+                let source_pos = BlockPos::new(x, y, z);
+                let source_state = world.get_block_state(source_pos);
+                if !should_compare_block(source_state, skip_air) {
+                    continue;
+                }
+                let destination_pos = source_pos.offset(offset_x, offset_y, offset_z);
+                if source_state != world.get_block_state(destination_pos)
+                    || !block_entities_match(world, source_pos, destination_pos)
+                {
+                    return Ok(None);
+                }
+                count += 1;
+            }
+        }
+    }
+    Ok(Some(count))
+}
+
+fn block_region_volume(region: &BoundingBox) -> i64 {
+    let x_span = i64::from(region.max_x()) - i64::from(region.min_x()) + 1;
+    let y_span = i64::from(region.max_y()) - i64::from(region.min_y()) + 1;
+    let z_span = i64::from(region.max_z()) - i64::from(region.min_z()) + 1;
+    x_span.saturating_mul(y_span).saturating_mul(z_span)
+}
+
+// Steel's synchronous command runner rejects unloaded region chunks instead of loading them.
+fn ensure_region_chunks_loaded(
+    world: &World,
+    region: &BoundingBox,
+) -> Result<(), CommandSyntaxError> {
+    if region.max_y() < world.get_min_y() || region.min_y() > world.get_max_y() {
+        return Ok(());
+    }
+    let min_chunk_x = SectionPos::block_to_section_coord(region.min_x());
+    let max_chunk_x = SectionPos::block_to_section_coord(region.max_x());
+    let min_chunk_z = SectionPos::block_to_section_coord(region.min_z());
+    let max_chunk_z = SectionPos::block_to_section_coord(region.max_z());
+    for chunk_z in min_chunk_z..=max_chunk_z {
+        for chunk_x in min_chunk_x..=max_chunk_x {
+            if !ChunkPos::is_valid(chunk_x, chunk_z) {
+                continue;
+            }
+            let pos = BlockPos::new(chunk_x * 16, world.get_min_y(), chunk_z * 16);
+            if !world.is_full_chunk_loaded_at(pos) {
+                return Err(unloaded_position());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn should_compare_block(state: steel_utils::BlockStateId, skip_air: bool) -> bool {
+    !skip_air || state.get_block() != &vanilla_blocks::AIR
+}
+
+fn block_entities_match(world: &World, source: BlockPos, destination: BlockPos) -> bool {
+    let source_entity = world.get_block_entity(source);
+    let destination_entity = world.get_block_entity(destination);
+    block_entity_data_matches(source_entity.as_ref(), destination_entity.as_ref())
+}
+
+fn block_entity_data_matches(
+    source: Option<&SharedBlockEntity>,
+    destination: Option<&SharedBlockEntity>,
+) -> bool {
+    let Some(source) = source else {
+        return true;
+    };
+    let Some(destination) = destination else {
+        return false;
+    };
+    if Arc::ptr_eq(source, destination) {
+        return true;
+    }
+    let source = source.lock();
+    let destination = destination.lock();
+    if source.get_type() != destination.get_type() {
+        return false;
+    }
+    let source_data = source.save_custom_only();
+    let destination_data = destination.save_custom_only();
+    source_data.len() == destination_data.len()
+        && compare_nbt_compounds(&source_data, &destination_data, false)
+}
+
+fn execute_blocks_condition(
+    context: &SteelCommandContext<CommandSource>,
+    expected: bool,
+    count: Option<i32>,
+) -> Result<i32, CommandSyntaxError> {
+    match (expected, count) {
+        (true, Some(count)) => {
+            let message = translations::COMMANDS_EXECUTE_CONDITIONAL_PASS_COUNT
+                .message([TextComponent::from(count.to_string())])
+                .component();
+            context.source().send_success(&message);
+            Ok(count)
+        }
+        (true, None) => Err(conditional_failed()),
+        (false, Some(count)) => Err(conditional_failed_count(count)),
+        (false, None) => {
+            context.source().send_success(&TextComponent::from(
+                &translations::COMMANDS_EXECUTE_CONDITIONAL_PASS,
+            ));
+            Ok(1)
+        }
+    }
+}
+
+fn blocks_too_big(area: i64) -> CommandSyntaxError {
+    let message = translations::COMMANDS_EXECUTE_BLOCKS_TOOBIG
+        .message([
+            TextComponent::from(MAX_BLOCKS_REGION.to_string()),
+            TextComponent::from(area.to_string()),
+        ])
+        .component();
+    CommandSyntaxError::dynamic(message)
 }
 
 fn block_condition(expected: bool) -> Builder {
@@ -96,9 +277,7 @@ fn loaded_block_position(
         .block_pos(context.source());
     let world = context.source().world();
     if !world.is_full_chunk_loaded_at(position) {
-        return Err(CommandSyntaxError::dynamic(TextComponent::from(
-            &translations::ARGUMENT_POS_UNLOADED,
-        )));
+        return Err(unloaded_position());
     }
     if !world.is_in_valid_bounds(position) {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -106,6 +285,10 @@ fn loaded_block_position(
         )));
     }
     Ok(position)
+}
+
+fn unloaded_position() -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(TextComponent::from(&translations::ARGUMENT_POS_UNLOADED))
 }
 
 fn entity_condition(expected: bool) -> Builder {
@@ -299,10 +482,7 @@ fn execute_numeric_condition(
     }
 
     if count != 0 {
-        let message = translations::COMMANDS_EXECUTE_CONDITIONAL_FAIL_COUNT
-            .message([TextComponent::from(count.to_string())])
-            .component();
-        return Err(CommandSyntaxError::dynamic(message));
+        return Err(conditional_failed_count(count));
     }
     context.source().send_success(&TextComponent::from(
         &translations::COMMANDS_EXECUTE_CONDITIONAL_PASS,
@@ -316,8 +496,91 @@ fn conditional_failed() -> CommandSyntaxError {
     ))
 }
 
+fn conditional_failed_count(count: i32) -> CommandSyntaxError {
+    let message = translations::COMMANDS_EXECUTE_CONDITIONAL_FAIL_COUNT
+        .message([TextComponent::from(count.to_string())])
+        .component();
+    CommandSyntaxError::dynamic(message)
+}
+
 fn missing_argument(name: &str) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(format!(
         "Parsed value for {name} is missing from the command context"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use simdnbt::owned::NbtCompound;
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
+    };
+    use steel_utils::locks::SyncMutex;
+
+    use super::*;
+    use crate::block_entity::entities::RawBlockEntity;
+
+    fn raw_block_entity(value: i32, pos: BlockPos, reverse_order: bool) -> SharedBlockEntity {
+        let mut data = NbtCompound::new();
+        if reverse_order {
+            data.insert("other", 11_i32);
+            data.insert("value", value);
+        } else {
+            data.insert("value", value);
+            data.insert("other", 11_i32);
+        }
+        data.insert("x", pos.x());
+        Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+            &vanilla_block_entity_types::BARREL,
+            Weak::new(),
+            pos,
+            vanilla_blocks::BARREL.default_state(),
+            data,
+        )))
+    }
+
+    #[test]
+    fn block_region_volume_uses_inclusive_normalized_corners() {
+        let region = BoundingBox::from_corners(BlockPos::new(2, 5, -1), BlockPos::new(-1, 3, 2));
+
+        assert_eq!(block_region_volume(&region), 48);
+    }
+
+    #[test]
+    fn masked_regions_skip_only_vanilla_air() {
+        init_test_registry();
+
+        assert!(!should_compare_block(
+            vanilla_blocks::AIR.default_state(),
+            true
+        ));
+        assert!(should_compare_block(
+            vanilla_blocks::CAVE_AIR.default_state(),
+            true
+        ));
+        assert!(should_compare_block(
+            vanilla_blocks::VOID_AIR.default_state(),
+            true
+        ));
+        assert!(should_compare_block(
+            vanilla_blocks::AIR.default_state(),
+            false
+        ));
+    }
+
+    #[test]
+    fn region_block_entities_compare_type_and_custom_data_only() {
+        init_test_registry();
+        let source = raw_block_entity(7, BlockPos::new(1, 64, 1), false);
+        let matching = raw_block_entity(7, BlockPos::new(4, 70, 4), true);
+        let different = raw_block_entity(8, BlockPos::new(4, 70, 4), false);
+
+        assert!(block_entity_data_matches(Some(&source), Some(&source)));
+        assert!(block_entity_data_matches(Some(&source), Some(&matching)));
+        assert!(!block_entity_data_matches(Some(&source), Some(&different)));
+        assert!(!block_entity_data_matches(Some(&source), None));
+        assert!(block_entity_data_matches(None, Some(&matching)));
+    }
 }

@@ -248,6 +248,27 @@ mod tests {
                 Some(&SteelArgumentType::block_predicate())
             );
 
+            let blocks = child(child(execute, condition), "blocks");
+            let start = child(blocks, "start");
+            let end = child(start, "end");
+            let destination = child(end, "destination");
+            for position in [start, end, destination] {
+                assert_eq!(
+                    dispatcher
+                        .node(position)
+                        .and_then(|node| node.argument_type()),
+                    Some(&SteelArgumentType::block_pos())
+                );
+            }
+            for mode in ["all", "masked"] {
+                let terminal = child(destination, mode);
+                let Some(node) = dispatcher.node(terminal) else {
+                    panic!("execute blocks mode should exist");
+                };
+                assert!(node.is_executable());
+                assert_eq!(node.redirect(), Some(execute));
+            }
+
             let score = child(child(execute, condition), "score");
             let target = child(score, "target");
             assert_eq!(
