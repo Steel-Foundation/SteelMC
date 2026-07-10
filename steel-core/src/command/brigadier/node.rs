@@ -21,6 +21,21 @@ impl NodeId {
     }
 }
 
+/// Selects either an existing dispatcher node or the root currently being registered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum CommandRedirectTarget {
+    /// A dispatcher node that already exists.
+    Node(NodeId),
+    /// The root of the command tree containing this redirect.
+    CommandRoot,
+}
+
+impl From<NodeId> for CommandRedirectTarget {
+    fn from(value: NodeId) -> Self {
+        Self::Node(value)
+    }
+}
+
 /// The externally relevant category of a command node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NodeKind {
@@ -145,7 +160,7 @@ pub(super) struct CommandRedirect<S, R = BrigadierRuntime>
 where
     R: CommandRuntime<S>,
 {
-    pub(super) target: NodeId,
+    pub(super) target: CommandRedirectTarget,
     pub(super) modifier: Option<Arc<R::Modifier>>,
     pub(super) forks: bool,
 }
@@ -154,7 +169,7 @@ impl<S, R> CommandRedirect<S, R>
 where
     R: CommandRuntime<S>,
 {
-    pub(super) const fn identity(target: NodeId) -> Self {
+    pub(super) const fn identity(target: CommandRedirectTarget) -> Self {
         Self {
             target,
             modifier: None,
@@ -163,7 +178,7 @@ where
     }
 
     pub(super) const fn with_modifier(
-        target: NodeId,
+        target: CommandRedirectTarget,
         modifier: Arc<R::Modifier>,
         forks: bool,
     ) -> Self {
@@ -171,6 +186,12 @@ where
             target,
             modifier: Some(modifier),
             forks,
+        }
+    }
+
+    fn resolve_command_root(&mut self, command_root: NodeId) {
+        if self.target == CommandRedirectTarget::CommandRoot {
+            self.target = CommandRedirectTarget::Node(command_root);
         }
     }
 
@@ -292,7 +313,14 @@ where
 
     /// Returns this node's redirect target.
     pub(crate) fn redirect(&self) -> Option<NodeId> {
-        self.redirect.as_ref().map(|redirect| redirect.target)
+        self.redirect
+            .as_ref()
+            .map(|redirect| match redirect.target {
+                CommandRedirectTarget::Node(target) => target,
+                CommandRedirectTarget::CommandRoot => {
+                    unreachable!("registered command redirects have concrete targets")
+                }
+            })
     }
 
     /// Returns the externally visible node category.
@@ -364,6 +392,15 @@ where
 
     pub(super) const fn kind(&self) -> NodeKind {
         self.data.kind()
+    }
+
+    pub(super) fn resolve_command_root(&mut self, command_root: NodeId) {
+        if let Some(redirect) = &mut self.redirect {
+            redirect.resolve_command_root(command_root);
+        }
+        for child in &mut self.children {
+            child.resolve_command_root(command_root);
+        }
     }
 
     pub(super) fn merge(&mut self, mut incoming: Self) -> Result<(), RegistrationError> {

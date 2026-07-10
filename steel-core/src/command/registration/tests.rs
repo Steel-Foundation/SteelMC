@@ -2,7 +2,9 @@ use steel_utils::Identifier;
 
 use crate::command::execution::CommandPermissionSource;
 use crate::command::{
-    brigadier::{CommandDispatcher, CommandRequirement, CommandSyntaxError, NodeId},
+    brigadier::{
+        CommandDispatcher, CommandRedirectTarget, CommandRequirement, CommandSyntaxError, NodeId,
+    },
     execution::{CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, literal},
 };
 use crate::permission::{
@@ -58,6 +60,13 @@ fn command(id: Identifier, child: &'static str) -> CommandRegistration<TestSourc
     let root = id.path.clone();
     CommandRegistration::new(id, move |_| {
         literal(root).then(literal(child).executes(|_| Ok(1)))
+    })
+}
+
+fn self_redirecting_command(id: Identifier) -> CommandRegistration<TestSource> {
+    let root = id.path.clone();
+    CommandRegistration::new(id, move |_| {
+        literal(root).then(literal("again").redirects(CommandRedirectTarget::CommandRoot))
     })
 }
 
@@ -185,6 +194,27 @@ fn alias_collisions_use_the_same_owner_policy() {
     );
     assert_eq!(child_names(&dispatcher, "home"), ["first"]);
     assert_eq!(child_names(&dispatcher, "second:home"), ["second"]);
+}
+
+#[test]
+fn symbolic_command_root_redirects_follow_each_registered_clone() {
+    let dispatcher = build([
+        self_redirecting_command(Identifier::new_static("minecraft", "execute")).alias("perform"),
+        self_redirecting_command(Identifier::new_static("example", "execute")),
+    ]);
+
+    for root_name in ["execute", "perform", "minecraft:execute", "example:execute"] {
+        let root = child(&dispatcher, dispatcher.root(), root_name);
+        let again = child(&dispatcher, root, "again");
+        let Some(again_node) = dispatcher.node(again) else {
+            panic!("redirect node should exist");
+        };
+        assert_eq!(
+            again_node.redirect(),
+            Some(root),
+            "{root_name} should redirect to its own registered root"
+        );
+    }
 }
 
 #[test]

@@ -9,7 +9,8 @@ use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRuntime, CommandSyntaxError, ContextChain, NodeId,
+    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
+    ContextChain,
 };
 
 use super::{
@@ -134,7 +135,7 @@ where
     #[must_use]
     pub(crate) fn redirects_with(
         self,
-        target: NodeId,
+        target: impl Into<CommandRedirectTarget>,
         modifier: impl Fn(&SteelCommandContext<S>) -> Result<S, CommandSyntaxError>
         + Send
         + Sync
@@ -150,7 +151,7 @@ where
     #[must_use]
     pub(crate) fn forks(
         self,
-        target: NodeId,
+        target: impl Into<CommandRedirectTarget>,
         modifier: impl Fn(&SteelCommandContext<S>) -> Result<Vec<S>, CommandSyntaxError>
         + Send
         + Sync
@@ -167,7 +168,7 @@ where
     #[must_use]
     pub(crate) fn redirects_custom(
         self,
-        target: NodeId,
+        target: impl Into<CommandRedirectTarget>,
         modifier: impl CustomModifierExecutor<S> + 'static,
         forks: bool,
     ) -> Self {

@@ -27,7 +27,8 @@ pub(crate) use context_chain::{ContextChain, ContextChainStage};
 pub(crate) use dispatcher::CommandDispatcher;
 pub(crate) use error::{CommandSyntaxError, CommandSyntaxErrorKind};
 pub(crate) use node::{
-    CommandRequirement, NodeId, NodeKind, RegistrationError, RegistrationErrorKind,
+    CommandRedirectTarget, CommandRequirement, NodeId, NodeKind, RegistrationError,
+    RegistrationErrorKind,
 };
 pub(crate) use reader::{ReaderCursor, StringReader};
 pub(crate) use runtime::{BrigadierRuntime, CommandRuntime};

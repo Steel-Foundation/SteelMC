@@ -8,10 +8,10 @@ use std::sync::{
 #[cfg(test)]
 use super::CommandContext;
 use super::{
-    BrigadierRuntime, CommandArgumentParser, CommandNodeBuilder, CommandRuntime,
-    CommandSyntaxError, CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind, ParseError,
-    ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind, StringRange,
-    StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
+    BrigadierRuntime, CommandArgumentParser, CommandNodeBuilder, CommandRedirectTarget,
+    CommandRuntime, CommandSyntaxError, CommandSyntaxErrorKind, ContextChain, NodeId, NodeKind,
+    ParseError, ParseResults, ParsedCommandContext, RegistrationError, RegistrationErrorKind,
+    StringRange, StringReader, SuggestionError, Suggestions, SuggestionsBuilder,
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 
@@ -48,12 +48,16 @@ where
         &mut self,
         builder: CommandNodeBuilder<S, R>,
     ) -> Result<NodeId, RegistrationError> {
-        let node = builder.normalize()?;
+        let mut node = builder.normalize()?;
         if node.kind() != NodeKind::Literal {
             return Err(RegistrationError::new(RegistrationErrorKind::ArgumentRoot));
         }
 
         self.validate_redirects(&node)?;
+        let command_root = self
+            .find_child(self.root(), node.name())
+            .unwrap_or_else(|| NodeId::new(self.id, self.nodes.len()));
+        node.resolve_command_root(command_root);
         self.validate_merge(self.root(), &node)?;
         Ok(self.apply_merge(self.root(), node))
     }
@@ -190,12 +194,11 @@ where
         node: &UnregisteredCommandNode<S, R>,
     ) -> Result<(), RegistrationError> {
         if let Some(redirect) = &node.redirect
-            && self.node(redirect.target).is_none()
+            && let CommandRedirectTarget::Node(target) = redirect.target
+            && self.node(target).is_none()
         {
             return Err(RegistrationError::new(
-                RegistrationErrorKind::InvalidRedirectTarget {
-                    target: redirect.target,
-                },
+                RegistrationErrorKind::InvalidRedirectTarget { target },
             ));
         }
         for child in &node.children {
@@ -274,7 +277,7 @@ where
             }
 
             context.set_executor(child.executor.as_ref().map(Arc::clone));
-            let redirect = child.redirect.as_ref().map(|redirect| redirect.target);
+            let redirect = child.redirect();
             let required_remaining = if redirect.is_some() { 1 } else { 2 };
             if reader.can_read_length(required_remaining) {
                 reader.skip();

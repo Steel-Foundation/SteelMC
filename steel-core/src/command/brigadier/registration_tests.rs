@@ -4,8 +4,9 @@ use std::sync::{
 };
 
 use super::{
-    ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId, NodeKind,
-    RegistrationError, RegistrationErrorKind, argument, literal, node::CommandNode,
+    ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRedirectTarget, CommandRequirement,
+    NodeId, NodeKind, RegistrationError, RegistrationErrorKind, argument, literal,
+    node::CommandNode,
 };
 
 #[derive(Debug)]
@@ -272,6 +273,26 @@ fn redirected_nodes_cannot_have_children() {
         },
     );
     assert!(node_names(&dispatcher, root).is_empty());
+}
+
+#[test]
+fn symbolic_command_root_redirect_resolves_to_the_registered_root() {
+    let mut dispatcher = CommandDispatcher::<TestSource>::new();
+    let command = register(
+        &mut dispatcher,
+        literal("execute").then(literal("again").redirects(CommandRedirectTarget::CommandRoot)),
+    );
+    let Some(again) = dispatcher
+        .children(command)
+        .and_then(|children| children.first().copied())
+    else {
+        panic!("redirect child should exist");
+    };
+
+    assert_eq!(
+        dispatcher.node(again).and_then(CommandNode::redirect),
+        Some(command)
+    );
 }
 
 #[test]

@@ -5,7 +5,10 @@ use std::sync::Arc;
 use super::{
     ArgumentType, BrigadierRuntime, CommandContext, CommandRequirement, CommandRuntime,
     CommandSyntaxError, NodeId, RegistrationError, RegistrationErrorKind,
-    node::{CommandNodeData, CommandRedirect, UnregisteredCommandNode, merge_or_push},
+    node::{
+        CommandNodeData, CommandRedirect, CommandRedirectTarget, UnregisteredCommandNode,
+        merge_or_push,
+    },
     runtime::{BrigadierExecutor, BrigadierModifier},
 };
 
@@ -159,8 +162,8 @@ where
 
     /// Redirects parsing to an existing node without transforming the source.
     #[must_use]
-    pub(crate) fn redirects(mut self, target: NodeId) -> Self {
-        self.redirect = Some(CommandRedirect::identity(target));
+    pub(crate) fn redirects(mut self, target: impl Into<CommandRedirectTarget>) -> Self {
+        self.redirect = Some(CommandRedirect::identity(target.into()));
         self
     }
 
@@ -168,11 +171,15 @@ where
     #[must_use]
     pub(crate) fn redirects_with_modifier(
         mut self,
-        target: NodeId,
+        target: impl Into<CommandRedirectTarget>,
         modifier: Arc<R::Modifier>,
         forks: bool,
     ) -> Self {
-        self.redirect = Some(CommandRedirect::with_modifier(target, modifier, forks));
+        self.redirect = Some(CommandRedirect::with_modifier(
+            target.into(),
+            modifier,
+            forks,
+        ));
         self
     }
 
