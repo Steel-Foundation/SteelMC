@@ -14,10 +14,11 @@ use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use super::{
-    Coordinates, ExecutionCommandSource, ItemPredicate,
+    Coordinates, ExecutionCommandSource, IntRange, ItemPredicate, ScoreHolderArgument,
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -79,6 +80,12 @@ pub(crate) enum SteelArgumentType {
     EntityAnchor,
     /// A deferred entity selector using vanilla's entity argument flags.
     Entity { single: bool, players_only: bool },
+    /// A deferred scoreboard holder expression.
+    ScoreHolder { multiple: bool },
+    /// A scoreboard objective name resolved in the source domain at execution time.
+    Objective,
+    /// An inclusive integer range.
+    IntRange,
     /// One of vanilla's four game modes.
     GameMode,
     /// A configured Steel domain.
@@ -160,6 +167,22 @@ impl SteelArgumentType {
         }
     }
 
+    pub(crate) const fn score_holder() -> Self {
+        Self::ScoreHolder { multiple: false }
+    }
+
+    pub(crate) const fn score_holders() -> Self {
+        Self::ScoreHolder { multiple: true }
+    }
+
+    pub(crate) const fn objective() -> Self {
+        Self::Objective
+    }
+
+    pub(crate) const fn int_range() -> Self {
+        Self::IntRange
+    }
+
     pub(crate) const fn game_mode() -> Self {
         Self::GameMode
     }
@@ -220,6 +243,12 @@ pub(crate) enum SteelArgumentValue {
     Heightmap(HeightmapType),
     /// A source-independent entity selector retained until command execution.
     EntitySelector(Box<EntitySelector>),
+    /// A deferred score-holder expression.
+    ScoreHolder(Box<ScoreHolderArgument>),
+    /// A scoreboard objective name.
+    Objective(Box<str>),
+    /// An inclusive integer range.
+    IntRange(IntRange),
     /// A parsed vanilla game mode.
     GameMode(GameType),
     /// A configured Steel domain name.
@@ -250,6 +279,9 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Swizzle(_)
             | Self::Heightmap(_)
             | Self::EntitySelector(_)
+            | Self::ScoreHolder(_)
+            | Self::Objective(_)
+            | Self::IntRange(_)
             | Self::GameMode(_)
             | Self::Domain(_)
             | Self::EntityType(_)
@@ -293,6 +325,13 @@ where
             } => parse_entity_selector(reader, source, *single, *players_only)
                 .map(Box::new)
                 .map(SteelArgumentValue::EntitySelector),
+            Self::ScoreHolder { multiple } => parse_score_holder(reader, source, *multiple)
+                .map(Box::new)
+                .map(SteelArgumentValue::ScoreHolder),
+            Self::Objective => Ok(SteelArgumentValue::Objective(
+                reader.read_unquoted_string().into(),
+            )),
+            Self::IntRange => parse_int_range(reader).map(SteelArgumentValue::IntRange),
             Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
@@ -339,13 +378,25 @@ where
             Self::Vec3 { center_integers } => {
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
-            Self::Rotation | Self::Swizzle => {}
+            Self::Rotation | Self::Swizzle | Self::IntRange => {}
             Self::Heightmap => suggest_heightmaps(builder),
             Self::EntityAnchor => suggest_entity_anchors(builder),
             Self::Entity {
                 single,
                 players_only,
             } => suggest_entity_selector(builder, context.source(), *single, *players_only),
+            Self::ScoreHolder { .. } => suggest_score_holders(builder, context.source()),
+            Self::Objective => {
+                let prefix = builder.remaining();
+                for objective in context
+                    .source()
+                    .scoreboard_objective_names()
+                    .into_iter()
+                    .filter(|objective| objective.starts_with(prefix))
+                {
+                    builder.suggest(objective);
+                }
+            }
             Self::GameMode => suggest_game_modes(builder),
             Self::Domain => {
                 let prefix = builder.remaining();
@@ -437,6 +488,9 @@ where
             | SteelArgumentValue::Swizzle(_)
             | SteelArgumentValue::Heightmap(_)
             | SteelArgumentValue::EntitySelector(_)
+            | SteelArgumentValue::ScoreHolder(_)
+            | SteelArgumentValue::Objective(_)
+            | SteelArgumentValue::IntRange(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)

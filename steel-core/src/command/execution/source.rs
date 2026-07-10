@@ -91,6 +91,10 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
         Vec::new()
     }
 
+    fn scoreboard_objective_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn allows_entity_selectors(&self) -> bool {
         false
     }
@@ -344,6 +348,13 @@ impl ExecutionCommandSource for CommandSource {
             .scoreboards
             .get(self.world.domain())
             .map_or_else(Vec::new, Scoreboard::team_names)
+    }
+
+    fn scoreboard_objective_names(&self) -> Vec<String> {
+        self.server
+            .scoreboards
+            .get(self.world.domain())
+            .map_or_else(Vec::new, Scoreboard::objective_names)
     }
 
     fn allows_entity_selectors(&self) -> bool {

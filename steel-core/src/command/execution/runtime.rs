@@ -14,8 +14,8 @@ use crate::command::brigadier::{
 };
 
 use super::{
-    ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl,
-    ItemPredicate, SteelArgumentType,
+    ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl, IntRange,
+    ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -23,6 +23,7 @@ use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
     player::Player,
+    scoreboard::ScoreHolder,
 };
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
@@ -198,6 +199,9 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -223,6 +227,9 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -248,6 +255,9 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -276,6 +286,27 @@ where
         }
     }
 
+    pub(crate) fn score_holder_argument(&self, name: &str) -> Option<&ScoreHolderArgument> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::ScoreHolder(value)) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn objective_name(&self, name: &str) -> Option<&str> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Objective(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn int_range(&self, name: &str) -> Option<IntRange> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::IntRange(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// Returns a configured Steel domain name.
     pub(crate) fn domain(&self, name: &str) -> Option<&str> {
         match self.argument(name) {
@@ -288,6 +319,9 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -313,6 +347,9 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -338,6 +375,9 @@ where
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -363,6 +403,9 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
@@ -387,6 +430,9 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemPredicate(_)
@@ -421,6 +467,9 @@ where
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -446,6 +495,9 @@ where
                 | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -470,6 +522,9 @@ where
                 | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_),
             )
@@ -494,6 +549,9 @@ where
                 | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::GameMode(_)
+                | SteelArgumentValue::ScoreHolder(_)
+                | SteelArgumentValue::Objective(_)
+                | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -503,6 +561,29 @@ where
 }
 
 impl SteelCommandContext<CommandSource> {
+    pub(crate) fn score_holders(
+        &self,
+        name: &str,
+        wildcard: ScoreHolderWildcard,
+    ) -> Result<Vec<ScoreHolder>, CommandSyntaxError> {
+        let holders = self
+            .score_holder_argument(name)
+            .ok_or_else(|| missing_score_holder_argument(name))?
+            .resolve(self.source(), wildcard)?;
+        if holders.is_empty() {
+            Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_SCORE_HOLDER_EMPTY,
+            )))
+        } else {
+            Ok(holders)
+        }
+    }
+
+    pub(crate) fn score_holder(&self, name: &str) -> Result<ScoreHolder, CommandSyntaxError> {
+        let mut holders = self.score_holders(name, ScoreHolderWildcard::Empty)?;
+        Ok(holders.remove(0))
+    }
+
     pub(crate) fn optional_entities(
         &self,
         name: &str,
@@ -567,5 +648,11 @@ impl SteelCommandContext<CommandSource> {
 fn missing_selector_argument(name: &str) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(format!(
         "Parsed selector for {name} is missing from the command context"
+    ))
+}
+
+fn missing_score_holder_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed score holder for {name} is missing from the command context"
     ))
 }

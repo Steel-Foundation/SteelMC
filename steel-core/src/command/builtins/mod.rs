@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_source_modifiers_redirect_to_the_execute_root() {
+    fn execute_graph_uses_expected_redirects_and_argument_types() {
         init_test_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
@@ -223,6 +223,42 @@ mod tests {
                 assert_eq!(node.redirect(), Some(execute));
                 assert_eq!(node.argument_type(), Some(&expected_type));
             }
+
+            let score = child(child(execute, condition), "score");
+            let target = child(score, "target");
+            assert_eq!(
+                dispatcher
+                    .node(target)
+                    .and_then(|node| node.argument_type()),
+                Some(&SteelArgumentType::score_holder())
+            );
+            let target_objective = child(target, "targetObjective");
+            assert_eq!(
+                dispatcher
+                    .node(target_objective)
+                    .and_then(|node| node.argument_type()),
+                Some(&SteelArgumentType::objective())
+            );
+            for comparison in ["=", "<", "<=", ">", ">="] {
+                let source = child(child(target_objective, comparison), "source");
+                let source_objective = child(source, "sourceObjective");
+                let Some(node) = dispatcher.node(source_objective) else {
+                    panic!("score comparison terminal should exist");
+                };
+                assert!(node.is_executable());
+                assert_eq!(node.redirect(), Some(execute));
+                assert_eq!(node.argument_type(), Some(&SteelArgumentType::objective()));
+            }
+            let range = child(child(target_objective, "matches"), "range");
+            let Some(range_node) = dispatcher.node(range) else {
+                panic!("score range terminal should exist");
+            };
+            assert!(range_node.is_executable());
+            assert_eq!(range_node.redirect(), Some(execute));
+            assert_eq!(
+                range_node.argument_type(),
+                Some(&SteelArgumentType::int_range())
+            );
         }
 
         let modifier_paths: &[&[&str]] = &[

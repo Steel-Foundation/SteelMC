@@ -10,6 +10,7 @@ use super::super::super::{
         literal,
     },
 };
+use crate::scoreboard::{Scoreboard, ScoreboardObjective};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
@@ -19,6 +20,7 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     literal(name)
         .then(entity_condition(expected))
         .then(loaded_condition(expected))
+        .then(score_condition(expected))
 }
 
 fn entity_condition(expected: bool) -> Builder {
@@ -62,6 +64,143 @@ fn loaded_matches(
         .source()
         .world()
         .is_entity_ticking_chunk_loaded(position))
+}
+
+fn score_condition(expected: bool) -> Builder {
+    literal("score").then(
+        argument("target", SteelArgumentType::score_holder()).then(
+            argument("targetObjective", SteelArgumentType::objective())
+                .then(score_comparison("=", ScoreComparison::Equal, expected))
+                .then(score_comparison("<", ScoreComparison::Less, expected))
+                .then(score_comparison(
+                    "<=",
+                    ScoreComparison::LessOrEqual,
+                    expected,
+                ))
+                .then(score_comparison(">", ScoreComparison::Greater, expected))
+                .then(score_comparison(
+                    ">=",
+                    ScoreComparison::GreaterOrEqual,
+                    expected,
+                ))
+                .then(
+                    literal("matches").then(
+                        argument("range", SteelArgumentType::int_range())
+                            .forks(EXECUTE_ROOT, move |context| {
+                                let matches = score_range_matches(context)?;
+                                Ok(conditional_sources(context.source(), expected, matches))
+                            })
+                            .executes(move |context| {
+                                execute_boolean_condition(
+                                    context,
+                                    expected,
+                                    score_range_matches(context)?,
+                                )
+                            }),
+                    ),
+                ),
+        ),
+    )
+}
+
+fn score_comparison(name: &'static str, comparison: ScoreComparison, expected: bool) -> Builder {
+    literal(name).then(
+        argument("source", SteelArgumentType::score_holder()).then(
+            argument("sourceObjective", SteelArgumentType::objective())
+                .forks(EXECUTE_ROOT, move |context| {
+                    let matches = scores_match(context, comparison)?;
+                    Ok(conditional_sources(context.source(), expected, matches))
+                })
+                .executes(move |context| {
+                    execute_boolean_condition(context, expected, scores_match(context, comparison)?)
+                }),
+        ),
+    )
+}
+
+fn scores_match(
+    context: &SteelCommandContext<CommandSource>,
+    comparison: ScoreComparison,
+) -> Result<bool, CommandSyntaxError> {
+    let scoreboard = source_scoreboard(context)?;
+    let target = context.score_holder("target")?;
+    let target_objective = objective(context, scoreboard, "targetObjective")?;
+    let source = context.score_holder("source")?;
+    let source_objective = objective(context, scoreboard, "sourceObjective")?;
+    let Some(target_score) = scoreboard.score(&target, &target_objective) else {
+        return Ok(false);
+    };
+    let Some(source_score) = scoreboard.score(&source, &source_objective) else {
+        return Ok(false);
+    };
+    Ok(comparison.matches(target_score, source_score))
+}
+
+fn score_range_matches(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<bool, CommandSyntaxError> {
+    let scoreboard = source_scoreboard(context)?;
+    let target = context.score_holder("target")?;
+    let target_objective = objective(context, scoreboard, "targetObjective")?;
+    let range = context
+        .int_range("range")
+        .ok_or_else(|| missing_argument("range"))?;
+    Ok(scoreboard
+        .score(&target, &target_objective)
+        .is_some_and(|score| range.matches(score)))
+}
+
+fn source_scoreboard(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<&Scoreboard, CommandSyntaxError> {
+    let source = context.source();
+    source
+        .server()
+        .scoreboards
+        .get(source.world().domain())
+        .ok_or_else(|| {
+            CommandSyntaxError::dynamic(format!(
+                "Domain '{}' has no command scoreboard",
+                source.world().domain()
+            ))
+        })
+}
+
+fn objective(
+    context: &SteelCommandContext<CommandSource>,
+    scoreboard: &Scoreboard,
+    name: &str,
+) -> Result<ScoreboardObjective, CommandSyntaxError> {
+    let objective_name = context
+        .objective_name(name)
+        .ok_or_else(|| missing_argument(name))?;
+    scoreboard.objective(objective_name).ok_or_else(|| {
+        let message = translations::ARGUMENTS_OBJECTIVE_NOT_FOUND
+            .message([TextComponent::from(objective_name.to_owned())])
+            .component();
+        CommandSyntaxError::dynamic(message)
+    })
+}
+
+#[derive(Clone, Copy)]
+enum ScoreComparison {
+    Equal,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
+
+impl ScoreComparison {
+    const fn matches(self, target: i32, source: i32) -> bool {
+        match self {
+            Self::Equal => target == source,
+            Self::Less => target < source,
+            Self::LessOrEqual => target <= source,
+            Self::Greater => target > source,
+            Self::GreaterOrEqual => target >= source,
+        }
+    }
 }
 
 fn conditional_sources(

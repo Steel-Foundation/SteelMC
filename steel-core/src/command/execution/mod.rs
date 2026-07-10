@@ -6,6 +6,7 @@ mod item;
 mod item_predicate;
 mod queue;
 mod runtime;
+mod score;
 mod selector;
 mod source;
 
@@ -17,6 +18,7 @@ pub(crate) use runtime::{
     CustomCommandExecutor, CustomModifierExecutor, SteelCommandContext, SteelCommandRuntime,
     SteelContextChain, SteelExecutor, SteelModifier, argument, literal,
 };
+pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 pub(crate) use source::{
     CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
 };

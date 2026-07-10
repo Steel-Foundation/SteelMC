@@ -190,6 +190,17 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::ScoreHolder { multiple } => (
+                ProtocolArgumentType::ScoreHolder {
+                    flags: u8::from(*multiple),
+                },
+                Some(SuggestionType::AskServer),
+            ),
+            SteelArgumentType::Objective => (
+                ProtocolArgumentType::Objective,
+                Some(SuggestionType::AskServer),
+            ),
+            SteelArgumentType::IntRange => (ProtocolArgumentType::IntRange, None),
             SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
             SteelArgumentType::SummonableEntity => (
                 ProtocolArgumentType::Resource {
@@ -586,6 +597,32 @@ mod tests {
             ));
             assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
         }
+    }
+
+    #[test]
+    fn steel_scoreboard_arguments_project_vanilla_parsers() {
+        for (argument, expected_flags) in [
+            (SteelArgumentType::score_holder(), 0),
+            (SteelArgumentType::score_holders(), 1),
+        ] {
+            let (argument, suggestions) = argument.protocol_argument();
+            assert!(matches!(
+                argument,
+                ProtocolArgumentType::ScoreHolder { flags } if flags == expected_flags
+            ));
+            assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+        }
+
+        let (objective, objective_suggestions) = SteelArgumentType::objective().protocol_argument();
+        assert!(matches!(objective, ProtocolArgumentType::Objective));
+        assert!(matches!(
+            objective_suggestions,
+            Some(SuggestionType::AskServer)
+        ));
+
+        let (range, range_suggestions) = SteelArgumentType::int_range().protocol_argument();
+        assert!(matches!(range, ProtocolArgumentType::IntRange));
+        assert!(range_suggestions.is_none());
     }
 
     #[test]
