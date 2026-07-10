@@ -11,11 +11,10 @@ use text_components::{Modifier, TextComponent, format::Color};
 use crate::{
     command::{
         brigadier::{CommandSyntaxError, CommandSyntaxErrorKind},
-        context::EntityAnchor,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
     },
-    entity::{Entity as _, SharedEntity},
+    entity::{Entity as _, EntityAnchor, SharedEntity},
     permission::{PermissionContext, PermissionExpr, PermissionState},
     player::Player,
     scoreboard::Scoreboard,

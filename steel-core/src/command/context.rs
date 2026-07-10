@@ -4,7 +4,7 @@ use std::sync::Arc;
 use glam::DVec3;
 
 use crate::command::sender::CommandSender;
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityAnchor};
 use crate::player::Player;
 use crate::server::Server;
 use crate::world::World;
@@ -26,16 +26,6 @@ pub struct CommandContext {
     pub rotation: Option<(f32, f32)>,
     /// The anchor of the command.
     pub anchor: EntityAnchor,
-}
-
-/// The position anchor to use for an entity.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum EntityAnchor {
-    /// The feet of the entity.
-    #[default]
-    Feet,
-    /// The eyes of the entity.
-    Eyes,
 }
 
 impl CommandContext {

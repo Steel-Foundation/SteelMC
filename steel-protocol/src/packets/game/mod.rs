@@ -36,6 +36,7 @@ mod c_player_abilities;
 mod c_player_chat;
 mod c_player_combat_kill;
 mod c_player_info_update;
+mod c_player_look_at;
 mod c_player_position;
 mod c_remove_entities;
 mod c_remove_mob_effect;
@@ -158,6 +159,7 @@ pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,
 };
+pub use c_player_look_at::{CPlayerLookAt, LookAtAnchor};
 pub use c_player_position::{CPlayerPosition, RelativeMovement};
 pub use c_remove_entities::CRemoveEntities;
 pub use c_remove_mob_effect::CRemoveMobEffect;

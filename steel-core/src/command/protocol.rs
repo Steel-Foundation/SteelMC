@@ -178,6 +178,7 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
             SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
             SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
+            SteelArgumentType::EntityAnchor => (ProtocolArgumentType::EntityAnchor, None),
             SteelArgumentType::Entity {
                 single,
                 players_only,
@@ -528,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn steel_coordinate_arguments_project_vanilla_parsers() {
+    fn steel_position_arguments_project_vanilla_parsers() {
         let (block_pos, block_pos_suggestions) = SteelArgumentType::block_pos().protocol_argument();
         assert!(matches!(block_pos, ProtocolArgumentType::BlockPos));
         assert!(block_pos_suggestions.is_none());
@@ -540,6 +541,10 @@ mod tests {
         let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
         assert!(matches!(rotation, ProtocolArgumentType::Rotation));
         assert!(rotation_suggestions.is_none());
+
+        let (anchor, anchor_suggestions) = SteelArgumentType::entity_anchor().protocol_argument();
+        assert!(matches!(anchor, ProtocolArgumentType::EntityAnchor));
+        assert!(anchor_suggestions.is_none());
     }
 
     #[test]

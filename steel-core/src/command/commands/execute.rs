@@ -17,8 +17,9 @@ use crate::command::commands::{
     CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, CommandRedirectTarget, argument,
     literal, redirect,
 };
-use crate::command::context::{CommandContext, EntityAnchor};
+use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
+use crate::entity::EntityAnchor;
 
 /// Handler for the "execute" command.
 #[must_use]

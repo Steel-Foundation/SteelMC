@@ -16,7 +16,7 @@ use super::{
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
-use crate::entity::ENTITIES;
+use crate::entity::{ENTITIES, EntityAnchor};
 
 /// An argument parser stored by Steel's command runtime.
 #[derive(Clone, Debug, PartialEq)]
@@ -31,6 +31,8 @@ pub(crate) enum SteelArgumentType {
     Vec3 { center_integers: bool },
     /// A yaw and pitch rotation.
     Rotation,
+    /// An entity's feet or eyes position.
+    EntityAnchor,
     /// A deferred entity selector using vanilla's entity argument flags.
     Entity { single: bool, players_only: bool },
     /// One of vanilla's four game modes.
@@ -66,6 +68,10 @@ impl SteelArgumentType {
 
     pub(crate) const fn rotation() -> Self {
         Self::Rotation
+    }
+
+    pub(crate) const fn entity_anchor() -> Self {
+        Self::EntityAnchor
     }
 
     pub(crate) const fn entity() -> Self {
@@ -136,6 +142,8 @@ pub(crate) enum SteelArgumentValue {
     Time(i32),
     /// A coordinate expression retained until command execution.
     Coordinates(Coordinates),
+    /// A parsed entity position anchor.
+    EntityAnchor(EntityAnchor),
     /// A source-independent entity selector retained until command execution.
     EntitySelector(Box<EntitySelector>),
     /// A parsed vanilla game mode.
@@ -158,6 +166,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Primitive(value) => Some(value),
             Self::Time(_)
             | Self::Coordinates(_)
+            | Self::EntityAnchor(_)
             | Self::EntitySelector(_)
             | Self::GameMode(_)
             | Self::Domain(_)
@@ -190,6 +199,7 @@ where
                 parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
             }
             Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
+            Self::EntityAnchor => parse_entity_anchor(reader).map(SteelArgumentValue::EntityAnchor),
             Self::Entity {
                 single,
                 players_only,
@@ -232,6 +242,7 @@ where
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
             Self::Rotation => {}
+            Self::EntityAnchor => suggest_entity_anchors(builder),
             Self::Entity {
                 single,
                 players_only,
@@ -312,6 +323,7 @@ where
             SteelArgumentValue::Primitive(_)
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
+            | SteelArgumentValue::EntityAnchor(_)
             | SteelArgumentValue::EntitySelector(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
@@ -320,6 +332,31 @@ where
             | SteelArgumentValue::Timeline(_),
         )
         | None => None,
+    }
+}
+
+fn parse_entity_anchor(reader: &mut StringReader<'_>) -> Result<EntityAnchor, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    let name = reader.read_unquoted_string();
+    match name {
+        "feet" => Ok(EntityAnchor::Feet),
+        "eyes" => Ok(EntityAnchor::Eyes),
+        _ => {
+            reader.restore(start);
+            let message = translations::ARGUMENT_ANCHOR_INVALID
+                .message([name.to_owned()])
+                .component();
+            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
+        }
+    }
+}
+
+fn suggest_entity_anchors(builder: &mut SuggestionsBuilder<'_>) {
+    let prefix = builder.remaining_lowercase().to_owned();
+    for anchor in ["feet", "eyes"] {
+        if anchor.starts_with(&prefix) {
+            builder.suggest(anchor);
+        }
     }
 }
 

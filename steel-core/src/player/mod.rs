@@ -60,9 +60,9 @@ pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{Arc, Weak};
 use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CRespawn, CSetDefaultSpawnPosition,
-    CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction, EquipmentSlotItem,
-    RelativeMovement, SoundSource,
+    AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
+    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
+    EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -96,9 +96,10 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
+    RemovalReason, SharedEntity, apply_entity_look_at, equipment_items_to_packet_items,
+    start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
@@ -2123,6 +2124,30 @@ impl Entity for Player {
         self.gameprofile.name.clone()
     }
 
+    fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
+        apply_entity_look_at(self, from_anchor, target);
+        self.send_packet(CPlayerLookAt::position(
+            protocol_look_at_anchor(from_anchor),
+            target,
+        ));
+    }
+
+    fn look_at_entity(
+        &self,
+        from_anchor: EntityAnchor,
+        target: &dyn Entity,
+        target_anchor: EntityAnchor,
+    ) {
+        let target_position = target_anchor.position(target);
+        apply_entity_look_at(self, from_anchor, target_position);
+        self.send_packet(CPlayerLookAt::entity(
+            protocol_look_at_anchor(from_anchor),
+            target_position,
+            target.id(),
+            protocol_look_at_anchor(target_anchor),
+        ));
+    }
+
     fn is_always_ticking(&self) -> bool {
         true
     }
@@ -2487,6 +2512,13 @@ impl Entity for Player {
             self.send_inventory_to_remote();
         }
         self.apply_post_teleport_transition(&teleport_transition.post_transition);
+    }
+}
+
+const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
+    match anchor {
+        EntityAnchor::Feet => LookAtAnchor::Feet,
+        EntityAnchor::Eyes => LookAtAnchor::Eyes,
     }
 }
 

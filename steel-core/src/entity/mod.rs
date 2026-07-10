@@ -795,6 +795,28 @@ pub type SharedEntity = Arc<dyn Entity>;
 /// Type alias for a weak entity reference.
 pub type WeakEntity = Weak<dyn Entity>;
 
+/// The point on an entity used by commands that resolve positions or facing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EntityAnchor {
+    /// The entity's base position.
+    #[default]
+    Feet,
+    /// The entity's eye position for its current pose.
+    Eyes,
+}
+
+impl EntityAnchor {
+    /// Resolves this anchor against an entity's current position.
+    #[must_use]
+    pub fn position(self, entity: &dyn Entity) -> DVec3 {
+        let position = entity.position();
+        match self {
+            Self::Feet => position,
+            Self::Eyes => DVec3::new(position.x, entity.get_eye_y(), position.z),
+        }
+    }
+}
+
 pub(crate) fn start_riding_entities(
     passenger: &SharedEntity,
     entity_to_ride: &SharedEntity,
@@ -3047,6 +3069,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().set_rotation(rotation);
     }
 
+    /// Rotates this entity to face a fixed position.
+    fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
+        apply_entity_look_at(self.as_entity_event_source(), from_anchor, target);
+    }
+
+    /// Rotates this entity to follow an anchored point on another entity.
+    fn look_at_entity(
+        &self,
+        from_anchor: EntityAnchor,
+        target: &dyn Entity,
+        target_anchor: EntityAnchor,
+    ) {
+        self.look_at(from_anchor, target_anchor.position(target));
+    }
+
     /// Returns vanilla `Entity.getYHeadRot`.
     fn head_yaw(&self) -> f32 {
         self.as_living_entity()
@@ -4762,6 +4799,62 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return;
         };
         change_non_player_entity_world(entity, teleport_transition);
+    }
+}
+
+pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAnchor, target: DVec3) {
+    let rotation = look_at_rotation(from_anchor.position(entity), target);
+    entity.set_rotation(rotation);
+    let rotation = entity.rotation();
+    if let Some(living) = entity.as_living_entity() {
+        living.set_y_head_rot(rotation.0);
+    }
+    entity.base().set_old_rotation_to_current();
+}
+
+fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
+    let delta = target - from;
+    let horizontal = delta.x.hypot(delta.z);
+    let pitch = wrap_look_at_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
+    let yaw = wrap_look_at_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - 90.0);
+    (yaw, pitch)
+}
+
+fn wrap_look_at_degrees(mut degrees: f32) -> f32 {
+    degrees %= 360.0;
+    if degrees >= 180.0 {
+        degrees -= 360.0;
+    }
+    if degrees < -180.0 {
+        degrees += 360.0;
+    }
+    degrees
+}
+
+#[cfg(test)]
+mod look_at_tests {
+    use glam::DVec3;
+
+    use super::look_at_rotation;
+
+    #[test]
+    fn look_at_rotation_matches_vanilla_axes() {
+        assert_eq!(
+            look_at_rotation(DVec3::ZERO, DVec3::new(0.0, 0.0, 1.0)),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            look_at_rotation(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)),
+            (-90.0, 0.0)
+        );
+        assert_eq!(
+            look_at_rotation(DVec3::ZERO, DVec3::new(0.0, 1.0, 1.0)),
+            (0.0, -45.0)
+        );
+        assert_eq!(
+            look_at_rotation(DVec3::ZERO, DVec3::new(-1.0, 0.0, -1.0)),
+            (135.0, 0.0)
+        );
     }
 }
 

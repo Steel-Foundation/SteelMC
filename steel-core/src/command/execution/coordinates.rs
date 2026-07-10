@@ -42,6 +42,30 @@ impl Coordinates {
     pub(crate) fn block_pos(self, source: &CommandSource) -> BlockPos {
         BlockPos::from(self.position(source))
     }
+
+    /// Returns whether the X component used relative or local syntax.
+    pub(crate) const fn is_x_relative(self) -> bool {
+        match self {
+            Self::World(coordinates) => coordinates.x.is_relative(),
+            Self::Local(_) => true,
+        }
+    }
+
+    /// Returns whether the Y component used relative or local syntax.
+    pub(crate) const fn is_y_relative(self) -> bool {
+        match self {
+            Self::World(coordinates) => coordinates.y.is_relative(),
+            Self::Local(_) => true,
+        }
+    }
+
+    /// Returns whether the Z component used relative or local syntax.
+    pub(crate) const fn is_z_relative(self) -> bool {
+        match self {
+            Self::World(coordinates) => coordinates.z.is_relative(),
+            Self::Local(_) => true,
+        }
+    }
 }
 
 /// One absolute or source-relative world coordinate.
@@ -62,6 +86,10 @@ impl WorldCoordinate {
         } else {
             self.value
         }
+    }
+
+    const fn is_relative(self) -> bool {
+        self.relative
     }
 }
 
@@ -446,5 +474,22 @@ mod tests {
         assert!(position.x.abs() < f64::from(f32::EPSILON));
         assert!(position.y.abs() < f64::from(f32::EPSILON));
         assert!((position.z - 1.0).abs() < f64::from(f32::EPSILON));
+    }
+
+    #[test]
+    fn coordinates_retain_axis_relative_metadata() {
+        let coordinates = super::Coordinates::World(WorldCoordinates::new(
+            WorldCoordinate::new(true, 0.0),
+            WorldCoordinate::new(false, 64.0),
+            WorldCoordinate::new(true, 2.0),
+        ));
+        assert!(coordinates.is_x_relative());
+        assert!(!coordinates.is_y_relative());
+        assert!(coordinates.is_z_relative());
+
+        let local = super::Coordinates::Local(LocalCoordinates::new(0.0, 0.0, 0.0));
+        assert!(local.is_x_relative());
+        assert!(local.is_y_relative());
+        assert!(local.is_z_relative());
     }
 }

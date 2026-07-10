@@ -25,8 +25,8 @@ use glam::DVec3;
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 
 use crate::{
-    command::context::{CommandContext, EntityAnchor},
-    entity::Entity,
+    command::context::CommandContext,
+    entity::{Entity, EntityAnchor},
     server::Server,
     world::World,
 };

@@ -2,7 +2,8 @@
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 
 use crate::command::arguments::CommandArgument;
-use crate::command::context::{CommandContext, EntityAnchor};
+use crate::command::context::CommandContext;
+use crate::entity::EntityAnchor;
 
 /// A anchor argument.
 pub struct AnchorArgument;

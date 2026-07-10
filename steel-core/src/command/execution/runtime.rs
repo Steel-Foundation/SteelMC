@@ -15,7 +15,10 @@ use super::{
     ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl,
     SteelArgumentType, argument::SteelArgumentValue, selector::EntitySelector,
 };
-use crate::{entity::SharedEntity, player::Player};
+use crate::{
+    entity::{EntityAnchor, SharedEntity},
+    player::Player,
+};
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
@@ -186,6 +189,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -205,6 +209,27 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
+                | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    /// Returns a parsed entity position anchor.
+    pub(crate) fn entity_anchor(&self, name: &str) -> Option<EntityAnchor> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::EntityAnchor(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -225,6 +250,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::EntityType(_)
@@ -244,6 +270,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
@@ -262,6 +289,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -280,6 +308,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
@@ -298,6 +327,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -316,6 +346,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -334,6 +365,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)

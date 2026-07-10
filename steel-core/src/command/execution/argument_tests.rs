@@ -13,7 +13,7 @@ use steel_registry::{
 };
 use steel_utils::{Identifier, types::GameType};
 
-use crate::entity::init_test_entities;
+use crate::entity::{EntityAnchor, init_test_entities};
 use crate::permission::{PermissionExpr, PermissionState};
 
 struct TestSource {
@@ -278,6 +278,33 @@ fn game_mode_argument_suggests_vanilla_names() {
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["spectator", "survival"]);
+}
+
+#[test]
+fn entity_anchor_argument_parses_and_suggests_vanilla_names() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::entity_anchor());
+    for (name, expected) in [("feet", EntityAnchor::Feet), ("eyes", EntityAnchor::Eyes)] {
+        let input = format!("resource {name}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("vanilla entity anchor should parse");
+        };
+        assert_eq!(chain.top_context().entity_anchor("value"), Some(expected));
+    }
+
+    let parse = dispatcher.parse("resource missing", TestSource::new());
+    assert!(dispatcher.context_chain(parse).is_err());
+
+    let parse = dispatcher.parse("resource e", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("entity anchor suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["eyes"]);
 }
 
 #[test]
