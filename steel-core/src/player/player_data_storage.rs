@@ -81,6 +81,7 @@ struct PlayerDataFile {
     seen_credits: bool,
     root_vehicle: Option<RootVehicleFile>,
     ender_pearls: Vec<EnderPearlFile>,
+    ender_items: Vec<SlotFile>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -384,6 +385,14 @@ impl PlayerDataFile {
                     entity: pearl.entity.clone(),
                 })
                 .collect(),
+            ender_items: data
+                .ender_items
+                .iter()
+                .map(|slot| SlotFile {
+                    slot: slot.slot,
+                    item_nbt: item_to_nbt_bytes(&slot.item).unwrap_or_default(),
+                })
+                .collect(),
         })
     }
 
@@ -454,6 +463,16 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+            ender_items: {
+                let mut items = Vec::with_capacity(self.ender_items.len());
+                for slot in self.ender_items {
+                    items.push(PersistentSlot {
+                        slot: slot.slot,
+                        item: item_from_nbt_bytes(&slot.item_nbt)?,
+                    });
+                }
+                items
+            },
         })
     }
 }
@@ -596,6 +615,7 @@ mod tests {
             seen_credits: true,
             root_vehicle: None,
             ender_pearls: Vec::new(),
+            ender_items: Vec::new(),
         }
     }
 

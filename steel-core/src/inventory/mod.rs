@@ -7,6 +7,7 @@ pub mod chest_menu;
 pub mod container;
 pub mod crafting;
 pub mod crafting_menu;
+pub mod ender_chest;
 pub mod equipment;
 pub mod inventory_menu;
 pub mod lock;

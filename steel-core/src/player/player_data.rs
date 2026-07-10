@@ -112,6 +112,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// Vanilla EnderChest items.
+    pub ender_items: Vec<PersistentSlot>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -190,6 +193,18 @@ impl PersistentPlayerData {
             }
         }
 
+        let ender_chest_inventory = player.ender_chest_inventory.lock();
+        let mut ender_items = Vec::new();
+        for slot in 0..27 {
+            let item = ender_chest_inventory.get_item(slot);
+            if !item.is_empty() {
+                ender_items.push(PersistentSlot {
+                    slot: slot as i8,
+                    item: item.clone(),
+                });
+            }
+        }
+
         let (experience_level, experience_progress, experience_total, score) = {
             let lock = player.experience.lock();
             (
@@ -243,6 +258,7 @@ impl PersistentPlayerData {
             seen_credits: player.has_seen_credits(),
             root_vehicle,
             ender_pearls,
+            ender_items,
         }
     }
 
@@ -401,6 +417,20 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        // Ender Chest
+        {
+            let mut ender_chest_inventory = player.ender_chest_inventory.lock();
+            for slot in 0..27 {
+                ender_chest_inventory.set_item(slot, ItemStack::empty());
+            }
+            for slot_data in &self.ender_items {
+                let slot_index = slot_data.slot as usize;
+                if slot_index < 27 {
+                    ender_chest_inventory.set_item(slot_index, slot_data.item.clone());
+                }
+            }
         }
 
         // Food data

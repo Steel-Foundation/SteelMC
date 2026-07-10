@@ -4,6 +4,7 @@ mod barrel;
 mod beehive;
 mod end_gateway;
 mod end_portal;
+mod ender_chest;
 mod potent_sulfur;
 mod raw;
 mod sign;
@@ -14,6 +15,7 @@ pub use beehive::{
 };
 pub use end_gateway::EndGatewayBlockEntity;
 pub use end_portal::EndPortalBlockEntity;
+pub use ender_chest::EnderChestBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use raw::RawBlockEntity;
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
