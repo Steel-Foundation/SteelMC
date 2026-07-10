@@ -93,7 +93,7 @@ impl BlockBehavior for EnderChestBlock {
 
         // TODO: Award stat OPEN_ENDERCHEST
         // TODO: Anger nearby piglins
-        
+
         InteractionResult::Success
     }
 

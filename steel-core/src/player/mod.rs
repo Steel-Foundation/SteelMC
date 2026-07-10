@@ -185,13 +185,13 @@ pub enum PlayerConnection {
 }
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::networking::JavaConnection;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
 use crate::world::World;
-use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 
 /// A struct representing a player.
 pub struct Player {

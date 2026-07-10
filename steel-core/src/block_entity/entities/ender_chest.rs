@@ -5,6 +5,8 @@
 use std::any::Any;
 use std::sync::{Arc, Weak};
 
+use simdnbt::borrow::BaseNbtCompound;
+use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId};
@@ -31,7 +33,7 @@ pub struct EnderChestBlockEntity {
 impl EnderChestBlockEntity {
     /// Creates a new ender chest block entity.
     #[must_use]
-    pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
+    pub const fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         Self {
             level,
             pos,
@@ -41,13 +43,21 @@ impl EnderChestBlockEntity {
     }
 
     /// Called when a player starts looking into the ender chest.
-    pub fn start_open(&mut self) {
+    #[expect(
+        clippy::unused_self,
+        reason = "Will use self once ContainerOpenersCounter is implemented"
+    )]
+    pub const fn start_open(&mut self) {
         // TODO: Implement ContainerOpenersCounter to track open state and play sounds.
         // Needs a lid controller and block events.
     }
 
     /// Called when a player stops looking into the ender chest.
-    pub fn stop_open(&mut self) {
+    #[expect(
+        clippy::unused_self,
+        reason = "Will use self once ContainerOpenersCounter is implemented"
+    )]
+    pub const fn stop_open(&mut self) {
         // TODO: Implement ContainerOpenersCounter to track open state and play sounds.
         // Needs a lid controller and block events.
     }
@@ -94,7 +104,7 @@ impl BlockEntity for EnderChestBlockEntity {
         self.level.upgrade()
     }
 
-    fn load_additional(&mut self, _nbt: &simdnbt::borrow::BaseNbtCompound<'_>) {}
+    fn load_additional(&mut self, _nbt: &BaseNbtCompound<'_>) {}
 
-    fn save_additional(&self, _nbt: &mut simdnbt::owned::NbtCompound) {}
+    fn save_additional(&self, _nbt: &mut NbtCompound) {}
 }

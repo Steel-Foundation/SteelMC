@@ -113,7 +113,7 @@ pub struct PersistentPlayerData {
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
 
-    /// Vanilla EnderChest items.
+    /// Vanilla `EnderChest` items.
     pub ender_items: Vec<PersistentSlot>,
 }
 

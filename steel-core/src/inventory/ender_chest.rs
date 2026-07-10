@@ -4,7 +4,9 @@
 
 use std::sync::Weak;
 
+use std::sync::Arc;
 use steel_registry::item_stack::ItemStack;
+
 use steel_utils::locks::SyncMutex;
 
 use crate::block_entity::BlockEntity;
@@ -18,7 +20,7 @@ pub const ENDER_CHEST_SLOTS: usize = 27;
 type WeakBlockEntity = Weak<SyncMutex<dyn BlockEntity>>;
 
 /// Thread-safe reference to a player's ender chest container.
-pub type SyncPlayerEnderChest = std::sync::Arc<SyncMutex<PlayerEnderChestContainer>>;
+pub type SyncPlayerEnderChest = Arc<SyncMutex<PlayerEnderChestContainer>>;
 
 /// Player's personal ender chest inventory.
 ///
@@ -51,7 +53,7 @@ impl PlayerEnderChestContainer {
     pub fn set_active_chest(&mut self, active_chest: WeakBlockEntity) {
         self.active_chest = Some(active_chest);
     }
-    
+
     /// Clears the active block entity.
     pub fn clear_active_chest(&mut self) {
         self.active_chest = None;
@@ -88,13 +90,14 @@ impl Container for PlayerEnderChestContainer {
             if let Some(chest) = weak_chest.upgrade() {
                 let guard = chest.lock();
                 // Validate range with default container interaction range
-                return !guard.is_removed() && player.is_within_block_interaction_range_with_buffer(guard.get_block_pos(), 4.0);
-            } else {
-                // Chest was destroyed while open
-                return false;
+                return !guard.is_removed()
+                    && player
+                        .is_within_block_interaction_range_with_buffer(guard.get_block_pos(), 4.0);
             }
+            // Chest was destroyed while open
+            return false;
         }
-        
+
         true
     }
 }

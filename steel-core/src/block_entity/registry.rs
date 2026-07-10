@@ -271,7 +271,11 @@ pub fn init_block_entities() {
     // Register Ender Chest block entity factory
     registry.register(
         &vanilla_block_entity_types::ENDER_CHEST,
-        |level, pos, state| Arc::new(SyncMutex::new(EnderChestBlockEntity::new(level, pos, state))),
+        |level, pos, state| {
+            Arc::new(SyncMutex::new(EnderChestBlockEntity::new(
+                level, pos, state,
+            )))
+        },
     );
 
     // Register potent sulfur block entity factory
