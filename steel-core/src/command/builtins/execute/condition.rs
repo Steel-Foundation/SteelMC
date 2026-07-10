@@ -116,7 +116,7 @@ fn matching_data_count(path: &NbtPath, tag: &NbtTag) -> Result<i32, CommandSynta
         .map_err(|_| CommandSyntaxError::dynamic("NBT match count exceeds the command range"))
 }
 
-fn invalid_block_data_source() -> CommandSyntaxError {
+pub(super) fn invalid_block_data_source() -> CommandSyntaxError {
     CommandSyntaxError::dynamic(TextComponent::from(
         &translations::COMMANDS_DATA_BLOCK_INVALID,
     ))
@@ -379,7 +379,7 @@ fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
     Ok(expected.matches(biome))
 }
 
-fn loaded_block_position(
+pub(super) fn loaded_block_position(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<steel_utils::BlockPos, CommandSyntaxError> {

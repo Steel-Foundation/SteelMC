@@ -2180,6 +2180,14 @@ impl World {
         self.mark_chunk_dirty(chunk_pos);
     }
 
+    /// Queues a same-state block update and its block-entity update packet.
+    ///
+    /// Mirrors vanilla `Level.sendBlockUpdated` for callers that changed only
+    /// block-entity data.
+    pub(crate) fn send_block_updated(&self, pos: BlockPos) {
+        self.chunk_map.block_changed(pos);
+    }
+
     /// Marks a chunk as dirty (unsaved) so it will be persisted to disk.
     ///
     /// Called when entities move, are added/removed, or when block entities change.
@@ -3190,6 +3198,23 @@ impl World {
         };
 
         self.broadcast_to_nearby(chunk, packet, None);
+    }
+
+    /// Broadcasts the current block-entity update packet when that entity type
+    /// exposes client-visible update data.
+    pub(crate) fn broadcast_block_entity_if_needed(&self, pos: BlockPos) {
+        let Some(block_entity) = self.get_block_entity(pos) else {
+            return;
+        };
+        let update = {
+            let block_entity = block_entity.lock();
+            block_entity
+                .get_update_tag()
+                .map(|tag| (block_entity.get_type(), tag))
+        };
+        if let Some((block_entity_type, tag)) = update {
+            self.broadcast_block_entity_update(pos, block_entity_type, tag);
+        }
     }
 
     /// Drops an item stack at the given position with scatter behavior.

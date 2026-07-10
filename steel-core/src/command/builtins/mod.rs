@@ -58,6 +58,7 @@ pub(crate) fn create_dispatcher()
 #[cfg(test)]
 mod tests {
     use super::create_dispatcher;
+    use crate::command::brigadier::ArgumentType;
     use crate::command::execution::SteelArgumentType;
     use steel_registry::test_support::init_test_registry;
 
@@ -338,10 +339,8 @@ mod tests {
         }
 
         for store_kind in ["result", "success"] {
-            let targets = child(
-                child(child(child(execute, "store"), store_kind), "score"),
-                "targets",
-            );
+            let store = child(child(execute, "store"), store_kind);
+            let targets = child(child(store, "score"), "targets");
             assert_eq!(
                 dispatcher
                     .node(targets)
@@ -357,6 +356,38 @@ mod tests {
                 objective_node.argument_type(),
                 Some(&SteelArgumentType::objective())
             );
+
+            for (provider, target_name, target_type) in [
+                ("block", "targetPos", SteelArgumentType::block_pos()),
+                ("storage", "target", SteelArgumentType::storage_key()),
+            ] {
+                let target = child(child(store, provider), target_name);
+                assert_eq!(
+                    dispatcher
+                        .node(target)
+                        .and_then(|node| node.argument_type()),
+                    Some(&target_type)
+                );
+                let path = child(target, "path");
+                assert_eq!(
+                    dispatcher.node(path).and_then(|node| node.argument_type()),
+                    Some(&SteelArgumentType::nbt_path())
+                );
+                for data_type in ["int", "float", "short", "long", "double", "byte"] {
+                    let scale = child(child(path, data_type), "scale");
+                    let Some(scale_node) = dispatcher.node(scale) else {
+                        panic!("execute store data scale should exist");
+                    };
+                    assert_eq!(scale_node.redirect(), Some(execute));
+                    assert_eq!(
+                        scale_node.argument_type(),
+                        Some(&SteelArgumentType::Primitive(ArgumentType::double(
+                            f64::MIN,
+                            f64::MAX,
+                        )))
+                    );
+                }
+            }
         }
 
         let modifier_paths: &[&[&str]] = &[

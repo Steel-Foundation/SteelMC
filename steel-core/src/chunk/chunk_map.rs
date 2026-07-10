@@ -1087,6 +1087,7 @@ impl ChunkMap {
                             player.connection.send_encoded(encoded.clone());
                         }
                     }
+                    world.broadcast_block_entity_if_needed(block_pos);
                 } else {
                     // Multiple block changes - use CSectionBlocksUpdate
                     let changes: Vec<BlockChange> = changed_positions
@@ -1126,6 +1127,10 @@ impl ChunkMap {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
                             player.connection.send_encoded(encoded.clone());
                         }
+                    }
+                    for &packed in &changed_positions {
+                        let block_pos = section_pos.relative_to_block_pos(packed);
+                        world.broadcast_block_entity_if_needed(block_pos);
                     }
                 }
             }
