@@ -16,7 +16,7 @@ use crate::command::brigadier::{
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource,
     ExecutionControl, IntRange, ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard,
-    SteelArgumentType,
+    SteelArgumentType, WorldArgument,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -207,6 +207,7 @@ where
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -237,6 +238,7 @@ where
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -267,6 +269,7 @@ where
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -346,6 +349,7 @@ where
                 | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -355,6 +359,13 @@ where
                 | SteelArgumentValue::Timeline(_),
             )
             | None => None,
+        }
+    }
+
+    pub(crate) fn world_argument(&self, name: &str) -> Option<&WorldArgument> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::World(value)) => Some(value),
+            _ => None,
         }
     }
 
@@ -376,6 +387,7 @@ where
                 | SteelArgumentValue::BiomeOrTag(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -399,6 +411,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::ScoreHolder(_)
                 | SteelArgumentValue::Objective(_)
@@ -428,6 +441,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::ScoreHolder(_)
@@ -457,6 +471,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::ScoreHolder(_)
@@ -493,6 +508,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -522,6 +538,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -551,6 +568,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -580,6 +598,7 @@ where
                 | SteelArgumentValue::Swizzle(_)
                 | SteelArgumentValue::Heightmap(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::World(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)

@@ -83,6 +83,10 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
         Vec::new()
     }
 
+    fn command_world_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn selector_player_names(&self) -> Vec<String> {
         Vec::new()
     }
@@ -331,6 +335,18 @@ impl ExecutionCommandSource for CommandSource {
 
     fn domain_names(&self) -> Vec<&str> {
         self.server.worlds.domain_names().collect()
+    }
+
+    fn command_world_names(&self) -> Vec<String> {
+        let domain = self.world.domain();
+        let mut names = Vec::new();
+        for key in self.server.worlds.keys() {
+            names.push(key.to_string());
+            if key.namespace.as_ref() == domain {
+                names.push(key.path.to_string());
+            }
+        }
+        names
     }
 
     fn selector_player_names(&self) -> Vec<String> {

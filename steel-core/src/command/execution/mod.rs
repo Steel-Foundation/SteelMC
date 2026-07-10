@@ -11,6 +11,7 @@ mod runtime;
 mod score;
 mod selector;
 mod source;
+mod world;
 
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use biome::BiomeOrTag;
@@ -26,6 +27,7 @@ pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 pub(crate) use source::{
     CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
 };
+pub(crate) use world::WorldArgument;
 
 #[cfg(test)]
 mod argument_tests;

@@ -15,7 +15,7 @@ use text_components::TextComponent;
 
 use super::{
     BiomeOrTag, BlockPredicate, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate,
-    ScoreHolderArgument,
+    ScoreHolderArgument, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_predicate, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
@@ -23,6 +23,7 @@ use super::{
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{ENTITIES, EntityAnchor};
@@ -97,6 +98,8 @@ pub(crate) enum SteelArgumentType {
     GameMode,
     /// A configured Steel domain.
     Domain,
+    /// A loaded Steel world, optionally relative to the source domain.
+    World,
     /// A summonable entity type backed by a Steel entity factory.
     SummonableEntity,
     /// A registered enchantment.
@@ -206,6 +209,10 @@ impl SteelArgumentType {
         Self::Domain
     }
 
+    pub(crate) const fn world() -> Self {
+        Self::World
+    }
+
     pub(crate) const fn summonable_entity() -> Self {
         Self::SummonableEntity
     }
@@ -272,6 +279,8 @@ pub(crate) enum SteelArgumentValue {
     GameMode(GameType),
     /// A configured Steel domain name.
     Domain(Box<str>),
+    /// A loaded-world expression resolved when the command executes.
+    World(WorldArgument),
     /// A resolved summonable entity type.
     EntityType(EntityTypeRef),
     /// A resolved registered enchantment.
@@ -305,6 +314,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::BlockPredicate(_)
             | Self::GameMode(_)
             | Self::Domain(_)
+            | Self::World(_)
             | Self::EntityType(_)
             | Self::Enchantment(_)
             | Self::ItemStack(_)
@@ -359,6 +369,7 @@ where
             }
             Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
+            Self::World => parse_world_argument(reader).map(SteelArgumentValue::World),
             Self::SummonableEntity => {
                 parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
             }
@@ -436,6 +447,7 @@ where
                     builder.suggest(domain);
                 }
             }
+            Self::World => suggest_worlds(builder, context.source()),
             Self::SummonableEntity => {
                 suggest_resources(
                     REGISTRY
@@ -522,6 +534,7 @@ where
             | SteelArgumentValue::BlockPredicate(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
+            | SteelArgumentValue::World(_)
             | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Enchantment(_)
             | SteelArgumentValue::ItemStack(_)

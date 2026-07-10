@@ -28,9 +28,33 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(biome_condition(expected))
         .then(block_condition(expected))
         .then(blocks_condition(expected))
+        .then(dimension_condition(expected))
         .then(entity_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))
+}
+
+fn dimension_condition(expected: bool) -> Builder {
+    literal("dimension").then(
+        argument("dimension", SteelArgumentType::world())
+            .forks(EXECUTE_ROOT, move |context| {
+                let matches = dimension_matches(context)?;
+                Ok(conditional_sources(context.source(), expected, matches))
+            })
+            .executes(move |context| {
+                execute_boolean_condition(context, expected, dimension_matches(context)?)
+            }),
+    )
+}
+
+fn dimension_matches(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<bool, CommandSyntaxError> {
+    let world = context
+        .world_argument("dimension")
+        .ok_or_else(|| missing_argument("dimension"))?
+        .resolve(context.source())?;
+    Ok(Arc::ptr_eq(context.source().world(), &world))
 }
 
 fn blocks_condition(expected: bool) -> Builder {

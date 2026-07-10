@@ -229,6 +229,10 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 ProtocolArgumentType::ItemPredicate,
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::World => (
+                ProtocolArgumentType::Dimension,
+                Some(SuggestionType::AskServer),
+            ),
             SteelArgumentType::WorldClock => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:world_clock",
@@ -651,6 +655,14 @@ mod tests {
 
         assert!(matches!(argument, ProtocolArgumentType::BlockPredicate));
         assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_world_argument_projects_vanillas_dimension_parser() {
+        let (argument, suggestions) = SteelArgumentType::world().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::Dimension));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
     }
 
     #[test]

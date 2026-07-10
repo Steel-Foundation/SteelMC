@@ -269,6 +269,15 @@ mod tests {
                 assert_eq!(node.redirect(), Some(execute));
             }
 
+            let dimension = child(child(execute, condition), "dimension");
+            let dimension = child(dimension, "dimension");
+            let Some(node) = dispatcher.node(dimension) else {
+                panic!("execute dimension condition terminal should exist");
+            };
+            assert!(node.is_executable());
+            assert_eq!(node.redirect(), Some(execute));
+            assert_eq!(node.argument_type(), Some(&SteelArgumentType::world()));
+
             let score = child(child(execute, condition), "score");
             let target = child(score, "target");
             assert_eq!(
@@ -340,6 +349,7 @@ mod tests {
             &["facing", "entity", "targets", "anchor"],
             &["align", "axes"],
             &["anchored", "anchor"],
+            &["in", "dimension"],
             &["summon", "entity"],
             &["on", "vehicle"],
             &["on", "controller"],

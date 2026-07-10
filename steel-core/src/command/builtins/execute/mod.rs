@@ -35,6 +35,7 @@ fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCo
         .then(source::facing_operation())
         .then(source::align_operation())
         .then(source::anchored_operation())
+        .then(source::in_operation())
         .then(source::summon_operation())
         .then(source::on_relations())
 }

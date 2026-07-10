@@ -191,6 +191,21 @@ pub(super) fn anchored_operation() -> Builder {
     )
 }
 
+pub(super) fn in_operation() -> Builder {
+    literal("in").then(
+        argument("dimension", SteelArgumentType::world()).redirects_with(
+            EXECUTE_ROOT,
+            |context: &SteelCommandContext<CommandSource>| {
+                let world = context
+                    .world_argument("dimension")
+                    .ok_or_else(|| missing_argument("dimension"))?
+                    .resolve(context.source())?;
+                Ok(context.source().with_world(world))
+            },
+        ),
+    )
+}
+
 pub(super) fn summon_operation() -> Builder {
     literal("summon").then(
         argument("entity", SteelArgumentType::summonable_entity()).redirects_with(

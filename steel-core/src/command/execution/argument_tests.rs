@@ -4,7 +4,7 @@ use crate::command::{
     execution::{
         BiomeOrTag, BlockPredicate, CommandPermissionSource, CommandResultCallback, Coordinates,
         ExecutionCommandSource, ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime,
-        argument,
+        WorldArgument, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
@@ -56,6 +56,18 @@ impl ExecutionCommandSource for TestSource {
 
     fn domain_names(&self) -> Vec<&str> {
         vec!["alpha", "beta"]
+    }
+
+    fn command_world_names(&self) -> Vec<String> {
+        [
+            "alpha:overworld",
+            "overworld",
+            "alpha:arena",
+            "arena",
+            "beta:lobby",
+        ]
+        .map(str::to_owned)
+        .to_vec()
     }
 
     fn selector_player_names(&self) -> Vec<String> {
@@ -552,6 +564,40 @@ fn domain_argument_resolves_and_suggests_only_configured_domains() {
         .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["beta"]);
+}
+
+#[test]
+fn world_argument_retains_relative_and_fully_qualified_names() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::world());
+
+    let parse = dispatcher.parse("resource overworld", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("relative world should parse");
+    };
+    assert_eq!(
+        chain.top_context().world_argument("value"),
+        Some(&WorldArgument::Relative("overworld".into()))
+    );
+
+    let parse = dispatcher.parse("resource beta:lobby", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("fully qualified world should parse");
+    };
+    assert_eq!(
+        chain.top_context().world_argument("value"),
+        Some(&WorldArgument::Key(Identifier::new_static("beta", "lobby")))
+    );
+
+    let parse = dispatcher.parse("resource a", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("world suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["alpha:arena", "alpha:overworld", "arena"]);
 }
 
 #[test]
