@@ -5,7 +5,7 @@ use steel_registry::{
 };
 use steel_utils::{Identifier, translations};
 
-use super::argument::{matches_substring, parse_identifier, unknown_resource};
+use super::argument::{identifier_matches, parse_identifier, unknown_resource};
 use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
 };
@@ -84,14 +84,5 @@ pub(super) fn suggest_biomes(builder: &mut SuggestionsBuilder<'_>) {
     };
     for suggestion in suggestions {
         builder.suggest(suggestion);
-    }
-}
-
-fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
-    if pattern.contains(':') {
-        matches_substring(pattern, &identifier.to_string())
-    } else {
-        matches_substring(pattern, identifier.namespace.as_ref())
-            || matches_substring(pattern, identifier.path.as_ref())
     }
 }

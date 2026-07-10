@@ -194,6 +194,7 @@ pub struct StructureLocatePlan {
 pub struct StructureLocatePlacement {
     placement: StructurePlacement,
     ring_positions: Option<Vec<ChunkPos>>,
+    structures: Vec<Identifier>,
 }
 
 /// Candidate chunk and locate position for a structure search.
@@ -223,6 +224,17 @@ impl StructureLocatePlan {
                 PlacementKind::RandomSpread { .. }
             )
         })
+    }
+
+    /// Requested structures associated with the candidate's placement scan.
+    #[must_use]
+    pub fn structures_for_candidate(
+        &self,
+        candidate: StructureLocateCandidate,
+    ) -> Option<&[Identifier]> {
+        self.placements
+            .get(candidate.scan_id)
+            .map(|placement| placement.structures.as_slice())
     }
 
     /// Ring-placement candidates ordered by vanilla's stronghold distance pre-check.
@@ -600,20 +612,25 @@ impl StructureGenerator {
         &self,
         structures: &[Identifier],
     ) -> Option<StructureLocatePlan> {
-        let structures: FxHashSet<Identifier> = structures.iter().cloned().collect();
         let mut placements = Vec::new();
         for (set_key, set) in &self.structure_sets {
-            if !set
-                .structures
+            let matching_structures = structures
                 .iter()
-                .any(|entry| structures.contains(&entry.structure))
-            {
+                .filter(|structure| {
+                    set.structures
+                        .iter()
+                        .any(|entry| entry.structure == **structure)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if matching_structures.is_empty() {
                 continue;
             }
 
             placements.push(StructureLocatePlacement {
                 placement: set.placement.clone(),
                 ring_positions: self.ring_positions.get(set_key).cloned(),
+                structures: matching_structures,
             });
         }
 
@@ -843,6 +860,7 @@ mod tests {
                     },
                 },
                 ring_positions: None,
+                structures: vec![Identifier::new("test", "placeholder")],
             }],
         }
     }
@@ -1032,6 +1050,45 @@ mod tests {
     }
 
     #[test]
+    fn locate_candidates_retain_only_structures_for_their_placement_scan() {
+        let first_structure = Identifier::new("test", "first");
+        let second_structure = Identifier::new("test", "second");
+        let third_structure = Identifier::new("test", "third");
+        let mut first_set = test_structure_set(every_chunk_placement(None));
+        first_set.structures[0].structure = first_structure.clone();
+        first_set.structures.push(StructureSelectionEntry {
+            structure: third_structure.clone(),
+            weight: 1,
+        });
+        let mut second_placement = every_chunk_placement(None);
+        second_placement.salt = 1;
+        let mut second_set = test_structure_set(second_placement);
+        second_set.structures[0].structure = second_structure.clone();
+        let generator = generator_with_sets(vec![
+            (Identifier::new("test", "first_set"), first_set),
+            (Identifier::new("test", "second_set"), second_set),
+        ]);
+        let Some(plan) = generator.locate_plan_for_structures(&[
+            third_structure.clone(),
+            first_structure.clone(),
+            second_structure.clone(),
+        ]) else {
+            panic!("requested structures should produce a locate plan");
+        };
+
+        let candidates = plan.random_spread_candidates_at_radius(BlockPos::new(0, 64, 0), 0);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            plan.structures_for_candidate(candidates[0]),
+            Some([third_structure, first_structure].as_slice())
+        );
+        assert_eq!(
+            plan.structures_for_candidate(candidates[1]),
+            Some([second_structure].as_slice())
+        );
+    }
+
+    #[test]
     fn ring_candidates_are_ordered_by_vanilla_distance_probe() {
         let plan = StructureLocatePlan {
             seed: 0,
@@ -1050,6 +1107,7 @@ mod tests {
                     },
                 },
                 ring_positions: Some(vec![ChunkPos::new(10, 0), ChunkPos::new(1, 0)]),
+                structures: vec![Identifier::new("test", "placeholder")],
             }],
         };
 

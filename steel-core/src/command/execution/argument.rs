@@ -15,7 +15,7 @@ use text_components::TextComponent;
 
 use super::{
     BiomeOrTag, BlockPredicate, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate,
-    ScoreHolderArgument, WorldArgument,
+    ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_predicate, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
@@ -24,6 +24,7 @@ use super::{
     nbt::parse_nbt_path,
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    structure::{parse_structure_or_tag_key, suggest_structures},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -93,6 +94,8 @@ pub(crate) enum SteelArgumentType {
     IntRange,
     /// A registered biome or biome tag.
     BiomeOrTag,
+    /// A structure resource key or tag key resolved when the command executes.
+    StructureOrTagKey,
     /// A block or block tag with optional state and block-entity constraints.
     BlockPredicate,
     /// One of vanilla's four game modes.
@@ -202,6 +205,10 @@ impl SteelArgumentType {
         Self::BiomeOrTag
     }
 
+    pub(crate) const fn structure_or_tag_key() -> Self {
+        Self::StructureOrTagKey
+    }
+
     pub(crate) const fn block_predicate() -> Self {
         Self::BlockPredicate
     }
@@ -286,6 +293,8 @@ pub(crate) enum SteelArgumentValue {
     IntRange(IntRange),
     /// A registered biome or biome tag.
     BiomeOrTag(BiomeOrTag),
+    /// A structure resource key or tag key.
+    StructureOrTagKey(StructureOrTagKey),
     /// A parsed block-state and block-entity predicate.
     BlockPredicate(BlockPredicate),
     /// A parsed vanilla game mode.
@@ -326,6 +335,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::Objective(_)
             | Self::IntRange(_)
             | Self::BiomeOrTag(_)
+            | Self::StructureOrTagKey(_)
             | Self::BlockPredicate(_)
             | Self::GameMode(_)
             | Self::Domain(_)
@@ -380,6 +390,9 @@ where
             )),
             Self::IntRange => parse_int_range(reader).map(SteelArgumentValue::IntRange),
             Self::BiomeOrTag => parse_biome_or_tag(reader).map(SteelArgumentValue::BiomeOrTag),
+            Self::StructureOrTagKey => {
+                parse_structure_or_tag_key(reader).map(SteelArgumentValue::StructureOrTagKey)
+            }
             Self::BlockPredicate => {
                 parse_block_predicate(reader).map(SteelArgumentValue::BlockPredicate)
             }
@@ -453,6 +466,7 @@ where
                 }
             }
             Self::BiomeOrTag => suggest_biomes(builder),
+            Self::StructureOrTagKey => suggest_structures(builder),
             Self::BlockPredicate => suggest_blocks(builder),
             Self::GameMode => suggest_game_modes(builder),
             Self::Domain => {
@@ -551,6 +565,7 @@ where
             | SteelArgumentValue::Objective(_)
             | SteelArgumentValue::IntRange(_)
             | SteelArgumentValue::BiomeOrTag(_)
+            | SteelArgumentValue::StructureOrTagKey(_)
             | SteelArgumentValue::BlockPredicate(_)
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
@@ -806,6 +821,15 @@ pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {
         matches!(character, '.' | '_' | '/')
             && input[index + character.len_utf8()..].starts_with(pattern)
     })
+}
+
+pub(super) fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
+    if pattern.contains(':') {
+        matches_substring(pattern, &identifier.to_string())
+    } else {
+        matches_substring(pattern, identifier.namespace.as_ref())
+            || matches_substring(pattern, identifier.path.as_ref())
+    }
 }
 
 fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, CommandSyntaxError> {

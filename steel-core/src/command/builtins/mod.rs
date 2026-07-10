@@ -12,6 +12,7 @@ mod gamerule;
 mod give;
 mod kill;
 mod list;
+mod locate;
 mod seed;
 mod setworldspawn;
 mod stop;
@@ -44,6 +45,7 @@ pub(crate) fn create_dispatcher()
     builder.register(give::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
+    builder.register(locate::registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
@@ -97,6 +99,7 @@ mod tests {
                 "give",
                 "kill",
                 "list",
+                "locate",
                 "seed",
                 "setworldspawn",
                 "stop",

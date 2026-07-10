@@ -207,6 +207,12 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::StructureOrTagKey => (
+                ProtocolArgumentType::ResourceOrTagKey {
+                    identifier: "minecraft:worldgen/structure",
+                },
+                Some(SuggestionType::AskServer),
+            ),
             SteelArgumentType::BlockPredicate => (ProtocolArgumentType::BlockPredicate, None),
             SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
             SteelArgumentType::SummonableEntity => (
@@ -647,6 +653,19 @@ mod tests {
             argument,
             ProtocolArgumentType::ResourceOrTag {
                 identifier: "minecraft:worldgen/biome"
+            }
+        ));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+    }
+
+    #[test]
+    fn steel_structure_argument_projects_vanilla_resource_or_tag_key_parser() {
+        let (argument, suggestions) = SteelArgumentType::structure_or_tag_key().protocol_argument();
+
+        assert!(matches!(
+            argument,
+            ProtocolArgumentType::ResourceOrTagKey {
+                identifier: "minecraft:worldgen/structure"
             }
         ));
         assert!(matches!(suggestions, Some(SuggestionType::AskServer)));

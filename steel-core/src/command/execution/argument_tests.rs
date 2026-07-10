@@ -4,7 +4,7 @@ use crate::command::{
     execution::{
         BiomeOrTag, BlockPredicate, CommandPermissionSource, CommandResultCallback, Coordinates,
         ExecutionCommandSource, ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime,
-        WorldArgument, argument,
+        StructureOrTagKey, WorldArgument, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
@@ -287,6 +287,80 @@ fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
             .list()
             .iter()
             .any(|suggestion| suggestion.text() == "#minecraft:is_overworld")
+    );
+}
+
+#[test]
+fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::structure_or_tag_key());
+
+    let parse = dispatcher.parse("resource village_plains", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("structure keys should parse");
+    };
+    let Some(structure) = chain.top_context().structure_or_tag_key("value") else {
+        panic!("structure key should be retained");
+    };
+    assert!(matches!(
+        structure,
+        StructureOrTagKey::Structure(key)
+            if *key == Identifier::vanilla_static("village_plains")
+    ));
+    let Some(structures) = structure.resolve() else {
+        panic!("registered structure should resolve");
+    };
+    assert_eq!(structures.len(), 1);
+    assert_eq!(
+        structures[0].key,
+        Identifier::vanilla_static("village_plains")
+    );
+
+    let parse = dispatcher.parse("resource #village", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("structure tag keys should parse");
+    };
+    let Some(tag) = chain.top_context().structure_or_tag_key("value") else {
+        panic!("structure tag key should be retained");
+    };
+    assert!(matches!(
+        tag,
+        StructureOrTagKey::Tag(key) if *key == Identifier::vanilla_static("village")
+    ));
+    let Some(structures) = tag.resolve() else {
+        panic!("registered structure tag should resolve");
+    };
+    assert!(
+        structures
+            .iter()
+            .any(|structure| structure.key == Identifier::vanilla_static("village_plains"))
+    );
+    assert!(
+        structures
+            .iter()
+            .any(|structure| structure.key == Identifier::vanilla_static("village_desert"))
+    );
+
+    for input in ["resource missing", "resource #missing"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("{input} should retain an unresolved key");
+        };
+        let Some(key) = chain.top_context().structure_or_tag_key("value") else {
+            panic!("unresolved structure key should be retained");
+        };
+        assert!(key.resolve().is_none());
+    }
+
+    let parse = dispatcher.parse("resource #vill", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("structure tag suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "#minecraft:village")
     );
 }
 

@@ -16,7 +16,7 @@ use crate::command::brigadier::{
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, IntRange, ItemPredicate,
-    ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, WorldArgument,
+    ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -227,6 +227,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -259,6 +260,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -291,6 +293,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
@@ -350,6 +353,13 @@ where
         }
     }
 
+    pub(crate) fn structure_or_tag_key(&self, name: &str) -> Option<&StructureOrTagKey> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::StructureOrTagKey(value)) => Some(value),
+            _ => None,
+        }
+    }
+
     pub(crate) fn block_predicate(&self, name: &str) -> Option<&BlockPredicate> {
         match self.argument(name) {
             Some(SteelArgumentValue::BlockPredicate(value)) => Some(value),
@@ -373,6 +383,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::World(_)
@@ -412,6 +423,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::World(_)
@@ -445,6 +457,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -477,6 +490,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::ItemStack(_)
@@ -508,6 +522,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
@@ -557,6 +572,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -589,6 +605,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Timeline(_),
@@ -620,6 +637,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_),
@@ -651,6 +669,7 @@ where
                 | SteelArgumentValue::Objective(_)
                 | SteelArgumentValue::IntRange(_)
                 | SteelArgumentValue::BiomeOrTag(_)
+                | SteelArgumentValue::StructureOrTagKey(_)
                 | SteelArgumentValue::BlockPredicate(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
