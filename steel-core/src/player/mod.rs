@@ -686,17 +686,21 @@ impl Player {
             }
         }
 
-        {
+        let experience_packet = {
             let mut experience = self.experience.lock();
-
             if experience.dirty {
-                self.send_packet(CSetExperience {
-                    progress: experience.progress() as f32,
+                experience.dirty = false;
+                Some(CSetExperience {
+                    progress: experience.progress(),
                     level: experience.level(),
                     total_experience: experience.total_points(),
-                });
-                experience.dirty = false;
+                })
+            } else {
+                None
             }
+        };
+        if let Some(packet) = experience_packet {
+            self.send_packet(packet);
         }
 
         self.connection.tick();
@@ -875,13 +879,6 @@ impl Player {
 
         self.game_event(&vanilla_game_events::ENTITY_DIE);
 
-        {
-            let mut experience = self.experience.lock();
-
-            experience.sync_score(&mut self.entity_data.lock());
-            experience.score = 0;
-        }
-
         self.sync_entity_data();
 
         // NOTE: Vanilla `ServerPlayer.die()` does NOT set Pose::Dying — only
@@ -1043,17 +1040,21 @@ impl Player {
 
         self.send_difficulty();
 
-        // Handle XP loss on death
+        // Handle XP and score loss on death.
+        let loses_inventory = target_world.get_game_rule(&KEEP_INVENTORY)
+            != GameRuleValue::Bool(true)
+            && self.game_mode() != GameType::Spectator;
         {
             let mut experience = self.experience.lock();
-            if target_world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
-                && self.game_mode() != GameType::Spectator
-            {
+            if loses_inventory {
                 // TODO: drop XP orbs (min(level * 7, 100))
-                experience.set_total_points(0);
+                experience.clear();
             }
             // Re-send XP to client after respawn regardless of keepInventory
             experience.dirty = true;
+        }
+        if loses_inventory {
+            self.set_score(0);
         }
 
         // TODO: send mob effect packets once effects are implemented
@@ -1502,11 +1503,11 @@ impl Player {
 
         {
             let experience = self.experience.lock();
-            nbt.insert("XpP", experience.progress() as f32);
+            nbt.insert("XpP", experience.progress());
             nbt.insert("XpLevel", experience.level());
             nbt.insert("XpTotal", experience.total_points());
-            nbt.insert("Score", experience.score);
         }
+        nbt.insert("Score", self.score());
 
         {
             let food = self.food_data.lock();
@@ -1628,9 +1629,66 @@ impl Player {
         self.tick_state.lock().set_take_xp_delay(delay);
     }
 
+    /// Returns the player's vanilla death-screen score.
+    #[must_use]
+    pub fn score(&self) -> i32 {
+        *self.entity_data.lock().score.get()
+    }
+
+    /// Sets the player's vanilla death-screen score.
+    pub fn set_score(&self, score: i32) {
+        self.entity_data.lock().score.set(score);
+    }
+
+    fn increase_score(&self, amount: i32) {
+        let mut entity_data = self.entity_data.lock();
+        let score = entity_data.score.get().wrapping_add(amount);
+        entity_data.score.set(score);
+    }
+
     /// Gives raw experience points to this player.
     pub(crate) fn give_experience_points(&self, points: i32) {
-        self.experience.lock().add_points(points);
+        if points == 0 {
+            return;
+        }
+        self.increase_score(points);
+        let level_up_sound = {
+            let mut experience = self.experience.lock();
+            let old_level = experience.level();
+            experience.add_points(points);
+            first_point_level_up_sound(old_level, experience.level(), points)
+        };
+        if let Some(level) = level_up_sound {
+            self.play_experience_level_up_sound(level);
+        }
+    }
+
+    /// Gives experience levels to this player.
+    pub(crate) fn give_experience_levels(&self, levels: i32) {
+        let level_up_sound = {
+            let mut experience = self.experience.lock();
+            experience.add_levels(levels);
+            (levels > 0 && experience.level() % 5 == 0).then_some(experience.level())
+        };
+        if let Some(level) = level_up_sound {
+            self.play_experience_level_up_sound(level);
+        }
+    }
+
+    fn play_experience_level_up_sound(&self, level: i32) {
+        if !self.tick_state.lock().mark_level_up_sound_if_due() {
+            return;
+        }
+        let volume = if level > 30 { 1.0 } else { level as f32 / 30.0 };
+        // Vanilla emits this directly through the level, regardless of the player's silent flag.
+        self.get_world().play_sound_at(
+            &sound_events::ENTITY_PLAYER_LEVELUP,
+            SoundSource::Players,
+            self.position(),
+            volume * 0.75,
+            1.0,
+            None,
+        );
     }
 
     /// Advances this player's local server tick count.
@@ -2009,6 +2067,17 @@ impl Player {
 
 fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
     game_mode.map_or(-1, |game_mode| game_mode as i8)
+}
+
+fn first_point_level_up_sound(old_level: i32, new_level: i32, points: i32) -> Option<i32> {
+    if points <= 0 || new_level <= old_level {
+        return None;
+    }
+    let first_multiple = (i64::from(old_level).div_euclid(5) + 1) * 5;
+    if first_multiple > i64::from(new_level) {
+        return None;
+    }
+    i32::try_from(first_multiple).ok()
 }
 
 /// Why the player is being reset and spawned into a world.
@@ -2627,7 +2696,8 @@ mod tests {
 
     use super::{
         ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
-        ResetReason, nullable_game_mode_id,
+        ResetReason, experience::Experience, first_point_level_up_sound, nullable_game_mode_id,
+        player_data::PersistentPlayerData,
     };
 
     struct TestConnection;
@@ -2821,6 +2891,46 @@ mod tests {
     fn nullable_game_mode_id_matches_vanilla_encoding() {
         assert_eq!(nullable_game_mode_id(None), -1);
         assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
+    }
+
+    #[test]
+    fn point_level_up_sound_uses_first_crossed_five_level_boundary() {
+        assert_eq!(first_point_level_up_sound(0, 4, 100), None);
+        assert_eq!(first_point_level_up_sound(0, 5, 100), Some(5));
+        assert_eq!(first_point_level_up_sound(4, 12, 100), Some(5));
+        assert_eq!(first_point_level_up_sound(5, 10, 100), Some(10));
+        assert_eq!(first_point_level_up_sound(5, 10, -100), None);
+    }
+
+    #[test]
+    fn point_grants_update_entity_score_with_java_wrapping() {
+        let player = test_player(Arc::clone(test_world()));
+        player.set_score(i32::MAX - 10);
+
+        player.give_experience_points(100);
+
+        assert_eq!(player.score(), (i32::MAX - 10).wrapping_add(100));
+        assert_eq!(player.experience.lock().total_points(), 100);
+    }
+
+    #[test]
+    fn persistent_player_data_restores_independent_experience_fields_and_score() {
+        init_test_registry();
+        let player = test_player(Arc::clone(test_world()));
+        *player.experience.lock() = Experience::from_parts(7, 0.5, 32);
+        player.set_score(19);
+        let persistent = PersistentPlayerData::from_player(&player);
+
+        *player.experience.lock() = Experience::default();
+        player.set_score(-1);
+        persistent.apply_to_player_without_location(&player);
+
+        let experience = player.experience.lock();
+        assert_eq!(experience.level(), 7);
+        assert_eq!(experience.progress().to_bits(), 0.5_f32.to_bits());
+        assert_eq!(experience.total_points(), 32);
+        drop(experience);
+        assert_eq!(player.score(), 19);
     }
 
     #[test]

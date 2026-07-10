@@ -4085,9 +4085,9 @@ impl World {
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
     ///
-    /// The sound is sent to all players within 64 blocks of the position,
-    /// except for the excluded player (if any). The excluded player is typically
-    /// the one who triggered the sound, as they hear it client-side.
+    /// The sound is sent to players within its vanilla range, except for the
+    /// excluded player (if any). The excluded player is typically the one who
+    /// triggered the sound, as they hear it client-side.
     ///
     /// # Arguments
     /// * `sound` - The sound event to play
@@ -4129,8 +4129,6 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -4138,7 +4136,6 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-
         let packet = CSound::new(sound, source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -4147,7 +4144,7 @@ impl World {
             return;
         };
 
-        // Get players tracking this chunk, then filter by 64-block distance
+        // Get players tracking this chunk, then apply vanilla's strict range check.
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
             if exclude == Some(entity_id) {
@@ -4160,7 +4157,7 @@ impl World {
                 let dz = player_pos.z - pos.z;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if dist_sq <= MAX_DISTANCE_SQ {
+                if sound_is_within_range(sound, volume, dist_sq) {
                     player.connection.send_encoded(encoded.clone());
                 }
             }
@@ -4799,6 +4796,11 @@ fn nearest_player_distance_in_range(
     max_distance < 0.0 || distance_sqr < max_distance_sqr
 }
 
+fn sound_is_within_range(sound: SoundEventRef, volume: f32, distance_squared: f64) -> bool {
+    let range = f64::from(sound.range(volume));
+    distance_squared < range * range
+}
+
 impl LevelReader for World {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         Self::get_block_state(self, pos)
@@ -4918,7 +4920,9 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_fluids};
+    use steel_registry::{
+        sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
+    };
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
@@ -4932,6 +4936,15 @@ mod tests {
     fn global_sound_events_gamerule_controls_global_level_event_packet_mode() {
         assert!(global_sound_events_enabled(GameRuleValue::Bool(true)));
         assert!(!global_sound_events_enabled(GameRuleValue::Bool(false)));
+    }
+
+    #[test]
+    fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
+        init_test_registry();
+        let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
+
+        assert!(sound_is_within_range(sound, 0.75, 255.0));
+        assert!(!sound_is_within_range(sound, 0.75, 256.0));
     }
 
     #[test]

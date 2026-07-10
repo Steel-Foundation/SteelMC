@@ -118,14 +118,14 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         literal("clear")
             .executes(|(): (), ctx: &mut CommandContext| {
                 if let Some(player) = ctx.sender.get_player() {
-                    player.experience.lock().set_total_points(0);
+                    player.experience.lock().clear();
                 }
                 Ok(())
             })
             .then(argument("target", PlayerArgument::multiple()).executes(
                 |((), players): ((), Vec<Arc<Player>>), _ctx: &mut CommandContext| {
                     for player in players {
-                        player.experience.lock().set_total_points(0);
+                        player.experience.lock().clear();
                     }
                     Ok(())
                 },
@@ -144,14 +144,27 @@ fn set_experience(
     xp_type: ExperienceType,
     ctx: &mut CommandContext,
 ) -> Result<(), CommandError> {
+    let mut success = 0usize;
     for player in &players {
         let mut experience = player.experience.lock();
         match xp_type {
-            ExperienceType::Points => experience
-                .set_points(amount)
-                .map_err(|err| CommandError::CommandFailed(Box::new(TextComponent::from(err))))?,
-            ExperienceType::Levels => experience.set_levels(amount),
+            ExperienceType::Points => {
+                if experience.can_set_points(amount) {
+                    experience.set_points(amount);
+                    success += 1;
+                }
+            }
+            ExperienceType::Levels => {
+                experience.set_levels(amount);
+                success += 1;
+            }
         }
+    }
+
+    if success == 0 {
+        return Err(CommandError::CommandFailed(Box::new(TextComponent::from(
+            &translations::COMMANDS_EXPERIENCE_SET_POINTS_INVALID,
+        ))));
     }
 
     if let [player] = players.as_slice() {
@@ -198,10 +211,9 @@ fn add_experience(
     ctx: &mut CommandContext,
 ) {
     for player in &players {
-        let mut experience = player.experience.lock();
         match xp_type {
-            ExperienceType::Points => experience.add_points(amount),
-            ExperienceType::Levels => experience.add_levels(amount),
+            ExperienceType::Points => player.give_experience_points(amount),
+            ExperienceType::Levels => player.give_experience_levels(amount),
         }
     }
 

@@ -847,6 +847,9 @@ mod tests {
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
         assert_eq!(decoded.experience_level, 7);
+        assert_eq!(decoded.experience_progress.to_bits(), 0.5_f32.to_bits());
+        assert_eq!(decoded.experience_total, 32);
+        assert_eq!(decoded.score, 9);
         assert!(decoded.seen_credits);
     }
 

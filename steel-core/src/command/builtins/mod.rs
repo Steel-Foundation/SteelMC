@@ -2,6 +2,7 @@
 
 mod difficulty;
 mod domain;
+mod experience;
 pub(crate) mod gamemode;
 mod gamerule;
 mod kill;
@@ -27,6 +28,7 @@ pub(crate) fn create_dispatcher()
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
+    builder.register(experience::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(kill::registration())?;
@@ -71,6 +73,8 @@ mod tests {
             [
                 "difficulty",
                 "domain",
+                "experience",
+                "xp",
                 "gamemode",
                 "gamerule",
                 "kill",
