@@ -3,6 +3,7 @@
 mod difficulty;
 mod domain;
 mod experience;
+mod fly;
 pub(crate) mod gamemode;
 mod gamerule;
 mod kill;
@@ -30,6 +31,7 @@ pub(crate) fn create_dispatcher()
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(experience::registration())?;
+    builder.register(fly::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(kill::registration())?;
@@ -77,6 +79,7 @@ mod tests {
                 "domain",
                 "experience",
                 "xp",
+                "fly",
                 "gamemode",
                 "gamerule",
                 "kill",

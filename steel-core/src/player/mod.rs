@@ -33,7 +33,7 @@ mod spam_throttler;
 mod teleport_state;
 mod tick_state;
 
-pub use abilities::Abilities;
+pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat_state::ChatState;
 use container_counter::ContainerCounter;
 use food_data::FoodData;
