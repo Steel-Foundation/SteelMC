@@ -2712,7 +2712,8 @@ mod tests {
 
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::{
-        test_support::init_test_registry, vanilla_damage_types, vanilla_game_rules,
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_damage_types,
+        vanilla_game_rules, vanilla_items,
     };
     use steel_utils::types::{Difficulty, GameType};
     use text_components::TextComponent;
@@ -2720,6 +2721,7 @@ mod tests {
 
     use crate::config::RuntimeConfig;
     use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
+    use crate::inventory::{container::Container as _, menu::Menu as _};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
@@ -2923,6 +2925,70 @@ mod tests {
     fn nullable_game_mode_id_matches_vanilla_encoding() {
         assert_eq!(nullable_game_mode_id(None), -1);
         assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
+    }
+
+    #[test]
+    fn clear_matching_items_uses_inventory_crafting_then_carried_order() {
+        init_test_registry();
+        let player = test_player(Arc::clone(test_world()));
+        player
+            .inventory
+            .lock()
+            .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+        {
+            let inventory_menu = player.inventory_menu.lock();
+            inventory_menu
+                .crafting_container()
+                .lock()
+                .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 2));
+        }
+        player
+            .inventory_menu
+            .lock()
+            .behavior_mut()
+            .set_carried(ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+
+        let stone = |stack: &ItemStack| stack.is(&vanilla_items::ITEMS.stone);
+        assert_eq!(player.clear_or_count_matching_items(&stone, 5), 5);
+        assert!(player.inventory.lock().get_item(0).is_empty());
+        assert!(
+            player
+                .inventory_menu
+                .lock()
+                .crafting_container()
+                .lock()
+                .get_item(0)
+                .is_empty()
+        );
+        assert_eq!(
+            player
+                .inventory_menu
+                .lock()
+                .behavior()
+                .get_carried()
+                .count(),
+            4
+        );
+
+        assert_eq!(player.clear_or_count_matching_items(&stone, 0), 4);
+        assert_eq!(
+            player
+                .inventory_menu
+                .lock()
+                .behavior()
+                .get_carried()
+                .count(),
+            4
+        );
+        assert_eq!(player.clear_or_count_matching_items(&stone, -1), 4);
+        assert!(
+            player
+                .inventory_menu
+                .lock()
+                .behavior()
+                .get_carried()
+                .is_empty()
+        );
     }
 
     #[test]

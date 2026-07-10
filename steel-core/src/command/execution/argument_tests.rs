@@ -9,8 +9,10 @@ use crate::command::{
 };
 use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
+    item_stack::ItemStack,
     test_support::init_test_registry,
-    vanilla_enchantments, vanilla_entities, vanilla_items, vanilla_world_clocks,
+    vanilla_attributes, vanilla_enchantments, vanilla_entities, vanilla_items,
+    vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::{Identifier, types::GameType};
@@ -466,6 +468,8 @@ fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
     for input in [
         "resource stone[lore=[]]",
         "resource stone[creative_slot_lock={}]",
+        "resource stone[additional_trade_cost={}]",
+        "resource stone[map_post_processing={}]",
         "resource stone[missing={}]",
         "resource stone[max_stack_size=16,max_stack_size=8]",
         "resource stone[max_stack_size=0]",
@@ -570,6 +574,206 @@ fn item_stack_argument_suggests_items_and_supported_component_operations() {
         suggestion.text()
             == "stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},minecraft:weapon="
     }));
+}
+
+#[test]
+fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource #logs[count={min:2,max:3},!damage|enchantment_glint_override]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("vanilla item predicate grammar should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    assert!(predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 3)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 4)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.stone, 3)));
+}
+
+#[test]
+fn item_predicate_argument_decodes_exact_components_before_matching() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse("resource stone[max_stack_size=64b]", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("numeric component value should use the registered codec");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    assert!(predicate.matches(&ItemStack::new(&vanilla_items::ITEMS.stone)));
+}
+
+#[test]
+fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let input = "resource diamond_sword[damage~{damage:7,durability:{min:1}},enchantments~[{enchantments:'minecraft:sharpness',levels:{min:2}}]]";
+    let parse = dispatcher.parse(input, TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("implemented data component predicates should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+    let mut sword = ItemStack::new(&vanilla_items::ITEMS.diamond_sword);
+    sword.set_damage_value(7);
+    sword.set_enchantments(&[(Identifier::vanilla_static("sharpness"), 3)], false);
+
+    assert!(predicate.matches(&sword));
+    sword.set_damage_value(6);
+    assert!(!predicate.matches(&sword));
+}
+
+#[test]
+fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let input = "resource stone[attribute_modifiers~{modifiers:{contains:[{attribute:'minecraft:attack_damage',id:'minecraft:test',amount:{min:2.5,max:3.5},operation:'add_value',slot:'mainhand'}],count:[{test:{attribute:'minecraft:attack_damage'},count:1}],size:1}}]";
+    let parse = dispatcher.parse(input, TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("attribute modifier collection predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+    let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+    stack.set(
+        vanilla_components::ATTRIBUTE_MODIFIERS,
+        vanilla_components::ItemAttributeModifiers {
+            modifiers: vec![vanilla_components::ItemAttributeModifierEntry {
+                attribute: vanilla_attributes::ATTACK_DAMAGE,
+                id: Identifier::vanilla_static("test"),
+                amount: 3.0,
+                operation: vanilla_components::AttributeModifierOperation::AddValue,
+                slot: vanilla_components::EquipmentSlotGroup::MainHand,
+                display: vanilla_components::ItemAttributeModifierDisplay::Default,
+            }],
+        },
+    );
+
+    assert!(predicate.matches(&stack));
+    stack.set(
+        vanilla_components::ATTRIBUTE_MODIFIERS,
+        vanilla_components::ItemAttributeModifiers::empty(),
+    );
+    assert!(!predicate.matches(&stack));
+}
+
+#[test]
+fn item_predicate_argument_rejects_noncanonical_holder_and_slot_values() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+
+    for input in [
+        "resource diamond_sword[enchantments~[{enchantments:['#minecraft:curse']}]]",
+        "resource stone[attribute_modifiers~{modifiers:{contains:[{slot:'main_hand'}]}}]",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject a value outside the vanilla codec"
+        );
+    }
+}
+
+#[test]
+fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+
+    for (path, component) in [
+        ("creative_slot_lock", vanilla_components::CREATIVE_SLOT_LOCK),
+        (
+            "additional_trade_cost",
+            vanilla_components::ADDITIONAL_TRADE_COST,
+        ),
+        (
+            "map_post_processing",
+            vanilla_components::MAP_POST_PROCESSING,
+        ),
+    ] {
+        let input = format!("resource stone[{path}~{{ignored:1}}]");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("transient component existence predicate should accept a compound");
+        };
+        let Some(predicate) = chain.top_context().item_predicate("value") else {
+            panic!("item predicate should be retained");
+        };
+        let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+        stack.set(component, ());
+
+        assert!(predicate.matches(&stack));
+    }
+}
+
+#[test]
+fn item_predicate_argument_rejects_unsupported_predicates_during_parsing() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource potion[potion_contents~{potion:'minecraft:water'}]",
+        TestSource::new(),
+    );
+
+    assert!(dispatcher.context_chain(parse).is_err());
+}
+
+#[test]
+fn item_predicate_argument_rejects_transient_components_as_component_tests() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+
+    for input in [
+        "resource stone[creative_slot_lock]",
+        "resource stone[additional_trade_cost]",
+        "resource stone[map_post_processing]",
+        "resource stone[creative_slot_lock={}]",
+        "resource stone[additional_trade_cost={}]",
+        "resource stone[map_post_processing={}]",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject a transient component test"
+        );
+    }
+}
+
+#[test]
+fn item_predicate_argument_suggests_items_tags_and_condition_types() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+
+    for (input, expected) in [
+        ("resource minecraft:diamond_sw", "minecraft:diamond_sword"),
+        ("resource #log", "#minecraft:logs"),
+        ("resource stone[co", "stone[minecraft:count"),
+        (
+            "resource stone[villager",
+            "stone[minecraft:villager/variant",
+        ),
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+            panic!("item predicate suggestions should build");
+        };
+        assert!(
+            suggestions
+                .list()
+                .iter()
+                .any(|suggestion| suggestion.text() == expected),
+            "{input} should suggest {expected}"
+        );
+    }
 }
 
 #[test]

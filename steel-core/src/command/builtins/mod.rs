@@ -1,5 +1,6 @@
 //! Steel-owned built-in command declarations.
 
+mod clear;
 mod difficulty;
 mod domain;
 mod enchant;
@@ -30,6 +31,7 @@ use super::{
 pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
+    builder.register(clear::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -79,6 +81,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "clear",
                 "difficulty",
                 "domain",
                 "enchant",

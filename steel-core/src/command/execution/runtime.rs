@@ -14,7 +14,7 @@ use crate::command::brigadier::{
 
 use super::{
     ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl,
-    SteelArgumentType, argument::SteelArgumentValue, selector::EntitySelector,
+    ItemPredicate, SteelArgumentType, argument::SteelArgumentValue, selector::EntitySelector,
 };
 use crate::{
     entity::{EntityAnchor, SharedEntity},
@@ -197,6 +197,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -219,6 +220,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -241,6 +243,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -263,6 +266,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -285,6 +289,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -306,6 +311,7 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -327,6 +333,7 @@ where
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -348,11 +355,19 @@ where
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
             | None => None,
+        }
+    }
+
+    pub(crate) fn item_predicate(&self, name: &str) -> Option<&ItemPredicate> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::ItemPredicate(value)) => Some(value),
+            _ => None,
         }
     }
 
@@ -368,6 +383,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -389,6 +405,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -410,6 +427,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -431,6 +449,7 @@ where
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
+                | SteelArgumentValue::ItemPredicate(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)

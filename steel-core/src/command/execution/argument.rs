@@ -13,9 +13,10 @@ use steel_utils::{Identifier, types::GameType};
 use text_components::TextComponent;
 
 use super::{
-    Coordinates, ExecutionCommandSource,
+    Coordinates, ExecutionCommandSource, ItemPredicate,
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
+    item_predicate::{parse_item_predicate, suggest_item_predicate},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
 use crate::entity::{ENTITIES, EntityAnchor};
@@ -47,6 +48,8 @@ pub(crate) enum SteelArgumentType {
     Enchantment,
     /// An item and supported data-component patch.
     ItemStack,
+    /// A decoded vanilla item predicate.
+    ItemPredicate,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -128,6 +131,10 @@ impl SteelArgumentType {
         Self::ItemStack
     }
 
+    pub(crate) const fn item_predicate() -> Self {
+        Self::ItemPredicate
+    }
+
     pub(crate) const fn world_clock() -> Self {
         Self::WorldClock
     }
@@ -170,6 +177,8 @@ pub(crate) enum SteelArgumentValue {
     Enchantment(EnchantmentRef),
     /// A parsed item stack with a count of one.
     ItemStack(ItemStack),
+    /// A parsed item predicate ready for infallible matching.
+    ItemPredicate(ItemPredicate),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -191,6 +200,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::EntityType(_)
             | Self::Enchantment(_)
             | Self::ItemStack(_)
+            | Self::ItemPredicate(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -239,6 +249,9 @@ where
                 )
             }
             Self::ItemStack => parse_item_stack(reader).map(SteelArgumentValue::ItemStack),
+            Self::ItemPredicate => {
+                parse_item_predicate(reader).map(SteelArgumentValue::ItemPredicate)
+            }
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
                 REGISTRY.world_clocks.by_key(&key).map_or_else(
@@ -307,6 +320,7 @@ where
                 );
             }
             Self::ItemStack => suggest_item_stack(builder),
+            Self::ItemPredicate => suggest_item_predicate(builder),
             Self::WorldClock => {
                 suggest_resources(
                     REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
@@ -368,6 +382,7 @@ where
             | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Enchantment(_)
             | SteelArgumentValue::ItemStack(_)
+            | SteelArgumentValue::ItemPredicate(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )

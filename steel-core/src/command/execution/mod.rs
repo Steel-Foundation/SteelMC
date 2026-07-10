@@ -3,6 +3,7 @@
 mod argument;
 mod coordinates;
 mod item;
+mod item_predicate;
 mod queue;
 mod runtime;
 mod selector;
@@ -10,6 +11,7 @@ mod source;
 
 pub(crate) use argument::SteelArgumentType;
 pub(crate) use coordinates::Coordinates;
+pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use queue::{ChainModifiers, CommandExecutionContext, ExecutionControl, ExecutionStop};
 pub(crate) use runtime::{
     CustomCommandExecutor, CustomModifierExecutor, SteelCommandContext, SteelCommandRuntime,

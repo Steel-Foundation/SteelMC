@@ -205,6 +205,10 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 ProtocolArgumentType::ItemStack,
                 Some(SuggestionType::AskServer),
             ),
+            SteelArgumentType::ItemPredicate => (
+                ProtocolArgumentType::ItemPredicate,
+                Some(SuggestionType::AskServer),
+            ),
             SteelArgumentType::WorldClock => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:world_clock",
@@ -600,6 +604,14 @@ mod tests {
         let (argument, suggestions) = SteelArgumentType::item_stack().protocol_argument();
 
         assert!(matches!(argument, ProtocolArgumentType::ItemStack));
+        assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+    }
+
+    #[test]
+    fn steel_item_predicate_argument_asks_the_server_for_vanilla_parser_suggestions() {
+        let (argument, suggestions) = SteelArgumentType::item_predicate().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::ItemPredicate));
         assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
     }
 

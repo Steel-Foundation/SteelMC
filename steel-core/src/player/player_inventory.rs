@@ -22,7 +22,7 @@ use crate::{
     entity::{Entity, entities::ItemEntity},
     inventory::{
         MenuProvider,
-        container::Container,
+        container::{Container, clear_or_count_matching_stack},
         equipment::{EntityEquipment, EquipmentSlot},
         inventory_menu::InventoryMenu,
         lock::{ContainerId, ContainerLockGuard},
@@ -1038,6 +1038,64 @@ impl Player {
                 .behavior_mut()
                 .broadcast_changes(&self.connection);
         }
+    }
+
+    /// Removes or counts matching stacks across every location used by vanilla `/clear`.
+    pub(crate) fn clear_or_count_matching_items(
+        &self,
+        predicate: &dyn Fn(&ItemStack) -> bool,
+        amount_to_remove: i32,
+    ) -> i32 {
+        let counting_only = amount_to_remove == 0;
+        let mut count = self.inventory.lock().clear_or_count_matching_items(
+            predicate,
+            amount_to_remove,
+            counting_only,
+        );
+
+        {
+            let inventory_menu = self.inventory_menu.lock();
+            count += inventory_menu
+                .crafting_container()
+                .lock()
+                .clear_or_count_matching_items(predicate, amount_to_remove - count, counting_only);
+        }
+
+        let has_open_menu = {
+            let mut open_menu = self.open_menu.lock();
+            if let Some(menu) = open_menu.as_mut() {
+                let behavior = menu.behavior_mut();
+                count += clear_or_count_matching_stack(
+                    &mut behavior.carried,
+                    predicate,
+                    amount_to_remove - count,
+                    counting_only,
+                );
+                if behavior.carried.is_empty() {
+                    behavior.set_carried(ItemStack::empty());
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if !has_open_menu {
+            let mut inventory_menu = self.inventory_menu.lock();
+            let behavior = inventory_menu.behavior_mut();
+            count += clear_or_count_matching_stack(
+                &mut behavior.carried,
+                predicate,
+                amount_to_remove - count,
+                counting_only,
+            );
+            if behavior.carried.is_empty() {
+                behavior.set_carried(ItemStack::empty());
+            }
+        }
+
+        self.inventory_menu.lock().update_crafting_result();
+        self.broadcast_inventory_changes();
+        count
     }
 
     /// Drops an item from the player's selected hotbar slot.

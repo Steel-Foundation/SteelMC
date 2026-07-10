@@ -108,7 +108,7 @@ fn parse_component_key(reader: &mut StringReader<'_>) -> Result<Identifier, Comm
         reader.restore(start);
         return Err(unknown_component(reader, &key));
     };
-    if entry.key == vanilla_components::CREATIVE_SLOT_LOCK.key {
+    if !entry.is_persistent() {
         reader.restore(start);
         return Err(unknown_component(reader, &key));
     }
@@ -171,7 +171,7 @@ fn parse_component_value(
     Ok(())
 }
 
-fn read_component_value(entry: &ComponentEntry, tag: &NbtTag) -> Option<ComponentData> {
+pub(super) fn read_component_value(entry: &ComponentEntry, tag: &NbtTag) -> Option<ComponentData> {
     let normalized;
     let tag = match entry.expected_discriminant {
         ComponentDataDiscriminant::Bool => {
@@ -203,7 +203,7 @@ fn numeric_bool(tag: &NbtTag) -> Option<bool> {
     }
 }
 
-fn numeric_i32(tag: &NbtTag) -> Option<i32> {
+pub(super) fn numeric_i32(tag: &NbtTag) -> Option<i32> {
     match tag {
         NbtTag::Byte(value) => Some(i32::from(*value)),
         NbtTag::Short(value) => Some(i32::from(*value)),
@@ -227,7 +227,7 @@ fn numeric_f32(tag: &NbtTag) -> Option<f32> {
     }
 }
 
-fn component_value_is_valid(key: &Identifier, value: &ComponentData) -> bool {
+pub(super) fn component_value_is_valid(key: &Identifier, value: &ComponentData) -> bool {
     match value {
         ComponentData::I32(value) if *key == vanilla_components::MAX_STACK_SIZE.key => {
             (1..=99).contains(value)
@@ -268,7 +268,7 @@ fn validate_item_stack(
     Ok(())
 }
 
-fn advance_reader_bytes(reader: &mut StringReader<'_>, bytes: usize) -> bool {
+pub(super) fn advance_reader_bytes(reader: &mut StringReader<'_>, bytes: usize) -> bool {
     let Some(consumed) = reader.remaining().get(..bytes) else {
         return false;
     };
@@ -359,7 +359,7 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     for entry in
         (0..REGISTRY.data_components.len()).filter_map(|id| REGISTRY.data_components.by_id(id))
     {
-        if entry.key == vanilla_components::CREATIVE_SLOT_LOCK.key
+        if !entry.is_persistent()
             || visited.contains(&entry.key)
             || (!removed && entry.expected_discriminant == ComponentDataDiscriminant::Todo)
             || !resource_matches(component_prefix, &entry.key)
@@ -391,7 +391,7 @@ fn item_by_input(input: &str) -> Option<ItemRef> {
 fn component_by_input(input: &str) -> Option<&'static ComponentEntry> {
     let key = parse_identifier_text(input)?;
     let entry = REGISTRY.data_components.by_key(&key)?;
-    (entry.key != vanilla_components::CREATIVE_SLOT_LOCK.key).then_some(entry)
+    entry.is_persistent().then_some(entry)
 }
 
 fn parse_identifier_text(input: &str) -> Option<Identifier> {

@@ -98,6 +98,7 @@ pub struct ComponentEntry {
     pub nbt_reader: NbtReader,
     /// NBT storage writer
     pub nbt_writer: NbtWriter,
+    persistent: bool,
 }
 
 impl ComponentEntry {
@@ -110,6 +111,7 @@ impl ComponentEntry {
         network_writer: NetworkWriter,
         nbt_reader: NbtReader,
         nbt_writer: NbtWriter,
+        persistent: bool,
     ) -> Self {
         Self {
             key,
@@ -118,6 +120,7 @@ impl ComponentEntry {
             network_writer,
             nbt_reader,
             nbt_writer,
+            persistent,
         }
     }
 
@@ -130,9 +133,18 @@ impl ComponentEntry {
         data.discriminant() == self.expected_discriminant
     }
 
+    /// Returns whether this component has a persistent storage codec.
+    #[must_use]
+    pub const fn is_persistent(&self) -> bool {
+        self.persistent
+    }
+
     /// Decodes an owned NBT value with this component's registered persistent codec.
     #[must_use]
     pub fn read_nbt_owned(&self, tag: &OwnedNbtTag) -> Option<ComponentData> {
+        if !self.is_persistent() {
+            return None;
+        }
         let mut bytes = Vec::new();
         tag.write(&mut bytes);
         let borrowed = simdnbt::borrow::read_tag(&mut Cursor::new(bytes.as_slice())).ok()?;
@@ -179,6 +191,30 @@ impl DataComponentRegistry {
         &mut self,
         component: DataComponentType<T>,
         expected_discriminant: ComponentDataDiscriminant,
+    ) where
+        T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+    {
+        self.register_with_persistence(component, expected_discriminant, true);
+    }
+
+    /// Registers a transient vanilla component type.
+    ///
+    /// Transient components have network data but no persistent component codec.
+    pub fn register_transient<T>(
+        &mut self,
+        component: DataComponentType<T>,
+        expected_discriminant: ComponentDataDiscriminant,
+    ) where
+        T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+    {
+        self.register_with_persistence(component, expected_discriminant, false);
+    }
+
+    fn register_with_persistence<T>(
+        &mut self,
+        component: DataComponentType<T>,
+        expected_discriminant: ComponentDataDiscriminant,
+        persistent: bool,
     ) where
         T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
     {
@@ -242,6 +278,7 @@ impl DataComponentRegistry {
             make_network_writer::<T>(),
             make_nbt_reader::<T>(),
             make_nbt_writer::<T>(),
+            persistent,
         )));
 
         let id = self.entries.len();
@@ -298,6 +335,7 @@ impl DataComponentRegistry {
             network_writer,
             make_nbt_reader::<T>(),
             make_nbt_writer::<T>(),
+            true,
         )));
 
         let id = self.entries.len();
@@ -318,6 +356,52 @@ impl DataComponentRegistry {
         nbt_reader: NbtReader,
         nbt_writer: NbtWriter,
     ) -> usize {
+        self.register_dynamic_with_persistence(
+            key,
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+            true,
+        )
+    }
+
+    /// Registers a transient dynamic/plugin component type.
+    pub fn register_dynamic_transient(
+        &mut self,
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+    ) -> usize {
+        self.register_dynamic_with_persistence(
+            key,
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+            false,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "dynamic component registration keeps the four codec functions explicit"
+    )]
+    fn register_dynamic_with_persistence(
+        &mut self,
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+        persistent: bool,
+    ) -> usize {
         assert!(
             self.allows_registering,
             "Cannot register data components after the registry has been frozen"
@@ -330,6 +414,7 @@ impl DataComponentRegistry {
             network_writer,
             nbt_reader,
             nbt_writer,
+            persistent,
         )));
 
         let id = self.entries.len();
@@ -640,12 +725,16 @@ impl DataComponentPatch {
         let mut compound = NbtCompound::new();
 
         for (key, entry) in &self.entries {
+            let Some(component) = REGISTRY.data_components.by_key(key) else {
+                continue;
+            };
+            if !component.is_persistent() {
+                continue;
+            }
             match entry {
                 ComponentPatchEntry::Set(data) => {
-                    if let Some(entry) = REGISTRY.data_components.by_key(key) {
-                        let nbt = (entry.nbt_writer)(data);
-                        compound.insert(key.to_string(), nbt);
-                    }
+                    let nbt = (component.nbt_writer)(data);
+                    compound.insert(key.to_string(), nbt);
                 }
                 ComponentPatchEntry::Removed => {
                     compound.insert(format!("!{key}"), NbtCompound::new());
@@ -865,13 +954,19 @@ impl FromNbtTag for DataComponentPatch {
 
             if let Some(stripped) = key_str.strip_prefix('!') {
                 // Removed component
-                if let Ok(id) = stripped.parse::<Identifier>() {
+                if let Ok(id) = stripped.parse::<Identifier>()
+                    && REGISTRY
+                        .data_components
+                        .by_key(&id)
+                        .is_some_and(ComponentEntry::is_persistent)
+                {
                     patch.entries.insert(id, ComponentPatchEntry::Removed);
                 }
             } else {
                 // Set component
                 if let Ok(id) = key_str.parse::<Identifier>()
                     && let Some(entry) = REGISTRY.data_components.by_key(&id)
+                    && entry.is_persistent()
                     && let Some(component_data) = (entry.nbt_reader)(value)
                 {
                     patch
@@ -892,4 +987,33 @@ pub fn component_try_into<T: Component>(
     _component: DataComponentType<T>,
 ) -> Option<&T> {
     T::from_data_ref(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_components::vanilla_components::{
+            ADDITIONAL_TRADE_COST, CREATIVE_SLOT_LOCK, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+        },
+        test_support::init_test_registry,
+    };
+
+    #[test]
+    fn persistent_patch_nbt_omits_transient_components() {
+        init_test_registry();
+        let mut patch = DataComponentPatch::new();
+        patch.set(MAX_STACK_SIZE, 16);
+        patch.set(CREATIVE_SLOT_LOCK, ());
+        patch.remove(ADDITIONAL_TRADE_COST);
+        patch.set(MAP_POST_PROCESSING, ());
+
+        let OwnedNbtTag::Compound(compound) = patch.to_nbt_tag_ref() else {
+            panic!("component patch should serialize as a compound");
+        };
+        assert!(compound.get("minecraft:max_stack_size").is_some());
+        assert!(compound.get("minecraft:creative_slot_lock").is_none());
+        assert!(compound.get("!minecraft:additional_trade_cost").is_none());
+        assert!(compound.get("minecraft:map_post_processing").is_none());
+    }
 }
