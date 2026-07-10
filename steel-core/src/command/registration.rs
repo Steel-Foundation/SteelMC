@@ -18,6 +18,18 @@ use crate::permission::{
 
 type CommandFactory<S> = dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + 'static;
 
+pub(crate) const ENTITY_SELECTOR_PERMISSION_KEY: &str = "minecraft.selector";
+pub(crate) const ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY: &str = "minecraft.selector.advanced";
+
+pub(crate) fn entity_selector_permission_expr() -> Result<PermissionExpr, PermissionKeyError> {
+    PermissionKey::parse(ENTITY_SELECTOR_PERMISSION_KEY).map(PermissionExpr::key)
+}
+
+pub(crate) fn entity_selector_advanced_permission_expr()
+-> Result<PermissionExpr, PermissionKeyError> {
+    PermissionKey::parse(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY).map(PermissionExpr::key)
+}
+
 /// One complete command tree and its stable owner identity.
 pub(crate) struct CommandRegistration<S>
 where

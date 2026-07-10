@@ -4,15 +4,18 @@ use steel_registry::{
     entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::Identifier;
+use steel_utils::translations;
+use text_components::TextComponent;
 
 use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRuntime, CommandSyntaxError, ContextChain, NodeId,
 };
 
 use super::{
-    ChainModifiers, Coordinates, ExecutionCommandSource, ExecutionControl, SteelArgumentType,
-    argument::SteelArgumentValue,
+    ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource, ExecutionControl,
+    SteelArgumentType, argument::SteelArgumentValue, selector::EntitySelector,
 };
+use crate::{entity::SharedEntity, player::Player};
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
@@ -183,6 +186,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -200,6 +204,7 @@ where
             Some(
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
@@ -218,6 +223,7 @@ where
                 SteelArgumentValue::Primitive(_)
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -235,6 +241,7 @@ where
                 | SteelArgumentValue::Time(_)
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -252,6 +259,7 @@ where
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
             )
@@ -269,6 +277,7 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Timeline(_),
             )
             | None => None,
@@ -285,9 +294,95 @@ where
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::WorldClock(_),
             )
             | None => None,
         }
     }
+
+    pub(crate) fn entity_selector(&self, name: &str) -> Option<&EntitySelector> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::EntitySelector(value)) => Some(value.as_ref()),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+}
+
+impl SteelCommandContext<CommandSource> {
+    pub(crate) fn optional_entities(
+        &self,
+        name: &str,
+    ) -> Result<Vec<SharedEntity>, CommandSyntaxError> {
+        self.entity_selector(name)
+            .ok_or_else(|| missing_selector_argument(name))?
+            .find_entities(self.source())
+    }
+
+    pub(crate) fn entities(&self, name: &str) -> Result<Vec<SharedEntity>, CommandSyntaxError> {
+        let entities = self.optional_entities(name)?;
+        if entities.is_empty() {
+            Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_ENTITY_NOTFOUND_ENTITY,
+            )))
+        } else {
+            Ok(entities)
+        }
+    }
+
+    pub(crate) fn entity(&self, name: &str) -> Result<SharedEntity, CommandSyntaxError> {
+        let mut entities = self.entities(name)?;
+        if entities.len() != 1 {
+            return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_ENTITY_TOOMANY,
+            )));
+        }
+        Ok(entities.remove(0))
+    }
+
+    pub(crate) fn optional_players(
+        &self,
+        name: &str,
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
+        self.entity_selector(name)
+            .ok_or_else(|| missing_selector_argument(name))?
+            .find_players(self.source())
+    }
+
+    pub(crate) fn players(&self, name: &str) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
+        let players = self.optional_players(name)?;
+        if players.is_empty() {
+            Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_ENTITY_NOTFOUND_PLAYER,
+            )))
+        } else {
+            Ok(players)
+        }
+    }
+
+    pub(crate) fn player(&self, name: &str) -> Result<Arc<Player>, CommandSyntaxError> {
+        let mut players = self.players(name)?;
+        if players.len() != 1 {
+            return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_PLAYER_TOOMANY,
+            )));
+        }
+        Ok(players.remove(0))
+    }
+}
+
+fn missing_selector_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed selector for {name} is missing from the command context"
+    ))
 }

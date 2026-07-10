@@ -1,16 +1,20 @@
 use crate::command::{
     brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
     execution::{
-        CommandResultCallback, Coordinates, ExecutionCommandSource, SteelArgumentType,
-        SteelCommandRuntime, argument,
+        CommandPermissionSource, CommandResultCallback, Coordinates, ExecutionCommandSource,
+        SteelArgumentType, SteelCommandRuntime, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
 };
-use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_world_clocks};
+use steel_registry::{
+    test_support::init_test_registry, vanilla_entities, vanilla_world_clocks,
+    world_clock::WorldClockRef,
+};
 use steel_utils::Identifier;
 
 use crate::entity::init_test_entities;
+use crate::permission::{PermissionExpr, PermissionState};
 
 struct TestSource {
     callback: CommandResultCallback,
@@ -35,7 +39,7 @@ impl ExecutionCommandSource for TestSource {
 
     fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
 
-    fn default_world_clock(&self) -> Option<steel_registry::world_clock::WorldClockRef> {
+    fn default_world_clock(&self) -> Option<WorldClockRef> {
         Some(&vanilla_world_clocks::OVERWORLD)
     }
 
@@ -45,6 +49,24 @@ impl ExecutionCommandSource for TestSource {
 
     fn domain_names(&self) -> Vec<&str> {
         vec!["alpha", "beta"]
+    }
+
+    fn selector_player_names(&self) -> Vec<String> {
+        vec!["Steve".to_owned()]
+    }
+
+    fn allows_entity_selectors(&self) -> bool {
+        true
+    }
+
+    fn allows_advanced_entity_selectors(&self) -> bool {
+        true
+    }
+}
+
+impl CommandPermissionSource for TestSource {
+    fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {
+        Some(PermissionState::Allow)
     }
 }
 
@@ -175,7 +197,7 @@ fn coordinate_suggestions_include_vanilla_partial_prefixes() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["~", "~ ~", "~ ~ ~"]);
@@ -187,7 +209,7 @@ fn coordinate_suggestions_include_vanilla_partial_prefixes() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["^ ^", "^ ^ ^"]);
 }
@@ -212,7 +234,7 @@ fn domain_argument_resolves_and_suggests_only_configured_domains() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["beta"]);
 }
@@ -254,6 +276,34 @@ fn summonable_entity_argument_suggests_only_registered_factories() {
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["minecraft:pig"]);
+}
+
+#[test]
+fn entity_selector_argument_is_retained_for_deferred_resolution() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::players());
+    let parse = dispatcher.parse("resource @a[distance=..10]", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("selector should parse");
+    };
+
+    assert!(chain.top_context().entity_selector("value").is_some());
+}
+
+#[test]
+fn entity_selector_argument_suggests_source_domain_players() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::players());
+    let parse = dispatcher.parse("resource S", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("selector suggestions should build");
+    };
+
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "Steve")
+    );
 }
 
 #[test]
@@ -302,7 +352,7 @@ fn time_argument_suggests_units_for_a_numeric_prefix() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["10d", "10s", "10t"]);
@@ -371,7 +421,7 @@ fn time_marker_argument_suggests_only_visible_markers_for_selected_clock() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["minecraft:day"]);
@@ -394,7 +444,7 @@ fn timeline_suggestions_use_the_preceding_clock_argument() {
     let suggestions = suggestions
         .list()
         .iter()
-        .map(|suggestion| suggestion.text())
+        .map(Suggestion::text)
         .collect::<Vec<_>>();
     assert_eq!(suggestions, ["minecraft:day"]);
 

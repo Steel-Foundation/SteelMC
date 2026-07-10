@@ -45,6 +45,7 @@ use lifecycle_state::PlayerLifecycleState;
 pub use message_validator::LastSeenMessagesValidator;
 use movement_state::MovementState;
 pub use signature_cache::{LastSeen, MessageCache};
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
     packets::game::{CCooldown, CLevelEvent, CSetEntityData, CSetExperience},
@@ -120,7 +121,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, UuidExt as _};
 
 use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
 
@@ -1480,6 +1481,86 @@ impl Player {
         let mut pearls = self.ender_pearls.lock();
         pearls.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_removed()));
         pearls.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Appends vanilla-shaped player state used by command NBT predicates.
+    pub(crate) fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+        {
+            let inventory = self.inventory.lock();
+            nbt.insert("Inventory", inventory.to_vanilla_inventory_nbt());
+            nbt.insert("SelectedItemSlot", i32::from(inventory.get_selected_slot()));
+        }
+
+        {
+            let experience = self.experience.lock();
+            nbt.insert("XpP", experience.progress() as f32);
+            nbt.insert("XpLevel", experience.level());
+            nbt.insert("XpTotal", experience.total_points());
+            nbt.insert("Score", experience.score);
+        }
+
+        {
+            let food = self.food_data.lock();
+            nbt.insert("foodLevel", food.food_level);
+            nbt.insert("foodTickTimer", food.tick_timer);
+            nbt.insert("foodSaturationLevel", food.saturation_level);
+            nbt.insert("foodExhaustionLevel", food.exhaustion_level);
+        }
+
+        {
+            let abilities = self.abilities.lock();
+            let mut abilities_nbt = NbtCompound::new();
+            abilities_nbt.insert(
+                "invulnerable",
+                NbtTag::Byte(i8::from(abilities.invulnerable)),
+            );
+            abilities_nbt.insert("flying", NbtTag::Byte(i8::from(abilities.flying)));
+            abilities_nbt.insert("mayfly", NbtTag::Byte(i8::from(abilities.may_fly)));
+            abilities_nbt.insert("instabuild", NbtTag::Byte(i8::from(abilities.instabuild)));
+            abilities_nbt.insert("mayBuild", NbtTag::Byte(i8::from(abilities.may_build)));
+            abilities_nbt.insert("flySpeed", abilities.flying_speed);
+            abilities_nbt.insert("walkSpeed", abilities.walking_speed);
+            nbt.insert("abilities", NbtTag::Compound(abilities_nbt));
+        }
+
+        nbt.insert("playerGameType", self.game_mode() as i32);
+        if let Some(previous_game_mode) = self.previous_game_mode() {
+            nbt.insert("previousPlayerGameType", previous_game_mode as i32);
+        }
+        nbt.insert(
+            "seenCredits",
+            NbtTag::Byte(i8::from(self.has_seen_credits())),
+        );
+        nbt.insert("Dimension", self.get_world().key.to_string());
+
+        if let Some(vehicle) = self.vehicle()
+            && let Some(root_vehicle) = self.root_vehicle()
+            && root_vehicle.id() != self.id()
+            && root_vehicle.has_exactly_one_player_passenger()
+            && let Some(entity_nbt) = root_vehicle.nbt_for_passenger_save()
+        {
+            let mut root_vehicle_nbt = NbtCompound::new();
+            root_vehicle_nbt.insert(
+                "Attach",
+                NbtTag::IntArray(vehicle.uuid().to_int_array().to_vec()),
+            );
+            root_vehicle_nbt.insert("Entity", NbtTag::Compound(entity_nbt));
+            nbt.insert("RootVehicle", NbtTag::Compound(root_vehicle_nbt));
+        }
+
+        let ender_pearls = self
+            .ender_pearls()
+            .into_iter()
+            .filter_map(|pearl| {
+                let world = pearl.level()?;
+                let mut pearl_nbt = pearl.nbt_for_passenger_save()?;
+                pearl_nbt.insert("ender_pearl_dimension", world.key.to_string());
+                Some(pearl_nbt)
+            })
+            .collect::<Vec<_>>();
+        if !ender_pearls.is_empty() {
+            nbt.insert("ender_pearls", NbtList::Compound(ender_pearls));
+        }
     }
 
     /// Marks live ender pearls as stored with this player so chunk saves remove

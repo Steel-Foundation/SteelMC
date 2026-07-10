@@ -14,6 +14,7 @@ use text_components::TextComponent;
 use super::{
     Coordinates, ExecutionCommandSource,
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
 use crate::entity::ENTITIES;
 
@@ -30,6 +31,8 @@ pub(crate) enum SteelArgumentType {
     Vec3 { center_integers: bool },
     /// A yaw and pitch rotation.
     Rotation,
+    /// A deferred entity selector using vanilla's entity argument flags.
+    Entity { single: bool, players_only: bool },
     /// A configured Steel domain.
     Domain,
     /// A summonable entity type backed by a Steel entity factory.
@@ -61,6 +64,34 @@ impl SteelArgumentType {
 
     pub(crate) const fn rotation() -> Self {
         Self::Rotation
+    }
+
+    pub(crate) const fn entity() -> Self {
+        Self::Entity {
+            single: true,
+            players_only: false,
+        }
+    }
+
+    pub(crate) const fn entities() -> Self {
+        Self::Entity {
+            single: false,
+            players_only: false,
+        }
+    }
+
+    pub(crate) const fn player() -> Self {
+        Self::Entity {
+            single: true,
+            players_only: true,
+        }
+    }
+
+    pub(crate) const fn players() -> Self {
+        Self::Entity {
+            single: false,
+            players_only: true,
+        }
     }
 
     pub(crate) const fn domain() -> Self {
@@ -99,6 +130,8 @@ pub(crate) enum SteelArgumentValue {
     Time(i32),
     /// A coordinate expression retained until command execution.
     Coordinates(Coordinates),
+    /// A source-independent entity selector retained until command execution.
+    EntitySelector(Box<EntitySelector>),
     /// A configured Steel domain name.
     Domain(Box<str>),
     /// A resolved summonable entity type.
@@ -117,6 +150,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             Self::Primitive(value) => Some(value),
             Self::Time(_)
             | Self::Coordinates(_)
+            | Self::EntitySelector(_)
             | Self::Domain(_)
             | Self::EntityType(_)
             | Self::Identifier(_)
@@ -147,6 +181,12 @@ where
                 parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
             }
             Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
+            Self::Entity {
+                single,
+                players_only,
+            } => parse_entity_selector(reader, source, *single, *players_only)
+                .map(Box::new)
+                .map(SteelArgumentValue::EntitySelector),
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
                 parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
@@ -182,6 +222,10 @@ where
                 suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
             }
             Self::Rotation => {}
+            Self::Entity {
+                single,
+                players_only,
+            } => suggest_entity_selector(builder, context.source(), *single, *players_only),
             Self::Domain => {
                 let prefix = builder.remaining();
                 for domain in context
@@ -257,6 +301,7 @@ where
             SteelArgumentValue::Primitive(_)
             | SteelArgumentValue::Time(_)
             | SteelArgumentValue::Coordinates(_)
+            | SteelArgumentValue::EntitySelector(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)
             | SteelArgumentValue::Identifier(_)

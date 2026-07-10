@@ -178,6 +178,15 @@ impl CommandArgumentProtocol for SteelArgumentType {
             SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
             SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
             SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
+            SteelArgumentType::Entity {
+                single,
+                players_only,
+            } => (
+                ProtocolArgumentType::Entity {
+                    flags: u8::from(*single) | (u8::from(*players_only) << 1),
+                },
+                Some(SuggestionType::AskServer),
+            ),
             SteelArgumentType::SummonableEntity => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:entity_type",
@@ -530,6 +539,23 @@ mod tests {
         let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
         assert!(matches!(rotation, ProtocolArgumentType::Rotation));
         assert!(rotation_suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_entity_arguments_project_vanilla_flags() {
+        for (argument, expected_flags) in [
+            (SteelArgumentType::entities(), 0),
+            (SteelArgumentType::entity(), 1),
+            (SteelArgumentType::players(), 2),
+            (SteelArgumentType::player(), 3),
+        ] {
+            let (argument, suggestions) = argument.protocol_argument();
+            assert!(matches!(
+                argument,
+                ProtocolArgumentType::Entity { flags } if flags == expected_flags
+            ));
+            assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+        }
     }
 
     #[test]

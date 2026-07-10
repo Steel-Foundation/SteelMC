@@ -4,9 +4,6 @@
 
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
-/// The Minecraft version this server supports.
-pub const MC_VERSION: &str = "26.2";
-
 /// axis
 pub mod axis;
 /// Vanilla `BlockUtil` helpers.
@@ -21,10 +18,14 @@ mod front_vec;
 pub mod geometry;
 /// CRC32C hashing for component validation.
 pub mod hash;
+/// Java standard-library compatibility helpers.
+pub mod java;
 /// A module for custom locks.
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
+/// Vanilla-compatible NBT helpers.
+pub mod nbt;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;
@@ -51,6 +52,13 @@ pub mod translations_registry;
 #[path = "generated/entity_events.rs"]
 #[expect(missing_docs, warnings)]
 pub mod entity_events;
+#[rustfmt::skip]
+#[path = "generated/version.rs"]
+#[expect(missing_docs, warnings)]
+pub mod version;
+
+/// The Minecraft version this server supports.
+pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;

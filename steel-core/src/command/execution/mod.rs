@@ -4,6 +4,7 @@ mod argument;
 mod coordinates;
 mod queue;
 mod runtime;
+mod selector;
 mod source;
 
 pub(crate) use argument::SteelArgumentType;

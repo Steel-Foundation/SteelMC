@@ -2,6 +2,8 @@
 
 use std::str::FromStr;
 
+use steel_utils::java;
+
 use super::{CommandSyntaxError, CommandSyntaxErrorKind};
 
 const SYNTAX_ESCAPE: char = '\\';
@@ -103,7 +105,7 @@ impl<'input> StringReader<'input> {
 
     /// Advances past whitespace recognized by Java's `Character.isWhitespace`.
     pub(crate) fn skip_whitespace(&mut self) {
-        while self.peek().is_some_and(Self::is_java_whitespace) {
+        while self.peek().is_some_and(java::is_whitespace) {
             self.skip();
         }
     }
@@ -296,20 +298,5 @@ impl<'input> StringReader<'input> {
 
     const fn is_allowed_in_unquoted_string(character: char) -> bool {
         character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '+')
-    }
-
-    const fn is_java_whitespace(character: char) -> bool {
-        matches!(
-            character,
-            '\u{0009}'..='\u{000d}'
-                | '\u{001c}'..='\u{0020}'
-                | '\u{1680}'
-                | '\u{2000}'..='\u{2006}'
-                | '\u{2008}'..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{205f}'
-                | '\u{3000}'
-        )
     }
 }

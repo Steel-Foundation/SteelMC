@@ -12,11 +12,13 @@ use crate::{
     command::{
         brigadier::{CommandSyntaxError, CommandSyntaxErrorKind},
         context::EntityAnchor,
+        registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
     },
     entity::{Entity as _, SharedEntity},
     permission::{PermissionContext, PermissionExpr, PermissionState},
     player::Player,
+    scoreboard::Scoreboard,
     server::Server,
     world::World,
 };
@@ -81,11 +83,31 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
     fn domain_names(&self) -> Vec<&str> {
         Vec::new()
     }
+
+    fn selector_player_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn selector_team_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn allows_entity_selectors(&self) -> bool {
+        false
+    }
+
+    fn allows_advanced_entity_selectors(&self) -> bool {
+        false
+    }
 }
 
 /// Permission lookup required while constructing and traversing Steel command trees.
 pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState>;
+
+    fn has_permission(&self, permission: &PermissionExpr) -> bool {
+        self.permission_state(permission) == Some(PermissionState::Allow)
+    }
 }
 
 /// Immutable Minecraft command execution source.
@@ -306,6 +328,39 @@ impl ExecutionCommandSource for CommandSource {
 
     fn domain_names(&self) -> Vec<&str> {
         self.server.worlds.domain_names().collect()
+    }
+
+    fn selector_player_names(&self) -> Vec<String> {
+        let domain = self.world.domain();
+        self.server
+            .get_players()
+            .into_iter()
+            .filter(|player| player.get_world().domain() == domain)
+            .map(|player| player.gameprofile.name.clone())
+            .collect()
+    }
+
+    fn selector_team_names(&self) -> Vec<String> {
+        self.server
+            .scoreboards
+            .get(self.world.domain())
+            .map_or_else(Vec::new, Scoreboard::team_names)
+    }
+
+    fn allows_entity_selectors(&self) -> bool {
+        let Ok(permission) = entity_selector_permission_expr() else {
+            tracing::error!("built-in entity selector permission key is invalid");
+            return false;
+        };
+        CommandPermissionSource::has_permission(self, &permission)
+    }
+
+    fn allows_advanced_entity_selectors(&self) -> bool {
+        let Ok(permission) = entity_selector_advanced_permission_expr() else {
+            tracing::error!("built-in advanced entity selector permission key is invalid");
+            return false;
+        };
+        CommandPermissionSource::has_permission(self, &permission)
     }
 }
 

@@ -5,8 +5,9 @@ use std::sync::{Arc, LazyLock, Weak};
 use glam::DVec3;
 use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
+use simdnbt::ToNbtTag as _;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::NbtCompound;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -42,7 +43,7 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, WorldAabb, axis::Axis,
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, UuidExt as _, WorldAabb, axis::Axis,
     block_util::FoundRectangle, text::DisplayResolutor, translations_registry::TRANSLATIONS,
 };
 use text_components::TextComponent;
@@ -65,6 +66,10 @@ use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
+
+fn nbt_bool(value: bool) -> NbtTag {
+    NbtTag::Byte(i8::from(value))
+}
 
 fn entity_type_plain_text_name(entity_type: EntityTypeRef) -> String {
     let description_id = format!(
@@ -1480,6 +1485,122 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return custom_name.to_plain(&DisplayResolutor);
         }
         entity_type_plain_text_name(self.entity_type())
+    }
+
+    /// Returns the vanilla-shaped entity NBT used by command predicates.
+    ///
+    /// Mirrors `NbtPredicate.getEntityTagToCompare`: base and type-specific
+    /// `Entity.saveWithoutId` data, passengers, and a player's selected item.
+    fn nbt_for_data_compare(&self) -> NbtCompound {
+        let mut nbt = NbtCompound::new();
+        let position = self.vehicle().map_or_else(
+            || self.position(),
+            |vehicle| {
+                DVec3::new(
+                    vehicle.position().x,
+                    self.position().y,
+                    vehicle.position().z,
+                )
+            },
+        );
+        let velocity = self.velocity();
+        let (yaw, pitch) = self.rotation();
+        let fire_freeze = self.fire_freeze_state();
+
+        nbt.insert(
+            "Pos",
+            NbtList::Double(vec![position.x, position.y, position.z]),
+        );
+        nbt.insert(
+            "Motion",
+            NbtList::Double(vec![velocity.x, velocity.y, velocity.z]),
+        );
+        nbt.insert("Rotation", NbtList::Float(vec![yaw, pitch]));
+        nbt.insert("fall_distance", self.fall_distance());
+        nbt.insert(
+            "Fire",
+            NbtTag::Short(fire_freeze.remaining_fire_ticks() as i16),
+        );
+        nbt.insert("Air", NbtTag::Short(self.air_supply() as i16));
+        nbt.insert("OnGround", nbt_bool(self.on_ground()));
+        nbt.insert("Invulnerable", nbt_bool(self.is_invulnerable()));
+        nbt.insert("PortalCooldown", self.portal_cooldown());
+        nbt.insert(
+            "UUID",
+            NbtTag::IntArray(self.uuid().to_int_array().to_vec()),
+        );
+
+        if let Some(custom_name) = self.custom_name() {
+            nbt.insert("CustomName", custom_name.to_nbt_tag());
+        }
+        if self.is_custom_name_visible() {
+            nbt.insert("CustomNameVisible", nbt_bool(true));
+        }
+        if self.is_silent() {
+            nbt.insert("Silent", nbt_bool(true));
+        }
+        if self.is_no_gravity() {
+            nbt.insert("NoGravity", nbt_bool(true));
+        }
+        if self.has_glowing_tag() {
+            nbt.insert("Glowing", nbt_bool(true));
+        }
+        if fire_freeze.ticks_frozen() > 0 {
+            nbt.insert("TicksFrozen", fire_freeze.ticks_frozen());
+        }
+        if fire_freeze.has_visual_fire() {
+            nbt.insert("HasVisualFire", nbt_bool(true));
+        }
+
+        let tags = self.tags();
+        if !tags.is_empty() {
+            nbt.insert("Tags", NbtList::from(tags));
+        }
+        let custom_data = self.custom_data();
+        if !custom_data.is_empty() {
+            nbt.insert("data", NbtTag::Compound(custom_data));
+        }
+
+        if let Some(living) = self.as_living_entity() {
+            living.save_command_nbt(&mut nbt);
+        }
+        self.save_additional(&mut nbt);
+
+        if let Some(player) = self.as_player() {
+            player.save_command_nbt(&mut nbt);
+        }
+
+        let passengers = self
+            .passengers()
+            .into_iter()
+            .filter_map(|passenger| passenger.nbt_for_passenger_save())
+            .collect::<Vec<_>>();
+        if !passengers.is_empty() {
+            nbt.insert("Passengers", NbtList::Compound(passengers));
+        }
+
+        if let Some(player) = self.as_player() {
+            let inventory = player.inventory.lock();
+            let selected_item = inventory.get_selected_item();
+            if !selected_item.is_empty() {
+                nbt.insert("SelectedItem", selected_item.to_nbt_tag_ref());
+            }
+        }
+
+        nbt
+    }
+
+    /// Returns passenger-save NBT including the entity type id.
+    fn nbt_for_passenger_save(&self) -> Option<NbtCompound> {
+        if !self.removal_reason().is_none_or(RemovalReason::should_save)
+            || !self.entity_type().can_serialize
+        {
+            return None;
+        }
+
+        let mut nbt = self.nbt_for_data_compare();
+        nbt.insert("id", self.entity_type().key.to_string());
+        Some(nbt)
     }
 
     /// Gets the entity's current position.
@@ -4711,6 +4832,83 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
+    /// Appends vanilla-shaped living state used by command NBT predicates.
+    fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+        nbt.insert("Health", self.get_health());
+        nbt.insert(
+            "DeathTime",
+            NbtTag::Short(self.living_base().death_time() as i16),
+        );
+        nbt.insert("AbsorptionAmount", self.get_absorption_amount());
+        nbt.insert(
+            "current_impulse_context_reset_grace_time",
+            self.living_base()
+                .current_impulse_context_reset_grace_time(),
+        );
+        if let Some(impact) = self.living_base().current_impulse_impact_pos() {
+            nbt.insert(
+                "current_explosion_impact_pos",
+                NbtList::Double(vec![impact.x, impact.y, impact.z]),
+            );
+        }
+        nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
+
+        let mut effects = self.living_base().active_mob_effects();
+        effects.sort_by_key(|effect| effect.effect().try_id().unwrap_or(usize::MAX));
+        if !effects.is_empty() {
+            nbt.insert(
+                "active_effects",
+                NbtList::Compound(
+                    effects
+                        .iter()
+                        .map(ActiveMobEffect::to_vanilla_nbt)
+                        .collect(),
+                ),
+            );
+        }
+
+        nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
+        if let Some(pos) = self.sleeping_pos() {
+            nbt.insert(
+                "sleeping_pos",
+                NbtTag::IntArray(vec![pos.x(), pos.y(), pos.z()]),
+            );
+        }
+        if let Some(uuid) = self.last_hurt_by_player_uuid() {
+            nbt.insert(
+                "last_hurt_by_player",
+                NbtTag::IntArray(uuid.to_int_array().to_vec()),
+            );
+            nbt.insert(
+                "last_hurt_by_player_memory_time",
+                self.last_hurt_by_player_memory_time(),
+            );
+        }
+        if let Some(entity) = self.last_hurt_by_mob() {
+            nbt.insert(
+                "last_hurt_by_mob",
+                NbtTag::IntArray(entity.uuid().to_int_array().to_vec()),
+            );
+            nbt.insert(
+                "ticks_since_last_hurt_by_mob",
+                self.tick_count()
+                    .wrapping_sub(self.last_hurt_by_mob_timestamp()),
+            );
+        }
+
+        let mut equipment = NbtCompound::new();
+        for slot in EquipmentSlot::ALL {
+            self.with_equipment_slot(slot, &mut |item| {
+                if !item.is_empty() {
+                    equipment.insert(slot.name(), item.to_nbt_tag_ref());
+                }
+            });
+        }
+        if !equipment.is_empty() {
+            nbt.insert("equipment", NbtTag::Compound(equipment));
+        }
+    }
+
     /// Gets the current health of the entity.
     fn get_health(&self) -> f32;
 
@@ -7138,6 +7336,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
     use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::blocks::{
         block_state_ext::BlockStateExt as _,
@@ -7172,7 +7371,7 @@ mod tests {
     use crate::world::LevelReader;
 
     use super::{
-        AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
+        ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
         DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
         EntityFluidContact, EntityLevelCallback, EntityMoveError, EntitySyncedData,
         EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
@@ -7264,6 +7463,115 @@ mod tests {
 
         entity.set_custom_name(Some(TextComponent::plain("Command Pig")));
         assert_eq!(entity.plain_text_name(), "Command Pig");
+    }
+
+    #[test]
+    fn command_data_compare_nbt_contains_base_and_custom_data() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+        entity.set_velocity(DVec3::new(0.25, -0.5, 0.75));
+        entity.set_rotation((45.0, 10.0));
+        entity.set_on_ground(true);
+        entity.add_tag("selected".to_owned());
+        let mut custom_data = NbtCompound::new();
+        custom_data.insert("flag", NbtTag::Byte(1));
+        entity.set_custom_data(custom_data);
+
+        let nbt = entity.nbt_for_data_compare();
+
+        assert_eq!(
+            nbt.get("Motion"),
+            Some(&NbtTag::List(NbtList::Double(vec![0.25, -0.5, 0.75])))
+        );
+        assert_eq!(
+            nbt.get("Rotation"),
+            Some(&NbtTag::List(NbtList::Float(vec![45.0, 10.0])))
+        );
+        assert_eq!(nbt.get("OnGround"), Some(&NbtTag::Byte(1)));
+        assert_eq!(
+            nbt.compound("data").and_then(|data| data.byte("flag")),
+            Some(1)
+        );
+        assert!(matches!(
+            nbt.get("Tags"),
+            Some(NbtTag::List(NbtList::String(tags)))
+                if tags.len() == 1 && tags[0].to_str() == "selected"
+        ));
+    }
+
+    #[test]
+    fn command_data_compare_nbt_contains_implemented_living_data() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
+        entity.set_absorption_amount(3.0);
+        entity.living_base.increment_death_time();
+        entity.living_base.apply_post_impulse_grace_time(7);
+        entity
+            .living_base
+            .set_ignore_fall_damage_from_current_impulse(true, DVec3::new(1.0, 2.0, 3.0));
+        entity.set_fall_flying(true);
+        entity.set_sleeping_pos(BlockPos::new(4, 5, 6));
+        entity.add_mob_effect(
+            ActiveMobEffect::with_duration(vanilla_mob_effects::HASTE, 200, 2)
+                .with_ambient(true)
+                .with_visible(false),
+        );
+        entity.equip(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::ITEMS.diamond_helmet),
+        );
+
+        let nbt = entity.nbt_for_data_compare();
+
+        assert_eq!(nbt.get("Health"), Some(&NbtTag::Float(12.5)));
+        assert_eq!(nbt.get("DeathTime"), Some(&NbtTag::Short(1)));
+        assert_eq!(nbt.get("AbsorptionAmount"), Some(&NbtTag::Float(3.0)));
+        assert_eq!(
+            nbt.get("current_impulse_context_reset_grace_time"),
+            Some(&NbtTag::Int(40))
+        );
+        assert_eq!(
+            nbt.get("current_explosion_impact_pos"),
+            Some(&NbtTag::List(NbtList::Double(vec![1.0, 2.0, 3.0])))
+        );
+        assert_eq!(nbt.get("FallFlying"), Some(&NbtTag::Byte(1)));
+        assert_eq!(
+            nbt.get("sleeping_pos"),
+            Some(&NbtTag::IntArray(vec![4, 5, 6]))
+        );
+
+        let Some(NbtTag::List(NbtList::Compound(attributes))) = nbt.get("attributes") else {
+            panic!("living attributes should be serialized");
+        };
+        assert!(attributes.iter().any(|attribute| {
+            attribute.string("id").is_some_and(|id| {
+                id.to_str().as_ref() == vanilla_attributes::MAX_HEALTH.key.to_string()
+            })
+        }));
+
+        let Some(NbtTag::List(NbtList::Compound(effects))) = nbt.get("active_effects") else {
+            panic!("active effects should be serialized");
+        };
+        assert_eq!(effects.len(), 1);
+        assert_eq!(
+            effects[0].string("id").map(ToString::to_string),
+            Some("minecraft:haste".to_owned())
+        );
+        assert_eq!(effects[0].byte("amplifier"), Some(2));
+        assert_eq!(effects[0].int("duration"), Some(200));
+        assert_eq!(effects[0].byte("ambient"), Some(1));
+        assert_eq!(effects[0].byte("show_particles"), Some(0));
+        assert_eq!(effects[0].byte("show_icon"), Some(1));
+
+        let Some(NbtTag::Compound(equipment)) = nbt.get("equipment") else {
+            panic!("living equipment should be serialized");
+        };
+        assert_eq!(
+            equipment
+                .compound("head")
+                .and_then(|item| item.string("id"))
+                .map(ToString::to_string),
+            Some("minecraft:diamond_helmet".to_owned())
+        );
     }
 
     struct LeashNotificationTestEntity {
@@ -7561,12 +7869,6 @@ mod tests {
         fn set_health(&self, health: f32) {
             *self.health.lock() = health.clamp(0.0, self.get_max_health());
         }
-
-        fn get_absorption_amount(&self) -> f32 {
-            0.0
-        }
-
-        fn set_absorption_amount(&self, _amount: f32) {}
 
         fn is_affected_by_fluids(&self) -> bool {
             self.affected_by_fluids

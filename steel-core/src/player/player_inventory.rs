@@ -8,6 +8,7 @@ use std::{
 };
 
 use glam::DVec3;
+use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SSetCarriedItem, SSetCreativeModeSlot,
@@ -126,6 +127,27 @@ impl PlayerInventory {
     #[must_use]
     pub const fn get_selected_slot(&self) -> u8 {
         self.selected
+    }
+
+    /// Serializes the main inventory with vanilla's `ItemStackWithSlot` shape.
+    #[must_use]
+    pub(crate) fn to_vanilla_inventory_nbt(&self) -> NbtList {
+        let items = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, item)| {
+                if item.is_empty() {
+                    return None;
+                }
+                let NbtTag::Compound(mut nbt) = item.to_nbt_tag_ref() else {
+                    return None;
+                };
+                nbt.insert("Slot", NbtTag::Byte(slot as i8));
+                Some(nbt)
+            })
+            .collect();
+        NbtList::Compound(items)
     }
 
     /// Sets the selected hotbar slot.
@@ -1406,6 +1428,27 @@ mod tests {
     use steel_utils::Identifier;
 
     use super::*;
+
+    #[test]
+    fn vanilla_inventory_nbt_contains_main_slots_only() {
+        init_test_registry();
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.items[2] = ItemStack::new(&ITEMS.stone);
+        inventory
+            .equipment_mut()
+            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+
+        let NbtList::Compound(items) = inventory.to_vanilla_inventory_nbt() else {
+            panic!("player inventory should serialize as a compound list");
+        };
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].get("Slot"), Some(&NbtTag::Byte(2)));
+        assert_eq!(
+            items[0].string("id").map(ToString::to_string),
+            Some("minecraft:stone".to_owned())
+        );
+    }
 
     #[test]
     fn add_marks_changed_when_stack_fills_existing_slot() {

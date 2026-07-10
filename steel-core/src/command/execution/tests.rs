@@ -6,12 +6,13 @@ use text_components::TextComponent;
 use crate::command::brigadier::{
     ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandSyntaxError, NodeId,
 };
+use crate::permission::{PermissionExpr, PermissionState};
 
 use super::queue::{EntryAction, Frame};
 use super::{
-    ChainModifiers, CommandExecutionContext, CommandResultCallback, CustomCommandExecutor,
-    CustomModifierExecutor, ExecutionCommandSource, ExecutionControl, ExecutionStop,
-    SteelCommandRuntime, SteelContextChain, argument, literal,
+    ChainModifiers, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
+    CustomCommandExecutor, CustomModifierExecutor, ExecutionCommandSource, ExecutionControl,
+    ExecutionStop, SteelCommandRuntime, SteelContextChain, argument, literal,
 };
 
 #[derive(Default)]
@@ -66,6 +67,12 @@ impl ExecutionCommandSource for TestSource {
             .errors
             .lock()
             .push((error.raw_message(), forked));
+    }
+}
+
+impl CommandPermissionSource for TestSource {
+    fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {
+        Some(PermissionState::Allow)
     }
 }
 
