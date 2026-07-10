@@ -273,6 +273,28 @@ mod tests {
             );
         }
 
+        for store_kind in ["result", "success"] {
+            let targets = child(
+                child(child(child(execute, "store"), store_kind), "score"),
+                "targets",
+            );
+            assert_eq!(
+                dispatcher
+                    .node(targets)
+                    .and_then(|node| node.argument_type()),
+                Some(&SteelArgumentType::score_holders())
+            );
+            let objective = child(targets, "objective");
+            let Some(objective_node) = dispatcher.node(objective) else {
+                panic!("execute store score objective should exist");
+            };
+            assert_eq!(objective_node.redirect(), Some(execute));
+            assert_eq!(
+                objective_node.argument_type(),
+                Some(&SteelArgumentType::objective())
+            );
+        }
+
         let modifier_paths: &[&[&str]] = &[
             &["as", "targets"],
             &["at", "targets"],

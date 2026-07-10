@@ -10,7 +10,7 @@ use super::super::super::{
         literal,
     },
 };
-use crate::scoreboard::{Scoreboard, ScoreboardObjective};
+use super::{objective, source_scoreboard};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
@@ -189,38 +189,6 @@ fn score_range_matches(
     Ok(scoreboard
         .score(&target, &target_objective)
         .is_some_and(|score| range.matches(score)))
-}
-
-fn source_scoreboard(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<&Scoreboard, CommandSyntaxError> {
-    let source = context.source();
-    source
-        .server()
-        .scoreboards
-        .get(source.world().domain())
-        .ok_or_else(|| {
-            CommandSyntaxError::dynamic(format!(
-                "Domain '{}' has no command scoreboard",
-                source.world().domain()
-            ))
-        })
-}
-
-fn objective(
-    context: &SteelCommandContext<CommandSource>,
-    scoreboard: &Scoreboard,
-    name: &str,
-) -> Result<ScoreboardObjective, CommandSyntaxError> {
-    let objective_name = context
-        .objective_name(name)
-        .ok_or_else(|| missing_argument(name))?;
-    scoreboard.objective(objective_name).ok_or_else(|| {
-        let message = translations::ARGUMENTS_OBJECTIVE_NOT_FOUND
-            .message([TextComponent::from(objective_name.to_owned())])
-            .component();
-        CommandSyntaxError::dynamic(message)
-    })
 }
 
 #[derive(Clone, Copy)]
