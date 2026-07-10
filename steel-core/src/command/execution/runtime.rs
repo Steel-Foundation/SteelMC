@@ -15,8 +15,8 @@ use crate::command::brigadier::{
 
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandSource, Coordinates, ExecutionCommandSource,
-    ExecutionControl, IntRange, ItemPredicate, ItemSlotRange, ScoreHolderArgument,
-    ScoreHolderWildcard, SteelArgumentType, WorldArgument,
+    ExecutionControl, IntRange, ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard,
+    SteelArgumentType, WorldArgument,
     argument::{CoordinateAxes, SteelArgumentValue},
     selector::EntitySelector,
 };
@@ -212,7 +212,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -245,7 +244,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -278,7 +276,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -360,7 +357,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -400,7 +396,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -432,7 +427,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -464,7 +458,6 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -496,7 +489,6 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -509,13 +501,6 @@ where
     pub(crate) fn item_predicate(&self, name: &str) -> Option<&ItemPredicate> {
         match self.argument(name) {
             Some(SteelArgumentValue::ItemPredicate(value)) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn item_slots(&self, name: &str) -> Option<&ItemSlotRange> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::ItemSlots(value)) => Some(value),
             _ => None,
         }
     }
@@ -543,7 +528,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::ScoreHolder(_)
@@ -575,7 +559,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
@@ -607,7 +590,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
@@ -639,7 +621,6 @@ where
                 | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::ItemStack(_)
                 | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::ItemSlots(_)
                 | SteelArgumentValue::NbtPath(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::GameMode(_)

@@ -19,10 +19,7 @@ use steel_registry::{REGISTRY, RegistryExt, items::ItemRef};
 use steel_utils::types::{GameType, InteractionHand};
 
 use crate::{
-    entity::{
-        Entity, EntityCommandItemSlotResult, command_item_slot_to_equipment_slot,
-        entities::ItemEntity,
-    },
+    entity::{Entity, entities::ItemEntity},
     inventory::{
         MenuProvider,
         container::{Container, clear_or_count_matching_stack},
@@ -86,30 +83,6 @@ pub struct PlayerInventory {
     selected: u8,
     /// Counter incremented on every change.
     times_changed: u32,
-}
-
-/// Player ender-chest contents.
-pub struct EnderChestInventory {
-    items: [ItemStack; Self::SIZE],
-}
-
-impl EnderChestInventory {
-    /// Vanilla player ender chest slot count.
-    pub const SIZE: usize = 27;
-
-    /// Creates an empty ender chest inventory.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            items: array::from_fn(|_| ItemStack::empty()),
-        }
-    }
-}
-
-impl Default for EnderChestInventory {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl PlayerInventory {
@@ -760,47 +733,6 @@ impl PlayerInventory {
 }
 
 impl Player {
-    /// Visits the item exposed through a player-owned vanilla command slot ID.
-    pub(crate) fn with_command_item_slot(
-        &self,
-        slot: i32,
-        visitor: &mut dyn FnMut(&ItemStack),
-    ) -> EntityCommandItemSlotResult {
-        if slot == 499 {
-            return self.with_carried_command_item_slot(visitor);
-        }
-
-        if matches!(slot, 500..=503) {
-            let menu = self.inventory_menu.lock();
-            return visit_player_menu_command_item_slot(&menu, slot, visitor)
-                .unwrap_or(EntityCommandItemSlotResult::Missing);
-        }
-
-        if matches!(slot, 200..=226) {
-            let ender_chest = self.ender_chest.lock();
-            return visit_player_ender_chest_command_item_slot(&ender_chest, slot, visitor);
-        }
-
-        let inventory = self.inventory.lock();
-        visit_player_inventory_command_item_slot(&inventory, slot, visitor)
-    }
-
-    fn with_carried_command_item_slot(
-        &self,
-        visitor: &mut dyn FnMut(&ItemStack),
-    ) -> EntityCommandItemSlotResult {
-        let open_menu = self.open_menu.lock();
-        if let Some(menu) = open_menu.as_ref() {
-            visitor(menu.behavior().get_carried());
-            return EntityCommandItemSlotResult::Found;
-        }
-        drop(open_menu);
-
-        let menu = self.inventory_menu.lock();
-        visit_player_menu_command_item_slot(&menu, 499, visitor)
-            .unwrap_or(EntityCommandItemSlotResult::Missing)
-    }
-
     /// Attempts to pick up nearby item entities.
     ///
     /// Mirrors vanilla's `Player.aiStep()` item pickup logic:
@@ -1303,71 +1235,6 @@ impl Player {
     }
 }
 
-fn visit_player_inventory_command_item_slot(
-    inventory: &PlayerInventory,
-    slot: i32,
-    visitor: &mut dyn FnMut(&ItemStack),
-) -> EntityCommandItemSlotResult {
-    let Ok(inventory_slot) = usize::try_from(slot) else {
-        return EntityCommandItemSlotResult::Missing;
-    };
-    if inventory_slot < PlayerInventory::INVENTORY_SIZE {
-        visitor(inventory.get_item(inventory_slot));
-        return EntityCommandItemSlotResult::Found;
-    }
-
-    let Some(equipment_slot) = command_item_slot_to_equipment_slot(slot) else {
-        return EntityCommandItemSlotResult::Missing;
-    };
-    if equipment_slot == EquipmentSlot::MainHand {
-        visitor(inventory.get_selected_item());
-    } else {
-        visitor(inventory.equipment().get_ref(equipment_slot));
-    }
-    EntityCommandItemSlotResult::Found
-}
-
-fn visit_player_ender_chest_command_item_slot(
-    ender_chest: &EnderChestInventory,
-    slot: i32,
-    visitor: &mut dyn FnMut(&ItemStack),
-) -> EntityCommandItemSlotResult {
-    let Some(ender_slot) = slot
-        .checked_sub(200)
-        .and_then(|slot| usize::try_from(slot).ok())
-    else {
-        return EntityCommandItemSlotResult::Missing;
-    };
-    if ender_slot >= EnderChestInventory::SIZE {
-        return EntityCommandItemSlotResult::Missing;
-    }
-
-    visitor(ender_chest.get_item(ender_slot));
-    EntityCommandItemSlotResult::Found
-}
-
-fn visit_player_menu_command_item_slot(
-    menu: &InventoryMenu,
-    slot: i32,
-    visitor: &mut dyn FnMut(&ItemStack),
-) -> Option<EntityCommandItemSlotResult> {
-    if slot == 499 {
-        visitor(menu.behavior().get_carried());
-        return Some(EntityCommandItemSlotResult::Found);
-    }
-
-    let craft_slot = slot
-        .checked_sub(500)
-        .and_then(|slot| usize::try_from(slot).ok())?;
-    if craft_slot >= 4 {
-        return None;
-    }
-
-    let crafting = menu.crafting_container().lock();
-    visitor(crafting.get_item(craft_slot));
-    Some(EntityCommandItemSlotResult::Found)
-}
-
 impl PlayerInventory {
     /// Applies vanilla `ItemUtils.createFilledResult` to a held item.
     ///
@@ -1609,31 +1476,6 @@ impl Container for PlayerInventory {
     }
 }
 
-impl Container for EnderChestInventory {
-    fn get_container_size(&self) -> usize {
-        Self::SIZE
-    }
-
-    fn get_item(&self, slot: usize) -> &ItemStack {
-        self.items.get(slot).unwrap_or(&EMPTY_ITEM)
-    }
-
-    fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
-        &mut self.items[slot]
-    }
-
-    fn set_item(&mut self, slot: usize, stack: ItemStack) {
-        if let Some(item) = self.items.get_mut(slot) {
-            *item = stack;
-            self.set_changed();
-        }
-    }
-
-    fn set_changed(&mut self) {
-        // Live contents are captured when player persistence snapshots are created.
-    }
-}
-
 impl PlayerInventory {
     const fn mark_main_hand_dirty(&mut self) {
         self.dirty_main_hand = true;
@@ -1642,12 +1484,11 @@ impl PlayerInventory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items::ITEMS;
     use steel_utils::Identifier;
-    use steel_utils::locks::SyncMutex;
 
     use super::*;
 
@@ -1910,82 +1751,6 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert!(items.contains(&(EquipmentSlot::MainHand, main_hand)));
         assert!(items.contains(&(EquipmentSlot::Head, head)));
-    }
-
-    #[test]
-    fn command_item_slot_reads_player_inventory_and_equipment() {
-        init_test_registry();
-
-        let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[5] = ItemStack::with_count(&ITEMS.stone, 4);
-        inventory.set_offhand_item(ItemStack::with_count(&ITEMS.shield, 2));
-
-        let mut count = 0;
-        let result = visit_player_inventory_command_item_slot(&inventory, 5, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, EntityCommandItemSlotResult::Found);
-        assert_eq!(count, 4);
-
-        let mut count = 0;
-        let result = visit_player_inventory_command_item_slot(&inventory, 99, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, EntityCommandItemSlotResult::Found);
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn command_item_slot_reads_player_ender_chest() {
-        init_test_registry();
-
-        let mut ender_chest = EnderChestInventory::new();
-        ender_chest.set_item(0, ItemStack::with_count(&ITEMS.stone, 4));
-        ender_chest.set_item(26, ItemStack::with_count(&ITEMS.oak_log, 2));
-
-        let mut count = 0;
-        let result = visit_player_ender_chest_command_item_slot(&ender_chest, 200, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, EntityCommandItemSlotResult::Found);
-        assert_eq!(count, 4);
-
-        let mut count = 0;
-        let result = visit_player_ender_chest_command_item_slot(&ender_chest, 226, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, EntityCommandItemSlotResult::Found);
-        assert_eq!(count, 2);
-
-        let result = visit_player_ender_chest_command_item_slot(&ender_chest, 227, &mut |_| {});
-        assert_eq!(result, EntityCommandItemSlotResult::Missing);
-    }
-
-    #[test]
-    fn command_item_slot_reads_player_menu_cursor_and_crafting_slots() {
-        init_test_registry();
-
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(Weak::new())));
-        let mut menu = InventoryMenu::new(inventory);
-        menu.behavior_mut()
-            .set_carried(ItemStack::with_count(&ITEMS.stone, 3));
-        menu.crafting_container()
-            .lock()
-            .set_item(2, ItemStack::with_count(&ITEMS.oak_log, 5));
-
-        let mut count = 0;
-        let result = visit_player_menu_command_item_slot(&menu, 499, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, Some(EntityCommandItemSlotResult::Found));
-        assert_eq!(count, 3);
-
-        let mut count = 0;
-        let result = visit_player_menu_command_item_slot(&menu, 502, &mut |item| {
-            count = item.count();
-        });
-        assert_eq!(result, Some(EntityCommandItemSlotResult::Found));
-        assert_eq!(count, 5);
     }
 
     #[test]

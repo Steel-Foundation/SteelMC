@@ -6,11 +6,10 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::item_stack::ItemStack;
 use steel_utils::{UuidExt, locks::SyncMutex};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityCommandItemSlotResult};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 
 /// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
@@ -98,14 +97,6 @@ impl Entity for RawEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         *nbt = self.data.lock().clone();
-    }
-
-    fn with_command_item_slot(
-        &self,
-        _slot: i32,
-        _visitor: &mut dyn FnMut(&ItemStack),
-    ) -> EntityCommandItemSlotResult {
-        EntityCommandItemSlotResult::Unsupported
     }
 }
 

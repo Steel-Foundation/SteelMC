@@ -13,10 +13,7 @@ use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
-use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCommandItemSlotResult,
-    EntitySyncedData,
-};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -220,20 +217,6 @@ impl Entity for ItemFrameEntity {
         Some(&self.entity_data)
     }
 
-    fn with_command_item_slot(
-        &self,
-        slot: i32,
-        visitor: &mut dyn FnMut(&ItemStack),
-    ) -> EntityCommandItemSlotResult {
-        if slot != 0 {
-            return EntityCommandItemSlotResult::Missing;
-        }
-
-        let entity_data = self.entity_data.lock();
-        visitor(entity_data.item.get());
-        EntityCommandItemSlotResult::Found
-    }
-
     fn save_additional(&self, nbt: &mut NbtCompound) {
         let block_pos = *self.block_pos.lock();
         nbt.insert(
@@ -366,27 +349,5 @@ mod tests {
         );
 
         assert!(frame.is_pickable());
-    }
-
-    #[test]
-    fn item_frame_exposes_framed_item_as_contents_command_slot() {
-        let frame = ItemFrameEntity::new_attached(
-            &vanilla_entities::ITEM_FRAME,
-            1,
-            BlockPos::new(12, 80, 14),
-            Direction::West,
-            Weak::new(),
-        );
-        frame.set_item(ItemStack::new(&vanilla_items::ITEMS.elytra));
-
-        let mut item = ItemStack::empty();
-        let result = frame.with_command_item_slot(0, &mut |slot_item| {
-            item = slot_item.clone();
-        });
-        assert_eq!(result, EntityCommandItemSlotResult::Found);
-        assert_eq!(item, ItemStack::new(&vanilla_items::ITEMS.elytra));
-
-        let result = frame.with_command_item_slot(1, &mut |_| {});
-        assert_eq!(result, EntityCommandItemSlotResult::Missing);
     }
 }

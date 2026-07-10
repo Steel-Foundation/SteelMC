@@ -229,7 +229,6 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 ProtocolArgumentType::ItemPredicate,
                 Some(SuggestionType::AskServer),
             ),
-            SteelArgumentType::ItemSlots => (ProtocolArgumentType::ItemSlots, None),
             SteelArgumentType::NbtPath => (ProtocolArgumentType::NbtPath, None),
             SteelArgumentType::World => (
                 ProtocolArgumentType::Dimension,
@@ -720,14 +719,6 @@ mod tests {
 
         assert!(matches!(argument, ProtocolArgumentType::ItemPredicate));
         assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
-    }
-
-    #[test]
-    fn steel_item_slots_argument_projects_vanillas_parser() {
-        let (argument, suggestions) = SteelArgumentType::item_slots().protocol_argument();
-
-        assert!(matches!(argument, ProtocolArgumentType::ItemSlots));
-        assert!(suggestions.is_none());
     }
 
     #[test]
