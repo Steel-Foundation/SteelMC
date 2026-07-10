@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use steel_registry::{
-    entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
+    enchantment::EnchantmentRef, entity_type::EntityTypeRef, timeline::TimelineRef,
+    world_clock::WorldClockRef,
 };
 use steel_utils::translations;
 use steel_utils::{Identifier, types::GameType};
@@ -194,6 +195,7 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -214,6 +216,7 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -234,6 +237,7 @@ where
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -254,6 +258,7 @@ where
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -274,6 +279,7 @@ where
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::WorldClock(_)
                 | SteelArgumentValue::Timeline(_),
@@ -291,6 +297,27 @@ where
                 | SteelArgumentValue::Coordinates(_)
                 | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntitySelector(_)
+                | SteelArgumentValue::GameMode(_)
+                | SteelArgumentValue::Enchantment(_)
+                | SteelArgumentValue::Identifier(_)
+                | SteelArgumentValue::WorldClock(_)
+                | SteelArgumentValue::Timeline(_),
+            )
+            | None => None,
+        }
+    }
+
+    pub(crate) fn enchantment(&self, name: &str) -> Option<EnchantmentRef> {
+        match self.argument(name) {
+            Some(SteelArgumentValue::Enchantment(value)) => Some(*value),
+            Some(
+                SteelArgumentValue::Primitive(_)
+                | SteelArgumentValue::Time(_)
+                | SteelArgumentValue::Coordinates(_)
+                | SteelArgumentValue::EntityAnchor(_)
+                | SteelArgumentValue::Domain(_)
+                | SteelArgumentValue::EntityType(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::Identifier(_)
@@ -311,6 +338,7 @@ where
                 | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)
@@ -330,6 +358,7 @@ where
                 | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -349,6 +378,7 @@ where
                 | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::EntitySelector(_)
                 | SteelArgumentValue::GameMode(_)
@@ -368,6 +398,7 @@ where
                 | SteelArgumentValue::EntityAnchor(_)
                 | SteelArgumentValue::Domain(_)
                 | SteelArgumentValue::EntityType(_)
+                | SteelArgumentValue::Enchantment(_)
                 | SteelArgumentValue::Identifier(_)
                 | SteelArgumentValue::GameMode(_)
                 | SteelArgumentValue::WorldClock(_)

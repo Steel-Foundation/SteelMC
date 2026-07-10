@@ -195,6 +195,12 @@ impl CommandArgumentProtocol for SteelArgumentType {
                 },
                 Some(SuggestionType::SummonableEntities),
             ),
+            SteelArgumentType::Enchantment => (
+                ProtocolArgumentType::Resource {
+                    identifier: "minecraft:enchantment",
+                },
+                None,
+            ),
             SteelArgumentType::WorldClock => (
                 ProtocolArgumentType::Resource {
                     identifier: "minecraft:world_clock",
@@ -569,6 +575,19 @@ mod tests {
         let (argument, suggestions) = SteelArgumentType::game_mode().protocol_argument();
 
         assert!(matches!(argument, ProtocolArgumentType::Gamemode));
+        assert!(suggestions.is_none());
+    }
+
+    #[test]
+    fn steel_enchantment_argument_projects_vanillas_registry_parser() {
+        let (argument, suggestions) = SteelArgumentType::enchantment().protocol_argument();
+
+        assert!(matches!(
+            argument,
+            ProtocolArgumentType::Resource {
+                identifier: "minecraft:enchantment"
+            }
+        ));
         assert!(suggestions.is_none());
     }
 

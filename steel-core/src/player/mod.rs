@@ -2589,7 +2589,7 @@ impl LivingEntity for Player {
     ) {
         let mut inventory = self.inventory.lock();
         if slot == EquipmentSlot::MainHand {
-            visitor(inventory.get_selected_item_mut());
+            inventory.with_selected_item_mut(visitor);
         } else {
             visitor(inventory.equipment_mut().get_mut(slot));
         }

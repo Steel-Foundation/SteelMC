@@ -2,6 +2,7 @@
 
 mod difficulty;
 mod domain;
+mod enchant;
 mod experience;
 mod fly;
 pub(crate) mod gamemode;
@@ -30,6 +31,7 @@ pub(crate) fn create_dispatcher()
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
+    builder.register(enchant::registration())?;
     builder.register(experience::registration())?;
     builder.register(fly::registration())?;
     builder.register(gamemode::registration()?)?;
@@ -77,6 +79,7 @@ mod tests {
             [
                 "difficulty",
                 "domain",
+                "enchant",
                 "experience",
                 "xp",
                 "fly",

@@ -8,7 +8,7 @@ use crate::command::{
     },
 };
 use steel_registry::{
-    test_support::init_test_registry, vanilla_entities, vanilla_world_clocks,
+    test_support::init_test_registry, vanilla_enchantments, vanilla_entities, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::{Identifier, types::GameType};
@@ -344,6 +344,37 @@ fn summonable_entity_argument_suggests_only_registered_factories() {
         .collect::<Vec<_>>();
 
     assert_eq!(suggestions, ["minecraft:pig"]);
+}
+
+#[test]
+fn enchantment_argument_resolves_and_suggests_registered_entries() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::enchantment());
+
+    for input in ["resource sharpness", "resource minecraft:sharpness"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered enchantment should parse");
+        };
+        assert_eq!(
+            chain.top_context().enchantment("value"),
+            Some(&vanilla_enchantments::SHARPNESS)
+        );
+    }
+
+    let parse = dispatcher.parse("resource minecraft:missing", TestSource::new());
+    assert!(dispatcher.context_chain(parse).is_err());
+
+    let parse = dispatcher.parse("resource minecraft:sharp", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("enchantment suggestions should build");
+    };
+    let suggestions = suggestions
+        .list()
+        .iter()
+        .map(Suggestion::text)
+        .collect::<Vec<_>>();
+    assert_eq!(suggestions, ["minecraft:sharpness"]);
 }
 
 #[test]

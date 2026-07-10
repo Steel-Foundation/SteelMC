@@ -4,8 +4,9 @@ use crate::command::brigadier::{
     SuggestionsBuilder,
 };
 use steel_registry::{
-    ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
-    entity_type::EntityTypeRef, timeline::TimelineRef, world_clock::WorldClockRef,
+    ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
+    WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
+    timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::translations;
 use steel_utils::{Identifier, types::GameType};
@@ -41,6 +42,8 @@ pub(crate) enum SteelArgumentType {
     Domain,
     /// A summonable entity type backed by a Steel entity factory.
     SummonableEntity,
+    /// A registered enchantment.
+    Enchantment,
     /// A registered world clock.
     WorldClock,
     /// A registered timeline, suggested only when it uses the selected clock.
@@ -114,6 +117,10 @@ impl SteelArgumentType {
         Self::SummonableEntity
     }
 
+    pub(crate) const fn enchantment() -> Self {
+        Self::Enchantment
+    }
+
     pub(crate) const fn world_clock() -> Self {
         Self::WorldClock
     }
@@ -152,6 +159,8 @@ pub(crate) enum SteelArgumentValue {
     Domain(Box<str>),
     /// A resolved summonable entity type.
     EntityType(EntityTypeRef),
+    /// A resolved registered enchantment.
+    Enchantment(EnchantmentRef),
     /// A parsed resource location.
     Identifier(Identifier),
     /// A resolved registered world clock.
@@ -171,6 +180,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
             | Self::GameMode(_)
             | Self::Domain(_)
             | Self::EntityType(_)
+            | Self::Enchantment(_)
             | Self::Identifier(_)
             | Self::WorldClock(_)
             | Self::Timeline(_) => None,
@@ -210,6 +220,13 @@ where
             Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
             Self::SummonableEntity => {
                 parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
+            }
+            Self::Enchantment => {
+                let key = parse_identifier(reader)?;
+                REGISTRY.enchantments.by_key(&key).map_or_else(
+                    || Err(unknown_resource(reader, &key, &ENCHANTMENT_REGISTRY)),
+                    |enchantment| Ok(SteelArgumentValue::Enchantment(enchantment)),
+                )
             }
             Self::WorldClock => {
                 let key = parse_identifier(reader)?;
@@ -266,6 +283,15 @@ where
                         .iter()
                         .filter(|(_, entity_type)| can_summon(entity_type))
                         .map(|(_, entity_type)| &entity_type.key),
+                    builder,
+                );
+            }
+            Self::Enchantment => {
+                suggest_resources(
+                    REGISTRY
+                        .enchantments
+                        .iter()
+                        .map(|(_, enchantment)| &enchantment.key),
                     builder,
                 );
             }
@@ -328,6 +354,7 @@ where
             | SteelArgumentValue::GameMode(_)
             | SteelArgumentValue::Domain(_)
             | SteelArgumentValue::EntityType(_)
+            | SteelArgumentValue::Enchantment(_)
             | SteelArgumentValue::Identifier(_)
             | SteelArgumentValue::Timeline(_),
         )
