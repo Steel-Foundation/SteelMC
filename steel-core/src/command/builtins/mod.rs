@@ -18,6 +18,7 @@ mod setworldspawn;
 mod stop;
 mod summon;
 mod teleport;
+mod tellraw;
 mod tick;
 mod time;
 mod weather;
@@ -51,6 +52,7 @@ pub(crate) fn create_dispatcher()
     builder.register(stop::registration())?;
     builder.register(summon::registration())?;
     builder.register(teleport::registration())?;
+    builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(weather::registration())?;
@@ -106,6 +108,7 @@ mod tests {
                 "summon",
                 "teleport",
                 "tp",
+                "tellraw",
                 "tick",
                 "time",
                 "weather"
