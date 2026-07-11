@@ -38,7 +38,7 @@ use crate::command::commands::gamemode::get_gamemode_translation;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{ActiveItemUseState, Entity, LivingEntity, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::menu::Menu;
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
@@ -54,6 +54,8 @@ const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;
 const ATTACK_RANGE_BUFFER: f64 = 3.0;
 const ENTITY_INTERACTION_RANGE_BUFFER: f64 = 3.0;
 const FLIGHT_DISABLE_RANGE: f64 = 1.0;
+const LIVING_ENTITY_FLAG_ACTIVE_ITEM: i8 = 1;
+const LIVING_ENTITY_FLAG_ACTIVE_OFF_HAND: i8 = 2;
 
 /// Handles using an item on a block.
 ///
@@ -320,6 +322,153 @@ fn update_ray_axis(
 }
 
 impl Player {
+    /// Starts vanilla active use for the item held in `hand`.
+    pub fn start_using_item(&self, hand: InteractionHand) -> bool {
+        let stack = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(hand);
+            item.copy_with_count(item.count())
+        };
+        if stack.is_empty() {
+            return false;
+        }
+
+        let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+        let duration = behavior.get_use_duration(&stack, self);
+        if !self.living_base.start_using_item(hand, stack, duration) {
+            return false;
+        }
+
+        self.sync_active_item_use_flags(Some(hand));
+        true
+    }
+
+    /// Stops active item use without firing item callbacks.
+    pub fn stop_using_item(&self) {
+        self.take_active_item_use();
+    }
+
+    /// Releases active item use and calls the held item's release hook.
+    pub fn release_using_item(&self) {
+        let Some(active) = self.take_active_item_use() else {
+            return;
+        };
+
+        let world = self.get_world();
+        let stack = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(active.hand());
+            item.copy_with_count(item.count())
+        };
+        if stack.is_empty() || !ItemStack::is_same_item_same_components(&stack, active.item()) {
+            return;
+        }
+
+        let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+        let mut updated_stack = stack.copy_with_count(stack.count());
+        behavior.release_using(&mut updated_stack, &world, self, active.remaining_ticks());
+        self.replace_active_use_stack_if_current(active.hand(), &stack, updated_stack);
+    }
+
+    fn complete_using_item(&self) {
+        let Some(active) = self.take_active_item_use() else {
+            return;
+        };
+
+        let world = self.get_world();
+        let stack = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(active.hand());
+            item.copy_with_count(item.count())
+        };
+        if stack.is_empty() || !ItemStack::is_same_item_same_components(&stack, active.item()) {
+            return;
+        }
+
+        let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+        let mut updated_stack = stack.copy_with_count(stack.count());
+        let result = behavior.finish_using(&mut updated_stack, &world, self);
+        self.replace_active_use_stack_if_current(active.hand(), &stack, result);
+    }
+
+    fn take_active_item_use(&self) -> Option<ActiveItemUseState> {
+        let active = self.living_base.stop_using_item();
+        if active.is_some() {
+            self.sync_active_item_use_flags(None);
+        }
+        active
+    }
+
+    fn sync_active_item_use_flags(&self, hand: Option<InteractionHand>) {
+        let mut entity_data = self.entity_data.lock();
+        let living = entity_data.living_entity_mut();
+        let mut flags = *living.living_entity_flags.get();
+        flags &= !(LIVING_ENTITY_FLAG_ACTIVE_ITEM | LIVING_ENTITY_FLAG_ACTIVE_OFF_HAND);
+        if let Some(hand) = hand {
+            flags |= LIVING_ENTITY_FLAG_ACTIVE_ITEM;
+            if hand == InteractionHand::OffHand {
+                flags |= LIVING_ENTITY_FLAG_ACTIVE_OFF_HAND;
+            }
+        }
+        living.living_entity_flags.set(flags);
+    }
+
+    fn replace_active_use_stack_if_current(
+        &self,
+        hand: InteractionHand,
+        expected: &ItemStack,
+        replacement: ItemStack,
+    ) {
+        let mut inventory = self.inventory.lock();
+        if !ItemStack::is_same_item_same_components(inventory.get_item_in_hand(hand), expected) {
+            return;
+        }
+        inventory.set_item_in_hand(hand, replacement);
+    }
+
+    /// Ticks vanilla active item use for player-held items.
+    pub fn tick_active_item_use(&self) {
+        let Some(active) = self.living_base.active_item_use() else {
+            return;
+        };
+        if !LivingEntity::is_alive(self) {
+            self.stop_using_item();
+            return;
+        }
+
+        let stack = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(active.hand());
+            item.copy_with_count(item.count())
+        };
+        if stack.is_empty() || !ItemStack::is_same_item_same_components(&stack, active.item()) {
+            self.stop_using_item();
+            return;
+        }
+
+        let world = self.get_world();
+        let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+        let mut updated_stack = stack.copy_with_count(stack.count());
+        behavior.on_use_tick(&world, self, &mut updated_stack, active.remaining_ticks());
+        self.replace_active_use_stack_if_current(active.hand(), &stack, updated_stack);
+
+        let Some(updated_active) = self.living_base.active_item_use() else {
+            return;
+        };
+        if updated_active.hand() != active.hand()
+            || !ItemStack::is_same_item_same_components(updated_active.item(), active.item())
+        {
+            return;
+        }
+
+        let Some(updated_active) = self.living_base.decrement_active_item_use() else {
+            return;
+        };
+        if updated_active.remaining_ticks() <= 0 {
+            self.complete_using_item();
+        }
+    }
+
     fn invalid_entity_attacked_message() -> TextComponent {
         TranslatedMessage {
             key: "multiplayer.disconnect.invalid_entity_attacked".into(),
@@ -1376,20 +1525,19 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                // TODO: Implement release use item (releasing bow, etc.)
-                log::debug!("Player {} released use item", self.gameprofile.name);
+                self.release_using_item();
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
                     return;
                 }
 
+                self.stop_using_item();
                 let changed = self.inventory.lock().swap_hands();
                 if changed {
                     self.broadcast_entity_event(EntityStatus::SwapHands);
                     self.broadcast_inventory_changes();
                 }
-                // TODO: Stop active item use once the using-item foundation exists.
             }
             PlayerAction::Stab => {
                 if self.game_mode() == GameType::Spectator {

@@ -22,11 +22,11 @@ use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
-use glam::DVec3;
+use glam::{DVec3, Vec3};
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CPlayerChat,
-    CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
+    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CLevelParticles,
+    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
     CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
     CUpdateAttributes, GameEventType, SoundSource,
 };
@@ -45,6 +45,7 @@ use steel_registry::blocks::shapes::{
     BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_offset_shape_full_block,
     is_shape_full_block, join_is_not_empty,
 };
+use steel_registry::entity_data::ParticleData;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -4067,6 +4068,62 @@ impl World {
         // Get players tracking this chunk, then filter by 64-block distance
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
+            if exclude == Some(entity_id) {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                let player_pos = player.position();
+                let dx = player_pos.x - pos.x;
+                let dy = player_pos.y - pos.y;
+                let dz = player_pos.z - pos.z;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                if dist_sq <= MAX_DISTANCE_SQ {
+                    player.connection.send_encoded(encoded.clone());
+                }
+            }
+        }
+    }
+
+    /// Sends particles at an exact world position, broadcasting to nearby players.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "particle packet mirrors vanilla fields"
+    )]
+    pub fn send_particles(
+        &self,
+        particle: ParticleData,
+        override_limiter: bool,
+        always_show: bool,
+        pos: DVec3,
+        offset: Vec3,
+        max_speed: f32,
+        count: i32,
+        exclude: Option<i32>,
+    ) {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x.floor() as i32),
+            SectionPos::block_to_section_coord(pos.z.floor() as i32),
+        );
+        let packet = CLevelParticles::new(
+            particle,
+            override_limiter,
+            always_show,
+            pos,
+            offset,
+            max_speed,
+            count,
+        );
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode level particles packet");
+            return;
+        };
+
+        for entity_id in self.player_area_map.get_tracking_players(chunk) {
             if exclude == Some(entity_id) {
                 continue;
             }

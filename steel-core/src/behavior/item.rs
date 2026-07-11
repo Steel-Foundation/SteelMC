@@ -1,5 +1,7 @@
 //! Item behavior trait and registry.
 
+use std::sync::Arc;
+
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
@@ -10,6 +12,32 @@ use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
+use crate::world::World;
+
+/// Vanilla item-use animation shown while a living entity is actively using an item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UseAnimation {
+    /// No active use animation.
+    None,
+    /// Food eating animation.
+    Eat,
+    /// Drink animation.
+    Drink,
+    /// Blocking animation.
+    Block,
+    /// Bow draw animation.
+    Bow,
+    /// Spear/trident use animation.
+    Spear,
+    /// Crossbow charge animation.
+    Crossbow,
+    /// Spyglass animation.
+    Spyglass,
+    /// Goat horn animation.
+    TootHorn,
+    /// Brush animation.
+    Brush,
+}
 
 /// Trait defining the behavior of an item.
 ///
@@ -34,6 +62,46 @@ pub trait ItemBehavior: Send + Sync {
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, _context: &mut UseItemContext) -> InteractionResult {
         InteractionResult::Pass
+    }
+
+    /// Returns vanilla `Item.getUseAnimation`.
+    fn get_use_animation(&self, _stack: &ItemStack) -> UseAnimation {
+        UseAnimation::None
+    }
+
+    /// Returns vanilla `Item.getUseDuration`.
+    fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+        0
+    }
+
+    /// Called every tick while a living entity is actively using this item.
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+    }
+
+    /// Called when active use is released before completion.
+    fn release_using(
+        &self,
+        _stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        _time_left: i32,
+    ) {
+    }
+
+    /// Called when active use reaches its full duration.
+    fn finish_using(
+        &self,
+        stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+    ) -> ItemStack {
+        stack.copy_with_count(stack.count())
     }
 
     /// Called by vanilla `ItemStack.interactLivingEntity`.

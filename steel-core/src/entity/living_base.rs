@@ -514,6 +514,52 @@ impl Default for LivingSwingState {
     }
 }
 
+/// Vanilla active item-use state stored on `LivingEntity`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveItemUseState {
+    hand: InteractionHand,
+    item: ItemStack,
+    duration: i32,
+    remaining_ticks: i32,
+}
+
+impl ActiveItemUseState {
+    /// Creates active item-use state from the hand, stack snapshot, and duration.
+    #[must_use]
+    pub fn new(hand: InteractionHand, item: ItemStack, duration: i32) -> Self {
+        Self {
+            hand,
+            item,
+            duration,
+            remaining_ticks: duration,
+        }
+    }
+
+    /// Returns the hand being used.
+    #[must_use]
+    pub const fn hand(&self) -> InteractionHand {
+        self.hand
+    }
+
+    /// Returns the item snapshot captured when use started.
+    #[must_use]
+    pub const fn item(&self) -> &ItemStack {
+        &self.item
+    }
+
+    /// Returns the original use duration.
+    #[must_use]
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    /// Returns the remaining active-use ticks.
+    #[must_use]
+    pub const fn remaining_ticks(&self) -> i32 {
+        self.remaining_ticks
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LivingEntityState {
     effects_dirty: bool,
@@ -544,6 +590,7 @@ struct LivingEntityState {
     travel_input: LivingTravelInput,
     rotation: LivingRotationState,
     swing: LivingSwingState,
+    active_item_use: Option<ActiveItemUseState>,
     no_jump_delay: i32,
     no_action_time: i32,
 }
@@ -579,6 +626,7 @@ impl LivingEntityState {
             travel_input: LivingTravelInput::ZERO,
             rotation: LivingRotationState::new(),
             swing: LivingSwingState::new(),
+            active_item_use: None,
             no_jump_delay: 0,
             no_action_time: 0,
         }
@@ -674,6 +722,41 @@ impl LivingEntityBase {
     #[must_use]
     pub fn swing_state(&self) -> LivingSwingState {
         self.state.lock().swing
+    }
+
+    /// Returns a snapshot of vanilla active item-use state.
+    #[must_use]
+    pub fn active_item_use(&self) -> Option<ActiveItemUseState> {
+        self.state.lock().active_item_use.clone()
+    }
+
+    /// Returns whether this living entity is actively using an item.
+    #[must_use]
+    pub fn is_using_item(&self) -> bool {
+        self.state.lock().active_item_use.is_some()
+    }
+
+    /// Starts vanilla active item use.
+    pub fn start_using_item(&self, hand: InteractionHand, item: ItemStack, duration: i32) -> bool {
+        if item.is_empty() || duration <= 0 {
+            return false;
+        }
+
+        self.state.lock().active_item_use = Some(ActiveItemUseState::new(hand, item, duration));
+        true
+    }
+
+    /// Stops vanilla active item use without calling item hooks.
+    pub fn stop_using_item(&self) -> Option<ActiveItemUseState> {
+        self.state.lock().active_item_use.take()
+    }
+
+    /// Decrements active-use remaining ticks and returns the updated state.
+    pub fn decrement_active_item_use(&self) -> Option<ActiveItemUseState> {
+        let mut state = self.state.lock();
+        let active = state.active_item_use.as_mut()?;
+        active.remaining_ticks -= 1;
+        Some(active.clone())
     }
 
     /// Returns vanilla `yBodyRot`.

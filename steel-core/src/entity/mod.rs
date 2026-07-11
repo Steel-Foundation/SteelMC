@@ -737,9 +737,9 @@ pub use inside_block_effects::{
 };
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use living_base::{
-    ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase, LivingRotationState,
-    LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
-    MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
+    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
+    MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
@@ -5658,7 +5658,7 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity is currently using an item.
     fn is_using_item(&self) -> bool {
-        false
+        self.living_base().is_using_item()
     }
 
     /// Checks if the entity is blocking with a shield or similar item.

@@ -2847,7 +2847,7 @@ impl ChunkStorage {
                     .map(|&idx| Self::resolve_block_state(chunk, idx))
                     .collect();
                 let mut cube = Box::new([[[BlockStateId(0); 16]; 16]; 16]);
-                for plane in &mut cube {
+                for plane in cube.iter_mut() {
                     for row in plane {
                         for cell in row {
                             *cell = runtime_palette[indices.next().expect(

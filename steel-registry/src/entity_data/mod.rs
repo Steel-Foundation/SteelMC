@@ -280,6 +280,7 @@ impl Quaternionf {
 pub enum ParticleOptions {
     None,
     Color { color: i32 },
+    Block { state: BlockStateId },
 }
 
 /// Particle effect data.
@@ -296,6 +297,17 @@ impl ParticleData {
         Self {
             particle_type,
             options,
+        }
+    }
+}
+
+impl WriteTo for ParticleData {
+    fn write(&self, writer: &mut impl io::Write) -> io::Result<()> {
+        VarInt(self.particle_type).write(writer)?;
+        match &self.options {
+            ParticleOptions::None => Ok(()),
+            ParticleOptions::Color { color } => color.write(writer),
+            ParticleOptions::Block { state } => VarInt(i32::from(state.0)).write(writer),
         }
     }
 }

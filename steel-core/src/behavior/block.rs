@@ -1102,6 +1102,17 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Returns brushable-block data for archaeology brushing
+    ///
+    /// Vanilla keeps this on `BrushableBlock`; exposing it through block behavior lets
+    /// `BrushItem` stay generic without matching concrete vanilla blocks
+    fn brushable_data(
+        &self,
+        _state: BlockStateId,
+    ) -> Option<(BlockRef, SoundEventRef, SoundEventRef)> {
+        None
+    }
+
     /// Returns whether this block can provide an analog output signal to comparators.
     ///
     /// Override to return `true` for containers (chests, barrels, hoppers, etc.)

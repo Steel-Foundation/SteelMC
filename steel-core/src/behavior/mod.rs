@@ -73,7 +73,7 @@ pub use context::{
     UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
-pub use item::{ItemBehavior, ItemBehaviorRegistry};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, UseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,

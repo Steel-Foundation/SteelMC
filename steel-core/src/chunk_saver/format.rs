@@ -221,7 +221,7 @@ impl RegionHeader {
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(CHUNK_TABLE_SIZE);
-        for entry in &self.entries {
+        for entry in self.entries.iter() {
             bytes.extend_from_slice(&entry.to_bytes());
         }
         bytes

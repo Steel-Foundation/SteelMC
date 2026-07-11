@@ -2,6 +2,7 @@
 
 mod barrel;
 mod beehive;
+mod brushable;
 mod end_gateway;
 mod end_portal;
 mod potent_sulfur;
@@ -12,6 +13,7 @@ pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
+pub use brushable::BrushableBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;
 pub use end_portal::EndPortalBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;

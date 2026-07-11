@@ -81,7 +81,7 @@ use steel_utils::entity_events::EntityStatus;
 
 use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, GameType};
+use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::TextComponent;
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
@@ -428,6 +428,20 @@ impl ServerJob for PlayerRespawnJob {
 }
 
 impl Player {
+    /// Returns the hand currently driving active item use.
+    #[must_use]
+    pub fn active_item_use_hand(&self) -> Option<InteractionHand> {
+        self.living_base
+            .active_item_use()
+            .map(|active| active.hand())
+    }
+
+    /// Returns the player's configured main arm.
+    #[must_use]
+    pub fn main_arm(&self) -> HumanoidArm {
+        self.client_information.lock().main_hand
+    }
+
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
@@ -586,6 +600,7 @@ impl Player {
 
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
+        self.tick_active_item_use();
 
         if self.get_health() <= 0.0 {
             self.tick_death();
