@@ -1,5 +1,7 @@
 //! Vanilla-shaped text rendering for command-visible NBT values.
 
+use std::fmt::Write as _;
+
 use simdnbt::owned::{NbtCompound, NbtTag};
 use text_components::{Modifier as _, TextComponent, format::Color};
 
@@ -252,7 +254,7 @@ fn quote_and_escape(value: &str) -> (char, String) {
             '\u{000c}' => escaped.push_str("\\f"),
             '\r' => escaped.push_str("\\r"),
             character if character < ' ' => {
-                escaped.push_str(&format!("\\x{:02x}", u32::from(character)));
+                let _ = write!(escaped, "\\x{:02x}", u32::from(character));
             }
             character => escaped.push(character),
         }

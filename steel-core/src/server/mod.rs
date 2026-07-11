@@ -3292,7 +3292,7 @@ impl Server {
     }
 
     /// Resends client state that is not fully covered by `CRespawn`.
-    pub fn resend_player_context(&self, player: &Player) {
+    pub fn resend_player_context(self: &Arc<Self>, player: &Arc<Player>) {
         player.send_difficulty();
         player.send_inventory_to_remote();
 
@@ -3307,7 +3307,7 @@ impl Server {
     }
 
     /// Resends the command tree and vanilla client permission-level projection.
-    pub fn resend_player_permission_context(&self, player: &Player) {
+    pub fn resend_player_permission_context(self: &Arc<Self>, player: &Arc<Player>) {
         let world = player.get_world();
         player.send_packet(CEntityEvent {
             entity_id: player.id(),
@@ -3315,7 +3315,7 @@ impl Server {
         });
 
         let server = player.server();
-        if !std::ptr::eq(server.as_ref(), self) {
+        if !Arc::ptr_eq(&server, self) {
             tracing::error!(
                 player = %player.gameprofile.name,
                 "cannot project commands from a different server"
@@ -3329,7 +3329,7 @@ impl Server {
             );
             return;
         };
-        if !std::ptr::eq(shared_player.as_ref(), player) {
+        if !Arc::ptr_eq(&shared_player, player) {
             tracing::error!(
                 player = %player.gameprofile.name,
                 "cannot project commands for a stale player handle"

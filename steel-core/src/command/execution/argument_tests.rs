@@ -12,7 +12,9 @@ use crate::command::{
     },
 };
 use glam::DVec3;
-use steel_protocol::packets::game::ArgumentType as ProtocolArgumentType;
+use steel_protocol::packets::game::{
+    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+};
 use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
@@ -142,12 +144,7 @@ impl SteelArgumentParser for ExtensionParser {
         reader.read_int().map(ExtensionValue)
     }
 
-    fn protocol_argument(
-        &self,
-    ) -> (
-        ProtocolArgumentType,
-        Option<steel_protocol::packets::game::SuggestionType>,
-    ) {
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         (
             ProtocolArgumentType::Integer {
                 min: None,
@@ -558,7 +555,7 @@ fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
         assert!(key.resolve().is_none());
     }
 
-    let parse = dispatcher.parse("resource #vill", TestSource::new());
+    let parse = dispatcher.parse("resource #villa", TestSource::new());
     let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
         panic!("structure tag suggestions should build");
     };

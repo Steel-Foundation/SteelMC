@@ -435,11 +435,10 @@ mod tests {
                 .and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::structure_or_tag_key())
         );
-        assert!(
-            dispatcher
-                .node(target)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(target_node) = dispatcher.node(target) else {
+            panic!("locate structure argument should exist");
+        };
+        assert!(target_node.is_executable());
         assert!(dispatcher.children(target).is_some_and(<[_]>::is_empty));
         assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(1));
     }

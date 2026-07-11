@@ -125,11 +125,10 @@ mod tests {
             panic!("built-in commands should register");
         };
         let root = child(&dispatcher, dispatcher.root(), "setworldspawn");
-        assert!(
-            dispatcher
-                .node(root)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(root_node) = dispatcher.node(root) else {
+            panic!("setworldspawn root should exist");
+        };
+        assert!(root_node.is_executable());
 
         let position = child(&dispatcher, root, "pos");
         assert_eq!(
@@ -138,11 +137,10 @@ mod tests {
                 .and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::block_pos())
         );
-        assert!(
-            dispatcher
-                .node(position)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(position_node) = dispatcher.node(position) else {
+            panic!("setworldspawn position should exist");
+        };
+        assert!(position_node.is_executable());
 
         let rotation = child(&dispatcher, position, "rotation");
         assert_eq!(
@@ -151,10 +149,9 @@ mod tests {
                 .and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::rotation())
         );
-        assert!(
-            dispatcher
-                .node(rotation)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(rotation_node) = dispatcher.node(rotation) else {
+            panic!("setworldspawn rotation should exist");
+        };
+        assert!(rotation_node.is_executable());
     }
 }

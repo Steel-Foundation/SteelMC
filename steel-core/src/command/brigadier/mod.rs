@@ -2,6 +2,14 @@
 //!
 //! Semantics are adapted from Brigadier 1.3.10. See `LICENSE-MIT` in this directory.
 
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the complete Brigadier foundation includes primitives not used by current built-ins"
+    )
+)]
+
 mod argument;
 mod builder;
 mod context;
@@ -18,10 +26,25 @@ pub(crate) use argument::{
     ArgumentType, CommandArgumentParser, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue,
     StringType,
 };
-pub(crate) use builder::{CommandNodeBuilder, argument, literal};
+pub(crate) use builder::CommandNodeBuilder;
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "generic Brigadier builders remain available for future internal command runtimes"
+    )
+)]
+pub(crate) use builder::{argument, literal};
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "parsed node metadata is part of the tested Brigadier foundation"
+    )
+)]
+pub(crate) use context::ParsedCommandNode;
 pub(crate) use context::{
     ArgumentSuggestionContext, CommandContext, ParseError, ParseResults, ParsedCommandContext,
-    ParsedCommandNode,
 };
 pub(crate) use context_chain::{ContextChain, ContextChainStage};
 pub(crate) use dispatcher::CommandDispatcher;
@@ -33,7 +56,15 @@ pub(crate) use node::{
 pub(crate) use reader::{ReaderCursor, StringReader};
 pub(crate) use runtime::{BrigadierRuntime, CommandRuntime};
 pub(crate) use string_range::StringRange;
-pub(crate) use suggestion::{Suggestion, SuggestionError, Suggestions, SuggestionsBuilder};
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "direct suggestion construction is part of the tested Brigadier foundation"
+    )
+)]
+pub(crate) use suggestion::Suggestion;
+pub(crate) use suggestion::{SuggestionError, Suggestions, SuggestionsBuilder};
 
 #[cfg(test)]
 mod argument_tests;

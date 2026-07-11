@@ -254,6 +254,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "paused and non-advancing clocks must report the exact zero network rate"
+    )]
     fn pause_and_advance_time_gate_network_rate_and_ticks() {
         init_test_registry();
         let mut manager = WorldClockManager::new();

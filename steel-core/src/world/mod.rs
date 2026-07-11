@@ -4970,6 +4970,7 @@ mod tests {
 
     use crate::behavior::init_behaviors;
     use crate::entity::{EntityBase, entities::PigEntity};
+    use crate::test_support::test_world;
 
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
@@ -5110,7 +5111,7 @@ mod tests {
     #[test]
     fn block_state_outside_world_bounds_is_void_air() {
         init_test_registry();
-        let world = crate::test_support::test_world();
+        let world = test_world();
 
         assert_eq!(
             world.get_block_state(BlockPos::new(0, world.get_min_y() - 1, 0)),

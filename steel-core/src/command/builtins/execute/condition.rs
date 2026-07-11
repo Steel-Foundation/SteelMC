@@ -633,7 +633,7 @@ mod tests {
     use steel_registry::{
         test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
     };
-    use steel_utils::locks::SyncMutex;
+    use steel_utils::{locks::SyncMutex, nbt::parse_nbt_path};
 
     use super::*;
     use crate::block_entity::entities::RawBlockEntity;
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn data_match_count_returns_selected_tag_count() {
-        let path = steel_utils::nbt::parse_nbt_path("items[].value").expect("path should parse");
+        let path = parse_nbt_path("items[].value").expect("path should parse");
         let mut first = NbtCompound::new();
         first.insert("value", 1);
         let mut second = NbtCompound::new();

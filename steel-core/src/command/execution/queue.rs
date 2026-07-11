@@ -1,3 +1,11 @@
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "custom scheduler control hooks are exercised by tests and reserved for keyed runtimes"
+    )
+)]
+
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::command::brigadier::{CommandSyntaxError, ContextChainStage};

@@ -367,7 +367,10 @@ mod tests {
         let children = dispatcher.children(root).unwrap_or_default();
         let names = children
             .iter()
-            .filter_map(|child| dispatcher.node(*child).map(|node| node.name()))
+            .filter_map(|child| {
+                let node = dispatcher.node(*child)?;
+                Some(node.name())
+            })
             .collect::<Vec<_>>();
         assert_eq!(
             names,

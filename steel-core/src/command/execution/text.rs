@@ -118,7 +118,7 @@ where
         if holder == "*"
             && let Some(default_name) = &self.default_scoreboard_name
         {
-            holder = default_name.to_owned();
+            default_name.clone_into(&mut holder);
         }
 
         Ok(self
@@ -325,8 +325,7 @@ pub(super) fn validate_component_syntax(component: &TextComponent) -> Result<(),
                 }
             }
         }
-        Content::Object(Object::Atlas { fallback, .. })
-        | Content::Object(Object::Player { fallback, .. }) => {
+        Content::Object(Object::Atlas { fallback, .. } | Object::Player { fallback, .. }) => {
             if let Some(fallback) = fallback {
                 validate_component_syntax(fallback)?;
             }
@@ -338,13 +337,13 @@ pub(super) fn validate_component_syntax(component: &TextComponent) -> Result<(),
         validate_component_syntax(child)?;
     }
     match &component.interactions.hover {
-        Some(HoverEvent::ShowText { value })
-        | Some(HoverEvent::ShowEntity {
-            name: Some(value), ..
-        }) => validate_component_syntax(value)?,
-        Some(HoverEvent::ShowItem { .. })
-        | Some(HoverEvent::ShowEntity { name: None, .. })
-        | None => {}
+        Some(
+            HoverEvent::ShowText { value }
+            | HoverEvent::ShowEntity {
+                name: Some(value), ..
+            },
+        ) => validate_component_syntax(value)?,
+        Some(HoverEvent::ShowItem { .. } | HoverEvent::ShowEntity { name: None, .. }) | None => {}
     }
     Ok(())
 }

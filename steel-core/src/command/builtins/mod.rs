@@ -122,11 +122,10 @@ mod tests {
         }) else {
             panic!("list root should exist");
         };
-        assert!(
-            dispatcher
-                .node(list)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(list_node) = dispatcher.node(list) else {
+            panic!("list root should exist");
+        };
+        assert!(list_node.is_executable());
         let Some(list_children) = dispatcher.children(list) else {
             panic!("list children should exist");
         };
@@ -171,6 +170,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one graph-shape test keeps execute paths and redirects directly comparable"
+    )]
     fn execute_graph_uses_expected_redirects_and_argument_types() {
         init_test_registry();
         let Ok(dispatcher) = create_dispatcher() else {
@@ -204,10 +207,10 @@ mod tests {
         };
 
         let run = child(execute, "run");
-        assert_eq!(
-            dispatcher.node(run).and_then(|node| node.redirect()),
-            Some(dispatcher.root())
-        );
+        let Some(run_node) = dispatcher.node(run) else {
+            panic!("execute run should exist");
+        };
+        assert_eq!(run_node.redirect(), Some(dispatcher.root()));
 
         for condition in ["if", "unless"] {
             for (path, expected_type) in [
@@ -415,8 +418,11 @@ mod tests {
             let terminal = path
                 .iter()
                 .fold(execute, |parent, name| child(parent, name));
+            let Some(terminal_node) = dispatcher.node(terminal) else {
+                panic!("execute modifier terminal should exist");
+            };
             assert_eq!(
-                dispatcher.node(terminal).and_then(|node| node.redirect()),
+                terminal_node.redirect(),
                 Some(execute),
                 "execute {} should redirect to the execute root",
                 path.join(" ")

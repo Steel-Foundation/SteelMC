@@ -170,11 +170,10 @@ mod tests {
         let qualified = child(&dispatcher, gamerule, "minecraft:keep_inventory");
 
         for rule in [short, qualified] {
-            assert!(
-                dispatcher
-                    .node(rule)
-                    .is_some_and(|node| node.is_executable())
-            );
+            let Some(rule_node) = dispatcher.node(rule) else {
+                panic!("gamerule literal should exist");
+            };
+            assert!(rule_node.is_executable());
             let value = child(&dispatcher, rule, "value");
             assert_eq!(
                 dispatcher.node(value).and_then(|node| node.argument_type()),

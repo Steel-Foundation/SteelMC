@@ -84,10 +84,9 @@ mod tests {
                 .and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::domain())
         );
-        assert!(
-            dispatcher
-                .node(domain)
-                .is_some_and(|node| node.is_executable())
-        );
+        let Some(domain) = dispatcher.node(domain) else {
+            panic!("domain argument should exist");
+        };
+        assert!(domain.is_executable());
     }
 }

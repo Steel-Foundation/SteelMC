@@ -372,11 +372,10 @@ mod tests {
         );
         for name in ["rate", "step", "sprint", "unfreeze", "freeze"] {
             let node = child(&dispatcher, tick, name);
-            assert!(
-                dispatcher
-                    .node(node)
-                    .is_some_and(|node| node.is_restricted())
-            );
+            let Some(node) = dispatcher.node(node) else {
+                panic!("tick subcommand should exist");
+            };
+            assert!(node.is_restricted());
         }
 
         let rate = child(&dispatcher, tick, "rate");

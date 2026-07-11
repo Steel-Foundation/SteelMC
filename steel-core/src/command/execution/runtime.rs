@@ -1,3 +1,11 @@
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "custom runtime variants are reserved for future keyed command integrations"
+    )
+)]
+
 use std::sync::Arc;
 
 use steel_registry::{

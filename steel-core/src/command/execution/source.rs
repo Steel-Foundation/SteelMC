@@ -177,6 +177,10 @@ impl CommandSource {
         }
     }
 
+    #[expect(
+        dead_code,
+        reason = "source-aware runtime extensions need access to the original sender"
+    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
@@ -271,12 +275,20 @@ impl CommandSource {
         self.position
     }
 
+    #[expect(
+        dead_code,
+        reason = "silent command-source derivation is retained for future vanilla command paths"
+    )]
     pub(crate) fn with_suppressed_output(&self) -> Self {
         let mut source = self.clone();
         source.silent = true;
         source
     }
 
+    #[expect(
+        dead_code,
+        reason = "custom executors need to inspect silent command-source state"
+    )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
     }

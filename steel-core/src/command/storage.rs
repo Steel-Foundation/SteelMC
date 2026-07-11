@@ -217,11 +217,13 @@ fn storage_io_error(domain: &str, error: io::Error) -> io::Error {
 mod tests {
     use std::{
         env::temp_dir,
+        slice,
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use simdnbt::owned::{NbtCompound, NbtTag};
     use steel_utils::Identifier;
+    use tokio::fs;
 
     use crate::saved_data::SavedDataManager;
 
@@ -236,7 +238,7 @@ mod tests {
         let mut value = NbtCompound::new();
         value.insert("value", 3);
         storage.set(key.clone(), value);
-        assert_eq!(storage.keys(), [key.clone()]);
+        assert_eq!(storage.keys(), slice::from_ref(&key));
 
         storage.set(key.clone(), NbtCompound::new());
         assert!(storage.get(&key).is_empty());
@@ -275,7 +277,7 @@ mod tests {
             CommandStorage::from_persistent(persistent).expect("stored NBT should validate");
         assert_eq!(restored.get(&key), value);
 
-        tokio::fs::remove_dir_all(path)
+        fs::remove_dir_all(path)
             .await
             .expect("temporary command storage directory should be removed");
     }

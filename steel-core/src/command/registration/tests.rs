@@ -301,10 +301,10 @@ fn factories_receive_the_built_dispatcher_root_for_redirects() {
     };
     let forward = child(&dispatcher, dispatcher.root(), "forward");
 
-    assert_eq!(
-        dispatcher.node(forward).and_then(|node| node.redirect()),
-        Some(dispatcher.root())
-    );
+    let Some(forward_node) = dispatcher.node(forward) else {
+        panic!("forward root should exist");
+    };
+    assert_eq!(forward_node.redirect(), Some(dispatcher.root()));
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn default_access_allows_unset_but_not_explicitly_denied_permissions() {
 
 #[test]
 fn explicit_permission_expressions_replace_id_derivation() {
-    let permission = crate::permission::PermissionKey::parse("steel.command.inspect");
+    let permission = PermissionKey::parse("steel.command.inspect");
     let Ok(permission) = permission else {
         panic!("test permission should be valid");
     };

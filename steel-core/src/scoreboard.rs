@@ -595,6 +595,7 @@ mod tests {
         env::temp_dir,
         time::{SystemTime, UNIX_EPOCH},
     };
+    use tokio::fs;
 
     use crate::saved_data::{SavedDataManager, names as saved_data_names};
 
@@ -702,7 +703,7 @@ mod tests {
             .expect("objective should persist");
         assert_eq!(restored.score(&holder, &restored_objective), Some(5));
 
-        tokio::fs::remove_dir_all(path)
+        fs::remove_dir_all(path)
             .await
             .expect("temporary scoreboard directory should be removed");
     }

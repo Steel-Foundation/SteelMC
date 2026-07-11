@@ -23,11 +23,27 @@ pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use queue::{
     ChainModifiers, CommandExecutionContext, CommandResultSuspension, CommandResultSuspensionPoll,
-    CommandSuspension, CommandSuspensionPoll, EntryAction, ExecutionControl, ExecutionStop, Frame,
+    ExecutionControl, ExecutionStop,
 };
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "custom scheduler extension hooks are retained for keyed command runtimes"
+    )
+)]
+pub(crate) use queue::{CommandSuspension, CommandSuspensionPoll, EntryAction, Frame};
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "custom executors are retained for future keyed command runtime integrations"
+    )
+)]
+pub(crate) use runtime::{CustomCommandExecutor, CustomModifierExecutor};
 pub(crate) use runtime::{
-    CustomCommandExecutor, CustomModifierExecutor, SteelCommandContext, SteelCommandRuntime,
-    SteelContextChain, SteelExecutor, SteelModifier, argument, literal,
+    SteelCommandContext, SteelCommandRuntime, SteelContextChain, SteelExecutor, SteelModifier,
+    argument, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 pub(crate) use source::{
