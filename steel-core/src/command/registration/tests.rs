@@ -1,6 +1,6 @@
 use steel_utils::Identifier;
 
-use crate::command::execution::CommandPermissionSource;
+use crate::command::execution::{CommandArgumentSource, CommandPermissionSource};
 use crate::command::{
     brigadier::{
         CommandDispatcher, CommandRedirectTarget, CommandRequirement, CommandSyntaxError, NodeId,
@@ -38,6 +38,8 @@ impl ExecutionCommandSource for TestSource {
 
     fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
 }
+
+impl CommandArgumentSource for TestSource {}
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {

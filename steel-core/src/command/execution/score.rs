@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use super::{CommandSource, ExecutionCommandSource};
+use super::{CommandArgumentSource, CommandSource};
 use crate::{
     command::{
         brigadier::{
@@ -99,7 +99,7 @@ pub(super) fn parse_score_holder<S>(
     multiple: bool,
 ) -> Result<ScoreHolderArgument, CommandSyntaxError>
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     if reader.peek() == Some('@') {
         return parse_entity_selector(reader, source, !multiple, false)
@@ -126,7 +126,7 @@ where
 
 pub(super) fn suggest_score_holders<S>(builder: &mut SuggestionsBuilder<'_>, source: &S)
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     // Vanilla's SUGGEST_SCORE_HOLDERS provider is selector-aware but does not
     // filter suggestions to the single-result parser variant.

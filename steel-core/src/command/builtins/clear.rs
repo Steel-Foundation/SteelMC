@@ -186,25 +186,22 @@ mod tests {
         assert!(clear_node.is_executable());
 
         let targets = child(&dispatcher, clear, "targets");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(targets)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Entity {
-                single: false,
-                players_only: true
-            })
-        ));
+            Some(&SteelArgumentType::players())
+        );
         assert!(matches!(
             dispatcher.node(targets),
             Some(node) if node.is_executable()
         ));
 
         let item = child(&dispatcher, targets, "item");
-        assert!(matches!(
+        assert_eq!(
             dispatcher.node(item).and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::ItemPredicate)
-        ));
+            Some(&SteelArgumentType::item_predicate())
+        );
         assert!(matches!(
             dispatcher.node(item),
             Some(node) if node.is_executable()
@@ -215,10 +212,7 @@ mod tests {
             dispatcher
                 .node(max_count)
                 .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::Primitive(ArgumentType::integer(
-                0,
-                i32::MAX
-            )))
+            Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
         );
         assert!(matches!(
             dispatcher.node(max_count),

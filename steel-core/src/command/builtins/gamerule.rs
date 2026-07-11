@@ -176,10 +176,10 @@ mod tests {
                     .is_some_and(|node| node.is_executable())
             );
             let value = child(&dispatcher, rule, "value");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher.node(value).and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Primitive(ArgumentType::Bool))
-            ));
+                Some(&SteelArgumentType::from(ArgumentType::bool()))
+            );
         }
     }
 
@@ -193,12 +193,9 @@ mod tests {
         let rule = child(&dispatcher, gamerule, "max_command_forks");
         let value = child(&dispatcher, rule, "value");
 
-        assert!(matches!(
+        assert_eq!(
             dispatcher.node(value).and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Primitive(ArgumentType::Integer {
-                minimum: 0,
-                maximum: i32::MAX,
-            }))
-        ));
+            Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
+        );
     }
 }

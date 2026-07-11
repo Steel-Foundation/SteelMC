@@ -4,7 +4,7 @@ use std::{fmt, sync::Arc};
 
 use steel_utils::{Identifier, translations};
 
-use super::{CommandSource, ExecutionCommandSource, argument::parse_identifier};
+use super::{CommandArgumentSource, CommandSource, argument::parse_identifier};
 use crate::{
     command::brigadier::{CommandSyntaxError, StringReader, SuggestionsBuilder},
     world::World,
@@ -62,7 +62,7 @@ pub(super) fn parse_world_argument(
 
 pub(super) fn suggest_worlds<S>(builder: &mut SuggestionsBuilder<'_>, source: &S)
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     let prefix = builder.remaining_lowercase().to_owned();
     for world in source

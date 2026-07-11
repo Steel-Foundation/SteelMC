@@ -30,7 +30,8 @@ pub(crate) use runtime::{
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 pub(crate) use source::{
-    CommandPermissionSource, CommandResultCallback, CommandSource, ExecutionCommandSource,
+    CommandArgumentSource, CommandPermissionSource, CommandResultCallback, CommandSource,
+    ExecutionCommandSource,
 };
 pub(crate) use structure::StructureOrTagKey;
 pub(crate) use world::WorldArgument;

@@ -63,14 +63,8 @@ impl CommandResultCallback {
     }
 }
 
-/// Source behavior required by the Steel command scheduler.
-pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
-    fn with_callback(&self, callback: CommandResultCallback) -> Self;
-
-    fn callback(&self) -> CommandResultCallback;
-
-    fn handle_error(&self, error: &CommandSyntaxError, forked: bool);
-
+/// Read-only source data exposed to command argument parsers and suggestion providers.
+pub(crate) trait CommandArgumentSource: Send + Sync {
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         None
     }
@@ -110,6 +104,17 @@ pub(crate) trait ExecutionCommandSource: Sized + Send + Sync + 'static {
     fn allows_advanced_entity_selectors(&self) -> bool {
         false
     }
+}
+
+/// Source behavior required by the Steel command scheduler.
+pub(crate) trait ExecutionCommandSource:
+    CommandArgumentSource + Sized + Send + Sync + 'static
+{
+    fn with_callback(&self, callback: CommandResultCallback) -> Self;
+
+    fn callback(&self) -> CommandResultCallback;
+
+    fn handle_error(&self, error: &CommandSyntaxError, forked: bool);
 }
 
 /// Permission lookup required while constructing and traversing Steel command trees.
@@ -328,7 +333,9 @@ impl ExecutionCommandSource for CommandSource {
         };
         self.send_failure(message);
     }
+}
 
+impl CommandArgumentSource for CommandSource {
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         self.world.dimension_type.default_clock
     }

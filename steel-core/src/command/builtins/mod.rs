@@ -160,10 +160,7 @@ mod tests {
                 };
                 assert_eq!(duration.name(), "duration");
                 assert!(duration.is_executable());
-                assert!(matches!(
-                    duration.argument_type(),
-                    Some(SteelArgumentType::Time { minimum: 1 })
-                ));
+                assert_eq!(duration.argument_type(), Some(&SteelArgumentType::time(1)));
                 node.name()
             })
             .collect::<Vec<_>>();
@@ -384,7 +381,7 @@ mod tests {
                     assert_eq!(scale_node.redirect(), Some(execute));
                     assert_eq!(
                         scale_node.argument_type(),
-                        Some(&SteelArgumentType::Primitive(ArgumentType::double(
+                        Some(&SteelArgumentType::from(ArgumentType::double(
                             f64::MIN,
                             f64::MAX,
                         )))

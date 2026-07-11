@@ -381,21 +381,18 @@ mod tests {
 
         let rate = child(&dispatcher, tick, "rate");
         let rate = child(&dispatcher, rate, "rate");
-        assert!(matches!(
+        assert_eq!(
             dispatcher.node(rate).and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Primitive(ArgumentType::Float {
-                minimum: 1.0,
-                maximum: 10_000.0,
-            }))
-        ));
+            Some(&SteelArgumentType::from(ArgumentType::float(1.0, 10_000.0)))
+        );
 
         for parent in ["step", "sprint"] {
             let parent = child(&dispatcher, tick, parent);
             let time = child(&dispatcher, parent, "time");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher.node(time).and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Time { minimum: 1 })
-            ));
+                Some(&SteelArgumentType::time(1))
+            );
         }
     }
 }

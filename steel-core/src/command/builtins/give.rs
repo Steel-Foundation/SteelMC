@@ -185,24 +185,21 @@ mod tests {
         assert!(give_node.is_restricted());
 
         let targets = child(&dispatcher, give, "targets");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(targets)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Entity {
-                single: false,
-                players_only: true
-            })
-        ));
+            Some(&SteelArgumentType::players())
+        );
 
         let item = child(&dispatcher, targets, "item");
         let Some(item_node) = dispatcher.node(item) else {
             panic!("item node should exist");
         };
-        assert!(matches!(
+        assert_eq!(
             item_node.argument_type(),
-            Some(SteelArgumentType::ItemStack)
-        ));
+            Some(&SteelArgumentType::item_stack())
+        );
         assert!(item_node.is_executable());
 
         let count = child(&dispatcher, item, "count");
@@ -211,10 +208,7 @@ mod tests {
         };
         assert_eq!(
             count_node.argument_type(),
-            Some(&SteelArgumentType::Primitive(ArgumentType::integer(
-                1,
-                i32::MAX
-            )))
+            Some(&SteelArgumentType::from(ArgumentType::integer(1, i32::MAX)))
         );
         assert!(count_node.is_executable());
     }

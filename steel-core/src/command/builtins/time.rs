@@ -376,49 +376,43 @@ mod tests {
 
         let set = child(&dispatcher, root, "set");
         let time = child(&dispatcher, set, "time");
-        assert!(matches!(
+        assert_eq!(
             dispatcher.node(time).and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Time { minimum: 0 })
-        ));
+            Some(&SteelArgumentType::time(0))
+        );
         let marker = child(&dispatcher, set, "timemarker");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(marker)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::TimeMarker {
-                clock_argument: None
-            })
-        ));
+            Some(&SteelArgumentType::time_marker(None))
+        );
 
         let rate = child(&dispatcher, root, "rate");
         let rate_value = child(&dispatcher, rate, "rate");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(rate_value)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Primitive(ArgumentType::Float {
-                minimum,
-                maximum
-            })) if minimum.to_bits() == 1.0E-5_f32.to_bits()
-                && maximum.to_bits() == 1_000.0_f32.to_bits()
-        ));
+            Some(&SteelArgumentType::from(ArgumentType::float(
+                1.0E-5, 1_000.0
+            )))
+        );
 
         let of = child(&dispatcher, root, "of");
         let clock = child(&dispatcher, of, CLOCK_ARGUMENT);
-        assert!(matches!(
+        assert_eq!(
             dispatcher.node(clock).and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::WorldClock)
-        ));
+            Some(&SteelArgumentType::world_clock())
+        );
         let of_set = child(&dispatcher, clock, "set");
         let of_marker = child(&dispatcher, of_set, "timemarker");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(of_marker)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::TimeMarker {
-                clock_argument: Some("clock")
-            })
-        ));
+            Some(&SteelArgumentType::time_marker(Some("clock")))
+        );
     }
 
     #[test]

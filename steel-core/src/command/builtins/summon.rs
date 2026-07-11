@@ -161,26 +161,24 @@ mod tests {
         };
         let root = child(&dispatcher, dispatcher.root(), "summon");
         let entity = child(&dispatcher, root, "entity");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(entity)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::SummonableEntity)
-        ));
+            Some(&SteelArgumentType::summonable_entity())
+        );
         assert!(matches!(
             dispatcher.node(entity),
             Some(node) if node.is_executable()
         ));
 
         let position = child(&dispatcher, entity, "pos");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(position)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Vec3 {
-                center_integers: true
-            })
-        ));
+            Some(&SteelArgumentType::vec3(true))
+        );
         assert!(matches!(
             dispatcher.node(position),
             Some(node) if node.is_executable()

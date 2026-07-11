@@ -102,13 +102,7 @@ mod tests {
             dispatcher.node(*targets),
             Some(node)
                 if node.is_executable()
-                    && matches!(
-                        node.argument_type(),
-                        Some(SteelArgumentType::Entity {
-                            single: false,
-                            players_only: false
-                        })
-                    )
+                    && node.argument_type() == Some(&SteelArgumentType::entities())
         ));
     }
 }

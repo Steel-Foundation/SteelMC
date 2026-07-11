@@ -512,12 +512,7 @@ mod tests {
                 dispatcher.node(location),
                 Some(node)
                     if node.is_executable()
-                        && matches!(
-                            node.argument_type(),
-                            Some(SteelArgumentType::Vec3 {
-                                center_integers: true
-                            })
-                        )
+                        && node.argument_type() == Some(&SteelArgumentType::vec3(true))
             ));
 
             let destination = child(&dispatcher, root, "destination");
@@ -525,13 +520,7 @@ mod tests {
                 dispatcher.node(destination),
                 Some(node)
                     if node.is_executable()
-                        && matches!(
-                            node.argument_type(),
-                            Some(SteelArgumentType::Entity {
-                                single: true,
-                                players_only: false
-                            })
-                        )
+                        && node.argument_type() == Some(&SteelArgumentType::entity())
             ));
 
             let targets = child(&dispatcher, root, "targets");
@@ -541,7 +530,7 @@ mod tests {
                 dispatcher.node(rotation),
                 Some(node)
                     if node.is_executable()
-                        && matches!(node.argument_type(), Some(SteelArgumentType::Rotation))
+                        && node.argument_type() == Some(&SteelArgumentType::rotation())
             ));
 
             let facing = child(&dispatcher, target_location, "facing");
@@ -552,7 +541,7 @@ mod tests {
                 dispatcher.node(anchor),
                 Some(node)
                     if node.is_executable()
-                        && matches!(node.argument_type(), Some(SteelArgumentType::EntityAnchor))
+                        && node.argument_type() == Some(&SteelArgumentType::entity_anchor())
             ));
             let facing_location = child(&dispatcher, facing, "facingLocation");
             assert!(matches!(

@@ -1,15 +1,18 @@
 use crate::chunk::heightmap::HeightmapType;
 use crate::command::{
-    brigadier::{CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, Suggestion},
+    brigadier::{
+        CommandDispatcher, CommandSyntaxError, CommandSyntaxErrorKind, StringReader, Suggestion,
+    },
     execution::{
-        BiomeOrTag, BlockPredicate, CommandPermissionSource, CommandResultCallback, Coordinates,
-        ExecutionCommandSource, ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime,
-        StructureOrTagKey, WorldArgument, argument,
+        BiomeOrTag, BlockPredicate, CommandArgumentSource, CommandPermissionSource,
+        CommandResultCallback, Coordinates, ExecutionCommandSource, ScoreHolderArgument,
+        SteelArgumentType, SteelCommandRuntime, StructureOrTagKey, WorldArgument, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
 };
 use glam::DVec3;
+use steel_protocol::packets::game::ArgumentType as ProtocolArgumentType;
 use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
@@ -18,10 +21,12 @@ use steel_registry::{
     vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
-use steel_utils::{Identifier, types::GameType};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 
 use crate::entity::{EntityAnchor, init_test_entities};
 use crate::permission::{PermissionExpr, PermissionState};
+
+use super::argument::SteelArgumentParser;
 
 struct TestSource {
     callback: CommandResultCallback,
@@ -45,7 +50,9 @@ impl ExecutionCommandSource for TestSource {
     }
 
     fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
+}
 
+impl CommandArgumentSource for TestSource {
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         Some(&vanilla_world_clocks::OVERWORLD)
     }
@@ -98,6 +105,94 @@ impl CommandPermissionSource for TestSource {
 }
 
 type TestDispatcher = CommandDispatcher<TestSource, SteelCommandRuntime>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExtensionParser;
+
+// SAFETY: This test-only key uniquely identifies `ExtensionParser` in the process.
+unsafe impl DowncastType for ExtensionParser {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/command/parser/extension");
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ExtensionValue(i32);
+
+// SAFETY: This test-only key uniquely identifies `ExtensionValue` in the process.
+unsafe impl DowncastType for ExtensionValue {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/command/value/extension");
+}
+
+#[derive(Debug)]
+struct UnrelatedValue;
+
+// SAFETY: This test-only key uniquely identifies `UnrelatedValue` in the process.
+unsafe impl DowncastType for UnrelatedValue {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/command/value/unrelated");
+}
+
+impl SteelArgumentParser for ExtensionParser {
+    type Value = ExtensionValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        reader.read_int().map(ExtensionValue)
+    }
+
+    fn protocol_argument(
+        &self,
+    ) -> (
+        ProtocolArgumentType,
+        Option<steel_protocol::packets::game::SuggestionType>,
+    ) {
+        (
+            ProtocolArgumentType::Integer {
+                min: None,
+                max: None,
+            },
+            None,
+        )
+    }
+}
+
+#[test]
+fn keyed_argument_erasure_accepts_new_parser_and_value_types() {
+    let argument_type = SteelArgumentType::new(ExtensionParser);
+    assert_eq!(argument_type.parser_type_key(), ExtensionParser::TYPE_KEY);
+    assert_eq!(argument_type, argument_type.clone());
+
+    let dispatcher = resource_dispatcher(argument_type);
+    let parse = dispatcher.parse("resource 42", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("extension argument should parse");
+    };
+    let Some(value) = chain.top_context().argument("value") else {
+        panic!("extension argument value should be retained");
+    };
+
+    assert_eq!(value.type_key(), ExtensionValue::TYPE_KEY);
+    assert_eq!(
+        value.downcast_ref::<ExtensionValue>(),
+        Some(&ExtensionValue(42))
+    );
+    assert!(value.downcast_ref::<UnrelatedValue>().is_none());
+}
+
+#[test]
+fn keyed_parser_equality_includes_concrete_configuration() {
+    let one_tick = SteelArgumentType::time(1);
+    let two_ticks = SteelArgumentType::time(2);
+
+    assert_eq!(one_tick.parser_type_key(), two_ticks.parser_type_key());
+    assert_eq!(one_tick, SteelArgumentType::time(1));
+    assert_ne!(one_tick, two_ticks);
+    assert_ne!(
+        one_tick.parser_type_key(),
+        SteelArgumentType::block_pos().parser_type_key()
+    );
+}
 
 fn dispatcher(minimum: i32) -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();

@@ -10,11 +10,11 @@ use crate::command::brigadier::{
 use crate::permission::{PermissionExpr, PermissionState};
 
 use super::{
-    ChainModifiers, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
-    CommandResultSuspension, CommandResultSuspensionPoll, CommandSuspension, CommandSuspensionPoll,
-    CustomCommandExecutor, CustomModifierExecutor, EntryAction, ExecutionCommandSource,
-    ExecutionControl, ExecutionStop, Frame, SteelCommandRuntime, SteelContextChain, argument,
-    literal,
+    ChainModifiers, CommandArgumentSource, CommandExecutionContext, CommandPermissionSource,
+    CommandResultCallback, CommandResultSuspension, CommandResultSuspensionPoll, CommandSuspension,
+    CommandSuspensionPoll, CustomCommandExecutor, CustomModifierExecutor, EntryAction,
+    ExecutionCommandSource, ExecutionControl, ExecutionStop, Frame, SteelCommandRuntime,
+    SteelContextChain, argument, literal,
 };
 
 #[derive(Default)]
@@ -71,6 +71,8 @@ impl ExecutionCommandSource for TestSource {
             .push((error.raw_message(), forked));
     }
 }
+
+impl CommandArgumentSource for TestSource {}
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {

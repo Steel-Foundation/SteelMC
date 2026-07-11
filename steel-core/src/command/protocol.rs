@@ -170,99 +170,11 @@ impl CommandArgumentProtocol for ArgumentType {
 
 impl CommandArgumentProtocol for SteelArgumentType {
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<SuggestionType>) {
-        match self {
-            SteelArgumentType::Primitive(argument) => argument.protocol_argument(),
-            SteelArgumentType::Time { minimum } => {
-                (ProtocolArgumentType::Time { min: *minimum }, None)
-            }
-            SteelArgumentType::BlockPos => (ProtocolArgumentType::BlockPos, None),
-            SteelArgumentType::Vec3 { .. } => (ProtocolArgumentType::Vec3, None),
-            SteelArgumentType::Rotation => (ProtocolArgumentType::Rotation, None),
-            SteelArgumentType::Swizzle => (ProtocolArgumentType::Swizzle, None),
-            SteelArgumentType::Heightmap => (ProtocolArgumentType::Heightmap, None),
-            SteelArgumentType::EntityAnchor => (ProtocolArgumentType::EntityAnchor, None),
-            SteelArgumentType::Entity {
-                single,
-                players_only,
-            } => (
-                ProtocolArgumentType::Entity {
-                    flags: u8::from(*single) | (u8::from(*players_only) << 1),
-                },
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::ScoreHolder { multiple } => (
-                ProtocolArgumentType::ScoreHolder {
-                    flags: u8::from(*multiple),
-                },
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::Objective => (
-                ProtocolArgumentType::Objective,
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::IntRange => (ProtocolArgumentType::IntRange, None),
-            SteelArgumentType::BiomeOrTag => (
-                ProtocolArgumentType::ResourceOrTag {
-                    identifier: "minecraft:worldgen/biome",
-                },
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::StructureOrTagKey => (
-                ProtocolArgumentType::ResourceOrTagKey {
-                    identifier: "minecraft:worldgen/structure",
-                },
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::BlockPredicate => (ProtocolArgumentType::BlockPredicate, None),
-            SteelArgumentType::GameMode => (ProtocolArgumentType::Gamemode, None),
-            SteelArgumentType::SummonableEntity => (
-                ProtocolArgumentType::Resource {
-                    identifier: "minecraft:entity_type",
-                },
-                Some(SuggestionType::SummonableEntities),
-            ),
-            SteelArgumentType::Enchantment => (
-                ProtocolArgumentType::Resource {
-                    identifier: "minecraft:enchantment",
-                },
-                None,
-            ),
-            SteelArgumentType::ItemStack => (
-                ProtocolArgumentType::ItemStack,
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::ItemPredicate => (
-                ProtocolArgumentType::ItemPredicate,
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::NbtPath => (ProtocolArgumentType::NbtPath, None),
-            SteelArgumentType::World => (
-                ProtocolArgumentType::Dimension,
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::WorldClock => (
-                ProtocolArgumentType::Resource {
-                    identifier: "minecraft:world_clock",
-                },
-                None,
-            ),
-            SteelArgumentType::Timeline { .. } => (
-                ProtocolArgumentType::Resource {
-                    identifier: "minecraft:timeline",
-                },
-                Some(SuggestionType::AskServer),
-            ),
-            SteelArgumentType::Domain
-            | SteelArgumentType::StorageKey
-            | SteelArgumentType::TimeMarker { .. } => (
-                ProtocolArgumentType::ResourceLocation,
-                Some(SuggestionType::AskServer),
-            ),
-        }
+        SteelArgumentType::protocol_argument(self)
     }
 }
 
-fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {
+pub(super) fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {
     match *argument {
         ArgumentType::Bool => ProtocolArgumentType::Bool,
         ArgumentType::Integer { minimum, maximum } => ProtocolArgumentType::Integer {
@@ -294,8 +206,8 @@ fn protocol_argument_type(argument: &ArgumentType) -> ProtocolArgumentType {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandArgumentProtocol, CommandTreeProjectionError, MAX_COMMAND_SUGGESTIONS,
-        command_suggestions_packet, command_tree_packet, protocol_argument_type,
+        CommandTreeProjectionError, MAX_COMMAND_SUGGESTIONS, command_suggestions_packet,
+        command_tree_packet, protocol_argument_type,
     };
     use crate::command::brigadier::{
         ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId,

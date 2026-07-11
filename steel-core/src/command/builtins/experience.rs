@@ -307,25 +307,22 @@ mod tests {
 
             let add = child(&dispatcher, root, "add");
             let add_target = child(&dispatcher, add, "target");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(add_target)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Entity {
-                    single: false,
-                    players_only: true
-                })
-            ));
+                Some(&SteelArgumentType::players())
+            );
             let add_amount = child(&dispatcher, add_target, "amount");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(add_amount)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Primitive(ArgumentType::Integer {
-                    minimum: i32::MIN,
-                    maximum: i32::MAX
-                }))
-            ));
+                Some(&SteelArgumentType::from(ArgumentType::integer(
+                    i32::MIN,
+                    i32::MAX
+                )))
+            );
             assert!(
                 dispatcher
                     .node(add_amount)
@@ -342,25 +339,19 @@ mod tests {
 
             let set = child(&dispatcher, root, "set");
             let set_target = child(&dispatcher, set, "target");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(set_target)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Entity {
-                    single: false,
-                    players_only: true
-                })
-            ));
+                Some(&SteelArgumentType::players())
+            );
             let set_amount = child(&dispatcher, set_target, "amount");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(set_amount)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Primitive(ArgumentType::Integer {
-                    minimum: 0,
-                    maximum: i32::MAX
-                }))
-            ));
+                Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
+            );
             assert!(
                 dispatcher
                     .node(set_amount)
@@ -377,15 +368,12 @@ mod tests {
 
             let query = child(&dispatcher, root, "query");
             let query_target = child(&dispatcher, query, "target");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(query_target)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Entity {
-                    single: true,
-                    players_only: true
-                })
-            ));
+                Some(&SteelArgumentType::player())
+            );
             for suffix in ["points", "levels"] {
                 let suffix = child(&dispatcher, query_target, suffix);
                 assert!(
@@ -402,15 +390,12 @@ mod tests {
                     .is_some_and(|node| node.is_executable())
             );
             let clear_target = child(&dispatcher, clear, "target");
-            assert!(matches!(
+            assert_eq!(
                 dispatcher
                     .node(clear_target)
                     .and_then(|node| node.argument_type()),
-                Some(SteelArgumentType::Entity {
-                    single: false,
-                    players_only: true
-                })
-            ));
+                Some(&SteelArgumentType::players())
+            );
             assert!(
                 dispatcher
                     .node(clear_target)

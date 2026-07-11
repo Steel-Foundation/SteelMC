@@ -132,12 +132,12 @@ mod tests {
         );
 
         let position = child(&dispatcher, root, "pos");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(position)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::BlockPos)
-        ));
+            Some(&SteelArgumentType::block_pos())
+        );
         assert!(
             dispatcher
                 .node(position)
@@ -145,12 +145,12 @@ mod tests {
         );
 
         let rotation = child(&dispatcher, position, "rotation");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(rotation)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Rotation)
-        ));
+            Some(&SteelArgumentType::rotation())
+        );
         assert!(
             dispatcher
                 .node(rotation)

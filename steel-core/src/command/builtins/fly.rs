@@ -232,26 +232,19 @@ mod tests {
             dispatcher.node(targets),
             Some(node)
                 if node.is_executable()
-                    && matches!(
-                        node.argument_type(),
-                        Some(SteelArgumentType::Entity {
-                            single: false,
-                            players_only: true
-                        })
-                    )
+                    && node.argument_type() == Some(&SteelArgumentType::players())
         ));
         let value = child(&dispatcher, targets, "value");
         assert_eq!(
             dispatcher.node(value).and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::Primitive(ArgumentType::bool()))
+            Some(&SteelArgumentType::from(ArgumentType::bool()))
         );
 
         let own_speed = child(&dispatcher, fly, "speed");
         let own_speed_value = child(&dispatcher, own_speed, "speed");
         let target_speed = child(&dispatcher, targets, "speed");
         let target_speed_value = child(&dispatcher, target_speed, "speed");
-        let expected =
-            SteelArgumentType::Primitive(ArgumentType::float(0.0, MAX_FLY_SPEED_MULTIPLIER));
+        let expected = SteelArgumentType::from(ArgumentType::float(0.0, MAX_FLY_SPEED_MULTIPLIER));
         for node in [own_speed_value, target_speed_value] {
             assert_eq!(
                 dispatcher.node(node).and_then(|node| node.argument_type()),

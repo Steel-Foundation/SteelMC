@@ -78,12 +78,12 @@ mod tests {
         };
         let root = child(&dispatcher, dispatcher.root(), "domain");
         let domain = child(&dispatcher, root, "domain");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(domain)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Domain)
-        ));
+            Some(&SteelArgumentType::domain())
+        );
         assert!(
             dispatcher
                 .node(domain)

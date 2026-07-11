@@ -4,8 +4,7 @@ use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::translations;
-use steel_utils::{Identifier, nbt::NbtPath, types::GameType};
+use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
 use text_components::TextComponent;
 
 use crate::command::brigadier::{
@@ -17,7 +16,11 @@ use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, IntRange, ItemPredicate,
     ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
-    argument::{CoordinateAxes, SteelArgumentValue},
+    argument::{
+        CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue, GameModeValue,
+        IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue, SteelArgumentValue,
+        TimeValue, TimelineValue, WorldClockValue,
+    },
     selector::EntitySelector,
 };
 use crate::{
@@ -212,470 +215,115 @@ impl<S> SteelCommandContext<S>
 where
     S: ExecutionCommandSource,
 {
+    fn typed_argument<T: DowncastType>(&self, name: &str) -> Option<&T> {
+        self.argument(name)?.downcast_ref::<T>()
+    }
+
     /// Returns a parsed Minecraft time argument in ticks.
     pub(crate) fn time(&self, name: &str) -> Option<i32> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Time(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<TimeValue>(name).map(|value| value.0)
     }
 
     /// Returns a parsed coordinate expression without resolving it early.
     pub(crate) fn coordinates(&self, name: &str) -> Option<Coordinates> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Coordinates(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<Coordinates>(name).copied()
     }
 
     /// Returns a parsed entity position anchor.
     pub(crate) fn entity_anchor(&self, name: &str) -> Option<EntityAnchor> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::EntityAnchor(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<EntityAnchor>(name).copied()
     }
 
     pub(crate) fn swizzle(&self, name: &str) -> Option<CoordinateAxes> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Swizzle(value)) => Some(*value),
-            _ => None,
-        }
+        self.typed_argument::<CoordinateAxes>(name).copied()
     }
 
     pub(crate) fn heightmap(&self, name: &str) -> Option<HeightmapType> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Heightmap(value)) => Some(*value),
-            _ => None,
-        }
+        self.typed_argument::<HeightmapType>(name).copied()
     }
 
     pub(crate) fn score_holder_argument(&self, name: &str) -> Option<&ScoreHolderArgument> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::ScoreHolder(value)) => Some(value.as_ref()),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     pub(crate) fn objective_name(&self, name: &str) -> Option<&str> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Objective(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument::<ObjectiveValue>(name)
+            .map(|value| value.0.as_ref())
     }
 
     pub(crate) fn int_range(&self, name: &str) -> Option<IntRange> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::IntRange(value)) => Some(*value),
-            _ => None,
-        }
+        self.typed_argument::<IntRange>(name).copied()
     }
 
     pub(crate) fn biome_or_tag(&self, name: &str) -> Option<&BiomeOrTag> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::BiomeOrTag(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     pub(crate) fn structure_or_tag_key(&self, name: &str) -> Option<&StructureOrTagKey> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::StructureOrTagKey(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     pub(crate) fn block_predicate(&self, name: &str) -> Option<&BlockPredicate> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::BlockPredicate(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     /// Returns a configured Steel domain name.
     pub(crate) fn domain(&self, name: &str) -> Option<&str> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Domain(value)) => Some(value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<DomainValue>(name)
+            .map(|value| value.0.as_ref())
     }
 
     pub(crate) fn world_argument(&self, name: &str) -> Option<&WorldArgument> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::World(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     /// Returns a parsed vanilla game mode.
     pub(crate) fn game_mode(&self, name: &str) -> Option<GameType> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::GameMode(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<GameModeValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn entity_type(&self, name: &str) -> Option<EntityTypeRef> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::EntityType(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<EntityTypeValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn enchantment(&self, name: &str) -> Option<EnchantmentRef> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Enchantment(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<EnchantmentValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn item_stack(&self, name: &str) -> Option<&ItemStack> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::ItemStack(value)) => Some(value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<ItemStackValue>(name)
+            .map(|value| &value.0)
     }
 
     pub(crate) fn item_predicate(&self, name: &str) -> Option<&ItemPredicate> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::ItemPredicate(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument(name)
     }
 
     pub(crate) fn nbt_path(&self, name: &str) -> Option<&NbtPath> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::NbtPath(value)) => Some(value),
-            _ => None,
-        }
+        self.typed_argument::<NbtPathValue>(name)
+            .map(|value| &value.0)
     }
 
     pub(crate) fn identifier(&self, name: &str) -> Option<&Identifier> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Identifier(value)) => Some(value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<IdentifierValue>(name)
+            .map(|value| &value.0)
     }
 
     pub(crate) fn world_clock(&self, name: &str) -> Option<WorldClockRef> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::WorldClock(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<WorldClockValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn timeline(&self, name: &str) -> Option<TimelineRef> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::Timeline(value)) => Some(*value),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::EntitySelector(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::WorldClock(_),
-            )
-            | None => None,
-        }
+        self.typed_argument::<TimelineValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn entity_selector(&self, name: &str) -> Option<&EntitySelector> {
-        match self.argument(name) {
-            Some(SteelArgumentValue::EntitySelector(value)) => Some(value.as_ref()),
-            Some(
-                SteelArgumentValue::Primitive(_)
-                | SteelArgumentValue::Time(_)
-                | SteelArgumentValue::Coordinates(_)
-                | SteelArgumentValue::EntityAnchor(_)
-                | SteelArgumentValue::Swizzle(_)
-                | SteelArgumentValue::Heightmap(_)
-                | SteelArgumentValue::Domain(_)
-                | SteelArgumentValue::World(_)
-                | SteelArgumentValue::EntityType(_)
-                | SteelArgumentValue::Enchantment(_)
-                | SteelArgumentValue::ItemStack(_)
-                | SteelArgumentValue::ItemPredicate(_)
-                | SteelArgumentValue::NbtPath(_)
-                | SteelArgumentValue::Identifier(_)
-                | SteelArgumentValue::GameMode(_)
-                | SteelArgumentValue::ScoreHolder(_)
-                | SteelArgumentValue::Objective(_)
-                | SteelArgumentValue::IntRange(_)
-                | SteelArgumentValue::BiomeOrTag(_)
-                | SteelArgumentValue::StructureOrTagKey(_)
-                | SteelArgumentValue::BlockPredicate(_)
-                | SteelArgumentValue::WorldClock(_)
-                | SteelArgumentValue::Timeline(_),
-            )
-            | None => None,
-        }
+        self.typed_argument(name)
     }
 }
 

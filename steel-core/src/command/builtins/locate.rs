@@ -429,12 +429,12 @@ mod tests {
         let structure = child(&dispatcher, locate, "structure");
         let target = child(&dispatcher, structure, "structure");
 
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(target)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::StructureOrTagKey)
-        ));
+            Some(&SteelArgumentType::structure_or_tag_key())
+        );
         assert!(
             dispatcher
                 .node(target)

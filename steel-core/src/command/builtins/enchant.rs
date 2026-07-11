@@ -259,23 +259,20 @@ mod tests {
         };
         let enchant = child(&dispatcher, dispatcher.root(), "enchant");
         let targets = child(&dispatcher, enchant, "targets");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(targets)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Entity {
-                single: false,
-                players_only: false
-            })
-        ));
+            Some(&SteelArgumentType::entities())
+        );
 
         let enchantment = child(&dispatcher, targets, "enchantment");
-        assert!(matches!(
+        assert_eq!(
             dispatcher
                 .node(enchantment)
                 .and_then(|node| node.argument_type()),
-            Some(SteelArgumentType::Enchantment)
-        ));
+            Some(&SteelArgumentType::enchantment())
+        );
         assert!(matches!(
             dispatcher.node(enchantment),
             Some(node) if node.is_executable()
@@ -284,10 +281,7 @@ mod tests {
         let level = child(&dispatcher, enchantment, "level");
         assert_eq!(
             dispatcher.node(level).and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::Primitive(ArgumentType::integer(
-                0,
-                i32::MAX
-            )))
+            Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
         );
     }
 

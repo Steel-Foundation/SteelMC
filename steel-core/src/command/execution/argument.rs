@@ -1,20 +1,27 @@
+use std::{fmt, sync::Arc};
+
 use crate::command::brigadier::{
     ArgumentSuggestionContext, ArgumentType, CommandArgumentParser, CommandSyntaxError,
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
 use glam::DVec3;
+use steel_protocol::packets::game::{
+    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+};
 use steel_registry::{
     ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
     WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
     item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::translations;
-use steel_utils::{Identifier, nbt::NbtPath, types::GameType};
+use steel_utils::{
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, nbt::NbtPath,
+    translations, types::GameType,
+};
 use text_components::TextComponent;
 
 use super::{
-    BiomeOrTag, BlockPredicate, Coordinates, ExecutionCommandSource, IntRange, ItemPredicate,
+    BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_predicate, suggest_blocks},
@@ -28,6 +35,7 @@ use super::{
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
+use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 
 /// Axes selected by vanilla's coordinate swizzle argument.
@@ -65,296 +73,317 @@ impl CoordinateAxes {
     }
 }
 
-/// An argument parser stored by Steel's command runtime.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SteelArgumentType {
-    /// One of Brigadier's built-in primitive parsers.
-    Primitive(ArgumentType),
-    /// A Minecraft duration measured in ticks with an optional unit suffix.
-    Time { minimum: i32 },
-    /// A three-dimensional block position.
-    BlockPos,
-    /// A three-dimensional position.
-    Vec3 { center_integers: bool },
-    /// A yaw and pitch rotation.
-    Rotation,
-    /// A unique set of coordinate axes.
-    Swizzle,
-    /// A live-world heightmap type.
-    Heightmap,
-    /// An entity's feet or eyes position.
-    EntityAnchor,
-    /// A deferred entity selector using vanilla's entity argument flags.
-    Entity { single: bool, players_only: bool },
-    /// A deferred scoreboard holder expression.
-    ScoreHolder { multiple: bool },
-    /// A scoreboard objective name resolved in the source domain at execution time.
-    Objective,
-    /// An inclusive integer range.
-    IntRange,
-    /// A registered biome or biome tag.
-    BiomeOrTag,
-    /// A structure resource key or tag key resolved when the command executes.
-    StructureOrTagKey,
-    /// A block or block tag with optional state and block-entity constraints.
-    BlockPredicate,
-    /// One of vanilla's four game modes.
-    GameMode,
-    /// A configured Steel domain.
-    Domain,
-    /// A loaded Steel world, optionally relative to the source domain.
-    World,
-    /// A summonable entity type backed by a Steel entity factory.
-    SummonableEntity,
-    /// A registered enchantment.
-    Enchantment,
-    /// An item and supported data-component patch.
-    ItemStack,
-    /// A decoded vanilla item predicate.
-    ItemPredicate,
-    /// A parsed vanilla NBT path.
-    NbtPath,
-    /// A command-storage key in the source domain.
-    StorageKey,
-    /// A registered world clock.
-    WorldClock,
-    /// A registered timeline, suggested only when it uses the selected clock.
-    Timeline {
-        clock_argument: Option<&'static str>,
-    },
-    /// A resource location naming a command-visible marker for the selected clock.
-    TimeMarker {
-        clock_argument: Option<&'static str>,
-    },
+/// Typed parser contract erased by [`SteelArgumentType`].
+pub(crate) trait SteelArgumentParser:
+    DowncastType + fmt::Debug + PartialEq + Send + Sync + 'static
+{
+    /// Concrete value produced by this parser.
+    type Value: DowncastType + fmt::Debug + Send + Sync + 'static;
+
+    /// Parses one value from the command reader.
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError>;
+
+    /// Adds context-aware completion suggestions.
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        _builder: &mut SuggestionsBuilder<'_>,
+    ) {
+    }
+
+    /// Returns the vanilla command-tree parser representation.
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
 }
 
+trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
+    fn parse_erased(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<SteelArgumentValue, CommandSyntaxError>;
+
+    fn list_suggestions_erased(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    );
+
+    fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
+}
+
+impl<P> ErasedSteelArgumentParser for P
+where
+    P: SteelArgumentParser,
+{
+    fn parse_erased(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<SteelArgumentValue, CommandSyntaxError> {
+        self.parse(reader, source).map(SteelArgumentValue::new)
+    }
+
+    fn list_suggestions_erased(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        self.list_suggestions(context, builder);
+    }
+
+    fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        self.protocol_argument()
+    }
+
+    fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool {
+        other.downcast_ref::<P>() == Some(self)
+    }
+}
+
+/// An extensible, keyed parser stored by Steel's command runtime.
+#[derive(Clone)]
+pub(crate) struct SteelArgumentType(Arc<dyn ErasedSteelArgumentParser>);
+
 impl SteelArgumentType {
-    pub(crate) const fn time(minimum: i32) -> Self {
-        Self::Time { minimum }
+    /// Erases a concrete parser while retaining its deterministic type key.
+    pub(crate) fn new(parser: impl SteelArgumentParser) -> Self {
+        Self(Arc::new(parser))
     }
 
-    pub(crate) const fn block_pos() -> Self {
-        Self::BlockPos
+    pub(crate) fn time(minimum: i32) -> Self {
+        Self::new(TimeParser { minimum })
     }
 
-    pub(crate) const fn vec3(center_integers: bool) -> Self {
-        Self::Vec3 { center_integers }
+    pub(crate) fn block_pos() -> Self {
+        Self::new(BlockPosParser)
     }
 
-    pub(crate) const fn rotation() -> Self {
-        Self::Rotation
+    pub(crate) fn vec3(center_integers: bool) -> Self {
+        Self::new(Vec3Parser { center_integers })
     }
 
-    pub(crate) const fn swizzle() -> Self {
-        Self::Swizzle
+    pub(crate) fn rotation() -> Self {
+        Self::new(RotationParser)
     }
 
-    pub(crate) const fn heightmap() -> Self {
-        Self::Heightmap
+    pub(crate) fn swizzle() -> Self {
+        Self::new(SwizzleParser)
     }
 
-    pub(crate) const fn entity_anchor() -> Self {
-        Self::EntityAnchor
+    pub(crate) fn heightmap() -> Self {
+        Self::new(HeightmapParser)
     }
 
-    pub(crate) const fn entity() -> Self {
-        Self::Entity {
+    pub(crate) fn entity_anchor() -> Self {
+        Self::new(EntityAnchorParser)
+    }
+
+    pub(crate) fn entity() -> Self {
+        Self::new(EntityParser {
             single: true,
             players_only: false,
-        }
+        })
     }
 
-    pub(crate) const fn entities() -> Self {
-        Self::Entity {
+    pub(crate) fn entities() -> Self {
+        Self::new(EntityParser {
             single: false,
             players_only: false,
-        }
+        })
     }
 
-    pub(crate) const fn player() -> Self {
-        Self::Entity {
+    pub(crate) fn player() -> Self {
+        Self::new(EntityParser {
             single: true,
             players_only: true,
-        }
+        })
     }
 
-    pub(crate) const fn players() -> Self {
-        Self::Entity {
+    pub(crate) fn players() -> Self {
+        Self::new(EntityParser {
             single: false,
             players_only: true,
-        }
+        })
     }
 
-    pub(crate) const fn score_holder() -> Self {
-        Self::ScoreHolder { multiple: false }
+    pub(crate) fn score_holder() -> Self {
+        Self::new(ScoreHolderParser { multiple: false })
     }
 
-    pub(crate) const fn score_holders() -> Self {
-        Self::ScoreHolder { multiple: true }
+    pub(crate) fn score_holders() -> Self {
+        Self::new(ScoreHolderParser { multiple: true })
     }
 
-    pub(crate) const fn objective() -> Self {
-        Self::Objective
+    pub(crate) fn objective() -> Self {
+        Self::new(ObjectiveParser)
     }
 
-    pub(crate) const fn int_range() -> Self {
-        Self::IntRange
+    pub(crate) fn int_range() -> Self {
+        Self::new(IntRangeParser)
     }
 
-    pub(crate) const fn biome_or_tag() -> Self {
-        Self::BiomeOrTag
+    pub(crate) fn biome_or_tag() -> Self {
+        Self::new(BiomeOrTagParser)
     }
 
-    pub(crate) const fn structure_or_tag_key() -> Self {
-        Self::StructureOrTagKey
+    pub(crate) fn structure_or_tag_key() -> Self {
+        Self::new(StructureOrTagKeyParser)
     }
 
-    pub(crate) const fn block_predicate() -> Self {
-        Self::BlockPredicate
+    pub(crate) fn block_predicate() -> Self {
+        Self::new(BlockPredicateParser)
     }
 
-    pub(crate) const fn game_mode() -> Self {
-        Self::GameMode
+    pub(crate) fn game_mode() -> Self {
+        Self::new(GameModeParser)
     }
 
-    pub(crate) const fn domain() -> Self {
-        Self::Domain
+    pub(crate) fn domain() -> Self {
+        Self::new(DomainParser)
     }
 
-    pub(crate) const fn world() -> Self {
-        Self::World
+    pub(crate) fn world() -> Self {
+        Self::new(WorldParser)
     }
 
-    pub(crate) const fn summonable_entity() -> Self {
-        Self::SummonableEntity
+    pub(crate) fn summonable_entity() -> Self {
+        Self::new(SummonableEntityParser)
     }
 
-    pub(crate) const fn enchantment() -> Self {
-        Self::Enchantment
+    pub(crate) fn enchantment() -> Self {
+        Self::new(EnchantmentParser)
     }
 
-    pub(crate) const fn item_stack() -> Self {
-        Self::ItemStack
+    pub(crate) fn item_stack() -> Self {
+        Self::new(ItemStackParser)
     }
 
-    pub(crate) const fn item_predicate() -> Self {
-        Self::ItemPredicate
+    pub(crate) fn item_predicate() -> Self {
+        Self::new(ItemPredicateParser)
     }
 
-    pub(crate) const fn nbt_path() -> Self {
-        Self::NbtPath
+    pub(crate) fn nbt_path() -> Self {
+        Self::new(NbtPathParser)
     }
 
-    pub(crate) const fn storage_key() -> Self {
-        Self::StorageKey
+    pub(crate) fn storage_key() -> Self {
+        Self::new(StorageKeyParser)
     }
 
-    pub(crate) const fn world_clock() -> Self {
-        Self::WorldClock
+    pub(crate) fn world_clock() -> Self {
+        Self::new(WorldClockParser)
     }
 
-    pub(crate) const fn timeline(clock_argument: Option<&'static str>) -> Self {
-        Self::Timeline { clock_argument }
+    pub(crate) fn timeline(clock_argument: Option<&'static str>) -> Self {
+        Self::new(TimelineParser { clock_argument })
     }
 
-    pub(crate) const fn time_marker(clock_argument: Option<&'static str>) -> Self {
-        Self::TimeMarker { clock_argument }
+    pub(crate) fn time_marker(clock_argument: Option<&'static str>) -> Self {
+        Self::new(TimeMarkerParser { clock_argument })
+    }
+
+    pub(crate) fn protocol_argument(
+        &self,
+    ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        self.0.protocol_argument_erased()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn parser_type_key(&self) -> DowncastTypeKey {
+        self.0.downcast_type_key()
+    }
+}
+
+impl fmt::Debug for SteelArgumentType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SteelArgumentType")
+            .field("type_key", &self.0.downcast_type_key())
+            .field("parser", &self.0)
+            .finish()
+    }
+}
+
+impl PartialEq for SteelArgumentType {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.equals_erased(other.0.as_ref())
     }
 }
 
 impl From<ArgumentType> for SteelArgumentType {
     fn from(argument: ArgumentType) -> Self {
-        Self::Primitive(argument)
+        Self::new(PrimitiveParser(argument))
     }
 }
 
-/// A parsed argument retained by Steel's command runtime.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SteelArgumentValue {
-    /// A value produced by a Brigadier primitive parser.
-    Primitive(PrimitiveArgumentValue),
-    /// A Minecraft duration resolved to ticks.
-    Time(i32),
-    /// A coordinate expression retained until command execution.
-    Coordinates(Coordinates),
-    /// A parsed entity position anchor.
-    EntityAnchor(EntityAnchor),
-    /// Axes selected by a coordinate swizzle.
-    Swizzle(CoordinateAxes),
-    /// A parsed live-world heightmap type.
-    Heightmap(HeightmapType),
-    /// A source-independent entity selector retained until command execution.
-    EntitySelector(Box<EntitySelector>),
-    /// A deferred score-holder expression.
-    ScoreHolder(Box<ScoreHolderArgument>),
-    /// A scoreboard objective name.
-    Objective(Box<str>),
-    /// An inclusive integer range.
-    IntRange(IntRange),
-    /// A registered biome or biome tag.
-    BiomeOrTag(BiomeOrTag),
-    /// A structure resource key or tag key.
-    StructureOrTagKey(StructureOrTagKey),
-    /// A parsed block-state and block-entity predicate.
-    BlockPredicate(BlockPredicate),
-    /// A parsed vanilla game mode.
-    GameMode(GameType),
-    /// A configured Steel domain name.
-    Domain(Box<str>),
-    /// A loaded-world expression resolved when the command executes.
-    World(WorldArgument),
-    /// A resolved summonable entity type.
-    EntityType(EntityTypeRef),
-    /// A resolved registered enchantment.
-    Enchantment(EnchantmentRef),
-    /// A parsed item stack with a count of one.
-    ItemStack(ItemStack),
-    /// A parsed item predicate ready for infallible matching.
-    ItemPredicate(ItemPredicate),
-    /// A parsed NBT path.
-    NbtPath(NbtPath),
-    /// A parsed resource location.
-    Identifier(Identifier),
-    /// A resolved registered world clock.
-    WorldClock(WorldClockRef),
-    /// A resolved registered timeline.
-    Timeline(TimelineRef),
+trait ErasedSteelArgumentValue: ErasedType + fmt::Debug + Send + Sync {}
+
+impl<T> ErasedSteelArgumentValue for T where T: DowncastType + fmt::Debug + Send + Sync {}
+
+/// A keyed parsed value retained by Steel's command runtime.
+#[derive(Clone)]
+pub(crate) struct SteelArgumentValue(Arc<dyn ErasedSteelArgumentValue>);
+
+impl SteelArgumentValue {
+    pub(crate) fn new(value: impl DowncastType + fmt::Debug + Send + Sync) -> Self {
+        Self(Arc::new(value))
+    }
+
+    pub(crate) fn downcast_ref<T: DowncastType>(&self) -> Option<&T> {
+        self.0.downcast_ref::<T>()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn type_key(&self) -> DowncastTypeKey {
+        self.0.downcast_type_key()
+    }
+}
+
+impl fmt::Debug for SteelArgumentValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SteelArgumentValue")
+            .field("type_key", &self.0.downcast_type_key())
+            .field("value", &self.0)
+            .finish()
+    }
 }
 
 impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
     fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
-        match self {
-            Self::Primitive(value) => Some(value),
-            Self::Time(_)
-            | Self::Coordinates(_)
-            | Self::EntityAnchor(_)
-            | Self::Swizzle(_)
-            | Self::Heightmap(_)
-            | Self::EntitySelector(_)
-            | Self::ScoreHolder(_)
-            | Self::Objective(_)
-            | Self::IntRange(_)
-            | Self::BiomeOrTag(_)
-            | Self::StructureOrTagKey(_)
-            | Self::BlockPredicate(_)
-            | Self::GameMode(_)
-            | Self::Domain(_)
-            | Self::World(_)
-            | Self::EntityType(_)
-            | Self::Enchantment(_)
-            | Self::ItemStack(_)
-            | Self::ItemPredicate(_)
-            | Self::NbtPath(_)
-            | Self::Identifier(_)
-            | Self::WorldClock(_)
-            | Self::Timeline(_) => None,
-        }
+        self.downcast_ref::<PrimitiveArgumentValue>()
+    }
+}
+
+/// Suggestion context exposed to erased Steel argument parsers.
+pub(crate) trait SteelArgumentSuggestionContext {
+    fn source(&self) -> &dyn CommandArgumentSource;
+
+    fn argument(&self, name: &str) -> Option<&SteelArgumentValue>;
+}
+
+impl<S> SteelArgumentSuggestionContext for ArgumentSuggestionContext<'_, S, SteelArgumentValue>
+where
+    S: CommandArgumentSource,
+{
+    fn source(&self) -> &dyn CommandArgumentSource {
+        ArgumentSuggestionContext::source(self)
+    }
+
+    fn argument(&self, name: &str) -> Option<&SteelArgumentValue> {
+        ArgumentSuggestionContext::argument(self, name)
     }
 }
 
 impl<S> CommandArgumentParser<S> for SteelArgumentType
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource,
 {
     type Value = SteelArgumentValue;
 
@@ -363,75 +392,7 @@ where
         reader: &mut StringReader<'_>,
         source: &S,
     ) -> Result<Self::Value, CommandSyntaxError> {
-        match self {
-            Self::Primitive(argument) => argument
-                .parse_value(reader)
-                .map(SteelArgumentValue::Primitive),
-            Self::Time { minimum } => parse_time(reader, *minimum).map(SteelArgumentValue::Time),
-            Self::BlockPos => parse_block_pos(reader).map(SteelArgumentValue::Coordinates),
-            Self::Vec3 { center_integers } => {
-                parse_vec3(reader, *center_integers).map(SteelArgumentValue::Coordinates)
-            }
-            Self::Rotation => parse_rotation(reader).map(SteelArgumentValue::Coordinates),
-            Self::Swizzle => parse_swizzle(reader).map(SteelArgumentValue::Swizzle),
-            Self::Heightmap => parse_heightmap(reader).map(SteelArgumentValue::Heightmap),
-            Self::EntityAnchor => parse_entity_anchor(reader).map(SteelArgumentValue::EntityAnchor),
-            Self::Entity {
-                single,
-                players_only,
-            } => parse_entity_selector(reader, source, *single, *players_only)
-                .map(Box::new)
-                .map(SteelArgumentValue::EntitySelector),
-            Self::ScoreHolder { multiple } => parse_score_holder(reader, source, *multiple)
-                .map(Box::new)
-                .map(SteelArgumentValue::ScoreHolder),
-            Self::Objective => Ok(SteelArgumentValue::Objective(
-                reader.read_unquoted_string().into(),
-            )),
-            Self::IntRange => parse_int_range(reader).map(SteelArgumentValue::IntRange),
-            Self::BiomeOrTag => parse_biome_or_tag(reader).map(SteelArgumentValue::BiomeOrTag),
-            Self::StructureOrTagKey => {
-                parse_structure_or_tag_key(reader).map(SteelArgumentValue::StructureOrTagKey)
-            }
-            Self::BlockPredicate => {
-                parse_block_predicate(reader).map(SteelArgumentValue::BlockPredicate)
-            }
-            Self::GameMode => parse_game_mode(reader).map(SteelArgumentValue::GameMode),
-            Self::Domain => parse_domain(reader, source).map(SteelArgumentValue::Domain),
-            Self::World => parse_world_argument(reader).map(SteelArgumentValue::World),
-            Self::SummonableEntity => {
-                parse_summonable_entity(reader).map(SteelArgumentValue::EntityType)
-            }
-            Self::Enchantment => {
-                let key = parse_identifier(reader)?;
-                REGISTRY.enchantments.by_key(&key).map_or_else(
-                    || Err(unknown_resource(reader, &key, &ENCHANTMENT_REGISTRY)),
-                    |enchantment| Ok(SteelArgumentValue::Enchantment(enchantment)),
-                )
-            }
-            Self::ItemStack => parse_item_stack(reader).map(SteelArgumentValue::ItemStack),
-            Self::ItemPredicate => {
-                parse_item_predicate(reader).map(SteelArgumentValue::ItemPredicate)
-            }
-            Self::NbtPath => parse_nbt_path(reader).map(SteelArgumentValue::NbtPath),
-            Self::StorageKey | Self::TimeMarker { .. } => {
-                parse_identifier(reader).map(SteelArgumentValue::Identifier)
-            }
-            Self::WorldClock => {
-                let key = parse_identifier(reader)?;
-                REGISTRY.world_clocks.by_key(&key).map_or_else(
-                    || Err(unknown_resource(reader, &key, &WORLD_CLOCK_REGISTRY)),
-                    |clock| Ok(SteelArgumentValue::WorldClock(clock)),
-                )
-            }
-            Self::Timeline { .. } => {
-                let key = parse_identifier(reader)?;
-                REGISTRY.timelines.by_key(&key).map_or_else(
-                    || Err(unknown_resource(reader, &key, &TIMELINE_REGISTRY)),
-                    |timeline| Ok(SteelArgumentValue::Timeline(timeline)),
-                )
-            }
-        }
+        self.0.parse_erased(reader, source)
     }
 
     fn list_suggestions(
@@ -439,147 +400,700 @@ where
         context: &ArgumentSuggestionContext<'_, S, Self::Value>,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        match self {
-            Self::Primitive(argument) => argument.suggest(builder),
-            Self::Time { .. } => suggest_time_units(builder),
-            Self::BlockPos => suggest_coordinates(builder, parse_block_pos),
-            Self::Vec3 { center_integers } => {
-                suggest_coordinates(builder, |reader| parse_vec3(reader, *center_integers));
-            }
-            Self::Rotation | Self::Swizzle | Self::IntRange | Self::NbtPath => {}
-            Self::Heightmap => suggest_heightmaps(builder),
-            Self::EntityAnchor => suggest_entity_anchors(builder),
-            Self::Entity {
-                single,
-                players_only,
-            } => suggest_entity_selector(builder, context.source(), *single, *players_only),
-            Self::ScoreHolder { .. } => suggest_score_holders(builder, context.source()),
-            Self::Objective => {
-                let prefix = builder.remaining();
-                for objective in context
-                    .source()
-                    .scoreboard_objective_names()
-                    .into_iter()
-                    .filter(|objective| objective.starts_with(prefix))
-                {
-                    builder.suggest(objective);
-                }
-            }
-            Self::BiomeOrTag => suggest_biomes(builder),
-            Self::StructureOrTagKey => suggest_structures(builder),
-            Self::BlockPredicate => suggest_blocks(builder),
-            Self::GameMode => suggest_game_modes(builder),
-            Self::Domain => {
-                let prefix = builder.remaining();
-                for domain in context
-                    .source()
-                    .domain_names()
-                    .into_iter()
-                    .filter(|domain| domain.starts_with(prefix))
-                {
-                    builder.suggest(domain);
-                }
-            }
-            Self::World => suggest_worlds(builder, context.source()),
-            Self::SummonableEntity => {
-                suggest_resources(
-                    REGISTRY
-                        .entity_types
-                        .iter()
-                        .filter(|(_, entity_type)| can_summon(entity_type))
-                        .map(|(_, entity_type)| &entity_type.key),
-                    builder,
-                );
-            }
-            Self::Enchantment => {
-                suggest_resources(
-                    REGISTRY
-                        .enchantments
-                        .iter()
-                        .map(|(_, enchantment)| &enchantment.key),
-                    builder,
-                );
-            }
-            Self::ItemStack => suggest_item_stack(builder),
-            Self::ItemPredicate => suggest_item_predicate(builder),
-            Self::StorageKey => suggest_storage_keys(context.source(), builder),
-            Self::WorldClock => {
-                suggest_resources(
-                    REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
-                    builder,
-                );
-            }
-            Self::Timeline { clock_argument } => {
-                let Some(clock) = selected_clock(context, *clock_argument) else {
-                    return;
-                };
-                suggest_resources(
-                    REGISTRY
-                        .timelines
-                        .iter()
-                        .filter(|(_, timeline)| timeline.clock == clock)
-                        .map(|(_, timeline)| &timeline.key),
-                    builder,
-                );
-            }
-            Self::TimeMarker { clock_argument } => {
-                let Some(clock) = selected_clock(context, *clock_argument) else {
-                    return;
-                };
-                suggest_resources(
-                    REGISTRY
-                        .timelines
-                        .iter()
-                        .filter(|(_, timeline)| timeline.clock == clock)
-                        .flat_map(|(_, timeline)| timeline.time_markers)
-                        .filter(|marker| marker.show_in_commands == Some(true))
-                        .map(|marker| &marker.key),
-                    builder,
-                );
-            }
-        }
+        self.0.list_suggestions_erased(context, builder);
     }
 }
 
-fn selected_clock<S>(
-    context: &ArgumentSuggestionContext<'_, S, SteelArgumentValue>,
+macro_rules! impl_downcast_type {
+    ($type:ty, $key:literal) => {
+        // SAFETY: This Steel-owned key uniquely identifies the concrete type in the process.
+        unsafe impl DowncastType for $type {
+            const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new($key);
+        }
+    };
+}
+
+impl_downcast_type!(PrimitiveArgumentValue, "steel:command/value/primitive");
+impl_downcast_type!(Coordinates, "steel:command/value/coordinates");
+impl_downcast_type!(EntityAnchor, "steel:command/value/entity_anchor");
+impl_downcast_type!(CoordinateAxes, "steel:command/value/swizzle");
+impl_downcast_type!(HeightmapType, "steel:command/value/heightmap");
+impl_downcast_type!(EntitySelector, "steel:command/value/entity_selector");
+impl_downcast_type!(ScoreHolderArgument, "steel:command/value/score_holder");
+impl_downcast_type!(IntRange, "steel:command/value/int_range");
+impl_downcast_type!(BiomeOrTag, "steel:command/value/biome_or_tag");
+impl_downcast_type!(
+    StructureOrTagKey,
+    "steel:command/value/structure_or_tag_key"
+);
+impl_downcast_type!(BlockPredicate, "steel:command/value/block_predicate");
+impl_downcast_type!(WorldArgument, "steel:command/value/world");
+impl_downcast_type!(ItemPredicate, "steel:command/value/item_predicate");
+
+macro_rules! argument_value_wrapper {
+    ($name:ident($value:ty), $key:literal) => {
+        #[derive(Debug)]
+        pub(super) struct $name(pub(super) $value);
+
+        impl_downcast_type!($name, $key);
+    };
+}
+
+argument_value_wrapper!(TimeValue(i32), "steel:command/value/time");
+argument_value_wrapper!(ObjectiveValue(Box<str>), "steel:command/value/objective");
+argument_value_wrapper!(GameModeValue(GameType), "steel:command/value/game_mode");
+argument_value_wrapper!(DomainValue(Box<str>), "steel:command/value/domain");
+argument_value_wrapper!(
+    EntityTypeValue(EntityTypeRef),
+    "steel:command/value/entity_type"
+);
+argument_value_wrapper!(
+    EnchantmentValue(EnchantmentRef),
+    "steel:command/value/enchantment"
+);
+argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
+argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
+argument_value_wrapper!(
+    IdentifierValue(Identifier),
+    "steel:command/value/identifier"
+);
+argument_value_wrapper!(
+    WorldClockValue(WorldClockRef),
+    "steel:command/value/world_clock"
+);
+argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+
+macro_rules! unit_argument_parser {
+    (
+        $parser:ident,
+        $key:literal,
+        $value:ty,
+        parse |$reader:ident, $source:ident| $parse:block,
+        suggest |$context:ident, $builder:ident| $suggest:block,
+        protocol $protocol:expr
+    ) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        struct $parser;
+
+        impl_downcast_type!($parser, $key);
+
+        impl SteelArgumentParser for $parser {
+            type Value = $value;
+
+            fn parse(
+                &self,
+                $reader: &mut StringReader<'_>,
+                $source: &dyn CommandArgumentSource,
+            ) -> Result<Self::Value, CommandSyntaxError> $parse
+
+            fn list_suggestions(
+                &self,
+                $context: &dyn SteelArgumentSuggestionContext,
+                $builder: &mut SuggestionsBuilder<'_>,
+            ) $suggest
+
+            fn protocol_argument(
+                &self,
+            ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+                $protocol
+            }
+        }
+    };
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct PrimitiveParser(ArgumentType);
+
+impl_downcast_type!(PrimitiveParser, "steel:command/parser/primitive");
+
+impl SteelArgumentParser for PrimitiveParser {
+    type Value = PrimitiveArgumentValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        self.0.parse_value(reader)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        self.0.suggest(builder);
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (protocol_argument_type(&self.0), None)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimeParser {
+    minimum: i32,
+}
+
+impl_downcast_type!(TimeParser, "steel:command/parser/time");
+
+impl SteelArgumentParser for TimeParser {
+    type Value = TimeValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_time(reader, self.minimum).map(TimeValue)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_time_units(builder);
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Time { min: self.minimum }, None)
+    }
+}
+
+unit_argument_parser!(
+    BlockPosParser,
+    "steel:command/parser/block_pos",
+    Coordinates,
+    parse | reader,
+    _source | { parse_block_pos(reader) },
+    suggest | _context,
+    builder | {
+        suggest_coordinates(builder, parse_block_pos);
+    },
+    protocol(ProtocolArgumentType::BlockPos, None)
+);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Vec3Parser {
+    center_integers: bool,
+}
+
+impl_downcast_type!(Vec3Parser, "steel:command/parser/vec3");
+
+impl SteelArgumentParser for Vec3Parser {
+    type Value = Coordinates;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_vec3(reader, self.center_integers)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_coordinates(builder, |reader| parse_vec3(reader, self.center_integers));
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Vec3, None)
+    }
+}
+
+unit_argument_parser!(
+    RotationParser,
+    "steel:command/parser/rotation",
+    Coordinates,
+    parse | reader,
+    _source | { parse_rotation(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Rotation, None)
+);
+unit_argument_parser!(
+    SwizzleParser,
+    "steel:command/parser/swizzle",
+    CoordinateAxes,
+    parse | reader,
+    _source | { parse_swizzle(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Swizzle, None)
+);
+unit_argument_parser!(
+    HeightmapParser,
+    "steel:command/parser/heightmap",
+    HeightmapType,
+    parse | reader,
+    _source | { parse_heightmap(reader) },
+    suggest | _context,
+    builder | {
+        suggest_heightmaps(builder);
+    },
+    protocol(ProtocolArgumentType::Heightmap, None)
+);
+unit_argument_parser!(
+    EntityAnchorParser,
+    "steel:command/parser/entity_anchor",
+    EntityAnchor,
+    parse | reader,
+    _source | { parse_entity_anchor(reader) },
+    suggest | _context,
+    builder | {
+        suggest_entity_anchors(builder);
+    },
+    protocol(ProtocolArgumentType::EntityAnchor, None)
+);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EntityParser {
+    single: bool,
+    players_only: bool,
+}
+
+impl_downcast_type!(EntityParser, "steel:command/parser/entity");
+
+impl SteelArgumentParser for EntityParser {
+    type Value = EntitySelector;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_entity_selector(reader, source, self.single, self.players_only)
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_entity_selector(builder, context.source(), self.single, self.players_only);
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::Entity {
+                flags: u8::from(self.single) | (u8::from(self.players_only) << 1),
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ScoreHolderParser {
+    multiple: bool,
+}
+
+impl_downcast_type!(ScoreHolderParser, "steel:command/parser/score_holder");
+
+impl SteelArgumentParser for ScoreHolderParser {
+    type Value = ScoreHolderArgument;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_score_holder(reader, source, self.multiple)
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_score_holders(builder, context.source());
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::ScoreHolder {
+                flags: u8::from(self.multiple),
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
+
+unit_argument_parser!(
+    ObjectiveParser,
+    "steel:command/parser/objective",
+    ObjectiveValue,
+    parse | reader,
+    _source | { Ok(ObjectiveValue(reader.read_unquoted_string().into())) },
+    suggest | context,
+    builder | {
+        let prefix = builder.remaining();
+        for objective in context
+            .source()
+            .scoreboard_objective_names()
+            .into_iter()
+            .filter(|objective| objective.starts_with(prefix))
+        {
+            builder.suggest(objective);
+        }
+    },
+    protocol(
+        ProtocolArgumentType::Objective,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    IntRangeParser,
+    "steel:command/parser/int_range",
+    IntRange,
+    parse | reader,
+    _source | { parse_int_range(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::IntRange, None)
+);
+unit_argument_parser!(
+    BiomeOrTagParser,
+    "steel:command/parser/biome_or_tag",
+    BiomeOrTag,
+    parse | reader,
+    _source | { parse_biome_or_tag(reader) },
+    suggest | _context,
+    builder | {
+        suggest_biomes(builder);
+    },
+    protocol(
+        ProtocolArgumentType::ResourceOrTag {
+            identifier: "minecraft:worldgen/biome",
+        },
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    StructureOrTagKeyParser,
+    "steel:command/parser/structure_or_tag_key",
+    StructureOrTagKey,
+    parse | reader,
+    _source | { parse_structure_or_tag_key(reader) },
+    suggest | _context,
+    builder | {
+        suggest_structures(builder);
+    },
+    protocol(
+        ProtocolArgumentType::ResourceOrTagKey {
+            identifier: "minecraft:worldgen/structure",
+        },
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    BlockPredicateParser,
+    "steel:command/parser/block_predicate",
+    BlockPredicate,
+    parse | reader,
+    _source | { parse_block_predicate(reader) },
+    suggest | _context,
+    builder | {
+        suggest_blocks(builder);
+    },
+    protocol(ProtocolArgumentType::BlockPredicate, None)
+);
+unit_argument_parser!(
+    GameModeParser,
+    "steel:command/parser/game_mode",
+    GameModeValue,
+    parse | reader,
+    _source | { parse_game_mode(reader).map(GameModeValue) },
+    suggest | _context,
+    builder | {
+        suggest_game_modes(builder);
+    },
+    protocol(ProtocolArgumentType::Gamemode, None)
+);
+unit_argument_parser!(
+    DomainParser,
+    "steel:command/parser/domain",
+    DomainValue,
+    parse | reader,
+    source | { parse_domain(reader, source).map(DomainValue) },
+    suggest | context,
+    builder | {
+        let prefix = builder.remaining();
+        for domain in context
+            .source()
+            .domain_names()
+            .into_iter()
+            .filter(|domain| domain.starts_with(prefix))
+        {
+            builder.suggest(domain);
+        }
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    WorldParser,
+    "steel:command/parser/world",
+    WorldArgument,
+    parse | reader,
+    _source | { parse_world_argument(reader) },
+    suggest | context,
+    builder | {
+        suggest_worlds(builder, context.source());
+    },
+    protocol(
+        ProtocolArgumentType::Dimension,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    SummonableEntityParser,
+    "steel:command/parser/summonable_entity",
+    EntityTypeValue,
+    parse | reader,
+    _source | { parse_summonable_entity(reader).map(EntityTypeValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .entity_types
+                .iter()
+                .filter(|(_, entity_type)| can_summon(entity_type))
+                .map(|(_, entity_type)| &entity_type.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:entity_type",
+        },
+        Some(ProtocolSuggestionType::SummonableEntities),
+    )
+);
+unit_argument_parser!(
+    EnchantmentParser,
+    "steel:command/parser/enchantment",
+    EnchantmentValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.enchantments.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &ENCHANTMENT_REGISTRY)),
+            |enchantment| Ok(EnchantmentValue(enchantment)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .enchantments
+                .iter()
+                .map(|(_, enchantment)| &enchantment.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:enchantment",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    ItemStackParser,
+    "steel:command/parser/item_stack",
+    ItemStackValue,
+    parse | reader,
+    _source | { parse_item_stack(reader).map(ItemStackValue) },
+    suggest | _context,
+    builder | {
+        suggest_item_stack(builder);
+    },
+    protocol(
+        ProtocolArgumentType::ItemStack,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    ItemPredicateParser,
+    "steel:command/parser/item_predicate",
+    ItemPredicate,
+    parse | reader,
+    _source | { parse_item_predicate(reader) },
+    suggest | _context,
+    builder | {
+        suggest_item_predicate(builder);
+    },
+    protocol(
+        ProtocolArgumentType::ItemPredicate,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    NbtPathParser,
+    "steel:command/parser/nbt_path",
+    NbtPathValue,
+    parse | reader,
+    _source | { parse_nbt_path(reader).map(NbtPathValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::NbtPath, None)
+);
+unit_argument_parser!(
+    StorageKeyParser,
+    "steel:command/parser/storage_key",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | context,
+    builder | {
+        suggest_storage_keys(context.source(), builder);
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    WorldClockParser,
+    "steel:command/parser/world_clock",
+    WorldClockValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.world_clocks.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &WORLD_CLOCK_REGISTRY)),
+            |clock| Ok(WorldClockValue(clock)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.world_clocks.iter().map(|(_, clock)| &clock.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:world_clock",
+        },
+        None,
+    )
+);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimelineParser {
+    clock_argument: Option<&'static str>,
+}
+
+impl_downcast_type!(TimelineParser, "steel:command/parser/timeline");
+
+impl SteelArgumentParser for TimelineParser {
+    type Value = TimelineValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        let key = parse_identifier(reader)?;
+        REGISTRY.timelines.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &TIMELINE_REGISTRY)),
+            |timeline| Ok(TimelineValue(timeline)),
+        )
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let Some(clock) = selected_clock(context, self.clock_argument) else {
+            return;
+        };
+        suggest_resources(
+            REGISTRY
+                .timelines
+                .iter()
+                .filter(|(_, timeline)| timeline.clock == clock)
+                .map(|(_, timeline)| &timeline.key),
+            builder,
+        );
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::Resource {
+                identifier: "minecraft:timeline",
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimeMarkerParser {
+    clock_argument: Option<&'static str>,
+}
+
+impl_downcast_type!(TimeMarkerParser, "steel:command/parser/time_marker");
+
+impl SteelArgumentParser for TimeMarkerParser {
+    type Value = IdentifierValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_identifier(reader).map(IdentifierValue)
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let Some(clock) = selected_clock(context, self.clock_argument) else {
+            return;
+        };
+        suggest_resources(
+            REGISTRY
+                .timelines
+                .iter()
+                .filter(|(_, timeline)| timeline.clock == clock)
+                .flat_map(|(_, timeline)| timeline.time_markers)
+                .filter(|marker| marker.show_in_commands == Some(true))
+                .map(|marker| &marker.key),
+            builder,
+        );
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::ResourceLocation,
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
+
+fn selected_clock(
+    context: &dyn SteelArgumentSuggestionContext,
     clock_argument: Option<&str>,
-) -> Option<WorldClockRef>
-where
-    S: ExecutionCommandSource,
-{
+) -> Option<WorldClockRef> {
     let Some(clock_argument) = clock_argument else {
         return context.source().default_world_clock();
     };
-    match context.argument(clock_argument) {
-        Some(SteelArgumentValue::WorldClock(clock)) => Some(*clock),
-        Some(
-            SteelArgumentValue::Primitive(_)
-            | SteelArgumentValue::Time(_)
-            | SteelArgumentValue::Coordinates(_)
-            | SteelArgumentValue::EntityAnchor(_)
-            | SteelArgumentValue::Swizzle(_)
-            | SteelArgumentValue::Heightmap(_)
-            | SteelArgumentValue::EntitySelector(_)
-            | SteelArgumentValue::ScoreHolder(_)
-            | SteelArgumentValue::Objective(_)
-            | SteelArgumentValue::IntRange(_)
-            | SteelArgumentValue::BiomeOrTag(_)
-            | SteelArgumentValue::StructureOrTagKey(_)
-            | SteelArgumentValue::BlockPredicate(_)
-            | SteelArgumentValue::GameMode(_)
-            | SteelArgumentValue::Domain(_)
-            | SteelArgumentValue::World(_)
-            | SteelArgumentValue::EntityType(_)
-            | SteelArgumentValue::Enchantment(_)
-            | SteelArgumentValue::ItemStack(_)
-            | SteelArgumentValue::ItemPredicate(_)
-            | SteelArgumentValue::NbtPath(_)
-            | SteelArgumentValue::Identifier(_)
-            | SteelArgumentValue::Timeline(_),
-        )
-        | None => None,
-    }
+    context
+        .argument(clock_argument)?
+        .downcast_ref::<WorldClockValue>()
+        .map(|clock| clock.0)
 }
 
 fn parse_swizzle(reader: &mut StringReader<'_>) -> Result<CoordinateAxes, CommandSyntaxError> {
@@ -720,7 +1234,7 @@ fn parse_domain<S>(
     source: &S,
 ) -> Result<Box<str>, CommandSyntaxError>
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     let domain = reader.read_unquoted_string();
     if source.domain_exists(domain) {
@@ -803,7 +1317,7 @@ fn suggest_resources<'a>(
 
 fn suggest_storage_keys<S>(source: &S, builder: &mut SuggestionsBuilder<'_>)
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     let keys = source
         .command_storage_keys()

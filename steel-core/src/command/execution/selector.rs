@@ -33,7 +33,7 @@ use crate::{
     world::World,
 };
 
-use super::{CommandSource, ExecutionCommandSource};
+use super::{CommandArgumentSource, CommandSource};
 
 const SORT_NEAREST: &str = "nearest";
 const SORT_FURTHEST: &str = "furthest";
@@ -908,7 +908,7 @@ pub(crate) fn parse_entity_selector<S>(
     players_only: bool,
 ) -> Result<EntitySelector, CommandSyntaxError>
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     let start = reader.checkpoint();
     let raw = read_selector_argument(reader)?;
@@ -940,14 +940,14 @@ fn selector_syntax_error(
 
 fn allow_selectors<S>(source: &S) -> bool
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     source.allows_entity_selectors()
 }
 
 fn allow_advanced_selectors<S>(source: &S) -> bool
 where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     source.allows_advanced_entity_selectors()
 }
@@ -981,7 +981,7 @@ pub(crate) fn suggest_entity_selector<S>(
     single: bool,
     players_only: bool,
 ) where
-    S: ExecutionCommandSource,
+    S: CommandArgumentSource + ?Sized,
 {
     let data = SelectorSuggestionData {
         allow_selectors: allow_selectors(source),
@@ -2465,7 +2465,7 @@ mod tests {
     use crate::{
         command::{
             brigadier::{CommandSyntaxError, StringReader, SuggestionsBuilder},
-            execution::{CommandResultCallback, ExecutionCommandSource},
+            execution::{CommandArgumentSource, CommandResultCallback, ExecutionCommandSource},
         },
         entity::{Entity, EntityBase},
         scoreboard::{ScoreHolder, Scoreboard},
@@ -2537,7 +2537,9 @@ mod tests {
         }
 
         fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
+    }
 
+    impl CommandArgumentSource for TestSource {
         fn selector_player_names(&self) -> Vec<String> {
             vec!["Alex".to_owned(), "Steve".to_owned()]
         }

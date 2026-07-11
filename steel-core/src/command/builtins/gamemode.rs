@@ -337,7 +337,7 @@ mod tests {
             dispatcher.node(game_mode),
             Some(node)
                 if node.is_executable()
-                    && matches!(node.argument_type(), Some(SteelArgumentType::GameMode))
+                    && node.argument_type() == Some(&SteelArgumentType::game_mode())
         ));
         let Some(target) = dispatcher
             .children(game_mode)
@@ -350,13 +350,7 @@ mod tests {
             Some(node)
                 if node.name() == "target"
                     && node.is_executable()
-                    && matches!(
-                        node.argument_type(),
-                        Some(SteelArgumentType::Entity {
-                            single: false,
-                            players_only: true
-                        })
-                    )
+                    && node.argument_type() == Some(&SteelArgumentType::players())
         ));
     }
 }
