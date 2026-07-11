@@ -34,6 +34,14 @@ pub(super) struct PlayerPermissionMetadataEntryFile {
 }
 
 impl PlayerPermissionsFile {
+    pub(super) fn from_subject_index(subjects: &PermissionSubjectIndex) -> Self {
+        let mut file = Self::default();
+        for (uuid, state) in subjects.entries() {
+            set_permission_subject(&mut file, uuid, state);
+        }
+        file
+    }
+
     pub(super) fn validate(&self) -> io::Result<()> {
         for (uuid, entry) in &self.players {
             let uuid = parse_uuid(uuid)?;
@@ -42,17 +50,16 @@ impl PlayerPermissionsFile {
         Ok(())
     }
 
-    pub(super) fn subject(&self, uuid: Uuid) -> io::Result<Option<PermissionSubjectState>> {
-        self.players
-            .get(&uuid.to_string())
-            .map(|entry| entry.to_subject_state(uuid))
-            .transpose()
-    }
-
     pub(super) fn into_subject_index(self) -> io::Result<PermissionSubjectIndex> {
         let mut subjects = PermissionSubjectIndex::new();
-        for (uuid, entry) in self.players {
-            let uuid = parse_uuid(&uuid)?;
+        for (uuid_text, entry) in self.players {
+            let uuid = parse_uuid(&uuid_text)?;
+            if subjects.get(uuid).is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("duplicate player permission UUID '{uuid_text}' resolves to {uuid}"),
+                ));
+            }
             subjects.set(uuid, entry.into_subject_state(uuid)?);
         }
         Ok(subjects)
@@ -104,10 +111,6 @@ impl PlayerPermissionEntryFile {
                 })
                 .collect(),
         }
-    }
-
-    fn to_subject_state(&self, uuid: Uuid) -> io::Result<PermissionSubjectState> {
-        self.clone().into_subject_state(uuid)
     }
 
     fn into_subject_state(self, uuid: Uuid) -> io::Result<PermissionSubjectState> {
@@ -352,13 +355,15 @@ mod tests {
             Ok(parsed) => parsed,
             Err(error) => panic!("subject file should parse: {error}"),
         };
-        let parsed = match parsed.subject(uuid) {
-            Ok(Some(parsed)) => parsed,
-            Ok(None) => panic!("subject should exist"),
-            Err(error) => panic!("subject should validate: {error}"),
+        let parsed = match parsed.into_subject_index() {
+            Ok(parsed) => parsed,
+            Err(error) => panic!("subjects should validate: {error}"),
+        };
+        let Some(parsed) = parsed.get(uuid) else {
+            panic!("subject should exist");
         };
 
-        assert_eq!(parsed, state);
+        assert_eq!(parsed, &state);
     }
 
     #[test]
@@ -391,5 +396,33 @@ mod tests {
         set_permission_subject(&mut file, uuid, &PermissionSubjectState::default());
 
         assert!(file.players.is_empty());
+    }
+
+    #[test]
+    fn subject_file_rejects_duplicate_uuid_spellings() {
+        let uuid = Uuid::from_u128(4);
+        let mut file = PlayerPermissionsFile::default();
+        file.players.insert(
+            uuid.to_string(),
+            PlayerPermissionEntryFile {
+                groups: vec!["op".to_owned()],
+                ..PlayerPermissionEntryFile::default()
+            },
+        );
+        file.players.insert(
+            uuid.simple().to_string(),
+            PlayerPermissionEntryFile {
+                groups: vec!["builder".to_owned()],
+                ..PlayerPermissionEntryFile::default()
+            },
+        );
+
+        let error = file.into_subject_index();
+
+        assert!(error.is_err_and(|error| {
+            error
+                .to_string()
+                .contains("duplicate player permission UUID")
+        }));
     }
 }

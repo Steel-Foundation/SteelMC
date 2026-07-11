@@ -18,11 +18,11 @@ use tokio::{
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
+#[cfg(test)]
+use self::permissions::set_permission_subject;
 use self::{
     known_players::{KnownPlayersFile, decode_known_players_file, encode_known_players_file},
-    permissions::{
-        PlayerPermissionsFile, serialize_player_permissions_file, set_permission_subject,
-    },
+    permissions::{PlayerPermissionsFile, serialize_player_permissions_file},
 };
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
@@ -30,7 +30,9 @@ use super::player_data::{
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
-use crate::permission::{PermissionSubjectIndex, PermissionSubjectState};
+use crate::permission::PermissionSubjectIndex;
+#[cfg(test)]
+use crate::permission::PermissionSubjectState;
 use crate::player::Player;
 use crate::player::known_players::KnownPlayers;
 use steel_registry::item_stack::ItemStack;
@@ -226,16 +228,6 @@ impl PlayerDataStorage {
         }
     }
 
-    /// Loads one player's persisted permission snapshot.
-    pub async fn load_player_permissions(
-        &self,
-        uuid: Uuid,
-    ) -> io::Result<Option<PermissionSubjectState>> {
-        match &self.backend {
-            PlayerDataStorageBackend::File(storage) => storage.load_player_permissions(uuid).await,
-        }
-    }
-
     /// Saves server-wide player data.
     pub async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         match &self.backend {
@@ -243,53 +235,14 @@ impl PlayerDataStorage {
         }
     }
 
-    /// Atomically loads, edits, and persists one player's permission snapshot.
-    pub async fn update_player_permissions<F, E>(
+    /// Persists the server's complete UUID-keyed permission snapshot.
+    pub async fn save_permission_subjects(
         &self,
-        uuid: Uuid,
-        update: F,
-    ) -> Result<PermissionSubjectState, E>
-    where
-        F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
-        E: From<io::Error> + Send,
-    {
+        subjects: &PermissionSubjectIndex,
+    ) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => {
-                storage.update_player_permissions(uuid, update).await
-            }
-        }
-    }
-
-    /// Atomically edits and persists one player snapshot while returning caller data.
-    pub async fn try_update_player_permissions<T, F, E>(
-        &self,
-        uuid: Uuid,
-        update: F,
-    ) -> Result<(PermissionSubjectState, T), E>
-    where
-        F: FnOnce(Option<PermissionSubjectState>) -> Result<(PermissionSubjectState, T), E> + Send,
-        T: Send,
-        E: From<io::Error> + Send,
-    {
-        match &self.backend {
-            PlayerDataStorageBackend::File(storage) => {
-                storage.try_update_player_permissions(uuid, update).await
-            }
-        }
-    }
-
-    /// Persists a snapshot only when it is still the caller's current version.
-    pub async fn save_player_permissions_if_current(
-        &self,
-        uuid: Uuid,
-        state: &PermissionSubjectState,
-        is_current: impl FnOnce() -> bool + Send,
-    ) -> io::Result<bool> {
-        match &self.backend {
-            PlayerDataStorageBackend::File(storage) => {
-                storage
-                    .save_player_permissions_if_current(uuid, state, is_current)
-                    .await
+                storage.save_permission_subjects(subjects).await
             }
         }
     }
@@ -403,14 +356,6 @@ impl FilePlayerDataStorage {
         Ok(true)
     }
 
-    async fn load_player_permissions(
-        &self,
-        uuid: Uuid,
-    ) -> io::Result<Option<PermissionSubjectState>> {
-        let file = self.load_player_permissions_file().await?;
-        file.subject(uuid)
-    }
-
     async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         let file = GlobalPlayerDataFile {
             data_version: GLOBAL_PLAYER_DATA_VERSION,
@@ -421,64 +366,13 @@ impl FilePlayerDataStorage {
             .await
     }
 
-    async fn update_player_permissions<F, E>(
-        &self,
-        uuid: Uuid,
-        update: F,
-    ) -> Result<PermissionSubjectState, E>
-    where
-        F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
-        E: From<io::Error> + Send,
-    {
-        self.try_update_player_permissions(uuid, |current| update(current).map(|state| (state, ())))
-            .await
-            .map(|(state, ())| state)
-    }
-
-    async fn try_update_player_permissions<T, F, E>(
-        &self,
-        uuid: Uuid,
-        update: F,
-    ) -> Result<(PermissionSubjectState, T), E>
-    where
-        F: FnOnce(Option<PermissionSubjectState>) -> Result<(PermissionSubjectState, T), E> + Send,
-        T: Send,
-        E: From<io::Error> + Send,
-    {
+    async fn save_permission_subjects(&self, subjects: &PermissionSubjectIndex) -> io::Result<()> {
         let path = self.player_permissions_file();
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        let mut file = self
-            .read_player_permissions_file_locked(&path)
-            .await
-            .map_err(E::from)?;
-        let current = file.subject(uuid).map_err(E::from)?;
-        let (updated, result) = update(current)?;
-        set_permission_subject(&mut file, uuid, &updated);
+        let file = PlayerPermissionsFile::from_subject_index(subjects);
         self.write_player_permissions_file_locked(&path, &file)
             .await
-            .map_err(E::from)?;
-        Ok((updated, result))
-    }
-
-    async fn save_player_permissions_if_current(
-        &self,
-        uuid: Uuid,
-        state: &PermissionSubjectState,
-        is_current: impl FnOnce() -> bool + Send,
-    ) -> io::Result<bool> {
-        let path = self.player_permissions_file();
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
-        if !is_current() {
-            return Ok(false);
-        }
-
-        let mut file = self.read_player_permissions_file_locked(&path).await?;
-        set_permission_subject(&mut file, uuid, state);
-        self.write_player_permissions_file_locked(&path, &file)
-            .await?;
-        Ok(true)
     }
 
     async fn load_player_permissions_file(&self) -> io::Result<PlayerPermissionsFile> {
@@ -1033,20 +927,20 @@ mod tests {
         let storage = FilePlayerDataStorage::new(root.clone())
             .await
             .expect("test storage should initialize");
+        let mut subjects = PermissionSubjectIndex::new();
         for (uuid, group) in [
             (Uuid::from_u128(10), "builder"),
             (Uuid::from_u128(20), "moderator"),
         ] {
-            storage
-                .update_player_permissions(uuid, |_| {
-                    Ok::<_, io::Error>(PermissionSubjectState::new(
-                        vec![group.to_owned()],
-                        PermissionSet::new(),
-                    ))
-                })
-                .await
-                .expect("permission subject should persist");
+            subjects.set(
+                uuid,
+                PermissionSubjectState::new(vec![group.to_owned()], PermissionSet::new()),
+            );
         }
+        storage
+            .save_permission_subjects(&subjects)
+            .await
+            .expect("permission subjects should persist");
 
         let path = storage.player_permissions_file();
         let backup = FilePlayerDataStorage::atomic_backup_path(&path);
@@ -1058,7 +952,7 @@ mod tests {
             .await
             .expect("uncommitted replacement should be staged");
 
-        let recovered = storage
+        let mut recovered = storage
             .load_permission_subjects()
             .await
             .expect("last committed permissions should recover");
@@ -1077,13 +971,12 @@ mod tests {
         );
         assert!(!temporary.exists());
 
+        recovered.set(
+            Uuid::from_u128(30),
+            PermissionSubjectState::new(vec!["operator".to_owned()], PermissionSet::new()),
+        );
         storage
-            .update_player_permissions(Uuid::from_u128(30), |_| {
-                Ok::<_, io::Error>(PermissionSubjectState::new(
-                    vec!["operator".to_owned()],
-                    PermissionSet::new(),
-                ))
-            })
+            .save_permission_subjects(&recovered)
             .await
             .expect("an update after recovery should preserve existing subjects");
         let updated = storage
@@ -1103,13 +996,13 @@ mod tests {
         let storage = FilePlayerDataStorage::new(root.clone())
             .await
             .expect("test storage should initialize");
+        let mut subjects = PermissionSubjectIndex::new();
+        subjects.set(
+            Uuid::from_u128(42),
+            PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
         storage
-            .update_player_permissions(Uuid::from_u128(42), |_| {
-                Ok::<_, io::Error>(PermissionSubjectState::new(
-                    vec!["op".to_owned()],
-                    PermissionSet::new(),
-                ))
-            })
+            .save_permission_subjects(&subjects)
             .await
             .expect("permission subject should persist");
         let path = storage.player_permissions_file();
@@ -1317,91 +1210,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn concurrent_permission_updates_preserve_both_subjects() {
-        let root = temp_storage_root("permission-updates");
-        let storage = match FilePlayerDataStorage::new(root.clone()).await {
-            Ok(storage) => Arc::new(storage),
-            Err(error) => panic!("test storage should initialize: {error}"),
-        };
-        let first_uuid = Uuid::from_u128(10);
-        let second_uuid = Uuid::from_u128(20);
-        let first = {
-            let storage = Arc::clone(&storage);
-            tokio::spawn(async move {
-                storage
-                    .update_player_permissions(first_uuid, |_| {
-                        Ok::<_, io::Error>(PermissionSubjectState::new(
-                            vec!["builder".to_owned()],
-                            PermissionSet::new(),
-                        ))
-                    })
-                    .await
-            })
-        };
-        let second = {
-            let storage = Arc::clone(&storage);
-            tokio::spawn(async move {
-                storage
-                    .update_player_permissions(second_uuid, |_| {
-                        Ok::<_, io::Error>(PermissionSubjectState::new(
-                            vec!["moderator".to_owned()],
-                            PermissionSet::new(),
-                        ))
-                    })
-                    .await
-            })
-        };
-
-        match first.await {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => panic!("first update should persist: {error}"),
-            Err(error) => panic!("first update task should complete: {error}"),
-        }
-        match second.await {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => panic!("second update should persist: {error}"),
-            Err(error) => panic!("second update task should complete: {error}"),
-        }
-        let subjects = match storage.load_permission_subjects().await {
-            Ok(subjects) => subjects,
-            Err(error) => panic!("permission subjects should load: {error}"),
-        };
-
-        assert_eq!(subjects.len(), 2);
-        assert_eq!(
-            subjects.get(first_uuid).map(PermissionSubjectState::groups),
-            Some(["builder".to_owned()].as_slice())
-        );
-        assert_eq!(
-            subjects
-                .get(second_uuid)
-                .map(PermissionSubjectState::groups),
-            Some(["moderator".to_owned()].as_slice())
-        );
-        fs::remove_dir_all(root)
-            .await
-            .expect("temporary storage should be removable");
-    }
-
-    #[tokio::test]
-    async fn stale_permission_snapshot_is_not_written() {
-        let root = temp_storage_root("stale-permissions");
+    async fn permission_subject_snapshot_removes_noncanonical_uuid_key() {
+        let root = temp_storage_root("permission-uuid-key");
         let storage = match FilePlayerDataStorage::new(root.clone()).await {
             Ok(storage) => storage,
             Err(error) => panic!("test storage should initialize: {error}"),
         };
-        let state = PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new());
+        let target_uuid = Uuid::from_u128(42);
+        let control_uuid = Uuid::from_u128(84);
+        let mut seed = PermissionSubjectIndex::new();
+        seed.set(
+            target_uuid,
+            PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
+        seed.set(
+            control_uuid,
+            PermissionSubjectState::new(vec!["builder".to_owned()], PermissionSet::new()),
+        );
+        let file = PlayerPermissionsFile::from_subject_index(&seed);
+        let canonical = target_uuid.to_string();
+        let noncanonical = target_uuid.simple().to_string();
+        let contents = serialize_player_permissions_file(&file)
+            .expect("permission subjects should serialize")
+            .replace(&canonical, &noncanonical);
+        fs::write(storage.player_permissions_file(), contents)
+            .await
+            .expect("noncanonical permission UUID should be seeded");
 
-        let saved = storage
-            .save_player_permissions_if_current(Uuid::from_u128(30), &state, || false)
-            .await;
+        let mut subjects = storage
+            .load_permission_subjects()
+            .await
+            .expect("valid UUID spellings should load");
+        assert_eq!(subjects.len(), 2);
+        let removed = subjects
+            .remove(target_uuid)
+            .expect("target should be indexed by UUID");
+        assert_eq!(removed.groups(), ["op"]);
+        storage
+            .save_permission_subjects(&subjects)
+            .await
+            .expect("updated UUID index should persist");
 
-        match saved {
-            Ok(false) => {}
-            Ok(true) => panic!("stale snapshot should not be written"),
-            Err(error) => panic!("stale snapshot check should not fail: {error}"),
-        }
-        assert!(!storage.player_permissions_file().exists());
+        let reloaded = storage
+            .load_permission_subjects()
+            .await
+            .expect("updated permission subjects should load");
+        assert!(reloaded.get(target_uuid).is_none());
+        assert_eq!(
+            reloaded
+                .get(control_uuid)
+                .map(PermissionSubjectState::groups),
+            Some(["builder".to_owned()].as_slice())
+        );
+        let persisted = fs::read_to_string(storage.player_permissions_file())
+            .await
+            .expect("updated permissions should be readable");
+        assert!(!persisted.contains(&canonical));
+        assert!(!persisted.contains(&noncanonical));
+
         fs::remove_dir_all(root)
             .await
             .expect("temporary storage should be removable");

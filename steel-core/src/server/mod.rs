@@ -475,7 +475,7 @@ pub enum PlayerPermissionUpdateError<E> {
     /// The edit assigns a group that is not configured.
     #[error("unknown permission group '{0}'")]
     UnknownGroup(String),
-    /// The permission snapshot could not be read or persisted.
+    /// The permission snapshot could not be persisted.
     #[error("failed to update player permissions: {0}")]
     Storage(io::Error),
 }
@@ -1968,23 +1968,26 @@ impl Server {
         E: Send,
     {
         let _guard = self.player_permission_updates.lock().await;
-        let (updated, result) = self
-            .player_data_storage
-            .try_update_player_permissions(uuid, |current| {
-                let current = current.unwrap_or_default();
-                let previous_groups = current.groups().to_vec();
-                let (updated, result) =
-                    update(current).map_err(PlayerPermissionUpdateError::Edit)?;
-                validate_player_permission_group_update(
-                    &self.permission_groups,
-                    &previous_groups,
-                    updated.groups(),
-                )?;
-                Ok::<_, PlayerPermissionUpdateError<E>>((updated, result))
-            })
+        let mut states = self.player_permission_states.read().clone();
+        let current = states.get(uuid).cloned().unwrap_or_default();
+        let previous_groups = current.groups().to_vec();
+        let (updated, result) = update(current).map_err(PlayerPermissionUpdateError::Edit)?;
+        validate_player_permission_group_update(
+            &self.permission_groups,
+            &previous_groups,
+            updated.groups(),
+        )?;
+
+        if updated.is_empty() {
+            states.remove(uuid);
+        } else {
+            states.set(uuid, updated.clone());
+        }
+        self.player_data_storage
+            .save_permission_subjects(&states)
             .await?;
 
-        self.set_cached_player_permission_state(uuid, updated.clone());
+        *self.player_permission_states.write() = states;
         self.queue_player_permission_refresh(uuid);
         Ok((updated, result))
     }
@@ -2143,15 +2146,6 @@ impl Server {
                 Err(error) => tracing::error!(%error, "failed to save known player cache"),
             }
         });
-    }
-
-    fn set_cached_player_permission_state(&self, uuid: Uuid, state: PermissionSubjectState) {
-        let mut states = self.player_permission_states.write();
-        if state.is_empty() {
-            states.remove(uuid);
-        } else {
-            states.set(uuid, state);
-        }
     }
 
     fn queue_player_permission_refresh(self: &Arc<Self>, uuid: Uuid) {
