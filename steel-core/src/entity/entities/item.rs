@@ -13,6 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -108,6 +109,11 @@ pub struct ItemEntity {
 
     /// Item-specific mutable state.
     item_state: SyncMutex<ItemEntityState>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ItemEntity`.
+unsafe impl DowncastType for ItemEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item");
 }
 
 impl ItemEntity {

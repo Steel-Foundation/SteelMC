@@ -2495,6 +2495,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(SelectorTestEntity);
+
     impl Entity for SelectorTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base

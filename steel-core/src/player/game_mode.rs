@@ -23,7 +23,7 @@ use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
-use steel_utils::{BlockPos, Identifier, WorldAabb};
+use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
@@ -1565,7 +1565,7 @@ impl Player {
         };
 
         let mut guard = block_entity.lock();
-        let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
             return;
         };
 
@@ -1613,7 +1613,7 @@ impl Player {
 
         if let Some(block_entity) = world.get_block_entity(pos) {
             let mut guard = block_entity.lock();
-            if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
+            if let Some(sign) = guard.downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
             }
         }

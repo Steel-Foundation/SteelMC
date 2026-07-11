@@ -13,6 +13,8 @@ pub mod climate;
 pub mod codec;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
+/// Deterministic concrete-type downcasting for erased Steel objects.
+pub mod downcast;
 mod front_vec;
 /// Shared geometry primitives.
 pub mod geometry;
@@ -61,6 +63,7 @@ pub mod version;
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
 pub use direction::Direction;
+pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};
 pub use front_vec::FrontVec;
 pub use geometry::{BlockLocalAabb, BoundingBox, WorldAabb};
 pub use rotation::Rotation;

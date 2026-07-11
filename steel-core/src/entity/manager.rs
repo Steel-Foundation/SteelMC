@@ -1728,6 +1728,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
+
     impl Entity for MovingTickTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -1774,6 +1776,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
+
     impl Entity for AddDuringTickTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -1815,6 +1819,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(DespawnOnCheckTestEntity);
+
     impl Entity for DespawnOnCheckTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -1828,6 +1834,8 @@ mod tests {
             self.set_removed(RemovalReason::Discarded);
         }
     }
+
+    crate::entity::impl_test_downcast_type!(ManagerTestEntity);
 
     impl Entity for ManagerTestEntity {
         fn base(&self) -> &EntityBase {

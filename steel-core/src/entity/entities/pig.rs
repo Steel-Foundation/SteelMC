@@ -26,7 +26,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
@@ -65,6 +65,11 @@ pub struct PigEntity {
     animal_base: AnimalBase,
     steering: SyncMutex<ItemBasedSteering>,
     entity_data: SyncMutex<PigEntityData>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `PigEntity`.
+unsafe impl DowncastType for PigEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/pig");
 }
 
 impl PigEntity {

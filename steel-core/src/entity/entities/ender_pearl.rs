@@ -25,6 +25,7 @@ use steel_registry::vanilla_game_rules::ENDER_PEARLS_VANISH_ON_DEATH;
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
@@ -53,6 +54,11 @@ pub struct EnderPearlEntity {
     projectile_base: ProjectileBase,
     /// Countdown until the chunk-loading ticket is refreshed (vanilla `ticketTimer`).
     ticket_timer: SyncMutex<i32>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `EnderPearlEntity`.
+unsafe impl DowncastType for EnderPearlEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/ender_pearl");
 }
 
 impl EnderPearlEntity {

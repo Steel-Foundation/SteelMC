@@ -107,6 +107,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TestPathfinderMob);
+
     impl Entity for TestPathfinderMob {
         fn base(&self) -> &EntityBase {
             &self.base

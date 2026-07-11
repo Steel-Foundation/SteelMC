@@ -4,6 +4,7 @@ use steel_registry::item_stack::ItemStack;
 
 use crate::behavior::UseItemContext;
 use crate::inventory::lock::ContainerId;
+use crate::player::player_inventory::PlayerInventory;
 
 /// Applies vanilla `ItemUtils.createFilledResult`.
 pub(crate) fn create_filled_result(
@@ -14,7 +15,7 @@ pub(crate) fn create_filled_result(
     let player = context.player;
     let overflow = context.inv.with_guard(|guard| {
         let inv_id = ContainerId::from_arc(&player.inventory);
-        let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
+        let Some(inv) = guard.get_typed_mut::<PlayerInventory>(inv_id) else {
             return result_stack;
         };
 

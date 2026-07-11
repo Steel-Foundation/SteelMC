@@ -17,6 +17,7 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, items::ItemRef};
 use steel_utils::types::{GameType, InteractionHand};
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
     entity::{Entity, entities::ItemEntity},
@@ -83,6 +84,11 @@ pub struct PlayerInventory {
     selected: u8,
     /// Counter incremented on every change.
     times_changed: u32,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `PlayerInventory`.
+unsafe impl DowncastType for PlayerInventory {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:container/player_inventory");
 }
 
 impl PlayerInventory {

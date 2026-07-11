@@ -19,10 +19,15 @@ Template: *"I verified [sources]. The blocker is [missing data/decision]. Guessi
 
 **SKETCHY WORKAROUND PROTOCOL** — Halt and ask permission before using:
 - `.clone()` to appease borrow checker, `.unwrap()`/`.expect()` in production, `unsafe`
-- `Any` (`Any` isn't ABI safe and is a bad workaround)
+- `Any`/`TypeId` downcasting in plugin-extensible foundations. It is sound within one linked Rust build, but its identity is not deterministic across builds; use Steel's keyed downcasting foundation instead.
 - Disabling linters, ignoring errors, deprecated deps
 
 Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve root cause?"*
+
+**DOWNCASTING** — Exact concrete downcasting uses `steel_utils::{Downcast, DowncastType, DowncastTypeKey}`.
+- Keys identify concrete Rust implementations, not Minecraft registry entries or translation keys. Steel-owned types use the `steel:` namespace; plugins own their namespace.
+- Steel may downcast Steel-owned types and a plugin may downcast its own types. A key does not make a Rust type ABI-stable or permit one owner to reinterpret another owner's private type.
+- Use capability traits for shared behavior, vanilla interfaces, and class-hierarchy checks. Exact downcasting is only for callers that require a specific concrete implementation.
 
 **CONSTRUCTIVE DISSENT** — Treat user claims as hypotheses. Verify against local code/vanilla, call out mismatches, and challenge XY problems. Before building a complex system, identify the required vanilla-compatible foundations and ask when architecture is unclear.
 

@@ -4,6 +4,7 @@
 )]
 
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_utils::Downcast as _;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
@@ -522,10 +523,7 @@ impl FeatureDecorationRunner {
             return;
         };
         let mut block_entity = block_entity.lock();
-        let Some(beehive) = block_entity
-            .as_any_mut()
-            .downcast_mut::<BeehiveBlockEntity>()
-        else {
+        let Some(beehive) = block_entity.downcast_mut::<BeehiveBlockEntity>() else {
             return;
         };
 

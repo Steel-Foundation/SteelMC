@@ -4,7 +4,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_dimension_types;
-use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, locks::SyncMutex};
 
 use crate::behavior::BlockPlaceContext;
 use crate::behavior::block::BlockBehavior;
@@ -124,10 +124,7 @@ impl EndGatewayBlock {
             return;
         };
         let mut block_entity = block_entity.lock();
-        let Some(gateway) = block_entity
-            .as_any_mut()
-            .downcast_mut::<EndGatewayBlockEntity>()
-        else {
+        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
             return;
         };
         if gateway.is_cooling_down() {
@@ -195,7 +192,7 @@ mod tests {
 
     use super::{EndGatewayBlock, EndPortalBlock};
     use steel_registry::vanilla_entities;
-    use steel_utils::BlockPos;
+    use steel_utils::{BlockPos, Downcast as _};
 
     #[test]
     fn registered_end_portal_blocks_reject_fluid_replacement() {
@@ -237,6 +234,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TestEntity);
+
     impl Entity for TestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -276,12 +275,7 @@ mod tests {
             .expect("end portal block entity");
         let guard = block_entity.lock();
 
-        assert!(
-            guard
-                .as_any()
-                .downcast_ref::<EndPortalBlockEntity>()
-                .is_some()
-        );
+        assert!(guard.downcast_ref::<EndPortalBlockEntity>().is_some());
         assert_eq!(guard.get_type(), &vanilla_block_entity_types::END_PORTAL);
         assert_eq!(guard.get_block_pos(), pos);
         assert_eq!(guard.get_block_state(), state);
@@ -318,12 +312,7 @@ mod tests {
             .expect("end gateway block entity");
         let guard = block_entity.lock();
 
-        assert!(
-            guard
-                .as_any()
-                .downcast_ref::<EndGatewayBlockEntity>()
-                .is_some()
-        );
+        assert!(guard.downcast_ref::<EndGatewayBlockEntity>().is_some());
         assert_eq!(guard.get_block_pos(), pos);
         assert_eq!(guard.get_block_state(), state);
     }

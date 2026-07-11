@@ -1,6 +1,5 @@
 //! End gateway block entity.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
@@ -8,7 +7,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::{BlockEntity, BlockEntityTickAction};
 use crate::world::World;
@@ -28,6 +27,11 @@ pub struct EndGatewayBlockEntity {
     teleport_cooldown: i32,
     exit_portal: Option<BlockPos>,
     exact_teleport: bool,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `EndGatewayBlockEntity`.
+unsafe impl DowncastType for EndGatewayBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/end_gateway");
 }
 
 impl EndGatewayBlockEntity {
@@ -99,14 +103,6 @@ impl EndGatewayBlockEntity {
 }
 
 impl BlockEntity for EndGatewayBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::END_GATEWAY
     }

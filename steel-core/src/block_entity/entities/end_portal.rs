@@ -1,13 +1,12 @@
 //! End portal block entity.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::world::World;
@@ -18,6 +17,11 @@ pub struct EndPortalBlockEntity {
     pos: BlockPos,
     state: BlockStateId,
     removed: bool,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `EndPortalBlockEntity`.
+unsafe impl DowncastType for EndPortalBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/end_portal");
 }
 
 impl EndPortalBlockEntity {
@@ -34,14 +38,6 @@ impl EndPortalBlockEntity {
 }
 
 impl BlockEntity for EndPortalBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::END_PORTAL
     }

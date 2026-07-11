@@ -259,6 +259,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(RecordingEntity);
+
     impl Entity for RecordingEntity {
         fn base(&self) -> &EntityBase {
             &self.base

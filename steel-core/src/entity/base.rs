@@ -2394,6 +2394,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
+
     impl Entity for FallDamageTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base

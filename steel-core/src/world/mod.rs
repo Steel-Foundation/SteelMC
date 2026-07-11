@@ -67,6 +67,7 @@ use steel_registry::{
 use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_poi_types};
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
+    Downcast as _,
     locks::{SyncMutex, SyncRwLock},
     random::{Random as _, RandomSource, legacy_random::LegacyRandom},
 };
@@ -1066,10 +1067,7 @@ impl World {
             return false;
         };
         let mut block_entity = block_entity.lock();
-        let Some(gateway) = block_entity
-            .as_any_mut()
-            .downcast_mut::<EndGatewayBlockEntity>()
-        else {
+        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
             return false;
         };
         gateway.set_exit_position(exit, exact);
@@ -5056,6 +5054,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TrackerTestEntity);
 
     impl Entity for TrackerTestEntity {
         fn base(&self) -> &EntityBase {

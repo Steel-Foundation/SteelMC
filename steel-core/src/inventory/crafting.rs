@@ -9,6 +9,7 @@ use steel_registry::{
     item_stack::ItemStack,
     recipe::{CraftingInput, PositionedCraftingInput},
 };
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::inventory::container::Container;
 
@@ -21,6 +22,11 @@ pub struct CraftingContainer {
     width: usize,
     height: usize,
     items: Vec<ItemStack>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `CraftingContainer`.
+unsafe impl DowncastType for CraftingContainer {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:container/crafting");
 }
 
 impl CraftingContainer {
@@ -92,6 +98,11 @@ impl Container for CraftingContainer {
 /// A simple container for holding a single crafting result.
 pub struct ResultContainer {
     result: ItemStack,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ResultContainer`.
+unsafe impl DowncastType for ResultContainer {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:container/result");
 }
 
 impl ResultContainer {
