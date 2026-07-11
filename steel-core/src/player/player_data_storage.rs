@@ -17,7 +17,9 @@ use wincode::{SchemaRead, SchemaWrite};
 
 use self::{
     known_players::{KnownPlayersFile, decode_known_players_file, encode_known_players_file},
-    permissions::{PlayerPermissionsFile, set_permission_subject},
+    permissions::{
+        PlayerPermissionsFile, serialize_player_permissions_file, set_permission_subject,
+    },
 };
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
@@ -509,7 +511,7 @@ impl FilePlayerDataStorage {
         path: &Path,
         file: &PlayerPermissionsFile,
     ) -> io::Result<()> {
-        let contents = toml::to_string_pretty(file).map_err(|error| {
+        let contents = serialize_player_permissions_file(file).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("failed to serialize player permissions TOML: {error}"),

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use tokio::io;
+use toml::ser::Error as TomlSerializeError;
 use uuid::Uuid;
 
 use crate::permission::{
@@ -201,6 +202,102 @@ pub(super) fn set_permission_subject(
     );
 }
 
+pub(super) fn serialize_player_permissions_file(
+    file: &PlayerPermissionsFile,
+) -> Result<String, TomlSerializeError> {
+    let mut output = String::new();
+    if file.players.is_empty() {
+        output.push_str("players = {}\n");
+        return Ok(output);
+    }
+
+    for (uuid, entry) in &file.players {
+        output.push_str("[players.");
+        output.push_str(&toml_value(uuid)?);
+        output.push_str("]\n");
+        push_player_permission_entry(&mut output, entry)?;
+        output.push('\n');
+    }
+    Ok(output)
+}
+
+fn push_player_permission_entry(
+    output: &mut String,
+    entry: &PlayerPermissionEntryFile,
+) -> Result<(), TomlSerializeError> {
+    push_string_array_field(output, "groups", &entry.groups)?;
+    push_string_array_field(output, "allow", &entry.allow)?;
+    push_string_array_field(output, "deny", &entry.deny)?;
+    push_permission_metadata_entries(output, &entry.metadata)
+}
+
+fn push_string_array_field(
+    output: &mut String,
+    key: &str,
+    values: &[String],
+) -> Result<(), TomlSerializeError> {
+    if values.is_empty() {
+        output.push_str(key);
+        output.push_str(" = []\n");
+        return Ok(());
+    }
+
+    output.push_str(key);
+    output.push_str(" = [\n");
+    for value in values {
+        output.push_str("    ");
+        output.push_str(&toml_value(value)?);
+        output.push_str(",\n");
+    }
+    output.push_str("]\n");
+    Ok(())
+}
+
+fn push_permission_metadata_entries(
+    output: &mut String,
+    metadata: &[PlayerPermissionMetadataEntryFile],
+) -> Result<(), TomlSerializeError> {
+    if metadata.is_empty() {
+        output.push_str("metadata = []\n");
+        return Ok(());
+    }
+
+    output.push_str("metadata = [\n");
+    for entry in metadata {
+        output.push_str("    { key = ");
+        output.push_str(&toml_value(&entry.key)?);
+        output.push_str(", value = ");
+        output.push_str(&permission_metadata_value_toml(&entry.value)?);
+        output.push_str(" },\n");
+    }
+    output.push_str("]\n");
+    Ok(())
+}
+
+fn toml_value<T: Serialize + ?Sized>(value: &T) -> Result<String, TomlSerializeError> {
+    #[derive(Serialize)]
+    struct Field<'a, T: Serialize + ?Sized> {
+        value: &'a T,
+    }
+
+    let serialized = toml::to_string(&Field { value })?;
+    let serialized = serialized.trim_end();
+    Ok(serialized
+        .strip_prefix("value = ")
+        .unwrap_or(serialized)
+        .to_owned())
+}
+
+fn permission_metadata_value_toml(
+    value: &PermissionMetadataValue,
+) -> Result<String, TomlSerializeError> {
+    match value {
+        PermissionMetadataValue::Bool(value) => toml_value(value),
+        PermissionMetadataValue::Integer(value) => toml_value(value),
+        PermissionMetadataValue::String(value) => toml_value(value),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,10 +340,12 @@ mod tests {
         let mut file = PlayerPermissionsFile::default();
         set_permission_subject(&mut file, uuid, &state);
 
-        let serialized = match toml::to_string_pretty(&file) {
+        let serialized = match serialize_player_permissions_file(&file) {
             Ok(serialized) => serialized,
             Err(error) => panic!("subject file should serialize: {error}"),
         };
+
+        assert!(serialized.contains("{ key = \"plugin:max_homes{domain=survival}\", value = 5 }"));
         let parsed = match toml::from_str::<PlayerPermissionsFile>(&serialized) {
             Ok(parsed) => parsed,
             Err(error) => panic!("subject file should parse: {error}"),
