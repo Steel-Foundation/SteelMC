@@ -2,8 +2,10 @@ use steel_utils::Identifier;
 
 use super::{
     PermissionContext, PermissionContextKey, PermissionEntry, PermissionExpr, PermissionKey,
-    PermissionKeyError, PermissionResolutionSource, PermissionRuleContext,
-    PermissionRuleContextError, PermissionSegment, PermissionSet, PermissionState,
+    PermissionKeyError, PermissionMetadataEntry, PermissionMetadataExpression,
+    PermissionMetadataKeyError, PermissionMetadataSet, PermissionMetadataValue,
+    PermissionResolutionSource, PermissionRuleContext, PermissionRuleContextError,
+    PermissionSegment, PermissionSet, PermissionState, parse_permission_metadata_key,
 };
 
 fn key(value: &str) -> PermissionKey {
@@ -29,6 +31,94 @@ fn custom_context(key: &str, value: &str) -> PermissionRuleContext {
         Ok(context) => context,
         Err(error) => panic!("test custom context should build: {error}"),
     }
+}
+
+fn metadata_key(value: &str) -> Identifier {
+    match parse_permission_metadata_key(value) {
+        Ok(key) => key,
+        Err(error) => panic!("test metadata key '{value}' should parse: {error}"),
+    }
+}
+
+#[test]
+fn metadata_keys_require_explicit_valid_namespaces() {
+    assert_eq!(
+        parse_permission_metadata_key("max_homes"),
+        Err(PermissionMetadataKeyError::InvalidFormat)
+    );
+    assert_eq!(
+        parse_permission_metadata_key(":max_homes"),
+        Err(PermissionMetadataKeyError::EmptyNamespace)
+    );
+    assert_eq!(
+        parse_permission_metadata_key("plugin:homes//max"),
+        Err(PermissionMetadataKeyError::InvalidPath)
+    );
+    assert_eq!(
+        parse_permission_metadata_key("plugin:max_homes"),
+        Ok(Identifier::new("plugin", "max_homes"))
+    );
+}
+
+#[test]
+fn metadata_expressions_share_permission_context_syntax() {
+    let expression = PermissionMetadataExpression::parse(
+        "plugin:max_homes{plugin:region=spawn,world=lobby:spawn,domain=lobby}",
+    );
+    let Ok(expression) = expression else {
+        panic!("metadata expression should parse");
+    };
+    assert_eq!(
+        expression.to_string(),
+        "plugin:max_homes{domain=lobby,world=lobby:spawn,plugin:region=spawn}"
+    );
+}
+
+#[test]
+fn metadata_resolution_uses_context_source_priority_and_order() {
+    let homes = metadata_key("plugin:max_homes");
+    let mut metadata = PermissionMetadataSet::new();
+    metadata.push_group(
+        PermissionMetadataEntry::new(homes.clone(), PermissionMetadataValue::Integer(5)),
+        "default",
+        0,
+    );
+    metadata.push_group(
+        PermissionMetadataEntry::new(homes.clone(), PermissionMetadataValue::Integer(10)),
+        "vip",
+        50,
+    );
+    metadata.push(PermissionMetadataEntry::new(
+        homes.clone(),
+        PermissionMetadataValue::Integer(20),
+    ));
+    metadata.push_group(
+        PermissionMetadataEntry::new_with_context(
+            homes.clone(),
+            PermissionRuleContext::domain("survival"),
+            PermissionMetadataValue::Integer(3),
+        ),
+        "default",
+        0,
+    );
+
+    assert_eq!(
+        metadata
+            .resolve(&homes)
+            .and_then(PermissionMetadataValue::as_i64),
+        Some(20)
+    );
+    assert_eq!(
+        metadata
+            .resolve_in(&homes, &world_context("survival", "overworld"))
+            .and_then(PermissionMetadataValue::as_i64),
+        Some(3)
+    );
+    let resolution = metadata.resolve_detailed(&homes);
+    let Some(resolution) = resolution else {
+        panic!("metadata should resolve");
+    };
+    assert_eq!(resolution.source(), &PermissionResolutionSource::Subject);
 }
 
 #[test]

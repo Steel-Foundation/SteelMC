@@ -47,7 +47,8 @@ impl PermissionRuleExpression {
             }
         })?;
         let context_value = &value[context_start + 1..value.len() - 1];
-        let context = parse_context(context_value)?;
+        let context = parse_context(context_value)
+            .map_err(PermissionRuleExpressionError::from_context_error)?;
         Ok(Self::new(key, context))
     }
 
@@ -77,21 +78,23 @@ impl fmt::Display for PermissionRuleExpression {
     }
 }
 
-fn parse_context(value: &str) -> Result<PermissionRuleContext, PermissionRuleExpressionError> {
+pub(super) fn parse_context(
+    value: &str,
+) -> Result<PermissionRuleContext, PermissionExpressionContextError> {
     if value.is_empty() {
-        return Err(PermissionRuleExpressionError::EmptyContext);
+        return Err(PermissionExpressionContextError::EmptyContext);
     }
 
     let mut contexts = Vec::new();
     let mut seen_keys = BTreeSet::new();
     for entry in value.split(',') {
         let Some((key, context_value)) = entry.split_once('=') else {
-            return Err(PermissionRuleExpressionError::InvalidContextEntry(
+            return Err(PermissionExpressionContextError::InvalidContextEntry(
                 entry.to_owned(),
             ));
         };
         if key.is_empty() || context_value.is_empty() {
-            return Err(PermissionRuleExpressionError::InvalidContextEntry(
+            return Err(PermissionExpressionContextError::InvalidContextEntry(
                 entry.to_owned(),
             ));
         }
@@ -99,13 +102,13 @@ fn parse_context(value: &str) -> Result<PermissionRuleContext, PermissionRuleExp
             .chars()
             .any(|character| character.is_whitespace() || "{},=".contains(character))
         {
-            return Err(PermissionRuleExpressionError::InvalidContextValue {
+            return Err(PermissionExpressionContextError::InvalidContextValue {
                 key: key.to_owned(),
                 value: context_value.to_owned(),
             });
         }
         if !seen_keys.insert(key) {
-            return Err(PermissionRuleExpressionError::DuplicateContextKey(
+            return Err(PermissionExpressionContextError::DuplicateContextKey(
                 key.to_owned(),
             ));
         }
@@ -118,14 +121,15 @@ fn parse_context(value: &str) -> Result<PermissionRuleContext, PermissionRuleExp
         contexts.push(context);
     }
 
-    PermissionRuleContext::all(contexts).map_err(PermissionRuleExpressionError::InvalidRuleContext)
+    PermissionRuleContext::all(contexts)
+        .map_err(PermissionExpressionContextError::InvalidRuleContext)
 }
 
 fn parse_domain_context(
     value: &str,
-) -> Result<PermissionRuleContext, PermissionRuleExpressionError> {
+) -> Result<PermissionRuleContext, PermissionExpressionContextError> {
     if value.is_empty() || !Identifier::validate_namespace(value) {
-        return Err(PermissionRuleExpressionError::InvalidDomain(
+        return Err(PermissionExpressionContextError::InvalidDomain(
             value.to_owned(),
         ));
     }
@@ -134,9 +138,9 @@ fn parse_domain_context(
 
 fn parse_world_context(
     value: &str,
-) -> Result<PermissionRuleContext, PermissionRuleExpressionError> {
+) -> Result<PermissionRuleContext, PermissionExpressionContextError> {
     let Some((domain, name)) = value.split_once(':') else {
-        return Err(PermissionRuleExpressionError::InvalidWorld(
+        return Err(PermissionExpressionContextError::InvalidWorld(
             value.to_owned(),
         ));
     };
@@ -146,7 +150,7 @@ fn parse_world_context(
         || !Identifier::validate_namespace(domain)
         || !Identifier::validate_path(name)
     {
-        return Err(PermissionRuleExpressionError::InvalidWorld(
+        return Err(PermissionExpressionContextError::InvalidWorld(
             value.to_owned(),
         ));
     }
@@ -159,18 +163,18 @@ fn parse_world_context(
 fn parse_custom_context(
     key: &str,
     value: &str,
-) -> Result<PermissionRuleContext, PermissionRuleExpressionError> {
+) -> Result<PermissionRuleContext, PermissionExpressionContextError> {
     let key = PermissionContextKey::parse(key).map_err(|source| {
-        PermissionRuleExpressionError::InvalidContextKey {
+        PermissionExpressionContextError::InvalidContextKey {
             key: key.to_owned(),
             source,
         }
     })?;
     PermissionRuleContext::custom(key, value)
-        .map_err(PermissionRuleExpressionError::InvalidRuleContext)
+        .map_err(PermissionExpressionContextError::InvalidRuleContext)
 }
 
-fn write_context(
+pub(super) fn write_context(
     formatter: &mut fmt::Formatter<'_>,
     context: &PermissionRuleContext,
 ) -> fmt::Result {
@@ -222,6 +226,24 @@ fn write_context_entry(
     write!(formatter, "{key}={value}")
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum PermissionExpressionContextError {
+    EmptyContext,
+    InvalidContextEntry(String),
+    InvalidContextValue {
+        key: String,
+        value: String,
+    },
+    DuplicateContextKey(String),
+    InvalidDomain(String),
+    InvalidWorld(String),
+    InvalidContextKey {
+        key: String,
+        source: PermissionContextKeyError,
+    },
+    InvalidRuleContext(PermissionRuleContextError),
+}
+
 /// Invalid permission rule expression syntax.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PermissionRuleExpressionError {
@@ -260,6 +282,31 @@ pub enum PermissionRuleExpressionError {
     },
     /// The combined rule-side context is invalid.
     InvalidRuleContext(PermissionRuleContextError),
+}
+
+impl PermissionRuleExpressionError {
+    pub(super) fn from_context_error(error: PermissionExpressionContextError) -> Self {
+        match error {
+            PermissionExpressionContextError::EmptyContext => Self::EmptyContext,
+            PermissionExpressionContextError::InvalidContextEntry(entry) => {
+                Self::InvalidContextEntry(entry)
+            }
+            PermissionExpressionContextError::InvalidContextValue { key, value } => {
+                Self::InvalidContextValue { key, value }
+            }
+            PermissionExpressionContextError::DuplicateContextKey(key) => {
+                Self::DuplicateContextKey(key)
+            }
+            PermissionExpressionContextError::InvalidDomain(domain) => Self::InvalidDomain(domain),
+            PermissionExpressionContextError::InvalidWorld(world) => Self::InvalidWorld(world),
+            PermissionExpressionContextError::InvalidContextKey { key, source } => {
+                Self::InvalidContextKey { key, source }
+            }
+            PermissionExpressionContextError::InvalidRuleContext(source) => {
+                Self::InvalidRuleContext(source)
+            }
+        }
+    }
 }
 
 impl fmt::Display for PermissionRuleExpressionError {

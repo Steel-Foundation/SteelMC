@@ -1791,7 +1791,7 @@ impl Server {
     }
 
     fn apply_player_permission_state(&self, player: &Player, state: PermissionSubjectState) -> u64 {
-        let (groups, overrides) = state.into_parts();
+        let (groups, overrides, metadata_overrides) = state.into_parts();
         for group in &groups {
             if !self.permission_groups.contains_group(group) {
                 log::warn!(
@@ -1803,7 +1803,16 @@ impl Server {
         let effective = self
             .permission_groups
             .effective_permissions(&groups, &overrides);
-        player.set_permission_state(groups, overrides, effective)
+        let effective_metadata = self
+            .permission_groups
+            .effective_metadata(&groups, &metadata_overrides);
+        player.set_permission_state(
+            groups,
+            overrides,
+            metadata_overrides,
+            effective,
+            effective_metadata,
+        )
     }
 
     /// Returns one player's cached persisted permission state.

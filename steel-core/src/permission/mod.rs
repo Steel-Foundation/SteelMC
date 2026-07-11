@@ -5,6 +5,7 @@ mod expression;
 mod groups;
 mod key;
 mod manager;
+mod metadata;
 mod rule_expression;
 mod set;
 mod subject;
@@ -16,12 +17,17 @@ pub use context::{
 pub use expression::PermissionExpr;
 pub use groups::{
     PermissionConfigError, PermissionGroup, PermissionGroupConfig, PermissionGroups,
-    PermissionGroupsConfig,
+    PermissionGroupsConfig, PermissionMetadataRuleConfig,
 };
 pub use key::{PermissionKey, PermissionKeyError, PermissionSegment};
 pub use manager::{
     PermissionGroupManager, PermissionGroupManagerError, PermissionGroupStore,
     PermissionGroupStoreError, PermissionGroupUpdateError,
+};
+pub use metadata::{
+    PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataExpressionError,
+    PermissionMetadataKeyError, PermissionMetadataResolution, PermissionMetadataSet,
+    PermissionMetadataValue, parse_permission_metadata_key,
 };
 pub use rule_expression::{PermissionRuleExpression, PermissionRuleExpressionError};
 pub use set::{

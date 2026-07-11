@@ -8,9 +8,17 @@ priority = 0
 inherits = []
 allow = []
 deny = []
+# Namespaced typed values consumed by Steel subsystems and plugins.
+# More-specific contexts win; equally specific entries use group priority.
+# metadata = [
+#     { key = "plugin:prefix", value = "[Builder]" },
+#     { key = "plugin:max_homes{domain=survival}", value = 5 },
+# ]
+metadata = []
 
 [groups.op]
 priority = 0
 inherits = []
 allow = ["*"]
 deny = []
+metadata = []

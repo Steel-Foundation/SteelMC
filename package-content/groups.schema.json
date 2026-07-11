@@ -35,6 +35,25 @@
       "description": "Permission key with an optional context selector, such as steel.fly{domain=lobby}.",
       "pattern": "^(\\*|[a-z0-9_-]+(\\.[a-z0-9_-]+)*(\\.\\*)?)(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
     },
+    "permission_metadata_expression": {
+      "type": "string",
+      "description": "Namespaced metadata key with an optional context selector, such as plugin:max_homes{domain=survival}.",
+      "pattern": "^[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
+    },
+    "permission_metadata_value": {
+      "description": "Typed permission metadata value",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
     "group": {
       "type": "object",
       "properties": {
@@ -69,8 +88,29 @@
           },
           "uniqueItems": true,
           "default": []
+        },
+        "metadata": {
+          "type": "array",
+          "description": "Ordered typed metadata rules",
+          "items": {
+            "$ref": "#/definitions/metadata_rule"
+          },
+          "default": []
         }
       },
+      "additionalProperties": false
+    },
+    "metadata_rule": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/permission_metadata_expression"
+        },
+        "value": {
+          "$ref": "#/definitions/permission_metadata_value"
+        }
+      },
+      "required": ["key", "value"],
       "additionalProperties": false
     }
   }

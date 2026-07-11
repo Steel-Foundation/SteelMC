@@ -5,8 +5,9 @@ use tokio::io;
 use uuid::Uuid;
 
 use crate::permission::{
-    PermissionEntry, PermissionRuleExpression, PermissionSegment, PermissionSet, PermissionState,
-    PermissionSubjectIndex, PermissionSubjectState,
+    PermissionEntry, PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataSet,
+    PermissionMetadataValue, PermissionRuleExpression, PermissionSegment, PermissionSet,
+    PermissionState, PermissionSubjectIndex, PermissionSubjectState,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -21,6 +22,14 @@ pub(super) struct PlayerPermissionEntryFile {
     pub(super) groups: Vec<String>,
     pub(super) allow: Vec<String>,
     pub(super) deny: Vec<String>,
+    pub(super) metadata: Vec<PlayerPermissionMetadataEntryFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PlayerPermissionMetadataEntryFile {
+    pub(super) key: String,
+    pub(super) value: PermissionMetadataValue,
 }
 
 impl PlayerPermissionsFile {
@@ -58,6 +67,9 @@ impl PlayerPermissionEntryFile {
         for expression in &self.deny {
             parse_permission_expression(uuid, expression, "deny")?;
         }
+        for entry in &self.metadata {
+            parse_metadata_expression(uuid, &entry.key)?;
+        }
         Ok(())
     }
 
@@ -77,6 +89,19 @@ impl PlayerPermissionEntryFile {
             groups: state.groups().to_vec(),
             allow,
             deny,
+            metadata: state
+                .metadata_overrides()
+                .entries()
+                .iter()
+                .map(|entry| PlayerPermissionMetadataEntryFile {
+                    key: PermissionMetadataExpression::new(
+                        entry.key().clone(),
+                        entry.context().clone(),
+                    )
+                    .to_string(),
+                    value: entry.value().clone(),
+                })
+                .collect(),
         }
     }
 
@@ -97,7 +122,21 @@ impl PlayerPermissionEntryFile {
             let (key, context) = expression.into_parts();
             overrides.push(PermissionEntry::deny_with_context(key, context));
         }
-        Ok(PermissionSubjectState::new(self.groups, overrides))
+        let mut metadata = PermissionMetadataSet::new();
+        for entry in self.metadata {
+            let expression = parse_metadata_expression(uuid, &entry.key)?;
+            let (key, context) = expression.into_parts();
+            metadata.push(PermissionMetadataEntry::new_with_context(
+                key,
+                context,
+                entry.value,
+            ));
+        }
+        Ok(PermissionSubjectState::new_with_metadata(
+            self.groups,
+            overrides,
+            metadata,
+        ))
     }
 }
 
@@ -135,6 +174,18 @@ fn parse_permission_expression(
     })
 }
 
+fn parse_metadata_expression(
+    uuid: Uuid,
+    expression: &str,
+) -> io::Result<PermissionMetadataExpression> {
+    PermissionMetadataExpression::parse(expression).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid permission metadata expression for {uuid}: {error}"),
+        )
+    })
+}
+
 pub(super) fn set_permission_subject(
     file: &mut PlayerPermissionsFile,
     uuid: Uuid,
@@ -153,7 +204,10 @@ pub(super) fn set_permission_subject(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permission::{PermissionKey, PermissionRuleContext};
+    use crate::permission::{
+        PermissionKey, PermissionMetadataValue, PermissionRuleContext,
+        parse_permission_metadata_key,
+    };
 
     fn key(value: &str) -> PermissionKey {
         match PermissionKey::parse(value) {
@@ -171,7 +225,21 @@ mod tests {
             key("steel.build"),
             PermissionRuleContext::domain("survival"),
         );
-        let state = PermissionSubjectState::new(vec!["retired_group".to_owned()], overrides);
+        let metadata_key = match parse_permission_metadata_key("plugin:max_homes") {
+            Ok(key) => key,
+            Err(error) => panic!("test metadata key should parse: {error}"),
+        };
+        let mut metadata = PermissionMetadataSet::new();
+        metadata.set_in(
+            metadata_key,
+            PermissionRuleContext::domain("survival"),
+            PermissionMetadataValue::Integer(5),
+        );
+        let state = PermissionSubjectState::new_with_metadata(
+            vec!["retired_group".to_owned()],
+            overrides,
+            metadata,
+        );
         let mut file = PlayerPermissionsFile::default();
         set_permission_subject(&mut file, uuid, &state);
 

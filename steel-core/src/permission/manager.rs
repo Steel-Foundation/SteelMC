@@ -3,7 +3,10 @@ use std::{error::Error, fmt, sync::Arc};
 use futures::future::BoxFuture;
 use steel_utils::locks::{AsyncMutex, SyncRwLock};
 
-use super::{PermissionConfigError, PermissionGroups, PermissionGroupsConfig, PermissionSet};
+use super::{
+    PermissionConfigError, PermissionGroups, PermissionGroupsConfig, PermissionMetadataSet,
+    PermissionSet,
+};
 
 /// Persists permission group configuration owned outside `steel-core`.
 pub trait PermissionGroupStore: Send + Sync {
@@ -118,6 +121,19 @@ impl PermissionGroupManager {
             .read()
             .groups
             .effective_permissions(assigned_groups, subject_permissions)
+    }
+
+    /// Builds effective metadata from the current group snapshot.
+    #[must_use]
+    pub fn effective_metadata(
+        &self,
+        assigned_groups: &[String],
+        subject_metadata: &PermissionMetadataSet,
+    ) -> PermissionMetadataSet {
+        self.state
+            .read()
+            .groups
+            .effective_metadata(assigned_groups, subject_metadata)
     }
 
     /// Replaces the complete config after validation and optional persistence.

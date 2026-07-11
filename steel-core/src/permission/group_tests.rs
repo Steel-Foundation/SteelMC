@@ -2,8 +2,10 @@ use steel_utils::Identifier;
 
 use super::{
     PermissionConfigError, PermissionEntry, PermissionGroupConfig, PermissionGroups,
-    PermissionGroupsConfig, PermissionKey, PermissionRuleContext, PermissionRuleExpression,
-    PermissionRuleExpressionError, PermissionSet, PermissionState,
+    PermissionGroupsConfig, PermissionKey, PermissionMetadataEntry, PermissionMetadataRuleConfig,
+    PermissionMetadataSet, PermissionMetadataValue, PermissionRuleContext,
+    PermissionRuleExpression, PermissionRuleExpressionError, PermissionSet, PermissionState,
+    parse_permission_metadata_key,
 };
 
 fn key(value: &str) -> PermissionKey {
@@ -18,6 +20,52 @@ fn groups(config: PermissionGroupsConfig) -> PermissionGroups {
         Ok(groups) => groups,
         Err(error) => panic!("test group config should resolve: {error}"),
     }
+}
+
+#[test]
+fn groups_inherit_contextual_metadata_and_subject_values_break_ties() {
+    let mut config = PermissionGroupsConfig::default();
+    let mut parent = PermissionGroupConfig::default();
+    parent.metadata.push(PermissionMetadataRuleConfig {
+        key: "plugin:max_homes".to_owned(),
+        value: PermissionMetadataValue::Integer(5),
+    });
+    parent.metadata.push(PermissionMetadataRuleConfig {
+        key: "plugin:max_homes{domain=survival}".to_owned(),
+        value: PermissionMetadataValue::Integer(3),
+    });
+    config.groups.insert("parent".to_owned(), parent);
+
+    let mut child = PermissionGroupConfig::default();
+    child.inherits.push("parent".to_owned());
+    config.groups.insert("child".to_owned(), child);
+
+    let homes = parse_permission_metadata_key("plugin:max_homes")
+        .unwrap_or_else(|error| panic!("test metadata key should parse: {error}"));
+    let subject = PermissionMetadataSet::from_entries([PermissionMetadataEntry::new(
+        homes.clone(),
+        PermissionMetadataValue::Integer(10),
+    )]);
+    let effective = groups(config).effective_metadata(&["child".to_owned()], &subject);
+
+    assert_eq!(
+        effective
+            .resolve(&homes)
+            .and_then(PermissionMetadataValue::as_i64),
+        Some(10)
+    );
+    assert_eq!(
+        effective
+            .resolve_in(
+                &homes,
+                &super::PermissionContext::for_world(
+                    "survival",
+                    Identifier::new("survival", "overworld"),
+                ),
+            )
+            .and_then(PermissionMetadataValue::as_i64),
+        Some(3)
+    );
 }
 
 #[test]

@@ -484,14 +484,14 @@ impl PermissionResolutionSource {
         }
     }
 
-    const fn rank(&self) -> usize {
+    pub(super) const fn rank(&self) -> usize {
         match self {
             Self::Group { .. } => 0,
             Self::Subject => 1,
         }
     }
 
-    const fn tie_priority(&self) -> i32 {
+    pub(super) const fn tie_priority(&self) -> i32 {
         match self {
             Self::Group { priority, .. } => *priority,
             Self::Subject => 0,

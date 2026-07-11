@@ -2,20 +2,39 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-use super::PermissionSet;
+use super::{PermissionMetadataSet, PermissionSet};
 
 /// Persisted permission state for one player or other internal subject.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PermissionSubjectState {
     groups: Vec<String>,
     overrides: PermissionSet,
+    metadata_overrides: PermissionMetadataSet,
 }
 
 impl PermissionSubjectState {
     /// Creates a persisted subject snapshot.
     #[must_use]
     pub const fn new(groups: Vec<String>, overrides: PermissionSet) -> Self {
-        Self { groups, overrides }
+        Self {
+            groups,
+            overrides,
+            metadata_overrides: PermissionMetadataSet::new(),
+        }
+    }
+
+    /// Creates a persisted subject snapshot with metadata overrides.
+    #[must_use]
+    pub const fn new_with_metadata(
+        groups: Vec<String>,
+        overrides: PermissionSet,
+        metadata_overrides: PermissionMetadataSet,
+    ) -> Self {
+        Self {
+            groups,
+            overrides,
+            metadata_overrides,
+        }
     }
 
     /// Returns assigned group names in persisted order.
@@ -30,16 +49,24 @@ impl PermissionSubjectState {
         &self.overrides
     }
 
+    /// Returns direct metadata overrides.
+    #[must_use]
+    pub const fn metadata_overrides(&self) -> &PermissionMetadataSet {
+        &self.metadata_overrides
+    }
+
     /// Returns whether this subject has no persisted permission state.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.groups.is_empty() && self.overrides.entries().is_empty()
+        self.groups.is_empty()
+            && self.overrides.entries().is_empty()
+            && self.metadata_overrides.is_empty()
     }
 
     /// Splits the snapshot into assigned groups and overrides.
     #[must_use]
-    pub fn into_parts(self) -> (Vec<String>, PermissionSet) {
-        (self.groups, self.overrides)
+    pub fn into_parts(self) -> (Vec<String>, PermissionSet, PermissionMetadataSet) {
+        (self.groups, self.overrides, self.metadata_overrides)
     }
 }
 

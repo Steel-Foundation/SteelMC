@@ -104,7 +104,10 @@ use crate::entity::{
 use crate::fluid::get_fluid_state;
 use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
 use crate::level_data::RespawnData;
-use crate::permission::{PermissionContext, PermissionExpr, PermissionSet, PermissionState};
+use crate::permission::{
+    PermissionContext, PermissionExpr, PermissionMetadataSet, PermissionMetadataValue,
+    PermissionSet, PermissionState,
+};
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
@@ -321,7 +324,9 @@ struct PendingRootVehicleRestore {
 struct PlayerPermissionState {
     groups: Vec<String>,
     overrides: PermissionSet,
+    metadata_overrides: PermissionMetadataSet,
     effective: PermissionSet,
+    effective_metadata: PermissionMetadataSet,
     version: u64,
 }
 
@@ -330,13 +335,17 @@ impl PlayerPermissionState {
         &mut self,
         groups: Vec<String>,
         overrides: PermissionSet,
+        metadata_overrides: PermissionMetadataSet,
         effective: PermissionSet,
+        effective_metadata: PermissionMetadataSet,
     ) -> u64 {
         let version = self.version.wrapping_add(1);
         *self = Self {
             groups,
             overrides,
+            metadata_overrides,
             effective,
+            effective_metadata,
             version,
         };
         version
@@ -1266,16 +1275,22 @@ impl Player {
             .expect("player must not outlive server")
     }
 
-    /// Replaces assigned groups, direct overrides, and effective permissions.
+    /// Replaces assigned groups, direct overrides, metadata, and effective state.
     pub fn set_permission_state(
         &self,
         groups: Vec<String>,
         overrides: PermissionSet,
+        metadata_overrides: PermissionMetadataSet,
         effective: PermissionSet,
+        effective_metadata: PermissionMetadataSet,
     ) -> u64 {
-        self.permissions
-            .lock()
-            .replace(groups, overrides, effective)
+        self.permissions.lock().replace(
+            groups,
+            overrides,
+            metadata_overrides,
+            effective,
+            effective_metadata,
+        )
     }
 
     /// Returns a snapshot of effective permissions.
@@ -1294,6 +1309,12 @@ impl Player {
     #[must_use]
     pub fn permission_overrides(&self) -> PermissionSet {
         self.permissions.lock().overrides.clone()
+    }
+
+    /// Returns direct permission metadata overrides.
+    #[must_use]
+    pub fn permission_metadata_overrides(&self) -> PermissionMetadataSet {
+        self.permissions.lock().metadata_overrides.clone()
     }
 
     /// Returns the current permission snapshot version.
@@ -1342,6 +1363,28 @@ impl Player {
             .lock()
             .effective
             .resolve_in(permission, context)
+    }
+
+    /// Resolves one permission metadata value in the player's current world.
+    #[must_use]
+    pub fn permission_metadata(&self, key: &Identifier) -> Option<PermissionMetadataValue> {
+        let world = self.get_world();
+        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        self.permission_metadata_in(key, &context)
+    }
+
+    /// Resolves one permission metadata value in an explicit context.
+    #[must_use]
+    pub fn permission_metadata_in(
+        &self,
+        key: &Identifier,
+        context: &PermissionContext,
+    ) -> Option<PermissionMetadataValue> {
+        self.permissions
+            .lock()
+            .effective_metadata
+            .resolve_in(key, context)
+            .cloned()
     }
 
     /// Sets the world the player is in.
@@ -2725,7 +2768,7 @@ mod tests {
     use crate::config::RuntimeConfig;
     use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
     use crate::inventory::{container::Container as _, menu::Menu as _};
-    use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
+    use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
     use crate::test_support::{hard_damage_test_world, test_world};
@@ -2826,9 +2869,17 @@ mod tests {
         let first = state.replace(
             vec!["builder".to_owned()],
             overrides.clone(),
+            PermissionMetadataSet::new(),
             effective.clone(),
+            PermissionMetadataSet::new(),
         );
-        let second = state.replace(vec!["moderator".to_owned()], overrides, effective);
+        let second = state.replace(
+            vec!["moderator".to_owned()],
+            overrides,
+            PermissionMetadataSet::new(),
+            effective,
+            PermissionMetadataSet::new(),
+        );
 
         assert_eq!(first, 1);
         assert_eq!(second, 2);
