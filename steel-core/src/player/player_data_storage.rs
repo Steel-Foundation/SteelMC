@@ -206,7 +206,7 @@ impl PlayerDataStorage {
         }
     }
 
-    /// Loads the persisted player identity cache.
+    /// Loads the rebuildable player identity cache, falling back to empty on failure.
     pub async fn load_known_players(&self) -> io::Result<KnownPlayers> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_known_players().await,
@@ -333,7 +333,20 @@ impl FilePlayerDataStorage {
         let path = self.known_players_file();
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !Self::recover_missing_atomic_path_locked(&path).await? {
+        match Self::read_known_players_file_locked(&path).await {
+            Ok(players) => Ok(players),
+            Err(error) => {
+                log::warn!(
+                    "Failed to load known player cache from {}: {error}. Starting with an empty cache",
+                    path.display()
+                );
+                Ok(KnownPlayers::new())
+            }
+        }
+    }
+
+    async fn read_known_players_file_locked(path: &Path) -> io::Result<KnownPlayers> {
+        if !Self::recover_missing_atomic_path_locked(path).await? {
             return Ok(KnownPlayers::new());
         }
         let bytes = fs::read(path).await?;
@@ -1055,6 +1068,61 @@ mod tests {
         assert!(loaded.entries().is_empty());
         assert!(!path.exists());
         assert!(!temporary.exists());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn corrupt_known_player_cache_loads_as_empty() {
+        let root = temp_storage_root("corrupt-known-players");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let path = storage.known_players_file();
+        fs::write(&path, b"not a known-player cache")
+            .await
+            .expect("known-player cache should be corrupted for the test");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("a corrupt optional cache should not prevent startup");
+        assert!(loaded.entries().is_empty());
+        assert_eq!(
+            fs::read(&path)
+                .await
+                .expect("the corrupt cache should remain available for diagnosis"),
+            b"not a known-player cache"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn incompatible_known_player_cache_version_loads_as_empty() {
+        let root = temp_storage_root("incompatible-known-player-version");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let uuid = Uuid::from_u128(42);
+        let players = KnownPlayers::from_entries([KnownPlayer::new(uuid, "Steve")]);
+        let mut bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(&players))
+            .expect("known-player cache should encode");
+        bytes[4..6].copy_from_slice(&u16::MAX.to_le_bytes());
+        fs::write(storage.known_players_file(), bytes)
+            .await
+            .expect("incompatible known-player cache should be seeded");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("an incompatible optional cache should not prevent startup");
+        assert!(loaded.entries().is_empty());
+        assert!(loaded.by_uuid(uuid).is_none());
 
         fs::remove_dir_all(root)
             .await
