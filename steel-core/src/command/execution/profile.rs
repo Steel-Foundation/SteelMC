@@ -29,7 +29,7 @@ pub(crate) struct ResolvedGameProfile {
 pub(crate) enum GameProfileArgument {
     /// Online players selected through an entity selector.
     Selector(Box<EntitySelector>),
-    /// A direct profile name or cached UUID string.
+    /// A direct profile name or UUID string.
     Direct(Box<str>),
 }
 

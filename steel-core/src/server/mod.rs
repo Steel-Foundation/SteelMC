@@ -104,6 +104,28 @@ const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UncachedPlayerTarget {
+    DirectUuid(Uuid),
+    OfflineName,
+    OnlineName,
+}
+
+fn classify_uncached_player_target(target: &str, online_mode: bool) -> UncachedPlayerTarget {
+    if let Ok(uuid) = Uuid::parse_str(target) {
+        return UncachedPlayerTarget::DirectUuid(uuid);
+    }
+    if online_mode {
+        UncachedPlayerTarget::OnlineName
+    } else {
+        UncachedPlayerTarget::OfflineName
+    }
+}
+
+fn direct_uuid_profile(uuid: Uuid) -> KnownPlayer {
+    KnownPlayer::new(uuid, uuid.to_string())
+}
+
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
 
@@ -140,9 +162,9 @@ mod tests {
     use crate::permission::{PermissionGroupManager, PermissionGroupsConfig};
 
     use super::{
-        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-        is_allowed_to_enter_portal_target, is_end_return_transition,
-        validate_player_permission_group_update,
+        UncachedPlayerTarget, can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+        classify_uncached_player_target, direct_uuid_profile, is_allowed_to_enter_portal_target,
+        is_end_return_transition, offline_uuid, validate_player_permission_group_update,
     };
 
     struct TestEntity {
@@ -187,6 +209,41 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn uncached_uuid_target_is_preserved_in_online_mode() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let target = "1234567890ABCDEF1234567890ABCDEF";
+
+        assert_eq!(
+            classify_uncached_player_target(target, true),
+            UncachedPlayerTarget::DirectUuid(uuid)
+        );
+    }
+
+    #[test]
+    fn uncached_uuid_target_is_preserved_in_offline_mode() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let target = "1234567890ABCDEF1234567890ABCDEF";
+
+        assert_eq!(
+            classify_uncached_player_target(target, false),
+            UncachedPlayerTarget::DirectUuid(uuid)
+        );
+        assert_ne!(offline_uuid(target), uuid);
+    }
+
+    #[test]
+    fn uncached_uuid_profile_uses_a_canonical_display_label() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let profile = direct_uuid_profile(uuid);
+
+        assert_eq!(profile.uuid(), uuid);
+        assert_eq!(
+            profile.last_known_name(),
+            "12345678-90ab-cdef-1234-567890abcdef"
+        );
     }
 
     #[test]
@@ -2062,11 +2119,11 @@ impl Server {
         self.save_known_players(version);
     }
 
-    /// Resolves a vanilla game-profile command target by name or cached UUID.
+    /// Resolves a vanilla game-profile command target by name or UUID.
     ///
-    /// Online players and cached profiles are checked first. Offline-mode names
-    /// use vanilla's deterministic UUID, while online mode queries the configured
-    /// profile service.
+    /// Online players and cached profiles are checked first. Uncached UUIDs remain
+    /// direct UUID targets in either server mode. Offline-mode names use vanilla's
+    /// deterministic UUID, while online mode queries the configured profile service.
     ///
     /// # Errors
     ///
@@ -2078,10 +2135,19 @@ impl Server {
         if let Some(profile) = self.cached_player_profile(name) {
             return Ok(profile);
         }
-        if !self.config.online_mode {
-            let profile = KnownPlayer::new(offline_uuid(name), name.to_owned());
-            self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
-            return Ok(profile);
+
+        match classify_uncached_player_target(name, self.config.online_mode) {
+            UncachedPlayerTarget::DirectUuid(uuid) => {
+                // No verified name is available, so use the canonical UUID for
+                // feedback without adding a synthetic identity-cache entry.
+                return Ok(direct_uuid_profile(uuid));
+            }
+            UncachedPlayerTarget::OfflineName => {
+                let profile = KnownPlayer::new(offline_uuid(name), name.to_owned());
+                self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
+                return Ok(profile);
+            }
+            UncachedPlayerTarget::OnlineName => {}
         }
         if !is_valid_player_name(name) {
             return Err(ProfileLookupError::UnknownPlayer(name.to_owned()));
