@@ -116,7 +116,10 @@ impl BigDripleafBlock {
     ) -> bool {
         let new_state = vanilla_blocks::BIG_DRIPLEAF
             .default_state()
-            .set_value(&WATERLOGGED, fluid_state.is_source() && fluid_state.is_water())
+            .set_value(
+                &WATERLOGGED,
+                fluid_state.is_source() && fluid_state.is_water(),
+            )
             .set_value(&FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
     }
