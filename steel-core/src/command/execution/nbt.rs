@@ -8,27 +8,18 @@ use crate::command::brigadier::{CommandSyntaxError, CommandSyntaxErrorKind, Stri
 pub(super) fn parse_nbt_path(reader: &mut StringReader<'_>) -> Result<NbtPath, CommandSyntaxError> {
     match parse_path(reader.remaining()) {
         Ok((path, consumed)) => {
-            advance_reader_bytes(reader, consumed)?;
+            if !reader.advance_bytes(consumed) {
+                return Err(dynamic_error(reader, "Invalid NBT path cursor"));
+            }
             Ok(path)
         }
         Err(error) => {
-            advance_reader_bytes(reader, error.cursor())?;
+            if !reader.advance_bytes(error.cursor()) {
+                return Err(dynamic_error(reader, "Invalid NBT path cursor"));
+            }
             Err(dynamic_error(reader, error.message()))
         }
     }
-}
-
-fn advance_reader_bytes(
-    reader: &mut StringReader<'_>,
-    bytes: usize,
-) -> Result<(), CommandSyntaxError> {
-    let Some(consumed) = reader.remaining().get(..bytes) else {
-        return Err(dynamic_error(reader, "Invalid NBT path cursor"));
-    };
-    for _ in consumed.chars() {
-        reader.skip();
-    }
-    Ok(())
 }
 
 fn dynamic_error(reader: &StringReader<'_>, message: impl Into<String>) -> CommandSyntaxError {

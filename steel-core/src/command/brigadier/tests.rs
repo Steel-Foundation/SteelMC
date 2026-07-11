@@ -44,6 +44,19 @@ fn reader_tracks_input_and_utf16_positions() {
 }
 
 #[test]
+fn reader_advances_utf8_bytes_and_tracks_utf16_positions() {
+    let mut reader = StringReader::new("a\u{1f600}z");
+
+    assert!(!reader.advance_bytes(2));
+    assert_eq!(reader.cursor(), 0);
+    assert!(reader.advance_bytes(5));
+    assert_eq!(reader.cursor(), 3);
+    assert_eq!(reader.remaining(), "z");
+    assert!(!reader.advance_bytes(2));
+    assert_eq!(reader.cursor(), 3);
+}
+
+#[test]
 fn reader_skips_java_whitespace_only() {
     let mut reader = StringReader::new(" \t\n\u{001c}\u{1680}\u{2000}\u{2028}\u{3000}text");
     reader.skip_whitespace();

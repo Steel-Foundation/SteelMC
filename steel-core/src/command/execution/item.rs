@@ -137,10 +137,10 @@ fn parse_component_value(
     }
 
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
-        advance_reader_bytes(reader, error.cursor());
+        reader.advance_bytes(error.cursor());
         malformed_component(reader, &key, error.message())
     })?;
-    if !advance_reader_bytes(reader, consumed) {
+    if !reader.advance_bytes(consumed) {
         return Err(malformed_component(
             reader,
             &key,
@@ -266,17 +266,6 @@ fn validate_item_stack(
         ));
     }
     Ok(())
-}
-
-pub(super) fn advance_reader_bytes(reader: &mut StringReader<'_>, bytes: usize) -> bool {
-    let Some(consumed) = reader.remaining().get(..bytes) else {
-        return false;
-    };
-    let characters = consumed.chars().count();
-    for _ in 0..characters {
-        reader.skip();
-    }
-    true
 }
 
 fn expected_component(reader: &StringReader<'_>) -> CommandSyntaxError {

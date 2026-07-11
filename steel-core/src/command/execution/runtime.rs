@@ -17,9 +17,9 @@ use super::{
     Coordinates, ExecutionCommandSource, ExecutionControl, IntRange, ItemPredicate,
     ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
-        CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue, GameModeValue,
-        IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue, SteelArgumentValue,
-        TimeValue, TimelineValue, WorldClockValue,
+        ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
+        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
+        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
     },
     selector::EntitySelector,
 };
@@ -300,6 +300,11 @@ where
 
     pub(crate) fn item_predicate(&self, name: &str) -> Option<&ItemPredicate> {
         self.typed_argument(name)
+    }
+
+    pub(crate) fn text_component(&self, name: &str) -> Option<&TextComponent> {
+        self.typed_argument::<ComponentValue>(name)
+            .map(|value| &value.0)
     }
 
     pub(crate) fn nbt_path(&self, name: &str) -> Option<&NbtPath> {

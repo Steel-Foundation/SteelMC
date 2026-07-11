@@ -196,28 +196,19 @@ fn parse_optional_nbt(
     let (nbt, consumed) = match parsed {
         Ok(value) => value,
         Err(error) => {
-            advance_reader_bytes(reader, error.cursor())?;
+            if !reader.advance_bytes(error.cursor()) {
+                return Err(dynamic_error(reader, "Invalid block entity NBT cursor"));
+            }
             return Err(dynamic_error(
                 reader,
                 format!("Invalid block entity NBT: {}", error.message()),
             ));
         }
     };
-    advance_reader_bytes(reader, consumed)?;
-    Ok(Some(nbt))
-}
-
-fn advance_reader_bytes(
-    reader: &mut StringReader<'_>,
-    bytes: usize,
-) -> Result<(), CommandSyntaxError> {
-    let Some(consumed_input) = reader.remaining().get(..bytes) else {
+    if !reader.advance_bytes(consumed) {
         return Err(dynamic_error(reader, "Invalid block entity NBT cursor"));
-    };
-    for _ in consumed_input.chars() {
-        reader.skip();
     }
-    Ok(())
+    Ok(Some(nbt))
 }
 
 fn dynamic_error(reader: &StringReader<'_>, message: impl Into<String>) -> CommandSyntaxError {

@@ -22,6 +22,7 @@ use steel_registry::{
     world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
+use text_components::{TextComponent, content::Content};
 
 use crate::entity::{EntityAnchor, init_test_entities};
 use crate::permission::{PermissionExpr, PermissionState};
@@ -192,6 +193,69 @@ fn keyed_parser_equality_includes_concrete_configuration() {
         one_tick.parser_type_key(),
         SteelArgumentType::block_pos().parser_type_key()
     );
+}
+
+#[test]
+fn component_argument_parses_vanilla_snbt_forms() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::component());
+
+    for (argument, expected) in [
+        ("\"hello world\"", "hello world"),
+        ("'hello world'", "hello world"),
+        ("\"\"", ""),
+        ("{text:\"hello world\"}", "hello world"),
+        ("[\"\"]", ""),
+    ] {
+        let input = format!("resource {argument}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("component form {argument} should parse");
+        };
+
+        assert_eq!(
+            chain.top_context().text_component("value"),
+            Some(&TextComponent::plain(expected))
+        );
+    }
+}
+
+#[test]
+fn component_argument_preserves_list_siblings_and_following_nodes() {
+    let mut dispatcher = TestDispatcher::new();
+    let command = literal("component").then(
+        argument("value", SteelArgumentType::component()).then(literal("done").executes(|_| Ok(1))),
+    );
+    assert!(dispatcher.register(command).is_ok());
+
+    let parse = dispatcher.parse("component ['first','second'] done", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("component parser should leave following command nodes unconsumed");
+    };
+    let Some(component) = chain.top_context().text_component("value") else {
+        panic!("component should be retained");
+    };
+    let mut expected = TextComponent::plain("first");
+    expected.children.push(TextComponent::plain("second"));
+
+    assert_eq!(component, &expected);
+}
+
+#[test]
+fn component_argument_reports_codec_errors_at_the_argument_start() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::component());
+    let parse = dispatcher.parse("resource {unknown:1}", TestSource::new());
+    let Err(error) = dispatcher.context_chain(parse) else {
+        panic!("compound without component content should be rejected");
+    };
+
+    assert_eq!(error.cursor(), Some("resource ".len()));
+    let CommandSyntaxErrorKind::Dynamic(component) = error.kind() else {
+        panic!("component codec failure should be a dynamic command error");
+    };
+    assert!(matches!(
+        &component.content,
+        Content::Translate(message) if message.key == "argument.component.invalid"
+    ));
 }
 
 fn dispatcher(minimum: i32) -> TestDispatcher {

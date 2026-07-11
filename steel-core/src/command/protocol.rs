@@ -600,6 +600,14 @@ mod tests {
     }
 
     #[test]
+    fn steel_component_argument_projects_vanillas_parser() {
+        let (argument, suggestions) = SteelArgumentType::component().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::Component));
+        assert!(suggestions.is_none());
+    }
+
+    #[test]
     fn steel_storage_key_argument_projects_vanillas_identifier_parser() {
         let (argument, suggestions) = SteelArgumentType::storage_key().protocol_argument();
 

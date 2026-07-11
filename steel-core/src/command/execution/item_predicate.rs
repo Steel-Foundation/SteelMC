@@ -23,7 +23,7 @@ use crate::command::brigadier::{
 
 use super::{
     argument::{matches_substring, parse_identifier},
-    item::{advance_reader_bytes, component_value_is_valid, numeric_i32, read_component_value},
+    item::{component_value_is_valid, numeric_i32, read_component_value},
 };
 
 const VANILLA_DATA_COMPONENT_PREDICATE_KEYS: &[&str] = &[
@@ -366,13 +366,13 @@ fn read_nbt(
 ) -> Result<NbtTag, CommandSyntaxError> {
     reader.skip_whitespace();
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
-        advance_reader_bytes(reader, error.cursor());
+        reader.advance_bytes(error.cursor());
         dynamic_error(
             reader,
             format!("Malformed item {description} '{key}': {}", error.message()),
         )
     })?;
-    if !advance_reader_bytes(reader, consumed) {
+    if !reader.advance_bytes(consumed) {
         return Err(dynamic_error(
             reader,
             format!("Malformed item {description} '{key}'"),

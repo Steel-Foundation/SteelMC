@@ -15,8 +15,10 @@ use steel_registry::{
     item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, nbt::NbtPath,
-    translations, types::GameType,
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    nbt::{NbtPath, parse_snbt_argument},
+    translations,
+    types::GameType,
 };
 use text_components::TextComponent;
 
@@ -268,6 +270,10 @@ impl SteelArgumentType {
         Self::new(ItemPredicateParser)
     }
 
+    pub(crate) fn component() -> Self {
+        Self::new(ComponentParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -452,6 +458,10 @@ argument_value_wrapper!(
     "steel:command/value/enchantment"
 );
 argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
+argument_value_wrapper!(
+    ComponentValue(TextComponent),
+    "steel:command/value/component"
+);
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -936,6 +946,16 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    ComponentParser,
+    "steel:command/parser/component",
+    ComponentValue,
+    parse | reader,
+    _source | { parse_component(reader).map(ComponentValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Component, None)
+);
+unit_argument_parser!(
     NbtPathParser,
     "steel:command/parser/nbt_path",
     NbtPathValue,
@@ -1094,6 +1114,39 @@ fn selected_clock(
         .argument(clock_argument)?
         .downcast_ref::<WorldClockValue>()
         .map(|clock| clock.0)
+}
+
+fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
+        reader.advance_bytes(error.cursor());
+        component_snbt_error(reader, error.message())
+    })?;
+    if !reader.advance_bytes(consumed) {
+        return Err(component_snbt_error(
+            reader,
+            "Invalid text component cursor",
+        ));
+    }
+
+    TextComponent::try_from_nbt(&tag).map_err(|error| {
+        reader.restore(start);
+        invalid_component(reader, error.to_string())
+    })
+}
+
+fn component_snbt_error(reader: &StringReader<'_>, message: &str) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+        TextComponent::plain(message.to_owned()),
+    )))
+}
+
+fn invalid_component(reader: &StringReader<'_>, message: String) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+        translations::ARGUMENT_COMPONENT_INVALID
+            .message([message])
+            .component(),
+    )))
 }
 
 fn parse_swizzle(reader: &mut StringReader<'_>) -> Result<CoordinateAxes, CommandSyntaxError> {

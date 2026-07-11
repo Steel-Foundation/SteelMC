@@ -103,6 +103,16 @@ impl<'input> StringReader<'input> {
         remaining
     }
 
+    /// Advances by an exact UTF-8 byte count while retaining Brigadier's UTF-16 cursor.
+    pub(crate) fn advance_bytes(&mut self, bytes: usize) -> bool {
+        let Some(consumed) = self.remaining().get(..bytes) else {
+            return false;
+        };
+        self.cursor.byte += bytes;
+        self.cursor.utf16 += consumed.encode_utf16().count();
+        true
+    }
+
     /// Advances past whitespace recognized by Java's `Character.isWhitespace`.
     pub(crate) fn skip_whitespace(&mut self) {
         while self.peek().is_some_and(java::is_whitespace) {
