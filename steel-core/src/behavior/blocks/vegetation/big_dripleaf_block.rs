@@ -7,8 +7,8 @@ use steel_registry::fluid::{FluidState, FluidStateExt};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events::{BLOCK_BIG_DRIPLEAF_TILT_DOWN, BLOCK_BIG_DRIPLEAF_TILT_UP};
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids::{self};
+use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -19,6 +19,7 @@ use crate::behavior::blocks::BigDripleafStemBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector};
+use crate::world::game_event_context::GameEventContext;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -66,12 +67,23 @@ impl BigDripleafBlock {
             world.schedule_block_tick(*pos, self.block, tick_delay, TickPriority::Normal);
         }
     }
+    fn tilt_causes_vibration(tilt: &Tilt) -> bool {
+        matches!(tilt, Tilt::None | Tilt::Partial | Tilt::Full)
+    }
+
     fn set_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos, new_tilt: Tilt) {
-        world.set_block(
-            *pos,
-            state_id.set_value(&TILT, new_tilt),
-            UpdateFlags::UPDATE_ALL,
-        );
+        let previous_tilt = state_id.get_value(&TILT);
+        let new_state = state_id.set_value(&TILT, new_tilt.clone());
+
+        world.set_block(*pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+
+        if Self::tilt_causes_vibration(&new_tilt) && new_tilt != previous_tilt {
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                *pos,
+                &GameEventContext::default(),
+            );
+        }
     }
     fn play_tilt_sound(world: &Arc<World>, pos: &BlockPos, tilt_sound: SoundEventRef) {
         let pitch = rand::rng().random_range(0.8f32..1.2f32);
@@ -104,7 +116,7 @@ impl BigDripleafBlock {
     ) -> bool {
         let new_state = vanilla_blocks::BIG_DRIPLEAF
             .default_state()
-            .set_value(&WATERLOGGED, fluid_state.is_water())
+            .set_value(&WATERLOGGED, fluid_state.is_source() && fluid_state.is_water())
             .set_value(&FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
     }
