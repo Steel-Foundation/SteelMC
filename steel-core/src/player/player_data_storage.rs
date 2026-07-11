@@ -11,7 +11,10 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
-use tokio::{fs, io};
+use tokio::{
+    fs,
+    io::{self, AsyncWriteExt},
+};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
@@ -343,7 +346,7 @@ impl FilePlayerDataStorage {
         let path = Self::player_file(&self.domain_players_dir(domain), uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
         let bytes = fs::read(&path).await?;
@@ -357,7 +360,7 @@ impl FilePlayerDataStorage {
         let path = Self::player_file(&self.global_players_dir(), uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
         let bytes = fs::read(&path).await?;
@@ -377,7 +380,7 @@ impl FilePlayerDataStorage {
         let path = self.known_players_file();
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(KnownPlayers::new());
         }
         let bytes = fs::read(path).await?;
@@ -489,7 +492,7 @@ impl FilePlayerDataStorage {
         &self,
         path: &Path,
     ) -> io::Result<PlayerPermissionsFile> {
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(path).await? {
             return Ok(PlayerPermissionsFile::default());
         }
         let contents = fs::read_to_string(path).await?;
@@ -544,14 +547,6 @@ impl FilePlayerDataStorage {
         players_dir.join(format!("{uuid}.dat"))
     }
 
-    fn temp_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
-        players_dir.join(format!("{uuid}.dat.tmp"))
-    }
-
-    fn backup_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
-        players_dir.join(format!("{uuid}.dat_old"))
-    }
-
     fn file_lock(&self, path: &Path) -> Arc<AsyncMutex<()>> {
         let mut locks = self.file_locks.lock();
         locks
@@ -561,21 +556,10 @@ impl FilePlayerDataStorage {
     }
 
     async fn write_atomic(&self, players_dir: &Path, uuid: Uuid, bytes: Vec<u8>) -> io::Result<()> {
-        fs::create_dir_all(players_dir).await?;
-        let temp_path = Self::temp_file(players_dir, uuid);
         let final_path = Self::player_file(players_dir, uuid);
-        let backup_path = Self::backup_file(players_dir, uuid);
         let lock = self.file_lock(&final_path);
         let _guard = lock.lock().await;
-
-        fs::write(&temp_path, bytes).await?;
-        if final_path.exists() {
-            if backup_path.exists() {
-                let _ = fs::remove_file(&backup_path).await;
-            }
-            fs::rename(&final_path, &backup_path).await?;
-        }
-        fs::rename(&temp_path, &final_path).await
+        Self::write_atomic_path_locked(&final_path, bytes).await
     }
 
     async fn write_atomic_path_locked(final_path: &Path, bytes: Vec<u8>) -> io::Result<()> {
@@ -586,24 +570,113 @@ impl FilePlayerDataStorage {
             ));
         };
         fs::create_dir_all(parent).await?;
-        let extension = final_path.extension().and_then(|value| value.to_str());
-        let temp_path = final_path.with_extension(match extension {
+        let temp_path = Self::atomic_temp_path(final_path);
+        let backup_path = Self::atomic_backup_path(final_path);
+        let backup_temp_path = Self::atomic_temp_path(&backup_path);
+
+        Self::write_synced_file(&temp_path, &bytes).await?;
+        if fs::try_exists(final_path).await? {
+            Self::copy_synced_file(final_path, &backup_temp_path).await?;
+            fs::rename(&backup_temp_path, &backup_path).await?;
+        }
+        fs::rename(&temp_path, final_path).await?;
+        if let Err(error) = Self::sync_parent(parent).await {
+            tracing::error!(
+                %error,
+                path = %final_path.display(),
+                "Atomic data-file replacement committed, but directory sync failed; crash durability is uncertain"
+            );
+        }
+        Ok(())
+    }
+
+    fn atomic_temp_path(path: &Path) -> PathBuf {
+        let extension = path.extension().and_then(|value| value.to_str());
+        path.with_extension(match extension {
             Some(extension) => format!("{extension}.tmp"),
             None => "tmp".to_owned(),
-        });
-        let backup_path = final_path.with_extension(match extension {
+        })
+    }
+
+    fn atomic_backup_path(path: &Path) -> PathBuf {
+        let extension = path.extension().and_then(|value| value.to_str());
+        path.with_extension(match extension {
             Some(extension) => format!("{extension}_old"),
             None => "old".to_owned(),
-        });
+        })
+    }
 
-        fs::write(&temp_path, bytes).await?;
-        if final_path.exists() {
-            if backup_path.exists() {
-                let _ = fs::remove_file(&backup_path).await;
-            }
-            fs::rename(final_path, &backup_path).await?;
+    async fn recover_missing_atomic_path_locked(final_path: &Path) -> io::Result<bool> {
+        if fs::try_exists(final_path).await? {
+            return Ok(true);
         }
-        fs::rename(temp_path, final_path).await
+
+        let backup_path = Self::atomic_backup_path(final_path);
+        if fs::try_exists(&backup_path).await? {
+            fs::rename(&backup_path, final_path).await?;
+            let Some(parent) = final_path.parent() else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "atomic recovery path has no parent",
+                ));
+            };
+            Self::sync_parent(parent).await?;
+            let temp_path = Self::atomic_temp_path(final_path);
+            if fs::try_exists(&temp_path).await?
+                && let Err(error) = fs::remove_file(&temp_path).await
+            {
+                tracing::warn!(
+                    %error,
+                    path = %temp_path.display(),
+                    "Failed to remove an uncommitted atomic-write temporary file"
+                );
+            }
+            tracing::warn!(
+                path = %final_path.display(),
+                backup = %backup_path.display(),
+                "Recovered a missing data file from its last committed backup"
+            );
+            return Ok(true);
+        }
+
+        let temp_path = Self::atomic_temp_path(final_path);
+        if fs::try_exists(&temp_path).await? {
+            if let Err(error) = fs::remove_file(&temp_path).await {
+                tracing::warn!(
+                    %error,
+                    path = %temp_path.display(),
+                    "Failed to remove an uncommitted atomic-write temporary file"
+                );
+            }
+            tracing::warn!(
+                path = %final_path.display(),
+                temporary = %temp_path.display(),
+                "Discarded an interrupted data-file publication with no committed generation"
+            );
+        }
+
+        Ok(false)
+    }
+
+    async fn write_synced_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let mut file = fs::File::create(path).await?;
+        file.write_all(bytes).await?;
+        file.sync_all().await
+    }
+
+    async fn copy_synced_file(source: &Path, destination: &Path) -> io::Result<()> {
+        let mut source = fs::File::open(source).await?;
+        let mut destination = fs::File::create(destination).await?;
+        io::copy(&mut source, &mut destination).await?;
+        destination.sync_all().await
+    }
+
+    async fn sync_parent(parent: &Path) -> io::Result<()> {
+        #[cfg(unix)]
+        fs::File::open(parent).await?.sync_all().await?;
+        #[cfg(not(unix))]
+        let _ = parent;
+        Ok(())
     }
 }
 
@@ -924,6 +997,208 @@ mod tests {
             nbt_data: Vec::new(),
             passengers: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn atomic_path_replacement_retains_the_last_committed_generation() {
+        let root = temp_storage_root("atomic-replacement");
+        let path = root.join("state.dat");
+
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"first".to_vec())
+            .await
+            .expect("first generation should publish");
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"second".to_vec())
+            .await
+            .expect("second generation should publish");
+
+        assert_eq!(
+            fs::read(&path).await.expect("live file should be readable"),
+            b"second"
+        );
+        assert_eq!(
+            fs::read(FilePlayerDataStorage::atomic_backup_path(&path))
+                .await
+                .expect("backup should be readable"),
+            b"first"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_permission_publication_recovers_before_the_next_update() {
+        let root = temp_storage_root("permission-recovery");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        for (uuid, group) in [
+            (Uuid::from_u128(10), "builder"),
+            (Uuid::from_u128(20), "moderator"),
+        ] {
+            storage
+                .update_player_permissions(uuid, |_| {
+                    Ok::<_, io::Error>(PermissionSubjectState::new(
+                        vec![group.to_owned()],
+                        PermissionSet::new(),
+                    ))
+                })
+                .await
+                .expect("permission subject should persist");
+        }
+
+        let path = storage.player_permissions_file();
+        let backup = FilePlayerDataStorage::atomic_backup_path(&path);
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        fs::rename(&path, &backup)
+            .await
+            .expect("legacy publication should reach its interrupted state");
+        fs::write(&temporary, b"uncommitted replacement")
+            .await
+            .expect("uncommitted replacement should be staged");
+
+        let recovered = storage
+            .load_permission_subjects()
+            .await
+            .expect("last committed permissions should recover");
+        assert_eq!(recovered.len(), 2);
+        assert_eq!(
+            recovered
+                .get(Uuid::from_u128(10))
+                .map(PermissionSubjectState::groups),
+            Some(["builder".to_owned()].as_slice())
+        );
+        assert_eq!(
+            recovered
+                .get(Uuid::from_u128(20))
+                .map(PermissionSubjectState::groups),
+            Some(["moderator".to_owned()].as_slice())
+        );
+        assert!(!temporary.exists());
+
+        storage
+            .update_player_permissions(Uuid::from_u128(30), |_| {
+                Ok::<_, io::Error>(PermissionSubjectState::new(
+                    vec!["operator".to_owned()],
+                    PermissionSet::new(),
+                ))
+            })
+            .await
+            .expect("an update after recovery should preserve existing subjects");
+        let updated = storage
+            .load_permission_subjects()
+            .await
+            .expect("updated permissions should load");
+        assert_eq!(updated.len(), 3);
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn corrupt_live_permission_file_does_not_fall_back_to_its_backup() {
+        let root = temp_storage_root("corrupt-live-permissions");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        storage
+            .update_player_permissions(Uuid::from_u128(42), |_| {
+                Ok::<_, io::Error>(PermissionSubjectState::new(
+                    vec!["op".to_owned()],
+                    PermissionSet::new(),
+                ))
+            })
+            .await
+            .expect("permission subject should persist");
+        let path = storage.player_permissions_file();
+        let backup = FilePlayerDataStorage::atomic_backup_path(&path);
+        fs::copy(&path, &backup)
+            .await
+            .expect("valid backup should be staged");
+        fs::write(&path, b"not valid permission TOML")
+            .await
+            .expect("live permission file should be corrupted for the test");
+
+        let error = storage
+            .load_permission_subjects()
+            .await
+            .expect_err("a corrupt live permission file must remain startup-fatal");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            fs::read_to_string(&path)
+                .await
+                .expect("corrupt live file should remain in place"),
+            "not valid permission TOML"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_first_known_player_publication_discards_its_temporary_file() {
+        let root = temp_storage_root("known-player-interrupted-first-write");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let uuid = Uuid::from_u128(42);
+        let players =
+            KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+        let path = storage.known_players_file();
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        let bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(&players))
+            .expect("known players should encode");
+        fs::write(&temporary, bytes)
+            .await
+            .expect("first publication should reach its interrupted state");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("uncommitted known-player state should be ignored");
+        assert!(loaded.entries().is_empty());
+        assert!(!path.exists());
+        assert!(!temporary.exists());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_first_permission_publication_does_not_apply_uncommitted_access() {
+        let root = temp_storage_root("permission-interrupted-first-write");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let path = storage.player_permissions_file();
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        let mut file = PlayerPermissionsFile::default();
+        set_permission_subject(
+            &mut file,
+            Uuid::from_u128(42),
+            &PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
+        let contents = serialize_player_permissions_file(&file)
+            .expect("uncommitted permissions should serialize");
+        fs::write(&temporary, contents)
+            .await
+            .expect("uncommitted permissions should be staged");
+
+        let loaded = storage
+            .load_permission_subjects()
+            .await
+            .expect("uncommitted permissions should be ignored");
+        assert!(loaded.is_empty());
+        assert!(!path.exists());
+        assert!(!temporary.exists());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
     }
 
     #[tokio::test]
