@@ -269,6 +269,46 @@ impl PermissionContext {
         }
     }
 
+    /// Builds the active context represented by one rule-side expression.
+    ///
+    /// World namespaces are Steel domain names, matching command-visible world identifiers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a custom context value conflicts with another value.
+    pub fn from_rule_context(
+        rule_context: &PermissionRuleContext,
+    ) -> Result<Self, PermissionRuleContextError> {
+        let mut context = Self::global();
+        context.append_rule_context(rule_context)?;
+        Ok(context)
+    }
+
+    fn append_rule_context(
+        &mut self,
+        rule_context: &PermissionRuleContext,
+    ) -> Result<(), PermissionRuleContextError> {
+        match rule_context {
+            PermissionRuleContext::Global => {}
+            PermissionRuleContext::Domain(domain) => {
+                self.domain = Some(domain.clone());
+            }
+            PermissionRuleContext::World(world) => {
+                self.domain = Some(world.namespace.to_string());
+                self.world = Some(world.clone());
+            }
+            PermissionRuleContext::Custom { key, value } => {
+                self.add_custom_context(key.clone(), value.clone())?;
+            }
+            PermissionRuleContext::All(contexts) => {
+                for context in contexts.iter() {
+                    self.append_rule_context(context)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Adds one custom active context.
     ///
     /// # Errors

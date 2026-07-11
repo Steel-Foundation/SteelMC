@@ -25,7 +25,7 @@ use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandDispatcher, CommandQueueFull,
     CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue, client_permission_event,
-    command_suggestions_packet, command_tree_packet, create_dispatcher,
+    command_suggestions_packet, command_tree_packet, create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
@@ -37,7 +37,8 @@ use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageR
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
     PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
-    PermissionGroupsConfig, PermissionSubjectIndex, PermissionSubjectState,
+    PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression,
+    PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
@@ -65,6 +66,7 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::{
+    collections::BTreeSet,
     io, mem,
     num::NonZero,
     path::Path,
@@ -1338,6 +1340,8 @@ pub struct Server {
     pub(crate) command_storage: DomainCommandStorage,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
+    /// Steel-owned permission keys exposed for command autocomplete.
+    command_permission_keys: Vec<String>,
     /// Command work submitted from connection and console tasks.
     command_requests: CommandRequestQueue,
     /// Jobs resumed from a known point in the server game tick.
@@ -1363,6 +1367,41 @@ pub struct Server {
 }
 
 impl Server {
+    pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
+        let mut suggestions = self
+            .command_permission_keys
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let config = self.permission_groups.config_snapshot();
+        for group in config.groups.values() {
+            suggestions.extend(group.allow.iter().cloned());
+            suggestions.extend(group.deny.iter().cloned());
+        }
+        for (_, state) in self.player_permission_states.read().entries() {
+            suggestions.extend(state.overrides().entries().iter().map(|entry| {
+                PermissionRuleExpression::new(entry.key().clone(), entry.context().clone())
+                    .to_string()
+            }));
+        }
+        suggestions.into_iter().collect()
+    }
+
+    pub(crate) fn permission_metadata_suggestions(&self) -> Vec<String> {
+        let mut suggestions = BTreeSet::new();
+        let config = self.permission_groups.config_snapshot();
+        for group in config.groups.values() {
+            suggestions.extend(group.metadata.iter().map(|rule| rule.key.clone()));
+        }
+        for (_, state) in self.player_permission_states.read().entries() {
+            suggestions.extend(state.metadata_overrides().entries().iter().map(|entry| {
+                PermissionMetadataExpression::new(entry.key().clone(), entry.context().clone())
+                    .to_string()
+            }));
+        }
+        suggestions.into_iter().collect()
+    }
+
     /// Creates a new server.
     ///
     #[expect(
@@ -1503,8 +1542,13 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
-        let command_dispatcher = create_dispatcher()
+        let registered_commands = create_registered_dispatcher()
             .map_err(|error| format!("failed to register built-in commands: {error}"))?;
+        let command_permission_keys = registered_commands
+            .permissions
+            .into_iter()
+            .map(|permission| permission.as_str().to_owned())
+            .collect();
 
         Ok(Server {
             config,
@@ -1518,7 +1562,8 @@ impl Server {
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             scoreboards,
             command_storage,
-            command_dispatcher: SyncRwLock::new(command_dispatcher),
+            command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
+            command_permission_keys,
             command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,

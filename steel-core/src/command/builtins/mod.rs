@@ -14,6 +14,7 @@ mod kill;
 mod list;
 mod locate;
 mod operator;
+mod perms;
 mod return_command;
 mod seed;
 mod setworldspawn;
@@ -27,15 +28,31 @@ mod weather;
 
 pub(crate) use difficulty::player_can_change_difficulty;
 
+#[cfg(test)]
+use super::{brigadier::CommandDispatcher, execution::SteelCommandRuntime};
 use super::{
-    brigadier::CommandDispatcher,
-    execution::{CommandSource, SteelCommandRuntime},
-    registration::{CommandDispatcherBuilder, CommandRegistrationError},
+    execution::CommandSource,
+    registration::{
+        CommandDispatcherBuilder, CommandRegistrationError,
+        ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY, ENTITY_SELECTOR_PERMISSION_KEY,
+        RegisteredCommandDispatcher,
+    },
 };
 
+#[cfg(test)]
 pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
+    create_registered_dispatcher().map(|registered| registered.dispatcher)
+}
+
+pub(crate) fn create_registered_dispatcher()
+-> Result<RegisteredCommandDispatcher<CommandSource>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
+    builder.declare_permission(ENTITY_SELECTOR_PERMISSION_KEY)?;
+    builder.declare_permission(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY)?;
+    builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
+    builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
+    builder.declare_permission(perms::METADATA_PERMISSION)?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(difficulty::registration())?;
@@ -51,6 +68,7 @@ pub(crate) fn create_dispatcher()
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(perms::registration())?;
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
@@ -61,7 +79,7 @@ pub(crate) fn create_dispatcher()
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(weather::registration())?;
-    builder.build()
+    builder.build_with_permissions()
 }
 
 #[cfg(test)]
@@ -109,6 +127,7 @@ mod tests {
                 "list",
                 "locate",
                 "op",
+                "perms",
                 "return",
                 "seed",
                 "setworldspawn",

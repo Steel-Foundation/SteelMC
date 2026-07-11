@@ -297,6 +297,24 @@ fn chained_context_is_more_specific_than_one_constraint() {
 }
 
 #[test]
+fn rule_context_builds_an_equivalent_active_context_for_admin_checks() {
+    let rule = PermissionRuleContext::all([
+        PermissionRuleContext::domain("lobby"),
+        PermissionRuleContext::world(Identifier::new("lobby", "spawn")),
+        custom_context("plugin:region", "market"),
+    ]);
+    let Ok(rule) = rule else {
+        panic!("test rule context should compose");
+    };
+    let active = PermissionContext::from_rule_context(&rule);
+    let Ok(active) = active else {
+        panic!("rule context should become an active context");
+    };
+
+    assert!(rule.matches(&active));
+}
+
+#[test]
 fn scoped_child_rules_override_parent_fallbacks() {
     let parent = key("minecraft.command.gamemode");
     let creative = key("minecraft.command.gamemode.creative");

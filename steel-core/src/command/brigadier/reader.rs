@@ -129,6 +129,18 @@ impl<'input> StringReader<'input> {
         &self.input[start.byte..self.cursor.byte]
     }
 
+    /// Reads one custom argument token up to Java-compatible whitespace.
+    pub(crate) fn read_unquoted_token(&mut self) -> &'input str {
+        let start = self.checkpoint();
+        while self
+            .peek()
+            .is_some_and(|character| !java::is_whitespace(character))
+        {
+            self.skip();
+        }
+        &self.input[start.byte..self.cursor.byte]
+    }
+
     /// Reads a single- or double-quoted Brigadier string.
     pub(crate) fn read_quoted_string(&mut self) -> Result<String, CommandSyntaxError> {
         let Some(terminator) = self.peek() else {

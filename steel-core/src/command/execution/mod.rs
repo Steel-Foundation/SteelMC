@@ -7,6 +7,7 @@ mod coordinates;
 mod item;
 mod item_predicate;
 mod nbt;
+mod permission;
 mod profile;
 mod queue;
 mod runtime;
@@ -22,6 +23,7 @@ pub(crate) use biome::BiomeOrTag;
 pub(crate) use block::BlockPredicate;
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
+pub(crate) use permission::PermissionGroupName;
 pub(crate) use profile::GameProfileArgument;
 pub(crate) use queue::{
     ChainModifiers, CommandExecutionContext, CommandResultSuspension, CommandResultSuspensionPoll,

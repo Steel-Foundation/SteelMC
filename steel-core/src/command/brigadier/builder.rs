@@ -130,7 +130,7 @@ where
         self
     }
 
-    /// Adds a requirement to the one literal node at `path`.
+    /// Adds a requirement to the one literal path, ignoring argument nodes.
     ///
     /// Returns the number of matching paths so callers can reject missing or
     /// ambiguous declarations before registration.
@@ -147,7 +147,11 @@ where
         };
         let mut matches = 0;
         for child in &mut self.children {
-            if child.literal_name() != Some(name.as_ref()) {
+            let Some(literal) = child.literal_name() else {
+                matches += child.add_requirement_at_literal_path(path, requirement);
+                continue;
+            };
+            if literal != name.as_ref() {
                 continue;
             }
             if remaining.is_empty() {

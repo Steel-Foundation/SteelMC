@@ -31,6 +31,7 @@ use super::{
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
+    permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
@@ -226,8 +227,24 @@ impl SteelArgumentType {
         ))
     }
 
+    pub(crate) fn game_profile() -> Self {
+        Self::new(GameProfileParser::new(GameProfileSuggestionMode::All))
+    }
+
     pub(crate) fn operator_profile() -> Self {
         Self::new(GameProfileParser::new(GameProfileSuggestionMode::Operators))
+    }
+
+    pub(crate) fn permission_rule() -> Self {
+        Self::new(PermissionRuleParser)
+    }
+
+    pub(crate) fn permission_metadata() -> Self {
+        Self::new(PermissionMetadataParser)
+    }
+
+    pub(crate) fn permission_group(require_existing: bool) -> Self {
+        Self::new(PermissionGroupParser { require_existing })
     }
 
     pub(crate) fn score_holders() -> Self {

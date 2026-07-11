@@ -5,7 +5,9 @@ use crate::command::{
     brigadier::{
         CommandDispatcher, CommandRedirectTarget, CommandRequirement, CommandSyntaxError, NodeId,
     },
-    execution::{CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, literal},
+    execution::{
+        CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, argument, literal,
+    },
 };
 use crate::permission::{
     PermissionEntry, PermissionExpr, PermissionKey, PermissionSet, PermissionState,
@@ -331,6 +333,37 @@ fn required_root_permissions_are_derived_from_stable_command_ids() {
 }
 
 #[test]
+fn dispatcher_build_retains_declared_and_derived_permission_keys() {
+    let mut builder = CommandDispatcherBuilder::new();
+    assert!(builder.declare_permission("minecraft.selector").is_ok());
+    assert!(
+        builder
+            .register(
+                command(Identifier::new_static("minecraft", "tick"), "freeze")
+                    .subcommand_permission(["freeze"]),
+            )
+            .is_ok()
+    );
+    let Ok(registered) = builder.build_with_permissions() else {
+        panic!("valid command declarations should build");
+    };
+    let permissions = registered
+        .permissions
+        .iter()
+        .map(PermissionKey::as_str)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        permissions,
+        [
+            "minecraft.command.tick",
+            "minecraft.command.tick.freeze",
+            "minecraft.selector"
+        ]
+    );
+}
+
+#[test]
 fn default_access_allows_unset_but_not_explicitly_denied_permissions() {
     let dispatcher =
         build([command(Identifier::new_static("minecraft", "list"), "child").default_access()]);
@@ -459,6 +492,44 @@ fn derived_subcommand_permissions_are_alternatives_to_the_root() {
         dispatcher
             .node(freeze)
             .is_some_and(|node| !node.allows(&root_with_freeze_deny))
+    );
+}
+
+#[test]
+fn derived_subcommand_permissions_follow_literals_through_arguments() {
+    let registration = CommandRegistration::new(Identifier::new_static("steel", "perms"), |_| {
+        literal("perms").then(
+            literal("user").then(
+                argument("targets", crate::command::brigadier::ArgumentType::string()).then(
+                    literal("info")
+                        .executes(|_| Ok(1))
+                        .then(literal("verbose").executes(|_| Ok(1))),
+                ),
+            ),
+        )
+    })
+    .subcommand_permission(["user", "info"])
+    .subcommand_permission(["user", "info", "verbose"]);
+    let dispatcher = build([registration]);
+    let perms = child(&dispatcher, dispatcher.root(), "perms");
+    let user = child(&dispatcher, perms, "user");
+    let targets = child(&dispatcher, user, "targets");
+    let info = child(&dispatcher, targets, "info");
+    let verbose = child(&dispatcher, info, "verbose");
+    let info_only = permission_source([permission_entry(
+        "steel.command.perms.user.info",
+        PermissionState::Allow,
+    )]);
+
+    assert!(
+        dispatcher
+            .node(info)
+            .is_some_and(|node| node.allows(&info_only))
+    );
+    assert!(
+        dispatcher
+            .node(verbose)
+            .is_some_and(|node| !node.allows(&info_only))
     );
 }
 

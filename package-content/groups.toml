@@ -1,6 +1,7 @@
 #:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/groups.schema.json
 
-# Permission groups assigned by the server.
+# Permission groups assigned by the server. Rules may be managed at runtime
+# with `/perms`; successful edits are persisted back to this file.
 default_groups = ["default"]
 
 [groups.default]
@@ -8,6 +9,12 @@ priority = 0
 inherits = []
 allow = []
 deny = []
+# Permission expressions can include domain, world, and identifier-keyed custom
+# contexts. Multiple entries inside `{...}` are combined with AND.
+# allow = [
+#     "minecraft.command.gamemode{domain=lobby}",
+#     "plugin.region.build{world=lobby:spawn,plugin:region=spawn}",
+# ]
 # Namespaced typed values consumed by Steel subsystems and plugins.
 # More-specific contexts win; equally specific entries use group priority.
 # metadata = [

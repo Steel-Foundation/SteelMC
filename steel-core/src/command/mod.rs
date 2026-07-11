@@ -11,7 +11,7 @@ pub mod sender;
 pub(crate) mod storage;
 
 pub(crate) use builtins::{
-    create_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,
+    create_registered_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,
 };
 pub(crate) use pending_execution::{COMMAND_RESUMPTIONS_PER_TICK, PendingCommandExecutionQueue};
 pub(crate) use protocol::{command_suggestions_packet, command_tree_packet};

@@ -81,11 +81,31 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
         Vec::new()
     }
 
+    fn permission_context_world_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn command_storage_keys(&self) -> Vec<String> {
         Vec::new()
     }
 
+    fn permission_rule_suggestions(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn permission_metadata_suggestions(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn permission_group_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn non_operator_profile_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn all_profile_names(&self) -> Vec<String> {
         Vec::new()
     }
 
@@ -380,6 +400,10 @@ impl CommandArgumentSource for CommandSource {
         names
     }
 
+    fn permission_context_world_names(&self) -> Vec<String> {
+        self.server.worlds.keys().map(ToString::to_string).collect()
+    }
+
     fn command_storage_keys(&self) -> Vec<String> {
         self.server
             .command_storage
@@ -393,8 +417,24 @@ impl CommandArgumentSource for CommandSource {
             })
     }
 
+    fn permission_rule_suggestions(&self) -> Vec<String> {
+        self.server.permission_rule_suggestions()
+    }
+
+    fn permission_metadata_suggestions(&self) -> Vec<String> {
+        self.server.permission_metadata_suggestions()
+    }
+
+    fn permission_group_names(&self) -> Vec<String> {
+        self.server.permission_groups.group_names()
+    }
+
     fn non_operator_profile_names(&self) -> Vec<String> {
         profile_names(self.server(), false, false)
+    }
+
+    fn all_profile_names(&self) -> Vec<String> {
+        all_profile_names(self.server())
     }
 
     fn operator_profile_names(&self) -> Vec<String> {
@@ -478,6 +518,24 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
         if operator == is_operator {
             names.push(known.last_known_name().to_owned());
         }
+    }
+    names
+}
+
+fn all_profile_names(server: &Server) -> Vec<String> {
+    let players = server.get_players();
+    let mut names = players
+        .iter()
+        .map(|player| player.gameprofile.name.clone())
+        .collect::<Vec<_>>();
+    for known in server.known_players().entries() {
+        if names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(known.last_known_name()))
+        {
+            continue;
+        }
+        names.push(known.last_known_name().to_owned());
     }
     names
 }

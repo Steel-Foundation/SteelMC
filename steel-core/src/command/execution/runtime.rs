@@ -23,8 +23,8 @@ use crate::command::brigadier::{
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
-    ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey,
-    WorldArgument,
+    ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
+    SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
         GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
@@ -35,6 +35,7 @@ use super::{
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
+    permission::{PermissionMetadataExpression, PermissionRuleExpression},
     player::Player,
     scoreboard::ScoreHolder,
 };
@@ -341,6 +342,24 @@ where
     }
 
     pub(crate) fn game_profile_argument(&self, name: &str) -> Option<&GameProfileArgument> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_rule_expression(
+        &self,
+        name: &str,
+    ) -> Option<&PermissionRuleExpression> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_metadata_expression(
+        &self,
+        name: &str,
+    ) -> Option<&PermissionMetadataExpression> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_group(&self, name: &str) -> Option<&PermissionGroupName> {
         self.typed_argument(name)
     }
 }

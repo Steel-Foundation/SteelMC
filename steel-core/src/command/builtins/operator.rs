@@ -112,51 +112,20 @@ async fn run_operation(
     argument: GameProfileArgument,
     action: OperatorAction,
 ) -> Result<OperatorCommandResult, CommandSyntaxError> {
-    let targets = resolve_targets(source, argument).await?;
+    let targets = argument.resolve(source).await?;
     let mut changed = Vec::new();
     for target in targets {
         if update_operator_group(source.server(), target.uuid, action).await? {
-            changed.push(target);
+            changed.push(OperatorTarget {
+                uuid: target.uuid,
+                name: target.name,
+            });
         }
     }
     if changed.is_empty() {
         return Err(CommandSyntaxError::dynamic(action.failed()));
     }
     Ok(OperatorCommandResult { changed })
-}
-
-async fn resolve_targets(
-    source: &CommandSource,
-    argument: GameProfileArgument,
-) -> Result<Vec<OperatorTarget>, CommandSyntaxError> {
-    match argument {
-        GameProfileArgument::Selector(selector) => {
-            let players = selector.find_players(source)?;
-            if players.is_empty() {
-                return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                    &translations::ARGUMENT_ENTITY_NOTFOUND_PLAYER,
-                )));
-            }
-            Ok(players
-                .into_iter()
-                .map(|player| OperatorTarget {
-                    uuid: player.gameprofile.id,
-                    name: player.gameprofile.name.clone(),
-                })
-                .collect())
-        }
-        GameProfileArgument::Direct(name) => {
-            let profile = source
-                .server()
-                .resolve_player_profile(&name)
-                .await
-                .map_err(|error| CommandSyntaxError::dynamic(error.to_string()))?;
-            Ok(vec![OperatorTarget {
-                uuid: profile.uuid(),
-                name: profile.last_known_name().to_owned(),
-            }])
-        }
-    }
 }
 
 async fn update_operator_group(

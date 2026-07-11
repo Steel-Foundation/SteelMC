@@ -80,8 +80,27 @@ impl CommandArgumentSource for TestSource {
         .to_vec()
     }
 
+    fn permission_context_world_names(&self) -> Vec<String> {
+        vec!["alpha:arena".to_owned(), "alpha:overworld".to_owned()]
+    }
+
     fn command_storage_keys(&self) -> Vec<String> {
         vec!["minecraft:global".to_owned(), "steel:data".to_owned()]
+    }
+
+    fn permission_rule_suggestions(&self) -> Vec<String> {
+        vec![
+            "minecraft.command.gamemode".to_owned(),
+            "steel.build{plugin:region=spawn}".to_owned(),
+        ]
+    }
+
+    fn permission_metadata_suggestions(&self) -> Vec<String> {
+        vec!["plugin:max_homes{plugin:region=spawn}".to_owned()]
+    }
+
+    fn permission_group_names(&self) -> Vec<String> {
+        vec!["builder".to_owned(), "default".to_owned()]
     }
 
     fn selector_player_names(&self) -> Vec<String> {
@@ -214,6 +233,68 @@ fn component_argument_parses_vanilla_snbt_forms() {
             Some(&TextComponent::plain(expected))
         );
     }
+}
+
+#[test]
+fn permission_arguments_parse_contexts_and_suggest_discovered_values() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::permission_rule());
+    let parse = dispatcher.parse(
+        "resource steel.build{domain=alpha,plugin:region=spawn}",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("contextual permission expression should parse");
+    };
+    assert_eq!(
+        chain
+            .top_context()
+            .permission_rule_expression("value")
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("steel.build{domain=alpha,plugin:region=spawn}")
+    );
+
+    let parse = dispatcher.parse("resource steel.build{plugin:region=s", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("permission suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| { suggestion.text() == "steel.build{plugin:region=spawn}" })
+    );
+
+    let parse = dispatcher.parse("resource steel.build{world=alpha:", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("world context suggestions should build");
+    };
+    assert_eq!(
+        suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        [
+            "steel.build{world=alpha:arena}",
+            "steel.build{world=alpha:overworld}"
+        ]
+    );
+}
+
+#[test]
+fn permission_group_argument_can_require_a_configured_group() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::permission_group(true));
+    assert!(
+        dispatcher
+            .context_chain(dispatcher.parse("resource builder", TestSource::new()))
+            .is_ok()
+    );
+    assert!(
+        dispatcher
+            .context_chain(dispatcher.parse("resource missing", TestSource::new()))
+            .is_err()
+    );
 }
 
 #[test]

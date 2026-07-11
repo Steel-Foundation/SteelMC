@@ -3,17 +3,26 @@
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{DowncastType, DowncastTypeKey, translations};
+use text_components::TextComponent;
+use uuid::Uuid;
 
 use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
 };
 
 use super::{
-    CommandArgumentSource,
+    CommandArgumentSource, CommandSource,
     argument::{SteelArgumentParser, SteelArgumentSuggestionContext},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
 };
+
+/// Resolved game profile used by permission administration commands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResolvedGameProfile {
+    pub(crate) uuid: Uuid,
+    pub(crate) name: String,
+}
 
 /// Parsed vanilla game-profile argument.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,6 +33,42 @@ pub(crate) enum GameProfileArgument {
     Direct(Box<str>),
 }
 
+impl GameProfileArgument {
+    pub(crate) async fn resolve(
+        self,
+        source: &CommandSource,
+    ) -> Result<Vec<ResolvedGameProfile>, CommandSyntaxError> {
+        match self {
+            Self::Selector(selector) => {
+                let players = selector.find_players(source)?;
+                if players.is_empty() {
+                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                        &translations::ARGUMENT_ENTITY_NOTFOUND_PLAYER,
+                    )));
+                }
+                Ok(players
+                    .into_iter()
+                    .map(|player| ResolvedGameProfile {
+                        uuid: player.gameprofile.id,
+                        name: player.gameprofile.name.clone(),
+                    })
+                    .collect())
+            }
+            Self::Direct(name) => {
+                let profile = source
+                    .server()
+                    .resolve_player_profile(&name)
+                    .await
+                    .map_err(|error| CommandSyntaxError::dynamic(error.to_string()))?;
+                Ok(vec![ResolvedGameProfile {
+                    uuid: profile.uuid(),
+                    name: profile.last_known_name().to_owned(),
+                }])
+            }
+        }
+    }
+}
+
 // SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
 unsafe impl DowncastType for GameProfileArgument {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:command/value/game_profile");
@@ -31,6 +76,7 @@ unsafe impl DowncastType for GameProfileArgument {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum GameProfileSuggestionMode {
+    All,
     NonOperators,
     Operators,
 }
@@ -79,6 +125,7 @@ impl SteelArgumentParser for GameProfileParser {
     ) {
         suggest_entity_selector(builder, context.source(), false, true);
         let names = match self.suggestion_mode {
+            GameProfileSuggestionMode::All => context.source().all_profile_names(),
             GameProfileSuggestionMode::NonOperators => {
                 context.source().non_operator_profile_names()
             }

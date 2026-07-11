@@ -1,6 +1,6 @@
 //! Stable command identities and collision-aware dispatcher construction.
 
-use std::iter::once;
+use std::{collections::BTreeSet, iter::once};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_utils::Identifier;
@@ -162,6 +162,16 @@ where
 {
     registrations: Vec<CommandRegistration<S>>,
     ids: FxHashSet<Identifier>,
+    declared_permissions: BTreeSet<PermissionKey>,
+}
+
+/// Built dispatcher and its discovery-only permission declarations.
+pub(crate) struct RegisteredCommandDispatcher<S>
+where
+    S: CommandPermissionSource,
+{
+    pub(crate) dispatcher: CommandDispatcher<S, SteelCommandRuntime>,
+    pub(crate) permissions: Vec<PermissionKey>,
 }
 
 impl<S> CommandDispatcherBuilder<S>
@@ -172,7 +182,21 @@ where
         Self {
             registrations: Vec::new(),
             ids: FxHashSet::default(),
+            declared_permissions: BTreeSet::new(),
         }
+    }
+
+    /// Declares a non-command permission for discovery and autocomplete.
+    pub(crate) fn declare_permission(
+        &mut self,
+        permission: impl Into<String>,
+    ) -> Result<(), CommandRegistrationError> {
+        let value = permission.into();
+        let permission = PermissionKey::parse(value.clone()).map_err(|source| {
+            CommandRegistrationError::InvalidInternalPermission { value, source }
+        })?;
+        self.declared_permissions.insert(permission);
+        Ok(())
     }
 
     /// Adds one declaration. Earlier declarations win unqualified collisions.
@@ -191,12 +215,22 @@ where
     }
 
     /// Builds the complete graph without exposing a partially registered dispatcher.
+    #[cfg(test)]
     pub(crate) fn build(
         self,
     ) -> Result<CommandDispatcher<S, SteelCommandRuntime>, CommandRegistrationError> {
+        self.build_with_permissions()
+            .map(|registered| registered.dispatcher)
+    }
+
+    /// Builds the graph and retains permission keys for command autocomplete.
+    pub(crate) fn build_with_permissions(
+        self,
+    ) -> Result<RegisteredCommandDispatcher<S>, CommandRegistrationError> {
         let mut dispatcher = CommandDispatcher::new();
         let dispatcher_root = dispatcher.root();
         let mut resolved = Vec::with_capacity(self.registrations.len());
+        let mut permissions = self.declared_permissions;
 
         for registration in self.registrations {
             let CommandRegistration {
@@ -213,11 +247,13 @@ where
                 let key = derived_command_permission_key(&id)?;
                 (PermissionExpr::key(key.clone()), Some(key))
             };
+            collect_permission_keys(&root_permission, &mut permissions);
             let mut root = factory(dispatcher_root);
             let mut alternate_permissions = Vec::with_capacity(subcommand_permissions.len());
             if let Some(derived_root) = derived_root {
                 for path in &subcommand_permissions {
                     let permission = derived_subcommand_permission(&id, &derived_root, path)?;
+                    permissions.insert(permission.clone());
                     let requirement = permission_requirement(PermissionExpr::scoped_key(
                         derived_root.clone(),
                         permission.clone(),
@@ -285,7 +321,10 @@ where
             }
         }
 
-        Ok(dispatcher)
+        Ok(RegisteredCommandDispatcher {
+            dispatcher,
+            permissions: permissions.into_iter().collect(),
+        })
     }
 }
 
@@ -393,6 +432,23 @@ where
     })
 }
 
+fn collect_permission_keys(expression: &PermissionExpr, keys: &mut BTreeSet<PermissionKey>) {
+    match expression {
+        PermissionExpr::Key(key) => {
+            keys.insert(key.clone());
+        }
+        PermissionExpr::ScopedKey { parent, key } => {
+            keys.insert(parent.clone());
+            keys.insert(key.clone());
+        }
+        PermissionExpr::All(expressions) | PermissionExpr::Any(expressions) => {
+            for expression in expressions {
+                collect_permission_keys(expression, keys);
+            }
+        }
+    }
+}
+
 fn display_permission_path(path: &[Box<str>]) -> String {
     path.iter()
         .map(AsRef::as_ref)
@@ -453,6 +509,12 @@ pub(crate) enum CommandRegistrationError {
     #[error("command '{id}' cannot derive a permission from its id: {source}")]
     InvalidDerivedPermission {
         id: Identifier,
+        #[source]
+        source: PermissionKeyError,
+    },
+    #[error("invalid internal permission declaration '{value}': {source}")]
+    InvalidInternalPermission {
+        value: String,
         #[source]
         source: PermissionKeyError,
     },
