@@ -436,6 +436,14 @@ where
         );
     }
 
+    pub(crate) fn discard_frame(&mut self) {
+        self.context.discard(&self.frame);
+    }
+
+    pub(crate) fn queue_fallthrough(&mut self) {
+        self.queue_next(FallthroughAction);
+    }
+
     pub(crate) fn return_success(&mut self, result: i32) {
         self.frame.return_success(result);
         self.context.discard(&self.frame);

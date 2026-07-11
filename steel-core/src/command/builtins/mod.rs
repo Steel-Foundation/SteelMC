@@ -14,6 +14,7 @@ mod kill;
 mod list;
 mod locate;
 mod operator;
+mod return_command;
 mod seed;
 mod setworldspawn;
 mod stop;
@@ -50,6 +51,7 @@ pub(crate) fn create_dispatcher()
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
@@ -107,6 +109,7 @@ mod tests {
                 "list",
                 "locate",
                 "op",
+                "return",
                 "seed",
                 "setworldspawn",
                 "stop",

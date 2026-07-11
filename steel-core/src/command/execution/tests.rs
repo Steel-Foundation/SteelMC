@@ -466,6 +466,7 @@ impl CustomModifierExecutor<TestSource> for ReturningModifier {
         let Some(next_stage) = chain.next_stage() else {
             panic!("custom redirect should have a following stage");
         };
+        control.discard_frame();
         control.queue_contexts(
             next_stage,
             original_source,
@@ -485,24 +486,42 @@ fn custom_modifier_can_continue_with_return_propagation() {
         &mut dispatcher,
         literal::<TestSource>("run").executes(|_| Ok(5)),
     );
+    let discarded_observed = Arc::clone(&observed);
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("discarded").executes(move |context| {
+            discarded_observed
+                .invocations
+                .lock()
+                .push(context.source().name);
+            Ok(1)
+        }),
+    );
     let root = dispatcher.root();
     register(
         &mut dispatcher,
         literal::<TestSource>("returning").redirects_custom(root, ReturningModifier, false),
     );
-    let chain = chain(&dispatcher, "returning run", Arc::clone(&observed));
+    let returning_chain = chain(&dispatcher, "returning run", Arc::clone(&observed));
+    let discarded_chain = chain(&dispatcher, "discarded", Arc::clone(&observed));
     let mut execution = CommandExecutionContext::new(10, 10);
     execution.queue_initial_command(
-        chain,
+        returning_chain,
         TestSource::new("runtime", Arc::clone(&observed)),
         CommandResultCallback::new(move |success, result| {
             callback_results.lock().push((success, result));
         }),
     );
+    execution.queue_initial_command(
+        discarded_chain,
+        TestSource::new("discarded", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
 
     assert_eq!(execution.run(), ExecutionStop::Completed);
     assert_eq!(*observed.results.lock(), [(true, 5)]);
     assert_eq!(*frame_results.lock(), [(true, 5)]);
+    assert!(observed.invocations.lock().is_empty());
 }
 
 struct NoopAction;

@@ -323,6 +323,20 @@ where
             })
     }
 
+    /// Returns whether this node's redirect forks its command source.
+    pub(crate) fn is_forked_redirect(&self) -> bool {
+        self.redirect
+            .as_ref()
+            .is_some_and(|redirect| redirect.forks)
+    }
+
+    /// Returns whether this node transforms sources while redirecting.
+    pub(crate) fn has_redirect_modifier(&self) -> bool {
+        self.redirect
+            .as_ref()
+            .is_some_and(|redirect| redirect.modifier.is_some())
+    }
+
     /// Returns the externally visible node category.
     pub(crate) const fn kind(&self) -> NodeKind {
         self.data.kind()

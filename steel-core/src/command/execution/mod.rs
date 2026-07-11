@@ -35,13 +35,6 @@ pub(crate) use queue::{
     )
 )]
 pub(crate) use queue::{CommandSuspension, CommandSuspensionPoll, EntryAction, Frame};
-#[cfg_attr(
-    not(test),
-    expect(
-        unused_imports,
-        reason = "custom executors are retained for future keyed command runtime integrations"
-    )
-)]
 pub(crate) use runtime::{CustomCommandExecutor, CustomModifierExecutor};
 pub(crate) use runtime::{
     SteelCommandContext, SteelCommandRuntime, SteelContextChain, SteelExecutor, SteelModifier,

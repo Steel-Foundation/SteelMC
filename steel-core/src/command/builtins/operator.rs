@@ -246,6 +246,7 @@ mod tests {
 
     use super::{OperatorAction, update_groups};
     use crate::command::builtins::create_dispatcher;
+    use crate::command::execution::SteelArgumentType;
 
     #[test]
     fn operator_group_updates_are_idempotent_and_preserve_other_groups() {
@@ -285,7 +286,7 @@ mod tests {
             };
             let protocol = target
                 .argument_type()
-                .map(|argument| argument.protocol_argument());
+                .map(SteelArgumentType::protocol_argument);
             assert!(matches!(
                 protocol,
                 Some((
