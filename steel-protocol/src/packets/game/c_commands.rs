@@ -335,6 +335,9 @@ pub enum ArgumentType {
     ResourceKey {
         identifier: &'static str,
     },
+    ResourceSelector {
+        identifier: &'static str,
+    },
     TemplateMirror,
     TemplateRotation,
     Heightmap,
@@ -403,14 +406,15 @@ impl ArgumentType {
             Self::ResourceOrTagKey { .. } => 45,
             Self::Resource { .. } => 46,
             Self::ResourceKey { .. } => 47,
-            Self::TemplateMirror => 48,
-            Self::TemplateRotation => 49,
-            Self::Heightmap => 50,
-            Self::LootTable => 51,
-            Self::LootPredicate => 52,
-            Self::LootModifier => 53,
-            Self::Dialog => 54,
-            Self::Uuid => 55,
+            Self::ResourceSelector { .. } => 48,
+            Self::TemplateMirror => 49,
+            Self::TemplateRotation => 50,
+            Self::Heightmap => 51,
+            Self::LootTable => 52,
+            Self::LootPredicate => 53,
+            Self::LootModifier => 54,
+            Self::Dialog => 55,
+            Self::Uuid => 56,
         }
     }
 }
@@ -439,6 +443,7 @@ impl WriteTo for ArgumentType {
             Self::ResourceOrTagKey { identifier } => identifier.write_prefixed::<VarInt>(writer),
             Self::Resource { identifier } => identifier.write_prefixed::<VarInt>(writer),
             Self::ResourceKey { identifier } => identifier.write_prefixed::<VarInt>(writer),
+            Self::ResourceSelector { identifier } => identifier.write_prefixed::<VarInt>(writer),
             _ => Ok(()),
         }
     }
@@ -490,7 +495,7 @@ impl SuggestionType {
 mod tests {
     use steel_utils::serial::WriteTo;
 
-    use super::{CommandNode, CommandNodeInfo};
+    use super::{ArgumentType, CommandNode, CommandNodeInfo};
 
     #[test]
     fn restricted_nodes_set_the_26_2_protocol_flag() {
@@ -512,5 +517,35 @@ mod tests {
 
         assert!(node.write(&mut encoded).is_ok());
         assert_eq!(encoded.first().copied(), Some(1 | 4 | 8 | 32));
+    }
+
+    #[test]
+    fn command_argument_tail_uses_the_26_2_registry_ids() {
+        for (argument, expected) in [
+            (ArgumentType::TemplateMirror, 49),
+            (ArgumentType::TemplateRotation, 50),
+            (ArgumentType::Heightmap, 51),
+            (ArgumentType::LootTable, 52),
+            (ArgumentType::LootPredicate, 53),
+            (ArgumentType::LootModifier, 54),
+            (ArgumentType::Dialog, 55),
+            (ArgumentType::Uuid, 56),
+        ] {
+            let mut encoded = Vec::new();
+            assert!(argument.write(&mut encoded).is_ok());
+            assert_eq!(encoded, [expected]);
+        }
+    }
+
+    #[test]
+    fn resource_selector_writes_its_registry_key() {
+        let mut encoded = Vec::new();
+        let argument = ArgumentType::ResourceSelector {
+            identifier: "minecraft:test_instance",
+        };
+
+        assert!(argument.write(&mut encoded).is_ok());
+        assert_eq!(&encoded[..2], [48, 23]);
+        assert_eq!(&encoded[2..], b"minecraft:test_instance");
     }
 }

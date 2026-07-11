@@ -218,6 +218,7 @@ mod tests {
         ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
         CommandNode as ProtocolCommandNode, SuggestionType,
     };
+    use steel_utils::serial::WriteTo;
     use text_components::TextComponent;
 
     #[derive(Clone, Copy)]
@@ -510,7 +511,10 @@ mod tests {
         assert!(swizzle_suggestions.is_none());
 
         let (heightmap, heightmap_suggestions) = SteelArgumentType::heightmap().protocol_argument();
+        let mut encoded_heightmap = Vec::new();
         assert!(matches!(heightmap, ProtocolArgumentType::Heightmap));
+        assert!(heightmap.write(&mut encoded_heightmap).is_ok());
+        assert_eq!(encoded_heightmap, [51]);
         assert!(heightmap_suggestions.is_none());
     }
 
