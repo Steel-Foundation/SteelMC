@@ -8,7 +8,8 @@ use thiserror::Error;
 
 use super::{
     brigadier::{
-        CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId, RegistrationError,
+        CommandDispatcher, CommandNodeBuilder, CommandRequirement, CommandRequirementRoute, NodeId,
+        RegistrationError,
     },
     execution::{CommandPermissionSource, SteelCommandRuntime},
 };
@@ -248,41 +249,15 @@ where
                 (PermissionExpr::key(key.clone()), Some(key))
             };
             collect_permission_keys(&root_permission, &mut permissions);
-            let mut root = factory(dispatcher_root);
-            let mut alternate_permissions = Vec::with_capacity(subcommand_permissions.len());
-            if let Some(derived_root) = derived_root {
-                for path in &subcommand_permissions {
-                    let permission = derived_subcommand_permission(&id, &derived_root, path)?;
-                    permissions.insert(permission.clone());
-                    let requirement = permission_requirement(PermissionExpr::scoped_key(
-                        derived_root.clone(),
-                        permission.clone(),
-                    ));
-                    match root.add_requirement_at_literal_path(path, &requirement) {
-                        1 => alternate_permissions.push(permission),
-                        0 => {
-                            return Err(
-                                CommandRegistrationError::MissingSubcommandPermissionPath {
-                                    id,
-                                    path: display_permission_path(path),
-                                },
-                            );
-                        }
-                        matches => {
-                            return Err(
-                                CommandRegistrationError::AmbiguousSubcommandPermissionPath {
-                                    id,
-                                    path: display_permission_path(path),
-                                    matches,
-                                },
-                            );
-                        }
-                    }
-                }
-            }
-            let requirement =
-                root_permission_requirement(root_permission, alternate_permissions, default_access);
-            root = root.also_requires(requirement);
+            let root = apply_registration_requirements(
+                factory(dispatcher_root),
+                &id,
+                root_permission,
+                derived_root.as_ref(),
+                &subcommand_permissions,
+                default_access,
+                &mut permissions,
+            )?;
             let Some(root_name) = root.literal_name() else {
                 return Err(CommandRegistrationError::RootMustBeLiteral { id });
             };
@@ -326,6 +301,77 @@ where
             permissions: permissions.into_iter().collect(),
         })
     }
+}
+
+fn apply_registration_requirements<S>(
+    mut root: CommandNodeBuilder<S, SteelCommandRuntime>,
+    id: &Identifier,
+    root_permission: PermissionExpr,
+    derived_root: Option<&PermissionKey>,
+    subcommand_permissions: &[Vec<Box<str>>],
+    default_access: bool,
+    permissions: &mut BTreeSet<PermissionKey>,
+) -> Result<CommandNodeBuilder<S, SteelCommandRuntime>, CommandRegistrationError>
+where
+    S: CommandPermissionSource,
+{
+    if subcommand_permissions.is_empty() {
+        return Ok(root.also_requires(root_permission_requirement(
+            root_permission,
+            Vec::new(),
+            default_access,
+        )));
+    }
+    let Some(derived_root) = derived_root else {
+        return Err(
+            CommandRegistrationError::SubcommandPermissionsRequireDerivedRoot { id: id.clone() },
+        );
+    };
+
+    let mut scoped_permissions = Vec::with_capacity(subcommand_permissions.len());
+    for path in subcommand_permissions {
+        let permission = derived_subcommand_permission(id, derived_root, path)?;
+        permissions.insert(permission.clone());
+        match root.literal_path_match_count(path) {
+            1 => scoped_permissions.push(permission),
+            0 => {
+                return Err(CommandRegistrationError::MissingSubcommandPermissionPath {
+                    id: id.clone(),
+                    path: display_permission_path(path),
+                });
+            }
+            matches => {
+                return Err(
+                    CommandRegistrationError::AmbiguousSubcommandPermissionPath {
+                        id: id.clone(),
+                        path: display_permission_path(path),
+                        matches,
+                    },
+                );
+            }
+        }
+    }
+    root.apply_scoped_requirements(
+        subcommand_permissions,
+        |governing_scope, descendant_scopes| {
+            let descendants = descendant_scopes
+                .iter()
+                .map(|index| scoped_permissions[*index].clone())
+                .collect::<Vec<_>>();
+            let traversal = if let Some(index) = governing_scope {
+                scoped_permission_requirement(derived_root, &scoped_permissions[index], descendants)
+            } else {
+                root_permission_requirement(root_permission.clone(), descendants, default_access)
+            };
+            let execution = if let Some(index) = governing_scope {
+                scoped_permission_requirement(derived_root, &scoped_permissions[index], Vec::new())
+            } else {
+                root_permission_requirement(root_permission.clone(), Vec::new(), default_access)
+            };
+            CommandRequirementRoute::new(traversal, execution)
+        },
+    );
+    Ok(root)
 }
 
 impl<S> Default for CommandDispatcherBuilder<S>
@@ -430,6 +476,21 @@ where
     CommandRequirement::authorization(move |source: &S| {
         source.permission_state(&permission) == Some(PermissionState::Allow)
     })
+}
+
+fn scoped_permission_requirement<S>(
+    root: &PermissionKey,
+    scoped: &PermissionKey,
+    alternatives: Vec<PermissionKey>,
+) -> CommandRequirement<S>
+where
+    S: CommandPermissionSource,
+{
+    let permission = alternatives.into_iter().fold(
+        PermissionExpr::scoped_key(root.clone(), scoped.clone()),
+        |permission, alternative| permission | PermissionExpr::key(alternative),
+    );
+    permission_requirement(permission)
 }
 
 fn collect_permission_keys(expression: &PermissionExpr, keys: &mut BTreeSet<PermissionKey>) {

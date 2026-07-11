@@ -21,7 +21,48 @@ where
     children: Vec<Self>,
     executor: Option<Arc<R::Executor>>,
     requirement: CommandRequirement<S>,
+    execution_requirement: CommandRequirement<S>,
     redirect: Option<CommandRedirect<S, R>>,
+}
+
+/// Requirements for traversing a scoped route and executing its current node.
+pub(crate) struct CommandRequirementRoute<S> {
+    traversal: CommandRequirement<S>,
+    execution: CommandRequirement<S>,
+}
+
+impl<S> CommandRequirementRoute<S> {
+    /// Creates the requirements for one resolved route through a command tree.
+    pub(crate) const fn new(
+        traversal: CommandRequirement<S>,
+        execution: CommandRequirement<S>,
+    ) -> Self {
+        Self {
+            traversal,
+            execution,
+        }
+    }
+}
+
+impl<S> Clone for CommandRequirementRoute<S> {
+    fn clone(&self) -> Self {
+        Self {
+            traversal: self.traversal.clone(),
+            execution: self.execution.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RequirementRouteKey {
+    governing_scope: Option<usize>,
+    descendant_scopes: Vec<usize>,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveRequirementScope<'path> {
+    index: usize,
+    remaining: &'path [Box<str>],
 }
 
 impl<S, R> Clone for CommandNodeBuilder<S, R>
@@ -35,6 +76,7 @@ where
             children: self.children.clone(),
             executor: self.executor.as_ref().map(Arc::clone),
             requirement: self.requirement.clone(),
+            execution_requirement: self.execution_requirement.clone(),
             redirect: self.redirect.clone(),
         }
     }
@@ -64,6 +106,7 @@ where
             children: Vec::new(),
             executor: None,
             requirement: CommandRequirement::allow_all(),
+            execution_requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
     }
@@ -78,6 +121,7 @@ where
             children: Vec::new(),
             executor: None,
             requirement: CommandRequirement::allow_all(),
+            execution_requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
     }
@@ -130,38 +174,136 @@ where
         self
     }
 
-    /// Adds a requirement to the one literal path, ignoring argument nodes.
-    ///
-    /// Returns the number of matching paths so callers can reject missing or
-    /// ambiguous declarations before registration.
-    pub(crate) fn add_requirement_at_literal_path(
-        &mut self,
-        path: &[Box<str>],
-        requirement: &CommandRequirement<S>,
-    ) -> usize
+    /// Adds a requirement that applies only when this node's executor is selected.
+    #[must_use]
+    pub(crate) fn also_requires_execution(mut self, requirement: CommandRequirement<S>) -> Self
     where
         S: 'static,
     {
+        self.execution_requirement = self.execution_requirement.and(requirement);
+        self
+    }
+
+    /// Returns the number of occurrences of one literal path below this node.
+    ///
+    /// Argument nodes do not consume path segments.
+    pub(crate) fn literal_path_match_count(&self, path: &[Box<str>]) -> usize {
         let Some((name, remaining)) = path.split_first() else {
             return 0;
         };
         let mut matches = 0;
-        for child in &mut self.children {
+        for child in &self.children {
             let Some(literal) = child.literal_name() else {
-                matches += child.add_requirement_at_literal_path(path, requirement);
+                matches += child.literal_path_match_count(path);
                 continue;
             };
             if literal != name.as_ref() {
                 continue;
             }
             if remaining.is_empty() {
-                child.requirement = child.requirement.clone().and(requirement.clone());
                 matches += 1;
             } else {
-                matches += child.add_requirement_at_literal_path(remaining, requirement);
+                matches += child.literal_path_match_count(remaining);
             }
         }
         matches
+    }
+
+    /// Applies independently scoped requirements using literal-only paths.
+    ///
+    /// A descendant scope may traverse its ancestors, but it cannot execute an
+    /// ancestor unless the route's governing requirement also permits it.
+    pub(crate) fn apply_scoped_requirements(
+        &mut self,
+        scope_paths: &[Vec<Box<str>>],
+        mut requirements_for: impl FnMut(Option<usize>, &[usize]) -> CommandRequirementRoute<S>,
+    ) where
+        S: 'static,
+    {
+        let active = scope_paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| ActiveRequirementScope {
+                index,
+                remaining: path,
+            })
+            .collect::<Vec<_>>();
+        let mut cache = Vec::new();
+        self.apply_scoped_requirements_inner(
+            None,
+            &active,
+            None,
+            &mut cache,
+            &mut requirements_for,
+        );
+    }
+
+    fn apply_scoped_requirements_inner<F>(
+        &mut self,
+        inherited_scope: Option<usize>,
+        active: &[ActiveRequirementScope<'_>],
+        parent_route: Option<&RequirementRouteKey>,
+        cache: &mut Vec<(RequirementRouteKey, CommandRequirementRoute<S>)>,
+        requirements_for: &mut F,
+    ) where
+        S: 'static,
+        F: FnMut(Option<usize>, &[usize]) -> CommandRequirementRoute<S>,
+    {
+        let governing_scope = active
+            .iter()
+            .find(|scope| scope.remaining.is_empty())
+            .map_or(inherited_scope, |scope| Some(scope.index));
+        let descendant_scopes = active
+            .iter()
+            .filter(|scope| !scope.remaining.is_empty())
+            .map(|scope| scope.index)
+            .collect::<Vec<_>>();
+        let route = RequirementRouteKey {
+            governing_scope,
+            descendant_scopes,
+        };
+        let requirements = cached_route_requirements(cache, &route, requirements_for);
+
+        if parent_route != Some(&route) {
+            self.requirement = self.requirement.clone().and(requirements.traversal);
+        }
+        if !route.descendant_scopes.is_empty() && self.executor.is_some() {
+            self.execution_requirement = self
+                .execution_requirement
+                .clone()
+                .and(requirements.execution);
+        }
+
+        for child in &mut self.children {
+            let child_active = if let Some(literal) = child.literal_name() {
+                active
+                    .iter()
+                    .filter_map(|scope| {
+                        let (name, remaining) = scope.remaining.split_first()?;
+                        (name.as_ref() == literal).then_some(ActiveRequirementScope {
+                            index: scope.index,
+                            remaining,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                active
+                    .iter()
+                    .filter(|scope| {
+                        !scope.remaining.is_empty()
+                            && child.literal_path_match_count(scope.remaining) > 0
+                    })
+                    .copied()
+                    .collect::<Vec<_>>()
+            };
+            child.apply_scoped_requirements_inner(
+                governing_scope,
+                &child_active,
+                Some(&route),
+                cache,
+                requirements_for,
+            );
+        }
     }
 
     /// Redirects parsing to an existing node without transforming the source.
@@ -205,9 +347,26 @@ where
             children,
             executor: self.executor,
             requirement: self.requirement,
+            execution_requirement: self.execution_requirement,
             redirect: self.redirect,
         })
     }
+}
+
+fn cached_route_requirements<S, F>(
+    cache: &mut Vec<(RequirementRouteKey, CommandRequirementRoute<S>)>,
+    route: &RequirementRouteKey,
+    requirements_for: &mut F,
+) -> CommandRequirementRoute<S>
+where
+    F: FnMut(Option<usize>, &[usize]) -> CommandRequirementRoute<S>,
+{
+    if let Some((_, requirements)) = cache.iter().find(|(cached, _)| cached == route) {
+        return requirements.clone();
+    }
+    let requirements = requirements_for(route.governing_scope, &route.descendant_scopes);
+    cache.push((route.clone(), requirements.clone()));
+    requirements
 }
 
 impl<S> CommandNodeBuilder<S, BrigadierRuntime> {

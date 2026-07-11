@@ -229,6 +229,7 @@ where
             children: Vec::new(),
             executor: incoming.executor,
             requirement: incoming.requirement,
+            execution_requirement: incoming.execution_requirement,
             redirect: incoming.redirect,
         });
         self.nodes[parent.index].children.push(node_id);
@@ -276,7 +277,12 @@ where
                 continue;
             }
 
-            context.set_executor(child.executor.as_ref().map(Arc::clone));
+            let executor = child
+                .executor
+                .as_ref()
+                .filter(|_| child.execution_requirement.allows(context.source()))
+                .map(Arc::clone);
+            context.set_executor(executor);
             let redirect = child.redirect();
             let required_remaining = if redirect.is_some() { 1 } else { 2 };
             if reader.can_read_length(required_remaining) {
@@ -390,7 +396,11 @@ impl<S> CommandDispatcher<S, BrigadierRuntime> {
         node: NodeId,
         source: S,
     ) -> Option<Result<i32, CommandSyntaxError>> {
-        let executor = self.node(node)?.executor.as_deref()?;
+        let node = self.node(node)?;
+        if !node.can_execute(&source) {
+            return None;
+        }
+        let executor = node.executor.as_deref()?;
         Some(executor(&CommandContext::empty(source, self.root())))
     }
 }

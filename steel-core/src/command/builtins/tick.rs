@@ -368,7 +368,7 @@ mod tests {
         assert!(
             dispatcher
                 .node(query)
-                .is_some_and(|node| node.is_executable() && !node.is_restricted())
+                .is_some_and(|node| node.is_executable() && node.is_restricted())
         );
         for name in ["rate", "step", "sprint", "unfreeze", "freeze"] {
             let node = child(&dispatcher, tick, name);

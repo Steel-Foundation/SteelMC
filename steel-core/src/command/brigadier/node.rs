@@ -284,6 +284,7 @@ where
     pub(super) children: Vec<NodeId>,
     pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,
+    pub(super) execution_requirement: CommandRequirement<S>,
     pub(super) redirect: Option<CommandRedirect<S, R>>,
 }
 
@@ -297,6 +298,7 @@ where
             children: Vec::new(),
             executor: None,
             requirement: CommandRequirement::allow_all(),
+            execution_requirement: CommandRequirement::allow_all(),
             redirect: None,
         }
     }
@@ -309,6 +311,13 @@ where
     /// Returns whether this node has a command callback.
     pub(crate) const fn is_executable(&self) -> bool {
         self.executor.is_some()
+    }
+
+    /// Returns whether this source may run the node's executor.
+    pub(crate) fn can_execute(&self, source: &S) -> bool {
+        self.executor.is_some()
+            && self.requirement.allows(source)
+            && self.execution_requirement.allows(source)
     }
 
     /// Returns this node's redirect target.
@@ -357,7 +366,7 @@ where
 
     /// Returns whether this node is guarded by authorization.
     pub(crate) const fn is_restricted(&self) -> bool {
-        self.requirement.is_authorization()
+        self.requirement.is_authorization() || self.execution_requirement.is_authorization()
     }
 
     pub(super) fn validate_compatible(
@@ -368,6 +377,16 @@ where
             return Err(RegistrationError::new(kind));
         }
         if !self.requirement.is_compatible_with(&incoming.requirement) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RequirementCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        if !self
+            .execution_requirement
+            .is_compatible_with(&incoming.execution_requirement)
+        {
             return Err(RegistrationError::new(
                 RegistrationErrorKind::RequirementCollision {
                     name: incoming.name().into(),
@@ -393,6 +412,7 @@ where
     pub(super) children: Vec<Self>,
     pub(super) executor: Option<Arc<R::Executor>>,
     pub(super) requirement: CommandRequirement<S>,
+    pub(super) execution_requirement: CommandRequirement<S>,
     pub(super) redirect: Option<CommandRedirect<S, R>>,
 }
 
@@ -433,6 +453,16 @@ where
             return Err(RegistrationError::new(kind));
         }
         if !self.requirement.is_compatible_with(&incoming.requirement) {
+            return Err(RegistrationError::new(
+                RegistrationErrorKind::RequirementCollision {
+                    name: incoming.name().into(),
+                },
+            ));
+        }
+        if !self
+            .execution_requirement
+            .is_compatible_with(&incoming.execution_requirement)
+        {
             return Err(RegistrationError::new(
                 RegistrationErrorKind::RequirementCollision {
                     name: incoming.name().into(),

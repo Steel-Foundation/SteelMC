@@ -88,7 +88,7 @@ where
         };
 
         let mut info = CommandNodeInfo::new(children);
-        if node.is_executable() {
+        if node.can_execute(source) {
             info = info.executable();
         }
         if node.is_restricted() {
@@ -363,6 +363,58 @@ mod tests {
         };
         assert_eq!(name, "nearby");
         assert!(!is_restricted);
+    }
+
+    #[test]
+    fn command_tree_hides_a_denied_executor_without_hiding_its_route() {
+        let mut dispatcher = CommandDispatcher::new();
+        register(
+            &mut dispatcher,
+            literal("route")
+                .executes(|_| Ok(1))
+                .also_requires_execution(CommandRequirement::authorization(
+                    |source: &TestSource| source.authorized,
+                ))
+                .then(literal("child").executes(|_| Ok(2))),
+        );
+
+        let denied = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: false,
+                in_context: true,
+            },
+        );
+        let Ok(denied) = denied else {
+            panic!("denied command tree should project");
+        };
+        let ProtocolCommandNode::Literal {
+            name,
+            is_executable,
+            is_restricted,
+            ..
+        } = &denied.nodes[1]
+        else {
+            panic!("route should remain visible");
+        };
+        assert_eq!(name, "route");
+        assert!(!is_executable);
+        assert!(*is_restricted);
+
+        let allowed = command_tree_packet(
+            &dispatcher,
+            &TestSource {
+                authorized: true,
+                in_context: true,
+            },
+        );
+        let Ok(allowed) = allowed else {
+            panic!("allowed command tree should project");
+        };
+        let ProtocolCommandNode::Literal { is_executable, .. } = &allowed.nodes[1] else {
+            panic!("route should remain visible");
+        };
+        assert!(*is_executable);
     }
 
     #[test]

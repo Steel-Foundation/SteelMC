@@ -429,7 +429,7 @@ fn registration_composes_authorization_with_existing_context_requirements() {
 }
 
 #[test]
-fn derived_subcommand_permissions_are_alternatives_to_the_root() {
+fn derived_subcommand_permissions_only_allow_their_routes() {
     let registration =
         CommandRegistration::new(Identifier::new_static("minecraft", "tick"), |_| {
             literal("tick")
@@ -457,18 +457,36 @@ fn derived_subcommand_permissions_are_alternatives_to_the_root() {
     assert!(
         dispatcher
             .node(query)
-            .is_some_and(|node| node.allows(&rate_only))
+            .is_some_and(|node| !node.allows(&rate_only) && !node.can_execute(&rate_only))
     );
-    assert!(
-        dispatcher
-            .node(rate)
-            .is_some_and(|node| node.allows(&rate_only) && node.is_restricted())
-    );
+    assert!(dispatcher.node(rate).is_some_and(|node| {
+        node.allows(&rate_only) && node.can_execute(&rate_only) && node.is_restricted()
+    }));
     assert!(
         dispatcher
             .node(freeze)
             .is_some_and(|node| !node.allows(&rate_only))
     );
+
+    let query = dispatcher.parse(
+        "tick query",
+        permission_source([permission_entry(
+            "minecraft.command.tick.rate",
+            PermissionState::Allow,
+        )]),
+    );
+    assert!(query.reader().can_read());
+    assert!(!query.context().is_executable());
+
+    let rate_command = dispatcher.parse(
+        "tick rate",
+        permission_source([permission_entry(
+            "minecraft.command.tick.rate",
+            PermissionState::Allow,
+        )]),
+    );
+    assert!(!rate_command.reader().can_read());
+    assert!(rate_command.context().is_executable());
 
     let root = permission_source([permission_entry(
         "minecraft.command.tick",
@@ -533,6 +551,41 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
             .node(verbose)
             .is_some_and(|node| !node.allows(&info_only))
     );
+
+    let verbose_only = permission_source([permission_entry(
+        "steel.command.perms.user.info.verbose",
+        PermissionState::Allow,
+    )]);
+    assert!(
+        dispatcher
+            .node(info)
+            .is_some_and(|node| { node.allows(&verbose_only) && !node.can_execute(&verbose_only) })
+    );
+    assert!(
+        dispatcher
+            .node(verbose)
+            .is_some_and(|node| { node.allows(&verbose_only) && node.can_execute(&verbose_only) })
+    );
+
+    let parent = dispatcher.parse(
+        "perms user target info",
+        permission_source([permission_entry(
+            "steel.command.perms.user.info.verbose",
+            PermissionState::Allow,
+        )]),
+    );
+    assert!(!parent.reader().can_read());
+    assert!(!parent.context().is_executable());
+
+    let child = dispatcher.parse(
+        "perms user target info verbose",
+        permission_source([permission_entry(
+            "steel.command.perms.user.info.verbose",
+            PermissionState::Allow,
+        )]),
+    );
+    assert!(!child.reader().can_read());
+    assert!(child.context().is_executable());
 }
 
 #[test]

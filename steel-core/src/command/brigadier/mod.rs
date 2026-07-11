@@ -26,7 +26,7 @@ pub(crate) use argument::{
     ArgumentType, CommandArgumentParser, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue,
     StringType,
 };
-pub(crate) use builder::CommandNodeBuilder;
+pub(crate) use builder::{CommandNodeBuilder, CommandRequirementRoute};
 #[cfg_attr(
     not(test),
     expect(

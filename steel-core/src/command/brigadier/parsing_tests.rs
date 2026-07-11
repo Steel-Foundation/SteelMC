@@ -94,6 +94,28 @@ fn requirements_hide_unavailable_nodes_from_parsing() {
 }
 
 #[test]
+fn execution_requirements_do_not_hide_descendants() {
+    let mut dispatcher = CommandDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal("route")
+            .executes(|_| Ok(1))
+            .also_requires_execution(CommandRequirement::authorization(|source: &TestSource| {
+                source.allowed
+            }))
+            .then(literal("child").executes(|_| Ok(2))),
+    );
+
+    let parent = dispatcher.parse("route", TestSource { allowed: false });
+    assert!(!parent.reader().can_read());
+    assert!(!parent.context().is_executable());
+
+    let child = dispatcher.parse("route child", TestSource { allowed: false });
+    assert!(!child.reader().can_read());
+    assert!(child.context().is_executable());
+}
+
+#[test]
 fn incomplete_commands_stop_before_the_trailing_separator() {
     let mut dispatcher = CommandDispatcher::new();
     register(
