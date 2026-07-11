@@ -62,9 +62,10 @@ pub(crate) fn build() -> TokenStream {
                     xp,
                 } = trade;
 
-                let additional = match additional {
-                    Some((item, count)) => quote! { Some((#item, #count)) },
-                    None => quote! { None },
+                let additional = if let Some((item, count)) = additional {
+                    quote! { Some((#item, #count)) }
+                } else {
+                    quote! { None }
                 };
                 trade_tokens.extend(quote! {
                     VillagerTrade {

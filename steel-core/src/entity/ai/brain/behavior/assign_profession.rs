@@ -3,8 +3,8 @@
 use steel_registry::{REGISTRY, RegistryExt, vanilla_villager_professions};
 
 use super::{Behavior, BehaviorState};
-use crate::entity::ai::brain::memory::{Memories, MemoryModuleType, MemoryStatus};
 use crate::entity::PathfinderMob;
+use crate::entity::ai::brain::memory::{Memories, MemoryModuleType, MemoryStatus};
 
 const ENTRY_CONDITION: &[(MemoryModuleType, MemoryStatus)] =
     &[(MemoryModuleType::JobSite, MemoryStatus::ValuePresent)];

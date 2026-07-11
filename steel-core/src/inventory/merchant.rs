@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use steel_registry::item_stack::ItemStack;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::{Mob, SharedEntity};
 use crate::inventory::container::Container;
@@ -23,6 +24,11 @@ pub struct MerchantContainer {
     selection_hint: i32,
     active_offer: Option<usize>,
     future_xp: i32,
+}
+
+// SAFETY: `TYPE_KEY` is unique to `MerchantContainer`.
+unsafe impl DowncastType for MerchantContainer {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:container/merchant");
 }
 
 impl MerchantContainer {

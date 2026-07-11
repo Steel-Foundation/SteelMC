@@ -34,7 +34,7 @@ pub mod slots {
     pub const RESULT_SLOT: usize = 2;
     /// Start of main inventory
     pub const INV_SLOT_START: usize = 3;
-    /// End fo main inventory
+    /// End of main inventory
     pub const INV_SLOT_END: usize = 30;
     /// Start of hotbar
     pub const USE_ROW_SLOT_START: usize = 30;
@@ -67,11 +67,11 @@ impl MerchantMenu {
         let mut menu_slots = Vec::with_capacity(slots::TOTAL_SLOTS);
 
         menu_slots.push(SlotType::Normal(NormalSlot::new(
-            ContainerRef::MerchantContainer(Arc::clone(&trade_container)),
+            ContainerRef::from(Arc::clone(&trade_container)),
             slots::PAYMENT1_SLOT,
         )));
         menu_slots.push(SlotType::Normal(NormalSlot::new(
-            ContainerRef::MerchantContainer(Arc::clone(&trade_container)),
+            ContainerRef::from(Arc::clone(&trade_container)),
             slots::PAYMENT2_SLOT,
         )));
 
@@ -121,7 +121,13 @@ impl MerchantMenu {
                 continue;
             }
             let mut moving = old;
-            if !self.behavior.move_item_stack_to(&mut guard, &mut moving, slots::INV_SLOT_START, slots::USE_ROW_SLOT_END, true) {
+            if !self.behavior.move_item_stack_to(
+                &mut guard,
+                &mut moving,
+                slots::INV_SLOT_START,
+                slots::USE_ROW_SLOT_END,
+                true,
+            ) {
                 return;
             }
             self.behavior.slots[slot].set_item(&mut guard, moving);
@@ -162,7 +168,9 @@ impl MerchantMenu {
                 continue;
             }
             let new_payment = inv_item.copy_with_count(current.count() + move_count);
-            self.behavior.slots[i].get_item_mut(guard).shrink(move_count);
+            self.behavior.slots[i]
+                .get_item_mut(guard)
+                .shrink(move_count);
             self.behavior.slots[i].set_changed(guard);
             self.behavior.slots[payment_slot].set_item(guard, new_payment);
             if current.count() + move_count >= max_stack {

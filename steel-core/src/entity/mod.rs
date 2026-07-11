@@ -6935,9 +6935,30 @@ pub trait LivingEntity: Entity {
         self.sleeping_pos().is_some()
     }
 
-    /// Stops the entity from sleeping.
+    /// Puts the entity to sleep in the bed at `bed`: sets the sleeping pose,
+    /// snaps its body onto the bed, halts movement, and records the sleeping
+    /// position. Based on vanilla `LivingEntity::startSleeping`.
+    fn start_sleeping(&self, bed: BlockPos) {
+        self.set_pose(EntityPose::Sleeping);
+        if let Err(error) = self.try_set_position(DVec3::new(
+            f64::from(bed.x()) + 0.5,
+            f64::from(bed.y()) + 0.6875,
+            f64::from(bed.z()) + 0.5,
+        )) {
+            log::warn!("could not snap sleeping entity onto its bed: {error:?}");
+        }
+        self.set_velocity(DVec3::ZERO);
+        self.set_sleeping_pos(bed);
+        // TODO: sync SLEEPING_POS_ID for bed orientation + set the bed's OCCUPIED
+        // block state.
+    }
+
+    /// Wakes the entity: clears the sleeping position and restores the standing pose.
     fn stop_sleeping(&self) {
-        self.clear_sleeping_pos();
+        if self.is_sleeping() {
+            self.clear_sleeping_pos();
+            self.set_pose(EntityPose::Standing);
+        }
     }
 
     /// Checks if the entity is sprinting.

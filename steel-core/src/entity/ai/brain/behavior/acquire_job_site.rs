@@ -58,7 +58,7 @@ impl Behavior for AcquireJobSite {
             return;
         };
         if poi.reserve_ticket(job_pos) {
-            memories.set_job_stite(job_pos);
+            memories.set_job_site(job_pos);
         }
     }
 }

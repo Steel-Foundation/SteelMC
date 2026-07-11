@@ -18,18 +18,20 @@ use steel_registry::vanilla_entity_data::VillagerEntityData;
 use steel_registry::{
     REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_attributes, vanilla_particle_types,
 };
+use steel_utils::BlockPos;
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
 use steel_utils::translations;
+use steel_utils::types::InteractionHand;
+use steel_utils::{DowncastType, DowncastTypeKey};
 use text_components::TextComponent;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::{
     AcquireBed, AcquireJobSite, Activity, AssignProfession, Brain, LookAtTargetSink,
-    MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, Schedule,
-    SetEntityLookTarget, SetWalkTargetFromHome, SetWalkTargetFromJobSite, VillageBoundRandomStroll,
-    WorkAtPoi,
+    MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, Schedule, SetEntityLookTarget,
+    SetWalkTargetFromHome, SetWalkTargetFromJobSite, SleepInBed, StrollAroundPoi,
+    VillageBoundRandomStroll, WorkAtPoi,
 };
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::OpenDoorGoal;
@@ -70,6 +72,11 @@ pub struct VillagerEntity {
     villager_xp: SyncMutex<i32>,
     trading_player: SyncMutex<Option<i32>>,
     trade_state: SyncMutex<TradeState>,
+}
+
+// SAFETY: `TYPE_KEY` is unique to `VillagerEntity`.
+unsafe impl DowncastType for VillagerEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/villager");
 }
 
 #[derive(Default)]
@@ -171,9 +178,9 @@ impl VillagerEntity {
 
         self.set_trading_player(Some(player.id()));
 
-        let title = self
-            .custom_name()
-            .unwrap_or_else(|| TextComponent::translated(translations::ENTITY_MINECRAFT_VILLAGER.msg()));
+        let title = self.custom_name().unwrap_or_else(|| {
+            TextComponent::translated(translations::ENTITY_MINECRAFT_VILLAGER.msg())
+        });
         let provider =
             MerchantMenuProvider::new(player.inventory.clone(), self.offers(), merchant, title);
         let container_id = player.open_menu(&provider);
@@ -247,16 +254,19 @@ impl VillagerEntity {
             DEFAULT_LOOK_X_MAX_ROT_ANGLE,
         );
     }
-    
+
     fn should_restock(&self) -> bool {
-        let Some(world) = self.level() else { return false };
+        let Some(world) = self.level() else {
+            return false;
+        };
         let game_time = world.game_time();
 
         let (allowed, reset_uses_on_new_day) = {
             let mut state = self.trade_state.lock();
             let current_day = game_time / 24000;
             let mut is_new_day = game_time > state.last_restock_game_time + 12000;
-            is_new_day |= state.last_restock_check_day > 0 && current_day > state.last_restock_check_day;
+            is_new_day |=
+                state.last_restock_check_day > 0 && current_day > state.last_restock_check_day;
             state.last_restock_check_day = current_day;
 
             let mut reset = false;
@@ -473,13 +483,34 @@ impl Entity for VillagerEntity {
         villager_data.insert("level", data.level);
         nbt.insert("VillagerData", NbtTag::Compound(villager_data));
         nbt.insert("Xp", self.villager_xp());
+
+        // The brain's claimed-POI memories aren't otherwise persisted; save them
+        // so the villager keeps its bed / job site across a reload. The POI
+        // tickets persist separately, so the two stay consistent. (Scoped before
+        // the trade-state/offers locks to keep a consistent lock order.)
+        {
+            let brain = self.brain.lock();
+            if let Some(home) = brain.memories().home() {
+                nbt.insert(
+                    "HomePos",
+                    NbtTag::IntArray(vec![home.x(), home.y(), home.z()]),
+                );
+            }
+            if let Some(job_site) = brain.memories().job_site() {
+                nbt.insert(
+                    "JobSitePos",
+                    NbtTag::IntArray(vec![job_site.x(), job_site.y(), job_site.z()]),
+                );
+            }
+        }
+
         let state = self.trade_state.lock();
         nbt.insert("LastRestock", state.last_restock_game_time);
         nbt.insert("RestocksToday", state.restocks_today);
         let offers = self.offers.lock();
         if !offers.is_empty() {
-            let recepies: Vec<NbtCompound> = offers.iter().map(MerchantOffer::to_nbt).collect();
-            nbt.insert("Offers", NbtList::Compound(recepies));
+            let recipes: Vec<NbtCompound> = offers.iter().map(MerchantOffer::to_nbt).collect();
+            nbt.insert("Offers", NbtList::Compound(recipes));
         }
     }
 
@@ -530,6 +561,23 @@ impl Entity for VillagerEntity {
                 self.update_trades();
             }
             self.set_villager_data(data);
+        }
+
+        if let Some(arr) = nbt.int_array("HomePos")
+            && arr.len() >= 3
+        {
+            self.brain
+                .lock()
+                .memories_mut()
+                .set_home(BlockPos::new(arr[0], arr[1], arr[2]));
+        }
+        if let Some(arr) = nbt.int_array("JobSitePos")
+            && arr.len() >= 3
+        {
+            self.brain
+                .lock()
+                .memories_mut()
+                .set_job_site(BlockPos::new(arr[0], arr[1], arr[2]));
         }
     }
 }
@@ -598,13 +646,36 @@ impl VillagerEntity {
         brain.add_activity(
             Activity::Rest,
             0,
-            vec![Box::new(SetWalkTargetFromHome::new(0.6, 1))],
+            vec![
+                Box::new(SetWalkTargetFromHome::new(0.6, 1)),
+                Box::new(SleepInBed::new()),
+            ],
         );
-        brain.add_activity(Activity::Work, 0, vec![
-            Box::new(SetWalkTargetFromJobSite::new(0.5, 1)),
-            Box::new(WorkAtPoi::new())
-        ]);
-        brain.add_activity(Activity::Meet, 0, Vec::new());
+        brain.add_activity(
+            Activity::Work,
+            0,
+            vec![
+                Box::new(SetWalkTargetFromJobSite::new(0.5, 1)),
+                Box::new(StrollAroundPoi::new(0.4, 4)),
+                Box::new(WorkAtPoi::new()),
+            ],
+        );
+        // Vanilla strolls around the MEETING_POINT here; we don't track that POI
+        // yet, so anchor a village-bound stroll to the bed/job as a stand-in.
+        brain.add_activity(
+            Activity::Meet,
+            0,
+            vec![Box::new(VillageBoundRandomStroll::new(0.4))],
+        );
+        // TODO: remaining villager AI/systems (not yet implemented):
+        //  - Panic activity: flee NEAREST_HOSTILE / HURT_BY_ENTITY (needs a
+        //    hostile-detection sensor + those memories + a SetWalkTargetAwayFrom
+        //    behavior + a Core panic trigger + VillagerCalmDown).
+        //  - Play activity: baby-villager play/stroll.
+        //  - Real Meet + breeding: a MEETING_POINT POI (gather at the bell) and
+        //    VillagerMakeLove at the meeting point (replaces the stand-in above).
+        //  - Gossip / reputation: trade discounts, hero-of-the-village, etc.
+        //  - Raid activities (PreRaid/Raid/Fight/Celebrate): blocked on a raid system.
         brain.set_schedule(VILLAGER_DEFAULT_SCHEDULE);
         brain.use_default_activity();
         brain

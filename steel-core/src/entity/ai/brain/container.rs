@@ -183,7 +183,13 @@ impl Brain {
 
         for entry in &mut *behaviors {
             if entry.behavior.status() == BehaviorStatus::Running {
-                entry.behavior.tick_or_stop(mob, memories, time);
+                if active_activities.contains(&entry.activity) {
+                    entry.behavior.tick_or_stop(mob, memories, time);
+                } else {
+                    // The behavior's activity is no longer active (e.g. Rest ended
+                    // at dawn) — stop it so its `stop` hook runs (e.g. wake up).
+                    entry.behavior.do_stop(mob, memories, time);
+                }
             }
         }
     }

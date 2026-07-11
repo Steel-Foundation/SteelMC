@@ -5,7 +5,7 @@ use steel_registry::packets::play::C_LEVEL_PARTICLES;
 ///
 /// Based on vanilla `ClientboundLevelParticlesPacket`. Only simple particle
 /// types (no extra options payload) are supported — the trailing particle data
-/// is just the particle's registry id as a VarInt.
+/// is just the particle's registry id as a `VarInt`.
 #[derive(WriteTo, ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_LEVEL_PARTICLES)]
 pub struct CLevelParticles {

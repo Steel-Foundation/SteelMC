@@ -9,7 +9,8 @@ use std::{
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged, SSelectTrade, SSetCarriedItem, SSetCreativeModeSlot,
+    CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose,
+    SContainerSlotStateChanged, SSelectTrade, SSetCarriedItem, SSetCreativeModeSlot,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;

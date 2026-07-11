@@ -221,7 +221,7 @@ impl Memories {
         }
     }
 
-    pub(crate) fn set_job_stite(&mut self, pos: BlockPos) {
+    pub(crate) fn set_job_site(&mut self, pos: BlockPos) {
         self.set_internal(
             MemoryModuleType::JobSite,
             Some(ExpirableValue::of(MemoryValue::JobSite(pos))),

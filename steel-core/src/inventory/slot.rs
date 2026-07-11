@@ -767,7 +767,7 @@ impl MerchantResultSlot {
     /// Returns a container reference to the merchant container.
     #[must_use]
     pub fn container_ref(&self) -> ContainerRef {
-        ContainerRef::MerchantContainer(Arc::clone(&self.container))
+        ContainerRef::from(Arc::clone(&self.container))
     }
 
     fn container_id(&self) -> ContainerId {
@@ -803,7 +803,7 @@ impl Slot for MerchantResultSlot {
 
     fn may_pickup(&self, guard: &ContainerLockGuard, _player: &Player) -> bool {
         guard
-            .get_merchant_container(self.container_id())
+            .get_typed::<MerchantContainer>(self.container_id())
             .is_some_and(MerchantContainer::has_active_offer)
     }
 
@@ -839,7 +839,7 @@ impl Slot for MerchantResultSlot {
         _stack: &ItemStack,
         _player: &Player,
     ) -> Option<ItemStack> {
-        if let Some(merchant) = guard.get_merchant_container_mut(self.container_id()) {
+        if let Some(merchant) = guard.get_typed_mut::<MerchantContainer>(self.container_id()) {
             merchant.take_trade();
         }
         None

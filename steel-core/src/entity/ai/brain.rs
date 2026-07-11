@@ -10,9 +10,8 @@ mod sensor;
 pub(crate) use activity::Activity;
 pub(crate) use behavior::{
     AcquireBed, AcquireJobSite, AssignProfession, LookAtTargetSink, MoveToTargetSink,
-    VillageBoundRandomStroll,
-    SetEntityLookTarget, SetWalkTargetFromHome,
-    WorkAtPoi, SetWalkTargetFromJobSite
+    SetEntityLookTarget, SetWalkTargetFromHome, SetWalkTargetFromJobSite, SleepInBed,
+    StrollAroundPoi, VillageBoundRandomStroll, WorkAtPoi,
 };
 pub(crate) use container::Brain;
 pub(crate) use memory::MemoryModuleType;

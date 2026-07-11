@@ -8,10 +8,12 @@ mod acquire_job_site;
 mod assign_profession;
 mod look_at_target_sink;
 mod move_to_target_sink;
-mod village_bound_random_stroll;
 mod set_entity_look_target;
 mod set_walk_target_from_home;
 mod set_walk_target_from_job_site;
+mod sleep_in_bed;
+mod stroll_around_poi;
+mod village_bound_random_stroll;
 mod work_at_poi;
 
 pub(crate) use acquire_bed::AcquireBed;
@@ -19,11 +21,13 @@ pub(crate) use acquire_job_site::AcquireJobSite;
 pub(crate) use assign_profession::AssignProfession;
 pub(crate) use look_at_target_sink::LookAtTargetSink;
 pub(crate) use move_to_target_sink::MoveToTargetSink;
-pub(crate) use village_bound_random_stroll::VillageBoundRandomStroll;
 pub(crate) use set_entity_look_target::SetEntityLookTarget;
 pub(crate) use set_walk_target_from_home::SetWalkTargetFromHome;
-pub(crate) use work_at_poi::WorkAtPoi;
 pub(crate) use set_walk_target_from_job_site::SetWalkTargetFromJobSite;
+pub(crate) use sleep_in_bed::SleepInBed;
+pub(crate) use stroll_around_poi::StrollAroundPoi;
+pub(crate) use village_bound_random_stroll::VillageBoundRandomStroll;
+pub(crate) use work_at_poi::WorkAtPoi;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BehaviorStatus {

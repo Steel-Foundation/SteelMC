@@ -16,7 +16,10 @@ pub(crate) struct WorkAtPoi {
 impl WorkAtPoi {
     #[must_use]
     pub(crate) const fn new() -> Self {
-        Self { state: BehaviorState::new(ENTRY_CONDITION), last_check: 0 }
+        Self {
+            state: BehaviorState::new(ENTRY_CONDITION),
+            last_check: 0,
+        }
     }
 }
 
@@ -32,15 +35,18 @@ impl Behavior for WorkAtPoi {
         &mut self,
         mob: &dyn PathfinderMob,
         memories: &Memories,
-    ) -> bool
-    {
-        let Some(world) = mob.level() else { return false };
+    ) -> bool {
+        let Some(world) = mob.level() else {
+            return false;
+        };
         let now = world.game_time();
         if now - self.last_check < CHECK_COOLDOWN {
             return false;
         }
         self.last_check = now;
-        let Some(job) = memories.job_site() else { return false };
+        let Some(job) = memories.job_site() else {
+            return false;
+        };
         let pos = mob.position();
         let dx = (f64::from(job.x()) + 0.5) - pos.x;
         let dy = (f64::from(job.y()) + 0.5) - pos.y;
