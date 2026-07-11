@@ -976,20 +976,11 @@ where
     source.allows_advanced_entity_selectors()
 }
 
-fn selector_suggestions(
-    players_only: bool,
-    single: bool,
-    allow_selectors: bool,
-) -> Vec<&'static str> {
+fn selector_suggestions(allow_selectors: bool) -> Vec<&'static str> {
     if !allow_selectors {
         return Vec::new();
     }
-    match (players_only, single) {
-        (true, true) => vec!["@p", "@r", "@s"],
-        (true, false) => vec!["@a", "@p", "@r", "@s"],
-        (false, true) => vec!["@p", "@r", "@s", "@n"],
-        (false, false) => vec!["@a", "@e", "@p", "@r", "@s", "@n"],
-    }
+    vec!["@a", "@e", "@p", "@r", "@s", "@n"]
 }
 
 struct SelectorSuggestionData {
@@ -1064,11 +1055,11 @@ fn selector_argument_suggestions(
 
 fn selector_root_suggestions(
     prefix: &str,
-    players_only: bool,
-    single: bool,
+    _players_only: bool,
+    _single: bool,
     data: &SelectorSuggestionData,
 ) -> Vec<String> {
-    let mut suggestions = selector_suggestions(players_only, single, data.allow_selectors)
+    let mut suggestions = selector_suggestions(data.allow_selectors)
         .into_iter()
         .filter(|selector| selector.starts_with(prefix))
         .map(str::to_owned)
@@ -2492,7 +2483,7 @@ mod tests {
 
     use crate::{
         command::{
-            brigadier::{CommandSyntaxError, StringReader, SuggestionsBuilder},
+            brigadier::{CommandSyntaxError, StringReader, Suggestion, SuggestionsBuilder},
             execution::{CommandArgumentSource, CommandResultCallback, ExecutionCommandSource},
         },
         entity::{Entity, EntityBase},
@@ -2744,6 +2735,23 @@ mod tests {
                 .iter()
                 .any(|suggestion| suggestion.text() == "Steve")
         );
+
+        let Ok(mut single_player) = SuggestionsBuilder::new("@", 0) else {
+            panic!("suggestion builder should be valid");
+        };
+        suggest_entity_selector(&mut single_player, &source, true, true);
+        let Ok(single_player) = single_player.build() else {
+            panic!("single-player selector suggestions should build");
+        };
+        let roots = single_player
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>();
+        assert_eq!(roots.len(), 6);
+        for selector in ["@a", "@e", "@n", "@p", "@r", "@s"] {
+            assert!(roots.contains(&selector));
+        }
 
         let Ok(mut options) = SuggestionsBuilder::new("@e[", 0) else {
             panic!("suggestion builder should be valid");

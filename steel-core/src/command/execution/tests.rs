@@ -651,6 +651,37 @@ fn suspended_normal_executor_reports_its_delayed_result() {
 }
 
 #[test]
+fn suspended_normal_executor_is_retained_at_the_sequence_limit() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |_| {
+            Ok(TestResultSuspension {
+                pending_polls: 0,
+                result: Some(Ok(42)),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(1, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", Arc::clone(&observed)),
+        CommandResultCallback::empty(),
+    );
+
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+    assert!(observed.results.lock().is_empty());
+
+    assert_eq!(execution.poll_suspension(), ExecutionStop::CommandLimit);
+    assert_eq!(*observed.results.lock(), [(true, 42)]);
+    assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
 fn suspended_normal_executor_reports_delayed_errors_like_a_standard_executor() {
     let observed = Arc::new(Observed::default());
     let cancellations = Arc::new(SyncMutex::new(0));

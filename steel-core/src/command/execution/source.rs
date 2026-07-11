@@ -10,7 +10,7 @@ use text_components::{Modifier, TextComponent, format::Color};
 
 use crate::{
     command::{
-        brigadier::{CommandSyntaxError, CommandSyntaxErrorKind},
+        brigadier::CommandSyntaxError,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
     },
@@ -173,6 +173,29 @@ pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
     }
 }
 
+/// Authorization state captured when command execution starts.
+///
+/// Vanilla keeps the initiating permission state when `/execute` changes the
+/// execution entity, position, or world. Keeping this separate from the
+/// mutable execution fields prevents source transforms from changing which
+/// contextual Steel permissions apply.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CommandAuthorizationContext {
+    permission_context: PermissionContext,
+}
+
+impl CommandAuthorizationContext {
+    fn for_world_key(world: steel_utils::Identifier) -> Self {
+        Self {
+            permission_context: PermissionContext::for_world(world),
+        }
+    }
+
+    const fn permission_context(&self) -> &PermissionContext {
+        &self.permission_context
+    }
+}
+
 /// Immutable Minecraft command execution source.
 #[derive(Clone)]
 pub(crate) struct CommandSource {
@@ -184,6 +207,7 @@ pub(crate) struct CommandSource {
     position: DVec3,
     rotation: (f32, f32),
     anchor: EntityAnchor,
+    authorization: CommandAuthorizationContext,
     callback: CommandResultCallback,
     silent: bool,
 }
@@ -209,6 +233,7 @@ impl CommandSource {
         let rotation = entity
             .as_ref()
             .map_or((0.0, 0.0), |entity| entity.rotation());
+        let authorization = CommandAuthorizationContext::for_world_key(world.key.clone());
 
         Self {
             sender,
@@ -219,6 +244,7 @@ impl CommandSource {
             position,
             rotation,
             anchor: EntityAnchor::default(),
+            authorization,
             callback: CommandResultCallback::empty(),
             silent: false,
         }
@@ -386,11 +412,10 @@ impl ExecutionCommandSource for CommandSource {
         if forked || self.silent {
             return;
         }
-        let message = match error.kind() {
-            CommandSyntaxErrorKind::Dynamic(message) => message.as_ref().clone(),
-            _ => TextComponent::from(error.raw_message()),
-        };
-        self.send_failure(message);
+        self.send_failure(error.message_component());
+        if let Some(context) = error.context_component() {
+            self.sender.send_message(&context);
+        }
     }
 }
 
@@ -688,8 +713,7 @@ impl CommandPermissionSource for CommandSource {
         let CommandSender::Player(player) = &self.sender else {
             return Some(PermissionState::Allow);
         };
-        let context = PermissionContext::for_world(self.world.key.clone());
-        player.permission_state_in(permission, &context)
+        player.permission_state_in(permission, self.authorization.permission_context())
     }
 }
 
@@ -724,8 +748,11 @@ fn normalize_rotation((mut yaw, mut pitch): (f32, f32)) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use steel_registry::game_rules::GameRuleValue;
+    use steel_utils::Identifier;
 
-    use super::{game_rule_integer, normalize_rotation};
+    use crate::permission::PermissionContext;
+
+    use super::{CommandAuthorizationContext, game_rule_integer, normalize_rotation};
 
     #[test]
     fn rotation_normalization_matches_command_source_stack() {
@@ -742,6 +769,17 @@ mod tests {
         assert_eq!(
             game_rule_integer(GameRuleValue::Bool(false), GameRuleValue::Int(7), 1),
             7
+        );
+    }
+
+    #[test]
+    fn authorization_context_captures_initial_world_scope() {
+        let world = Identifier::new("lobby", "spawn");
+        let authorization = CommandAuthorizationContext::for_world_key(world.clone());
+
+        assert_eq!(
+            authorization.permission_context(),
+            &PermissionContext::for_world(world)
         );
     }
 }

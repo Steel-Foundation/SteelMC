@@ -83,6 +83,10 @@ where
 {
     fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame);
 
+    fn runs_after_command_limit(&self) -> bool {
+        false
+    }
+
     fn cancel(&mut self) {}
 }
 
@@ -141,6 +145,30 @@ where
 {
     frame: Frame,
     suspension: Box<dyn CommandSuspension<S>>,
+}
+
+struct SuspensionResumeAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    action: Box<dyn EntryAction<S>>,
+}
+
+impl<S> EntryAction<S> for SuspensionResumeAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        self.action.execute(context, frame);
+    }
+
+    fn runs_after_command_limit(&self) -> bool {
+        true
+    }
+
+    fn cancel(&mut self) {
+        self.action.cancel();
+    }
 }
 
 /// Vanilla-style command action queue retained only while explicitly suspended.
@@ -222,7 +250,12 @@ where
 
         self.push_new_commands();
         let stop = loop {
-            if self.command_quota == 0 {
+            if self.command_quota == 0
+                && !self
+                    .command_queue
+                    .front()
+                    .is_some_and(|entry| entry.action.runs_after_command_limit())
+            {
                 log::info!(
                     "Command execution stopped due to limit (executed {} commands)",
                     self.command_limit
@@ -263,7 +296,7 @@ where
                 ExecutionStop::Suspended
             }
             CommandSuspensionPoll::Ready(action) => {
-                self.queue_boxed(active.frame, action);
+                self.queue_next(active.frame, SuspensionResumeAction { action });
                 self.run()
             }
         }
@@ -475,6 +508,10 @@ where
             frame,
             suspension: self.suspension,
         });
+    }
+
+    fn runs_after_command_limit(&self) -> bool {
+        true
     }
 
     fn cancel(&mut self) {

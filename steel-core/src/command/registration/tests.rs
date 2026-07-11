@@ -378,6 +378,7 @@ fn default_access_allows_unset_but_not_explicitly_denied_permissions() {
         Some(PermissionState::Deny),
         "minecraft.command.list"
     )));
+    assert!(!list.is_restricted());
 }
 
 #[test]

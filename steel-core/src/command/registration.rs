@@ -407,7 +407,7 @@ where
                 alternatives.into_iter().map(PermissionExpr::key).collect(),
             ))
         };
-        return CommandRequirement::authorization(move |source: &S| {
+        return CommandRequirement::contextual(move |source: &S| {
             source.permission_state(&root) != Some(PermissionState::Deny)
                 || alternatives.as_ref().is_some_and(|alternatives| {
                     source.permission_state(alternatives) == Some(PermissionState::Allow)

@@ -109,15 +109,19 @@ impl CommandArgumentSource for TestSource {
     }
 
     fn group_permission_rule_suggestions(&self, group: &str) -> Vec<String> {
-        (group == "builder")
-            .then(|| vec!["steel.group_owned".to_owned()])
-            .unwrap_or_default()
+        if group == "builder" {
+            vec!["steel.group_owned".to_owned()]
+        } else {
+            Vec::new()
+        }
     }
 
     fn group_permission_metadata_suggestions(&self, group: &str) -> Vec<String> {
-        (group == "builder")
-            .then(|| vec!["plugin:group_owned".to_owned()])
-            .unwrap_or_default()
+        if group == "builder" {
+            vec!["plugin:group_owned".to_owned()]
+        } else {
+            Vec::new()
+        }
     }
 
     fn permission_group_names(&self) -> Vec<String> {

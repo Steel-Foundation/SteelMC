@@ -1,4 +1,6 @@
 use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringRange, StringReader};
+use steel_utils::translations;
+use text_components::{content::Content, format::Color, interactivity::ClickEvent};
 
 fn assert_error(
     result: Result<impl Sized, CommandSyntaxError>,
@@ -308,6 +310,56 @@ fn command_syntax_error_formats_brigadier_context() {
         error.to_string(),
         "Expected '!' at position 13: ...3456789abc<--[HERE]"
     );
+}
+
+#[test]
+fn command_syntax_error_builds_translated_styled_feedback() {
+    let mut reader = StringReader::new("0123456789abcdef");
+    for _ in 0..13 {
+        assert!(reader.skip());
+    }
+    let error = assert_error(
+        reader.expect('!'),
+        CommandSyntaxErrorKind::ExpectedSymbol('!'),
+        13,
+    );
+
+    assert!(matches!(
+        error.message_component().content,
+        Content::Translate(ref message) if message.key.as_ref() == translations::PARSING_EXPECTED.0
+    ));
+
+    let Some(context) = error.context_component() else {
+        panic!("parser errors should include a context component");
+    };
+    assert_eq!(context.format.color, Some(Color::Gray));
+    assert!(matches!(
+        context.interactions.click,
+        Some(ClickEvent::SuggestCommand { ref command })
+            if command.as_ref() == "/0123456789abcdef"
+    ));
+    assert_eq!(context.children.len(), 4);
+    assert!(matches!(
+        &context.children[0].content,
+        Content::Text { text } if text.as_ref() == "..."
+    ));
+    assert!(matches!(
+        &context.children[1].content,
+        Content::Text { text } if text.as_ref() == "3456789abc"
+    ));
+    assert!(matches!(
+        &context.children[2].content,
+        Content::Text { text } if text.as_ref() == "def"
+    ));
+    assert_eq!(context.children[2].format.color, Some(Color::Red));
+    assert_eq!(context.children[2].format.underlined, Some(true));
+    assert!(matches!(
+        &context.children[3].content,
+        Content::Translate(message)
+            if message.key.as_ref() == translations::COMMAND_CONTEXT_HERE.0
+    ));
+    assert_eq!(context.children[3].format.color, Some(Color::Red));
+    assert_eq!(context.children[3].format.italic, Some(true));
 }
 
 #[test]

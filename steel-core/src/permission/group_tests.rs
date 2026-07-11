@@ -83,7 +83,7 @@ fn rule_expressions_parse_plain_and_contextual_keys() {
     };
     assert_eq!(
         contextual.to_string(),
-        "minecraft.command.gamemode{domain=lobby,world=lobby:spawn,plugin:region=spawn}"
+        "minecraft.command.gamemode{world=lobby:spawn,plugin:region=spawn}"
     );
 }
 

@@ -97,14 +97,8 @@ fn start_operation(
     })
 }
 
-#[derive(Clone)]
-struct OperatorTarget {
-    uuid: uuid::Uuid,
-    name: String,
-}
-
 struct OperatorCommandResult {
-    changed: Vec<OperatorTarget>,
+    changed_names: Vec<String>,
 }
 
 async fn run_operation(
@@ -113,19 +107,16 @@ async fn run_operation(
     action: OperatorAction,
 ) -> Result<OperatorCommandResult, CommandSyntaxError> {
     let targets = argument.resolve(source).await?;
-    let mut changed = Vec::new();
+    let mut changed_names = Vec::new();
     for target in targets {
         if update_operator_group(source.server(), target.uuid, action).await? {
-            changed.push(OperatorTarget {
-                uuid: target.uuid,
-                name: target.name,
-            });
+            changed_names.push(target.name);
         }
     }
-    if changed.is_empty() {
+    if changed_names.is_empty() {
         return Err(CommandSyntaxError::dynamic(action.failed()));
     }
-    Ok(OperatorCommandResult { changed })
+    Ok(OperatorCommandResult { changed_names })
 }
 
 async fn update_operator_group(
@@ -178,14 +169,11 @@ impl CommandResultSuspension for OperatorCommandSuspension {
             Ok(result) => {
                 self.task = None;
                 CommandResultSuspensionPoll::Ready(result.map(|result| {
-                    for target in &result.changed {
-                        self.source
-                            .server()
-                            .refresh_player_permission_state(target.uuid);
-                        self.source
-                            .send_success(&self.action.success(target.name.clone()));
+                    let changed = result.changed_names.len().min(i32::MAX as usize) as i32;
+                    for name in result.changed_names {
+                        self.source.send_success(&self.action.success(name));
                     }
-                    result.changed.len().min(i32::MAX as usize) as i32
+                    changed
                 }))
             }
             Err(oneshot::error::TryRecvError::Empty) => CommandResultSuspensionPoll::Pending,

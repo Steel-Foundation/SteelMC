@@ -1,10 +1,12 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use steel_utils::locks::SyncMutex;
+use uuid::Uuid;
 
 use crate::{command::sender::CommandSender, player::Player};
 
 const DEFAULT_COMMAND_REQUEST_CAPACITY: usize = 1024;
+const DEFAULT_SUGGESTION_REQUEST_CAPACITY: usize = 1024;
 
 /// Maximum command requests handled before one world tick.
 pub(crate) const COMMAND_REQUESTS_PER_TICK: usize = 128;
@@ -22,35 +24,129 @@ pub(crate) enum CommandRequest {
     },
 }
 
-/// Returned when the pending command request queue has reached its fixed capacity.
+/// Returned when the relevant pending command request queue has reached its fixed capacity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CommandQueueFull;
 
-/// Bounded cross-task FIFO drained by the main game tick.
+enum PendingRequest<E, S> {
+    Execute(E),
+    Suggestions(S),
+}
+
+/// Independently bounded execution and suggestion queues.
+///
+/// Suggestions are coalesced by sender and the two queues are drained fairly. This keeps a client
+/// producing suggestion traffic from consuming execution capacity or the entire tick budget.
+struct PendingRequestQueues<K, E, S> {
+    executions: VecDeque<E>,
+    suggestions: VecDeque<(K, S)>,
+    execution_capacity: usize,
+    suggestion_capacity: usize,
+    prefer_execution: bool,
+}
+
+impl<K: Eq, E, S> PendingRequestQueues<K, E, S> {
+    const fn new(execution_capacity: usize, suggestion_capacity: usize) -> Self {
+        Self {
+            executions: VecDeque::new(),
+            suggestions: VecDeque::new(),
+            execution_capacity,
+            suggestion_capacity,
+            prefer_execution: true,
+        }
+    }
+
+    fn submit_execution(&mut self, request: E) -> Result<(), CommandQueueFull> {
+        if self.executions.len() >= self.execution_capacity {
+            return Err(CommandQueueFull);
+        }
+        self.executions.push_back(request);
+        Ok(())
+    }
+
+    fn submit_suggestions(&mut self, key: K, request: S) -> Result<(), CommandQueueFull> {
+        if let Some((_, pending)) = self
+            .suggestions
+            .iter_mut()
+            .find(|(pending_key, _)| pending_key == &key)
+        {
+            *pending = request;
+            return Ok(());
+        }
+        if self.suggestions.len() >= self.suggestion_capacity {
+            return Err(CommandQueueFull);
+        }
+        self.suggestions.push_back((key, request));
+        Ok(())
+    }
+
+    fn pop_front(&mut self) -> Option<PendingRequest<E, S>> {
+        if self.prefer_execution {
+            if let Some(request) = self.executions.pop_front() {
+                self.prefer_execution = false;
+                return Some(PendingRequest::Execute(request));
+            }
+            let (_, request) = self.suggestions.pop_front()?;
+            self.prefer_execution = true;
+            return Some(PendingRequest::Suggestions(request));
+        }
+
+        if let Some((_, request)) = self.suggestions.pop_front() {
+            self.prefer_execution = true;
+            return Some(PendingRequest::Suggestions(request));
+        }
+        let request = self.executions.pop_front()?;
+        self.prefer_execution = false;
+        Some(PendingRequest::Execute(request))
+    }
+
+    fn clear(&mut self) {
+        self.executions.clear();
+        self.suggestions.clear();
+        self.prefer_execution = true;
+    }
+}
+
+/// Bounded cross-task requests drained by the main game tick.
 pub(crate) struct CommandRequestQueue {
-    queued: SyncMutex<VecDeque<CommandRequest>>,
-    capacity: usize,
+    queued: SyncMutex<PendingRequestQueues<Uuid, CommandRequest, CommandRequest>>,
 }
 
 impl CommandRequestQueue {
     pub(crate) const fn new() -> Self {
         Self {
-            queued: SyncMutex::new(VecDeque::new()),
-            capacity: DEFAULT_COMMAND_REQUEST_CAPACITY,
+            queued: SyncMutex::new(PendingRequestQueues::new(
+                DEFAULT_COMMAND_REQUEST_CAPACITY,
+                DEFAULT_SUGGESTION_REQUEST_CAPACITY,
+            )),
         }
     }
 
     pub(crate) fn submit(&self, request: CommandRequest) -> Result<(), CommandQueueFull> {
         let mut queued = self.queued.lock();
-        if queued.len() >= self.capacity {
-            return Err(CommandQueueFull);
+        match request {
+            request @ CommandRequest::Execute { .. } => queued.submit_execution(request),
+            CommandRequest::Suggestions {
+                player,
+                transaction_id,
+                input,
+            } => queued.submit_suggestions(
+                player.gameprofile.id,
+                CommandRequest::Suggestions {
+                    player,
+                    transaction_id,
+                    input,
+                },
+            ),
         }
-        queued.push_back(request);
-        Ok(())
     }
 
     pub(crate) fn pop_front(&self) -> Option<CommandRequest> {
-        self.queued.lock().pop_front()
+        match self.queued.lock().pop_front()? {
+            PendingRequest::Execute(request) | PendingRequest::Suggestions(request) => {
+                Some(request)
+            }
+        }
     }
 
     pub(crate) fn clear(&self) {
@@ -66,67 +162,117 @@ impl Default for CommandRequestQueue {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use super::{CommandQueueFull, PendingRequest, PendingRequestQueues};
 
-    use steel_utils::locks::SyncMutex;
-
-    use super::{CommandQueueFull, CommandRequest, CommandRequestQueue};
-    use crate::command::sender::CommandSender;
-
-    fn queue_with_capacity(capacity: usize) -> CommandRequestQueue {
-        CommandRequestQueue {
-            queued: SyncMutex::new(VecDeque::new()),
-            capacity,
-        }
-    }
-
-    fn submit(queue: &CommandRequestQueue, command: &str) -> Result<(), CommandQueueFull> {
-        queue.submit(CommandRequest::Execute {
-            sender: CommandSender::Console,
-            command: command.to_owned(),
-        })
-    }
-
-    fn pop_command(queue: &CommandRequestQueue) -> Option<String> {
-        let CommandRequest::Execute { command, .. } = queue.pop_front()? else {
-            return None;
-        };
-        Some(command)
+    fn queue_with_capacity(
+        execution_capacity: usize,
+        suggestion_capacity: usize,
+    ) -> PendingRequestQueues<u8, &'static str, &'static str> {
+        PendingRequestQueues::new(execution_capacity, suggestion_capacity)
     }
 
     #[test]
-    fn requests_are_dequeued_in_submission_order() {
-        let queue = queue_with_capacity(3);
+    fn executions_are_dequeued_in_submission_order() {
+        let mut queue = queue_with_capacity(3, 3);
 
-        assert!(submit(&queue, "first").is_ok());
-        assert!(submit(&queue, "second").is_ok());
+        assert!(queue.submit_execution("first").is_ok());
+        assert!(queue.submit_execution("second").is_ok());
 
-        assert_eq!(pop_command(&queue).as_deref(), Some("first"));
-        assert_eq!(pop_command(&queue).as_deref(), Some("second"));
-        assert_eq!(pop_command(&queue), None);
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("first"))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("second"))
+        ));
+        assert!(queue.pop_front().is_none());
     }
 
     #[test]
-    fn full_queue_rejects_without_dropping_pending_requests() {
-        let queue = queue_with_capacity(2);
+    fn full_execution_queue_rejects_without_dropping_pending_requests() {
+        let mut queue = queue_with_capacity(2, 2);
 
-        assert!(submit(&queue, "first").is_ok());
-        assert!(submit(&queue, "second").is_ok());
-        assert_eq!(submit(&queue, "third"), Err(CommandQueueFull));
+        assert!(queue.submit_execution("first").is_ok());
+        assert!(queue.submit_execution("second").is_ok());
+        assert_eq!(queue.submit_execution("third"), Err(CommandQueueFull));
 
-        assert_eq!(pop_command(&queue).as_deref(), Some("first"));
-        assert_eq!(pop_command(&queue).as_deref(), Some("second"));
-        assert_eq!(pop_command(&queue), None);
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("first"))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("second"))
+        ));
+        assert!(queue.pop_front().is_none());
     }
 
     #[test]
-    fn clear_discards_pending_requests() {
-        let queue = queue_with_capacity(2);
+    fn suggestion_capacity_cannot_starve_execution_capacity() {
+        let mut queue = queue_with_capacity(2, 2);
 
-        assert!(submit(&queue, "first").is_ok());
-        assert!(submit(&queue, "second").is_ok());
+        assert!(queue.submit_suggestions(1, "first suggestion").is_ok());
+        assert!(queue.submit_suggestions(2, "second suggestion").is_ok());
+        assert_eq!(
+            queue.submit_suggestions(3, "rejected suggestion"),
+            Err(CommandQueueFull)
+        );
+
+        assert!(queue.submit_execution("command").is_ok());
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("command"))
+        ));
+    }
+
+    #[test]
+    fn suggestions_from_one_sender_are_coalesced() {
+        let mut queue = queue_with_capacity(1, 1);
+
+        assert!(queue.submit_suggestions(1, "old").is_ok());
+        assert!(queue.submit_suggestions(1, "latest").is_ok());
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Suggestions("latest"))
+        ));
+        assert!(queue.pop_front().is_none());
+    }
+
+    #[test]
+    fn busy_queues_are_drained_fairly() {
+        let mut queue = queue_with_capacity(2, 2);
+        assert!(queue.submit_execution("first command").is_ok());
+        assert!(queue.submit_execution("second command").is_ok());
+        assert!(queue.submit_suggestions(1, "first suggestion").is_ok());
+        assert!(queue.submit_suggestions(2, "second suggestion").is_ok());
+
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute(_))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Suggestions(_))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute(_))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Suggestions(_))
+        ));
+    }
+
+    #[test]
+    fn clear_discards_all_pending_requests() {
+        let mut queue = queue_with_capacity(2, 2);
+
+        assert!(queue.submit_execution("command").is_ok());
+        assert!(queue.submit_suggestions(1, "suggestion").is_ok());
         queue.clear();
 
-        assert_eq!(pop_command(&queue), None);
+        assert!(queue.pop_front().is_none());
     }
 }

@@ -2,7 +2,8 @@
 
 use std::{error::Error, fmt};
 
-use text_components::TextComponent;
+use steel_utils::translations;
+use text_components::{Modifier, TextComponent, format::Color, interactivity::ClickEvent};
 
 const CONTEXT_AMOUNT: usize = 10;
 
@@ -130,6 +131,78 @@ impl fmt::Display for CommandSyntaxErrorKind {
     }
 }
 
+impl CommandSyntaxErrorKind {
+    fn component(&self) -> TextComponent {
+        match self {
+            Self::UnknownCommand => TextComponent::from(&translations::COMMAND_UNKNOWN_COMMAND),
+            Self::UnknownArgument => TextComponent::from(&translations::COMMAND_UNKNOWN_ARGUMENT),
+            Self::Dynamic(message) => message.as_ref().clone(),
+            Self::ExpectedStartOfQuote => {
+                TextComponent::from(&translations::PARSING_QUOTE_EXPECTED_START)
+            }
+            Self::ExpectedEndOfQuote => {
+                TextComponent::from(&translations::PARSING_QUOTE_EXPECTED_END)
+            }
+            Self::InvalidEscape(character) => translations::PARSING_QUOTE_ESCAPE
+                .message([character.to_string()])
+                .component(),
+            Self::InvalidBool(value) => translations::PARSING_BOOL_INVALID
+                .message([value.to_string()])
+                .component(),
+            Self::InvalidInt(value) => translations::PARSING_INT_INVALID
+                .message([value.to_string()])
+                .component(),
+            Self::ExpectedInt => TextComponent::from(&translations::PARSING_INT_EXPECTED),
+            Self::InvalidLong(value) => translations::PARSING_LONG_INVALID
+                .message([value.to_string()])
+                .component(),
+            Self::ExpectedLong => TextComponent::from(&translations::PARSING_LONG_EXPECTED),
+            Self::InvalidDouble(value) => translations::PARSING_DOUBLE_INVALID
+                .message([value.to_string()])
+                .component(),
+            Self::ExpectedDouble => TextComponent::from(&translations::PARSING_DOUBLE_EXPECTED),
+            Self::InvalidFloat(value) => translations::PARSING_FLOAT_INVALID
+                .message([value.to_string()])
+                .component(),
+            Self::ExpectedFloat => TextComponent::from(&translations::PARSING_FLOAT_EXPECTED),
+            Self::ExpectedBool => TextComponent::from(&translations::PARSING_BOOL_EXPECTED),
+            Self::ExpectedSymbol(symbol) => translations::PARSING_EXPECTED
+                .message([symbol.to_string()])
+                .component(),
+            Self::LiteralIncorrect(expected) => translations::ARGUMENT_LITERAL_INCORRECT
+                .message([expected.to_string()])
+                .component(),
+            Self::IntegerTooLow { found, minimum } => translations::ARGUMENT_INTEGER_LOW
+                .message([minimum.to_string(), found.to_string()])
+                .component(),
+            Self::IntegerTooHigh { found, maximum } => translations::ARGUMENT_INTEGER_BIG
+                .message([maximum.to_string(), found.to_string()])
+                .component(),
+            Self::LongTooLow { found, minimum } => translations::ARGUMENT_LONG_LOW
+                .message([minimum.to_string(), found.to_string()])
+                .component(),
+            Self::LongTooHigh { found, maximum } => translations::ARGUMENT_LONG_BIG
+                .message([maximum.to_string(), found.to_string()])
+                .component(),
+            Self::FloatTooLow { found, minimum } => translations::ARGUMENT_FLOAT_LOW
+                .message([minimum.to_string(), found.to_string()])
+                .component(),
+            Self::FloatTooHigh { found, maximum } => translations::ARGUMENT_FLOAT_BIG
+                .message([maximum.to_string(), found.to_string()])
+                .component(),
+            Self::DoubleTooLow { found, minimum } => translations::ARGUMENT_DOUBLE_LOW
+                .message([minimum.to_string(), found.to_string()])
+                .component(),
+            Self::DoubleTooHigh { found, maximum } => translations::ARGUMENT_DOUBLE_BIG
+                .message([maximum.to_string(), found.to_string()])
+                .component(),
+            Self::ExpectedArgumentSeparator => {
+                TextComponent::from(&translations::COMMAND_EXPECTED_SEPARATOR)
+            }
+        }
+    }
+}
+
 /// A Brigadier-compatible parsing error with input context.
 ///
 /// Dynamic floating-point values use Rust's standard display formatting; parsing and bounds
@@ -193,6 +266,57 @@ impl CommandSyntaxError {
     /// Returns the error message without input context.
     pub(crate) fn raw_message(&self) -> String {
         self.kind.to_string()
+    }
+
+    /// Returns the vanilla translatable component for this error.
+    pub(crate) fn message_component(&self) -> TextComponent {
+        self.kind.component()
+    }
+
+    /// Builds vanilla's styled, clickable parser-context line.
+    pub(crate) fn context_component(&self) -> Option<TextComponent> {
+        let context = self.context.as_ref()?;
+        let input_before_cursor = &context.input[..context.byte_cursor];
+        let mut context_start = context.byte_cursor;
+        let mut context_length = 0;
+
+        for (byte_index, character) in input_before_cursor.char_indices().rev() {
+            let character_length = character.len_utf16();
+            if context_length + character_length > CONTEXT_AMOUNT {
+                break;
+            }
+            context_length += character_length;
+            context_start = byte_index;
+        }
+
+        let suggested_command = if context.input.starts_with('/') {
+            context.input.to_string()
+        } else {
+            format!("/{}", context.input)
+        };
+        let mut component = TextComponent::new()
+            .color(Color::Gray)
+            .click_event(ClickEvent::suggest_command(suggested_command));
+        if context.cursor > CONTEXT_AMOUNT {
+            component = component.add_child(TextComponent::const_plain("..."));
+        }
+        component = component.add_child(TextComponent::plain(
+            context.input[context_start..context.byte_cursor].to_owned(),
+        ));
+        if context.byte_cursor < context.input.len() {
+            component = component.add_child(
+                TextComponent::plain(context.input[context.byte_cursor..].to_owned())
+                    .color(Color::Red)
+                    .underlined(true),
+            );
+        }
+        Some(
+            component.add_child(
+                TextComponent::from(&translations::COMMAND_CONTEXT_HERE)
+                    .color(Color::Red)
+                    .italic(true),
+            ),
+        )
     }
 
     /// Returns the input immediately before the error marker.
