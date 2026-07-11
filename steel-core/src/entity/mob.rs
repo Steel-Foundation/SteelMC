@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
+use crate::entity::Villager;
 use crate::entity::ai::control::{
     BodyRotationInput, MobControls, MoveControlOperation, rotate_if_necessary, rotate_towards,
 };
@@ -49,7 +50,6 @@ use crate::physics::WorldCollisionProvider;
 use crate::player::Player;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{LevelReader, World};
-use crate::entity::Villager;
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;

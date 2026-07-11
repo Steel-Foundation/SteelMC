@@ -1,12 +1,16 @@
 //! Vilalger offers and profession trade tables.
 
 use std::str::FromStr;
+use std::sync::Arc;
 
+use simdnbt::borrow::NbtCompound as NbtCompoundView;
+use simdnbt::owned::NbtCompound;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_villager_trades::VILLAGER_TRADES;
 use steel_registry::villager_trade::VillagerTrade;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
+use steel_utils::locks::SyncMutex;
 
 #[derive(Clone)]
 pub struct MerchantOffer {
@@ -17,6 +21,8 @@ pub struct MerchantOffer {
     max_uses: i32,
     xp: i32,
 }
+
+pub type SharedMerchantOffers = Arc<SyncMutex<MerchantOffers>>;
 
 impl MerchantOffer {
     #[must_use]
@@ -102,6 +108,50 @@ impl MerchantOffer {
         }
         true
     }
+
+    #[must_use]
+    pub fn to_nbt(&self) -> NbtCompound {
+        let mut c = NbtCompound::new();
+        c.insert("buy", self.cost_a.to_nbt_tag_ref());
+        if let Some(cost_b) = &self.cost_b {
+            c.insert("buyB", cost_b.to_nbt_tag_ref());
+        }
+        c.insert("sell", self.result.to_nbt_tag_ref());
+        c.insert("uses", self.uses);
+        c.insert("maxUses", self.max_uses());
+        c.insert("xp", self.xp);
+        c
+    }
+
+    #[must_use]
+    pub fn from_nbt(compound: &NbtCompoundView<'_, '_>) -> Option<Self> {
+        let cost_a = compound
+            .compound("buy")
+            .and_then(|c| ItemStack::from_borrowed_compound(&c))?;
+        let cost_b = compound
+            .compound("buyB")
+            .and_then(|c| ItemStack::from_borrowed_compound(&c));
+        let result = compound
+            .compound("sell")
+            .and_then(|c| ItemStack::from_borrowed_compound(&c))?;
+        Some(Self {
+            cost_a,
+            cost_b,
+            result,
+            uses: compound.int("uses").unwrap_or(0),
+            max_uses: compound.int("maxUses").unwrap_or(0),
+            xp: compound.int("xp").unwrap_or(0),
+        })
+    }
+
+    #[must_use]
+    pub const fn needs_restock(&self) -> bool {
+        self.uses > 0
+    }
+
+    pub const fn reset_uses(&mut self) {
+        self.uses = 0;
+    }
 }
 
 pub type MerchantOffers = Vec<MerchantOffer>;
@@ -111,9 +161,9 @@ pub fn offers_for(profession_key: &Identifier, level: i32) -> MerchantOffers {
     let Some(table) = VILLAGER_TRADES
         .iter()
         .find(|table| table.profession == profession_key.path.as_ref())
-        else {
-            return Vec::new();
-        };
+    else {
+        return Vec::new();
+    };
     let Ok(level_index) = usize::try_from(level - 1) else {
         return Vec::new();
     };
@@ -131,7 +181,13 @@ fn build_offer(trade: &VillagerTrade) -> Option<MerchantOffer> {
         None => None,
     };
     let result = resolve_item(trade.gives, trade.gives_count)?;
-    Some(MerchantOffer::new(cost_a, cost_b, result, trade.max_uses, trade.xp))
+    Some(MerchantOffer::new(
+        cost_a,
+        cost_b,
+        result,
+        trade.max_uses,
+        trade.xp,
+    ))
 }
 
 fn resolve_item(key: &str, count: i32) -> Option<ItemStack> {

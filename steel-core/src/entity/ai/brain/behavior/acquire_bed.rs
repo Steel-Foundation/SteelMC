@@ -44,7 +44,12 @@ impl Behavior for AcquireBed {
 
         let origin = mob.block_position();
         let mut poi = world.poi_storage.lock();
-        let Some((bed_pos, _)) = poi.get_nearest(&|id| id == home_id, origin, self.search_radius, OccupationStatus::Free) else {
+        let Some((bed_pos, _)) = poi.get_nearest(
+            &|id| id == home_id,
+            origin,
+            self.search_radius,
+            OccupationStatus::Free,
+        ) else {
             return;
         };
         if poi.reserve_ticket(bed_pos) {

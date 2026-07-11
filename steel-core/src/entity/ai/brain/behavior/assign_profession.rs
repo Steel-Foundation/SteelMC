@@ -41,17 +41,16 @@ impl Behavior for AssignProfession {
         &mut self,
         mob: &dyn PathfinderMob,
         _memories: &Memories,
-    ) -> bool
-    {
+    ) -> bool {
         let Some(villager) = mob.as_villager() else {
             return false;
         };
         let Some(none_id) = REGISTRY
             .villager_professions
             .id_from_key(&vanilla_villager_professions::NONE.key)
-            else {
-                return false;
-            };
+        else {
+            return false;
+        };
         let Ok(none_id) = i32::try_from(none_id) else {
             return false;
         };
@@ -84,5 +83,6 @@ impl Behavior for AssignProfession {
         let mut data = villager.villager_data();
         data.profession = profession_id;
         villager.set_villager_data(data);
+        villager.updateTrades();
     }
 }

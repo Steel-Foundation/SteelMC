@@ -5,9 +5,11 @@ use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::{entity_behavior, entity_impl};
-use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
+use steel_protocol::packets::game::{
+    AttributeSnapshot, CMerchantOffers, EquipmentSlotItem, MerchantOfferData, SoundSource,
+};
 use steel_registry::entity_data::VillagerData;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
@@ -18,21 +20,24 @@ use steel_registry::{
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
+use text_components::TextComponent;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::{
-    Activity, Brain, LookAtTargetSink, MemoryModuleType, MoveToTargetSink,
-    NearestLivingEntitiesSensor, RandomStroll, Schedule, SetEntityLookTarget,
-    AcquireBed, SetWalkTargetFromHome, AcquireJobSite, AssignProfession,
+    AcquireBed, AcquireJobSite, Activity, AssignProfession, Brain, LookAtTargetSink,
+    MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, RandomStroll, Schedule,
+    SetEntityLookTarget, SetWalkTargetFromHome,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
     EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectSyncChange,
-    PathfinderMob, SharedEntity, SpawnGroupData, Villager
+    PathfinderMob, SharedEntity, SpawnGroupData, Villager,
 };
+use crate::inventory::MerchantMenuProvider;
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::trading::{MerchantOffer, SharedMerchantOffers, offers_for};
 use crate::world::World;
 
 const VILLAGER_BABY_SCALE: f32 = 0.5;
@@ -54,6 +59,19 @@ pub struct VillagerEntity {
     ageable_base: AgeableMobBase,
     entity_data: SyncMutex<VillagerEntityData>,
     brain: SyncMutex<Brain>,
+    offers: SharedMerchantOffers,
+    villager_xp: SyncMutex<i32>,
+    trading_player: SyncMutex<Option<i32>>,
+    trade_state: SyncMutex<TradeState>,
+}
+
+#[derive(Default)]
+struct TradeState {
+    update_merchant_timer: i32,
+    increase_level_pending: bool,
+    last_restock_game_time: i64,
+    restocks_today: i32,
+    last_restock_check_day: i64,
 }
 
 impl VillagerEntity {
@@ -87,6 +105,10 @@ impl VillagerEntity {
             ageable_base,
             entity_data: SyncMutex::new(entity_data),
             brain: SyncMutex::new(Self::make_brain()),
+            offers: Arc::new(SyncMutex::new(Vec::new())),
+            villager_xp: SyncMutex::new(0),
+            trading_player: SyncMutex::new(None),
+            trade_state: SyncMutex::new(TradeState::default()),
         }
     }
 
@@ -115,6 +137,102 @@ impl VillagerEntity {
 
     pub fn set_baby(&self, baby: bool) {
         AgeableMob::set_baby(self, baby);
+    }
+
+    fn start_trading(&self, player: &Player) {
+        let Some(world) = self.level() else { return };
+        let Some(merchant) = world.get_entity_by_id(self.id()) else {
+            return;
+        };
+
+        self.set_trading_player(Some(player.id()));
+
+        let title = self
+            .custom_name()
+            .unwrap_or_else(|| TextComponent::translated("entity.minecraft.vilager"));
+        let provider =
+            MerchantMenuProvider::new(player.inventory.clone(), self.offers(), merchant, title);
+        let container_id = player.open_menu(&provider);
+
+        let data = self.villager_data();
+        let offers: Vec<MerchantOfferData> =
+            self.offers().lock().iter().map(offer_to_packet).collect();
+        if offers.is_empty() {
+            return;
+        }
+        player.send_packet(CMerchantOffers {
+            container_id: i32::from(container_id),
+            offers,
+            villager_level: data.level,
+            villager_xp: self.villager_xp(),
+            show_progress: true,
+            can_restock: true,
+        });
+    }
+
+    fn should_increase_level(&self) -> bool {
+        let data = self.villager_data();
+        can_level_up(data.level) && self.villager_xp() >= max_xp_per_level(data.level)
+    }
+
+    fn increase_merchant_career(&self) {
+        let mut data = self.villager_data();
+        data.level += 1;
+        self.set_villager_data(data);
+        self.updateTrades();
+        self.resend_offers_to_trading_player();
+    }
+    
+    fn should_restock(&self) -> bool {
+        let Some(world) = self.level() else { return false };
+        let game_time = world.game_time();
+
+        let (allowed, reset_uses_on_new_day) = {
+            let mut state = self.trade_state.lock();
+            let current_day = game_time / 24000;
+            let mut is_new_day = game_time > state.last_restock_game_time + 12000;
+            is_new_day |= state.last_restock_check_day > 0 && current_day > state.last_restock_check_day;
+            state.last_restock_check_day = current_day;
+
+            let mut reset = false;
+            if is_new_day {
+                state.last_restock_game_time = game_time;
+                reset = (2 - state.restocks_today) > 0;
+                state.restocks_today = 0;
+            }
+            let allowed = state.restocks_today == 0
+                || (state.restocks_today < 2 && game_time > state.last_restock_game_time + 2400);
+            (allowed, reset)
+        };
+
+        if reset_uses_on_new_day {
+            for offer in self.offers.lock().iter_mut() {
+                offer.reset_uses();
+            }
+            self.resend_offers_to_trading_player();
+        }
+        allowed && self.needs_to_restock()
+    }
+
+    fn needs_to_restock(&self) -> bool {
+        self.offers.lock().iter().any(MerchantOffer::needs_restock)
+    }
+
+    fn restock(&self) {
+        for offer in self.offers.lock().iter_mut() {
+            offer.reset_uses();
+        }
+        self.resend_offers_to_trading_player();
+        if let Some(world) = self.level() {
+            let mut state = self.trade_state.lock();
+            state.last_restock_game_time = world.game_time();
+            state.restocks_today += 1;
+        }
+    }
+
+    fn resend_offers_to_trading_player(&self) {
+        //TODO resend CMerchantOffers to a player if currently trading. This needs the open menu's
+        //id. Store it in TradeState.
     }
 }
 
@@ -267,6 +385,15 @@ impl Entity for VillagerEntity {
         }
         villager_data.insert("level", data.level);
         nbt.insert("VillagerData", NbtTag::Compound(villager_data));
+        nbt.insert("Xp", self.villager_xp());
+        let state = self.trade_state.lock();
+        nbt.insert("LastRestock", state.last_restock_game_time);
+        nbt.insert("RestocksToday", state.restocks_today);
+        let offers = self.offers.lock();
+        if !offers.is_empty() {
+            let recepies: Vec<NbtCompound> = offers.iter().map(MerchantOffer::to_nbt).collect();
+            nbt.insert("Offers", NbtList::Compound(recepies));
+        }
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -289,6 +416,31 @@ impl Entity for VillagerEntity {
             }
             if let Some(level) = villager_data.int("level") {
                 data.level = level;
+            }
+            if let Some(xp) = nbt.int("Xp") {
+                *self.villager_xp.lock() = xp;
+            }
+            if let Some(v) = nbt.long("LastRestock") {
+                self.trade_state.lock().last_restock_game_time = v;
+            }
+            if let Some(v) = nbt.int("RestocksToday") {
+                self.trade_state.lock().restocks_today = v;
+            }
+            let mut loaded_offers = false;
+            if let Some(list) = nbt.list("Offers")
+                && let Some(compounds) = list.compounds()
+            {
+                let mut offers = self.offers.lock();
+                offers.clear();
+                for compound in compounds {
+                    if let Some(offer) = MerchantOffer::from_nbt(&compound) {
+                        offers.push(offer);
+                    }
+                }
+                loaded_offers = true;
+            }
+            if !loaded_offers {
+                self.updateTrades();
             }
             self.set_villager_data(data);
         }
@@ -325,7 +477,12 @@ impl VillagerEntity {
 
     fn make_brain() -> Brain {
         let mut brain = Brain::new(
-            [MemoryModuleType::LookTarget, MemoryModuleType::WalkTarget, MemoryModuleType::Home, MemoryModuleType::JobSite],
+            [
+                MemoryModuleType::LookTarget,
+                MemoryModuleType::WalkTarget,
+                MemoryModuleType::Home,
+                MemoryModuleType::JobSite,
+            ],
             vec![Box::new(NearestLivingEntitiesSensor)],
         );
         brain.set_core_activities([Activity::Core]);
@@ -351,8 +508,15 @@ impl VillagerEntity {
                 )),
             ],
         );
-        brain.add_activity(Activity::Rest, 0, vec![Box::new(SetWalkTargetFromHome::new(0.6, 1))]);
-        brain.add_activity(Activity::Work, 0, Vec::new());
+        brain.add_activity(
+            Activity::Rest,
+            0,
+            vec![Box::new(SetWalkTargetFromHome::new(0.6, 1))],
+        );
+        brain.add_activity(Activity::Work, 0, vec![
+            Box::new(SetWalkTargetFromJobSite::new(0.5, 1)),
+            Box::new(WorkAtPoi::new())
+        ]);
         brain.add_activity(Activity::Meet, 0, Vec::new());
         brain.set_schedule(VILLAGER_DEFAULT_SCHEDULE);
         brain.use_default_activity();
@@ -477,6 +641,38 @@ impl Mob for VillagerEntity {
         let mut brain = self.brain.lock();
         brain.update_activity_from_schedule(game_time, day_time);
         brain.tick(self, game_time);
+        drop(brain);
+        if !self.is_trading() {
+            let mut fire_career = false;
+            {
+                let mut state = self.trade_state.lock();
+                if state.update_merchant_timer > 0 {
+                    state.update_merchant_timer -= 1;
+                    if state.update_merchant_timer == 0 {
+                        fire_career = std::mem::take(&mut state.increase_level_pending);
+                    }
+                }
+            }
+            if fire_career {
+                self.increase_merchant_career();
+            }
+        }
+    }
+
+    fn mob_interact(&self, player: &Player, _hand: InteractionHand) -> InteractionResult {
+        if !Entity::is_alive(self) || self.is_trading() || self.is_sleeping() {
+            return InteractionResult::Pass;
+        }
+        if self.is_baby() {
+            //TODO: setUnhappy
+            return InteractionResult::Success;
+        }
+        if self.offers().lock().is_empty() {
+            //TODO: setUnhappy on main hand and award TALKED_TO_VILLAGER stat
+            return InteractionResult::ConsumeM;
+        }
+        self.start_trading(player);
+        InteractionResult::Success
     }
 }
 
@@ -487,7 +683,82 @@ impl Villager for VillagerEntity {
         *self.entity_data.lock().villager_data.get()
     }
 
-    fn set_villager_data(&self, data:VillagerData) {
+    fn set_villager_data(&self, data: VillagerData) {
         self.entity_data.lock().villager_data.set(data);
+    }
+
+    fn offers(&self) -> SharedMerchantOffers {
+        Arc::clone(&self.offers)
+    }
+
+    fn updateTrades(&self) {
+        let data = self.villager_data();
+        let Some(profession) = usize::try_from(data.profession)
+            .ok()
+            .and_then(|id| REGISTRY.villager_professions.by_id(id))
+        else {
+            return;
+        };
+        let new_offers = offers_for(&profession.key, data.level);
+        self.offers.lock().extend(new_offers);
+    }
+
+    fn villager_xp(&self) -> i32 {
+        *self.villager_xp.lock()
+    }
+
+    fn notify_trade(&self, xp: i32) {
+        *self.villager_xp.lock() += xp;
+        if self.should_increase_level() {
+            let mut state = self.trade_state.lock();
+            state.update_merchant_timer = 40;
+            state.increase_level_pending = true;
+        }
+        // TODO spawn ExperienceOrb, play ENTITY_VILLAGER_YES, set lastTradedPlayer for the TRADE
+        // reputation event, happy particle.
+    }
+
+    fn is_trading(&self) -> bool {
+        self.trading_player.lock().is_some()
+    }
+
+    fn set_trading_player(&self, id: Option<i32>) {
+        *self.trading_player.lock() = id;
+    }
+    fn try_restock(&self) {
+        if self.should_restock() {
+            self.restock();
+        }
+    }
+}
+
+fn offer_to_packet(offer: &MerchantOffer) -> MerchantOfferData {
+    MerchantOfferData {
+        cost_a: offer.cost_a().clone(),
+        result: offer.result().clone(),
+        cost_b: offer.cost_b().cloned(),
+        out_of_stock: offer.is_out_of_stock(),
+        uses: offer.uses(),
+        max_uses: offer.max_uses(),
+        xp: offer.xp(),
+        special_price: 0,
+        price_multiplier: 0.0,
+        demand: 0,
+    }
+}
+
+const MAX_VILLAGER_LEVEL: i32 = 5;
+
+const fn can_level_up(level: i32) -> bool {
+    level >= 1 && level < MAX_VILLAGER_LEVEL
+}
+
+const fn max_xp_per_level(level: i32) -> i32 {
+    match level {
+        1 => 10,
+        2 => 70,
+        3 => 150,
+        4 => 250,
+        _ => 0,
     }
 }

@@ -689,7 +689,6 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
 
 mod ageable;
 pub(crate) mod ai;
-pub mod villager;
 mod animal;
 pub mod attribute;
 mod base;
@@ -698,6 +697,7 @@ mod callback;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
+pub mod villager;
 #[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/entities.rs"]

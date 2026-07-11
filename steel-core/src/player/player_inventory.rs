@@ -954,7 +954,7 @@ impl Player {
     ///
     /// # Arguments
     /// * `provider` - The menu provider containing the title and factory
-    pub fn open_menu(&self, provider: &impl MenuProvider) {
+    pub fn open_menu(&self, provider: &impl MenuProvider) -> u8 {
         self.do_close_container();
 
         let container_id = self.next_container_counter();
@@ -970,6 +970,8 @@ impl Player {
             .send_all_data_to_remote(&self.connection);
 
         *self.open_menu.lock() = Some(menu);
+
+        container_id
     }
 
     /// Closes the currently open container and returns to the inventory menu.

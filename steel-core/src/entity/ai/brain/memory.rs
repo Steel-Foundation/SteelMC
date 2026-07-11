@@ -206,7 +206,10 @@ impl Memories {
     }
 
     pub(crate) fn set_home(&mut self, pos: BlockPos) {
-        self.set_internal(MemoryModuleType::Home, Some(ExpirableValue::of(MemoryValue::Home(pos))));
+        self.set_internal(
+            MemoryModuleType::Home,
+            Some(ExpirableValue::of(MemoryValue::Home(pos))),
+        );
     }
 
     #[must_use]
@@ -219,7 +222,10 @@ impl Memories {
     }
 
     pub(crate) fn set_job_stite(&mut self, pos: BlockPos) {
-        self.set_internal(MemoryModuleType::JobSite, Some(ExpirableValue::of(MemoryValue::JobSite(pos))));
+        self.set_internal(
+            MemoryModuleType::JobSite,
+            Some(ExpirableValue::of(MemoryValue::JobSite(pos))),
+        );
     }
 
     #[must_use]

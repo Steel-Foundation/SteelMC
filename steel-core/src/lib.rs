@@ -10,7 +10,6 @@ pub mod chunk;
 pub mod chunk_saver;
 pub mod command;
 pub mod config;
-pub mod trading;
 pub(crate) mod enchantment_helper;
 pub mod entity;
 pub mod fluid;
@@ -25,5 +24,6 @@ pub mod server;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;
+pub mod trading;
 pub mod world;
 pub mod worldgen;

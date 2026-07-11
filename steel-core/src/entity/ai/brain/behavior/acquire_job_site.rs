@@ -40,21 +40,25 @@ impl Behavior for AcquireJobSite {
             return;
         };
         let is_job_site = |id: usize| {
-            REGISTRY
-                .poi_types
-                .by_id(id)
-                .is_some_and(|ty| REGISTRY.poi_types.is_in_tag(ty, &PoiTag::ACQUIRABLE_JOB_SITE))
+            REGISTRY.poi_types.by_id(id).is_some_and(|ty| {
+                REGISTRY
+                    .poi_types
+                    .is_in_tag(ty, &PoiTag::ACQUIRABLE_JOB_SITE)
+            })
         };
 
         let origin = mob.block_position();
         let mut poi = world.poi_storage.lock();
-        let Some((job_pos, _)) = 
-            poi.get_nearest(&is_job_site, origin, self.search_radius, OccupationStatus::Free)
-            else {
-                return;
-            };
-            if poi.reserve_ticket(job_pos){
-                memories.set_job_stite(job_pos);
-            }
+        let Some((job_pos, _)) = poi.get_nearest(
+            &is_job_site,
+            origin,
+            self.search_radius,
+            OccupationStatus::Free,
+        ) else {
+            return;
+        };
+        if poi.reserve_ticket(job_pos) {
+            memories.set_job_stite(job_pos);
+        }
     }
 }

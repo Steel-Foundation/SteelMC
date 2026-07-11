@@ -1,9 +1,11 @@
 //! temp container for the villager trade menu.
 
+use std::sync::Arc;
 use steel_registry::item_stack::ItemStack;
 
+use crate::entity::{Mob, SharedEntity};
 use crate::inventory::container::Container;
-use crate::trading::{MerchantOffer, MerchantOffers};
+use crate::trading::{MerchantOffer, MerchantOffers, SharedMerchantOffers};
 
 pub const PAYMENT1_SLOT: usize = 0;
 pub const PAYMENT2_SLOT: usize = 1;
@@ -11,7 +13,8 @@ pub const RESULT_SLOT: usize = 2;
 
 pub struct MerchantContainer {
     items: [ItemStack; 3],
-    offers: MerchantOffers,
+    offers: SharedMerchantOffers,
+    merchant: SharedEntity,
     selection_hint: i32,
     active_offer: Option<usize>,
     future_xp: i32,
@@ -19,10 +22,11 @@ pub struct MerchantContainer {
 
 impl MerchantContainer {
     #[must_use]
-    pub fn new(offers: MerchantOffers) -> Self {
+    pub fn new(offers: SharedMerchantOffers, merchant: SharedEntity) -> Self {
         Self {
             items: [ItemStack::empty(), ItemStack::empty(), ItemStack::empty()],
             offers,
+            merchant,
             selection_hint: -1,
             active_offer: None,
             future_xp: 0,
@@ -30,13 +34,13 @@ impl MerchantContainer {
     }
 
     #[must_use]
-    pub fn active_offer(&self) -> Option<&MerchantOffer> {
-        self.active_offer.map(|i| &self.offers[i])
+    pub fn has_active_offer(&self) -> bool {
+        self.active_offer.is_some()
     }
 
     #[must_use]
-    pub const fn offers(&self) -> &MerchantOffers {
-        &self.offers
+    pub fn offers(&self) -> SharedMerchantOffers {
+        Arc::clone(&self.offers)
     }
 
     #[must_use]
@@ -61,35 +65,31 @@ impl MerchantContainer {
             )
         };
 
-        if self.offers.is_empty() {
+        let offers = self.offers.lock();
+        if offers.is_empty() {
             return;
         }
 
-        let mut matched = self.recipe_for(&buy_a, &buy_b);
-        if matched.is_none_or(|i| self.offers[i].is_out_of_stock()) {
+        let mut matched = recipe_for(offers.as_slice(), self.selection_hint, &buy_a, &buy_b);
+        if matched.is_none_or(|i| offers[i].is_out_of_stock()) {
             self.active_offer = matched;
-            matched = self.recipe_for(&buy_b, &buy_a);
+            matched = recipe_for(offers.as_slice(), self.selection_hint, &buy_b, &buy_a);
         }
 
         if let Some(i) = matched
-            && !self.offers[i].is_out_of_stock()
+            && !offers[i].is_out_of_stock()
         {
+            let result = offers[i].assemble();
+            let xp = offers[i].xp();
+            drop(offers);
             self.active_offer = Some(i);
-            self.items[RESULT_SLOT] = self.offers[i].assemble();
-            self.future_xp = self.offers[i].xp();
+            self.items[RESULT_SLOT] = result;
+            self.future_xp = xp;
         } else {
+            drop(offers);
             self.items[RESULT_SLOT] = ItemStack::empty();
             self.future_xp = 0;
         }
-    }
-
-    fn recipe_for(&self, a: &ItemStack, b: &ItemStack) -> Option<usize> {
-        if let Ok(hint) = usize::try_from(self.selection_hint)
-            && self.offers.get(hint).is_some_and(|o| o.satisfied_by(a, b))
-        {
-            return Some(hint);
-        }
-        self.offers.iter().position(|o| o.satisfied_by(a, b))
     }
 
     pub fn take_trade(&mut self) {
@@ -100,17 +100,42 @@ impl MerchantContainer {
         let mut buy_a = self.items[PAYMENT1_SLOT].clone();
         let mut buy_b = self.items[PAYMENT2_SLOT].clone();
 
-        let took = {
-            let offer = &self.offers[index];
-            offer.take(&mut buy_a, &mut buy_b) || offer.take(&mut buy_b, &mut buy_a)
+        let awarded_xp = {
+            let mut offers = self.offers.lock();
+            let Some(offer) = offers.get_mut(index) else {
+                return;
+            };
+            let took = offer.take(&mut buy_a, &mut buy_b) || offer.take(&mut buy_b, &mut buy_a);
+
+            if !took {
+                return;
+            }
+
+            offer.increment_uses();
+            offer.xp()
         };
 
-        if took {
-            self.offers[index].increment_uses();
-            self.set_item(PAYMENT1_SLOT, buy_a);
-            self.set_item(PAYMENT2_SLOT, buy_b);
+        self.set_item(PAYMENT1_SLOT, buy_a);
+        self.set_item(PAYMENT2_SLOT, buy_b);
+
+        if let Some(villager) = self.merchant.as_mob().and_then(Mob::as_villager) {
+            villager.notify_trade(awarded_xp);
         }
     }
+}
+
+fn recipe_for(
+    offers: &[MerchantOffer],
+    selection_hint: i32,
+    a: &ItemStack,
+    b: &ItemStack,
+) -> Option<usize> {
+    if let Ok(hint) = usize::try_from(selection_hint)
+        && offers.get(hint).is_some_and(|o| o.satisfied_by(a, b))
+    {
+        return Some(hint);
+    }
+    offers.iter().position(|o| o.satisfied_by(a, b))
 }
 
 impl Container for MerchantContainer {
@@ -122,11 +147,11 @@ impl Container for MerchantContainer {
         &self.items[slot]
     }
 
-    fn get_item_mut(&mut self,slot: usize) ->  &mut ItemStack {
+    fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
         &mut self.items[slot]
     }
 
-    fn set_item(&mut self,slot: usize,stack: ItemStack) {
+    fn set_item(&mut self, slot: usize, stack: ItemStack) {
         self.items[slot] = stack;
         if slot == PAYMENT1_SLOT || slot == PAYMENT2_SLOT {
             self.update_sell_item();

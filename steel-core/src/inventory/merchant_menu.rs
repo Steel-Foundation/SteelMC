@@ -8,19 +8,21 @@ use steel_registry::vanilla_menu_types;
 use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 
-use crate::entity::{Entity, SharedEntity};
+use crate::entity::{Entity, Mob, SharedEntity};
 use crate::inventory::{
-  SyncPlayerInv,
-  container::Container,
-  lock::{ContainerLockGuard, ContainerRef},
-  menu::{Menu, MenuBehavior},
-  menu_provider::{MenuInstance, MenuProvider},
-  merchant::MerchantContainer,
-  slot::{MerchantResultSlot, NormalSlot, Slot, SlotType, SyncMerchantContainer,
-      add_standard_inventory_slots},
-};      
+    SyncPlayerInv,
+    container::Container,
+    lock::{ContainerLockGuard, ContainerRef},
+    menu::{Menu, MenuBehavior},
+    menu_provider::{MenuInstance, MenuProvider},
+    merchant::MerchantContainer,
+    slot::{
+        MerchantResultSlot, NormalSlot, Slot, SlotType, SyncMerchantContainer,
+        add_standard_inventory_slots,
+    },
+};
 use crate::player::Player;
-use crate::trading::{MerchantOffer, MerchantOffers};
+use crate::trading::{MerchantOffer, MerchantOffers, SharedMerchantOffers};
 
 pub mod slots {
     /// First payment slot
@@ -53,11 +55,12 @@ impl MerchantMenu {
     pub fn new(
         inventory: SyncPlayerInv,
         container_id: u8,
-        offers: MerchantOffers,
+        offers: SharedMerchantOffers,
         merchant: SharedEntity,
     ) -> Self {
-        let trade_container: SyncMerchantContainer = 
-            Arc::new(SyncMutex::new(MerchantContainer::new(offers)));
+        let trade_container: SyncMerchantContainer = Arc::new(SyncMutex::new(
+            MerchantContainer::new(offers, Arc::clone(&merchant)),
+        ));
 
         let mut menu_slots = Vec::with_capacity(slots::TOTAL_SLOTS);
 
@@ -107,8 +110,7 @@ impl Menu for MerchantMenu {
         guard: &mut ContainerLockGuard,
         slot_index: usize,
         player: &Player,
-    ) -> ItemStack
-    {
+    ) -> ItemStack {
         if slot_index >= self.behavior.slots.len() {
             return ItemStack::empty();
         }
@@ -127,16 +129,40 @@ impl Menu for MerchantMenu {
         let mut stack_mut = stack;
 
         let moved = if slot_index == slots::RESULT_SLOT {
-            if !self.behavior.move_item_stack_to(guard, &mut stack_mut, slots::INV_SLOT_START, slots::USE_ROW_SLOT_END, true) {
+            if !self.behavior.move_item_stack_to(
+                guard,
+                &mut stack_mut,
+                slots::INV_SLOT_START,
+                slots::USE_ROW_SLOT_END,
+                true,
+            ) {
                 return ItemStack::empty();
             }
             true
         } else if slot_index == slots::PAYMENT1_SLOT || slot_index == slots::PAYMENT2_SLOT {
-            self.behavior.move_item_stack_to(guard, &mut stack_mut, slots::INV_SLOT_START, slots::USE_ROW_SLOT_END, false)
+            self.behavior.move_item_stack_to(
+                guard,
+                &mut stack_mut,
+                slots::INV_SLOT_START,
+                slots::USE_ROW_SLOT_END,
+                false,
+            )
         } else if (slots::INV_SLOT_START..slots::INV_SLOT_END).contains(&slot_index) {
-            self.behavior.move_item_stack_to(guard, &mut stack_mut, slots::USE_ROW_SLOT_START, slots::USE_ROW_SLOT_END, false)
+            self.behavior.move_item_stack_to(
+                guard,
+                &mut stack_mut,
+                slots::USE_ROW_SLOT_START,
+                slots::USE_ROW_SLOT_END,
+                false,
+            )
         } else if (slots::USE_ROW_SLOT_START..slots::USE_ROW_SLOT_END).contains(&slot_index) {
-            self.behavior.move_item_stack_to(guard, &mut stack_mut, slots::INV_SLOT_START, slots::INV_SLOT_END, false)
+            self.behavior.move_item_stack_to(
+                guard,
+                &mut stack_mut,
+                slots::INV_SLOT_START,
+                slots::INV_SLOT_END,
+                false,
+            )
         } else {
             false
         };
@@ -154,7 +180,7 @@ impl Menu for MerchantMenu {
         self.behavior.slots[slot_index].set_changed(guard);
 
         if slot_index == slots::RESULT_SLOT {
-            if let Some(remainder) = 
+            if let Some(remainder) =
                 self.behavior.slots[slot_index].on_take(guard, &clicked, player)
             {
                 player.add_item_or_drop_with_guard(guard, remainder);
@@ -183,9 +209,9 @@ impl Menu for MerchantMenu {
             let mut container = self.trade_container.lock();
             [slots::PAYMENT1_SLOT, slots::PAYMENT2_SLOT]
                 .into_iter()
-                    .map(|i| container.remove_item_no_update(i))
-                    .filter(|item| !item.is_empty())
-                    .collect()
+                .map(|i| container.remove_item_no_update(i))
+                .filter(|item| !item.is_empty())
+                .collect()
         };
         for item in payments {
             player.add_item_or_drop(item);
@@ -195,7 +221,9 @@ impl Menu for MerchantMenu {
             .lock()
             .set_item(slots::RESULT_SLOT, ItemStack::empty());
 
-        //TODO clear the villagers trading player
+        if let Some(villager) = self.merchant.as_mob().and_then(Mob::as_villager) {
+            villager.set_trading_player(None)
+        }
     }
 }
 
@@ -211,7 +239,7 @@ impl MenuInstance for MerchantMenu {
 
 pub struct MerchantMenuProvider {
     inventory: SyncPlayerInv,
-    offers: MerchantOffers,
+    offers: SharedMerchantOffers,
     merchant: SharedEntity,
     title: TextComponent,
 }
@@ -220,7 +248,7 @@ impl MerchantMenuProvider {
     #[must_use]
     pub const fn new(
         inventory: SyncPlayerInv,
-        offers: MerchantOffers,
+        offers: SharedMerchantOffers,
         merchant: SharedEntity,
         title: TextComponent,
     ) -> Self {
@@ -240,10 +268,10 @@ impl MenuProvider for MerchantMenuProvider {
 
     fn create(&self, container_id: u8) -> Box<dyn MenuInstance> {
         Box::new(MerchantMenu::new(
-                self.inventory.clone(),
-                container_id,
-                self.offers.clone(),
-                Arc::clone(&self.merchant),
+            self.inventory.clone(),
+            container_id,
+            Arc::clone(&self.offers),
+            Arc::clone(&self.merchant),
         ))
     }
 }

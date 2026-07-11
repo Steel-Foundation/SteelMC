@@ -16,9 +16,9 @@ use steel_utils::locks::SyncMutex;
 use crate::inventory::SyncPlayerInv;
 use crate::inventory::container::Container;
 use crate::inventory::crafting::{CraftingContainer, ResultContainer};
-use crate::inventory::merchant::{MerchantContainer, RESULT_SLOT};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
+use crate::inventory::merchant::{MerchantContainer, RESULT_SLOT};
 use crate::inventory::recipe_manager;
 use crate::player::Player;
 
@@ -773,46 +773,46 @@ impl MerchantResultSlot {
 }
 
 impl Slot for MerchantResultSlot {
-    fn get_item<'a>(&self,guard: &'a ContainerLockGuard) ->  &'a ItemStack {
+    fn get_item<'a>(&self, guard: &'a ContainerLockGuard) -> &'a ItemStack {
         guard
             .get(self.container_id())
             .expect("container not locked")
             .get_item(RESULT_SLOT)
     }
 
-    fn get_item_mut<'a>(&self,guard: &'a mut ContainerLockGuard) ->  &'a mut ItemStack {
+    fn get_item_mut<'a>(&self, guard: &'a mut ContainerLockGuard) -> &'a mut ItemStack {
         guard
             .get_mut(self.container_id())
             .expect("container not locked")
             .get_item_mut(RESULT_SLOT)
     }
 
-    fn set_item(&self,guard: &mut ContainerLockGuard,stack: ItemStack) {
+    fn set_item(&self, guard: &mut ContainerLockGuard, stack: ItemStack) {
         guard
             .get_mut(self.container_id())
             .expect("container not locked")
             .set_item(RESULT_SLOT, stack);
     }
 
-    fn may_place(&self,_stack: &ItemStack) -> bool {
+    fn may_place(&self, _stack: &ItemStack) -> bool {
         false
     }
 
-    fn may_pickup(&self,guard: &ContainerLockGuard,_player: &Player) -> bool {
+    fn may_pickup(&self, guard: &ContainerLockGuard, _player: &Player) -> bool {
         guard
             .get_merchant_container(self.container_id())
-            .is_some_and(|m| m.active_offer().is_some())
+            .is_some_and(MerchantContainer::has_active_offer)
     }
 
-    fn allow_modification(&self,guard: &ContainerLockGuard,player: &Player) -> bool {
+    fn allow_modification(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
         false
     }
 
-    fn remove(&self,guard: &mut ContainerLockGuard,amount: i32) -> ItemStack {
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
         mem::take(self.get_item_mut(guard))
     }
 
-    fn set_changed(&self,guard: &mut ContainerLockGuard) {
+    fn set_changed(&self, guard: &mut ContainerLockGuard) {
         guard
             .get_mut(self.container_id())
             .expect("container not locked")
@@ -823,18 +823,22 @@ impl Slot for MerchantResultSlot {
         RESULT_SLOT
     }
 
-    fn get_max_stack_size(&self,guard: &ContainerLockGuard) -> i32 {
+    fn get_max_stack_size(&self, guard: &ContainerLockGuard) -> i32 {
         guard
             .get(self.container_id())
             .expect("container not locked")
             .get_max_stack_size()
     }
 
-    fn on_take(&self,guard: &mut ContainerLockGuard,_stack: &ItemStack,_player: &Player,) -> Option<ItemStack> {
+    fn on_take(
+        &self,
+        guard: &mut ContainerLockGuard,
+        _stack: &ItemStack,
+        _player: &Player,
+    ) -> Option<ItemStack> {
         if let Some(merchant) = guard.get_merchant_container_mut(self.container_id()) {
             merchant.take_trade();
         }
-        //TODO award xp to villager
         None
     }
 }

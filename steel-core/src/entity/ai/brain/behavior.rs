@@ -11,15 +11,19 @@ mod move_to_target_sink;
 mod random_stroll;
 mod set_entity_look_target;
 mod set_walk_target_from_home;
+mod set_walk_target_from_job_site;
+mod work_at_poi;
 
+pub(crate) use acquire_bed::AcquireBed;
 pub(crate) use acquire_job_site::AcquireJobSite;
 pub(crate) use assign_profession::AssignProfession;
 pub(crate) use look_at_target_sink::LookAtTargetSink;
 pub(crate) use move_to_target_sink::MoveToTargetSink;
 pub(crate) use random_stroll::RandomStroll;
 pub(crate) use set_entity_look_target::SetEntityLookTarget;
-pub(crate) use acquire_bed::AcquireBed;
 pub(crate) use set_walk_target_from_home::SetWalkTargetFromHome;
+pub(crate) use work_at_poi::WorkAtPoi;
+pub(crate) use set_walk_target_from_job_site::SetWalkTargetFromJobSite;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BehaviorStatus {

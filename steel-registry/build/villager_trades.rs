@@ -1,4 +1,3 @@
-
 use std::fs;
 
 use proc_macro2::TokenStream;
@@ -53,11 +52,19 @@ pub(crate) fn build() -> TokenStream {
             };
             let mut trade_tokens = TokenStream::new();
             for trade in trades {
-                let SimpleTrade { wants, wants_count, additional, gives, gives_count, max_uses, xp } = trade;
+                let SimpleTrade {
+                    wants,
+                    wants_count,
+                    additional,
+                    gives,
+                    gives_count,
+                    max_uses,
+                    xp,
+                } = trade;
 
                 let additional = match additional {
                     Some((item, count)) => quote! { Some((#item, #count)) },
-                    None => quote! { None }
+                    None => quote! { None },
                 };
                 trade_tokens.extend(quote! {
                     VillagerTrade {
@@ -90,7 +97,8 @@ pub(crate) fn build() -> TokenStream {
 }
 
 fn read_level(profession: &str, level: usize) -> Option<(i32, Vec<SimpleTrade>)> {
-    let trade_set: TradeSet = read_json(&format!("{TRADE_SET_DIR}/{profession}/level_{level}.json"))?;
+    let trade_set: TradeSet =
+        read_json(&format!("{TRADE_SET_DIR}/{profession}/level_{level}.json"))?;
     let tag_ref = trade_set.trades.trim_start_matches('#');
     let tag_path = tag_ref.strip_prefix("minecraft").unwrap_or(tag_ref);
     let tag: TagFile = read_json(&format!("{TAG_DIR}/{tag_path}.json"))?;
@@ -133,10 +141,24 @@ fn parse_simple_trade(value: &serde_json::Value) -> Option<SimpleTrade> {
         None => None,
     };
     let (gives, gives_count) = parse_item(obj.get("gives")?)?;
-    let max_uses = obj.get("max_uses").and_then(serde_json::Value::as_f64).map_or(4, |v| v as i32);
-    let xp = obj.get("xp").and_then(serde_json::Value::as_f64).map_or(1, |v| v as i32);
+    let max_uses = obj
+        .get("max_uses")
+        .and_then(serde_json::Value::as_f64)
+        .map_or(4, |v| v as i32);
+    let xp = obj
+        .get("xp")
+        .and_then(serde_json::Value::as_f64)
+        .map_or(1, |v| v as i32);
 
-    Some(SimpleTrade { wants, wants_count, additional, gives, gives_count, max_uses, xp })
+    Some(SimpleTrade {
+        wants,
+        wants_count,
+        additional,
+        gives,
+        gives_count,
+        max_uses,
+        xp,
+    })
 }
 
 fn parse_item(value: &serde_json::Value) -> Option<(String, i32)> {
@@ -145,6 +167,9 @@ fn parse_item(value: &serde_json::Value) -> Option<(String, i32)> {
         return None;
     }
     let id = obj.get("id")?.as_str()?.to_owned();
-    let count = obj.get("count").and_then(serde_json::Value::as_f64).map_or(1, |v| v as i32);
+    let count = obj
+        .get("count")
+        .and_then(serde_json::Value::as_f64)
+        .map_or(1, |v| v as i32);
     Some((id, count))
 }
