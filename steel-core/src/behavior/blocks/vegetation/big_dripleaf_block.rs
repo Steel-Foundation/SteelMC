@@ -67,7 +67,7 @@ impl BigDripleafBlock {
             world.schedule_block_tick(*pos, self.block, tick_delay, TickPriority::Normal);
         }
     }
-    fn tilt_causes_vibration(tilt: &Tilt) -> bool {
+    const fn tilt_causes_vibration(tilt: &Tilt) -> bool {
         matches!(tilt, Tilt::None | Tilt::Partial | Tilt::Full)
     }
 
