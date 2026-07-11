@@ -32,9 +32,10 @@ pub(crate) fn build() -> TokenStream {
         );
         let key = generate_identifier(&sound_event.key);
         let sound_id = generate_identifier(&sound_event.sound_id);
-        let fixed_range = match sound_event.fixed_range {
-            Some(range) => quote! { Some(#range) },
-            None => quote! { None },
+        let fixed_range = if let Some(range) = sound_event.fixed_range {
+            quote! { Some(#range) }
+        } else {
+            quote! { None }
         };
 
         constants.extend(quote! {

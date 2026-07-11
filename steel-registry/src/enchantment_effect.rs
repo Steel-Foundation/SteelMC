@@ -445,7 +445,7 @@ impl EnchantmentEffects {
     };
 
     #[must_use]
-    pub fn has(&self, component: EnchantmentEffectComponent) -> bool {
+    pub const fn has(&self, component: EnchantmentEffectComponent) -> bool {
         match component {
             EnchantmentEffectComponent::DamageProtection => !self.damage_protection.is_empty(),
             EnchantmentEffectComponent::DamageImmunity => !self.damage_immunity.is_empty(),
@@ -492,7 +492,7 @@ impl EnchantmentEffects {
     }
 
     #[must_use]
-    pub fn value_effects(
+    pub const fn value_effects(
         &self,
         component: EnchantmentEffectComponent,
     ) -> &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>] {
@@ -522,7 +522,7 @@ impl EnchantmentEffects {
     }
 
     #[must_use]
-    pub fn targeted_value_effects(
+    pub const fn targeted_value_effects(
         &self,
         component: EnchantmentEffectComponent,
     ) -> &'static [TargetedConditionalEnchantmentEffect<EnchantmentValueEffect>] {
@@ -533,7 +533,7 @@ impl EnchantmentEffects {
     }
 
     #[must_use]
-    pub fn single_value_effect(
+    pub const fn single_value_effect(
         &self,
         component: EnchantmentEffectComponent,
     ) -> Option<&EnchantmentValueEffect> {

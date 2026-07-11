@@ -13,7 +13,7 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_registry::{vanilla_damage_type_tags, vanilla_entities};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, ChunkPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -65,6 +65,11 @@ pub struct ExperienceOrbEntity {
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<ExperienceOrbEntityData>,
     state: SyncMutex<ExperienceOrbState>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrbEntity`.
+unsafe impl DowncastType for ExperienceOrbEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/experience_orb");
 }
 
 impl ExperienceOrbEntity {

@@ -14,7 +14,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
@@ -244,7 +244,7 @@ fn try_open_sign_editor(
     };
 
     let mut guard = block_entity.lock();
-    let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
+    let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
         return InteractionResult::Pass;
     };
 

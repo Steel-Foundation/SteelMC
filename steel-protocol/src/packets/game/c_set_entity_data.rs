@@ -13,7 +13,7 @@ use steel_utils::{codec::VarInt, serial::WriteTo};
 ///
 /// The packet contains a list of changed metadata values, each with:
 /// - `index`: The field index (0-254)
-/// - `serializer_id`: The type ID from EntityDataSerializers
+/// - `serializer_id`: The type ID from `EntityDataSerializers`
 /// - `value`: The actual data
 ///
 /// The list is terminated by a 0xFF byte.
@@ -29,7 +29,7 @@ pub struct CSetEntityData {
 impl CSetEntityData {
     /// Creates a new set entity data packet.
     #[must_use]
-    pub fn new(entity_id: i32, packed_items: Vec<DataValue>) -> Self {
+    pub const fn new(entity_id: i32, packed_items: Vec<DataValue>) -> Self {
         Self {
             entity_id,
             packed_items,

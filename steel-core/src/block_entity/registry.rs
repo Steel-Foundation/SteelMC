@@ -17,7 +17,8 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -250,6 +251,22 @@ pub fn init_block_entities() {
     registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
         Arc::new(SyncMutex::new(BeehiveBlockEntity::new(level, pos, state)))
     });
+
+    // Register End gateway block entity factory
+    registry.register(
+        &vanilla_block_entity_types::END_GATEWAY,
+        |level, pos, state| {
+            Arc::new(SyncMutex::new(EndGatewayBlockEntity::new(
+                level, pos, state,
+            )))
+        },
+    );
+
+    // Register End portal block entity factory
+    registry.register(
+        &vanilla_block_entity_types::END_PORTAL,
+        |level, pos, state| Arc::new(SyncMutex::new(EndPortalBlockEntity::new(level, pos, state))),
+    );
 
     // Register potent sulfur block entity factory
     registry.register(

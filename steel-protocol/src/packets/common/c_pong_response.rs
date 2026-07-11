@@ -9,7 +9,7 @@ pub struct CPongResponse {
 
 impl CPongResponse {
     #[must_use]
-    pub fn new(time: i64) -> Self {
+    pub const fn new(time: i64) -> Self {
         Self { time }
     }
 }

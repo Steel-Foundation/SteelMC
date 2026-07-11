@@ -479,7 +479,7 @@ impl BlockPalette {
             }
             Self::Building(cube) => {
                 let mut count: u16 = 0;
-                for slab in cube.iter() {
+                for slab in cube {
                     for row in slab {
                         for v in row {
                             if v.0 != 0 {

@@ -70,7 +70,7 @@ impl Default for ItemEnchantments {
     }
 }
 
-/// Network format: VarInt count, then (VarInt enchantment_id, VarInt level) pairs.
+/// Network format: `VarInt` count, then (`VarInt` `enchantment_id`, `VarInt` level) pairs.
 impl WriteTo for ItemEnchantments {
     fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
         VarInt(self.levels.len() as i32).write(writer)?;

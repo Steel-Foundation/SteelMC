@@ -27,7 +27,7 @@ pub enum JigsawOrientation {
 impl JigsawOrientation {
     /// Parses from the block state property string (e.g., `"up_north"`).
     #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
+    pub const fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "down_east" => Self::DownEast,
             "down_north" => Self::DownNorth,
@@ -72,7 +72,7 @@ impl JigsawOrientation {
 
     /// Returns the front-facing direction offset as (dx, dy, dz).
     #[must_use]
-    pub fn front(self) -> (i32, i32, i32) {
+    pub const fn front(self) -> (i32, i32, i32) {
         self.front_direction().offset()
     }
 
@@ -104,7 +104,7 @@ impl JigsawOrientation {
     /// Both the front and top directions are rotated, matching vanilla's
     /// `BlockState.rotate(rotation)` for jigsaw blocks.
     #[must_use]
-    pub fn rotate(self, rotation: Rotation) -> Self {
+    pub const fn rotate(self, rotation: Rotation) -> Self {
         let front = rotation.rotate(self.front_direction());
         let top = rotation.rotate(self.top_direction());
         // Rotation of valid FrontAndTop always produces a valid FrontAndTop
@@ -233,7 +233,7 @@ pub enum PoolElement {
 impl PoolElement {
     /// Returns the projection mode, or `Rigid` for empty elements.
     #[must_use]
-    pub fn projection(&self) -> Projection {
+    pub const fn projection(&self) -> Projection {
         match self {
             Self::Single { projection, .. }
             | Self::LegacySingle { projection, .. }
@@ -245,7 +245,7 @@ impl PoolElement {
 
     /// Returns true if this is an empty placeholder element.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 }

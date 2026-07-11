@@ -2404,6 +2404,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(DespawnTestMob);
+
     impl Entity for DespawnTestMob {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -2464,6 +2466,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(HiddenTarget);
 
     impl Entity for HiddenTarget {
         fn base(&self) -> &EntityBase {
@@ -2534,6 +2538,8 @@ mod tests {
             }
         }
     }
+
+    crate::entity::impl_test_downcast_type!(MobControlVehicleEntity);
 
     impl Entity for MobControlVehicleEntity {
         fn base(&self) -> &EntityBase {

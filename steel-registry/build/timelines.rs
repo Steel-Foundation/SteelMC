@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted timeline data"
+)]
+
 use std::fs;
 
 use heck::ToShoutySnakeCase;
@@ -33,8 +38,7 @@ fn quote_opt_identifier(s: &str) -> TokenStream {
     let (namespace, path) = s.split_once(':').expect("Identifier missing ':'");
     assert_eq!(
         namespace, "minecraft",
-        "Expected minecraft namespace in: {}",
-        s
+        "Expected minecraft namespace in: {s}"
     );
     quote! { Some(Identifier::vanilla_static(#path)) }
 }
@@ -89,7 +93,7 @@ fn quote_keyframe_value(v: &Value) -> TokenStream {
                 }
             }
         }
-        _ => panic!("Unexpected keyframe value: {:?}", v),
+        _ => panic!("Unexpected keyframe value: {v:?}"),
     }
 }
 
@@ -123,7 +127,7 @@ fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
                 }
             }
         }
-        _ => panic!("Unexpected time_marker value: {:?}", v),
+        _ => panic!("Unexpected time_marker value: {v:?}"),
     }
 }
 
@@ -141,7 +145,7 @@ pub(crate) fn build() -> TokenStream {
             let timeline_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let timeline_data: TimelineJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", timeline_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {timeline_name}: {e}"));
 
             timelines.push((timeline_name, timeline_data));
         }
@@ -162,14 +166,16 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#timeline_name_str) };
 
-        let clock_ts = match &timeline_data.clock {
-            Some(s) => quote_opt_identifier(s),
-            None => quote! { None },
+        let clock_ts = if let Some(s) = &timeline_data.clock {
+            quote_opt_identifier(s)
+        } else {
+            quote! { None }
         };
 
-        let period_ticks_ts = match timeline_data.period_ticks {
-            Some(pt) => quote! { Some(#pt) },
-            None => quote! { None },
+        let period_ticks_ts = if let Some(pt) = timeline_data.period_ticks {
+            quote! { Some(#pt) }
+        } else {
+            quote! { None }
         };
 
         // Generate track literals
@@ -178,20 +184,20 @@ pub(crate) fn build() -> TokenStream {
             .iter()
             .map(|(track_name, track_val)| {
                 let track: TrackJson = serde_json::from_value(track_val.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse track {}: {}", track_name, e));
+                    .unwrap_or_else(|e| panic!("Failed to parse track {track_name}: {e}"));
                 let track_name_str = track_name.as_str();
 
-                let ease_ts = match &track.ease {
-                    Some(v) => quote_ease(v),
-                    None => quote! { None },
+                let ease_ts = if let Some(v) = &track.ease {
+                    quote_ease(v)
+                } else {
+                    quote! { None }
                 };
 
-                let modifier_ts = match &track.modifier {
-                    Some(m) => {
-                        let m_str = m.as_str();
-                        quote! { Some(#m_str) }
-                    }
-                    None => quote! { None },
+                let modifier_ts = if let Some(m) = &track.modifier {
+                    let m_str = m.as_str();
+                    quote! { Some(#m_str) }
+                } else {
+                    quote! { None }
                 };
 
                 let keyframe_tokens: Vec<TokenStream> = track

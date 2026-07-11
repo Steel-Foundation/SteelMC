@@ -35,7 +35,7 @@ impl AttributeModifierOperation {
     }
 
     #[must_use]
-    pub fn by_name(name: &str) -> Option<Self> {
+    pub const fn by_name(name: &str) -> Option<Self> {
         match name {
             "add_value" => Some(Self::AddValue),
             "add_multiplied_base" => Some(Self::AddMultipliedBase),
@@ -84,7 +84,7 @@ pub struct Attribute {
 impl Attribute {
     /// Clamps a value to this attribute's valid range
     #[must_use]
-    pub fn sanitize_value(&self, value: f64) -> f64 {
+    pub const fn sanitize_value(&self, value: f64) -> f64 {
         value.clamp(self.min_value, self.max_value)
     }
 }

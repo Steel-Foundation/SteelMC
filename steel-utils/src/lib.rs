@@ -10,11 +10,15 @@ pub const MC_VERSION: &str = "26.2";
 /// axis
 pub mod angle;
 pub mod axis;
+/// Vanilla `BlockUtil` helpers.
+pub mod block_util;
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
+/// Deterministic concrete-type downcasting for erased Steel objects.
+pub mod downcast;
 mod front_vec;
 /// Shared geometry primitives.
 pub mod geometry;
@@ -53,6 +57,7 @@ pub mod entity_events;
 
 pub use angle::wrap_degrees;
 pub use direction::Direction;
+pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};
 pub use front_vec::FrontVec;
 pub use geometry::{BlockLocalAabb, BoundingBox, WorldAabb};
 pub use rotation::Rotation;

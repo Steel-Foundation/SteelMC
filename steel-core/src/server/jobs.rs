@@ -83,6 +83,18 @@ impl ServerJobQueue {
         self.jobs.lock().push(Box::new(job));
     }
 
+    /// Polls a job immediately from a known safe point, queuing it only if it remains pending.
+    pub fn poll_now_or_spawn(
+        &self,
+        server: Weak<Server>,
+        tick_count: u64,
+        runs_normally: bool,
+        job: impl ServerJob + 'static,
+    ) -> JobPoll {
+        let mut context = ServerJobContext::for_server(server, tick_count, runs_normally);
+        self.poll_now_or_spawn_with_context(&mut context, job)
+    }
+
     /// Returns the number of queued jobs.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -141,6 +153,20 @@ impl ServerJobQueue {
             polled,
             finished,
             pending: pending_count,
+        }
+    }
+
+    fn poll_now_or_spawn_with_context(
+        &self,
+        context: &mut ServerJobContext,
+        mut job: impl ServerJob + 'static,
+    ) -> JobPoll {
+        match job.poll(context) {
+            JobPoll::Pending => {
+                self.spawn(job);
+                JobPoll::Pending
+            }
+            JobPoll::Finished => JobPoll::Finished,
         }
     }
 }
@@ -290,5 +316,48 @@ mod tests {
         assert_eq!(second.finished, 1);
         assert_eq!(second.pending, 0);
         assert_eq!(polls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn poll_now_or_spawn_drops_finished_job() {
+        let queue = ServerJobQueue::new();
+        let polls = Arc::new(AtomicUsize::new(0));
+        let mut context = ServerJobContext::for_test(1, true);
+
+        let result = queue.poll_now_or_spawn_with_context(
+            &mut context,
+            CountJob {
+                polls: polls.clone(),
+                finish_after: 1,
+            },
+        );
+
+        assert_eq!(result, JobPoll::Finished);
+        assert!(queue.is_empty());
+        assert_eq!(polls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn poll_now_or_spawn_queues_pending_job_after_first_poll() {
+        let queue = ServerJobQueue::new();
+        let polls = Arc::new(AtomicUsize::new(0));
+        let mut context = ServerJobContext::for_test(1, true);
+
+        let result = queue.poll_now_or_spawn_with_context(
+            &mut context,
+            CountJob {
+                polls: polls.clone(),
+                finish_after: 2,
+            },
+        );
+
+        assert_eq!(result, JobPoll::Pending);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(polls.load(Ordering::Relaxed), 1);
+
+        let stats = queue.tick_with_context(&mut context);
+        assert_eq!(stats.finished, 1);
+        assert_eq!(stats.pending, 0);
+        assert_eq!(polls.load(Ordering::Relaxed), 2);
     }
 }

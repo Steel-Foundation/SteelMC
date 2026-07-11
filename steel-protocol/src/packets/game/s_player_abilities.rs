@@ -12,7 +12,8 @@ impl SPlayerAbilities {
     const FLAG_FLYING: u8 = 0x02;
 
     /// Returns whether the player is flying
-    pub fn is_flying(&self) -> bool {
+    #[must_use]
+    pub const fn is_flying(&self) -> bool {
         (self.flags & Self::FLAG_FLYING) != 0
     }
 }

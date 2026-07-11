@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted structure set data"
+)]
+
 use std::fs;
 
 use rustc_hash::FxHashMap as HashMap;
@@ -49,7 +54,7 @@ struct PlacementJson {
     preferred_biomes: Option<String>,
 }
 
-fn default_frequency() -> f32 {
+const fn default_frequency() -> f32 {
     1.0
 }
 
@@ -202,9 +207,10 @@ fn resolve_tag(
     }
 
     // Cycle detection
-    if stack.contains(&tag_name.to_string()) {
-        panic!("Circular biome tag reference: {stack:?} -> {tag_name}");
-    }
+    assert!(
+        !stack.contains(&tag_name.to_string()),
+        "Circular biome tag reference: {stack:?} -> {tag_name}"
+    );
     stack.push(tag_name.to_string());
 
     let Some(values) = raw_tags.get(tag_name) else {
@@ -326,11 +332,10 @@ fn required_array<'a>(
     context: &str,
     field: &str,
 ) -> &'a [serde_json::Value] {
-    value
-        .get(field)
-        .and_then(|v| v.as_array())
-        .map(Vec::as_slice)
-        .unwrap_or_else(|| panic!("Missing required array field {field} in {context}: {value}"))
+    value.get(field).and_then(|v| v.as_array()).map_or_else(
+        || panic!("Missing required array field {field} in {context}: {value}"),
+        Vec::as_slice,
+    )
 }
 
 fn i64_to_i32(value: i64, context: &str) -> i32 {
@@ -348,9 +353,10 @@ fn required_i32(value: Option<i64>, context: &str, field: &str) -> i32 {
 }
 
 fn non_negative_i32(value: i32, context: &str) -> i32 {
-    if value < 0 {
-        panic!("Expected non-negative integer in {context}, got {value}");
-    }
+    assert!(
+        value >= 0,
+        "Expected non-negative integer in {context}, got {value}"
+    );
     value
 }
 
@@ -358,7 +364,7 @@ fn parse_absolute_start_anchor(value: &serde_json::Value, context: &str) -> i32 
     if let Some(n) = value.as_i64() {
         return i64_to_i32(n, context);
     }
-    if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
+    if let Some(n) = value.get("absolute").and_then(serde_json::Value::as_i64) {
         return i64_to_i32(n, context);
     }
     panic!("Unsupported jigsaw start_height anchor in {context}: {value}");
@@ -366,7 +372,7 @@ fn parse_absolute_start_anchor(value: &serde_json::Value, context: &str) -> i32 
 
 fn parse_start_height_full(value: &serde_json::Value, context: &str) -> StartHeightData {
     // {"absolute": N}
-    if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
+    if let Some(n) = value.get("absolute").and_then(serde_json::Value::as_i64) {
         return StartHeightData::Constant(i64_to_i32(n, context));
     }
 
@@ -409,13 +415,16 @@ fn parse_vertical_anchor(value: &serde_json::Value, context: &str) -> VerticalAn
     if let Some(n) = value.as_i64() {
         return VerticalAnchorData::Absolute(i64_to_i32(n, context));
     }
-    if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
+    if let Some(n) = value.get("absolute").and_then(serde_json::Value::as_i64) {
         return VerticalAnchorData::Absolute(i64_to_i32(n, context));
     }
-    if let Some(n) = value.get("above_bottom").and_then(|v| v.as_i64()) {
+    if let Some(n) = value
+        .get("above_bottom")
+        .and_then(serde_json::Value::as_i64)
+    {
         return VerticalAnchorData::AboveBottom(i64_to_i32(n, context));
     }
-    if let Some(n) = value.get("below_top").and_then(|v| v.as_i64()) {
+    if let Some(n) = value.get("below_top").and_then(serde_json::Value::as_i64) {
         return VerticalAnchorData::BelowTop(i64_to_i32(n, context));
     }
     panic!("Unsupported vertical anchor in {context}: {value}");
@@ -466,14 +475,12 @@ fn parse_dimension_padding(value: Option<&serde_json::Value>, context: &str) -> 
     };
     let bottom = object
         .get("bottom")
-        .and_then(|v| v.as_i64())
-        .map(|n| non_negative_i32(i64_to_i32(n, context), context))
-        .unwrap_or(0);
+        .and_then(serde_json::Value::as_i64)
+        .map_or(0, |n| non_negative_i32(i64_to_i32(n, context), context));
     let top = object
         .get("top")
-        .and_then(|v| v.as_i64())
-        .map(|n| non_negative_i32(i64_to_i32(n, context), context))
-        .unwrap_or(0);
+        .and_then(serde_json::Value::as_i64)
+        .map_or(0, |n| non_negative_i32(i64_to_i32(n, context), context));
     (bottom, top)
 }
 
@@ -538,24 +545,21 @@ fn load_structure_data(
                     &full_name,
                     "use_expansion_hack",
                 );
-                let start_height = structure
-                    .start_height
-                    .as_ref()
-                    .map(|height| parse_start_height_full(height, &full_name))
-                    .unwrap_or_else(|| {
+                let start_height = structure.start_height.as_ref().map_or_else(
+                    || {
                         panic!(
                             "Missing required field start_height in jigsaw structure {full_name}"
                         )
-                    });
+                    },
+                    |height| parse_start_height_full(height, &full_name),
+                );
                 let max_distance_from_center = structure
                     .max_distance_from_center
-                    .as_ref()
-                    .map(|distance| parse_max_distance(distance, &full_name))
-                    .unwrap_or_else(|| {
+                    .as_ref().map_or_else(|| {
                         panic!(
                             "Missing required field max_distance_from_center in jigsaw structure {full_name}"
                         )
-                    });
+                    }, |distance| parse_max_distance(distance, &full_name));
                 let dim_pad =
                     parse_dimension_padding(structure.dimension_padding.as_ref(), &full_name);
 
@@ -598,22 +602,22 @@ fn load_structure_data(
             "minecraft:ruined_portal" => StructureConfigData::RuinedPortal {
                 setups: {
                     let setups = required(structure.setups.clone(), &full_name, "setups");
-                    if setups.is_empty() {
-                        panic!("Field setups must be non-empty in ruined portal {full_name}");
-                    }
+                    assert!(
+                        !setups.is_empty(),
+                        "Field setups must be non-empty in ruined portal {full_name}"
+                    );
                     setups
                 },
             },
             "minecraft:nether_fossil" => StructureConfigData::NetherFossil {
-                height: structure
-                    .height
-                    .as_ref()
-                    .map(|height| parse_height_provider(height, &full_name))
-                    .unwrap_or_else(|| {
+                height: structure.height.as_ref().map_or_else(
+                    || {
                         panic!(
                             "Missing required field height in nether fossil structure {full_name}"
                         )
-                    }),
+                    },
+                    |height| parse_height_provider(height, &full_name),
+                ),
             },
             "minecraft:buried_treasure"
             | "minecraft:desert_pyramid"
@@ -663,13 +667,12 @@ fn generate_spread_type(spread: &Option<String>) -> TokenStream {
 }
 
 fn generate_identifier(id: &str) -> TokenStream {
-    if id.is_empty() {
-        panic!("Cannot generate an empty identifier");
-    }
+    assert!(!id.is_empty(), "Cannot generate an empty identifier");
     if let Some((namespace, path)) = id.split_once(':') {
-        if namespace.is_empty() || path.is_empty() {
-            panic!("Invalid identifier {id}");
-        }
+        assert!(
+            !(namespace.is_empty() || path.is_empty()),
+            "Invalid identifier {id}"
+        );
         quote! { Identifier::new(#namespace, #path) }
     } else {
         quote! { Identifier::vanilla(#id.to_string()) }
@@ -805,9 +808,7 @@ fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<To
                 "minecraft:random" => {
                     let a = generate_identifier(required_str(alias, &alias_context, "alias"));
                     let target_values = required_array(alias, &alias_context, "targets");
-                    if target_values.is_empty() {
-                        panic!("Field targets must be non-empty in {alias_context}");
-                    }
+                    assert!(!target_values.is_empty(), "Field targets must be non-empty in {alias_context}");
                     let targets: Vec<TokenStream> = target_values
                         .iter()
                         .enumerate()
@@ -817,13 +818,11 @@ fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<To
                             let data =
                                 generate_identifier(required_str(target, &target_context, "data"));
                             let weight = required_i32(
-                                target.get("weight").and_then(|w| w.as_i64()),
+                                target.get("weight").and_then(serde_json::Value::as_i64),
                                 &target_context,
                                 "weight",
                             );
-                            if weight <= 0 {
-                                panic!("Field weight must be positive in {target_context}");
-                            }
+                            assert!(weight > 0, "Field weight must be positive in {target_context}");
                             quote! { (#data, #weight) }
                         })
                         .collect();
@@ -831,26 +830,20 @@ fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<To
                 }
                 "minecraft:random_group" => {
                     let group_values = required_array(alias, &alias_context, "groups");
-                    if group_values.is_empty() {
-                        panic!("Field groups must be non-empty in {alias_context}");
-                    }
+                    assert!(!group_values.is_empty(), "Field groups must be non-empty in {alias_context}");
                     let groups: Vec<TokenStream> = group_values
                         .iter()
                         .enumerate()
                         .map(|(group_index, group)| {
                             let group_context = format!("{alias_context}.groups[{group_index}]");
                             let weight = required_i32(
-                                group.get("weight").and_then(|w| w.as_i64()),
+                                group.get("weight").and_then(serde_json::Value::as_i64),
                                 &group_context,
                                 "weight",
                             );
-                            if weight <= 0 {
-                                panic!("Field weight must be positive in {group_context}");
-                            }
+                            assert!(weight > 0, "Field weight must be positive in {group_context}");
                             let data_values = required_array(group, &group_context, "data");
-                            if data_values.is_empty() {
-                                panic!("Field data must be non-empty in {group_context}");
-                            }
+                            assert!(!data_values.is_empty(), "Field data must be non-empty in {group_context}");
                             let bindings: Vec<TokenStream> = data_values
                                 .iter()
                                 .enumerate()
@@ -859,11 +852,10 @@ fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<To
                                         format!("{group_context}.data[{binding_index}]");
                                     let binding_type =
                                         required_str(binding, &binding_context, "type");
-                                    if binding_type != "minecraft:direct" {
-                                        panic!(
-                                            "Unsupported random_group binding type {binding_type} in {binding_context}"
-                                        );
-                                    }
+                                    assert!(
+                                        binding_type == "minecraft:direct",
+                                        "Unsupported random_group binding type {binding_type} in {binding_context}"
+                                    );
                                     let a = generate_identifier(required_str(
                                         binding,
                                         &binding_context,
@@ -900,18 +892,18 @@ fn generate_jigsaw_config(config: &JigsawConfigData, context: &str) -> TokenStre
     let start_pool = generate_identifier(&config.start_pool);
     let max_depth = config.max_depth;
     let use_expansion_hack = config.use_expansion_hack;
-    let heightmap_token = match &config.project_start_to_heightmap {
-        Some(h) => quote! { Some(#h.to_string()) },
-        None => quote! { None },
+    let heightmap_token = if let Some(h) = &config.project_start_to_heightmap {
+        quote! { Some(#h.to_string()) }
+    } else {
+        quote! { None }
     };
     let start_height = generate_start_height(&config.start_height);
     let max_distance_from_center = config.max_distance_from_center;
-    let start_jigsaw_name = match &config.start_jigsaw_name {
-        Some(name) => {
-            let id = generate_identifier(name);
-            quote! { Some(#id) }
-        }
-        None => quote! { None },
+    let start_jigsaw_name = if let Some(name) = &config.start_jigsaw_name {
+        let id = generate_identifier(name);
+        quote! { Some(#id) }
+    } else {
+        quote! { None }
     };
     let pad_bottom = config.dimension_padding.0;
     let pad_top = config.dimension_padding.1;
@@ -1129,18 +1121,20 @@ pub(crate) fn build() -> TokenStream {
 
     for (set_name, set) in &sets {
         let key = generate_identifier(&format!("minecraft:{set_name}"));
-        if set.structures.is_empty() {
-            panic!("Structure set {set_name} must have at least one structure");
-        }
+        assert!(
+            !set.structures.is_empty(),
+            "Structure set {set_name} must have at least one structure"
+        );
 
         let structures: Vec<TokenStream> = set
             .structures
             .iter()
             .enumerate()
             .map(|(entry_index, entry)| {
-                if entry.weight <= 0 {
-                    panic!("Structure set {set_name} entry {entry_index} has non-positive weight");
-                }
+                assert!(
+                    entry.weight > 0,
+                    "Structure set {set_name} entry {entry_index} has non-positive weight"
+                );
                 let structure = generate_identifier(&entry.structure);
                 let weight = entry.weight;
 
@@ -1154,9 +1148,10 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         let freq = set.placement.frequency;
-        if !freq.is_finite() || !(0.0..=1.0).contains(&freq) {
-            panic!("Structure set {set_name} has invalid placement frequency {freq}");
-        }
+        assert!(
+            !(!freq.is_finite() || !(0.0..=1.0).contains(&freq)),
+            "Structure set {set_name} has invalid placement frequency {freq}"
+        );
         let freq_method = generate_frequency_method(&set.placement.frequency_reduction_method);
         let [locate_x, locate_y, locate_z] = set.placement.locate_offset.unwrap_or([0, 0, 0]);
 
@@ -1165,27 +1160,27 @@ pub(crate) fn build() -> TokenStream {
                 let spacing = required(set.placement.spacing, set_name, "placement.spacing");
                 let separation =
                     required(set.placement.separation, set_name, "placement.separation");
-                if spacing <= 0 {
-                    panic!("Structure set {set_name} has non-positive spacing {spacing}");
-                }
-                if separation < 0 {
-                    panic!("Structure set {set_name} has negative separation {separation}");
-                }
-                if spacing <= separation {
-                    panic!(
-                        "Structure set {set_name} has spacing {spacing} <= separation {separation}"
-                    );
-                }
+                assert!(
+                    spacing > 0,
+                    "Structure set {set_name} has non-positive spacing {spacing}"
+                );
+                assert!(
+                    separation >= 0,
+                    "Structure set {set_name} has negative separation {separation}"
+                );
+                assert!(
+                    spacing > separation,
+                    "Structure set {set_name} has spacing {spacing} <= separation {separation}"
+                );
                 let salt = set.placement.salt;
                 let spread_type = generate_spread_type(&set.placement.spread_type);
 
                 let exclusion = if let Some(ez) = &set.placement.exclusion_zone {
-                    if ez.chunk_count < 0 {
-                        panic!(
-                            "Structure set {set_name} has negative exclusion chunk_count {}",
-                            ez.chunk_count
-                        );
-                    }
+                    assert!(
+                        ez.chunk_count >= 0,
+                        "Structure set {set_name} has negative exclusion chunk_count {}",
+                        ez.chunk_count
+                    );
                     let other = generate_identifier(&ez.other_set);
                     let count = ez.chunk_count;
                     quote! {
@@ -1215,15 +1210,18 @@ pub(crate) fn build() -> TokenStream {
                 let distance = required(set.placement.distance, set_name, "placement.distance");
                 let spread = required(set.placement.spread, set_name, "placement.spread");
                 let count = required(set.placement.count, set_name, "placement.count");
-                if distance <= 0 {
-                    panic!("Structure set {set_name} has non-positive ring distance {distance}");
-                }
-                if spread <= 0 {
-                    panic!("Structure set {set_name} has non-positive ring spread {spread}");
-                }
-                if count < 0 {
-                    panic!("Structure set {set_name} has negative ring count {count}");
-                }
+                assert!(
+                    distance > 0,
+                    "Structure set {set_name} has non-positive ring distance {distance}"
+                );
+                assert!(
+                    spread > 0,
+                    "Structure set {set_name} has non-positive ring spread {spread}"
+                );
+                assert!(
+                    count >= 0,
+                    "Structure set {set_name} has negative ring count {count}"
+                );
                 let salt = set.placement.salt;
 
                 // Resolve preferred biomes from tag reference (e.g., "#minecraft:stronghold_biased_to")

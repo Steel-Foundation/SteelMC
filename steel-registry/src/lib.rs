@@ -1,4 +1,31 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
+#![expect(
+    missing_docs,
+    reason = "registry APIs mirror large generated vanilla data surfaces that are not individually documented yet"
+)]
+#![expect(
+    clippy::absolute_paths,
+    clippy::allow_attributes_without_reason,
+    clippy::fn_params_excessive_bools,
+    clippy::items_after_statements,
+    clippy::match_same_arms,
+    clippy::missing_fields_in_debug,
+    clippy::missing_panics_doc,
+    clippy::ref_option,
+    clippy::return_self_not_must_use,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unreadable_literal,
+    clippy::unused_self,
+    reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::float_cmp,
+        reason = "registry tests compare exact extracted floating-point constants"
+    )
+)]
 
 use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
@@ -421,6 +448,11 @@ pub mod vanilla_structure_sets;
 #[path = "generated/vanilla_structure_processors.rs"]
 pub mod vanilla_structure_processors;
 
+#[expect(
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    reason = "generated vanilla template pool data is emitted by the registry build script"
+)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_template_pools.rs"]
 pub mod vanilla_template_pools;
@@ -634,8 +666,8 @@ pub struct Registry {
 impl Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Registry {")
-            .and_then(|_| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
-            .and_then(|_| f.write_str("}"))
+            .and_then(|()| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
+            .and_then(|()| f.write_str("}"))
     }
 }
 

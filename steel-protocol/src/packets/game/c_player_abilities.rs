@@ -15,7 +15,7 @@ pub mod ability_flags {
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_PLAYER_ABILITIES)]
 pub struct CPlayerAbilities {
-    /// Bitfield of ability flags (invulnerable, flying, may_fly, instabuild)
+    /// Bitfield of ability flags (invulnerable, flying, `may_fly`, instabuild)
     pub flags: u8,
     /// Flying speed (default 0.05)
     pub flying_speed: f32,
@@ -30,7 +30,8 @@ impl CPlayerAbilities {
     pub const DEFAULT_WALKING_SPEED: f32 = 0.1;
 
     /// Creates abilities for survival mode
-    pub fn survival() -> Self {
+    #[must_use]
+    pub const fn survival() -> Self {
         Self {
             flags: 0,
             flying_speed: Self::DEFAULT_FLYING_SPEED,
@@ -39,7 +40,8 @@ impl CPlayerAbilities {
     }
 
     /// Creates abilities for creative mode
-    pub fn creative() -> Self {
+    #[must_use]
+    pub const fn creative() -> Self {
         Self {
             flags: ability_flags::INVULNERABLE | ability_flags::MAY_FLY | ability_flags::INSTABUILD,
             flying_speed: Self::DEFAULT_FLYING_SPEED,
@@ -48,7 +50,8 @@ impl CPlayerAbilities {
     }
 
     /// Creates abilities for adventure mode
-    pub fn adventure() -> Self {
+    #[must_use]
+    pub const fn adventure() -> Self {
         Self {
             flags: 0,
             flying_speed: Self::DEFAULT_FLYING_SPEED,
@@ -57,7 +60,8 @@ impl CPlayerAbilities {
     }
 
     /// Creates abilities for spectator mode
-    pub fn spectator() -> Self {
+    #[must_use]
+    pub const fn spectator() -> Self {
         Self {
             // Spectators: invulnerable, can fly, and are currently flying
             flags: ability_flags::INVULNERABLE | ability_flags::MAY_FLY | ability_flags::FLYING,

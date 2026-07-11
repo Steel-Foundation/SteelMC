@@ -18,7 +18,7 @@ pub struct ToolRule {
     /// The blocks this rule applies to (can be a tag like "#minecraft:mineable/pickaxe",
     /// a single block like "minecraft:cobweb", or a list of blocks).
     pub blocks: Vec<Identifier>,
-    /// The mining speed for these blocks. If None, uses the tool's default_mining_speed.
+    /// The mining speed for these blocks. If None, uses the tool's `default_mining_speed`.
     pub speed: Option<f32>,
     /// Whether the tool is "correct" for dropping items from these blocks.
     /// If None, falls back to the block's requiresCorrectToolForDrops property.
@@ -28,7 +28,7 @@ pub struct ToolRule {
 impl ToolRule {
     /// Creates a rule that sets both mining speed and marks the tool as correct for drops.
     #[must_use]
-    pub fn mines_and_drops(blocks: Vec<Identifier>, speed: f32) -> Self {
+    pub const fn mines_and_drops(blocks: Vec<Identifier>, speed: f32) -> Self {
         Self {
             blocks,
             speed: Some(speed),
@@ -38,7 +38,7 @@ impl ToolRule {
 
     /// Creates a rule that explicitly denies drops (e.g., incorrect tool tier).
     #[must_use]
-    pub fn denies_drops(blocks: Vec<Identifier>) -> Self {
+    pub const fn denies_drops(blocks: Vec<Identifier>) -> Self {
         Self {
             blocks,
             speed: None,
@@ -48,7 +48,7 @@ impl ToolRule {
 
     /// Creates a rule that only overrides the mining speed.
     #[must_use]
-    pub fn override_speed(blocks: Vec<Identifier>, speed: f32) -> Self {
+    pub const fn override_speed(blocks: Vec<Identifier>, speed: f32) -> Self {
         Self {
             blocks,
             speed: Some(speed),
@@ -270,8 +270,7 @@ impl simdnbt::FromNbtTag for Tool {
         let can_destroy_blocks_in_creative = compound
             .get("can_destroy_blocks_in_creative")
             .and_then(|t| t.byte())
-            .map(|b| b != 0)
-            .unwrap_or(true);
+            != Some(0);
 
         Some(Self {
             rules,

@@ -899,6 +899,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TestLivingEntity);
+
     impl Entity for TestLivingEntity {
         fn base(&self) -> &EntityBase {
             &self.base

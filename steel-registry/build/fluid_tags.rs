@@ -27,7 +27,7 @@ pub(crate) fn build() -> TokenStream {
         );
         let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
 
-        let fluid_strs = fluids.iter().map(|s| s.as_str());
+        let fluid_strs = fluids.iter().map(std::string::String::as_str);
 
         stream.extend(quote! {
             static #tag_array: &[&str] = &[#(#fluid_strs),*];

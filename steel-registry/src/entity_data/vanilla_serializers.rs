@@ -3,6 +3,13 @@
 //! This module registers all vanilla entity data serializers in the exact order
 //! they appear in vanilla's `EntityDataSerializers.java`. The registration order
 //! determines the serializer ID used in the network protocol.
+#![cfg_attr(
+    test,
+    expect(
+        clippy::unwrap_used,
+        reason = "vanilla entity data serializer tests unwrap generated registry invariants"
+    )
+)]
 
 use std::io;
 
@@ -28,7 +35,7 @@ macro_rules! ser_write {
     };
 }
 
-/// Serializer that wraps value in VarInt.
+/// Serializer that wraps value in `VarInt`.
 macro_rules! ser_varint {
     ($name:ident, $variant:ident) => {
         fn $name(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
@@ -40,7 +47,7 @@ macro_rules! ser_varint {
     };
 }
 
-/// Serializer that casts enum to i32 then writes as VarInt.
+/// Serializer that casts enum to i32 then writes as `VarInt`.
 macro_rules! ser_enum_varint {
     ($name:ident, $variant:ident) => {
         fn $name(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
@@ -211,7 +218,7 @@ fn ser_optional_unsigned_int(data: &EntityData, buf: &mut Vec<u8>) -> io::Result
     match data {
         EntityData::OptionalUnsignedInt(v) => {
             // Encoded as VarInt: 0 = absent, otherwise value + 1
-            VarInt(v.map(|x| x as i32 + 1).unwrap_or(0)).write(buf)
+            VarInt(v.map_or(0, |x| x as i32 + 1)).write(buf)
         }
         _ => Err(io::Error::other("Expected OptionalUnsignedInt")),
     }

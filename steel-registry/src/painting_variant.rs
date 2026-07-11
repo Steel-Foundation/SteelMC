@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "painting variant NBT conversion unwraps known text-component compound output"
+)]
+
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;

@@ -252,7 +252,7 @@ pub enum StructureConfigData {
 
 impl StructureConfigData {
     #[must_use]
-    pub fn as_jigsaw(&self) -> Option<&JigsawConfig> {
+    pub const fn as_jigsaw(&self) -> Option<&JigsawConfig> {
         match self {
             Self::Jigsaw(config) => Some(config),
             _ => None,

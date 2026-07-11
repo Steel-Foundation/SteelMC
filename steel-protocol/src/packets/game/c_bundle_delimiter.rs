@@ -21,7 +21,7 @@ pub struct CBundleDelimiter;
 impl CBundleDelimiter {
     /// Creates a new bundle delimiter packet.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }

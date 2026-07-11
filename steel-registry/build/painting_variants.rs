@@ -42,7 +42,7 @@ fn parse_color(color_str: &str) -> TokenStream {
         "light_purple" => quote! { Color::LightPurple },
         "yellow" => quote! { Color::Yellow },
         "white" => quote! { Color::White },
-        _ => panic!("Unknown color: {}", color_str),
+        _ => panic!("Unknown color: {color_str}"),
     }
 }
 

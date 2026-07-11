@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted item data"
+)]
+
 use std::{collections::BTreeMap, fs, str::FromStr};
 
 use crate::generator_functions::generate_sound_event_ref;
@@ -10,7 +15,10 @@ use steel_utils::Identifier;
 
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
-#[expect(dead_code)]
+#[expect(
+    dead_code,
+    reason = "extracted item JSON includes fields not used by current item generation"
+)]
 pub struct Item {
     pub id: u16,
     pub name: String,
@@ -37,7 +45,7 @@ fn get_component_ident(name: &str) -> Option<Ident> {
     Some(Ident::new(&shouty_name, Span::call_site()))
 }
 
-/// Generates the TokenStream for a Tool component from JSON data.
+/// Generates the `TokenStream` for a Tool component from JSON data.
 fn generate_tool_component(value: &Value) -> TokenStream {
     let rules = value
         .get("rules")
@@ -47,17 +55,17 @@ fn generate_tool_component(value: &Value) -> TokenStream {
 
     let default_mining_speed = value
         .get("default_mining_speed")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .unwrap_or(1.0) as f32;
 
     let damage_per_block = value
         .get("damage_per_block")
-        .and_then(|v| v.as_i64())
+        .and_then(serde_json::Value::as_i64)
         .unwrap_or(1) as i32;
 
     let can_destroy_blocks_in_creative = value
         .get("can_destroy_blocks_in_creative")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(true);
 
     quote! {
@@ -70,7 +78,7 @@ fn generate_tool_component(value: &Value) -> TokenStream {
     }
 }
 
-/// Parses a block or tag reference string into an Identifier TokenStream.
+/// Parses a block or tag reference string into an Identifier `TokenStream`.
 /// For tags like "#minecraft:mineable/pickaxe", creates Identifier { namespace: "#minecraft", path: "mineable/pickaxe" }
 /// For blocks like "minecraft:stone", creates Identifier { namespace: "minecraft", path: "stone" }
 fn parse_block_or_tag(s: &str) -> TokenStream {
@@ -453,7 +461,7 @@ fn generate_piercing_weapon_component(value: &Value) -> TokenStream {
     }
 }
 
-/// Generates the TokenStream for a single ToolRule from JSON data.
+/// Generates the `TokenStream` for a single `ToolRule` from JSON data.
 fn generate_tool_rule(rule: &Value) -> TokenStream {
     // Parse blocks - can be a string (single block or tag), or an array of strings
     let blocks_value = rule.get("blocks");
@@ -470,18 +478,21 @@ fn generate_tool_rule(rule: &Value) -> TokenStream {
     };
 
     // Parse optional speed
-    let speed_token = match rule.get("speed").and_then(|v| v.as_f64()) {
-        Some(speed) => {
-            let speed = speed as f32;
-            quote! { Some(#speed) }
-        }
-        None => quote! { None },
+    let speed_token = if let Some(speed) = rule.get("speed").and_then(serde_json::Value::as_f64) {
+        let speed = speed as f32;
+        quote! { Some(#speed) }
+    } else {
+        quote! { None }
     };
 
     // Parse optional correct_for_drops
-    let correct_for_drops_token = match rule.get("correct_for_drops").and_then(|v| v.as_bool()) {
-        Some(correct) => quote! { Some(#correct) },
-        None => quote! { None },
+    let correct_for_drops_token = if let Some(correct) = rule
+        .get("correct_for_drops")
+        .and_then(serde_json::Value::as_bool)
+    {
+        quote! { Some(#correct) }
+    } else {
+        quote! { None }
     };
 
     quote! {
@@ -494,7 +505,7 @@ fn generate_tool_rule(rule: &Value) -> TokenStream {
 }
 
 /// Returns the crafting remainder item key for a given item, if any.
-/// Based on vanilla Minecraft's Item.Properties.craftRemainder() calls.
+/// Based on vanilla Minecraft's `Item.Properties.craftRemainder()` calls.
 fn get_craft_remainder(item_name: &str) -> Option<&'static str> {
     match item_name {
         // Buckets return empty bucket
@@ -593,23 +604,23 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     let camera_overlay = optional_identifier_token(value, "camera_overlay");
                     let dispensable = value
                         .get("dispensable")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(true);
                     let swappable = value
                         .get("swappable")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(true);
                     let damage_on_hurt = value
                         .get("damage_on_hurt")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(true);
                     let equip_on_interact = value
                         .get("equip_on_interact")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     let can_be_sheared = value
                         .get("can_be_sheared")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     let shearing_sound = sound_event_holder_token(
                         value,
@@ -669,6 +680,32 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:use_cooldown" => {
+                let seconds = value
+                    .get("seconds")
+                    .and_then(Value::as_f64)
+                    .expect("use_cooldown.seconds must be a number")
+                    as f32;
+                let cooldown_group = value
+                    .get("cooldown_group")
+                    .and_then(Value::as_str)
+                    .map_or_else(
+                        || quote! { None },
+                        |group| {
+                            let id = Identifier::from_str(group)
+                                .expect("use_cooldown.cooldown_group must be an identifier");
+                            let namespace = id.namespace.as_ref();
+                            let path = id.path.as_ref();
+                            quote! { Some(Identifier::new_static(#namespace, #path)) }
+                        },
+                    );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::USE_COOLDOWN,
+                        Some(vanilla_components::UseCooldown::new(#seconds, #cooldown_group)),
+                    )
+                });
+            }
             "minecraft:weapon" => {
                 let weapon = generate_weapon_component(value);
                 builder_calls
@@ -717,25 +754,25 @@ pub(crate) fn build() -> TokenStream {
             let builder_calls = generate_builder_calls(item);
 
             if builder_calls.is_empty() {
-                if block_name != &item.name {
+                if block_name == &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
                     });
                 }
             } else {
                 // Block item with custom components
-                if block_name != &item.name {
+                if block_name == &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
                             #(#builder_calls)*,
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
                             #(#builder_calls)*,
                     });
                 }
