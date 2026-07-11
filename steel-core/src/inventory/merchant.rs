@@ -1,16 +1,21 @@
-//! temp container for the villager trade menu.
+//! Transient 3-slot container backing the villager trade menu.
 
 use std::sync::Arc;
 use steel_registry::item_stack::ItemStack;
 
 use crate::entity::{Mob, SharedEntity};
 use crate::inventory::container::Container;
-use crate::trading::{MerchantOffer, MerchantOffers, SharedMerchantOffers};
+use crate::trading::{MerchantOffer, SharedMerchantOffers};
 
+/// Slot index of the first payment slot.
 pub const PAYMENT1_SLOT: usize = 0;
+/// Slot index of the second payment slot.
 pub const PAYMENT2_SLOT: usize = 1;
+/// Slot index of the trade result slot.
 pub const RESULT_SLOT: usize = 2;
 
+/// A transient 3-slot container that computes a trade result from two payment
+/// slots against a villager's shared offer list. Based on Java's `MerchantContainer`.
 pub struct MerchantContainer {
     items: [ItemStack; 3],
     offers: SharedMerchantOffers,
@@ -21,6 +26,7 @@ pub struct MerchantContainer {
 }
 
 impl MerchantContainer {
+    /// Creates a new merchant container for the given offers and villager.
     #[must_use]
     pub fn new(offers: SharedMerchantOffers, merchant: SharedEntity) -> Self {
         Self {
@@ -33,21 +39,25 @@ impl MerchantContainer {
         }
     }
 
+    /// Returns true when the payment slots match an in-stock trade.
     #[must_use]
-    pub fn has_active_offer(&self) -> bool {
+    pub const fn has_active_offer(&self) -> bool {
         self.active_offer.is_some()
     }
 
+    /// Returns a handle to the shared offer list.
     #[must_use]
     pub fn offers(&self) -> SharedMerchantOffers {
         Arc::clone(&self.offers)
     }
 
+    /// Returns the XP a completed trade would grant.
     #[must_use]
     pub const fn future_xp(&self) -> i32 {
         self.future_xp
     }
 
+    /// Sets the selected trade index and recomputes the result slot.
     pub fn set_selection_hint(&mut self, hint: i32) {
         self.selection_hint = hint;
         self.update_sell_item();
@@ -92,6 +102,8 @@ impl MerchantContainer {
         }
     }
 
+    /// Executes the active trade: consumes the payment, increments the offer's
+    /// use count, refills the result slot, and notifies the villager.
     pub fn take_trade(&mut self) {
         let Some(index) = self.active_offer else {
             return;

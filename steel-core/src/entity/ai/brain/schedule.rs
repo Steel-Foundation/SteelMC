@@ -1,5 +1,3 @@
-use crate::entity::ai::brain::activity;
-
 use super::activity::Activity;
 
 const DAY_LENGTH: i64 = 24000;

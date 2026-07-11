@@ -22,11 +22,11 @@ use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
-use glam::DVec3;
+use glam::{DVec3, Vec3};
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CPlayerChat,
-    CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
+    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CLevelParticles,
+    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
     CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
     CUpdateAttributes, GameEventType, SoundSource,
 };
@@ -1285,6 +1285,7 @@ impl World {
         self.level_data.read().game_time()
     }
 
+    /// Returns the world's time of day (ticks within the daily cycle).
     pub fn day_time(&self) -> i64 {
         self.level_data.read().day_time()
     }
@@ -4080,6 +4081,59 @@ impl World {
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
+                    player.connection.send_encoded(encoded.clone());
+                }
+            }
+        }
+    }
+
+    /// Spawns particles at a position, broadcasting to nearby tracking players.
+    ///
+    /// Only simple particle types (no extra options payload) are supported.
+    /// `*_dist` is the gaussian spread applied client-side; `count` particles
+    /// are spawned. Based on vanilla `ServerLevel::sendParticles`.
+    pub fn send_particles(
+        &self,
+        particle_id: i32,
+        pos: DVec3,
+        dist: Vec3,
+        max_speed: f32,
+        count: i32,
+    ) {
+        const MAX_DISTANCE_SQ: f64 = 32.0 * 32.0;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x.floor() as i32),
+            SectionPos::block_to_section_coord(pos.z.floor() as i32),
+        );
+
+        let packet = CLevelParticles {
+            override_limiter: false,
+            always_show: false,
+            x: pos.x,
+            y: pos.y,
+            z: pos.z,
+            x_dist: dist.x,
+            y_dist: dist.y,
+            z_dist: dist.z,
+            max_speed,
+            count,
+            particle_id,
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode particle packet");
+            return;
+        };
+
+        for entity_id in self.player_area_map.get_tracking_players(chunk) {
+            if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                let player_pos = player.position();
+                let dx = player_pos.x - pos.x;
+                let dy = player_pos.y - pos.y;
+                let dz = player_pos.z - pos.z;
+                if dx * dx + dy * dy + dz * dz <= MAX_DISTANCE_SQ {
                     player.connection.send_encoded(encoded.clone());
                 }
             }

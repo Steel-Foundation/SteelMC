@@ -79,7 +79,7 @@ pub(crate) fn build() -> TokenStream {
                 });
             }
             level_tokens.extend(quote! {
-                ProfessionTradeTable { amount: #amount, trades: &[#trade_tokens] },
+                VillagerTradeLevel { amount: #amount, trades: &[#trade_tokens] },
             });
         }
         profession_tokens.extend(quote! {
@@ -100,7 +100,7 @@ fn read_level(profession: &str, level: usize) -> Option<(i32, Vec<SimpleTrade>)>
     let trade_set: TradeSet =
         read_json(&format!("{TRADE_SET_DIR}/{profession}/level_{level}.json"))?;
     let tag_ref = trade_set.trades.trim_start_matches('#');
-    let tag_path = tag_ref.strip_prefix("minecraft").unwrap_or(tag_ref);
+    let tag_path = tag_ref.strip_prefix("minecraft:").unwrap_or(tag_ref);
     let tag: TagFile = read_json(&format!("{TAG_DIR}/{tag_path}.json"))?;
 
     let trades = tag

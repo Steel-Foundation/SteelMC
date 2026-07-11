@@ -17,7 +17,7 @@ use steel_protocol::packets::game::{
     SContainerSlotStateChanged, SInteract, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
     SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
     SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
-    SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SSpectatorAction, SSwing, SUseItem, SUseItemOn, SSelectTrade,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -409,6 +409,10 @@ impl JavaConnection {
             }
             play::S_SET_CREATIVE_MODE_SLOT => {
                 player.handle_set_creative_mode_slot(SSetCreativeModeSlot::read_packet(data)?);
+            }
+            play::S_SELECT_TRADE => {
+                let packet = SSelectTrade::read_packet(data)?;
+                player.handle_select_trade(packet);
             }
             play::S_PLAYER_INPUT => {
                 player.handle_player_input(SPlayerInput::read_packet(data)?);

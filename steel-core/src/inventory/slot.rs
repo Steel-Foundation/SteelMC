@@ -752,16 +752,19 @@ impl Slot for CraftingResultSlot {
     }
 }
 
+/// The result slot in a merchant menu; taking its item executes the trade.
 pub struct MerchantResultSlot {
     container: SyncMerchantContainer,
 }
 
 impl MerchantResultSlot {
+    /// Creates a new merchant result slot for the given trade container.
     #[must_use]
     pub const fn new(container: SyncMerchantContainer) -> Self {
         Self { container }
     }
 
+    /// Returns a container reference to the merchant container.
     #[must_use]
     pub fn container_ref(&self) -> ContainerRef {
         ContainerRef::MerchantContainer(Arc::clone(&self.container))
@@ -804,11 +807,11 @@ impl Slot for MerchantResultSlot {
             .is_some_and(MerchantContainer::has_active_offer)
     }
 
-    fn allow_modification(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
+    fn allow_modification(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
         false
     }
 
-    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+    fn remove(&self, guard: &mut ContainerLockGuard, _amount: i32) -> ItemStack {
         mem::take(self.get_item_mut(guard))
     }
 

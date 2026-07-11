@@ -1,8 +1,9 @@
-//! Vilalger offers and profession trade tables.
+//! Villager offers and profession trade tables.
 
 use std::str::FromStr;
 use std::sync::Arc;
 
+use rand::seq::IteratorRandom;
 use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::item_stack::ItemStack;
@@ -12,6 +13,8 @@ use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 
+/// A single villager trade offer: up to two cost items for one result item,
+/// with a use counter that limits how many times it can be traded before restock.
 #[derive(Clone)]
 pub struct MerchantOffer {
     cost_a: ItemStack,
@@ -22,11 +25,13 @@ pub struct MerchantOffer {
     xp: i32,
 }
 
+/// A villager's offer list, shared between the entity and any open trade menu.
 pub type SharedMerchantOffers = Arc<SyncMutex<MerchantOffers>>;
 
 impl MerchantOffer {
+    /// Creates a new offer with a fresh (zero) use count.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         cost_a: ItemStack,
         cost_b: Option<ItemStack>,
         result: ItemStack,
@@ -43,45 +48,57 @@ impl MerchantOffer {
         }
     }
 
+    /// The primary cost item.
     #[must_use]
     pub const fn cost_a(&self) -> &ItemStack {
         &self.cost_a
     }
 
+    /// The optional secondary cost item.
     #[must_use]
     pub const fn cost_b(&self) -> Option<&ItemStack> {
         self.cost_b.as_ref()
     }
 
+    /// The item produced by this trade.
     #[must_use]
     pub const fn result(&self) -> &ItemStack {
         &self.result
     }
 
+    /// How many times this offer has been traded since the last restock.
     #[must_use]
     pub const fn uses(&self) -> i32 {
         self.uses
     }
 
+    /// The maximum number of trades before this offer is out of stock.
     #[must_use]
     pub const fn max_uses(&self) -> i32 {
         self.max_uses
     }
 
+    /// The experience granted to the villager per trade.
     #[must_use]
     pub const fn xp(&self) -> i32 {
         self.xp
     }
 
+    /// Returns true if this offer has been used up (needs a restock).
     #[must_use]
     pub const fn is_out_of_stock(&self) -> bool {
         self.uses >= self.max_uses
     }
 
+    /// Increments the use counter after a completed trade.
     pub const fn increment_uses(&mut self) {
         self.uses += 1;
     }
 
+    /// Returns true if the payment stacks `a`/`b` meet this offer's costs.
+    ///
+    /// Item type is compared ignoring components (matching vanilla `ItemCost`
+    /// with an empty predicate); each count must meet or exceed the cost.
     #[must_use]
     pub fn satisfied_by(&self, a: &ItemStack, b: &ItemStack) -> bool {
         if !ItemStack::is_same_item(a, &self.cost_a) || a.count() < self.cost_a.count() {
@@ -93,11 +110,15 @@ impl MerchantOffer {
         }
     }
 
+    /// Returns a fresh copy of this offer's result item.
     #[must_use]
     pub fn assemble(&self) -> ItemStack {
         self.result.clone()
     }
 
+    /// Consumes this offer's costs from the payment stacks if they satisfy it.
+    ///
+    /// Returns true and shrinks `a`/`b` on success; leaves them untouched otherwise.
     pub fn take(&self, a: &mut ItemStack, b: &mut ItemStack) -> bool {
         if !self.satisfied_by(a, b) {
             return false;
@@ -109,6 +130,7 @@ impl MerchantOffer {
         true
     }
 
+    /// Serializes this offer to a vanilla-style recipe NBT compound.
     #[must_use]
     pub fn to_nbt(&self) -> NbtCompound {
         let mut c = NbtCompound::new();
@@ -123,6 +145,7 @@ impl MerchantOffer {
         c
     }
 
+    /// Deserializes an offer from a recipe NBT compound, if valid.
     #[must_use]
     pub fn from_nbt(compound: &NbtCompoundView<'_, '_>) -> Option<Self> {
         let cost_a = compound
@@ -144,18 +167,25 @@ impl MerchantOffer {
         })
     }
 
+    /// Returns true if this offer has been used and could be restocked.
     #[must_use]
     pub const fn needs_restock(&self) -> bool {
         self.uses > 0
     }
 
+    /// Resets the use counter to zero (a restock).
     pub const fn reset_uses(&mut self) {
         self.uses = 0;
     }
 }
 
+/// A villager's full list of trade offers.
 pub type MerchantOffers = Vec<MerchantOffer>;
 
+/// Rolls the trade offers for a profession at a given level.
+///
+/// Mirrors vanilla: a random selection of `amount` trades is drawn from the
+/// level's pool (without replacement) rather than returning the whole pool.
 #[must_use]
 pub fn offers_for(profession_key: &Identifier, level: i32) -> MerchantOffers {
     let Some(table) = VILLAGER_TRADES
@@ -171,7 +201,14 @@ pub fn offers_for(profession_key: &Identifier, level: i32) -> MerchantOffers {
         return Vec::new();
     };
 
-    trade_level.trades.iter().filter_map(build_offer).collect()
+    // Vanilla rolls `amount` trades at random from the level's pool (without
+    // replacement) rather than offering the whole pool.
+    let amount = usize::try_from(trade_level.amount).unwrap_or(0);
+    trade_level
+        .trades
+        .iter()
+        .filter_map(build_offer)
+        .sample(&mut rand::rng(), amount)
 }
 
 fn build_offer(trade: &VillagerTrade) -> Option<MerchantOffer> {

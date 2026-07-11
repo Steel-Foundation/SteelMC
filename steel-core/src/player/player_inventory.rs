@@ -9,8 +9,7 @@ use std::{
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SSetCarriedItem, SSetCreativeModeSlot,
+    CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged, SSelectTrade, SSetCarriedItem, SSetCreativeModeSlot,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
@@ -758,6 +757,14 @@ impl Player {
         // - Stonecutter recipe selection
         // - Loom pattern selection
         // - Lectern page turning
+    }
+
+    /// Handles the client selecting a trade in an open merchant menu.
+    pub fn handle_select_trade(&self, packet: SSelectTrade) {
+        let mut open_menu_guard = self.open_menu.lock();
+        if let Some(ref mut menu) = *open_menu_guard {
+            menu.select_trade(packet.item);
+        }
     }
 
     /// Handles a container click packet (slot interaction).

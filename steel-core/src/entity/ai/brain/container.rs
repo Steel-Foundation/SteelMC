@@ -69,7 +69,7 @@ impl Brain {
         self.default_activity = activity;
     }
 
-    pub(crate) fn set_schedule(&mut self, schedule: Schedule) {
+    pub(crate) const fn set_schedule(&mut self, schedule: Schedule) {
         self.schedule = Some(schedule);
     }
 

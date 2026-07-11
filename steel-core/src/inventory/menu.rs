@@ -1191,6 +1191,10 @@ pub trait Menu {
         true
     }
 
+    /// Handles the client selecting a trade. Only merchant menus act on this;
+    /// the default is a no-op.
+    fn select_trade(&mut self, _index: i32) {}
+
     /// Returns true if the item can be taken from the slot during pickup all.
     /// Override to prevent pickup from certain slots (like crafting result).
     fn can_take_item_for_pick_all(&self, _carried: &ItemStack, _slot_index: usize) -> bool {

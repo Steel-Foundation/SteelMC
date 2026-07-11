@@ -14,9 +14,11 @@ const ENTRY_CONDITION: &[(MemoryModuleType, MemoryStatus)] = &[
     ),
 ];
 
+type LookPredicate = Box<dyn Fn(&dyn Entity) -> bool + Send + Sync>;
+
 pub(crate) struct SetEntityLookTarget {
     state: BehaviorState,
-    can_look_at: Box<dyn Fn(&dyn Entity) -> bool + Send + Sync>,
+    can_look_at: LookPredicate,
     max_dist_sqr: f64,
 }
 

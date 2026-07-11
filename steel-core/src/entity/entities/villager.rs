@@ -1,9 +1,10 @@
 //! Villager entity implementation.
 
+use std::mem;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
-use glam::DVec3;
+use glam::{DVec3, Vec3};
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::{entity_behavior, entity_impl};
@@ -20,13 +21,14 @@ use steel_registry::{
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
+use steel_utils::translations;
 use text_components::TextComponent;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::{
     AcquireBed, AcquireJobSite, Activity, AssignProfession, Brain, LookAtTargetSink,
     MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, RandomStroll, Schedule,
-    SetEntityLookTarget, SetWalkTargetFromHome,
+    SetEntityLookTarget, SetWalkTargetFromHome, SetWalkTargetFromJobSite, WorkAtPoi,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -50,6 +52,8 @@ const VILLAGER_DEFAULT_SCHEDULE: Schedule = Schedule::new(&[
     (12000, Activity::Rest),
 ]);
 
+/// A brain-driven villager: schedules, claims a bed and job site, takes a
+/// profession, and trades with players.
 #[entity_behavior(class = "Villager")]
 pub struct VillagerEntity {
     base: EntityBase,
@@ -72,9 +76,11 @@ struct TradeState {
     last_restock_game_time: i64,
     restocks_today: i32,
     last_restock_check_day: i64,
+    open_container_id: i32,
 }
 
 impl VillagerEntity {
+    /// Creates a freshly spawned villager.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
@@ -83,6 +89,7 @@ impl VillagerEntity {
         )
     }
 
+    /// Reconstructs a villager from saved NBT.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
@@ -95,7 +102,7 @@ impl VillagerEntity {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
         let ageable_base = AgeableMobBase::new();
-        let mut entity_data = VillagerEntityData::new();
+        let entity_data = VillagerEntityData::new();
 
         Self {
             base,
@@ -112,29 +119,35 @@ impl VillagerEntity {
         }
     }
 
+    /// Returns the villager's data (biome type, profession, level).
     #[must_use]
     pub fn villager_data(&self) -> VillagerData {
         *self.entity_data.lock().villager_data.get()
     }
 
+    /// Sets the villager's data (biome type, profession, level).
     pub fn set_villager_data(&self, data: VillagerData) {
         self.entity_data.lock().villager_data.set(data);
     }
 
+    /// Returns the villager's age in ticks.
     #[must_use]
     pub fn get_age(&self) -> i32 {
         AgeableMob::get_age(self)
     }
 
+    /// Sets the villager's age in ticks.
     pub fn set_age(&self, age: i32) {
         AgeableMob::set_age(self, age);
     }
 
+    /// Returns true if the villager is a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
         AgeableMob::is_baby(self)
     }
 
+    /// Sets whether the villager is a baby.
     pub fn set_baby(&self, baby: bool) {
         AgeableMob::set_baby(self, baby);
     }
@@ -149,10 +162,11 @@ impl VillagerEntity {
 
         let title = self
             .custom_name()
-            .unwrap_or_else(|| TextComponent::translated("entity.minecraft.vilager"));
+            .unwrap_or_else(|| TextComponent::translated(translations::ENTITY_MINECRAFT_VILLAGER.msg()));
         let provider =
             MerchantMenuProvider::new(player.inventory.clone(), self.offers(), merchant, title);
         let container_id = player.open_menu(&provider);
+        self.trade_state.lock().open_container_id = i32::from(container_id);
 
         let data = self.villager_data();
         let offers: Vec<MerchantOfferData> =
@@ -179,8 +193,29 @@ impl VillagerEntity {
         let mut data = self.villager_data();
         data.level += 1;
         self.set_villager_data(data);
-        self.updateTrades();
+        self.update_trades();
         self.resend_offers_to_trading_player();
+        self.spawn_level_up_particles();
+    }
+
+    fn spawn_level_up_particles(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(particle_id) = vanilla_particle_types::HAPPY_VILLAGER.try_id() else {
+            return;
+        };
+        let Ok(particle_id) = i32::try_from(particle_id) else {
+            return;
+        };
+        let pos = self.position();
+        world.send_particles(
+            particle_id,
+            DVec3::new(pos.x, pos.y + 1.0, pos.z),
+            Vec3::new(0.3, 0.6, 0.3),
+            0.0,
+            7,
+        );
     }
     
     fn should_restock(&self) -> bool {
@@ -231,8 +266,30 @@ impl VillagerEntity {
     }
 
     fn resend_offers_to_trading_player(&self) {
-        //TODO resend CMerchantOffers to a player if currently trading. This needs the open menu's
-        //id. Store it in TradeState.
+        let Some(player_id) = *self.trading_player.lock() else {
+            return;
+        };
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(player) = world.players.get_by_entity_id(player_id) else {
+            return;
+        };
+        let container_id = self.trade_state.lock().open_container_id;
+        let data = self.villager_data();
+        let offers: Vec<MerchantOfferData> =
+            self.offers().lock().iter().map(offer_to_packet).collect();
+        if offers.is_empty() {
+            return;
+        }
+        player.send_packet(CMerchantOffers {
+            container_id,
+            offers,
+            villager_level: data.level,
+            villager_xp: self.villager_xp(),
+            show_progress: true,
+            can_restock: true,
+        });
     }
 }
 
@@ -440,7 +497,7 @@ impl Entity for VillagerEntity {
                 loaded_offers = true;
             }
             if !loaded_offers {
-                self.updateTrades();
+                self.update_trades();
             }
             self.set_villager_data(data);
         }
@@ -649,7 +706,7 @@ impl Mob for VillagerEntity {
                 if state.update_merchant_timer > 0 {
                     state.update_merchant_timer -= 1;
                     if state.update_merchant_timer == 0 {
-                        fire_career = std::mem::take(&mut state.increase_level_pending);
+                        fire_career = mem::take(&mut state.increase_level_pending);
                     }
                 }
             }
@@ -669,7 +726,7 @@ impl Mob for VillagerEntity {
         }
         if self.offers().lock().is_empty() {
             //TODO: setUnhappy on main hand and award TALKED_TO_VILLAGER stat
-            return InteractionResult::ConsumeM;
+            return InteractionResult::Consume;
         }
         self.start_trading(player);
         InteractionResult::Success
@@ -691,7 +748,7 @@ impl Villager for VillagerEntity {
         Arc::clone(&self.offers)
     }
 
-    fn updateTrades(&self) {
+    fn update_trades(&self) {
         let data = self.villager_data();
         let Some(profession) = usize::try_from(data.profession)
             .ok()
@@ -709,6 +766,7 @@ impl Villager for VillagerEntity {
 
     fn notify_trade(&self, xp: i32) {
         *self.villager_xp.lock() += xp;
+        self.play_sound(&sound_events::ENTITY_VILLAGER_YES, 1.0, 1.0);
         if self.should_increase_level() {
             let mut state = self.trade_state.lock();
             state.update_merchant_timer = 40;

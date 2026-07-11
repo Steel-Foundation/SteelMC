@@ -1,5 +1,5 @@
 use super::{Behavior, BehaviorState};
-use crate::entity::{PathfinderMob, Villager};
+use crate::entity::PathfinderMob;
 use crate::entity::ai::brain::memory::{Memories, MemoryModuleType, MemoryStatus, PositionTracker};
 
 const ENTRY_CONDITION: &[(MemoryModuleType, MemoryStatus)] =
@@ -42,9 +42,9 @@ impl Behavior for WorkAtPoi {
         self.last_check = now;
         let Some(job) = memories.job_site() else { return false };
         let pos = mob.position();
-        let dx = (job.x() as f64 + 0.5) - pos.x;
-        let dy = (job.y() as f64 + 0.5) - pos.y;
-        let dz = (job.z() as f64 + 0.5) - pos.z;
+        let dx = (f64::from(job.x()) + 0.5) - pos.x;
+        let dy = (f64::from(job.y()) + 0.5) - pos.y;
+        let dz = (f64::from(job.z()) + 0.5) - pos.z;
         dx * dx + dy * dy + dz * dz < DISTANCE_SQR
     }
 
