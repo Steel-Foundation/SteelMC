@@ -1,7 +1,7 @@
 //! Configured carver registry.
 //!
 //! Mirrors vanilla's `ConfiguredWorldCarver` — each entry is a
-//! `CarverType` (the carver kind — cave / nether_cave / canyon) paired with
+//! `CarverType` (the carver kind — cave / `nether_cave` / canyon) paired with
 //! its configuration. Configured carvers are referenced by biomes via the
 //! `carvers` field on [`Biome`](crate::biome::Biome) and sampled during the
 //! `CARVERS` chunk generation stage.

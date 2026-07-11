@@ -9,7 +9,7 @@ use steel_utils::serial::{PrefixedRead, ReadFrom};
 /// Commands with signable arguments have each argument individually signed.
 /// This prevents tampering with command arguments.
 ///
-/// Equivalent to ServerboundChatCommandSignedPacket in Minecraft.
+/// Equivalent to `ServerboundChatCommandSignedPacket` in Minecraft.
 #[derive(ServerPacket, Clone, Debug)]
 pub struct SChatCommandSigned {
     /// The command string (without leading slash)
@@ -87,7 +87,7 @@ pub struct LastSeenMessagesUpdate {
     /// Offset to advance the message window
     pub offset: VarInt,
 
-    /// BitSet indicating which of the last 20 messages were acknowledged
+    /// `BitSet` indicating which of the last 20 messages were acknowledged
     /// 3 bytes = 24 bits (using 20)
     pub acknowledged: [u8; 3],
 }

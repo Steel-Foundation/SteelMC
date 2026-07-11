@@ -25,7 +25,7 @@ pub enum PlayerInfoAction {
 }
 
 /// Bitmask combining all actions needed when a player first joins.
-/// This matches vanilla's createPlayerInitializing() method.
+/// This matches vanilla's `createPlayerInitializing()` method.
 pub const PLAYER_INFO_INIT_ACTIONS: u8 = PlayerInfoAction::AddPlayer as u8
     | PlayerInfoAction::InitializeChat as u8
     | PlayerInfoAction::UpdateGameMode as u8
@@ -70,7 +70,7 @@ pub struct PlayerInfoEntry {
 impl PlayerInfoEntry {
     /// Creates a new entry with only the UUID filled in.
     #[must_use]
-    pub fn new(uuid: Uuid) -> Self {
+    pub const fn new(uuid: Uuid) -> Self {
         Self {
             uuid,
             name: None,
@@ -87,21 +87,21 @@ impl PlayerInfoEntry {
 
     /// Sets the latency field.
     #[must_use]
-    pub fn with_latency(mut self, latency: i32) -> Self {
+    pub const fn with_latency(mut self, latency: i32) -> Self {
         self.latency = Some(VarInt(latency));
         self
     }
 
     /// Sets the game mode field.
     #[must_use]
-    pub fn with_game_mode(mut self, game_mode: i32) -> Self {
+    pub const fn with_game_mode(mut self, game_mode: i32) -> Self {
         self.game_mode = Some(VarInt(game_mode));
         self
     }
 
     /// Sets the listed field.
     #[must_use]
-    pub fn with_listed(mut self, listed: bool) -> Self {
+    pub const fn with_listed(mut self, listed: bool) -> Self {
         self.listed = Some(listed);
         self
     }
@@ -115,14 +115,14 @@ impl PlayerInfoEntry {
 
     /// Sets the show hat field.
     #[must_use]
-    pub fn with_show_hat(mut self, show_hat: bool) -> Self {
+    pub const fn with_show_hat(mut self, show_hat: bool) -> Self {
         self.show_hat = Some(show_hat);
         self
     }
 
     /// Sets the list order field (controls sort order in tab list).
     #[must_use]
-    pub fn with_list_order(mut self, list_order: i32) -> Self {
+    pub const fn with_list_order(mut self, list_order: i32) -> Self {
         self.list_order = Some(VarInt(list_order));
         self
     }
@@ -145,7 +145,7 @@ pub struct CPlayerInfoUpdate {
 impl CPlayerInfoUpdate {
     /// Creates a full player initializing packet with all information.
     /// This is sent when a player joins to add them to the tab list.
-    /// Matches vanilla's ClientboundPlayerInfoUpdatePacket.createPlayerInitializing()
+    /// Matches vanilla's `ClientboundPlayerInfoUpdatePacket.createPlayerInitializing()`
     #[must_use]
     pub fn create_player_initializing(
         uuid: Uuid,

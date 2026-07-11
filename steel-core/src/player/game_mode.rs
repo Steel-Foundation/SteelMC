@@ -45,6 +45,7 @@ use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
+use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;
@@ -137,12 +138,13 @@ pub fn use_item_on(
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
-        // TODO: Check item cooldowns
-        // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
 
         let mut context = UseOnContext::new(
             player,
@@ -178,14 +180,15 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         return InteractionResult::Pass;
     }
 
-    // TODO: Check item cooldowns
-    // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
-
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
+
         let mut context =
             crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
@@ -202,6 +205,10 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
                     item.count = original_count;
                 }
             });
+        }
+
+        if result.should_apply_item_use_side_effects() {
+            player.apply_item_use_cooldown(&stack_before_use);
         }
 
         return result;
@@ -996,7 +1003,7 @@ impl Player {
 
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.get_world().broadcast_to_all(update_packet);
+        self.server().broadcast_to_online(update_packet);
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();
@@ -1427,6 +1434,20 @@ impl Player {
         );
 
         self.ack_block_changes_up_to(packet.sequence);
+
+        let item_stack_is_empty = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(packet.hand).is_empty()
+        };
+        if item_stack_is_empty {
+            return;
+        }
+
+        let target_yaw = wrap_degrees(packet.y_rot);
+        let target_pitch = wrap_degrees(packet.x_rot);
+        if self.rotation() != (target_yaw, target_pitch) {
+            self.set_rotation((target_yaw, target_pitch));
+        }
 
         let world = self.get_world();
         let result = use_item(self, &world, packet.hand);

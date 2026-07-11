@@ -72,7 +72,7 @@ impl<T: Clone + PartialEq> SyncedValue<T> {
 
     /// Get a reference to the current value.
     #[inline]
-    pub fn get(&self) -> &T {
+    pub const fn get(&self) -> &T {
         &self.value
     }
 
@@ -87,13 +87,13 @@ impl<T: Clone + PartialEq> SyncedValue<T> {
 
     /// Returns true if the value has been modified since last sync.
     #[inline]
-    pub fn is_dirty(&self) -> bool {
+    pub const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
     /// Clear the dirty flag after syncing.
     #[inline]
-    pub fn clear_dirty(&mut self) {
+    pub const fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 
@@ -172,7 +172,8 @@ impl Rotations {
         z: 0.0,
     };
 
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
+    #[must_use]
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 }
@@ -211,7 +212,8 @@ pub struct VillagerData {
 }
 
 impl VillagerData {
-    pub fn new(villager_type: i32, profession: i32, level: i32) -> Self {
+    #[must_use]
+    pub const fn new(villager_type: i32, profession: i32, level: i32) -> Self {
         Self {
             villager_type,
             profession,
@@ -228,7 +230,8 @@ pub struct GlobalPos {
 }
 
 impl GlobalPos {
-    pub fn new(dimension: Identifier, pos: BlockPos) -> Self {
+    #[must_use]
+    pub const fn new(dimension: Identifier, pos: BlockPos) -> Self {
         Self { dimension, pos }
     }
 }
@@ -248,7 +251,8 @@ impl Vector3f {
         z: 0.0,
     };
 
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
+    #[must_use]
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 }
@@ -270,7 +274,8 @@ impl Quaternionf {
         w: 1.0,
     };
 
-    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+    #[must_use]
+    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
 }
@@ -292,7 +297,7 @@ pub struct ParticleData {
 
 impl ParticleData {
     #[must_use]
-    pub fn new(particle_type: i32, options: ParticleOptions) -> Self {
+    pub const fn new(particle_type: i32, options: ParticleOptions) -> Self {
         Self {
             particle_type,
             options,
@@ -424,7 +429,7 @@ pub enum EntityData {
 pub struct DataValue {
     /// The index of this data field (0-254, 255 is terminator).
     pub index: u8,
-    /// The serializer ID (from registration order in EntityDataSerializerRegistry).
+    /// The serializer ID (from registration order in `EntityDataSerializerRegistry`).
     pub serializer_id: i32,
     /// The actual value to write.
     pub value: EntityData,

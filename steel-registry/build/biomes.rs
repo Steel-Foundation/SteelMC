@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted biome data"
+)]
+
 use rustc_hash::FxHashMap;
 use std::fs;
 
@@ -45,10 +50,10 @@ fn parse_hex_color(hex: &str) -> i32 {
                 u8::from_str_radix(&hex_str[4..6], 16).expect("Invalid hex color blue component");
             (i32::from(r) << 16) | (i32::from(g) << 8) | i32::from(b)
         } else {
-            panic!("Hex color must be 6 characters: {}", hex);
+            panic!("Hex color must be 6 characters: {hex}");
         }
     } else {
-        panic!("Hex color must start with #: {}", hex);
+        panic!("Hex color must start with #: {hex}");
     }
 }
 
@@ -228,7 +233,10 @@ struct BackgroundMusicEntry {
 }
 
 #[derive(Deserialize, Debug)]
-#[expect(dead_code)]
+#[expect(
+    dead_code,
+    reason = "extracted music payload keeps alternate variants not generated yet"
+)]
 struct BackgroundMusic {
     #[serde(default)]
     default: Option<BackgroundMusicEntry>,
@@ -509,7 +517,7 @@ pub(crate) fn build() -> TokenStream {
             let biome_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let mut biome: BiomeJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", biome_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {biome_name}: {e}"));
 
             // Extract attributes and populate effects
             extract_attributes_to_effects(&mut biome.effects, &biome.attributes);

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "property value lookup only unwraps values known to be declared by the property"
+)]
+
 use std::fmt::Debug;
 
 pub use steel_utils::{Direction, axis::Axis, codec::VarInt, serial::ReadFrom};

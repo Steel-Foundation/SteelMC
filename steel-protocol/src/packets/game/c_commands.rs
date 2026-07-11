@@ -41,7 +41,8 @@ impl CommandNode {
     const FLAG_HAS_REDIRECT: u8 = 8;
     const FLAG_HAS_SUGGESTION_TYPE: u8 = 16;
 
-    pub fn new_root() -> Self {
+    #[must_use]
+    pub const fn new_root() -> Self {
         Self::Root {
             children: Vec::new(),
         }
@@ -71,7 +72,7 @@ impl CommandNode {
         }
     }
 
-    fn flags(&self) -> u8 {
+    const fn flags(&self) -> u8 {
         let (mut flags, is_executable, has_redirect, has_suggestions_type) = match self {
             CommandNode::Root { .. } => (0, false, false, false),
             CommandNode::Literal {
@@ -88,13 +89,13 @@ impl CommandNode {
         };
 
         if is_executable {
-            flags |= Self::FLAG_IS_EXECUTABLE
+            flags |= Self::FLAG_IS_EXECUTABLE;
         }
         if has_redirect {
-            flags |= Self::FLAG_HAS_REDIRECT
+            flags |= Self::FLAG_HAS_REDIRECT;
         }
         if has_suggestions_type {
-            flags |= Self::FLAG_HAS_SUGGESTION_TYPE
+            flags |= Self::FLAG_HAS_SUGGESTION_TYPE;
         }
         flags
     }
@@ -115,7 +116,7 @@ impl CommandNode {
         }
     }
 
-    fn redirects_to(&self) -> &Option<i32> {
+    const fn redirects_to(&self) -> &Option<i32> {
         match self {
             CommandNode::Root { .. } => &None,
             CommandNode::Literal { redirects_to, .. } => redirects_to,
@@ -173,7 +174,8 @@ pub struct CommandNodeInfo {
 }
 
 impl CommandNodeInfo {
-    pub fn new(children: Vec<i32>) -> Self {
+    #[must_use]
+    pub const fn new(children: Vec<i32>) -> Self {
         Self {
             children,
             is_executable: false,
@@ -181,7 +183,8 @@ impl CommandNodeInfo {
         }
     }
 
-    pub fn new_executable() -> Self {
+    #[must_use]
+    pub const fn new_executable() -> Self {
         Self {
             children: Vec::new(),
             is_executable: true,
@@ -189,7 +192,8 @@ impl CommandNodeInfo {
         }
     }
 
-    pub fn new_redirect(redirects_to: i32) -> Self {
+    #[must_use]
+    pub const fn new_redirect(redirects_to: i32) -> Self {
         Self {
             children: Vec::new(),
             is_executable: false,
@@ -197,6 +201,7 @@ impl CommandNodeInfo {
         }
     }
 
+    #[must_use]
     pub fn chain(mut self, mut other: Self) -> Self {
         self.children.append(&mut other.children);
         self.is_executable |= other.is_executable;
@@ -299,7 +304,7 @@ pub enum ArgumentStringTypeBehavior {
 }
 
 impl ArgumentType {
-    fn discriminant(&self) -> i32 {
+    const fn discriminant(&self) -> i32 {
         match self {
             Self::Bool => 0,
             Self::Float { .. } => 1,
@@ -400,7 +405,8 @@ impl ArgumentType {
         // min = 1
         // max = 2
         // min & max = 3
-        (min.is_some() as u8 + max.is_some() as u8 + max.is_some() as u8).write(writer)?;
+        (u8::from(min.is_some()) + u8::from(max.is_some()) + u8::from(max.is_some()))
+            .write(writer)?;
 
         if let Some(min) = min {
             min.write(writer)?;
@@ -421,7 +427,7 @@ pub enum SuggestionType {
 }
 
 impl SuggestionType {
-    fn as_str(&self) -> &str {
+    const fn as_str(&self) -> &str {
         match self {
             SuggestionType::AskServer => "minecraft:ask_server",
             SuggestionType::AllRecipes => "minecraft:all_recipes",

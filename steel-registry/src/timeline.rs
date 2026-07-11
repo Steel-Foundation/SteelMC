@@ -31,8 +31,8 @@ pub struct Track {
     pub keyframes: &'static [Keyframe],
 }
 
-/// show_in_commands: None  = serialize marker as plain NbtTag::Int(ticks as i32)
-///                  Some(b)= serialize as compound {ticks: int, show_in_commands: byte}
+/// `show_in_commands`: None  = serialize marker as plain `NbtTag::Int(ticks` as i32)
+///                  Some(b)= serialize as compound {ticks: int, `show_in_commands`: byte}
 #[derive(Debug)]
 pub struct TimeMarker {
     pub name: &'static str,
@@ -90,7 +90,7 @@ impl ToNbtTag for &Timeline {
                     match &kf.value {
                         KeyframeValue::Float(f) => kc.insert("value", *f),
                         KeyframeValue::Int(i) => kc.insert("value", *i),
-                        KeyframeValue::Bool(b) => kc.insert("value", if *b { 1i8 } else { 0i8 }),
+                        KeyframeValue::Bool(b) => kc.insert("value", i8::from(*b)),
                         KeyframeValue::String(s) => kc.insert("value", *s),
                     }
                     kc
@@ -109,7 +109,7 @@ impl ToNbtTag for &Timeline {
                     Some(show) => {
                         let mut mcc = NbtCompound::new();
                         mcc.insert("ticks", marker.ticks as i32);
-                        mcc.insert("show_in_commands", if show { 1i8 } else { 0i8 });
+                        mcc.insert("show_in_commands", i8::from(show));
                         mc.insert(marker.name, NbtTag::Compound(mcc));
                     }
                 }

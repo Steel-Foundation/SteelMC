@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::unwrap_used,
+        reason = "block registry tests assert required vanilla properties are present"
+    )
+)]
+
 pub mod behavior;
 pub mod block_state_ext;
 pub mod properties;
@@ -41,6 +49,7 @@ pub struct StateBooleanOverwrite {
 }
 
 impl StateBooleanOverwrite {
+    #[must_use]
     pub const fn new(offset: u16, value: bool) -> Self {
         Self { offset, value }
     }
@@ -56,6 +65,7 @@ impl StateBooleanData {
     pub const TRUE: Self = Self::new(true, &[]);
     pub const FALSE: Self = Self::new(false, &[]);
 
+    #[must_use]
     pub const fn new(default: bool, overwrites: &'static [StateBooleanOverwrite]) -> Self {
         Self {
             default,
@@ -63,6 +73,7 @@ impl StateBooleanData {
         }
     }
 
+    #[must_use]
     pub fn value(self, offset: u16) -> bool {
         self.overwrites
             .iter()
@@ -979,7 +990,7 @@ mod tests {
                 "power" => {
                     assert_eq!(*value, "0", "Default power should be '0'");
                 }
-                _ => panic!("Unexpected property: {}", name),
+                _ => panic!("Unexpected property: {name}"),
             }
         }
     }
@@ -1011,7 +1022,7 @@ mod tests {
                 .iter()
                 .find(|(n, _)| n == name)
                 .expect("Property should exist");
-            assert_eq!(found.1, *value, "Property {} mismatch", name);
+            assert_eq!(found.1, *value, "Property {name} mismatch");
         }
     }
 
@@ -1194,15 +1205,14 @@ mod tests {
 
             let state_id = registry
                 .state_id_from_properties(&key, &props)
-                .unwrap_or_else(|| panic!("Should find state for power {}", power));
+                .unwrap_or_else(|| panic!("Should find state for power {power}"));
 
             let retrieved = registry.get_properties(state_id);
             let found_power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
             assert_eq!(
                 found_power.1,
                 power_str.as_str(),
-                "Power level {} mismatch",
-                power
+                "Power level {power} mismatch"
             );
         }
     }
@@ -1253,7 +1263,7 @@ mod tests {
             );
 
             let Some(block) = registry.by_key(&key) else {
-                errors.push(format!("Block {} not found in registry", block_name));
+                errors.push(format!("Block {block_name} not found in registry"));
                 continue;
             };
 
@@ -1280,8 +1290,7 @@ mod tests {
 
                 let Some(our_state_id) = registry.state_id_from_properties(&key, &props) else {
                     errors.push(format!(
-                        "{}: failed to get state for properties {:?}",
-                        block_name, props
+                        "{block_name}: failed to get state for properties {props:?}"
                     ));
                     continue;
                 };

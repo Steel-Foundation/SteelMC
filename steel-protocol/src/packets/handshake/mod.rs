@@ -20,7 +20,7 @@ pub struct SClientIntention {
 
 impl SClientIntention {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         protocol_version: i32,
         hostname: String,
         port: u16,

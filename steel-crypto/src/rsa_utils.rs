@@ -26,7 +26,7 @@ pub enum CryptError {
 
 /// Generates a 1024-bit RSA key pair.
 ///
-/// Equivalent to Crypt.generateKeyPair() in Minecraft.
+/// Equivalent to `Crypt.generateKeyPair()` in Minecraft.
 pub fn generate_key_pair() -> Result<(RsaPrivateKey, RsaPublicKey), CryptError> {
     let mut rng = rand::rng();
     let private_key = RsaPrivateKey::new(&mut rng, crate::RSA_KEY_BITS)?;
@@ -46,7 +46,7 @@ pub fn public_key_to_bytes(key: &RsaPublicKey) -> Result<Vec<u8>, CryptError> {
 
 /// Parses an RSA public key from DER-encoded X.509 format bytes.
 ///
-/// Equivalent to Crypt.byteToPublicKey() in Minecraft.
+/// Equivalent to `Crypt.byteToPublicKey()` in Minecraft.
 pub fn public_key_from_bytes(bytes: &[u8]) -> Result<RsaPublicKey, CryptError> {
     use rsa::pkcs8::DecodePublicKey;
     RsaPublicKey::from_public_key_der(bytes).map_err(CryptError::from)
@@ -62,7 +62,7 @@ pub fn private_key_to_bytes(key: &RsaPrivateKey) -> Result<Vec<u8>, CryptError> 
 
 /// Parses an RSA private key from PKCS8 DER format bytes.
 ///
-/// Equivalent to Crypt.byteToPrivateKey() in Minecraft.
+/// Equivalent to `Crypt.byteToPrivateKey()` in Minecraft.
 pub fn private_key_from_bytes(bytes: &[u8]) -> Result<RsaPrivateKey, CryptError> {
     use rsa::pkcs8::DecodePrivateKey;
     RsaPrivateKey::from_pkcs8_der(bytes).map_err(CryptError::from)
@@ -79,7 +79,7 @@ pub fn public_key_to_pem(key: &RsaPublicKey) -> Result<String, CryptError> {
 
 /// Parses an RSA public key from PEM format string.
 ///
-/// Equivalent to Crypt.stringToRsaPublicKey() in Minecraft.
+/// Equivalent to `Crypt.stringToRsaPublicKey()` in Minecraft.
 pub fn public_key_from_pem(pem: &str) -> Result<RsaPublicKey, CryptError> {
     use rsa::pkcs8::DecodePublicKey;
     RsaPublicKey::from_public_key_pem(pem).map_err(CryptError::from)
@@ -95,7 +95,7 @@ pub fn private_key_to_pem(key: &RsaPrivateKey) -> Result<String, CryptError> {
 
 /// Parses an RSA private key from PEM format string.
 ///
-/// Equivalent to Crypt.stringToPemRsaPrivateKey() in Minecraft.
+/// Equivalent to `Crypt.stringToPemRsaPrivateKey()` in Minecraft.
 pub fn private_key_from_pem(pem: &str) -> Result<RsaPrivateKey, CryptError> {
     use rsa::pkcs8::DecodePrivateKey;
     RsaPrivateKey::from_pkcs8_pem(pem).map_err(CryptError::from)

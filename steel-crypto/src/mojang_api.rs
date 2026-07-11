@@ -35,9 +35,12 @@ struct SessionServerResponse {
     #[serde(rename = "playerCertificateKeys")]
     player_certificate_keys: Vec<PublicKeyEntry>,
     #[serde(rename = "profilePropertyKeys")]
-    #[allow(
-        dead_code,
-        reason = "deserialized for completeness but only certificate keys are used"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "deserialized for completeness but only certificate keys are used"
+        )
     )]
     profile_property_keys: Vec<PublicKeyEntry>,
 }
@@ -49,7 +52,7 @@ struct MojangKeyCache {
 }
 
 impl MojangKeyCache {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             keys: Vec::new(),
             fetched_at: None,
@@ -140,10 +143,7 @@ pub async fn get_profile_key_validator() -> Box<dyn SignatureValidator> {
             Box::new(MultiKeyValidator::new(keys))
         }
         Err(err) => {
-            log::warn!(
-                "Failed to fetch Mojang public keys: {} - using permissive validation",
-                err
-            );
+            log::warn!("Failed to fetch Mojang public keys: {err} - using permissive validation");
             // Fall back to permissive mode if we can't fetch the keys
             Box::new(NoValidation)
         }
@@ -153,7 +153,7 @@ pub async fn get_profile_key_validator() -> Box<dyn SignatureValidator> {
 /// Gets the signature validator for Mojang profile keys (reference version).
 ///
 /// This is a convenience function for when you need a `&dyn` reference.
-/// Note: This always returns NoValidation for simplicity. Use `get_profile_key_validator()`
+/// Note: This always returns `NoValidation` for simplicity. Use `get_profile_key_validator()`
 /// for actual validation.
 #[must_use]
 pub fn get_profile_key_validator_ref() -> &'static dyn SignatureValidator {

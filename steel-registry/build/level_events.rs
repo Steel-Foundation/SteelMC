@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted level event data"
+)]
+
 use std::{collections::BTreeMap, fs};
 
 use proc_macro2::TokenStream;

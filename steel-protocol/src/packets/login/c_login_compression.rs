@@ -10,7 +10,7 @@ pub struct CLoginCompression {
 
 impl CLoginCompression {
     #[must_use]
-    pub fn new(threshold: i32) -> Self {
+    pub const fn new(threshold: i32) -> Self {
         Self { threshold }
     }
 }

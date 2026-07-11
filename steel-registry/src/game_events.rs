@@ -18,6 +18,7 @@ pub struct GameEventRegistry {
 // TODO: GameEventListenerRegistry per Chunk Section
 
 impl GameEventRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             game_events_by_id: Vec::new(),

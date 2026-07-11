@@ -15,7 +15,7 @@ pub struct KnownPack {
 
 impl KnownPack {
     #[must_use]
-    pub fn new(namespace: String, id: String, version: String) -> Self {
+    pub const fn new(namespace: String, id: String, version: String) -> Self {
         Self {
             namespace,
             id,

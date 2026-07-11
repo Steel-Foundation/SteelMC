@@ -26,7 +26,7 @@ impl SoundEvent {
             .unwrap_or(if volume > 1.0 { 16.0 * volume } else { 16.0 })
     }
 
-    /// Returns the VarInt payload used by vanilla holder-based sound packets.
+    /// Returns the `VarInt` payload used by vanilla holder-based sound packets.
     #[must_use]
     pub fn packet_holder_id(&self) -> i32 {
         let id = crate::RegistryEntry::id(self);

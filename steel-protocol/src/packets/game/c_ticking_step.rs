@@ -14,7 +14,7 @@ pub struct CTickingStep {
 impl CTickingStep {
     /// Creates a new ticking step packet.
     #[must_use]
-    pub fn new(tick_steps: i32) -> Self {
+    pub const fn new(tick_steps: i32) -> Self {
         Self { tick_steps }
     }
 }

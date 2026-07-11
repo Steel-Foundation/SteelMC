@@ -117,6 +117,7 @@ impl Enchantment {
     }
 
     /// Checks if two enchantments are compatible (neither's `exclusive_set` contains the other).
+    #[must_use]
     pub fn are_compatible(a: EnchantmentRef, b: EnchantmentRef) -> bool {
         if a == b {
             return false;
@@ -137,6 +138,7 @@ impl Enchantment {
     }
 
     /// Checks if this enchantment is compatible with all existing enchantments on an item.
+    #[must_use]
     pub fn is_compatible_with_existing(
         enchantment: EnchantmentRef,
         item: &crate::item_stack::ItemStack,

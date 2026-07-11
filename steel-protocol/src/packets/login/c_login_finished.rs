@@ -31,7 +31,7 @@ pub struct CLoginFinished<'a> {
 
 impl<'a> CLoginFinished<'a> {
     #[must_use]
-    pub fn new(game_profile: LoginGameProfile<'a>, session_id: Uuid) -> Self {
+    pub const fn new(game_profile: LoginGameProfile<'a>, session_id: Uuid) -> Self {
         Self {
             game_profile,
             session_id,

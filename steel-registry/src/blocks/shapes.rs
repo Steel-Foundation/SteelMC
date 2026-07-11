@@ -93,7 +93,7 @@ impl VoxelShape {
     /// Returns true if this shape has no non-empty boxes.
     #[must_use]
     pub fn is_empty(self) -> bool {
-        self.boxes.iter().all(|aabb| aabb.is_empty())
+        self.boxes.iter().all(steel_utils::geometry::Aabb::is_empty)
     }
 
     /// Returns the minimum coordinate on `axis`, or positive infinity for an empty shape.
@@ -232,7 +232,7 @@ impl OffsetVoxelShape {
     }
 }
 
-fn axis_offset(offset: DVec3, axis: Axis) -> f64 {
+const fn axis_offset(offset: DVec3, axis: Axis) -> f64 {
     match axis {
         Axis::X => offset.x,
         Axis::Y => offset.y,
@@ -240,10 +240,10 @@ fn axis_offset(offset: DVec3, axis: Axis) -> f64 {
     }
 }
 
-/// An ID referencing a registered VoxelShape in the ShapeRegistry.
+/// An ID referencing a registered `VoxelShape` in the `ShapeRegistry`.
 ///
 /// Use this to refer to shapes in a compact way. The actual shape data
-/// can be retrieved from the ShapeRegistry using this ID.
+/// can be retrieved from the `ShapeRegistry` using this ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ShapeId(pub u16);
 
@@ -255,9 +255,9 @@ impl ShapeId {
     pub const FULL_BLOCK: ShapeId = ShapeId(1);
 }
 
-/// Registry for VoxelShapes.
+/// Registry for `VoxelShapes`.
 ///
-/// Shapes are registered once and referenced by ShapeId. This allows
+/// Shapes are registered once and referenced by `ShapeId`. This allows
 /// deduplication of shapes and compact storage of shape references.
 ///
 /// Vanilla shapes are registered at startup. Plugins can register
@@ -320,18 +320,18 @@ impl ShapeRegistry {
 
     /// Returns the number of registered shapes.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.shapes.len()
     }
 
     /// Returns true if no shapes are registered.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.shapes.is_empty()
     }
 
     /// Freezes the registry, preventing further registrations.
-    pub fn freeze(&mut self) {
+    pub const fn freeze(&mut self) {
         self.allows_registering = false;
     }
 }
@@ -547,9 +547,10 @@ pub fn is_offset_shape_full_block(shape: OffsetVoxelShape) -> bool {
 /// operation guard for unbounded outside-space results.
 #[must_use]
 pub fn join_is_not_empty(first: VoxelShape, second: VoxelShape, op: BooleanOp) -> bool {
-    if op.apply(false, false) {
-        panic!("join_is_not_empty cannot use an operation that includes empty outside space");
-    }
+    assert!(
+        !op.apply(false, false),
+        "join_is_not_empty cannot use an operation that includes empty outside space"
+    );
 
     let first_empty = first.is_empty();
     let second_empty = second.is_empty();
@@ -617,9 +618,10 @@ pub fn join_unoptimized_boxes(
     second: VoxelShape,
     op: BooleanOp,
 ) -> Vec<BlockLocalAabb> {
-    if op.apply(false, false) {
-        panic!("join_unoptimized_boxes cannot use an operation that includes empty outside space");
-    }
+    assert!(
+        !op.apply(false, false),
+        "join_unoptimized_boxes cannot use an operation that includes empty outside space"
+    );
 
     if first.is_empty() && second.is_empty() {
         return Vec::new();
@@ -673,7 +675,7 @@ fn shape_edges(first: VoxelShape, second: VoxelShape, axis: Axis) -> Vec<f64> {
 }
 
 fn sort_and_dedup_voxel_edges(edges: &mut Vec<f64>) {
-    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.sort_by(f64::total_cmp);
     edges.dedup_by(|a, b| (*a - *b).abs() <= VOXEL_EPSILON);
 }
 
@@ -929,6 +931,7 @@ struct FaceRect {
 
 const FACE_EPSILON: f64 = 1.0e-6;
 
+#[must_use]
 pub fn face_rectangles_cover(
     shape: VoxelShape,
     direction: Direction,
@@ -966,6 +969,7 @@ pub fn face_rectangles_cover(
     )
 }
 
+#[must_use]
 pub fn offset_face_rectangles_cover(
     shape: OffsetVoxelShape,
     direction: Direction,
@@ -1096,7 +1100,7 @@ fn face_rect_for_aabb(aabb: BlockLocalAabb, direction: Direction) -> Option<Face
 }
 
 fn sort_and_dedup_edges(edges: &mut Vec<f64>) {
-    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.sort_by(f64::total_cmp);
     edges.dedup_by(|a, b| (*a - *b).abs() <= FACE_EPSILON);
 }
 

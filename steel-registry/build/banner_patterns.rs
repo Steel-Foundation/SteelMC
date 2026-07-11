@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted banner pattern data"
+)]
+
 use std::fs;
 
 use crate::generator_functions::generate_identifier;
@@ -28,7 +33,7 @@ pub(crate) fn build() -> TokenStream {
             let banner_pattern_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let banner_pattern: BannerPatternJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", banner_pattern_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {banner_pattern_name}: {e}"));
 
             banner_patterns.push((banner_pattern_name, banner_pattern));
         }

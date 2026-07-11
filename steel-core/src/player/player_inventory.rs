@@ -1150,6 +1150,44 @@ impl Player {
     }
 }
 
+impl PlayerInventory {
+    /// Applies vanilla `ItemUtils.createFilledResult` to a held item.
+    ///
+    /// Mutates the held stack and inventory, returning only the result stack that
+    /// should be dropped by the caller. Creative inventory insertion discards
+    /// leftover result items instead of dropping them.
+    pub fn apply_filled_result(
+        &mut self,
+        hand: InteractionHand,
+        mut result_stack: ItemStack,
+        has_infinite_materials: bool,
+        limit_creative_stack_size: bool,
+    ) -> ItemStack {
+        if limit_creative_stack_size && has_infinite_materials {
+            if !self.contains_stack(&result_stack) {
+                let _ = self.add(&mut result_stack);
+            }
+            return ItemStack::empty();
+        }
+
+        if !has_infinite_materials {
+            self.shrink_item_in_hand(hand, 1);
+        }
+
+        if self.get_item_in_hand(hand).is_empty() {
+            self.set_item_in_hand(hand, result_stack);
+            return ItemStack::empty();
+        }
+
+        let added = self.add(&mut result_stack);
+        if added || has_infinite_materials {
+            ItemStack::empty()
+        } else {
+            result_stack
+        }
+    }
+}
+
 /// Static empty item stack for returning references to invalid slots.
 static EMPTY_ITEM: LazyLock<ItemStack> = LazyLock::new(ItemStack::empty);
 
@@ -1421,6 +1459,157 @@ mod tests {
                 EquipmentSlot::MainHand,
                 ItemStack::with_count(&ITEMS.oak_log, 3)
             )]
+        );
+    }
+
+    #[test]
+    fn contains_stack_compares_components() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut damaged_in_inventory = ItemStack::new(&ITEMS.diamond_pickaxe);
+        damaged_in_inventory.set_damage_value(3);
+        inventory.items[0] = damaged_in_inventory;
+
+        let mut damaged_search = ItemStack::new(&ITEMS.diamond_pickaxe);
+        damaged_search.set_damage_value(3);
+        let undamaged_search = ItemStack::new(&ITEMS.diamond_pickaxe);
+
+        assert!(inventory.contains_stack(&damaged_search));
+        assert!(!inventory.contains_stack(&undamaged_search));
+    }
+
+    #[test]
+    fn filled_result_replaces_single_survival_hand_stack() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.water_bucket));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.bucket),
+            false,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::new(&ITEMS.bucket)
+        );
+    }
+
+    #[test]
+    fn filled_result_adds_result_for_stacked_survival_hand_stack() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::with_count(&ITEMS.bucket, 2));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.water_bucket),
+            false,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::new(&ITEMS.bucket)
+        );
+        assert_eq!(inventory.get_item(1), &ItemStack::new(&ITEMS.water_bucket));
+    }
+
+    #[test]
+    fn filled_result_creative_limited_keeps_matching_held_stack() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.water_bucket));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.water_bucket),
+            true,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::new(&ITEMS.water_bucket)
+        );
+        assert_eq!(
+            (0..PlayerInventory::INVENTORY_SIZE)
+                .filter(|&slot| !inventory.items[slot].is_empty())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn filled_result_creative_limited_adds_missing_result_without_consuming_hand() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::with_count(&ITEMS.bucket, 16));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.water_bucket),
+            true,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::with_count(&ITEMS.bucket, 16)
+        );
+        assert_eq!(inventory.get_item(1), &ItemStack::new(&ITEMS.water_bucket));
+    }
+
+    #[test]
+    fn filled_result_empty_result_still_consumes_survival_hand_stack() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.bucket));
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::empty(),
+            false,
+            true,
+        );
+
+        assert!(overflow.is_empty());
+        assert!(inventory.get_selected_item().is_empty());
+    }
+
+    #[test]
+    fn filled_result_creative_unlimited_discards_unadded_result() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.set_selected_item(ItemStack::new(&ITEMS.lava_bucket));
+        for slot in 1..PlayerInventory::INVENTORY_SIZE {
+            inventory.items[slot] = ItemStack::with_count(&ITEMS.oak_log, 64);
+        }
+
+        let overflow = inventory.apply_filled_result(
+            InteractionHand::MainHand,
+            ItemStack::new(&ITEMS.water_bucket),
+            true,
+            false,
+        );
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            inventory.get_selected_item(),
+            &ItemStack::new(&ITEMS.lava_bucket)
         );
     }
 

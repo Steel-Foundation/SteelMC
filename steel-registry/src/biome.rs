@@ -244,7 +244,11 @@ impl ToNbtTag for &Biome {
 
         // Carvers (all treated as "air" step)
         let mut carvers_compound = NbtCompound::new();
-        let air_carvers: Vec<String> = self.carvers.iter().map(|id| id.to_string()).collect();
+        let air_carvers: Vec<String> = self
+            .carvers
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         carvers_compound.insert("air", NbtTag::List(NbtList::from(air_carvers)));
         compound.insert("carvers", NbtTag::Compound(carvers_compound));
 
@@ -253,7 +257,8 @@ impl ToNbtTag for &Biome {
             .features
             .iter()
             .map(|step| {
-                let step_strings: Vec<String> = step.iter().map(|id| id.to_string()).collect();
+                let step_strings: Vec<String> =
+                    step.iter().map(std::string::ToString::to_string).collect();
                 NbtList::from(step_strings)
             })
             .collect();

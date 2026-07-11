@@ -9,7 +9,7 @@ use steel_utils::serial::WriteTo;
 #[packet_id(Play = C_SET_TIME)]
 pub struct CSetTime {
     pub game_time: i64,
-    /// (clock_registry_id, total_ticks, partial_tick, rate)
+    /// (`clock_registry_id`, `total_ticks`, `partial_tick`, rate)
     pub clock_updates: Vec<(i32, i64, f32, f32)>,
 }
 
@@ -29,6 +29,10 @@ impl WriteTo for CSetTime {
 
 impl CSetTime {
     #[must_use]
+    #[expect(
+        clippy::unwrap_used,
+        reason = "vanilla overworld clock is generated into the registry"
+    )]
     pub fn new(game_time: i64, day_time: i64, partial_tick: f32, rate: f32) -> Self {
         use steel_registry::{REGISTRY, vanilla_world_clocks};
         let clock_id = REGISTRY

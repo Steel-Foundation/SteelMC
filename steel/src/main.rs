@@ -14,6 +14,8 @@ use futures::FutureExt;
 use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
+use steel_core::player::player_data::PersistentPlayerData;
+use steel_core::player::player_data_storage::GlobalPlayerData;
 use steel_core::server::Server;
 use steel_utils::text::DisplayResolutor;
 use text_components::fmt::set_display_resolutor;
@@ -378,6 +380,17 @@ async fn shutdown_worlds(server: &Arc<Server>) {
         world.chunk_map.task_tracker.wait().await;
     }
 
+    let mut players_to_save = Vec::new();
+    for world in server.worlds.values() {
+        world.players.iter_players(|_, player| {
+            let domain = player.get_world().domain().to_owned();
+            let data = PersistentPlayerData::from_player(player);
+            player.store_ender_pearls_with_player();
+            players_to_save.push((player.clone(), domain, data));
+            true
+        });
+    }
+
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
     let mut total_saved = 0;
@@ -388,17 +401,35 @@ async fn shutdown_worlds(server: &Arc<Server>) {
 
     // Save all player data before shutdown
     log::info!("Saving player data...");
-    let mut players_to_save = Vec::new();
-    for world in server.worlds.values() {
-        world.players.iter_players(|_, player| {
-            players_to_save.push(player.clone());
-            true
-        });
+    let mut saved = 0;
+    for (player, domain, data) in players_to_save {
+        let uuid = player.gameprofile.id;
+        match server
+            .player_data_storage
+            .save_domain_data(&domain, uuid, &data)
+            .await
+        {
+            Ok(()) => {
+                saved += 1;
+            }
+            Err(e) => {
+                log::error!("Failed to save player {uuid} domain data during shutdown: {e}");
+            }
+        }
+        if let Err(e) = server
+            .player_data_storage
+            .save_global(
+                uuid,
+                &GlobalPlayerData {
+                    last_active_domain: domain,
+                },
+            )
+            .await
+        {
+            log::error!("Failed to save player {uuid} global data during shutdown: {e}");
+        }
     }
-    match server.player_data_storage.save_all(&players_to_save).await {
-        Ok(count) => log::info!("Saved {count} players"),
-        Err(e) => log::error!("Failed to save player data: {e}"),
-    }
+    log::info!("Saved {saved} players");
 }
 
 #[cfg(test)]

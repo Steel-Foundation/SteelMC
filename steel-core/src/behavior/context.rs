@@ -52,6 +52,18 @@ impl InteractionResult {
     pub const fn should_swing_server(self) -> bool {
         matches!(self, InteractionResult::SuccessServer)
     }
+
+    /// Returns true for vanilla `InteractionResult.Success` variants that run
+    /// item-use side effects such as `minecraft:use_cooldown`.
+    #[must_use]
+    pub const fn should_apply_item_use_side_effects(self) -> bool {
+        matches!(
+            self,
+            InteractionResult::Success
+                | InteractionResult::SuccessServer
+                | InteractionResult::Consume
+        )
+    }
 }
 
 /// Context for placing a block.
@@ -311,5 +323,20 @@ impl<'a> UseItemContext<'a> {
             world,
             inv: InventoryAccess::new(inventory, hand),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InteractionResult;
+
+    #[test]
+    fn item_use_side_effects_apply_to_all_success_variants() {
+        assert!(InteractionResult::Success.should_apply_item_use_side_effects());
+        assert!(InteractionResult::SuccessServer.should_apply_item_use_side_effects());
+        assert!(InteractionResult::Consume.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::Fail.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::Pass.should_apply_item_use_side_effects());
+        assert!(!InteractionResult::TryEmptyHandInteraction.should_apply_item_use_side_effects());
     }
 }
