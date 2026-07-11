@@ -9,7 +9,8 @@ mod sensor;
 
 pub(crate) use activity::Activity;
 pub(crate) use behavior::{
-    AcquireBed, AcquireJobSite, AssignProfession, LookAtTargetSink, MoveToTargetSink, RandomStroll,
+    AcquireBed, AcquireJobSite, AssignProfession, LookAtTargetSink, MoveToTargetSink,
+    VillageBoundRandomStroll,
     SetEntityLookTarget, SetWalkTargetFromHome,
     WorkAtPoi, SetWalkTargetFromJobSite
 };

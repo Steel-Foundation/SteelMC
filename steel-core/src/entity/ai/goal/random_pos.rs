@@ -25,7 +25,7 @@ pub(crate) fn default_random_pos(
     })
 }
 
-pub(super) fn default_random_pos_towards(
+pub(crate) fn default_random_pos_towards(
     mob: &dyn PathfinderMob,
     horizontal_dist: i32,
     vertical_dist: i32,

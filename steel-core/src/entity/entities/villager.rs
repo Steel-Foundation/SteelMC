@@ -27,9 +27,12 @@ use text_components::TextComponent;
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::{
     AcquireBed, AcquireJobSite, Activity, AssignProfession, Brain, LookAtTargetSink,
-    MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, RandomStroll, Schedule,
-    SetEntityLookTarget, SetWalkTargetFromHome, SetWalkTargetFromJobSite, WorkAtPoi,
+    MemoryModuleType, MoveToTargetSink, NearestLivingEntitiesSensor, Schedule,
+    SetEntityLookTarget, SetWalkTargetFromHome, SetWalkTargetFromJobSite, VillageBoundRandomStroll,
+    WorkAtPoi,
 };
+use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
+use crate::entity::ai::goal::OpenDoorGoal;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
@@ -103,6 +106,14 @@ impl VillagerEntity {
         let mob_base = MobBase::new();
         let ageable_base = AgeableMobBase::new();
         let entity_data = VillagerEntityData::new();
+
+        // Let the villager path through and open wooden doors instead of
+        // treating them as walls (and hunting for gaps like windows).
+        mob_base.navigation().lock().set_can_open_doors(true);
+        mob_base
+            .goal_selector()
+            .lock()
+            .add_goal(2, OpenDoorGoal::new(true));
 
         Self {
             base,
@@ -215,6 +226,25 @@ impl VillagerEntity {
             Vec3::new(0.3, 0.6, 0.3),
             0.0,
             7,
+        );
+    }
+
+    fn look_at_trading_player(&self) {
+        let Some(player_id) = *self.trading_player.lock() else {
+            return;
+        };
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(player) = world.players.get_by_entity_id(player_id) else {
+            return;
+        };
+        let mut target = player.position();
+        target.y += player.get_eye_height();
+        self.mob_base().controls().lock().look_control.set_look_at(
+            target,
+            DEFAULT_LOOK_Y_MAX_ROT_SPEED,
+            DEFAULT_LOOK_X_MAX_ROT_ANGLE,
         );
     }
     
@@ -558,7 +588,7 @@ impl VillagerEntity {
             Activity::Idle,
             0,
             vec![
-                Box::new(RandomStroll::new(0.5)),
+                Box::new(VillageBoundRandomStroll::new(0.5)),
                 Box::new(SetEntityLookTarget::new(
                     |entity| entity.as_player().is_some(),
                     8.0,
@@ -692,6 +722,14 @@ impl Mob for VillagerEntity {
     }
 
     fn custom_server_ai_step(&self) {
+        // While a player has the trade menu open, freeze the brain and turn to
+        // face them instead of wandering off. Matches vanilla's trading stance.
+        if self.is_trading() {
+            self.mob_base().navigation().lock().stop();
+            self.look_at_trading_player();
+            return;
+        }
+
         let (game_time, day_time) = self
             .level()
             .map_or((0, 0), |world| (world.game_time(), world.day_time()));
@@ -699,20 +737,19 @@ impl Mob for VillagerEntity {
         brain.update_activity_from_schedule(game_time, day_time);
         brain.tick(self, game_time);
         drop(brain);
-        if !self.is_trading() {
-            let mut fire_career = false;
-            {
-                let mut state = self.trade_state.lock();
-                if state.update_merchant_timer > 0 {
-                    state.update_merchant_timer -= 1;
-                    if state.update_merchant_timer == 0 {
-                        fire_career = mem::take(&mut state.increase_level_pending);
-                    }
+
+        let mut fire_career = false;
+        {
+            let mut state = self.trade_state.lock();
+            if state.update_merchant_timer > 0 {
+                state.update_merchant_timer -= 1;
+                if state.update_merchant_timer == 0 {
+                    fire_career = mem::take(&mut state.increase_level_pending);
                 }
             }
-            if fire_career {
-                self.increase_merchant_career();
-            }
+        }
+        if fire_career {
+            self.increase_merchant_career();
         }
     }
 
