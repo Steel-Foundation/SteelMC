@@ -3,7 +3,8 @@ use steel_utils::Identifier;
 use crate::command::execution::{CommandArgumentSource, CommandPermissionSource};
 use crate::command::{
     brigadier::{
-        CommandDispatcher, CommandRedirectTarget, CommandRequirement, CommandSyntaxError, NodeId,
+        ArgumentType, CommandDispatcher, CommandRedirectTarget, CommandRequirement,
+        CommandSyntaxError, NodeId,
     },
     execution::{
         CommandResultCallback, ExecutionCommandSource, SteelCommandRuntime, argument, literal,
@@ -500,7 +501,7 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
     let registration = CommandRegistration::new(Identifier::new_static("steel", "perms"), |_| {
         literal("perms").then(
             literal("user").then(
-                argument("targets", crate::command::brigadier::ArgumentType::string()).then(
+                argument("targets", ArgumentType::string()).then(
                     literal("info")
                         .executes(|_| Ok(1))
                         .then(literal("verbose").executes(|_| Ok(1))),

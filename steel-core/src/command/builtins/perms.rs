@@ -1392,13 +1392,13 @@ mod tests {
 
     use super::{GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION};
     use crate::command::{
-        brigadier::NodeId,
+        brigadier::{CommandDispatcher, NodeId},
         builtins::{create_dispatcher, create_registered_dispatcher},
         execution::{CommandSource, SteelCommandRuntime},
     };
+    use crate::permission::PermissionKey;
 
-    type Dispatcher =
-        crate::command::brigadier::CommandDispatcher<CommandSource, SteelCommandRuntime>;
+    type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
     fn child(dispatcher: &Dispatcher, parent: NodeId, name: &str) -> NodeId {
         let Some(child) = dispatcher.children(parent).and_then(|children| {
@@ -1458,7 +1458,7 @@ mod tests {
         let permissions = registered
             .permissions
             .iter()
-            .map(|permission| permission.as_str())
+            .map(PermissionKey::as_str)
             .collect::<Vec<_>>();
 
         for expected in [
