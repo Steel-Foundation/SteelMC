@@ -13,6 +13,7 @@ mod score;
 mod selector;
 mod source;
 mod structure;
+mod text;
 mod world;
 
 pub(crate) use argument::SteelArgumentType;
@@ -34,6 +35,7 @@ pub(crate) use source::{
     ExecutionCommandSource,
 };
 pub(crate) use structure::StructureOrTagKey;
+pub(crate) use text::CommandTextResolver;
 pub(crate) use world::WorldArgument;
 
 #[cfg(test)]

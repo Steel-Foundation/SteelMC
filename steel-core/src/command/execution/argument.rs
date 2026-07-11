@@ -34,6 +34,7 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
+    text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -1129,10 +1130,15 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
         ));
     }
 
-    TextComponent::try_from_nbt(&tag).map_err(|error| {
+    let component = TextComponent::try_from_nbt(&tag).map_err(|error| {
         reader.restore(start);
         invalid_component(reader, error.to_string())
-    })
+    })?;
+    validate_component_syntax(&component).map_err(|error| {
+        reader.restore(start);
+        invalid_component(reader, error)
+    })?;
+    Ok(component)
 }
 
 fn component_snbt_error(reader: &StringReader<'_>, message: &str) -> CommandSyntaxError {

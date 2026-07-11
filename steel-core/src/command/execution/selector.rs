@@ -922,6 +922,30 @@ where
     Ok(selector)
 }
 
+pub(super) fn parse_entity_selector_text(raw: &str) -> Result<EntitySelector, CommandSyntaxError> {
+    let mut command_reader = StringReader::new(raw);
+    if command_reader.peek() != Some('@') {
+        let name = command_reader.read_string()?;
+        if command_reader.can_read() {
+            return Err(
+                command_reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                    TextComponent::plain("unexpected trailing selector data"),
+                ))),
+            );
+        }
+        return parse_name_or_uuid_value(name).map_err(|error| {
+            let mut error_reader = StringReader::new(raw);
+            let start = error_reader.checkpoint();
+            selector_syntax_error(&mut error_reader, start, raw, error)
+        });
+    }
+
+    let mut reader = StringReader::new(raw);
+    let start = reader.checkpoint();
+    parse_selector_plan_with_permissions(raw, true, true)
+        .map_err(|error| selector_syntax_error(&mut reader, start, raw, error))
+}
+
 fn selector_syntax_error(
     reader: &mut StringReader<'_>,
     start: ReaderCursor,
@@ -1586,6 +1610,10 @@ fn parse_name_or_uuid(
     reader: &mut SelectorReader<'_>,
 ) -> Result<EntitySelector, SelectorParseError> {
     let name = reader.read_remaining();
+    parse_name_or_uuid_value(name)
+}
+
+fn parse_name_or_uuid_value(name: String) -> Result<EntitySelector, SelectorParseError> {
     if let Ok(uuid) = Uuid::parse_str(&name) {
         return Ok(EntitySelector::new(
             SelectorKind::EntityUuid(uuid),

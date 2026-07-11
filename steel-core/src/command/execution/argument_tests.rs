@@ -258,6 +258,53 @@ fn component_argument_reports_codec_errors_at_the_argument_start() {
     ));
 }
 
+#[test]
+fn component_argument_compiles_command_strings_during_parsing() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::component());
+    let parse = dispatcher.parse(
+        r#"resource {nbt:"value",storage:"default_namespace"}"#,
+        TestSource::new(),
+    );
+    assert!(
+        dispatcher.context_chain(parse).is_ok(),
+        "vanilla resource identifiers may omit the minecraft namespace"
+    );
+    let parse = dispatcher.parse(r#"resource {selector:'"Alex Smith"'}"#, TestSource::new());
+    assert!(
+        dispatcher.context_chain(parse).is_ok(),
+        "quoted selector names may contain Brigadier delimiters"
+    );
+
+    for argument in [
+        r#"{selector:"@e["}"#,
+        r#"{selector:"Alex Smith"}"#,
+        r#"{nbt:"value[",storage:"minecraft:test"}"#,
+        r#"{nbt:"value",block:"~ ~"}"#,
+        r#"{selector:"@a",separator:{nbt:"value",storage:"INVALID"}}"#,
+        r#"{text:"nested",extra:[{selector:"@e["}]}"#,
+    ] {
+        let input = format!("resource {argument}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Err(error) = dispatcher.context_chain(parse) else {
+            panic!("component command string in {argument} should be rejected");
+        };
+
+        assert_eq!(error.cursor(), Some("resource ".len()), "{argument}");
+        assert!(
+            matches!(
+                error.kind(),
+                CommandSyntaxErrorKind::Dynamic(component)
+                    if matches!(
+                        &component.content,
+                        Content::Translate(message)
+                            if message.key == "argument.component.invalid"
+                    )
+            ),
+            "{argument}"
+        );
+    }
+}
+
 fn dispatcher(minimum: i32) -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();
     let command = literal("duration").then(

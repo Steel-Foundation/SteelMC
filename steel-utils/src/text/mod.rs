@@ -1,4 +1,8 @@
 //! This module contains everything related to text components.
+mod nbt;
+
+pub use nbt::command_nbt_component;
+
 use crate::{
     hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
     serial::ReadFrom,
