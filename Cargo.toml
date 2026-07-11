@@ -116,7 +116,7 @@ base64 = "0.22.1"
 hex = "0.4.3"
 text_components = {
     git = "https://github.com/Steel-Foundation/TextComponents.git",
-    rev = "e058b936e66b496385ba162b2e20344d14572a6a",
+    rev = "4ae59784754b0bd11a57adabcff1da2f7caa8c04",
     features = [
         "custom",
         "nbt",

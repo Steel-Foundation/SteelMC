@@ -64,7 +64,7 @@ fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandS
                     TextComponent::from(format!("{}", max_stack_size * 100)),
                     TextComponent::from(format!("[{}]", item.key.path)).hover_event(
                         // FIXME: display name
-                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                        HoverEvent::show_item(item.key.path.clone(), None, None),
                     ),
                 ])
                 .into(),
@@ -96,7 +96,7 @@ fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandS
                     TextComponent::from(format!("{count}")),
                     TextComponent::from(format!("[{}]", item.key.path)).hover_event(
                         // FIXME: display name
-                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                        HoverEvent::show_item(item.key.path.clone(), None, None),
                     ),
                     TextComponent::from(
                         targets
@@ -116,7 +116,7 @@ fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandS
                     TextComponent::from(format!("{count}")),
                     TextComponent::from(format!("[{}]", item.key.path)).hover_event(
                         // FIXME: display name
-                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                        HoverEvent::show_item(item.key.path.clone(), None, None),
                     ),
                     TextComponent::from(targets.len().to_string()),
                 ])

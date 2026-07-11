@@ -14,6 +14,8 @@
 //!
 //! All numeric values are little-endian (matching Guava's Hasher).
 
+use simdnbt::owned::NbtTag;
+
 /// Type tags matching Minecraft's `HashOps` implementation.
 #[repr(u8)]
 #[derive(Clone, Copy)]
@@ -405,6 +407,50 @@ impl HashComponent for () {
     }
 }
 
+impl HashComponent for NbtTag {
+    fn hash_component(&self, hasher: &mut ComponentHasher) {
+        match self {
+            NbtTag::Byte(value) => hasher.put_byte(*value),
+            NbtTag::Short(value) => hasher.put_short(*value),
+            NbtTag::Int(value) => hasher.put_int(*value),
+            NbtTag::Long(value) => hasher.put_long(*value),
+            NbtTag::Float(value) => hasher.put_float(*value),
+            NbtTag::Double(value) => hasher.put_double(*value),
+            NbtTag::ByteArray(values) => hasher.put_byte_array(values),
+            NbtTag::String(value) => hasher.put_string(&value.to_string()),
+            NbtTag::List(values) => {
+                hasher.start_list();
+                for value in values.as_nbt_tags() {
+                    hasher.put_raw_bytes(&value.compute_hash().to_le_bytes());
+                }
+                hasher.end_list();
+            }
+            NbtTag::Compound(values) => {
+                let mut entries = values
+                    .iter()
+                    .map(|(key, value)| {
+                        let mut key_hasher = ComponentHasher::new();
+                        key_hasher.put_string(&key.to_string());
+                        let mut value_hasher = ComponentHasher::new();
+                        value.hash_component(&mut value_hasher);
+                        HashEntry::new(key_hasher, value_hasher)
+                    })
+                    .collect::<Vec<_>>();
+                sort_map_entries(&mut entries);
+
+                hasher.start_map();
+                for entry in entries {
+                    hasher.put_raw_bytes(&entry.key_bytes);
+                    hasher.put_raw_bytes(&entry.value_bytes);
+                }
+                hasher.end_map();
+            }
+            NbtTag::IntArray(values) => hasher.put_int_array(values),
+            NbtTag::LongArray(values) => hasher.put_long_array(values),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +532,22 @@ mod tests {
             h.finish()
         };
         assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn nbt_compound_hash_is_independent_of_entry_order() {
+        use simdnbt::owned::NbtCompound;
+
+        let first = NbtTag::Compound(NbtCompound::from_values(vec![
+            ("first".into(), NbtTag::Int(1)),
+            ("second".into(), NbtTag::String("two".into())),
+        ]));
+        let reversed = NbtTag::Compound(NbtCompound::from_values(vec![
+            ("second".into(), NbtTag::String("two".into())),
+            ("first".into(), NbtTag::Int(1)),
+        ]));
+
+        assert_eq!(first.compute_hash(), reversed.compute_hash());
     }
 
     #[test]
