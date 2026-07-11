@@ -11,8 +11,8 @@ mod set;
 mod subject;
 
 pub use context::{
-    PermissionContext, PermissionContextKey, PermissionContextKeyError, PermissionRuleContext,
-    PermissionRuleContextError, PermissionRuleContexts,
+    PermissionContext, PermissionContextKey, PermissionContextKeyError, PermissionContextValue,
+    PermissionDomain, PermissionRuleContext, PermissionRuleContextError, PermissionRuleContexts,
 };
 pub use expression::PermissionExpr;
 pub(crate) use groups::OP_GROUP;

@@ -10,7 +10,7 @@ pub enum PermissionRuleContext {
     /// Applies in every runtime context.
     Global,
     /// Applies within one server domain.
-    Domain(String),
+    Domain(PermissionDomain),
     /// Applies within one loaded world.
     World(Identifier),
     /// Applies when a subsystem-provided key has one value.
@@ -18,10 +18,76 @@ pub enum PermissionRuleContext {
         /// Context key owned by Steel or a future plugin.
         key: PermissionContextKey,
         /// Required active value.
-        value: String,
+        value: PermissionContextValue,
     },
     /// Applies when every nested context matches.
     All(PermissionRuleContexts),
+}
+
+/// Validated Steel domain name used by permission contexts.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PermissionDomain(String);
+
+impl PermissionDomain {
+    /// Parses a domain name using the command-visible world namespace grammar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the domain is not a valid identifier namespace.
+    pub fn parse(value: impl Into<String>) -> Result<Self, PermissionRuleContextError> {
+        let value = value.into();
+        if value.is_empty() || !Identifier::validate_namespace(&value) {
+            return Err(PermissionRuleContextError::InvalidDomain(value));
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the validated domain name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for PermissionDomain {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Validated value in Steel's unquoted permission-context expression syntax.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PermissionContextValue(String);
+
+impl PermissionContextValue {
+    /// Parses one custom context value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the value cannot round-trip through an expression.
+    pub fn parse(value: impl Into<String>) -> Result<Self, PermissionRuleContextError> {
+        let value = value.into();
+        if value.is_empty()
+            || value
+                .chars()
+                .any(|character| character.is_whitespace() || "{},=".contains(character))
+        {
+            return Err(PermissionRuleContextError::InvalidValue(value));
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the validated context value.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for PermissionContextValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// Canonically ordered AND-chain of permission rule contexts.
@@ -53,9 +119,8 @@ impl PermissionRuleContext {
     }
 
     /// Creates a domain-scoped rule context.
-    #[must_use]
-    pub fn domain(domain: impl Into<String>) -> Self {
-        Self::Domain(domain.into())
+    pub fn domain(domain: impl Into<String>) -> Result<Self, PermissionRuleContextError> {
+        PermissionDomain::parse(domain).map(Self::Domain)
     }
 
     /// Creates a loaded-world rule context.
@@ -73,10 +138,7 @@ impl PermissionRuleContext {
         key: PermissionContextKey,
         value: impl Into<String>,
     ) -> Result<Self, PermissionRuleContextError> {
-        let value = value.into();
-        if value.is_empty() {
-            return Err(PermissionRuleContextError::EmptyValue);
-        }
+        let value = PermissionContextValue::parse(value)?;
         Ok(Self::Custom { key, value })
     }
 
@@ -103,6 +165,7 @@ impl PermissionRuleContext {
                 context => push_unique_context(&mut flattened, context)?,
             }
         }
+        normalize_world_domain(&mut flattened)?;
         flattened.sort_by(compare_rule_contexts);
 
         Ok(match flattened.len() {
@@ -141,9 +204,11 @@ impl fmt::Display for PermissionRuleContext {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Global => formatter.write_str("global"),
-            Self::Domain(domain) => write!(formatter, "domain {domain}"),
+            Self::Domain(domain) => write!(formatter, "domain {}", domain.as_str()),
             Self::World(world) => write!(formatter, "world {world}"),
-            Self::Custom { key, value } => write!(formatter, "{} {value}", key.as_str()),
+            Self::Custom { key, value } => {
+                write!(formatter, "{} {}", key.as_str(), value.as_str())
+            }
             Self::All(contexts) => {
                 for (index, context) in contexts.iter().enumerate() {
                     if index != 0 {
@@ -155,6 +220,30 @@ impl fmt::Display for PermissionRuleContext {
             }
         }
     }
+}
+
+fn normalize_world_domain(
+    contexts: &mut Vec<PermissionRuleContext>,
+) -> Result<(), PermissionRuleContextError> {
+    let domain = contexts.iter().find_map(|context| match context {
+        PermissionRuleContext::Domain(domain) => Some(domain.as_str()),
+        _ => None,
+    });
+    let world_domain = contexts.iter().find_map(|context| match context {
+        PermissionRuleContext::World(world) => Some(world.namespace.as_ref()),
+        _ => None,
+    });
+    let (Some(domain), Some(world_domain)) = (domain, world_domain) else {
+        return Ok(());
+    };
+    if domain != world_domain {
+        return Err(PermissionRuleContextError::WorldDomainMismatch {
+            domain: domain.to_owned(),
+            world_domain: world_domain.to_owned(),
+        });
+    }
+    contexts.retain(|context| !matches!(context, PermissionRuleContext::Domain(_)));
+    Ok(())
 }
 
 fn push_unique_context(
@@ -237,7 +326,7 @@ const fn rule_context_rank(context: &PermissionRuleContext) -> u8 {
 /// Active runtime context used to evaluate permission rules.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PermissionContext {
-    domain: Option<String>,
+    domain: Option<PermissionDomain>,
     world: Option<Identifier>,
     custom_contexts: Vec<PermissionRuleContext>,
 }
@@ -250,20 +339,19 @@ impl PermissionContext {
     }
 
     /// Creates a context for one domain.
-    #[must_use]
-    pub fn for_domain(domain: impl Into<String>) -> Self {
-        Self {
-            domain: Some(domain.into()),
+    pub fn for_domain(domain: impl Into<String>) -> Result<Self, PermissionRuleContextError> {
+        Ok(Self {
+            domain: Some(PermissionDomain::parse(domain)?),
             world: None,
             custom_contexts: Vec::new(),
-        }
+        })
     }
 
     /// Creates a context for a loaded world and its owning domain.
     #[must_use]
-    pub fn for_world(domain: impl Into<String>, world: Identifier) -> Self {
+    pub fn for_world(world: Identifier) -> Self {
         Self {
-            domain: Some(domain.into()),
+            domain: Some(PermissionDomain(world.namespace.to_string())),
             world: Some(world),
             custom_contexts: Vec::new(),
         }
@@ -294,11 +382,11 @@ impl PermissionContext {
                 self.domain = Some(domain.clone());
             }
             PermissionRuleContext::World(world) => {
-                self.domain = Some(world.namespace.to_string());
+                self.domain = Some(PermissionDomain(world.namespace.to_string()));
                 self.world = Some(world.clone());
             }
             PermissionRuleContext::Custom { key, value } => {
-                self.add_custom_context(key.clone(), value.clone())?;
+                self.add_custom_context(key.clone(), value.as_str())?;
             }
             PermissionRuleContext::All(contexts) => {
                 for context in contexts.iter() {
@@ -417,20 +505,34 @@ fn validate_namespaced_context_key(value: &str) -> Result<(), PermissionContextK
 /// Invalid rule-side or active permission context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PermissionRuleContextError {
-    /// A custom context value is empty.
-    EmptyValue,
+    /// A domain name is not a valid identifier namespace.
+    InvalidDomain(String),
+    /// A custom value cannot be represented by the expression syntax.
+    InvalidValue(String),
     /// One chain binds two different domains.
     DuplicateDomain,
     /// One chain binds two different loaded worlds.
     DuplicateWorld,
     /// One custom key is bound to two different values.
     DuplicateCustomKey(PermissionContextKey),
+    /// A world identifier and explicit domain name disagree.
+    WorldDomainMismatch {
+        /// Explicit domain constraint.
+        domain: String,
+        /// Domain implied by the world identifier.
+        world_domain: String,
+    },
 }
 
 impl fmt::Display for PermissionRuleContextError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyValue => formatter.write_str("permission context value is empty"),
+            Self::InvalidDomain(domain) => {
+                write!(formatter, "invalid permission context domain '{domain}'")
+            }
+            Self::InvalidValue(value) => {
+                write!(formatter, "invalid permission context value '{value}'")
+            }
             Self::DuplicateDomain => {
                 formatter.write_str("domain permission context cannot have multiple values")
             }
@@ -441,6 +543,13 @@ impl fmt::Display for PermissionRuleContextError {
                 formatter,
                 "custom permission context key '{}' cannot have multiple values",
                 key.as_str()
+            ),
+            Self::WorldDomainMismatch {
+                domain,
+                world_domain,
+            } => write!(
+                formatter,
+                "permission context domain '{domain}' conflicts with world domain '{world_domain}'"
             ),
         }
     }

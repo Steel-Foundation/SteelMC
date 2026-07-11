@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use glam::DVec3;
 use steel_registry::{
@@ -15,14 +15,17 @@ use crate::{
         sender::CommandSender,
     },
     entity::{Entity as _, EntityAnchor, SharedEntity},
-    permission::{OP_GROUP, PermissionContext, PermissionExpr, PermissionState},
-    player::Player,
+    permission::{
+        OP_GROUP, PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
+        PermissionRuleExpression, PermissionState,
+    },
+    player::{KnownPlayer, Player},
     scoreboard::Scoreboard,
     server::Server,
     world::World,
 };
 
-use super::CommandExecutionContext;
+use super::{CommandExecutionContext, GameProfileArgument};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -94,6 +97,22 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn permission_metadata_suggestions(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn user_permission_rule_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn user_permission_metadata_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn group_permission_rule_suggestions(&self, _group: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn group_permission_metadata_suggestions(&self, _group: &str) -> Vec<String> {
         Vec::new()
     }
 
@@ -425,6 +444,82 @@ impl CommandArgumentSource for CommandSource {
         self.server.permission_metadata_suggestions()
     }
 
+    fn user_permission_rule_suggestions(&self, targets: &GameProfileArgument) -> Vec<String> {
+        let mut suggestions = BTreeSet::new();
+        for uuid in profile_argument_uuids(self, targets) {
+            let Some(state) = self.server.player_permission_state(uuid) else {
+                continue;
+            };
+            suggestions.extend(
+                state
+                    .overrides()
+                    .entries()
+                    .iter()
+                    .filter(|entry| can_manage_permission(self, entry.key()))
+                    .map(|entry| {
+                        PermissionRuleExpression::new(entry.key().clone(), entry.context().clone())
+                            .to_string()
+                    }),
+            );
+        }
+        suggestions.into_iter().collect()
+    }
+
+    fn user_permission_metadata_suggestions(&self, targets: &GameProfileArgument) -> Vec<String> {
+        if !has_permission_key(self, "steel.permission.metadata") {
+            return Vec::new();
+        }
+        let mut suggestions = BTreeSet::new();
+        for uuid in profile_argument_uuids(self, targets) {
+            let Some(state) = self.server.player_permission_state(uuid) else {
+                continue;
+            };
+            suggestions.extend(state.metadata_overrides().entries().iter().map(|entry| {
+                PermissionMetadataExpression::new(entry.key().clone(), entry.context().clone())
+                    .to_string()
+            }));
+        }
+        suggestions.into_iter().collect()
+    }
+
+    fn group_permission_rule_suggestions(&self, group: &str) -> Vec<String> {
+        if !can_manage_group(self, group) {
+            return Vec::new();
+        }
+        self.server
+            .permission_groups
+            .config_snapshot()
+            .groups
+            .get(group)
+            .into_iter()
+            .flat_map(|group| group.allow.iter().chain(&group.deny))
+            .filter(|expression| {
+                PermissionRuleExpression::parse(expression.as_str())
+                    .is_ok_and(|expression| can_manage_permission(self, expression.key()))
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn group_permission_metadata_suggestions(&self, group: &str) -> Vec<String> {
+        if !has_permission_key(self, "steel.permission.metadata") || !can_manage_group(self, group)
+        {
+            return Vec::new();
+        }
+        self.server
+            .permission_groups
+            .config_snapshot()
+            .groups
+            .get(group)
+            .into_iter()
+            .flat_map(|group| group.metadata.iter().map(|rule| rule.key.clone()))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn permission_group_names(&self) -> Vec<String> {
         self.server.permission_groups.group_names()
     }
@@ -480,6 +575,54 @@ impl CommandArgumentSource for CommandSource {
         };
         CommandPermissionSource::has_permission(self, &permission)
     }
+}
+
+fn profile_argument_uuids(
+    source: &CommandSource,
+    argument: &GameProfileArgument,
+) -> BTreeSet<uuid::Uuid> {
+    match argument {
+        GameProfileArgument::Selector(selector) => selector.find_players(source).map_or_else(
+            |_| BTreeSet::new(),
+            |players| {
+                players
+                    .into_iter()
+                    .map(|player| player.gameprofile.id)
+                    .collect()
+            },
+        ),
+        GameProfileArgument::Direct(value) => {
+            let known = source.server.known_players();
+            let uuid = uuid::Uuid::parse_str(value)
+                .ok()
+                .or_else(|| known.by_name(value).map(KnownPlayer::uuid))
+                .or_else(|| {
+                    source
+                        .server
+                        .get_players()
+                        .into_iter()
+                        .find(|player| player.gameprofile.name.eq_ignore_ascii_case(value))
+                        .map(|player| player.gameprofile.id)
+                });
+            uuid.into_iter().collect()
+        }
+    }
+}
+
+fn can_manage_permission(source: &CommandSource, permission: &PermissionKey) -> bool {
+    has_permission_key(
+        source,
+        &format!("steel.permission.manage.{}", permission.as_str()),
+    )
+}
+
+fn can_manage_group(source: &CommandSource, group: &str) -> bool {
+    has_permission_key(source, &format!("steel.permission.group.{group}"))
+}
+
+fn has_permission_key(source: &CommandSource, value: &str) -> bool {
+    PermissionKey::parse(value)
+        .is_ok_and(|key| CommandPermissionSource::has_permission(source, &PermissionExpr::key(key)))
 }
 
 fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<String> {
@@ -545,7 +688,7 @@ impl CommandPermissionSource for CommandSource {
         let CommandSender::Player(player) = &self.sender else {
             return Some(PermissionState::Allow);
         };
-        let context = PermissionContext::for_world(self.world.domain(), self.world.key.clone());
+        let context = PermissionContext::for_world(self.world.key.clone());
         player.permission_state_in(permission, &context)
     }
 }

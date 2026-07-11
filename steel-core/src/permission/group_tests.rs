@@ -58,10 +58,7 @@ fn groups_inherit_contextual_metadata_and_subject_values_break_ties() {
         effective
             .resolve_in(
                 &homes,
-                &super::PermissionContext::for_world(
-                    "survival",
-                    Identifier::new("survival", "overworld"),
-                ),
+                &super::PermissionContext::for_world(Identifier::new("survival", "overworld")),
             )
             .and_then(PermissionMetadataValue::as_i64),
         Some(3)
@@ -125,11 +122,11 @@ fn contextual_group_rules_evaluate_in_the_parsed_context() {
 
     assert!(effective.allows_key_in(
         &key("steel.fly"),
-        &super::PermissionContext::for_world("lobby", Identifier::new("lobby", "spawn"))
+        &super::PermissionContext::for_world(Identifier::new("lobby", "spawn"))
     ));
     assert!(!effective.allows_key_in(
         &key("steel.fly"),
-        &super::PermissionContext::for_world("survival", Identifier::new("survival", "overworld"))
+        &super::PermissionContext::for_world(Identifier::new("survival", "overworld"))
     ));
 }
 

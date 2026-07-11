@@ -133,7 +133,8 @@ fn parse_domain_context(
             value.to_owned(),
         ));
     }
-    Ok(PermissionRuleContext::domain(value))
+    PermissionRuleContext::domain(value)
+        .map_err(PermissionExpressionContextError::InvalidRuleContext)
 }
 
 fn parse_world_context(

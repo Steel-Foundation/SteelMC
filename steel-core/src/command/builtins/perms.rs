@@ -81,7 +81,7 @@ fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             )
             .then(
                 literal("unset").then(
-                    argument("permission", SteelArgumentType::permission_rule())
+                    argument("permission", SteelArgumentType::user_permission_rule())
                         .executes_suspended(user_unset),
                 ),
             )
@@ -121,7 +121,7 @@ fn user_metadata_command() -> CommandNodeBuilder<CommandSource, SteelCommandRunt
         )
         .then(
             literal("unset").then(
-                argument("metadata", SteelArgumentType::permission_metadata())
+                argument("metadata", SteelArgumentType::user_permission_metadata())
                     .executes_suspended(user_metadata_unset),
             ),
         )
@@ -147,7 +147,7 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             )
             .then(
                 literal("unset").then(
-                    argument("permission", SteelArgumentType::permission_rule())
+                    argument("permission", SteelArgumentType::group_permission_rule())
                         .executes_suspended(group_unset),
                 ),
             )
@@ -178,7 +178,7 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     .then(metadata_set_command(group_metadata_set))
                     .then(
                         literal("unset").then(
-                            argument("metadata", SteelArgumentType::permission_metadata())
+                            argument("metadata", SteelArgumentType::group_permission_metadata())
                                 .executes_suspended(group_metadata_unset),
                         ),
                     ),

@@ -236,11 +236,27 @@ impl SteelArgumentType {
     }
 
     pub(crate) fn permission_rule() -> Self {
-        Self::new(PermissionRuleParser)
+        Self::new(PermissionRuleParser::all())
+    }
+
+    pub(crate) fn user_permission_rule() -> Self {
+        Self::new(PermissionRuleParser::user_owned())
+    }
+
+    pub(crate) fn group_permission_rule() -> Self {
+        Self::new(PermissionRuleParser::group_owned())
     }
 
     pub(crate) fn permission_metadata() -> Self {
-        Self::new(PermissionMetadataParser)
+        Self::new(PermissionMetadataParser::all())
+    }
+
+    pub(crate) fn user_permission_metadata() -> Self {
+        Self::new(PermissionMetadataParser::user_owned())
+    }
+
+    pub(crate) fn group_permission_metadata() -> Self {
+        Self::new(PermissionMetadataParser::group_owned())
     }
 
     pub(crate) fn permission_group(require_existing: bool) -> Self {

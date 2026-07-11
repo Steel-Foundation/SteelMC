@@ -320,7 +320,8 @@ mod tests {
         overrides.allow(key("steel.fly"));
         overrides.deny_in(
             key("steel.build"),
-            PermissionRuleContext::domain("survival"),
+            PermissionRuleContext::domain("survival")
+                .unwrap_or_else(|error| panic!("test domain should parse: {error}")),
         );
         let metadata_key = match parse_permission_metadata_key("plugin:max_homes") {
             Ok(key) => key,
@@ -329,7 +330,8 @@ mod tests {
         let mut metadata = PermissionMetadataSet::new();
         metadata.set_in(
             metadata_key,
-            PermissionRuleContext::domain("survival"),
+            PermissionRuleContext::domain("survival")
+                .unwrap_or_else(|error| panic!("test domain should parse: {error}")),
             PermissionMetadataValue::Integer(5),
         );
         let state = PermissionSubjectState::new_with_metadata(

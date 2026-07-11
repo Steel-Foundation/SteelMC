@@ -5,8 +5,9 @@ use crate::command::{
     },
     execution::{
         BiomeOrTag, BlockPredicate, CommandArgumentSource, CommandPermissionSource,
-        CommandResultCallback, Coordinates, ExecutionCommandSource, ScoreHolderArgument,
-        SteelArgumentType, SteelCommandRuntime, StructureOrTagKey, WorldArgument, argument,
+        CommandResultCallback, Coordinates, ExecutionCommandSource, GameProfileArgument,
+        ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime, StructureOrTagKey,
+        WorldArgument, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
         literal,
     },
@@ -97,6 +98,26 @@ impl CommandArgumentSource for TestSource {
 
     fn permission_metadata_suggestions(&self) -> Vec<String> {
         vec!["plugin:max_homes{plugin:region=spawn}".to_owned()]
+    }
+
+    fn user_permission_rule_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
+        vec!["steel.user_owned".to_owned()]
+    }
+
+    fn user_permission_metadata_suggestions(&self, _targets: &GameProfileArgument) -> Vec<String> {
+        vec!["plugin:user_owned".to_owned()]
+    }
+
+    fn group_permission_rule_suggestions(&self, group: &str) -> Vec<String> {
+        (group == "builder")
+            .then(|| vec!["steel.group_owned".to_owned()])
+            .unwrap_or_default()
+    }
+
+    fn group_permission_metadata_suggestions(&self, group: &str) -> Vec<String> {
+        (group == "builder")
+            .then(|| vec!["plugin:group_owned".to_owned()])
+            .unwrap_or_default()
     }
 
     fn permission_group_names(&self) -> Vec<String> {
@@ -294,6 +315,57 @@ fn permission_group_argument_can_require_a_configured_group() {
         dispatcher
             .context_chain(dispatcher.parse("resource missing", TestSource::new()))
             .is_err()
+    );
+}
+
+#[test]
+fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
+    let mut dispatcher = TestDispatcher::new();
+    assert!(
+        dispatcher
+            .register(literal("user").then(
+                argument("targets", SteelArgumentType::game_profile()).then(argument(
+                    "permission",
+                    SteelArgumentType::user_permission_rule(),
+                )),
+            ))
+            .is_ok()
+    );
+    assert!(
+        dispatcher
+            .register(literal("group").then(
+                argument("group", SteelArgumentType::permission_group(true)).then(argument(
+                    "permission",
+                    SteelArgumentType::group_permission_rule(),
+                )),
+            ))
+            .is_ok()
+    );
+
+    let user_parse = dispatcher.parse("user Steve ", TestSource::new());
+    let Ok(user_suggestions) = dispatcher.completion_suggestions(&user_parse) else {
+        panic!("user-owned suggestions should build");
+    };
+    assert_eq!(
+        user_suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["steel.user_owned"]
+    );
+
+    let group_parse = dispatcher.parse("group builder ", TestSource::new());
+    let Ok(group_suggestions) = dispatcher.completion_suggestions(&group_parse) else {
+        panic!("group-owned suggestions should build");
+    };
+    assert_eq!(
+        group_suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["steel.group_owned"]
     );
 }
 

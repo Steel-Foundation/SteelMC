@@ -23,7 +23,14 @@ fn context_key(value: &str) -> PermissionContextKey {
 }
 
 fn world_context(domain: &str, world: &str) -> PermissionContext {
-    PermissionContext::for_world(domain, Identifier::new(domain.to_owned(), world.to_owned()))
+    PermissionContext::for_world(Identifier::new(domain.to_owned(), world.to_owned()))
+}
+
+fn domain_context(domain: &str) -> PermissionRuleContext {
+    match PermissionRuleContext::domain(domain) {
+        Ok(context) => context,
+        Err(error) => panic!("test domain context should build: {error}"),
+    }
 }
 
 fn custom_context(key: &str, value: &str) -> PermissionRuleContext {
@@ -70,7 +77,7 @@ fn metadata_expressions_share_permission_context_syntax() {
     };
     assert_eq!(
         expression.to_string(),
-        "plugin:max_homes{domain=lobby,world=lobby:spawn,plugin:region=spawn}"
+        "plugin:max_homes{world=lobby:spawn,plugin:region=spawn}"
     );
 }
 
@@ -95,7 +102,7 @@ fn metadata_resolution_uses_context_source_priority_and_order() {
     metadata.push_group(
         PermissionMetadataEntry::new_with_context(
             homes.clone(),
-            PermissionRuleContext::domain("survival"),
+            domain_context("survival"),
             PermissionMetadataValue::Integer(3),
         ),
         "default",
@@ -179,7 +186,7 @@ fn wildcards_match_only_their_descendants() {
 
 #[test]
 fn chained_contexts_are_canonical_and_idempotent() {
-    let domain = PermissionRuleContext::domain("lobby");
+    let domain = domain_context("lobby");
     let world = PermissionRuleContext::world(Identifier::new("lobby", "spawn"));
     let region = custom_context("plugin:region", "spawn");
     let first = PermissionRuleContext::all([region.clone(), world.clone(), domain.clone()]);
@@ -189,12 +196,9 @@ fn chained_contexts_are_canonical_and_idempotent() {
     let Ok(first) = first else {
         panic!("non-conflicting contexts should chain");
     };
-    assert_eq!(
-        first.to_string(),
-        "domain lobby + world lobby:spawn + plugin:region spawn"
-    );
+    assert_eq!(first.to_string(), "world lobby:spawn + plugin:region spawn");
 
-    let same = PermissionRuleContext::domain("lobby");
+    let same = domain_context("lobby");
     assert_eq!(
         PermissionRuleContext::all([same.clone(), same.clone()]),
         Ok(same)
@@ -204,10 +208,7 @@ fn chained_contexts_are_canonical_and_idempotent() {
 #[test]
 fn chained_contexts_reject_conflicting_values() {
     assert_eq!(
-        PermissionRuleContext::all([
-            PermissionRuleContext::domain("lobby"),
-            PermissionRuleContext::domain("survival"),
-        ]),
+        PermissionRuleContext::all([domain_context("lobby"), domain_context("survival"),]),
         Err(PermissionRuleContextError::DuplicateDomain)
     );
     assert_eq!(
@@ -218,6 +219,28 @@ fn chained_contexts_reject_conflicting_values() {
         Err(PermissionRuleContextError::DuplicateCustomKey(context_key(
             "region"
         )))
+    );
+}
+
+#[test]
+fn contexts_reject_non_roundtrippable_values_and_mismatched_world_domains() {
+    assert!(matches!(
+        PermissionRuleContext::custom(context_key("plugin:region"), "spawn,market"),
+        Err(PermissionRuleContextError::InvalidValue(_))
+    ));
+    assert!(matches!(
+        PermissionRuleContext::domain("Uppercase"),
+        Err(PermissionRuleContextError::InvalidDomain(_))
+    ));
+    assert_eq!(
+        PermissionRuleContext::all([
+            domain_context("lobby"),
+            PermissionRuleContext::world(Identifier::new("survival", "overworld")),
+        ]),
+        Err(PermissionRuleContextError::WorldDomainMismatch {
+            domain: "lobby".to_owned(),
+            world_domain: "survival".to_owned(),
+        })
     );
 }
 
@@ -251,10 +274,7 @@ fn unset_permissions_default_to_deny() {
 fn key_specificity_precedes_context_specificity() {
     let creative = key("minecraft.command.gamemode.creative");
     let permissions = PermissionSet::from_entries([
-        PermissionEntry::allow_with_context(
-            key("minecraft.command.*"),
-            PermissionRuleContext::domain("lobby"),
-        ),
+        PermissionEntry::allow_with_context(key("minecraft.command.*"), domain_context("lobby")),
         PermissionEntry::deny(creative.clone()),
     ]);
 
@@ -266,7 +286,7 @@ fn context_specificity_breaks_equal_key_ties() {
     let fly = key("steel.fly");
     let permissions = PermissionSet::from_entries([
         PermissionEntry::deny(fly.clone()),
-        PermissionEntry::allow_with_context(fly.clone(), PermissionRuleContext::domain("lobby")),
+        PermissionEntry::allow_with_context(fly.clone(), domain_context("lobby")),
     ]);
 
     assert!(permissions.allows_key_in(&fly, &world_context("lobby", "spawn")));
@@ -286,7 +306,7 @@ fn chained_context_is_more_specific_than_one_constraint() {
         PermissionEntry::allow_with_context(fly.clone(), world),
         PermissionEntry::deny_with_context(fly.clone(), chained),
     ]);
-    let matching = PermissionContext::for_world("lobby", Identifier::new("lobby", "spawn"))
+    let matching = PermissionContext::for_world(Identifier::new("lobby", "spawn"))
         .with_custom_context(context_key("plugin:region"), "spawn");
     let Ok(matching) = matching else {
         panic!("active test context should build");
@@ -299,7 +319,7 @@ fn chained_context_is_more_specific_than_one_constraint() {
 #[test]
 fn rule_context_builds_an_equivalent_active_context_for_admin_checks() {
     let rule = PermissionRuleContext::all([
-        PermissionRuleContext::domain("lobby"),
+        domain_context("lobby"),
         PermissionRuleContext::world(Identifier::new("lobby", "spawn")),
         custom_context("plugin:region", "market"),
     ]);
@@ -394,10 +414,7 @@ fn source_and_group_priority_break_only_equal_specificity_ties() {
     let contextual = key("steel.contextual");
     permissions.push(PermissionEntry::allow(contextual.clone()));
     permissions.push_group(
-        PermissionEntry::deny_with_context(
-            contextual.clone(),
-            PermissionRuleContext::domain("lobby"),
-        ),
+        PermissionEntry::deny_with_context(contextual.clone(), domain_context("lobby")),
         "context",
         -100,
     );
@@ -407,7 +424,7 @@ fn source_and_group_priority_break_only_equal_specificity_ties() {
 #[test]
 fn set_and_unset_replace_only_exact_rules() {
     let fly = key("steel.fly");
-    let lobby = PermissionRuleContext::domain("lobby");
+    let lobby = domain_context("lobby");
     let mut permissions = PermissionSet::from_entries([
         PermissionEntry::allow(fly.clone()),
         PermissionEntry::deny_with_context(fly.clone(), lobby.clone()),

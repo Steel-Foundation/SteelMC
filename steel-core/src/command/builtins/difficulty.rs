@@ -23,7 +23,7 @@ pub(crate) fn player_can_change_difficulty(player: &Player, world: &World) -> bo
             return false;
         }
     };
-    let context = PermissionContext::for_world(world.domain(), world.key.clone());
+    let context = PermissionContext::for_world(world.key.clone());
     player.has_permission_in(&permission, &context)
 }
 

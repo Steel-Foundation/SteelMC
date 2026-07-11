@@ -51,7 +51,36 @@ unsafe impl DowncastType for PermissionGroupName {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PermissionRuleParser;
+enum PermissionSuggestionScope {
+    All,
+    UserOwned,
+    GroupOwned,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PermissionRuleParser {
+    suggestions: PermissionSuggestionScope,
+}
+
+impl PermissionRuleParser {
+    pub(super) const fn all() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::All,
+        }
+    }
+
+    pub(super) const fn user_owned() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::UserOwned,
+        }
+    }
+
+    pub(super) const fn group_owned() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::GroupOwned,
+        }
+    }
+}
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete parser.
 unsafe impl DowncastType for PermissionRuleParser {
@@ -79,11 +108,24 @@ impl SteelArgumentParser for PermissionRuleParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        suggest_expression(
-            builder,
-            context.source(),
-            context.source().permission_rule_suggestions(),
-        );
+        let expressions = match self.suggestions {
+            PermissionSuggestionScope::All => context.source().permission_rule_suggestions(),
+            PermissionSuggestionScope::UserOwned => context
+                .argument("targets")
+                .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
+                .map_or_else(Vec::new, |targets| {
+                    context.source().user_permission_rule_suggestions(targets)
+                }),
+            PermissionSuggestionScope::GroupOwned => context
+                .argument("group")
+                .and_then(|value| value.downcast_ref::<PermissionGroupName>())
+                .map_or_else(Vec::new, |group| {
+                    context
+                        .source()
+                        .group_permission_rule_suggestions(group.as_str())
+                }),
+        };
+        suggest_expression(builder, context.source(), expressions);
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
@@ -92,7 +134,29 @@ impl SteelArgumentParser for PermissionRuleParser {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PermissionMetadataParser;
+pub(super) struct PermissionMetadataParser {
+    suggestions: PermissionSuggestionScope,
+}
+
+impl PermissionMetadataParser {
+    pub(super) const fn all() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::All,
+        }
+    }
+
+    pub(super) const fn user_owned() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::UserOwned,
+        }
+    }
+
+    pub(super) const fn group_owned() -> Self {
+        Self {
+            suggestions: PermissionSuggestionScope::GroupOwned,
+        }
+    }
+}
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete parser.
 unsafe impl DowncastType for PermissionMetadataParser {
@@ -121,11 +185,26 @@ impl SteelArgumentParser for PermissionMetadataParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        suggest_expression(
-            builder,
-            context.source(),
-            context.source().permission_metadata_suggestions(),
-        );
+        let expressions = match self.suggestions {
+            PermissionSuggestionScope::All => context.source().permission_metadata_suggestions(),
+            PermissionSuggestionScope::UserOwned => context
+                .argument("targets")
+                .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
+                .map_or_else(Vec::new, |targets| {
+                    context
+                        .source()
+                        .user_permission_metadata_suggestions(targets)
+                }),
+            PermissionSuggestionScope::GroupOwned => context
+                .argument("group")
+                .and_then(|value| value.downcast_ref::<PermissionGroupName>())
+                .map_or_else(Vec::new, |group| {
+                    context
+                        .source()
+                        .group_permission_metadata_suggestions(group.as_str())
+                }),
+        };
+        suggest_expression(builder, context.source(), expressions);
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
@@ -300,7 +379,7 @@ fn collect_custom_contexts(
             contexts
                 .entry(key.as_str().to_owned())
                 .or_default()
-                .insert(value.clone());
+                .insert(value.as_str().to_owned());
         }
         PermissionRuleContext::All(nested) => {
             for context in nested.iter() {

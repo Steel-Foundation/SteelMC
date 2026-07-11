@@ -1333,7 +1333,7 @@ impl Player {
     #[must_use]
     pub fn has_permission(&self, permission: &PermissionExpr) -> bool {
         let world = self.get_world();
-        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        let context = PermissionContext::for_world(world.key.clone());
         self.has_permission_in(permission, &context)
     }
 
@@ -1354,7 +1354,7 @@ impl Player {
     #[must_use]
     pub fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
         let world = self.get_world();
-        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        let context = PermissionContext::for_world(world.key.clone());
         self.permission_state_in(permission, &context)
     }
 
@@ -1375,7 +1375,7 @@ impl Player {
     #[must_use]
     pub fn permission_metadata(&self, key: &Identifier) -> Option<PermissionMetadataValue> {
         let world = self.get_world();
-        let context = PermissionContext::for_world(world.domain(), world.key.clone());
+        let context = PermissionContext::for_world(world.key.clone());
         self.permission_metadata_in(key, &context)
     }
 
