@@ -1,5 +1,6 @@
 //! Player data storage for global and domain-scoped player state.
 
+mod known_players;
 mod permissions;
 
 use std::{
@@ -14,7 +15,10 @@ use tokio::{fs, io};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
-use self::permissions::{PlayerPermissionsFile, set_permission_subject};
+use self::{
+    known_players::{KnownPlayersFile, decode_known_players_file, encode_known_players_file},
+    permissions::{PlayerPermissionsFile, set_permission_subject},
+};
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
     PersistentRootVehicle, PersistentSlot,
@@ -23,6 +27,7 @@ use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
 use crate::permission::{PermissionSubjectIndex, PermissionSubjectState};
 use crate::player::Player;
+use crate::player::known_players::KnownPlayers;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -194,6 +199,28 @@ impl PlayerDataStorage {
         }
     }
 
+    /// Loads the persisted player identity cache.
+    pub async fn load_known_players(&self) -> io::Result<KnownPlayers> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => storage.load_known_players().await,
+        }
+    }
+
+    /// Persists the identity cache when the caller's snapshot is still current.
+    pub async fn save_known_players_if_current(
+        &self,
+        players: &KnownPlayers,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage
+                    .save_known_players_if_current(players, is_current)
+                    .await
+            }
+        }
+    }
+
     /// Loads one player's persisted permission snapshot.
     pub async fn load_player_permissions(
         &self,
@@ -219,11 +246,29 @@ impl PlayerDataStorage {
     ) -> Result<PermissionSubjectState, E>
     where
         F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
-        E: From<io::Error>,
+        E: From<io::Error> + Send,
     {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => {
                 storage.update_player_permissions(uuid, update).await
+            }
+        }
+    }
+
+    /// Atomically edits and persists one player snapshot while returning caller data.
+    pub async fn try_update_player_permissions<T, F, E>(
+        &self,
+        uuid: Uuid,
+        update: F,
+    ) -> Result<(PermissionSubjectState, T), E>
+    where
+        F: FnOnce(Option<PermissionSubjectState>) -> Result<(PermissionSubjectState, T), E> + Send,
+        T: Send,
+        E: From<io::Error> + Send,
+    {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage.try_update_player_permissions(uuid, update).await
             }
         }
     }
@@ -326,6 +371,33 @@ impl FilePlayerDataStorage {
             .into_subject_index()
     }
 
+    async fn load_known_players(&self) -> io::Result<KnownPlayers> {
+        let path = self.known_players_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        if !path.exists() {
+            return Ok(KnownPlayers::new());
+        }
+        let bytes = fs::read(path).await?;
+        decode_known_players_file(&bytes)?.into_known_players()
+    }
+
+    async fn save_known_players_if_current(
+        &self,
+        players: &KnownPlayers,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        let path = self.known_players_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        if !is_current() {
+            return Ok(false);
+        }
+        let bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(players))?;
+        Self::write_atomic_path_locked(&path, bytes).await?;
+        Ok(true)
+    }
+
     async fn load_player_permissions(
         &self,
         uuid: Uuid,
@@ -351,7 +423,22 @@ impl FilePlayerDataStorage {
     ) -> Result<PermissionSubjectState, E>
     where
         F: FnOnce(Option<PermissionSubjectState>) -> Result<PermissionSubjectState, E> + Send,
-        E: From<io::Error>,
+        E: From<io::Error> + Send,
+    {
+        self.try_update_player_permissions(uuid, |current| update(current).map(|state| (state, ())))
+            .await
+            .map(|(state, ())| state)
+    }
+
+    async fn try_update_player_permissions<T, F, E>(
+        &self,
+        uuid: Uuid,
+        update: F,
+    ) -> Result<(PermissionSubjectState, T), E>
+    where
+        F: FnOnce(Option<PermissionSubjectState>) -> Result<(PermissionSubjectState, T), E> + Send,
+        T: Send,
+        E: From<io::Error> + Send,
     {
         let path = self.player_permissions_file();
         let lock = self.file_lock(&path);
@@ -361,12 +448,12 @@ impl FilePlayerDataStorage {
             .await
             .map_err(E::from)?;
         let current = file.subject(uuid).map_err(E::from)?;
-        let updated = update(current)?;
+        let (updated, result) = update(current)?;
         set_permission_subject(&mut file, uuid, &updated);
         self.write_player_permissions_file_locked(&path, &file)
             .await
             .map_err(E::from)?;
-        Ok(updated)
+        Ok((updated, result))
     }
 
     async fn save_player_permissions_if_current(
@@ -441,6 +528,10 @@ impl FilePlayerDataStorage {
 
     fn player_permissions_file(&self) -> PathBuf {
         self.global_dir().join("player_permissions.toml")
+    }
+
+    fn known_players_file(&self) -> PathBuf {
+        self.global_dir().join("known_players.dat")
     }
 
     fn domain_players_dir(&self, domain: &str) -> PathBuf {
@@ -748,6 +839,7 @@ mod tests {
     use super::*;
     use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
     use crate::permission::PermissionSet;
+    use crate::player::known_players::KnownPlayer;
     use std::{
         env,
         time::{SystemTime, UNIX_EPOCH},
@@ -830,6 +922,69 @@ mod tests {
             nbt_data: Vec::new(),
             passengers: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn known_player_cache_round_trips_and_rejects_stale_writes() {
+        let root = temp_storage_root("known-players");
+        let storage = match FilePlayerDataStorage::new(root.clone()).await {
+            Ok(storage) => storage,
+            Err(error) => panic!("test storage should initialize: {error}"),
+        };
+        let uuid = Uuid::from_u128(42);
+        let players =
+            KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+
+        let stale = storage
+            .save_known_players_if_current(&players, || false)
+            .await;
+        assert!(matches!(stale, Ok(false)));
+        assert!(!storage.known_players_file().exists());
+
+        let saved = storage
+            .save_known_players_if_current(&players, || true)
+            .await;
+        assert!(matches!(saved, Ok(true)));
+        let loaded = storage.load_known_players().await;
+        let Ok(loaded) = loaded else {
+            panic!("known players should load");
+        };
+        assert_eq!(
+            loaded.by_uuid(uuid).map(KnownPlayer::last_known_name),
+            Some("Steve")
+        );
+        assert_eq!(
+            loaded.by_uuid(uuid).map(KnownPlayer::expires_at_millis),
+            Some(1_234_567)
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[test]
+    fn known_player_cache_persists_vanillas_mru_limit() {
+        let players = KnownPlayers::from_entries((0_u128..=1_000).map(|value| {
+            KnownPlayer::with_expiration(
+                Uuid::from_u128(value),
+                format!("Player{value}"),
+                1_234_567,
+            )
+        }));
+        let encoded = encode_known_players_file(&KnownPlayersFile::from_known_players(&players));
+        let Ok(encoded) = encoded else {
+            panic!("known player cache should encode");
+        };
+        let decoded =
+            decode_known_players_file(&encoded).and_then(KnownPlayersFile::into_known_players);
+        let Ok(decoded) = decoded else {
+            panic!("known player cache should decode");
+        };
+
+        assert_eq!(decoded.entries().len(), 1_000);
+        assert!(decoded.by_uuid(Uuid::from_u128(999)).is_some());
+        assert!(decoded.by_uuid(Uuid::from_u128(1_000)).is_none());
     }
 
     #[test]

@@ -22,8 +22,9 @@ use crate::command::brigadier::{
 
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
-    Coordinates, ExecutionCommandSource, ExecutionControl, IntRange, ItemPredicate,
-    ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
+    Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
+    ItemPredicate, ScoreHolderArgument, ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey,
+    WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
         GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
@@ -336,6 +337,10 @@ where
     }
 
     pub(crate) fn entity_selector(&self, name: &str) -> Option<&EntitySelector> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn game_profile_argument(&self, name: &str) -> Option<&GameProfileArgument> {
         self.typed_argument(name)
     }
 }

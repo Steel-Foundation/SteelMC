@@ -78,6 +78,7 @@ small-map = "0.1.5"
 smallvec = "1.15.1"
 bitflags = "2.11"
 phf = { version = "0.13.1", features = ["macros"] }
+chrono = "0.4.43"
 
 # UUID
 uuid = { version = "1.23", features = ["serde", "v4"] }

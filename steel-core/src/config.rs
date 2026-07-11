@@ -37,6 +37,8 @@ pub struct RuntimeConfig {
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
     pub auth_server: Option<String>,
+    /// Optional endpoint for online-mode player name-to-profile lookups.
+    pub profile_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.

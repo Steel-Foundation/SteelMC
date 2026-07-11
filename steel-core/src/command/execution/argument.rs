@@ -31,6 +31,7 @@ use super::{
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
+    profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
@@ -217,6 +218,16 @@ impl SteelArgumentType {
 
     pub(crate) fn score_holder() -> Self {
         Self::new(ScoreHolderParser { multiple: false })
+    }
+
+    pub(crate) fn non_operator_profile() -> Self {
+        Self::new(GameProfileParser::new(
+            GameProfileSuggestionMode::NonOperators,
+        ))
+    }
+
+    pub(crate) fn operator_profile() -> Self {
+        Self::new(GameProfileParser::new(GameProfileSuggestionMode::Operators))
     }
 
     pub(crate) fn score_holders() -> Self {

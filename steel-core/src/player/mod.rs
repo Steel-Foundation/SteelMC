@@ -17,6 +17,7 @@ mod game_profile;
 mod health_sync;
 mod input_state;
 mod item_cooldowns;
+mod known_players;
 mod lifecycle_state;
 pub mod message_chain;
 mod message_validator;
@@ -28,6 +29,7 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
+mod profile_lookup;
 mod signature_cache;
 mod spam_throttler;
 mod teleport_state;
@@ -56,7 +58,11 @@ use tick_state::PlayerTickState;
 use block_breaking::BlockBreakingManager;
 use enum_dispatch::enum_dispatch;
 use game_mode_state::PlayerGameModeState;
-pub use game_profile::{GameProfile, GameProfileAction};
+pub use game_profile::{GameProfile, GameProfileAction, is_valid_player_name, offline_uuid};
+pub(crate) use known_players::KnownPlayerNameLookup;
+pub use known_players::{KnownPlayer, KnownPlayers};
+pub use profile_lookup::ProfileLookupError;
+pub(crate) use profile_lookup::lookup_online_profile;
 use std::sync::{Arc, Weak};
 use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
@@ -2813,6 +2819,7 @@ mod tests {
             simulation_distance: 2,
             online_mode: false,
             auth_server: None,
+            profile_server: None,
             encryption: false,
             allow_flight: false,
             motd: String::new(),

@@ -164,6 +164,8 @@ pub struct ServerConfig {
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
     pub auth_server: Option<String>,
+    /// Optional endpoint for online-mode player name-to-profile lookups.
+    pub profile_server: Option<String>,
     /// Whether the server should use encryption.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
@@ -202,6 +204,7 @@ impl ServerConfig {
             simulation_distance: self.simulation_distance,
             online_mode: self.online_mode,
             auth_server: self.auth_server,
+            profile_server: self.profile_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
             motd: self.motd,
@@ -430,6 +433,14 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
             return Err("auth_server must use http or https");
         }
     }
+    if let Some(profile_server) = &config.profile_server {
+        let Ok(url) = Url::parse(profile_server) else {
+            return Err("profile_server must be an absolute URL");
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("profile_server must use http or https");
+        }
+    }
     if config.simulation_distance > config.view_distance {
         return Err("Simulation distance must be less than or equal to view distance");
     }
@@ -549,6 +560,29 @@ mod tests {
         assert_eq!(
             config.server.into_runtime_config().auth_server.as_deref(),
             Some(auth_server)
+        );
+    }
+
+    #[test]
+    fn configured_profile_server_flows_to_runtime_config() {
+        let profile_server = "https://profiles.example.com/lookup/name";
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            &format!("online_mode = true\nprofile_server = \"{profile_server}\""),
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            config.server.profile_server.as_deref(),
+            Some(profile_server)
+        );
+        assert_eq!(
+            config
+                .server
+                .into_runtime_config()
+                .profile_server
+                .as_deref(),
+            Some(profile_server)
         );
     }
 

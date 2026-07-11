@@ -15,7 +15,7 @@ use crate::{
         sender::CommandSender,
     },
     entity::{Entity as _, EntityAnchor, SharedEntity},
-    permission::{PermissionContext, PermissionExpr, PermissionState},
+    permission::{OP_GROUP, PermissionContext, PermissionExpr, PermissionState},
     player::Player,
     scoreboard::Scoreboard,
     server::Server,
@@ -82,6 +82,14 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn command_storage_keys(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn non_operator_profile_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn operator_profile_names(&self) -> Vec<String> {
         Vec::new()
     }
 
@@ -385,6 +393,14 @@ impl CommandArgumentSource for CommandSource {
             })
     }
 
+    fn non_operator_profile_names(&self) -> Vec<String> {
+        profile_names(self.server(), false, false)
+    }
+
+    fn operator_profile_names(&self) -> Vec<String> {
+        profile_names(self.server(), true, true)
+    }
+
     fn selector_player_names(&self) -> Vec<String> {
         let domain = self.world.domain();
         self.server
@@ -424,6 +440,46 @@ impl CommandArgumentSource for CommandSource {
         };
         CommandPermissionSource::has_permission(self, &permission)
     }
+}
+
+fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<String> {
+    let players = server.get_players();
+    let mut names = Vec::new();
+    for player in &players {
+        let is_operator = player
+            .permission_groups()
+            .iter()
+            .any(|group| group == OP_GROUP);
+        if operator == is_operator {
+            names.push(player.gameprofile.name.clone());
+        }
+    }
+
+    if !include_known {
+        return names;
+    }
+
+    for known in server.known_players().entries() {
+        if names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(known.last_known_name()))
+            || players.iter().any(|player| {
+                player
+                    .gameprofile
+                    .name
+                    .eq_ignore_ascii_case(known.last_known_name())
+            })
+        {
+            continue;
+        }
+        let is_operator = server
+            .player_permission_state(known.uuid())
+            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP));
+        if operator == is_operator {
+            names.push(known.last_known_name().to_owned());
+        }
+    }
+    names
 }
 
 impl CommandPermissionSource for CommandSource {

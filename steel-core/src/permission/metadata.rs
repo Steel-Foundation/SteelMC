@@ -398,7 +398,7 @@ impl PermissionMetadataSet {
 
     /// Returns whether the set contains no entries.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 

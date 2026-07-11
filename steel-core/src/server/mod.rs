@@ -35,20 +35,26 @@ use crate::entity::{
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
-use crate::permission::{PermissionGroupManager, PermissionSubjectIndex, PermissionSubjectState};
+use crate::permission::{
+    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionSubjectIndex, PermissionSubjectState,
+};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
-use crate::player::{Player, ResetReason};
+use crate::player::{
+    GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player, ProfileLookupError,
+    ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
+};
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
     end_portal, nether_portal,
 };
 use crate::scoreboard::DomainScoreboards;
-use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
+use crate::server::jobs::{FnServerJob, JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
@@ -82,7 +88,7 @@ use steel_registry::{
     REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
     vanilla_entities,
 };
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
@@ -129,10 +135,12 @@ mod tests {
     use uuid::Uuid;
 
     use crate::entity::{Entity, EntityBase};
+    use crate::permission::{PermissionGroupManager, PermissionGroupsConfig};
 
     use super::{
         can_entity_return_from_end_to_overworld, cap_positive_thread_count,
         is_allowed_to_enter_portal_target, is_end_return_transition,
+        validate_player_permission_group_update,
     };
 
     struct TestEntity {
@@ -177,6 +185,31 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn permission_updates_reject_only_new_unknown_group_assignments() {
+        let manager = PermissionGroupManager::transient(PermissionGroupsConfig::default());
+        let Ok(manager) = manager else {
+            panic!("default permission groups should resolve");
+        };
+
+        assert!(
+            validate_player_permission_group_update::<()>(&manager, &[], &["op".to_owned()])
+                .is_ok()
+        );
+        assert!(
+            validate_player_permission_group_update::<()>(
+                &manager,
+                &["retired".to_owned()],
+                &["retired".to_owned()],
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_player_permission_group_update::<()>(&manager, &[], &["missing".to_owned()],)
+                .is_err()
+        );
     }
 
     #[test]
@@ -429,6 +462,40 @@ struct DomainSwitchRequest {
     target_domain: String,
     target_world: Option<Arc<World>>,
     restore_saved_location: bool,
+}
+
+/// Failure while atomically editing one player's persisted permission state.
+#[derive(Debug, thiserror::Error)]
+pub enum PlayerPermissionUpdateError<E> {
+    /// The caller rejected the proposed edit.
+    #[error("{0}")]
+    Edit(E),
+    /// The edit assigns a group that is not configured.
+    #[error("unknown permission group '{0}'")]
+    UnknownGroup(String),
+    /// The permission snapshot could not be read or persisted.
+    #[error("failed to update player permissions: {0}")]
+    Storage(io::Error),
+}
+
+impl<E> From<io::Error> for PlayerPermissionUpdateError<E> {
+    fn from(value: io::Error) -> Self {
+        Self::Storage(value)
+    }
+}
+
+fn validate_player_permission_group_update<E>(
+    manager: &PermissionGroupManager,
+    previous_groups: &[String],
+    updated_groups: &[String],
+) -> Result<(), PlayerPermissionUpdateError<E>> {
+    for group in updated_groups {
+        let already_assigned = previous_groups.iter().any(|current| current == group);
+        if !already_assigned && !manager.contains_group(group) {
+            return Err(PlayerPermissionUpdateError::UnknownGroup(group.clone()));
+        }
+    }
+    Ok(())
 }
 
 struct PendingPlayerJoin {
@@ -1279,6 +1346,14 @@ pub struct Server {
     pub player_data_storage: PlayerDataStorage,
     /// Persisted permission state indexed by player UUID.
     player_permission_states: SyncRwLock<PermissionSubjectIndex>,
+    /// Serializes persistence and cache publication for player permission edits.
+    player_permission_updates: AsyncMutex<()>,
+    /// Player identities cached for vanilla game-profile command arguments.
+    known_players: SyncRwLock<KnownPlayers>,
+    /// Generation used to avoid publishing stale known-player snapshots.
+    known_players_version: SyncMutex<u64>,
+    /// HTTP client used by online-mode name-to-profile lookups.
+    profile_lookup_client: reqwest::Client,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
     /// Queued world changes to process after the tick.
@@ -1353,6 +1428,10 @@ impl Server {
             .load_permission_subjects()
             .await
             .map_err(|error| format!("failed to load player permissions: {error}"))?;
+        let known_players = player_data_storage
+            .load_known_players()
+            .await
+            .map_err(|error| format!("failed to load known players: {error}"))?;
         let mut worlds = WorldMap::new(
             resolved_worlds.default_domain.clone(),
             &resolved_worlds.domains,
@@ -1444,6 +1523,10 @@ impl Server {
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
+            player_permission_updates: AsyncMutex::new(()),
+            known_players: SyncRwLock::new(known_players),
+            known_players_version: SyncMutex::new(0),
+            profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
@@ -1819,6 +1902,247 @@ impl Server {
     #[must_use]
     pub fn player_permission_state(&self, uuid: Uuid) -> Option<PermissionSubjectState> {
         self.player_permission_states.read().get(uuid).cloned()
+    }
+
+    /// Atomically edits one player's persisted permission state.
+    ///
+    /// Persistence completes before the cache is published. An online player is
+    /// refreshed from the latest cached snapshot at the server job tick stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an edit error, an unknown newly assigned group, or a storage error.
+    pub async fn try_update_player_permissions<T, E>(
+        self: &Arc<Self>,
+        uuid: Uuid,
+        update: impl FnOnce(PermissionSubjectState) -> Result<(PermissionSubjectState, T), E> + Send,
+    ) -> Result<(PermissionSubjectState, T), PlayerPermissionUpdateError<E>>
+    where
+        T: Send,
+        E: Send,
+    {
+        let _guard = self.player_permission_updates.lock().await;
+        let (updated, result) = self
+            .player_data_storage
+            .try_update_player_permissions(uuid, |current| {
+                let current = current.unwrap_or_default();
+                let previous_groups = current.groups().to_vec();
+                let (updated, result) =
+                    update(current).map_err(PlayerPermissionUpdateError::Edit)?;
+                validate_player_permission_group_update(
+                    &self.permission_groups,
+                    &previous_groups,
+                    updated.groups(),
+                )?;
+                Ok::<_, PlayerPermissionUpdateError<E>>((updated, result))
+            })
+            .await?;
+
+        self.set_cached_player_permission_state(uuid, updated.clone());
+        self.queue_player_permission_refresh(uuid);
+        Ok((updated, result))
+    }
+
+    /// Replaces the complete permission group config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn replace_permission_groups(
+        self: &Arc<Self>,
+        config: PermissionGroupsConfig,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.replace_config(config).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Edits the latest permission group config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn update_permission_groups(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionGroupsConfig) + Send,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Applies a fallible permission group edit and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns the caller edit error or a validation/persistence error.
+    pub async fn try_update_permission_groups<T, E>(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionGroupsConfig) -> Result<T, E> + Send,
+    ) -> Result<T, PermissionGroupUpdateError<E>>
+    where
+        T: Send,
+        E: Send,
+    {
+        let result = self.permission_groups.try_update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(result)
+    }
+
+    /// Returns a snapshot of player identities known to this server.
+    #[must_use]
+    pub fn known_players(&self) -> KnownPlayers {
+        self.known_players.read().clone()
+    }
+
+    /// Records a connected player identity in the persistent profile cache.
+    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) {
+        self.record_known_profile(profile.id, profile.name.clone());
+    }
+
+    /// Records a UUID and last-known name in the persistent profile cache.
+    pub fn record_known_profile(self: &Arc<Self>, uuid: Uuid, last_known_name: impl Into<String>) {
+        let changed = self
+            .known_players
+            .write()
+            .record(uuid, last_known_name.into());
+        if !changed {
+            return;
+        }
+        let version = self.bump_known_players_version();
+        self.save_known_players(version);
+    }
+
+    /// Resolves a vanilla game-profile command target by name or cached UUID.
+    ///
+    /// Online players and cached profiles are checked first. Offline-mode names
+    /// use vanilla's deterministic UUID, while online mode queries the configured
+    /// profile service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the profile is unknown or the profile service fails.
+    pub async fn resolve_player_profile(
+        self: &Arc<Self>,
+        name: &str,
+    ) -> Result<KnownPlayer, ProfileLookupError> {
+        if let Some(profile) = self.cached_player_profile(name) {
+            return Ok(profile);
+        }
+        if !self.config.online_mode {
+            let profile = KnownPlayer::new(offline_uuid(name), name.to_owned());
+            self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
+            return Ok(profile);
+        }
+        if !is_valid_player_name(name) {
+            return Err(ProfileLookupError::UnknownPlayer(name.to_owned()));
+        }
+
+        let profile = lookup_online_profile(
+            &self.profile_lookup_client,
+            self.config.profile_server.as_deref(),
+            name,
+        )
+        .await?;
+        self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
+        Ok(profile)
+    }
+
+    fn cached_player_profile(self: &Arc<Self>, name: &str) -> Option<KnownPlayer> {
+        let uuid = Uuid::parse_str(name).ok();
+        if let Some(player) = self.get_players().into_iter().find(|player| {
+            player.gameprofile.name.eq_ignore_ascii_case(name)
+                || uuid.is_some_and(|uuid| player.gameprofile.id == uuid)
+        }) {
+            return Some(KnownPlayer::new(
+                player.gameprofile.id,
+                player.gameprofile.name.clone(),
+            ));
+        }
+
+        let mut known = self.known_players.write();
+        if let Some(uuid) = uuid {
+            return known.resolve_uuid(uuid);
+        }
+        match known.resolve_name(name, chrono::Utc::now().timestamp_millis()) {
+            KnownPlayerNameLookup::Found(profile) => Some(profile),
+            KnownPlayerNameLookup::Missing => None,
+            KnownPlayerNameLookup::Expired => {
+                drop(known);
+                let version = self.bump_known_players_version();
+                self.save_known_players(version);
+                None
+            }
+        }
+    }
+
+    fn bump_known_players_version(&self) -> u64 {
+        let mut version = self.known_players_version.lock();
+        *version = version.wrapping_add(1);
+        *version
+    }
+
+    fn save_known_players(self: &Arc<Self>, version: u64) {
+        let server = Arc::clone(self);
+        let players = self.known_players();
+        tokio::spawn(async move {
+            match server
+                .player_data_storage
+                .save_known_players_if_current(&players, || {
+                    *server.known_players_version.lock() == version
+                })
+                .await
+            {
+                Ok(true | false) => {}
+                Err(error) => tracing::error!(%error, "failed to save known player cache"),
+            }
+        });
+    }
+
+    fn set_cached_player_permission_state(&self, uuid: Uuid, state: PermissionSubjectState) {
+        let mut states = self.player_permission_states.write();
+        if state.is_empty() {
+            states.remove(uuid);
+        } else {
+            states.set(uuid, state);
+        }
+    }
+
+    fn queue_player_permission_refresh(self: &Arc<Self>, uuid: Uuid) {
+        self.jobs
+            .spawn(FnServerJob::new(move |context: &mut ServerJobContext| {
+                if let Some(server) = context.server() {
+                    server.refresh_player_permission_state(uuid);
+                }
+            }));
+    }
+
+    pub(crate) fn refresh_player_permission_state(self: &Arc<Self>, uuid: Uuid) {
+        let Some(player) = self.online_players.get_by_uuid(&uuid) else {
+            return;
+        };
+        let state = self.player_permission_state(uuid).unwrap_or_default();
+        self.apply_player_permission_state(&player, state);
+        self.resend_player_permission_context(&player);
+    }
+
+    fn queue_online_permission_group_refresh(self: &Arc<Self>) {
+        self.jobs
+            .spawn(FnServerJob::new(|context: &mut ServerJobContext| {
+                if let Some(server) = context.server() {
+                    server.refresh_online_permission_groups();
+                }
+            }));
+    }
+
+    fn refresh_online_permission_groups(self: &Arc<Self>) {
+        for player in self.get_players() {
+            let state = self
+                .player_permission_state(player.gameprofile.id)
+                .unwrap_or_default();
+            self.apply_player_permission_state(&player, state);
+            self.resend_player_permission_context(&player);
+        }
     }
 
     async fn load_domain_player_state(
@@ -2296,6 +2620,14 @@ impl Server {
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
         let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
+        let players = self.known_players();
+        if let Err(error) = self
+            .player_data_storage
+            .save_known_players_if_current(&players, || true)
+            .await
+        {
+            tracing::error!(%error, "failed to flush known player cache during shutdown");
+        }
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).

@@ -13,6 +13,7 @@ mod give;
 mod kill;
 mod list;
 mod locate;
+mod operator;
 mod seed;
 mod setworldspawn;
 mod stop;
@@ -35,6 +36,7 @@ pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
     builder.register(clear::registration())?;
+    builder.register(operator::deop_registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -47,6 +49,7 @@ pub(crate) fn create_dispatcher()
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
+    builder.register(operator::op_registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
@@ -89,6 +92,7 @@ mod tests {
             names,
             [
                 "clear",
+                "deop",
                 "difficulty",
                 "domain",
                 "enchant",
@@ -102,6 +106,7 @@ mod tests {
                 "kill",
                 "list",
                 "locate",
+                "op",
                 "seed",
                 "setworldspawn",
                 "stop",
