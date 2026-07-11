@@ -50,14 +50,7 @@ impl Completer {
             return;
         };
         // Gets the suggested commands
-        self.suggestions = server
-            .command_dispatcher
-            .read()
-            .handle_suggestions(CommandSender::Console, command, server.clone())
-            .0
-            .into_iter()
-            .map(|suggestion| suggestion.text)
-            .collect();
+        self.suggestions = server.command_suggestion_texts(CommandSender::Console, command);
         if self.suggestions.is_empty() {
             self.completed = String::new();
             self.selected = 0;

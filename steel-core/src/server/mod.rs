@@ -15,12 +15,17 @@ use crate::chunk::{
     chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
-use crate::command::execution::CommandSource;
+use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
+use crate::command::execution::{
+    CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
+    ExecutionStop,
+};
 use crate::command::sender::CommandSender;
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandDispatcher, CommandQueueFull,
     CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue, client_permission_event,
+    command_suggestions_packet, command_tree_packet, create_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{
@@ -64,7 +69,7 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CCommandSuggestions, CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
     CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
     CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
 };
@@ -1265,7 +1270,7 @@ pub struct Server {
     /// Command NBT storage isolated by Steel domain.
     pub(crate) command_storage: DomainCommandStorage,
     /// Saves and dispatches commands to appropriate handlers.
-    pub command_dispatcher: SyncRwLock<CommandDispatcher>,
+    command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Command work submitted from connection and console tasks.
     command_requests: CommandRequestQueue,
     /// Jobs resumed from a known point in the server game tick.
@@ -1419,6 +1424,8 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
+        let command_dispatcher = create_dispatcher()
+            .map_err(|error| format!("failed to register built-in commands: {error}"))?;
 
         Ok(Server {
             config,
@@ -1432,7 +1439,7 @@ impl Server {
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             scoreboards,
             command_storage,
-            command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
+            command_dispatcher: SyncRwLock::new(command_dispatcher),
             command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
@@ -1469,6 +1476,25 @@ impl Server {
             transaction_id,
             input,
         })
+    }
+
+    /// Returns Brigadier suggestion text visible to a command sender.
+    pub fn command_suggestion_texts(
+        self: &Arc<Self>,
+        sender: CommandSender,
+        input: &str,
+    ) -> Vec<String> {
+        match self.build_command_suggestions(sender, input) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(|suggestion| suggestion.text().to_owned())
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to build command suggestions");
+                Vec::new()
+            }
+        }
     }
 
     /// Queues initial player join work.
@@ -2318,7 +2344,7 @@ impl Server {
             };
 
             Self::tick_pending_command_executions(&mut pending_command_executions);
-            self.tick_command_requests();
+            self.tick_command_requests(&mut pending_command_executions);
             self.tick_worlds_game(tick_count, runs_normally).await;
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
@@ -2372,7 +2398,10 @@ impl Server {
         }
     }
 
-    fn tick_command_requests(self: &Arc<Self>) {
+    fn tick_command_requests(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+    ) {
         let mut handled = 0;
         for _ in 0..COMMAND_REQUESTS_PER_TICK {
             let Some(request) = self.command_requests.pop_front() else {
@@ -2388,9 +2417,7 @@ impl Server {
                     {
                         continue;
                     }
-                    self.command_dispatcher
-                        .read()
-                        .handle_command(sender, command, self);
+                    self.execute_command_request(pending, sender, &command);
                 }
                 CommandRequest::Suggestions {
                     player,
@@ -2400,12 +2427,7 @@ impl Server {
                     if player.connection.closed() {
                         continue;
                     }
-                    self.command_dispatcher.read().handle_player_suggestions(
-                        &player,
-                        transaction_id,
-                        &input,
-                        Arc::clone(self),
-                    );
+                    self.send_command_suggestions(&player, transaction_id, &input);
                 }
             }
         }
@@ -2413,6 +2435,68 @@ impl Server {
         if handled == COMMAND_REQUESTS_PER_TICK {
             tracing::debug!(handled, "Command request tick reached its processing limit");
         }
+    }
+
+    fn execute_command_request(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+        sender: CommandSender,
+        command: &str,
+    ) {
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let command = command.strip_prefix('/').unwrap_or(command);
+        let chain = {
+            let dispatcher = self.command_dispatcher.read();
+            let parse = dispatcher.parse(command, source.clone());
+            dispatcher.context_chain(parse)
+        };
+        let chain = match chain {
+            Ok(chain) => chain,
+            Err(error) => {
+                source.handle_error(&error, false);
+                return;
+            }
+        };
+
+        let mut execution = CommandExecutionContext::for_source(&source);
+        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+        if execution.run() == ExecutionStop::Suspended && !pending.push_suspended(execution) {
+            tracing::error!("suspended command execution could not be retained");
+        }
+    }
+
+    fn send_command_suggestions(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        transaction_id: i32,
+        input: &str,
+    ) {
+        let suggestions =
+            self.build_command_suggestions(CommandSender::Player(Arc::clone(player)), input);
+        match suggestions {
+            Ok(suggestions) => {
+                player.send_packet(command_suggestions_packet(transaction_id, &suggestions));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to build command suggestions");
+                player.send_packet(CCommandSuggestions::new(transaction_id, 0, 0, Vec::new()));
+            }
+        }
+    }
+
+    fn build_command_suggestions(
+        self: &Arc<Self>,
+        sender: CommandSender,
+        input: &str,
+    ) -> Result<Suggestions, SuggestionError> {
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let mut reader = StringReader::new(input);
+        if reader.peek() == Some('/') {
+            reader.skip();
+        }
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse_reader(reader, source);
+        dispatcher.completion_suggestions(&parse)
     }
 
     /// Chunk sending tick loop — encodes and sends chunks to players independently.
@@ -3230,8 +3314,41 @@ impl Server {
             event: client_permission_event(player, &world),
         });
 
-        let commands = self.command_dispatcher.read().get_commands();
-        player.send_packet(commands);
+        let server = player.server();
+        if !std::ptr::eq(server.as_ref(), self) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands from a different server"
+            );
+            return;
+        }
+        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id) else {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands for a player outside the online player map"
+            );
+            return;
+        };
+        if !std::ptr::eq(shared_player.as_ref(), player) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands for a stale player handle"
+            );
+            return;
+        }
+        let source = CommandSource::new(CommandSender::Player(shared_player), server);
+        let commands = {
+            let dispatcher = self.command_dispatcher.read();
+            command_tree_packet(&dispatcher, &source)
+        };
+        match commands {
+            Ok(commands) => player.send_packet(commands),
+            Err(error) => tracing::error!(
+                player = %player.gameprofile.name,
+                %error,
+                "failed to project the player's command tree"
+            ),
+        }
     }
     /// Queues a world change to be processed after the current tick.
     pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {
