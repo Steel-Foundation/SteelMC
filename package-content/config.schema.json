@@ -58,7 +58,7 @@
         },
         "encryption": {
           "type": "boolean",
-          "description": "Whether to enable encryption for client-server communication",
+          "description": "Whether to enable encryption for client-server communication. Required in online mode.",
           "default": true
         },
         "allow_flight": {
@@ -268,6 +268,23 @@
             "properties": {
               "view_distance": {
                 "maximum": 32
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "online_mode": {
+                "const": true
+              }
+            },
+            "required": ["online_mode"]
+          },
+          "then": {
+            "properties": {
+              "encryption": {
+                "const": true
               }
             }
           }

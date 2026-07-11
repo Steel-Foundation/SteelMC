@@ -27,7 +27,7 @@ use crate::command::{
     CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue, client_permission_event,
     command_suggestions_packet, command_tree_packet, create_registered_dispatcher,
 };
-use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
+use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
     init_entities,
@@ -1415,6 +1415,7 @@ impl Server {
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
     ) -> Result<Self, String> {
+        validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();

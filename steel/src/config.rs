@@ -16,7 +16,9 @@ use tracing_subscriber::filter::Directive;
 
 use futures::future::BoxFuture;
 use reqwest::Url;
-use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
+use steel_core::config::{
+    CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig, validate_login_security,
+};
 use steel_core::permission::{
     PermissionGroupConfig, PermissionGroupStore, PermissionGroupStoreError, PermissionGroups,
     PermissionGroupsConfig, PermissionMetadataRuleConfig, PermissionMetadataValue,
@@ -268,7 +270,7 @@ pub struct ServerConfig {
     pub auth_server: Option<String>,
     /// Optional endpoint for online-mode player name-to-profile lookups.
     pub profile_server: Option<String>,
-    /// Whether the server should use encryption.
+    /// Whether the server should use encryption. Required in online mode.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     #[serde(default)]
@@ -521,6 +523,7 @@ fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> 
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 fn validate(config: &ServerConfig) -> Result<(), &'static str> {
+    validate_login_security(config.online_mode, config.encryption)?;
     if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
@@ -730,6 +733,27 @@ mod tests {
             validate(&config.server),
             Err("View distance must in range 1..32")
         );
+    }
+
+    #[test]
+    fn validate_rejects_online_mode_without_encryption() {
+        let config_toml = DEFAULT_CONFIG.replace("encryption = true", "encryption = false");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("encryption must be true when online_mode is enabled")
+        );
+    }
+
+    #[test]
+    fn validate_allows_offline_mode_without_encryption() {
+        let config_toml = DEFAULT_CONFIG
+            .replace("online_mode = true", "online_mode = false")
+            .replace("encryption = true", "encryption = false");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("offline mode does not require encryption");
     }
 
     #[test]
