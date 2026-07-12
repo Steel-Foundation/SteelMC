@@ -922,10 +922,14 @@ mod tests {
     fn vanilla_assets_cover_vanilla_structure_sets() {
         init_test_registry();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
         let _ = StructureGenerator::vanilla_with_structure_sets(
             0,
             &biome_provider,
             load_vanilla_structure_sets(),
+            &thread_pool,
         );
     }
 
@@ -954,6 +958,9 @@ mod tests {
                 },
             },
         )];
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
 
         let _ = StructureGenerator::with_assets(
             0,
@@ -964,6 +971,7 @@ mod tests {
                 FxHashMap::default(),
                 FxHashMap::default(),
             ),
+            &thread_pool,
         );
     }
 

@@ -671,9 +671,12 @@ mod tests {
     #[test]
     fn test_generate_ring_positions_strongholds() {
         // Strongholds: distance=32, spread=3, count=128
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 128, None);
+        >(0, 32, 3, 128, None, &thread_pool);
         assert_eq!(positions.len(), 128);
 
         // First ring should be roughly 4*32 = 128 chunks from origin
@@ -698,15 +701,18 @@ mod tests {
         // Deterministic: same seed produces same positions
         let positions2 = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 128, None);
+        >(0, 32, 3, 128, None, &thread_pool);
         assert_eq!(positions, positions2);
     }
 
     #[test]
     fn test_generate_ring_positions_zero_count() {
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 0, None);
+        >(0, 32, 3, 0, None, &thread_pool);
         assert!(positions.is_empty());
     }
 
