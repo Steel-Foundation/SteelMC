@@ -159,7 +159,8 @@ impl MerchantMenu {
                 continue;
             }
             let current = self.behavior.slots[payment_slot].get_item(guard).clone();
-            if !current.is_empty() && !ItemStack::is_same_item_same_components(&inv_item, cost) {
+            if !current.is_empty() && !ItemStack::is_same_item_same_components(&inv_item, &current)
+            {
                 continue;
             }
             let max_stack = inv_item.max_stack_size();

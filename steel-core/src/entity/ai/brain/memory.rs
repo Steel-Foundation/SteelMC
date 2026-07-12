@@ -46,7 +46,7 @@ impl PositionTracker {
             } => {
                 if *track_eye_height {
                     let position = entity.position();
-                    DVec3::new(position.x, entity.get_eye_y(), position.y)
+                    DVec3::new(position.x, entity.get_eye_y(), position.z)
                 } else {
                     entity.position()
                 }

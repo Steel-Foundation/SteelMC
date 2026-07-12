@@ -535,32 +535,37 @@ impl Entity for VillagerEntity {
             if let Some(level) = villager_data.int("level") {
                 data.level = level;
             }
-            if let Some(xp) = nbt.int("Xp") {
-                *self.villager_xp.lock() = xp;
-            }
-            if let Some(v) = nbt.long("LastRestock") {
-                self.trade_state.lock().last_restock_game_time = v;
-            }
-            if let Some(v) = nbt.int("RestocksToday") {
-                self.trade_state.lock().restocks_today = v;
-            }
-            let mut loaded_offers = false;
-            if let Some(list) = nbt.list("Offers")
-                && let Some(compounds) = list.compounds()
-            {
-                let mut offers = self.offers.lock();
-                offers.clear();
-                for compound in compounds {
-                    if let Some(offer) = MerchantOffer::from_nbt(&compound) {
-                        offers.push(offer);
-                    }
-                }
-                loaded_offers = true;
-            }
-            if !loaded_offers {
-                self.update_trades();
-            }
+            // Apply the data before regenerating trades below, which reads the
+            // (now correct) profession/level via `self.villager_data()`.
             self.set_villager_data(data);
+        }
+
+        // These are written at the top level in `save_additional`, so read them
+        // there too rather than nesting them under `VillagerData`.
+        if let Some(xp) = nbt.int("Xp") {
+            *self.villager_xp.lock() = xp;
+        }
+        if let Some(v) = nbt.long("LastRestock") {
+            self.trade_state.lock().last_restock_game_time = v;
+        }
+        if let Some(v) = nbt.int("RestocksToday") {
+            self.trade_state.lock().restocks_today = v;
+        }
+        let mut loaded_offers = false;
+        if let Some(list) = nbt.list("Offers")
+            && let Some(compounds) = list.compounds()
+        {
+            let mut offers = self.offers.lock();
+            offers.clear();
+            for compound in compounds {
+                if let Some(offer) = MerchantOffer::from_nbt(&compound) {
+                    offers.push(offer);
+                }
+            }
+            loaded_offers = true;
+        }
+        if !loaded_offers {
+            self.update_trades();
         }
 
         if let Some(arr) = nbt.int_array("HomePos")
