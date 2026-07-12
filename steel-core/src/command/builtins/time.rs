@@ -2,6 +2,7 @@
 
 use steel_registry::{timeline::TimelineRef, world_clock::WorldClockRef};
 use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
@@ -185,9 +186,7 @@ fn set_time_marker(
     {
         Some(true) => {}
         Some(false) => {
-            let message = translations::COMMANDS_TIME_NO_TIME_MARKER_FOUND
-                .message([clock.key.to_string(), marker.to_string()])
-                .component();
+            let message = missing_time_marker_message(clock, marker);
             return Err(CommandSyntaxError::dynamic(message));
         }
         None => return Err(missing_clock(clock)),
@@ -277,12 +276,22 @@ fn selected_timeline(
         return Err(missing_argument("timeline"));
     };
     if timeline.clock != clock {
-        let message = translations::COMMANDS_TIME_WRONG_TIMELINE_FOR_CLOCK
-            .message([clock.key.to_string(), timeline.key.to_string()])
-            .component();
+        let message = wrong_timeline_for_clock_message(clock, timeline);
         return Err(CommandSyntaxError::dynamic(message));
     }
     Ok(timeline)
+}
+
+fn missing_time_marker_message(clock: WorldClockRef, marker: &Identifier) -> TextComponent {
+    translations::COMMANDS_TIME_NO_TIME_MARKER_FOUND
+        .message([marker.to_string(), clock.key.to_string()])
+        .component()
+}
+
+fn wrong_timeline_for_clock_message(clock: WorldClockRef, timeline: TimelineRef) -> TextComponent {
+    translations::COMMANDS_TIME_WRONG_TIMELINE_FOR_CLOCK
+        .message([timeline.key.to_string(), clock.key.to_string()])
+        .component()
 }
 
 fn query_timeline(
@@ -334,12 +343,17 @@ fn wrap_time(ticks: i64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
-    use super::{CLOCK_ARGUMENT, wrap_time};
+    use super::{
+        CLOCK_ARGUMENT, missing_time_marker_message, wrap_time, wrong_timeline_for_clock_message,
+    };
     use crate::command::{
         brigadier::{ArgumentType, CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_timelines, vanilla_world_clocks,
+    };
+    use steel_utils::{Identifier, translations};
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -424,5 +438,25 @@ mod tests {
         assert_eq!(wrap_time(i64::from(i32::MAX)), 0);
         assert_eq!(wrap_time(i64::from(i32::MAX) + 4), 4);
         assert_eq!(wrap_time(-4), -4);
+    }
+
+    #[test]
+    fn time_marker_and_timeline_errors_use_vanillas_argument_order() {
+        let marker = Identifier::vanilla_static("missing");
+        assert_eq!(
+            missing_time_marker_message(&vanilla_world_clocks::OVERWORLD, &marker),
+            translations::COMMANDS_TIME_NO_TIME_MARKER_FOUND
+                .message(["minecraft:missing", "minecraft:overworld"])
+                .component()
+        );
+        assert_eq!(
+            wrong_timeline_for_clock_message(
+                &vanilla_world_clocks::THE_END,
+                &vanilla_timelines::DAY,
+            ),
+            translations::COMMANDS_TIME_WRONG_TIMELINE_FOR_CLOCK
+                .message(["minecraft:day", "minecraft:the_end"])
+                .component()
+        );
     }
 }

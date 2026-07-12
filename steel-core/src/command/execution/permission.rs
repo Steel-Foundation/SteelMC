@@ -129,7 +129,7 @@ impl SteelArgumentParser for PermissionRuleParser {
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
-        string_argument()
+        permission_expression_argument()
     }
 }
 
@@ -208,7 +208,7 @@ impl SteelArgumentParser for PermissionMetadataParser {
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
-        string_argument()
+        permission_expression_argument()
     }
 }
 
@@ -263,11 +263,24 @@ impl SteelArgumentParser for PermissionGroupParser {
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
-        string_argument()
+        permission_group_argument()
     }
 }
 
-const fn string_argument() -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+const fn permission_expression_argument() -> (ProtocolArgumentType, Option<ProtocolSuggestionType>)
+{
+    // Permission expressions contain characters that Brigadier's word parser
+    // treats as delimiters. These arguments are terminal, so a greedy string
+    // lets the client cover Steel's full no-whitespace expression syntax.
+    (
+        ProtocolArgumentType::String {
+            behavior: ArgumentStringTypeBehavior::GreedyPhrase,
+        },
+        Some(ProtocolSuggestionType::AskServer),
+    )
+}
+
+const fn permission_group_argument() -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
     (
         ProtocolArgumentType::String {
             behavior: ArgumentStringTypeBehavior::SingleWord,

@@ -76,32 +76,36 @@ impl Player {
         chat.command_spam_throttler.tick();
     }
 
-    const fn detect_rate_spam(throttler: &mut TickThrottler) -> bool {
+    const fn should_disconnect_for_rate_spam(
+        throttler: &mut TickThrottler,
+        is_operator: bool,
+    ) -> bool {
         throttler.increment();
-        !throttler.is_under_threshold()
+        // TODO: Also exempt the singleplayer owner once Steel models that state.
+        !throttler.is_under_threshold() && !is_operator
     }
 
     /// Applies Vanilla command spam accounting after a command is handled
     pub fn detect_command_rate_spam(&self) {
+        let is_operator = self.is_operator();
         let should_disconnect = {
             let mut chat = self.chat.lock();
-            Self::detect_rate_spam(&mut chat.command_spam_throttler)
+            Self::should_disconnect_for_rate_spam(&mut chat.command_spam_throttler, is_operator)
         };
 
         if should_disconnect {
-            // TODO: Skip operators and the singleplayer owner once Steel has operator state
             self.disconnect(translations::DISCONNECT_SPAM.msg());
         }
     }
 
     fn detect_chat_rate_spam(&self) {
+        let is_operator = self.is_operator();
         let should_disconnect = {
             let mut chat = self.chat.lock();
-            Self::detect_rate_spam(&mut chat.chat_spam_throttler)
+            Self::should_disconnect_for_rate_spam(&mut chat.chat_spam_throttler, is_operator)
         };
 
         if should_disconnect {
-            // TODO: Skip operators and the singleplayer owner once Steel has operator state.
             self.disconnect(translations::DISCONNECT_SPAM.msg());
         }
     }
@@ -414,5 +418,38 @@ impl Player {
                 self.gameprofile.name
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ChatState, Player};
+
+    #[test]
+    fn operators_are_exempt_from_both_spam_disconnects() {
+        let mut chat = ChatState::new(1, 1);
+
+        assert!(!Player::should_disconnect_for_rate_spam(
+            &mut chat.command_spam_throttler,
+            true,
+        ));
+        assert!(!Player::should_disconnect_for_rate_spam(
+            &mut chat.chat_spam_throttler,
+            true,
+        ));
+    }
+
+    #[test]
+    fn non_operators_still_trigger_both_spam_disconnects() {
+        let mut chat = ChatState::new(1, 1);
+
+        assert!(Player::should_disconnect_for_rate_spam(
+            &mut chat.command_spam_throttler,
+            false,
+        ));
+        assert!(Player::should_disconnect_for_rate_spam(
+            &mut chat.chat_spam_throttler,
+            false,
+        ));
     }
 }

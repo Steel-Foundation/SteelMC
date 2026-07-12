@@ -16,8 +16,8 @@ use crate::{
     },
     entity::{Entity as _, EntityAnchor, SharedEntity},
     permission::{
-        OP_GROUP, PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
-        PermissionRuleExpression, PermissionState,
+        PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
+        PermissionRuleExpression, PermissionSet, PermissionState,
     },
     player::{KnownPlayer, Player},
     scoreboard::Scoreboard,
@@ -178,21 +178,39 @@ pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
 /// Vanilla keeps the initiating permission state when `/execute` changes the
 /// execution entity, position, or world. Keeping this separate from the
 /// mutable execution fields prevents source transforms from changing which
-/// contextual Steel permissions apply.
+/// contextual Steel permissions apply. Player permissions come from the
+/// persistence-published server state so delayed client refreshes cannot extend
+/// revoked command access.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CommandAuthorizationContext {
     permission_context: PermissionContext,
+    player_permissions: Option<PermissionSet>,
 }
 
 impl CommandAuthorizationContext {
-    fn for_world_key(world: steel_utils::Identifier) -> Self {
+    fn for_player(world: steel_utils::Identifier, permissions: PermissionSet) -> Self {
         Self {
             permission_context: PermissionContext::for_world(world),
+            player_permissions: Some(permissions),
+        }
+    }
+
+    fn unrestricted(world: steel_utils::Identifier) -> Self {
+        Self {
+            permission_context: PermissionContext::for_world(world),
+            player_permissions: None,
         }
     }
 
     const fn permission_context(&self) -> &PermissionContext {
         &self.permission_context
+    }
+
+    fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
+        let Some(permissions) = &self.player_permissions else {
+            return Some(PermissionState::Allow);
+        };
+        permissions.resolve_in(permission, self.permission_context())
     }
 }
 
@@ -233,7 +251,13 @@ impl CommandSource {
         let rotation = entity
             .as_ref()
             .map_or((0.0, 0.0), |entity| entity.rotation());
-        let authorization = CommandAuthorizationContext::for_world_key(world.key.clone());
+        let authorization = match &player {
+            Some(player) => CommandAuthorizationContext::for_player(
+                world.key.clone(),
+                server.command_permission_snapshot(player.gameprofile.id),
+            ),
+            None => CommandAuthorizationContext::unrestricted(world.key.clone()),
+        };
 
         Self {
             sender,
@@ -654,11 +678,7 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
     let players = server.get_players();
     let mut names = Vec::new();
     for player in &players {
-        let is_operator = player
-            .permission_groups()
-            .iter()
-            .any(|group| group == OP_GROUP);
-        if operator == is_operator {
+        if operator == server.is_operator(player.gameprofile.id) {
             names.push(player.gameprofile.name.clone());
         }
     }
@@ -680,9 +700,7 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
         {
             continue;
         }
-        let is_operator = server
-            .player_permission_state(known.uuid())
-            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP));
+        let is_operator = server.is_operator(known.uuid());
         if operator == is_operator {
             names.push(known.last_known_name().to_owned());
         }
@@ -710,10 +728,7 @@ fn all_profile_names(server: &Server) -> Vec<String> {
 
 impl CommandPermissionSource for CommandSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
-        let CommandSender::Player(player) = &self.sender else {
-            return Some(PermissionState::Allow);
-        };
-        player.permission_state_in(permission, self.authorization.permission_context())
+        self.authorization.permission_state(permission)
     }
 }
 
@@ -750,9 +765,19 @@ mod tests {
     use steel_registry::game_rules::GameRuleValue;
     use steel_utils::Identifier;
 
-    use crate::permission::PermissionContext;
+    use crate::permission::{
+        PermissionContext, PermissionEntry, PermissionExpr, PermissionKey, PermissionSet,
+        PermissionState,
+    };
 
     use super::{CommandAuthorizationContext, game_rule_integer, normalize_rotation};
+
+    fn permission_key(value: &str) -> PermissionKey {
+        match PermissionKey::parse(value) {
+            Ok(key) => key,
+            Err(error) => panic!("test permission key should parse: {error}"),
+        }
+    }
 
     #[test]
     fn rotation_normalization_matches_command_source_stack() {
@@ -775,11 +800,40 @@ mod tests {
     #[test]
     fn authorization_context_captures_initial_world_scope() {
         let world = Identifier::new("lobby", "spawn");
-        let authorization = CommandAuthorizationContext::for_world_key(world.clone());
+        let authorization =
+            CommandAuthorizationContext::for_player(world.clone(), PermissionSet::new());
 
         assert_eq!(
             authorization.permission_context(),
             &PermissionContext::for_world(world)
+        );
+    }
+
+    #[test]
+    fn authorization_context_uses_published_snapshot_instead_of_stale_player_permissions() {
+        let world = Identifier::new("lobby", "spawn");
+        let permission = permission_key("minecraft.command.stop");
+        let stale_player_permissions =
+            PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
+        assert!(stale_player_permissions.allows_key(&permission));
+
+        let authorization = CommandAuthorizationContext::for_player(world, PermissionSet::new());
+
+        assert_eq!(
+            authorization.permission_state(&PermissionExpr::key(permission)),
+            None
+        );
+    }
+
+    #[test]
+    fn unrestricted_authorization_allows_console_permissions() {
+        let authorization =
+            CommandAuthorizationContext::unrestricted(Identifier::new("default", "overworld"));
+        let permission = PermissionExpr::key(permission_key("minecraft.command.stop"));
+
+        assert_eq!(
+            authorization.permission_state(&permission),
+            Some(PermissionState::Allow)
         );
     }
 }

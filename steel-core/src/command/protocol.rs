@@ -210,10 +210,14 @@ mod tests {
         command_tree_packet, protocol_argument_type,
     };
     use crate::command::brigadier::{
-        ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement, NodeId,
-        StringRange, StringReader, StringType, Suggestion, Suggestions, argument, literal,
+        ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement,
+        CommandSyntaxError, NodeId, StringRange, StringReader, StringType, Suggestion, Suggestions,
+        argument, literal,
     };
-    use crate::command::execution::SteelArgumentType;
+    use crate::command::execution::{
+        CommandArgumentSource, CommandResultCallback, ExecutionCommandSource, SteelArgumentType,
+        SteelCommandRuntime, argument as steel_argument, literal as steel_literal,
+    };
     use steel_protocol::packets::game::{
         ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
         CommandNode as ProtocolCommandNode, SuggestionType,
@@ -225,6 +229,23 @@ mod tests {
     struct TestSource {
         authorized: bool,
         in_context: bool,
+    }
+
+    #[derive(Clone, Copy)]
+    struct SteelTestSource;
+
+    impl CommandArgumentSource for SteelTestSource {}
+
+    impl ExecutionCommandSource for SteelTestSource {
+        fn with_callback(&self, _callback: CommandResultCallback) -> Self {
+            *self
+        }
+
+        fn callback(&self) -> CommandResultCallback {
+            CommandResultCallback::empty()
+        }
+
+        fn handle_error(&self, _error: &CommandSyntaxError, _forked: bool) {}
     }
 
     fn register(
@@ -510,6 +531,76 @@ mod tests {
         assert!(*is_executable);
         assert_eq!(*min, Some(1));
         assert_eq!(*max, None);
+    }
+
+    #[test]
+    fn permission_expression_nodes_project_as_terminal_greedy_strings() {
+        let mut dispatcher = CommandDispatcher::<SteelTestSource, SteelCommandRuntime>::new();
+        let command = steel_literal::<SteelTestSource>("perms")
+            .then(steel_argument::<SteelTestSource>(
+                "permission",
+                SteelArgumentType::permission_rule(),
+            ))
+            .then(steel_argument::<SteelTestSource>(
+                "metadata",
+                SteelArgumentType::permission_metadata(),
+            ))
+            .then(steel_argument::<SteelTestSource>(
+                "group",
+                SteelArgumentType::permission_group(true),
+            ));
+        assert!(dispatcher.register(command).is_ok());
+
+        let packet = command_tree_packet(&dispatcher, &SteelTestSource);
+        let Ok(packet) = packet else {
+            panic!("permission command tree should project");
+        };
+
+        for name in ["permission", "metadata"] {
+            let Some(node) = packet.nodes.iter().find(|node| {
+                matches!(
+                    node,
+                    ProtocolCommandNode::Argument { name: node_name, .. }
+                        if node_name == name
+                )
+            }) else {
+                panic!("permission command tree should contain {name}");
+            };
+            let ProtocolCommandNode::Argument {
+                parser,
+                suggestions_type,
+                ..
+            } = node
+            else {
+                unreachable!();
+            };
+            assert!(matches!(
+                parser,
+                ProtocolArgumentType::String {
+                    behavior: ArgumentStringTypeBehavior::GreedyPhrase
+                }
+            ));
+            assert!(matches!(suggestions_type, Some(SuggestionType::AskServer)));
+        }
+
+        let Some(group) = packet.nodes.iter().find(|node| {
+            matches!(
+                node,
+                ProtocolCommandNode::Argument { name, .. } if name == "group"
+            )
+        }) else {
+            panic!("permission command tree should contain group");
+        };
+        assert!(matches!(
+            group,
+            ProtocolCommandNode::Argument {
+                parser: ProtocolArgumentType::String {
+                    behavior: ArgumentStringTypeBehavior::SingleWord
+                },
+                suggestions_type: Some(SuggestionType::AskServer),
+                ..
+            }
+        ));
     }
 
     #[test]

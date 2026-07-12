@@ -23,7 +23,7 @@
       }
     }
   },
-  "required": ["groups"],
+  "required": ["default_groups", "groups"],
   "additionalProperties": false,
   "definitions": {
     "group_name": {

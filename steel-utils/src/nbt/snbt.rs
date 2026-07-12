@@ -544,14 +544,21 @@ fn parse_float_token(token: &str) -> Result<NbtTag, String> {
 
 fn validate_float_underscore_placement(input: &str) -> Result<(), String> {
     let bytes = input.as_bytes();
-    for (index, byte) in bytes.iter().copied().enumerate() {
-        if byte != b'_' {
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'_' {
+            index += 1;
             continue;
         }
-        let surrounded_by_digits = index > 0
-            && index + 1 < bytes.len()
-            && bytes[index - 1].is_ascii_digit()
-            && bytes[index + 1].is_ascii_digit();
+
+        let run_start = index;
+        while index < bytes.len() && bytes[index] == b'_' {
+            index += 1;
+        }
+        let surrounded_by_digits = run_start > 0
+            && index < bytes.len()
+            && bytes[run_start - 1].is_ascii_digit()
+            && bytes[index].is_ascii_digit();
         if !surrounded_by_digits {
             return Err("invalid underscore placement in number literal".to_owned());
         }
@@ -577,6 +584,10 @@ fn parse_integer_token(token: &str, default_kind: DefaultIntegerKind) -> Result<
 
     let lower = token.to_ascii_lowercase();
     for &(suffix, kind, signedness) in SUFFIXES {
+        // Vanilla's hex numeral rule consumes `b` as a digit before suffix parsing.
+        if suffix == "b" && has_hex_radix_prefix(token) {
+            continue;
+        }
         let Some(body) = lower.strip_suffix(suffix) else {
             continue;
         };
@@ -622,9 +633,8 @@ fn parse_integer_body(
 
     let digits = normalize_number_digits(digits)?;
     let signed = signedness == IntegerSignedness::Signed
-        || negative
         || (radix == 10 && signedness != IntegerSignedness::Unsigned);
-    if negative && signedness == IntegerSignedness::Unsigned {
+    if negative && !signed {
         return Err("unsigned integer literal cannot be negative".to_owned());
     }
 
@@ -651,11 +661,18 @@ fn normalize_number_digits(input: &str) -> Result<String, String> {
     if input.is_empty() {
         return Err("invalid number literal".to_owned());
     }
-    if input.starts_with('_') || input.ends_with('_') || input.contains("__") {
+    if input.starts_with('_') || input.ends_with('_') {
         return Err("invalid underscore placement in number literal".to_owned());
     }
 
     Ok(input.chars().filter(|ch| *ch != '_').collect())
+}
+
+fn has_hex_radix_prefix(token: &str) -> bool {
+    let stripped = token
+        .strip_prefix(['+', '-'])
+        .map_or(token, |stripped| stripped);
+    stripped.starts_with("0x") || stripped.starts_with("0X")
 }
 
 fn integer_tag_value(tag: &NbtTag) -> Option<(IntegerKind, i64)> {
@@ -846,6 +863,42 @@ mod tests {
     }
 
     #[test]
+    fn hexadecimal_number_runs_are_greedy_before_suffixes() {
+        let compound = compound_tag("{first:0xAB,second:0x1B}");
+
+        assert_eq!(compound.int("first"), Some(0xAB));
+        assert_eq!(compound.int("second"), Some(0x1B));
+    }
+
+    #[test]
+    fn negative_radix_literals_require_explicit_signed_suffixes() {
+        assert_eq!(
+            parse_snbt("-0x1sI").expect("explicitly signed hex literal parses"),
+            NbtTag::Int(-1)
+        );
+        assert_eq!(
+            parse_snbt("-0b1sB").expect("explicitly signed binary literal parses"),
+            NbtTag::Byte(-1)
+        );
+
+        for literal in ["-0x1", "-0b1", "-0x1i", "-0b1B", "-0x1uI", "-0b1uB"] {
+            assert!(parse_snbt(literal).is_err(), "{literal} should not parse");
+        }
+    }
+
+    #[test]
+    fn number_runs_allow_repeated_interior_underscores() {
+        let compound =
+            compound_tag("{decimal:1__2,binary:0b1__0,hex:0xA__B,float:1__2.3__4,exponent:1e1__2}");
+
+        assert_eq!(compound.int("decimal"), Some(12));
+        assert_eq!(compound.int("binary"), Some(2));
+        assert_eq!(compound.int("hex"), Some(0xAB));
+        assert_eq!(compound.double("float"), Some(12.34));
+        assert_eq!(compound.double("exponent"), Some(1e12));
+    }
+
+    #[test]
     fn parses_floating_point_literals() {
         let compound = compound_tag("{float:1.5f,double:2.5d,exponent:1e2,underscored:1_2.5}");
 
@@ -856,8 +909,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_underscores_at_float_component_boundaries() {
-        for literal in ["1_.0", "1._0", "1_e2", "1e_2", "1e+_2"] {
+    fn rejects_underscores_at_number_run_boundaries() {
+        for literal in [
+            "+_1", "1_", "0x_1", "0x1_", "0b_1", "0b1_", "1_.0", "1._0", "1_e2", "1e_2", "1e+_2",
+            "1.0_", "1e2_",
+        ] {
             let input = format!("{{value:{literal}}}");
             assert!(
                 parse_snbt_compound(&input).is_err(),

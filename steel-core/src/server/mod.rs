@@ -36,8 +36,8 @@ use crate::entity::{
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
-    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
-    PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression,
+    OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
@@ -219,23 +219,189 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::{
+        env::temp_dir,
+        path::{Path, PathBuf},
+        slice,
+        sync::{Arc, Weak},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use glam::DVec3;
+    use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::game_rules::GameRuleValue;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use text_components::TextComponent;
+    use tokio::{fs, runtime::Builder};
     use uuid::Uuid;
 
+    use crate::command::execution::{CommandPermissionSource, CommandSource};
+    use crate::command::sender::CommandSender;
+    use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
     use crate::entity::{Entity, EntityBase};
-    use crate::permission::{PermissionGroupManager, PermissionGroupsConfig};
+    use crate::permission::{
+        OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
+        PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
+        PermissionSubjectIndex, PermissionSubjectState,
+    };
+    use crate::player::connection::NetworkConnection;
+    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
+    use crate::test_support::test_world;
+    use crate::world::World;
 
     use super::{
-        KnownPlayerCacheState, KnownPlayerSaveStep, KnownPlayers, UncachedPlayerTarget,
+        AsyncMutex, CancellationToken, CommandRequestQueue, DomainCommandStorage,
+        DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
+        KnownPlayers, Notify, PlayerDataStorage, PlayerJoinQueue, PlayerMap, RegistryCache, Server,
+        ServerJobQueue, SyncMutex, SyncRwLock, TickRateManager, UncachedPlayerTarget, WorldMap,
         can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-        classify_uncached_player_target, direct_uuid_profile, is_allowed_to_enter_portal_target,
-        is_end_return_transition, offline_uuid, validate_player_permission_group_update,
+        classify_uncached_player_target, create_registered_dispatcher, direct_uuid_profile,
+        is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
+        validate_player_permission_group_update,
     };
+
+    struct TestConnection;
+
+    impl NetworkConnection for TestConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, _packet: EncodedPacket) {}
+
+        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            false
+        }
+    }
+
+    fn test_runtime_config() -> Arc<RuntimeConfig> {
+        Arc::new(RuntimeConfig {
+            max_players: 1,
+            view_distance: 2,
+            simulation_distance: 2,
+            online_mode: false,
+            auth_server: None,
+            profile_server: None,
+            encryption: false,
+            allow_flight: false,
+            motd: String::new(),
+            use_favicon: false,
+            favicon: String::new(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: 10,
+            command_spam_threshold_seconds: 10,
+            compression: None,
+            server_links: None,
+            chunk_generation_threads: Some(1),
+        })
+    }
+
+    fn test_storage_root(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        temp_dir().join(format!("steel-server-{name}-{unique}"))
+    }
+
+    async fn test_server(
+        world: Arc<World>,
+        player_permission_states: PermissionSubjectIndex,
+        storage_root: &Path,
+    ) -> Result<Arc<Server>, String> {
+        let domain = ResolvedDomainConfig {
+            name: world.domain().to_owned(),
+            default_world: world.key.clone(),
+            worlds: vec![world.key.clone()],
+        };
+        let mut worlds = WorldMap::new(domain.name.clone(), slice::from_ref(&domain), &[]);
+        worlds.insert(world.key.clone(), world);
+
+        let scoreboards = DomainScoreboards::load(&worlds)
+            .await
+            .map_err(|error| format!("test scoreboards should load: {error}"))?;
+        let command_storage = DomainCommandStorage::load(&worlds)
+            .await
+            .map_err(|error| format!("test command storage should load: {error}"))?;
+        let player_data_storage = PlayerDataStorage::new(
+            storage_root.to_owned(),
+            StorageSelection::default_player_file(),
+        )
+        .await
+        .map_err(|error| format!("test player storage should initialize: {error}"))?;
+        let registered_commands = create_registered_dispatcher()
+            .map_err(|error| format!("test commands should register: {error}"))?;
+        let command_permission_keys = registered_commands
+            .permissions
+            .iter()
+            .map(|permission| permission.as_str().to_owned())
+            .collect();
+        let permission_groups =
+            PermissionGroupManager::transient(PermissionGroupsConfig::default())
+                .map_err(|error| format!("test permission groups should resolve: {error}"))?;
+        let config = test_runtime_config();
+        let registry_cache = RegistryCache::new(config.compression);
+
+        Ok(Arc::new(Server {
+            config,
+            permission_groups,
+            cancel_token: CancellationToken::new(),
+            key_store: KeyStore::create(),
+            registry_cache,
+            worlds,
+            online_players: PlayerMap::new(),
+            player_admissions: SyncMutex::new(FxHashMap::default()),
+            tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            scoreboards,
+            command_storage,
+            command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
+            command_permission_keys,
+            command_requests: CommandRequestQueue::new(),
+            jobs: ServerJobQueue::new(),
+            player_data_storage,
+            player_permission_states: SyncRwLock::new(player_permission_states),
+            player_permission_updates: AsyncMutex::new(()),
+            known_players: SyncMutex::new(KnownPlayerCacheState::new(KnownPlayers::new())),
+            known_player_save_idle: Notify::new(),
+            profile_lookup_client: reqwest::Client::new(),
+            pending_player_joins: PlayerJoinQueue::new(),
+            pending_world_changes: SyncMutex::new(Vec::new()),
+            pending_domain_switches: SyncMutex::new(Vec::new()),
+        }))
+    }
+
+    fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
+        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
+        Arc::new_cyclic(|weak_player| {
+            Player::new(
+                GameProfile {
+                    id: uuid,
+                    name: "TestPlayer".to_owned(),
+                    properties: Vec::new(),
+                    profile_actions: None,
+                },
+                Arc::clone(&connection),
+                world,
+                Arc::downgrade(server),
+                Arc::clone(&server.config),
+                1,
+                weak_player,
+                ClientInformation::default(),
+            )
+        })
+    }
 
     struct TestEntity {
         base: EntityBase,
@@ -250,6 +416,13 @@ mod tests {
                 entity_type,
                 projectile_owner_uuid,
             }
+        }
+    }
+
+    fn permission_key(value: &str) -> PermissionKey {
+        match PermissionKey::parse(value) {
+            Ok(key) => key,
+            Err(error) => panic!("test permission key should parse: {error}"),
         }
     }
 
@@ -405,6 +578,107 @@ mod tests {
             validate_player_permission_group_update::<()>(&manager, &[], &["missing".to_owned()],)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn command_source_and_operator_checks_use_published_subject_state() {
+        let world = Arc::clone(test_world());
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+        runtime.block_on(async {
+            let uuid = Uuid::from_u128(1);
+            let storage_root = test_storage_root("published-permissions");
+            let mut published_states = PermissionSubjectIndex::new();
+            published_states.set(uuid, PermissionSubjectState::default());
+            let server = test_server(Arc::clone(&world), published_states, &storage_root).await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, world, uuid);
+            let permission = permission_key("minecraft.command.stop");
+            let stale_player_permissions =
+                PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
+            player.set_permission_state(
+                vec![OP_GROUP.to_owned()],
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+                stale_player_permissions,
+                PermissionMetadataSet::new(),
+            );
+
+            assert!(!player.is_operator());
+            let revoked_source = CommandSource::new(
+                CommandSender::Player(Arc::clone(&player)),
+                Arc::clone(&server),
+            );
+            assert!(!CommandPermissionSource::has_permission(
+                &revoked_source,
+                &PermissionExpr::key(permission.clone()),
+            ));
+
+            server.player_permission_states.write().set(
+                uuid,
+                PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+            );
+            player.set_permission_state(
+                Vec::new(),
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+            );
+
+            assert!(player.is_operator());
+            let granted_source = CommandSource::new(
+                CommandSender::Player(Arc::clone(&player)),
+                Arc::clone(&server),
+            );
+            assert!(CommandPermissionSource::has_permission(
+                &granted_source,
+                &PermissionExpr::key(permission),
+            ));
+
+            drop(revoked_source);
+            drop(granted_source);
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn effective_permissions_reflect_published_group_revocation() {
+        let mut config = PermissionGroupsConfig::default();
+        config.groups.insert(
+            "staff".to_owned(),
+            PermissionGroupConfig {
+                allow: vec!["minecraft.command.stop".to_owned()],
+                ..PermissionGroupConfig::default()
+            },
+        );
+        let manager = PermissionGroupManager::transient(config);
+        let Ok(manager) = manager else {
+            panic!("test permission groups should resolve");
+        };
+        let subject = PermissionSubjectState::new(vec!["staff".to_owned()], PermissionSet::new());
+        let permission = permission_key("minecraft.command.stop");
+        let stale_player_snapshot =
+            manager.effective_permissions(subject.groups(), subject.overrides());
+        assert!(stale_player_snapshot.allows_key(&permission));
+
+        let mut revoked = manager.config_snapshot();
+        let Some(staff) = revoked.groups.get_mut("staff") else {
+            panic!("test staff group should exist");
+        };
+        staff.allow.clear();
+        assert_eq!(manager.replace_config(revoked).await, Ok(()));
+
+        let command_snapshot = manager.effective_permissions(subject.groups(), subject.overrides());
+        assert!(!command_snapshot.allows_key(&permission));
     }
 
     #[test]
@@ -2141,6 +2415,23 @@ impl Server {
     #[must_use]
     pub fn player_permission_state(&self, uuid: Uuid) -> Option<PermissionSubjectState> {
         self.player_permission_states.read().get(uuid).cloned()
+    }
+
+    /// Returns whether the latest published subject state assigns the operator group.
+    #[must_use]
+    pub(crate) fn is_operator(&self, uuid: Uuid) -> bool {
+        self.player_permission_states
+            .read()
+            .get(uuid)
+            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
+    }
+
+    /// Captures effective command permissions from the latest published subject and group state.
+    #[must_use]
+    pub(crate) fn command_permission_snapshot(&self, uuid: Uuid) -> PermissionSet {
+        let subject = self.player_permission_state(uuid).unwrap_or_default();
+        self.permission_groups
+            .effective_permissions(subject.groups(), subject.overrides())
     }
 
     /// Atomically edits one player's persisted permission state.
