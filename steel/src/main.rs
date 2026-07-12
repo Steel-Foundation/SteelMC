@@ -374,6 +374,10 @@ async fn run_server(
 }
 
 async fn shutdown_worlds(server: &Arc<Server>) {
+    if let Err(error) = server.flush_known_players().await {
+        log::error!("Failed to flush known player cache during shutdown: {error}");
+    }
+
     for world in server.worlds.values() {
         world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();

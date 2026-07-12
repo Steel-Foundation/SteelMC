@@ -94,7 +94,7 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
-use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
+use tokio::{runtime::Runtime, sync::Notify, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -124,6 +124,75 @@ fn classify_uncached_player_target(target: &str, online_mode: bool) -> UncachedP
 
 fn direct_uuid_profile(uuid: Uuid) -> KnownPlayer {
     KnownPlayer::new(uuid, uuid.to_string())
+}
+
+struct KnownPlayerCacheState {
+    players: KnownPlayers,
+    generation: u64,
+    worker_running: bool,
+    closed: bool,
+}
+
+impl KnownPlayerCacheState {
+    const fn new(players: KnownPlayers) -> Self {
+        Self {
+            players,
+            generation: 0,
+            worker_running: false,
+            closed: false,
+        }
+    }
+
+    fn record(&mut self, uuid: Uuid, name: String) -> bool {
+        if self.closed || !self.players.record(uuid, name) {
+            return false;
+        }
+        self.mark_changed()
+    }
+
+    const fn mark_changed(&mut self) -> bool {
+        if self.closed {
+            return false;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        if self.worker_running {
+            false
+        } else {
+            self.worker_running = true;
+            true
+        }
+    }
+
+    fn snapshot(&self) -> (KnownPlayers, u64) {
+        (self.players.clone(), self.generation)
+    }
+
+    const fn is_current(&self, generation: u64) -> bool {
+        !self.closed && self.generation == generation
+    }
+
+    const fn finish_save(&mut self, generation: u64) -> KnownPlayerSaveStep {
+        if !self.closed && self.generation != generation {
+            KnownPlayerSaveStep::SaveAgain
+        } else {
+            self.worker_running = false;
+            KnownPlayerSaveStep::Finished
+        }
+    }
+
+    fn close_if_idle(&mut self) -> Option<KnownPlayers> {
+        if self.worker_running {
+            return None;
+        }
+        self.closed = true;
+        Some(self.players.clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KnownPlayerSaveStep {
+    SaveAgain,
+    Finished,
 }
 
 /// Tick rate for the chunk sending loop.
@@ -162,7 +231,8 @@ mod tests {
     use crate::permission::{PermissionGroupManager, PermissionGroupsConfig};
 
     use super::{
-        UncachedPlayerTarget, can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+        KnownPlayerCacheState, KnownPlayerSaveStep, KnownPlayers, UncachedPlayerTarget,
+        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
         classify_uncached_player_target, direct_uuid_profile, is_allowed_to_enter_portal_target,
         is_end_return_transition, offline_uuid, validate_player_permission_group_update,
     };
@@ -244,6 +314,72 @@ mod tests {
             profile.last_known_name(),
             "12345678-90ab-cdef-1234-567890abcdef"
         );
+    }
+
+    #[test]
+    fn known_player_changes_are_coalesced_while_a_save_is_running() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, first_generation) = cache.snapshot();
+
+        for value in 2..=1_000 {
+            assert!(!cache.record(Uuid::from_u128(value), format!("Player{value}")));
+        }
+        assert_eq!(
+            cache.finish_save(first_generation),
+            KnownPlayerSaveStep::SaveAgain
+        );
+
+        let (latest, latest_generation) = cache.snapshot();
+        assert_eq!(latest.entries().len(), 1_000);
+        assert_eq!(
+            cache.finish_save(latest_generation),
+            KnownPlayerSaveStep::Finished
+        );
+    }
+
+    #[test]
+    fn known_player_change_cannot_be_lost_when_a_worker_becomes_idle() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, generation) = cache.snapshot();
+        assert_eq!(cache.finish_save(generation), KnownPlayerSaveStep::Finished);
+
+        assert!(cache.record(Uuid::from_u128(2), "Player2".to_owned()));
+    }
+
+    #[test]
+    fn known_player_change_during_a_failed_save_gets_a_follow_up() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, generation) = cache.snapshot();
+        assert!(!cache.record(Uuid::from_u128(2), "Player2".to_owned()));
+        assert_eq!(
+            cache.finish_save(generation),
+            KnownPlayerSaveStep::SaveAgain
+        );
+
+        let (_, latest_generation) = cache.snapshot();
+        assert_eq!(
+            cache.finish_save(latest_generation),
+            KnownPlayerSaveStep::Finished
+        );
+        assert!(cache.record(Uuid::from_u128(3), "Player3".to_owned()));
+    }
+
+    #[test]
+    fn known_player_cache_closes_only_after_the_worker_is_idle() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        assert!(cache.close_if_idle().is_none());
+
+        let (_, generation) = cache.snapshot();
+        assert_eq!(cache.finish_save(generation), KnownPlayerSaveStep::Finished);
+        let final_snapshot = cache
+            .close_if_idle()
+            .unwrap_or_else(|| panic!("idle cache should close"));
+        assert_eq!(final_snapshot.entries().len(), 1);
+        assert!(!cache.record(Uuid::from_u128(2), "Player2".to_owned()));
     }
 
     #[test]
@@ -1409,10 +1545,10 @@ pub struct Server {
     player_permission_states: SyncRwLock<PermissionSubjectIndex>,
     /// Serializes persistence and cache publication for player permission edits.
     player_permission_updates: AsyncMutex<()>,
-    /// Player identities cached for vanilla game-profile command arguments.
-    known_players: SyncRwLock<KnownPlayers>,
-    /// Generation used to avoid publishing stale known-player snapshots.
-    known_players_version: SyncMutex<u64>,
+    /// Player identities and coalesced persistence state.
+    known_players: SyncMutex<KnownPlayerCacheState>,
+    /// Wakes shutdown when the single known-player save worker becomes idle.
+    known_player_save_idle: Notify,
     /// HTTP client used by online-mode name-to-profile lookups.
     profile_lookup_client: reqwest::Client,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
@@ -1627,8 +1763,8 @@ impl Server {
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
             player_permission_updates: AsyncMutex::new(()),
-            known_players: SyncRwLock::new(known_players),
-            known_players_version: SyncMutex::new(0),
+            known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
+            known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
@@ -2098,7 +2234,7 @@ impl Server {
     /// Returns a snapshot of player identities known to this server.
     #[must_use]
     pub fn known_players(&self) -> KnownPlayers {
-        self.known_players.read().clone()
+        self.known_players.lock().players.clone()
     }
 
     /// Records a connected player identity in the persistent profile cache.
@@ -2108,15 +2244,13 @@ impl Server {
 
     /// Records a UUID and last-known name in the persistent profile cache.
     pub fn record_known_profile(self: &Arc<Self>, uuid: Uuid, last_known_name: impl Into<String>) {
-        let changed = self
+        let start_worker = self
             .known_players
-            .write()
+            .lock()
             .record(uuid, last_known_name.into());
-        if !changed {
-            return;
+        if start_worker {
+            self.start_known_player_save_worker();
         }
-        let version = self.bump_known_players_version();
-        self.save_known_players(version);
     }
 
     /// Resolves a vanilla game-profile command target by name or UUID.
@@ -2175,43 +2309,79 @@ impl Server {
             ));
         }
 
-        let mut known = self.known_players.write();
+        let mut known = self.known_players.lock();
         if let Some(uuid) = uuid {
-            return known.resolve_uuid(uuid);
+            return known.players.resolve_uuid(uuid);
         }
-        match known.resolve_name(name, chrono::Utc::now().timestamp_millis()) {
-            KnownPlayerNameLookup::Found(profile) => Some(profile),
-            KnownPlayerNameLookup::Missing => None,
+        let (profile, start_worker) = match known
+            .players
+            .resolve_name(name, chrono::Utc::now().timestamp_millis())
+        {
+            KnownPlayerNameLookup::Found(profile) => (Some(profile), false),
+            KnownPlayerNameLookup::Missing => (None, false),
             KnownPlayerNameLookup::Expired => {
-                drop(known);
-                let version = self.bump_known_players_version();
-                self.save_known_players(version);
-                None
+                let start_worker = known.mark_changed();
+                (None, start_worker)
             }
+        };
+        drop(known);
+        if start_worker {
+            self.start_known_player_save_worker();
         }
+        profile
     }
 
-    fn bump_known_players_version(&self) -> u64 {
-        let mut version = self.known_players_version.lock();
-        *version = version.wrapping_add(1);
-        *version
-    }
-
-    fn save_known_players(self: &Arc<Self>, version: u64) {
+    fn start_known_player_save_worker(self: &Arc<Self>) {
         let server = Arc::clone(self);
-        let players = self.known_players();
         tokio::spawn(async move {
-            match server
+            server.run_known_player_save_worker().await;
+        });
+    }
+
+    async fn run_known_player_save_worker(self: &Arc<Self>) {
+        loop {
+            let (players, generation) = self.known_players.lock().snapshot();
+            let result = self
                 .player_data_storage
                 .save_known_players_if_current(&players, || {
-                    *server.known_players_version.lock() == version
+                    self.known_players.lock().is_current(generation)
                 })
-                .await
-            {
+                .await;
+            match result {
                 Ok(true | false) => {}
-                Err(error) => tracing::error!(%error, "failed to save known player cache"),
+                Err(error) => {
+                    tracing::error!(%error, "failed to save known player cache");
+                }
             }
-        });
+            let step = self.known_players.lock().finish_save(generation);
+            if step == KnownPlayerSaveStep::SaveAgain {
+                continue;
+            }
+            self.known_player_save_idle.notify_one();
+            return;
+        }
+    }
+
+    /// Waits for the coalesced identity-cache writer and persists the final snapshot.
+    ///
+    /// Later identity observations are ignored because the server is shutting down.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the final rebuildable cache snapshot cannot be persisted.
+    pub async fn flush_known_players(&self) -> io::Result<()> {
+        let players = loop {
+            let idle = self.known_player_save_idle.notified();
+            let snapshot = self.known_players.lock().close_if_idle();
+            if let Some(players) = snapshot {
+                break players;
+            }
+            idle.await;
+        };
+        self.player_data_storage
+            .save_known_players_if_current(&players, || true)
+            .await
+            .map(|_| ())
     }
 
     fn queue_player_permission_refresh(self: &Arc<Self>, uuid: Uuid) {
@@ -2726,14 +2896,6 @@ impl Server {
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
         let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
-        let players = self.known_players();
-        if let Err(error) = self
-            .player_data_storage
-            .save_known_players_if_current(&players, || true)
-            .await
-        {
-            tracing::error!(%error, "failed to flush known player cache during shutdown");
-        }
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).
