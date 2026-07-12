@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use steel_core::{permission::PermissionGroupManager, server::Server};
+use steel_core::{command::CommandRegistry, permission::PermissionGroupManager, server::Server};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -71,6 +71,22 @@ impl SteelServer {
         cancel_token: CancellationToken,
         steel_config: config::SteelConfig,
     ) -> Result<Self, SteelServerError> {
+        Self::new_with_commands(
+            chunk_runtime,
+            cancel_token,
+            steel_config,
+            CommandRegistry::new(),
+        )
+        .await
+    }
+
+    /// Creates a new Steel server with additional commands registered atomically at startup.
+    pub async fn new_with_commands(
+        chunk_runtime: Arc<Runtime>,
+        cancel_token: CancellationToken,
+        steel_config: config::SteelConfig,
+        command_registry: CommandRegistry,
+    ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server");
 
         let permission_group_store = steel_config.permission_group_store();
@@ -84,12 +100,13 @@ impl SteelServer {
             )?;
         let runtime_config = steel_config.server.into_runtime_config();
 
-        let server = Server::new(
+        let server = Server::new_with_commands(
             chunk_runtime,
             cancel_token.clone(),
             runtime_config,
             worlds_config,
             permission_groups,
+            command_registry,
         )
         .await
         .map_err(SteelServerError::Core)?;

@@ -3,9 +3,12 @@ use std::{collections::BTreeSet, sync::Arc};
 use glam::DVec3;
 use steel_registry::{
     game_rules::GameRuleValue,
-    vanilla_game_rules::{MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH},
+    vanilla_game_rules::{
+        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
+    },
     world_clock::WorldClockRef,
 };
+use steel_utils::translations;
 use text_components::{Modifier, TextComponent, format::Color};
 
 use crate::{
@@ -14,7 +17,7 @@ use crate::{
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
     },
-    entity::{Entity as _, EntityAnchor, SharedEntity},
+    entity::{Entity, EntityAnchor, SharedEntity},
     permission::{
         PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
         PermissionRuleExpression, PermissionSet, PermissionState,
@@ -390,9 +393,23 @@ impl CommandSource {
         self.silent
     }
 
-    pub(crate) fn send_success(&self, message: &TextComponent) {
-        if !self.silent {
+    pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
+        if self.silent {
+            return;
+        }
+
+        let accepts_success = self.sender.get_player().is_none_or(|player| {
+            game_rule_boolean(
+                player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK),
+                SEND_COMMAND_FEEDBACK.default_value,
+                true,
+            )
+        });
+        if accepts_success {
             self.sender.send_message(message);
+        }
+        if broadcast_to_admins {
+            self.broadcast_to_admins(message);
         }
     }
 
@@ -418,6 +435,40 @@ impl CommandSource {
             0,
         );
         value.max(0) as usize
+    }
+
+    fn broadcast_to_admins(&self, message: &TextComponent) {
+        let sender_name = admin_broadcast_source_name(self.entity.as_deref(), &self.sender);
+        let broadcast = translations::CHAT_TYPE_ADMIN
+            .message([sender_name, message.clone()])
+            .component()
+            .color(Color::Gray)
+            .italic(true);
+
+        if game_rule_boolean(
+            self.world.get_game_rule(&SEND_COMMAND_FEEDBACK),
+            SEND_COMMAND_FEEDBACK.default_value,
+            true,
+        ) {
+            let sender_uuid = self.sender.get_player().map(|player| player.gameprofile.id);
+            for player in self.server.get_players() {
+                if Some(player.gameprofile.id) != sender_uuid
+                    && self.server.is_operator(player.gameprofile.id)
+                {
+                    player.send_message(&broadcast);
+                }
+            }
+        }
+
+        if !matches!(self.sender, CommandSender::Console)
+            && game_rule_boolean(
+                self.world.get_game_rule(&LOG_ADMIN_COMMANDS),
+                LOG_ADMIN_COMMANDS.default_value,
+                true,
+            )
+        {
+            CommandSender::Console.send_message(&broadcast);
+        }
     }
 }
 
@@ -748,6 +799,26 @@ const fn game_rule_integer(value: GameRuleValue, default: GameRuleValue, fallbac
     }
 }
 
+const fn game_rule_boolean(value: GameRuleValue, default: GameRuleValue, fallback: bool) -> bool {
+    match value {
+        GameRuleValue::Bool(value) => value,
+        GameRuleValue::Int(_) => match default {
+            GameRuleValue::Bool(value) => value,
+            GameRuleValue::Int(_) => fallback,
+        },
+    }
+}
+
+fn admin_broadcast_source_name(
+    entity: Option<&dyn Entity>,
+    sender: &CommandSender,
+) -> TextComponent {
+    entity.map_or_else(
+        || TextComponent::plain(sender.to_string()),
+        |entity| TextComponent::plain(entity.plain_text_name()),
+    )
+}
+
 fn normalize_rotation((mut yaw, mut pitch): (f32, f32)) -> (f32, f32) {
     yaw = yaw.rem_euclid(360.0);
     if yaw >= 180.0 {
@@ -762,15 +833,45 @@ fn normalize_rotation((mut yaw, mut pitch): (f32, f32)) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::game_rules::GameRuleValue;
-    use steel_utils::Identifier;
+    use std::sync::Weak;
 
+    use glam::DVec3;
+    use steel_registry::game_rules::GameRuleValue;
+    use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
+    use steel_utils::Identifier;
+    use text_components::TextComponent;
+
+    use crate::command::sender::CommandSender;
+    use crate::entity::{Entity, EntityBase};
     use crate::permission::{
         PermissionContext, PermissionEntry, PermissionExpr, PermissionKey, PermissionSet,
         PermissionState,
     };
 
-    use super::{CommandAuthorizationContext, game_rule_integer, normalize_rotation};
+    use super::{
+        CommandAuthorizationContext, admin_broadcast_source_name, game_rule_boolean,
+        game_rule_integer, normalize_rotation,
+    };
+
+    struct NamedTestEntity {
+        base: EntityBase,
+    }
+
+    crate::entity::impl_test_downcast_type!(NamedTestEntity);
+
+    impl Entity for NamedTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn plain_text_name(&self) -> String {
+            "Executor".to_owned()
+        }
+    }
 
     fn permission_key(value: &str) -> PermissionKey {
         match PermissionKey::parse(value) {
@@ -794,6 +895,41 @@ mod tests {
         assert_eq!(
             game_rule_integer(GameRuleValue::Bool(false), GameRuleValue::Int(7), 1),
             7
+        );
+    }
+
+    #[test]
+    fn boolean_game_rule_falls_back_to_its_extracted_default() {
+        assert!(!game_rule_boolean(
+            GameRuleValue::Bool(false),
+            GameRuleValue::Bool(true),
+            true,
+        ));
+        assert!(!game_rule_boolean(
+            GameRuleValue::Int(1),
+            GameRuleValue::Bool(false),
+            true,
+        ));
+    }
+
+    #[test]
+    fn admin_broadcast_uses_current_execution_entity_name() {
+        let entity = NamedTestEntity {
+            base: EntityBase::new(
+                1,
+                DVec3::ZERO,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+        };
+
+        assert_eq!(
+            admin_broadcast_source_name(Some(&entity), &CommandSender::Console),
+            TextComponent::plain("Executor")
+        );
+        assert_eq!(
+            admin_broadcast_source_name(None, &CommandSender::Console),
+            TextComponent::plain("Server")
         );
     }
 

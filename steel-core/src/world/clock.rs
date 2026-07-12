@@ -41,9 +41,10 @@ pub(crate) enum WorldClockLoadError {
 
 /// Per-world clock instances.
 ///
-/// Vanilla owns these clocks at server scope. Steel intentionally owns them per
-/// world so separately loaded worlds, including worlds in one domain, can have
-/// independent timelines.
+/// Vanilla 26.2 owns one clock manager at server scope and every loaded level
+/// delegates to it. Steel intentionally persists one manager in each world's
+/// level data instead: equal clock keys are not shared, so two overworlds in the
+/// same domain can advance and be configured independently.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub(crate) struct WorldClockManager {
@@ -228,6 +229,26 @@ mod tests {
         );
         assert_eq!(manager.total_ticks(&vanilla_world_clocks::THE_END), Some(0));
         assert_eq!(manager.network_updates(true).len(), 2);
+    }
+
+    #[test]
+    fn separate_worlds_keep_independent_clock_state() {
+        init_test_registry();
+        let mut first_world = WorldClockManager::new();
+        let second_world = WorldClockManager::new();
+
+        assert_eq!(
+            first_world.set_total_ticks(&vanilla_world_clocks::OVERWORLD, 6_000),
+            Some(())
+        );
+        assert_eq!(
+            first_world.total_ticks(&vanilla_world_clocks::OVERWORLD),
+            Some(6_000)
+        );
+        assert_eq!(
+            second_world.total_ticks(&vanilla_world_clocks::OVERWORLD),
+            Some(0)
+        );
     }
 
     #[test]

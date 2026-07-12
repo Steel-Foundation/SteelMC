@@ -89,7 +89,7 @@ fn query_experience(
             TextComponent::from(amount.to_string()),
         ])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(amount)
 }
 
@@ -207,7 +207,7 @@ fn send_mutation_success(
             .message([amount, TextComponent::from(players.len().to_string())])
             .component()
     };
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
 }
 
 #[expect(

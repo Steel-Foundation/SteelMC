@@ -93,7 +93,7 @@ fn give(
             ])
             .component()
     };
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
 
     i32::try_from(targets.len()).map_err(|_| {
         CommandSyntaxError::dynamic("Target player count exceeds the command result range")

@@ -157,10 +157,13 @@ fn set_flying_speed(source: &CommandSource, targets: &[Arc<Player>], multiplier:
     for target in targets {
         target.set_flying_speed(speed);
         target.send_abilities();
-        source.send_success(&TextComponent::plain(format!(
-            "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
-            target.gameprofile.name
-        )));
+        source.send_success(
+            &TextComponent::plain(format!(
+                "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
+                target.gameprofile.name
+            )),
+            true,
+        );
     }
 }
 
@@ -168,10 +171,13 @@ fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
     for target in targets {
         let speed = target.get_flying_speed();
         let multiplier = speed / DEFAULT_FLYING_SPEED;
-        source.send_success(&TextComponent::plain(format!(
-            "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
-            target.gameprofile.name
-        )));
+        source.send_success(
+            &TextComponent::plain(format!(
+                "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
+                target.gameprofile.name
+            )),
+            false,
+        );
     }
 }
 

@@ -882,12 +882,31 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
+    let source_world = entity.level()?;
+    if source_world.domain() != teleport_transition.target_world.domain() {
+        tracing::error!(
+            entity_id = entity.id(),
+            source_domain = source_world.domain(),
+            target_domain = teleport_transition.target_world.domain(),
+            "Refusing direct cross-domain entity teleport"
+        );
+        return None;
+    }
+
     if entity.as_player().is_some() {
+        let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
+            tracing::error!(
+                entity_id = entity.id(),
+                "Refusing player world change for an unregistered player entity"
+            );
+            return None;
+        };
         // Vanilla `ServerPlayer.teleport` keeps the live player/connection identity
         // and sends respawn/player-position packets instead of recreating from entity NBT.
-        let changed_entity = Arc::clone(&entity);
-        entity.change_world(teleport_transition);
-        return Some(changed_entity);
+        if !player.change_world_within_domain(teleport_transition) {
+            return None;
+        }
+        return Some(entity);
     }
 
     change_non_player_entity_world(entity, teleport_transition)
@@ -909,6 +928,15 @@ fn change_non_player_entity_world(
         );
         return None;
     };
+    if source_world.domain() != teleport_transition.target_world.domain() {
+        tracing::error!(
+            entity_id = entity.id(),
+            source_domain = source_world.domain(),
+            target_domain = teleport_transition.target_world.domain(),
+            "Refusing cross-domain non-player entity transition"
+        );
+        return None;
+    }
 
     entity.set_portal_cooldown(teleport_transition.portal_cooldown);
     if !teleport_transition.as_passenger {
@@ -4797,27 +4825,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     )]
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         false
-    }
-
-    /// Teleports an entity from one loaded world to another.
-    fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
-        let Some(world) = self.level() else {
-            tracing::warn!(
-                entity_id = self.id(),
-                entity_type = ?self.entity_type().key,
-                "Ignoring world change for entity without a live world"
-            );
-            return;
-        };
-        let Some(entity) = world.get_entity_by_id(self.id()) else {
-            tracing::warn!(
-                entity_id = self.id(),
-                entity_type = ?self.entity_type().key,
-                "Ignoring world change for entity that is not live in its world"
-            );
-            return;
-        };
-        change_non_player_entity_world(entity, teleport_transition);
     }
 }
 

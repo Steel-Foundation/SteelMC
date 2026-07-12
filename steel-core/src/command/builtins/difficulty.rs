@@ -58,7 +58,7 @@ fn query_difficulty(
     let message = translations::COMMANDS_DIFFICULTY_QUERY
         .message([TextComponent::from(difficulty_display_name(difficulty))])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(i32::from(u8::from(difficulty)))
 }
 
@@ -90,7 +90,7 @@ fn set_difficulty(
     let message = translations::COMMANDS_DIFFICULTY_SUCCESS
         .message([TextComponent::from(difficulty_display_name(difficulty))])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(0)
 }
 

@@ -118,7 +118,7 @@ fn set_game_mode(
             let message = translations::COMMANDS_GAMEMODE_SUCCESS_SELF
                 .message([TextComponent::from(game_mode_translation(game_mode))])
                 .component();
-            source.send_success(&message);
+            source.send_success(&message, true);
             continue;
         }
 
@@ -134,7 +134,7 @@ fn set_game_mode(
                 TextComponent::from(game_mode_translation(game_mode)),
             ])
             .component();
-        source.send_success(&message);
+        source.send_success(&message, true);
     }
 
     i32::try_from(changed).map_err(|_| {

@@ -83,7 +83,7 @@ fn set_spawn(
             source.world().key.to_string(),
         ])
         .component();
-    source.send_success(&message);
+    source.send_success(&message, true);
     Ok(1)
 }
 

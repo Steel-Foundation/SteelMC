@@ -96,8 +96,22 @@ pub(crate) enum CommandResultSuspensionPoll {
     Ready(Result<i32, CommandSyntaxError>),
 }
 
+/// Ordering barrier retained while a top-level command is suspended.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CommandSuspensionOrder {
+    /// Only later commands from the same source wait for this suspension.
+    #[default]
+    Source,
+    /// Every later command waits because the suspended work mutates shared command authority.
+    Global,
+}
+
 /// Cross-tick work that retains ordinary command result and error semantics.
 pub(crate) trait CommandResultSuspension: Send + 'static {
+    fn order(&self) -> CommandSuspensionOrder {
+        CommandSuspensionOrder::Source
+    }
+
     fn poll(&mut self) -> CommandResultSuspensionPoll;
 
     fn cancel(&mut self) {}
@@ -126,6 +140,10 @@ pub(crate) trait CommandSuspension<S>: Send + 'static
 where
     S: ExecutionCommandSource,
 {
+    fn order(&self) -> CommandSuspensionOrder {
+        CommandSuspensionOrder::Source
+    }
+
     fn poll(&mut self) -> CommandSuspensionPoll<S>;
 
     fn cancel(&mut self) {}
@@ -302,8 +320,10 @@ where
         }
     }
 
-    pub(crate) const fn is_suspended(&self) -> bool {
-        self.suspension.is_some()
+    pub(crate) fn suspension_order(&self) -> Option<CommandSuspensionOrder> {
+        self.suspension
+            .as_ref()
+            .map(|active| active.suspension.order())
     }
 
     /// Cancels active and queued suspension work and discards the retained command queue.
@@ -752,6 +772,10 @@ impl<S> CommandSuspension<S> for CommandResultSuspensionAdapter<S>
 where
     S: ExecutionCommandSource,
 {
+    fn order(&self) -> CommandSuspensionOrder {
+        self.suspension.order()
+    }
+
     fn poll(&mut self) -> CommandSuspensionPoll<S> {
         match self.suspension.poll() {
             CommandResultSuspensionPoll::Pending => CommandSuspensionPoll::Pending,

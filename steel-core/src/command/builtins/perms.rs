@@ -12,8 +12,8 @@ use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
     execution::{
         CommandPermissionSource, CommandResultSuspension, CommandResultSuspensionPoll,
-        CommandSource, GameProfileArgument, SteelArgumentType, SteelCommandContext,
-        SteelCommandRuntime, argument, literal,
+        CommandSource, CommandSuspensionOrder, GameProfileArgument, SteelArgumentType,
+        SteelCommandContext, SteelCommandRuntime, argument, literal,
     },
     registration::CommandRegistration,
 };
@@ -292,6 +292,29 @@ enum Operation {
         group: String,
         add: bool,
     },
+}
+
+impl Operation {
+    const fn suspension_order(&self) -> CommandSuspensionOrder {
+        match self {
+            Self::UserInfo(_)
+            | Self::UserCheck { .. }
+            | Self::UserMetadataCheck { .. }
+            | Self::GroupInfo(_)
+            | Self::GroupInheritanceList(_)
+            | Self::GroupsList => CommandSuspensionOrder::Source,
+            Self::UserPermission { .. }
+            | Self::UserMetadata { .. }
+            | Self::UserGroup { .. }
+            | Self::GroupCreate(_)
+            | Self::GroupDelete(_)
+            | Self::GroupPermission { .. }
+            | Self::GroupPriority { .. }
+            | Self::GroupInheritance { .. }
+            | Self::GroupMetadata { .. }
+            | Self::DefaultGroup { .. } => CommandSuspensionOrder::Global,
+        }
+    }
 }
 
 struct OperationResult {
@@ -677,6 +700,7 @@ fn start(
     context: &SteelCommandContext<CommandSource>,
     operation: Operation,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let order = operation.suspension_order();
     let source = context.source().clone();
     let task_source = source.clone();
     let (sender, receiver) = oneshot::channel();
@@ -686,6 +710,8 @@ fn start(
     });
     Ok(PermsCommandSuspension {
         source,
+        order,
+        broadcast_to_admins: order == CommandSuspensionOrder::Global,
         receiver,
         task: Some(task),
     })
@@ -1353,18 +1379,24 @@ fn dynamic_error(error: impl fmt::Display) -> CommandSyntaxError {
 
 struct PermsCommandSuspension {
     source: CommandSource,
+    order: CommandSuspensionOrder,
+    broadcast_to_admins: bool,
     receiver: oneshot::Receiver<Result<OperationResult, CommandSyntaxError>>,
     task: Option<JoinHandle<()>>,
 }
 
 impl CommandResultSuspension for PermsCommandSuspension {
+    fn order(&self) -> CommandSuspensionOrder {
+        self.order
+    }
+
     fn poll(&mut self) -> CommandResultSuspensionPoll {
         match self.receiver.try_recv() {
             Ok(result) => {
                 self.task = None;
                 CommandResultSuspensionPoll::Ready(result.map(|result| {
                     for message in &result.messages {
-                        self.source.send_success(message);
+                        self.source.send_success(message, self.broadcast_to_admins);
                     }
                     result.result
                 }))
@@ -1392,6 +1424,7 @@ mod tests {
 
     use super::{GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION};
     use crate::command::{
+        CommandRegistry,
         brigadier::{CommandDispatcher, NodeId},
         builtins::{create_dispatcher, create_registered_dispatcher},
         execution::{CommandSource, SteelCommandRuntime},
@@ -1452,7 +1485,7 @@ mod tests {
     #[test]
     fn perms_discovery_contains_static_admin_and_granular_command_permissions() {
         init_test_registry();
-        let Ok(registered) = create_registered_dispatcher() else {
+        let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
             panic!("built-in dispatcher should build");
         };
         let permissions = registered

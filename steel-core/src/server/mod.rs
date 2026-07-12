@@ -24,8 +24,9 @@ use crate::command::sender::CommandSender;
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandDispatcher, CommandQueueFull,
-    CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue, client_permission_event,
-    command_suggestions_packet, command_tree_packet, create_registered_dispatcher,
+    CommandRegistry, CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue,
+    client_permission_event, command_suggestions_packet, command_tree_packet,
+    create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
@@ -103,6 +104,17 @@ const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
+/// Wall-clock interval between saves of command-owned persistent server data.
+/// Matches vanilla's intended five-minute autosave cadence.
+const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
+
+/// Results from saving every command-owned persistent data set.
+pub struct CommandDataSaveResults {
+    /// Number of dirty domain scoreboards written, or the save error.
+    pub scoreboards: io::Result<usize>,
+    /// Number of dirty domain command-storage values written, or the save error.
+    pub storage: io::Result<usize>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UncachedPlayerTarget {
@@ -251,7 +263,7 @@ mod tests {
     use crate::world::World;
 
     use super::{
-        AsyncMutex, CancellationToken, CommandRequestQueue, DomainCommandStorage,
+        AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
         DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
         KnownPlayers, Notify, PlayerDataStorage, PlayerJoinQueue, PlayerMap, RegistryCache, Server,
         ServerJobQueue, SyncMutex, SyncRwLock, TickRateManager, UncachedPlayerTarget, WorldMap,
@@ -341,7 +353,7 @@ mod tests {
         )
         .await
         .map_err(|error| format!("test player storage should initialize: {error}"))?;
-        let registered_commands = create_registered_dispatcher()
+        let registered_commands = create_registered_dispatcher(CommandRegistry::new())
             .map_err(|error| format!("test commands should register: {error}"))?;
         let command_permission_keys = registered_commands
             .permissions
@@ -1869,18 +1881,37 @@ impl Server {
         suggestions.into_iter().collect()
     }
 
-    /// Creates a new server.
-    ///
-    #[expect(
-        clippy::too_many_lines,
-        reason = "server initialization is a single cohesive flow"
-    )]
+    /// Creates a new server with only Steel's built-in commands.
     pub async fn new(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
         permission_groups: PermissionGroupManager,
+    ) -> Result<Self, String> {
+        Self::new_with_commands(
+            chunk_runtime,
+            cancel_token,
+            config,
+            worlds_config,
+            permission_groups,
+            CommandRegistry::new(),
+        )
+        .await
+    }
+
+    /// Creates a new server and atomically merges startup command extensions after built-ins.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "server initialization is a single cohesive flow"
+    )]
+    pub async fn new_with_commands(
+        chunk_runtime: Arc<Runtime>,
+        cancel_token: CancellationToken,
+        config: RuntimeConfig,
+        worlds_config: WorldsConfig,
+        permission_groups: PermissionGroupManager,
+        command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
@@ -2010,8 +2041,8 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
-        let registered_commands = create_registered_dispatcher()
-            .map_err(|error| format!("failed to register built-in commands: {error}"))?;
+        let registered_commands = create_registered_dispatcher(command_registry)
+            .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
             .permissions
             .into_iter()
@@ -2049,6 +2080,14 @@ impl Server {
     /// Saves all dirty domain command storage through domain default worlds.
     pub async fn save_command_storage(&self) -> io::Result<usize> {
         self.command_storage.save(&self.worlds).await
+    }
+
+    /// Saves all command-owned persistent data while allowing each data set to fail independently.
+    pub async fn save_command_data(&self) -> CommandDataSaveResults {
+        CommandDataSaveResults {
+            scoreboards: self.scoreboards.save(&self.worlds).await,
+            storage: self.save_command_storage().await,
+        }
     }
 
     /// Queues a command for execution at the start of the next game tick.
@@ -3192,6 +3231,7 @@ impl Server {
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
+        let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
 
@@ -3264,6 +3304,11 @@ impl Server {
 
             self.process_domain_switches().await;
 
+            if Instant::now() >= next_command_data_autosave {
+                self.autosave_command_data().await;
+                next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
+            }
+
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
                 let mut tick_manager = self.tick_rate_manager.write();
@@ -3286,6 +3331,19 @@ impl Server {
         self.command_requests.clear();
     }
 
+    async fn autosave_command_data(&self) {
+        tracing::debug!("Command data autosave started");
+        let results = self.save_command_data().await;
+        match results.scoreboards {
+            Ok(saved) => tracing::debug!(saved, "Domain scoreboard autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain scoreboard autosave failed"),
+        }
+        match results.storage {
+            Ok(saved) => tracing::debug!(saved, "Domain command-storage autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain command-storage autosave failed"),
+        }
+    }
+
     fn tick_pending_command_executions(pending: &mut PendingCommandExecutionQueue<CommandSource>) {
         let stats = pending.tick(COMMAND_RESUMPTIONS_PER_TICK);
         if stats.polled == COMMAND_RESUMPTIONS_PER_TICK && stats.pending > 0 {
@@ -3304,7 +3362,10 @@ impl Server {
     ) {
         let mut handled = 0;
         for _ in 0..COMMAND_REQUESTS_PER_TICK {
-            let Some(request) = self.command_requests.pop_front() else {
+            let Some(request) = self
+                .command_requests
+                .pop_front_runnable(|sender| !pending.blocks(sender.key()))
+            else {
                 break;
             };
             handled += 1;
@@ -3343,6 +3404,7 @@ impl Server {
         sender: CommandSender,
         command: &str,
     ) {
+        let sender_key = sender.key();
         let source = CommandSource::new(sender, Arc::clone(self));
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
@@ -3360,7 +3422,9 @@ impl Server {
 
         let mut execution = CommandExecutionContext::for_source(&source);
         execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-        if execution.run() == ExecutionStop::Suspended && !pending.push_suspended(execution) {
+        if execution.run() == ExecutionStop::Suspended
+            && !pending.push_suspended(sender_key, execution)
+        {
             tracing::error!("suspended command execution could not be retained");
         }
     }

@@ -80,9 +80,17 @@ impl<K: Eq, E, S> PendingRequestQueues<K, E, S> {
         Ok(())
     }
 
+    #[cfg(test)]
     fn pop_front(&mut self) -> Option<PendingRequest<E, S>> {
+        self.pop_front_where(|_| true)
+    }
+
+    fn pop_front_where(
+        &mut self,
+        mut execution_allowed: impl FnMut(&E) -> bool,
+    ) -> Option<PendingRequest<E, S>> {
         if self.prefer_execution {
-            if let Some(request) = self.executions.pop_front() {
+            if let Some(request) = self.pop_allowed_execution(&mut execution_allowed) {
                 self.prefer_execution = false;
                 return Some(PendingRequest::Execute(request));
             }
@@ -95,9 +103,17 @@ impl<K: Eq, E, S> PendingRequestQueues<K, E, S> {
             self.prefer_execution = true;
             return Some(PendingRequest::Suggestions(request));
         }
-        let request = self.executions.pop_front()?;
+        let request = self.pop_allowed_execution(&mut execution_allowed)?;
         self.prefer_execution = false;
         Some(PendingRequest::Execute(request))
+    }
+
+    fn pop_allowed_execution(
+        &mut self,
+        execution_allowed: &mut impl FnMut(&E) -> bool,
+    ) -> Option<E> {
+        let index = self.executions.iter().position(execution_allowed)?;
+        self.executions.remove(index)
     }
 
     fn clear(&mut self) {
@@ -141,8 +157,17 @@ impl CommandRequestQueue {
         }
     }
 
-    pub(crate) fn pop_front(&self) -> Option<CommandRequest> {
-        match self.queued.lock().pop_front()? {
+    pub(crate) fn pop_front_runnable(
+        &self,
+        mut execution_allowed: impl FnMut(&CommandSender) -> bool,
+    ) -> Option<CommandRequest> {
+        let request = self.queued.lock().pop_front_where(|request| {
+            let CommandRequest::Execute { sender, .. } = request else {
+                return false;
+            };
+            execution_allowed(sender)
+        })?;
+        match request {
             PendingRequest::Execute(request) | PendingRequest::Suggestions(request) => {
                 Some(request)
             }
@@ -187,6 +212,27 @@ mod tests {
             Some(PendingRequest::Execute("second"))
         ));
         assert!(queue.pop_front().is_none());
+    }
+
+    #[test]
+    fn blocked_execution_sources_are_skipped_without_reordering_their_requests() {
+        let mut queue = queue_with_capacity(3, 1);
+        assert!(queue.submit_execution("blocked first").is_ok());
+        assert!(queue.submit_execution("ready").is_ok());
+        assert!(queue.submit_execution("blocked second").is_ok());
+
+        assert!(matches!(
+            queue.pop_front_where(|request| !request.starts_with("blocked")),
+            Some(PendingRequest::Execute("ready"))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("blocked first"))
+        ));
+        assert!(matches!(
+            queue.pop_front(),
+            Some(PendingRequest::Execute("blocked second"))
+        ));
     }
 
     #[test]

@@ -134,7 +134,7 @@ fn clear_players(
             ])
             .component()
     };
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(count)
 }
 

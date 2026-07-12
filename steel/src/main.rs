@@ -397,11 +397,12 @@ async fn shutdown_worlds(server: &Arc<Server>) {
 
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
-    match server.scoreboards.save(&server.worlds).await {
+    let command_data = server.save_command_data().await;
+    match command_data.scoreboards {
         Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
         Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
     }
-    match server.save_command_storage().await {
+    match command_data.storage {
         Ok(saved) => log::info!("Saved {saved} domain command storages"),
         Err(error) => log::error!("Failed to save domain command storage: {error}"),
     }

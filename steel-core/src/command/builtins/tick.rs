@@ -105,7 +105,7 @@ fn query_tick(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
     if let Some(status_message) = status_message {
         context
             .source()
-            .send_success(&TextComponent::from(status_message));
+            .send_success(&TextComponent::from(status_message), false);
         let message = translations::COMMANDS_TICK_QUERY_RATE_RUNNING
             .message([
                 tick_rate_string,
@@ -113,15 +113,16 @@ fn query_tick(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
                 nanos_to_millis_string(target_time_nanos),
             ])
             .component();
-        context.source().send_success(&message);
+        context.source().send_success(&message, false);
     } else {
-        context.source().send_success(&TextComponent::from(
-            &translations::COMMANDS_TICK_STATUS_SPRINTING,
-        ));
+        context.source().send_success(
+            &TextComponent::from(&translations::COMMANDS_TICK_STATUS_SPRINTING),
+            false,
+        );
         let message = translations::COMMANDS_TICK_QUERY_RATE_SPRINTING
             .message([tick_rate_string, busy_time])
             .component();
-        context.source().send_success(&message);
+        context.source().send_success(&message, false);
     }
 
     samples[..sample_count].sort_unstable();
@@ -140,7 +141,7 @@ fn query_tick(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
             sample_count.to_string(),
         ])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(tick_rate as i32)
 }
 
@@ -163,7 +164,7 @@ fn set_tick_rate(context: &SteelCommandContext<CommandSource>) -> Result<i32, Co
     let message = translations::COMMANDS_TICK_RATE_SUCCESS
         .message([format!("{rate:.1}")])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(rate as i32)
 }
 
@@ -200,7 +201,9 @@ fn set_frozen(
     } else {
         &translations::COMMANDS_TICK_STATUS_RUNNING
     };
-    context.source().send_success(&TextComponent::from(status));
+    context
+        .source()
+        .send_success(&TextComponent::from(status), true);
     Ok(i32::from(frozen))
 }
 
@@ -223,7 +226,7 @@ fn step(
         let message = translations::COMMANDS_TICK_STEP_SUCCESS
             .message([ticks.to_string()])
             .component();
-        context.source().send_success(&message);
+        context.source().send_success(&message, true);
     } else {
         context
             .source()
@@ -245,9 +248,10 @@ fn stop_step(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
         .stop_stepping();
     if stopped {
         context.source().server().broadcast_ticking_step();
-        context.source().send_success(&TextComponent::from(
-            &translations::COMMANDS_TICK_STEP_STOP_SUCCESS,
-        ));
+        context.source().send_success(
+            &TextComponent::from(&translations::COMMANDS_TICK_STEP_STOP_SUCCESS),
+            true,
+        );
         Ok(1)
     } else {
         context.source().send_failure(TextComponent::from(
@@ -273,13 +277,15 @@ fn sprint(
         .request_game_to_sprint(ticks);
     context.source().server().broadcast_ticking_state();
     if interrupted {
-        context.source().send_success(&TextComponent::from(
-            &translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
-        ));
+        context.source().send_success(
+            &TextComponent::from(&translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS),
+            true,
+        );
     }
-    context.source().send_success(&TextComponent::from(
-        &translations::COMMANDS_TICK_STATUS_SPRINTING,
-    ));
+    context.source().send_success(
+        &TextComponent::from(&translations::COMMANDS_TICK_STATUS_SPRINTING),
+        true,
+    );
     Ok(1)
 }
 
@@ -297,9 +303,10 @@ fn stop_sprint(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comm
     if let Some(report) = report {
         context.source().server().broadcast_sprint_report(&report);
         context.source().server().broadcast_ticking_state();
-        context.source().send_success(&TextComponent::from(
-            &translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS,
-        ));
+        context.source().send_success(
+            &TextComponent::from(&translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS),
+            true,
+        );
         Ok(1)
     } else {
         context.source().send_failure(TextComponent::from(

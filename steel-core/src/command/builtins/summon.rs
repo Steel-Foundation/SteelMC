@@ -55,7 +55,7 @@ fn summon_entity(
     let message = translations::COMMANDS_SUMMON_SUCCESS
         .message([entity_display_name(entity.as_ref())])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(1)
 }
 

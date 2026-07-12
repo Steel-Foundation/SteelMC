@@ -66,7 +66,7 @@ fn query_rule(
             TextComponent::from(value.to_string()),
         ])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(game_rule_result(value))
 }
 
@@ -108,7 +108,7 @@ fn set_rule(
             TextComponent::from(value.to_string()),
         ])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(game_rule_result(value))
 }
 

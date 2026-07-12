@@ -12,6 +12,8 @@ const DEFAULT_PROFILE_SERVER: &str =
     "https://api.minecraftservices.com/minecraft/profile/lookup/name";
 const MAX_PROFILE_LOOKUP_ATTEMPTS: usize = 3;
 const PROFILE_LOOKUP_RETRY_DELAY: Duration = Duration::from_millis(750);
+/// Bounds every attempt so suspended administrative commands always release their ordering barrier.
+const PROFILE_LOOKUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Failure while resolving a player identity through the configured profile service.
 #[derive(Debug, Error)]
@@ -65,7 +67,9 @@ pub async fn lookup_online_profile(
     let lookup_name = name.to_ascii_lowercase();
     let url = profile_lookup_url(profile_server, &lookup_name)?;
     for attempt in 1..=MAX_PROFILE_LOOKUP_ATTEMPTS {
-        let result = lookup_online_profile_once(client, url.as_str(), name).await;
+        let result =
+            lookup_online_profile_once(client, url.as_str(), name, PROFILE_LOOKUP_REQUEST_TIMEOUT)
+                .await;
         match result {
             Ok(profile) => return Ok(profile),
             Err(error @ ProfileLookupError::UnknownPlayer(_)) => return Err(error),
@@ -80,9 +84,11 @@ async fn lookup_online_profile_once(
     client: &reqwest::Client,
     url: &str,
     name: &str,
+    request_timeout: Duration,
 ) -> Result<KnownPlayer, ProfileLookupError> {
     let response = client
         .get(url)
+        .timeout(request_timeout)
         .send()
         .await
         .map_err(|source| ProfileLookupError::Request {
@@ -132,7 +138,11 @@ async fn parse_profile_response(
 
 #[cfg(test)]
 mod tests {
-    use super::profile_lookup_url;
+    use std::{future, time::Duration};
+
+    use tokio::net::TcpListener;
+
+    use super::{ProfileLookupError, lookup_online_profile_once, profile_lookup_url};
 
     #[test]
     fn profile_lookup_url_uses_mojangs_default_endpoint() {
@@ -153,5 +163,36 @@ mod tests {
             panic!("configured profile lookup URL should build");
         };
         assert_eq!(url.as_str(), "https://profiles.example.com/lookup/steve");
+    }
+
+    #[tokio::test]
+    async fn nonresponding_profile_service_is_bounded_by_request_timeout() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0").await else {
+            panic!("test profile service should bind");
+        };
+        let Ok(address) = listener.local_addr() else {
+            panic!("test profile service should have a local address");
+        };
+        let server = tokio::spawn(async move {
+            let Ok((_connection, _address)) = listener.accept().await else {
+                return;
+            };
+            future::pending::<()>().await;
+        });
+
+        let client = reqwest::Client::new();
+        let result = lookup_online_profile_once(
+            &client,
+            &format!("http://{address}/lookup/steve"),
+            "Steve",
+            Duration::from_millis(100),
+        )
+        .await;
+        server.abort();
+
+        assert!(matches!(
+            result,
+            Err(ProfileLookupError::Request { source, .. }) if source.is_timeout()
+        ));
     }
 }

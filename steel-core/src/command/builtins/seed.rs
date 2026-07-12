@@ -34,6 +34,6 @@ fn send_seed(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comman
                 value: seed_text.into(),
             })])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(seed as i32)
 }

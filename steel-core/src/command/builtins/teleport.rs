@@ -194,6 +194,7 @@ fn teleport_to_entity(
     let position = destination.position();
     ensure_spawnable_position(position)?;
     let rotation = destination.rotation();
+    ensure_same_domain_targets(targets, &target_world)?;
 
     for target in targets {
         let transition = TeleportTransition {
@@ -224,6 +225,7 @@ fn teleport_to_position(
     let position = destination.position(source);
     ensure_spawnable_position(position)?;
     let resolved_rotation = rotation.map(|rotation| rotation.rotation(source));
+    ensure_same_domain_targets(targets, source.world())?;
 
     for target in targets {
         let same_world = target
@@ -323,6 +325,28 @@ fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSyntaxError> 
     Err(CommandSyntaxError::dynamic(TextComponent::from(
         &translations::COMMANDS_TELEPORT_INVALID_POSITION,
     )))
+}
+
+fn ensure_same_domain_targets(
+    targets: &[SharedEntity],
+    target_world: &World,
+) -> Result<(), CommandSyntaxError> {
+    for target in targets {
+        let Some(source_world) = target.level() else {
+            continue;
+        };
+        ensure_same_domain(source_world.domain(), target_world.domain())?;
+    }
+    Ok(())
+}
+
+fn ensure_same_domain(source_domain: &str, target_domain: &str) -> Result<(), CommandSyntaxError> {
+    if source_domain == target_domain {
+        return Ok(());
+    }
+    Err(CommandSyntaxError::dynamic(
+        "Entities cannot be teleported across Steel domains",
+    ))
 }
 
 fn teleport_relatives(
@@ -429,7 +453,7 @@ fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destina
             ])
             .component()
     };
-    source.send_success(&message);
+    source.send_success(&message, true);
 }
 
 fn send_position_success(source: &CommandSource, targets: &[SharedEntity], position: DVec3) {
@@ -457,7 +481,7 @@ fn send_position_success(source: &CommandSource, targets: &[SharedEntity], posit
             ])
             .component()
     };
-    source.send_success(&message);
+    source.send_success(&message, true);
 }
 
 fn target_count(targets: &[SharedEntity]) -> Result<i32, CommandSyntaxError> {
@@ -474,7 +498,7 @@ fn missing_argument(name: &str) -> CommandSyntaxError {
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
-    use super::{packet_position, packet_rotation, teleport_relatives};
+    use super::{ensure_same_domain, packet_position, packet_rotation, teleport_relatives};
     use crate::command::{
         brigadier::{CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
@@ -568,6 +592,12 @@ mod tests {
                 | RelativeMovement::Y_ROT
                 | RelativeMovement::X_ROT
         );
+    }
+
+    #[test]
+    fn direct_teleport_rejects_cross_domain_transitions() {
+        assert!(ensure_same_domain("survival", "survival").is_ok());
+        assert!(ensure_same_domain("survival", "creative").is_err());
     }
 
     #[test]

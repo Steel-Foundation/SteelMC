@@ -9,8 +9,9 @@ use tokio::{sync::oneshot, task::JoinHandle};
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandResultSuspension, CommandResultSuspensionPoll, CommandSource, GameProfileArgument,
-        SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument, literal,
+        CommandResultSuspension, CommandResultSuspensionPoll, CommandSource,
+        CommandSuspensionOrder, GameProfileArgument, SteelArgumentType, SteelCommandContext,
+        SteelCommandRuntime, argument, literal,
     },
     registration::CommandRegistration,
 };
@@ -164,6 +165,10 @@ struct OperatorCommandSuspension {
 }
 
 impl CommandResultSuspension for OperatorCommandSuspension {
+    fn order(&self) -> CommandSuspensionOrder {
+        CommandSuspensionOrder::Global
+    }
+
     fn poll(&mut self) -> CommandResultSuspensionPoll {
         match self.receiver.try_recv() {
             Ok(result) => {
@@ -171,7 +176,7 @@ impl CommandResultSuspension for OperatorCommandSuspension {
                 CommandResultSuspensionPoll::Ready(result.map(|result| {
                     let changed = result.changed_names.len().min(i32::MAX as usize) as i32;
                     for name in result.changed_names {
-                        self.source.send_success(&self.action.success(name));
+                        self.source.send_success(&self.action.success(name), true);
                     }
                     changed
                 }))

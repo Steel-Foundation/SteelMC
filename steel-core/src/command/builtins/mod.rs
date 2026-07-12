@@ -28,9 +28,8 @@ mod weather;
 
 pub(crate) use difficulty::player_can_change_difficulty;
 
-#[cfg(test)]
-use super::{brigadier::CommandDispatcher, execution::SteelCommandRuntime};
 use super::{
+    CommandRegistry,
     execution::CommandSource,
     registration::{
         CommandDispatcherBuilder, CommandRegistrationError,
@@ -38,15 +37,18 @@ use super::{
         RegisteredCommandDispatcher,
     },
 };
+#[cfg(test)]
+use super::{brigadier::CommandDispatcher, execution::SteelCommandRuntime};
 
 #[cfg(test)]
 pub(crate) fn create_dispatcher()
 -> Result<CommandDispatcher<CommandSource, SteelCommandRuntime>, CommandRegistrationError> {
-    create_registered_dispatcher().map(|registered| registered.dispatcher)
+    create_registered_dispatcher(CommandRegistry::new()).map(|registered| registered.dispatcher)
 }
 
-pub(crate) fn create_registered_dispatcher()
--> Result<RegisteredCommandDispatcher<CommandSource>, CommandRegistrationError> {
+pub(crate) fn create_registered_dispatcher(
+    extension_commands: CommandRegistry,
+) -> Result<RegisteredCommandDispatcher<CommandSource>, CommandRegistrationError> {
     let mut builder = CommandDispatcherBuilder::new();
     builder.declare_permission(ENTITY_SELECTOR_PERMISSION_KEY)?;
     builder.declare_permission(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY)?;
@@ -79,15 +81,21 @@ pub(crate) fn create_registered_dispatcher()
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(weather::registration())?;
+    builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::create_dispatcher;
+    use super::{create_dispatcher, create_registered_dispatcher};
     use crate::command::brigadier::ArgumentType;
     use crate::command::execution::SteelArgumentType;
+    use crate::command::{
+        CommandRegistration as ExtensionCommandRegistration, CommandRegistry,
+        literal as extension_literal,
+    };
     use steel_registry::test_support::init_test_registry;
+    use steel_utils::Identifier;
 
     #[test]
     fn first_builtin_slice_has_the_expected_graph_shape() {
@@ -194,6 +202,41 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(weather_names, ["clear", "rain", "thunder"]);
+    }
+
+    #[test]
+    fn startup_extensions_merge_after_builtins_with_namespaced_collision_fallbacks() {
+        init_test_registry();
+        let mut extensions = CommandRegistry::new();
+        let registration =
+            ExtensionCommandRegistration::new(Identifier::new("steel_test", "stop"), || {
+                extension_literal("stop").executes(|_| Ok(1))
+            });
+        assert!(extensions.register(registration).is_ok());
+
+        let Ok(registered) = create_registered_dispatcher(extensions) else {
+            panic!("built-ins and extension should register atomically");
+        };
+        let dispatcher = registered.dispatcher;
+        let Some(roots) = dispatcher.children(dispatcher.root()) else {
+            panic!("dispatcher root should exist");
+        };
+        let names = roots
+            .iter()
+            .filter_map(|root| {
+                let node = dispatcher.node(*root)?;
+                Some(node.name())
+            })
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"stop"));
+        assert!(names.contains(&"steel_test:stop"));
+        assert!(
+            registered
+                .permissions
+                .iter()
+                .any(|permission| permission.as_str() == "steel_test.command.stop")
+        );
     }
 
     #[test]

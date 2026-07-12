@@ -305,11 +305,10 @@ impl LocateStructureSearch {
         let pos = best.candidate.locate_pos;
         let distance = horizontal_distance(self.origin, pos);
         let structure_name = self.query.found_name(&best.found_structure);
-        self.source.send_success(&locate_success_component(
-            structure_name.clone(),
-            pos,
-            distance,
-        ));
+        self.source.send_success(
+            &locate_success_component(structure_name.clone(), pos, distance),
+            false,
+        );
         tracing::info!(
             "Locating element {} took {} ms",
             structure_name,

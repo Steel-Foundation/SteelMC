@@ -1,4 +1,9 @@
 //! Per-world clock command.
+//!
+//! Vanilla applies clock mutations server-wide. Steel intentionally applies
+//! them only to the command source's world so multiple worlds in one domain can
+//! keep independent timelines. Use `execute in <world> run time ...` to target
+//! a different world.
 
 use steel_registry::{timeline::TimelineRef, world_clock::WorldClockRef};
 use steel_utils::{Identifier, translations};
@@ -147,7 +152,7 @@ fn set_total_ticks(
     let message = translations::COMMANDS_TIME_SET_ABSOLUTE
         .message([clock.key.to_string(), total_ticks.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(total_ticks)
 }
 
@@ -167,7 +172,7 @@ fn add_time(
     let message = translations::COMMANDS_TIME_SET_ABSOLUTE
         .message([clock.key.to_string(), total_ticks.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(wrap_time(total_ticks))
 }
 
@@ -195,7 +200,7 @@ fn set_time_marker(
     let message = translations::COMMANDS_TIME_SET_TIME_MARKER
         .message([clock.key.to_string(), marker.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(wrap_time(total_ticks))
 }
 
@@ -216,7 +221,7 @@ fn set_paused(
         &translations::COMMANDS_TIME_RESUME
     };
     let message = translation.message([clock.key.to_string()]).component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(1)
 }
 
@@ -236,7 +241,7 @@ fn set_rate(
     let message = translations::COMMANDS_TIME_RATE
         .message([clock.key.to_string(), rate.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(1)
 }
 
@@ -251,7 +256,7 @@ fn query_game_time(
     let message = translations::COMMANDS_TIME_QUERY_GAMETIME
         .message([game_time.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(wrap_time(game_time))
 }
 
@@ -264,7 +269,7 @@ fn query_time(
     let message = translations::COMMANDS_TIME_QUERY_ABSOLUTE
         .message([clock.key.to_string(), total_ticks.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(wrap_time(total_ticks))
 }
 
@@ -304,7 +309,7 @@ fn query_timeline(
     let message = translations::COMMANDS_TIME_QUERY_TIMELINE
         .message([timeline.key.to_string(), current_ticks.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(wrap_time(current_ticks))
 }
 
@@ -318,7 +323,7 @@ fn query_timeline_repetitions(
     let message = translations::COMMANDS_TIME_QUERY_TIMELINE_REPETITIONS
         .message([timeline.key.to_string(), repetitions.to_string()])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(wrap_time(i64::from(repetitions)))
 }
 

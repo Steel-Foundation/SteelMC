@@ -113,7 +113,7 @@ fn enchant(
             ])
             .component()
     };
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
 
     i32::try_from(success).map_err(|_| {
         CommandSyntaxError::dynamic("Enchanted entity count exceeds the command result range")

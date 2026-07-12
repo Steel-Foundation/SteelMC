@@ -1,5 +1,6 @@
 //! Brigadier-compatible command parsing, execution, and sender handling.
 
+mod api;
 pub(crate) mod brigadier;
 mod builtins;
 pub(crate) mod execution;
@@ -9,6 +10,14 @@ mod registration;
 mod request_queue;
 pub mod sender;
 pub(crate) mod storage;
+
+pub use api::{
+    CommandArgument, CommandArgumentParser, CommandContext, CommandError, CommandNode,
+    CommandParserSource, CommandReader, CommandReaderCursor, CommandRegistration,
+    CommandRegistrationError, CommandRegistry, CommandSource, CommandSuggestionContext,
+    CommandSuggestions, SuspendedCommand, SuspendedCommandPoll, argument, literal,
+};
+pub use execution::CommandSuspensionOrder;
 
 pub(crate) use builtins::{
     create_registered_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,
@@ -22,11 +31,12 @@ use steel_utils::entity_events::EntityStatus;
 
 use self::{
     brigadier::CommandDispatcher as BrigadierCommandDispatcher,
-    execution::{CommandSource, SteelCommandRuntime},
+    execution::{CommandSource as InternalCommandSource, SteelCommandRuntime},
 };
 use crate::{player::Player, world::World};
 
-pub(crate) type CommandDispatcher = BrigadierCommandDispatcher<CommandSource, SteelCommandRuntime>;
+pub(crate) type CommandDispatcher =
+    BrigadierCommandDispatcher<InternalCommandSource, SteelCommandRuntime>;
 
 /// Projects Steel capabilities onto vanilla's shared gamemaster client affordance.
 /// Packet handlers still authorize game-mode and difficulty requests independently.

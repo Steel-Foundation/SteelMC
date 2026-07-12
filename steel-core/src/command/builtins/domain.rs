@@ -39,9 +39,10 @@ fn switch_domain(context: &SteelCommandContext<CommandSource>) -> Result<i32, Co
         .queue_domain_switch(Arc::clone(player), domain.to_owned())
         .map_err(CommandSyntaxError::dynamic)?;
 
-    source.send_success(&TextComponent::plain(format!(
-        "Switching to domain {domain}"
-    )));
+    source.send_success(
+        &TextComponent::plain(format!("Switching to domain {domain}")),
+        true,
+    );
     Ok(1)
 }
 

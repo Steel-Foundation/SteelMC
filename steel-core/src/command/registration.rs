@@ -17,7 +17,8 @@ use crate::permission::{
     PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
 };
 
-type CommandFactory<S> = dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + 'static;
+type CommandFactory<S> =
+    dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + Send + 'static;
 
 pub(crate) const ENTITY_SELECTOR_PERMISSION_KEY: &str = "minecraft.selector";
 pub(crate) const ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY: &str = "minecraft.selector.advanced";
@@ -51,7 +52,7 @@ where
     /// Declares a command whose factory receives the target dispatcher's root.
     pub(crate) fn new(
         id: Identifier,
-        factory: impl FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + 'static,
+        factory: impl FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + Send + 'static,
     ) -> Self {
         Self {
             id,
@@ -212,6 +213,19 @@ where
             ));
         }
         self.registrations.push(registration);
+        Ok(())
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) -> Result<(), CommandRegistrationError> {
+        let Self {
+            registrations,
+            declared_permissions,
+            ..
+        } = other;
+        self.declared_permissions.extend(declared_permissions);
+        for registration in registrations {
+            self.register(registration)?;
+        }
         Ok(())
     }
 

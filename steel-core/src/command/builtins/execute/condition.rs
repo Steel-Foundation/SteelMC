@@ -298,15 +298,16 @@ fn execute_blocks_condition(
             let message = translations::COMMANDS_EXECUTE_CONDITIONAL_PASS_COUNT
                 .message([TextComponent::from(count.to_string())])
                 .component();
-            context.source().send_success(&message);
+            context.source().send_success(&message, false);
             Ok(count)
         }
         (true, None) => Err(conditional_failed()),
         (false, Some(count)) => Err(conditional_failed_count(count)),
         (false, None) => {
-            context.source().send_success(&TextComponent::from(
-                &translations::COMMANDS_EXECUTE_CONDITIONAL_PASS,
-            ));
+            context.source().send_success(
+                &TextComponent::from(&translations::COMMANDS_EXECUTE_CONDITIONAL_PASS),
+                false,
+            );
             Ok(1)
         }
     }
@@ -575,9 +576,10 @@ fn execute_boolean_condition(
     if matches != expected {
         return Err(conditional_failed());
     }
-    context.source().send_success(&TextComponent::from(
-        &translations::COMMANDS_EXECUTE_CONDITIONAL_PASS,
-    ));
+    context.source().send_success(
+        &TextComponent::from(&translations::COMMANDS_EXECUTE_CONDITIONAL_PASS),
+        false,
+    );
     Ok(1)
 }
 
@@ -593,16 +595,17 @@ fn execute_numeric_condition(
         let message = translations::COMMANDS_EXECUTE_CONDITIONAL_PASS_COUNT
             .message([TextComponent::from(count.to_string())])
             .component();
-        context.source().send_success(&message);
+        context.source().send_success(&message, false);
         return Ok(count);
     }
 
     if count != 0 {
         return Err(conditional_failed_count(count));
     }
-    context.source().send_success(&TextComponent::from(
-        &translations::COMMANDS_EXECUTE_CONDITIONAL_PASS,
-    ));
+    context.source().send_success(
+        &TextComponent::from(&translations::COMMANDS_EXECUTE_CONDITIONAL_PASS),
+        false,
+    );
     Ok(1)
 }
 

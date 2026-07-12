@@ -57,6 +57,6 @@ fn list_players(
             formatted_players,
         ])
         .component();
-    context.source().send_success(&message);
+    context.source().send_success(&message, false);
     Ok(result)
 }

@@ -95,7 +95,9 @@ fn set_weather(
         .source()
         .world()
         .set_weather_parameters(clear_time, rain_time, raining, thundering);
-    context.source().send_success(&weather.success_message());
+    context
+        .source()
+        .send_success(&weather.success_message(), true);
     Ok(requested_duration)
 }
 

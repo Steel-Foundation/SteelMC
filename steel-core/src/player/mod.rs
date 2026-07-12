@@ -1405,18 +1405,18 @@ impl Player {
     ///
     /// This is used when the correct world isn't known at construction time
     /// (e.g., when loading saved player data determines the actual world).
-    pub fn set_world(&self, world: Arc<World>) {
+    pub(crate) fn set_world(&self, world: Arc<World>) {
         self.base.set_world(Arc::downgrade(&world));
         self.world.store(world);
     }
 
     /// Marks the player as switching domains if they are not already in a transition.
-    pub fn begin_domain_switch(&self) -> bool {
+    pub(crate) fn begin_domain_switch(&self) -> bool {
         self.lifecycle.lock().begin_domain_switch()
     }
 
     /// Clears the domain-switch transition marker.
-    pub fn finish_domain_switch(&self) {
+    pub(crate) fn finish_domain_switch(&self) {
         self.lifecycle.lock().finish_domain_switch();
     }
 
@@ -1780,7 +1780,7 @@ impl Player {
     /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
     /// constructed during respawn / world change, since vanilla recreates the
     /// player object. We reuse the same `Player`, so we reset manually.
-    pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+    pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
         self.reset_inner_after(new_world, reason, false, || {});
     }
 
@@ -1869,7 +1869,7 @@ impl Player {
     /// # Panics
     /// Panics if the `advance_time` gamerule is not a bool.
     #[must_use]
-    pub fn spawn(
+    pub(crate) fn spawn(
         self: &Arc<Self>,
         position: DVec3,
         rotation: (f32, f32),
@@ -2124,6 +2124,72 @@ impl Player {
             }
         }
     }
+
+    /// Applies an ordinary player transition that has already passed server world-change checks.
+    /// Cross-domain player state is restored only by the domain-switch workflow.
+    pub(crate) fn change_world_within_domain(
+        self: &Arc<Self>,
+        teleport_transition: &TeleportTransition,
+    ) -> bool {
+        let current_world = self.get_world();
+        let new_world = Arc::clone(&teleport_transition.target_world);
+        if current_world.domain() != new_world.domain() {
+            tracing::error!(
+                entity_id = self.id(),
+                source_domain = current_world.domain(),
+                target_domain = new_world.domain(),
+                "Refusing player world change outside the domain-switch workflow"
+            );
+            return false;
+        }
+
+        let current_position = self.position();
+        let current_rotation = self.rotation();
+        let current_velocity = self.velocity();
+        let position = teleport_transition.resolved_position(current_position);
+        let rotation = teleport_transition.resolved_rotation(current_rotation);
+        let velocity =
+            teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
+        self.set_portal_cooldown(teleport_transition.portal_cooldown);
+        if !teleport_transition.as_passenger {
+            self.stop_riding();
+        }
+        if Arc::ptr_eq(&current_world, &new_world) {
+            if let Err(error) = self.teleport_with_velocity_packet(
+                position,
+                velocity,
+                rotation,
+                teleport_transition.position,
+                teleport_transition.velocity,
+                teleport_transition.rotation,
+                teleport_transition.relatives,
+            ) {
+                panic!(
+                    "failed to commit same-world portal teleport for player {}: {error}",
+                    self.id()
+                );
+            }
+            self.reset_flying_ticks();
+        } else {
+            self.reset(new_world, ResetReason::WorldChange);
+            if !self.spawn_with_velocity_packet(
+                position,
+                rotation,
+                velocity,
+                ResetReason::WorldChange,
+                teleport_transition.position,
+                teleport_transition.rotation,
+                teleport_transition.velocity,
+                teleport_transition.relatives,
+            ) {
+                return false;
+            }
+            // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
+            self.send_inventory_to_remote();
+        }
+        self.apply_post_teleport_transition(&teleport_transition.post_transition);
+        true
+    }
 }
 
 fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
@@ -2145,7 +2211,7 @@ fn first_point_level_up_sound(old_level: i32, new_level: i32, points: i32) -> Op
 ///
 /// Controls which packets are sent and how world add/remove is handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResetReason {
+pub(crate) enum ResetReason {
     /// First time joining the server. `CLogin` was already sent, so `CRespawn` is skipped.
     InitialJoin,
     /// Respawning after death in the same world.
@@ -2523,55 +2589,6 @@ impl Entity for Player {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
         Player::hurt(self, world, source, amount)
-    }
-
-    fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
-        let new_world = teleport_transition.target_world.clone();
-        let current_position = self.position();
-        let current_rotation = self.rotation();
-        let current_velocity = self.velocity();
-        let position = teleport_transition.resolved_position(current_position);
-        let rotation = teleport_transition.resolved_rotation(current_rotation);
-        let velocity =
-            teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
-        self.set_portal_cooldown(teleport_transition.portal_cooldown);
-        if !teleport_transition.as_passenger {
-            self.stop_riding();
-        }
-        if Arc::ptr_eq(&self.get_world(), &new_world) {
-            if let Err(error) = self.teleport_with_velocity_packet(
-                position,
-                velocity,
-                rotation,
-                teleport_transition.position,
-                teleport_transition.velocity,
-                teleport_transition.rotation,
-                teleport_transition.relatives,
-            ) {
-                panic!(
-                    "failed to commit same-world portal teleport for player {}: {error}",
-                    self.id()
-                );
-            }
-            self.reset_flying_ticks();
-        } else {
-            self.reset(new_world, ResetReason::WorldChange);
-            if !self.spawn_with_velocity_packet(
-                position,
-                rotation,
-                velocity,
-                ResetReason::WorldChange,
-                teleport_transition.position,
-                teleport_transition.rotation,
-                teleport_transition.velocity,
-                teleport_transition.relatives,
-            ) {
-                return;
-            }
-            // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
-            self.send_inventory_to_remote();
-        }
-        self.apply_post_teleport_transition(&teleport_transition.post_transition);
     }
 }
 

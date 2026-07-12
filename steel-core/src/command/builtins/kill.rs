@@ -61,7 +61,7 @@ fn kill_entities(
             .message([TextComponent::plain(targets.len().to_string())])
             .component()
     };
-    context.source().send_success(&message);
+    context.source().send_success(&message, true);
     Ok(result)
 }
 
