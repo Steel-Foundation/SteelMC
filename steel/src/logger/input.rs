@@ -99,9 +99,7 @@ impl CommandLogger {
                             KeyCode::Tab => {
                                 if state.completion.enabled {
                                     state.completion.enabled = false;
-                                    state.completion.selected = 0;
-                                    state.push(state.completion.completed.clone())?;
-                                    state.completion.completed = String::new();
+                                    state.apply_completion()?;
                                 } else {
                                     state.completion.enabled = true;
                                     let pos = state.out.pos;

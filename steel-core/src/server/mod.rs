@@ -23,10 +23,10 @@ use crate::command::execution::{
 use crate::command::sender::CommandSender;
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
-    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandDispatcher, CommandQueueFull,
-    CommandRegistry, CommandRequest, CommandRequestQueue, PendingCommandExecutionQueue,
-    client_permission_event, command_suggestions_packet, command_tree_packet,
-    create_registered_dispatcher,
+    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
+    CommandQueueFull, CommandRegistry, CommandRequest, CommandRequestQueue,
+    PendingCommandExecutionQueue, client_permission_event, command_suggestions_packet,
+    command_tree_packet, create_registered_dispatcher,
 };
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
@@ -2113,18 +2113,27 @@ impl Server {
         })
     }
 
-    /// Returns Brigadier suggestion text visible to a command sender.
-    pub fn command_suggestion_texts(
+    /// Returns Brigadier completions visible to a command sender.
+    pub fn command_completions(
         self: &Arc<Self>,
         sender: CommandSender,
         input: &str,
-    ) -> Vec<String> {
+    ) -> Vec<CommandCompletion> {
         match self.build_command_suggestions(sender, input) {
-            Ok(suggestions) => suggestions
-                .list()
-                .iter()
-                .map(|suggestion| suggestion.text().to_owned())
-                .collect(),
+            Ok(suggestions) => {
+                let range = suggestions.range();
+                suggestions
+                    .list()
+                    .iter()
+                    .map(|suggestion| {
+                        CommandCompletion::new(
+                            range.start(),
+                            range.len(),
+                            suggestion.text().to_owned(),
+                        )
+                    })
+                    .collect()
+            }
             Err(error) => {
                 tracing::warn!(%error, "failed to build command suggestions");
                 Vec::new()

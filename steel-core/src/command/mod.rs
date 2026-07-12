@@ -38,6 +38,46 @@ use crate::{player::Player, world::World};
 pub(crate) type CommandDispatcher =
     BrigadierCommandDispatcher<InternalCommandSource, SteelCommandRuntime>;
 
+/// One command completion and its replacement range in UTF-16 code units.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandCompletion {
+    replacement_start: usize,
+    replacement_length: usize,
+    text: String,
+}
+
+impl CommandCompletion {
+    pub(crate) const fn new(
+        replacement_start: usize,
+        replacement_length: usize,
+        text: String,
+    ) -> Self {
+        Self {
+            replacement_start,
+            replacement_length,
+            text,
+        }
+    }
+
+    /// Returns the inclusive replacement start in UTF-16 code units.
+    #[must_use]
+    pub const fn replacement_start(&self) -> usize {
+        self.replacement_start
+    }
+
+    /// Returns the replacement length in UTF-16 code units.
+    #[must_use]
+    pub const fn replacement_length(&self) -> usize {
+        self.replacement_length
+    }
+
+    /// Returns the replacement text.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
 /// Projects Steel capabilities onto vanilla's shared gamemaster client affordance.
 /// Packet handlers still authorize game-mode and difficulty requests independently.
 pub(crate) fn client_permission_event(player: &Player, world: &World) -> EntityStatus {
