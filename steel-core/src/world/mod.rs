@@ -4100,6 +4100,15 @@ impl World {
         max_speed: f32,
         count: i32,
     ) {
+        // TODO: this mirrors only vanilla's level-wide `sendParticles(ParticleOptions, ..)`
+        // convenience overload (which hard-codes overrideLimiter/alwaysShow = false, hence
+        // the faithful 32-block radius below). Still unimplemented:
+        //   - The per-player `sendParticles(ServerPlayer, ..)` variant (send to one player).
+        //   - The overload taking overrideLimiter/alwaysShow (overrideLimiter widens the
+        //     radius 32 -> 512).
+        //   - Rich particles: vanilla passes `ParticleOptions` (block/item/dust/etc. carry
+        //     an extra payload); we only take a bare `particle_id`, so those particle types
+        //     can't be sent yet (see `CLevelParticles`).
         const MAX_DISTANCE_SQ: f64 = 32.0 * 32.0;
 
         let chunk = ChunkPos::new(
