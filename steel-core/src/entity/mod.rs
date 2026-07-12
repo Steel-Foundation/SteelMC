@@ -1,6 +1,9 @@
 //! This module contains entity-related traits and types.
 
-use std::sync::{Arc, LazyLock, Weak};
+use std::{
+    borrow::Cow,
+    sync::{Arc, LazyLock, Weak},
+};
 
 use glam::DVec3;
 use rand::{SeedableRng as _, rngs::StdRng};
@@ -46,9 +49,10 @@ use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, ErasedType, Identifier, UuidExt as _, WorldAabb,
     axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
-    translations_registry::TRANSLATIONS,
 };
-use text_components::TextComponent;
+use text_components::{
+    Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
+};
 use uuid::Uuid;
 
 use crate::behavior::{
@@ -73,16 +77,27 @@ fn nbt_bool(value: bool) -> NbtTag {
     NbtTag::Byte(i8::from(value))
 }
 
-fn entity_type_plain_text_name(entity_type: EntityTypeRef) -> String {
-    let description_id = format!(
-        "entity.{}.{}",
-        entity_type.key.namespace, entity_type.key.path
-    );
-    if let Some(translation) = TRANSLATIONS.get(&description_id) {
-        (*translation).to_owned()
-    } else {
-        description_id
+fn entity_type_name(entity_type: EntityTypeRef) -> TextComponent {
+    TextComponent::translated(TranslatedMessage {
+        key: Cow::Owned(format!(
+            "entity.{}.{}",
+            entity_type.key.namespace, entity_type.key.path
+        )),
+        fallback: None,
+        args: None,
+    })
+}
+
+fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
+    fn remove_actions(component: &mut TextComponent) {
+        component.interactions.click = None;
+        for child in &mut component.children {
+            remove_actions(child);
+        }
     }
+
+    remove_actions(&mut component);
+    component
 }
 
 /// Global counter for allocating unique entity IDs.
@@ -1545,16 +1560,33 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         self.uuid().to_string()
     }
 
+    /// Returns this entity's vanilla name component before team decoration.
+    fn name(&self) -> TextComponent {
+        self.custom_name().map_or_else(
+            || entity_type_name(self.entity_type()),
+            remove_entity_name_actions,
+        )
+    }
+
+    /// Returns this entity's vanilla display name.
+    fn display_name(&self) -> TextComponent {
+        let name = self.name();
+        name.clone()
+            .hover_event(HoverEvent::show_entity(
+                self.entity_type().key.to_string(),
+                self.uuid(),
+                Some(name),
+            ))
+            .insertion(self.uuid().to_string())
+    }
+
     /// Returns this entity's plain vanilla name.
     ///
     /// Custom names are resolved as text components; otherwise entities use
     /// their translated type description. Players override this with their
     /// game profile name.
     fn plain_text_name(&self) -> String {
-        if let Some(custom_name) = self.custom_name() {
-            return custom_name.to_plain(&DisplayResolutor);
-        }
-        entity_type_plain_text_name(self.entity_type())
+        self.name().to_plain(&DisplayResolutor)
     }
 
     /// Returns the vanilla-shaped entity NBT used by command predicates.
@@ -7528,7 +7560,7 @@ mod tests {
         BlockPos, BlockStateId, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
         block_util::FoundRectangle,
     };
-    use text_components::TextComponent;
+    use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
@@ -7640,6 +7672,47 @@ mod tests {
 
         entity.set_custom_name(Some(TextComponent::plain("Command Pig")));
         assert_eq!(entity.plain_text_name(), "Command Pig");
+    }
+
+    #[test]
+    fn entity_display_name_preserves_the_custom_name_component() {
+        let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+        let custom_name = TextComponent::plain("Command Pig")
+            .color(Color::Red)
+            .click_event(ClickEvent::run_command("/root-action"))
+            .add_child(
+                TextComponent::plain(" Child")
+                    .italic(true)
+                    .click_event(ClickEvent::run_command("/child-action")),
+            );
+        entity.set_custom_name(Some(custom_name.clone()));
+
+        let display_name = entity.display_name();
+        let expected_insertion = entity.uuid().to_string();
+
+        assert_eq!(display_name.content, custom_name.content);
+        assert_eq!(display_name.format, custom_name.format);
+        assert_eq!(display_name.children.len(), 1);
+        assert_eq!(
+            display_name.children[0].content,
+            custom_name.children[0].content
+        );
+        assert_eq!(
+            display_name.children[0].format,
+            custom_name.children[0].format
+        );
+        assert!(display_name.interactions.click.is_none());
+        assert!(
+            display_name
+                .children
+                .iter()
+                .all(|child| child.interactions.click.is_none())
+        );
+        assert_eq!(
+            display_name.interactions.insertion.as_deref(),
+            Some(expected_insertion.as_str())
+        );
+        assert!(display_name.interactions.hover.is_some());
     }
 
     #[test]

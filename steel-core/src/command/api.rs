@@ -654,7 +654,7 @@ impl<'input> CommandReader<'_, 'input> {
     /// Returns the current UTF-8 byte cursor.
     #[must_use]
     pub const fn cursor(&self) -> usize {
-        self.inner.cursor()
+        self.inner.byte_cursor()
     }
 
     /// Returns the unconsumed input.
@@ -737,6 +737,24 @@ impl<'input> CommandReader<'_, 'input> {
             self.inner
                 .error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into()))),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandReader;
+    use crate::command::brigadier::StringReader;
+
+    #[test]
+    fn command_reader_cursor_is_a_utf8_byte_offset() {
+        let mut inner = StringReader::new("é🦀");
+        let mut reader = CommandReader { inner: &mut inner };
+
+        assert_eq!(reader.read(), Some('é'));
+        assert_eq!(reader.cursor(), 2);
+        assert_eq!(reader.read(), Some('🦀'));
+        assert_eq!(reader.cursor(), 6);
+        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }
 

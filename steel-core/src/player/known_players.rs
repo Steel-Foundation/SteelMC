@@ -96,25 +96,15 @@ impl KnownPlayers {
     /// A name can belong to only one UUID. Returns whether the cache changed.
     pub fn record(&mut self, uuid: Uuid, last_known_name: impl Into<String>) -> bool {
         let last_known_name = last_known_name.into();
-        let existing = self
-            .entries
-            .iter()
-            .position(|entry| entry.uuid == uuid)
-            .map(|index| self.entries.remove(index));
+        if let Some(index) = self.entries.iter().position(|entry| entry.uuid == uuid) {
+            self.entries.remove(index);
+        }
         let duplicate_name = self
             .entries
             .iter()
             .position(|entry| entry.last_known_name.eq_ignore_ascii_case(&last_known_name));
-        let removed_duplicate = duplicate_name
-            .map(|index| self.entries.remove(index))
-            .is_some();
-
-        if let Some(existing) = existing
-            && existing.last_known_name == last_known_name
-            && existing.expires_at_millis > Utc::now().timestamp_millis()
-        {
-            self.entries.insert(0, existing);
-            return removed_duplicate;
+        if let Some(index) = duplicate_name {
+            self.entries.remove(index);
         }
 
         self.entries
@@ -183,6 +173,7 @@ pub(crate) enum KnownPlayerNameLookup {
 #[cfg(test)]
 mod tests {
     use super::{KnownPlayer, KnownPlayers};
+    use chrono::{Months, Utc};
     use uuid::Uuid;
 
     #[test]
@@ -192,7 +183,7 @@ mod tests {
 
         assert!(players.record(uuid, "Steve"));
         assert!(players.record(uuid, "Alex"));
-        assert!(!players.record(uuid, "Alex"));
+        assert!(players.record(uuid, "Alex"));
         assert_eq!(players.entries().len(), 1);
         assert_eq!(
             players.by_uuid(uuid).map(KnownPlayer::last_known_name),
@@ -217,6 +208,28 @@ mod tests {
             Some(new_uuid)
         );
         assert_eq!(players.entries().len(), 2);
+    }
+
+    #[test]
+    fn record_renews_an_unchanged_identity() {
+        let uuid = Uuid::from_u128(1);
+        let old_expiration = Utc::now()
+            .checked_add_months(Months::new(1))
+            .expect("test timestamp plus one month should fit")
+            .timestamp_millis()
+            - 1;
+        let mut players = KnownPlayers::from_entries([KnownPlayer::with_expiration(
+            uuid,
+            "Steve",
+            old_expiration,
+        )]);
+
+        assert!(players.record(uuid, "Steve"));
+        assert!(
+            players
+                .by_uuid(uuid)
+                .is_some_and(|player| player.expires_at_millis() > old_expiration)
+        );
     }
 
     #[test]

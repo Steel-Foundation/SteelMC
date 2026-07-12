@@ -49,6 +49,11 @@ impl<'input> StringReader<'input> {
         self.cursor.utf16
     }
 
+    /// Returns the current position in UTF-8 bytes.
+    pub(crate) const fn byte_cursor(&self) -> usize {
+        self.cursor.byte
+    }
+
     /// Returns the remaining length in UTF-16 code units.
     pub(crate) const fn remaining_length(&self) -> usize {
         self.total_length - self.cursor.utf16

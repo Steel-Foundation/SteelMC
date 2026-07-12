@@ -315,11 +315,12 @@ impl CommandSource {
 
     pub(crate) fn with_entity(&self, entity: SharedEntity) -> Self {
         let mut source = self.clone();
-        source.player = self
-            .server
-            .get_players()
-            .into_iter()
-            .find(|player| player.uuid() == entity.uuid());
+        source.player = entity.as_player().and_then(|entity_player| {
+            self.server
+                .get_players()
+                .into_iter()
+                .find(|player| player.uuid() == entity_player.uuid())
+        });
         source.entity = Some(entity);
         source
     }

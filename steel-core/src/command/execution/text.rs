@@ -189,7 +189,7 @@ impl CommandTextResolutionSource for CommandSource {
         Ok(parse_entity_selector_text(selector)?
             .find_entities(self)?
             .into_iter()
-            .map(|entity| TextComponent::plain(entity.plain_text_name()))
+            .map(|entity| entity.display_name())
             .collect())
     }
 

@@ -92,9 +92,12 @@ use uuid::Uuid;
 use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
-use text_components::TextComponent;
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
+use text_components::{
+    Modifier as _, TextComponent,
+    interactivity::{ClickEvent, HoverEvent},
+};
 use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
@@ -2244,6 +2247,24 @@ impl Entity for Player {
 
     fn scoreboard_name(&self) -> String {
         self.gameprofile.name.clone()
+    }
+
+    fn name(&self) -> TextComponent {
+        TextComponent::plain(self.gameprofile.name.clone())
+    }
+
+    fn display_name(&self) -> TextComponent {
+        self.name()
+            .click_event(ClickEvent::suggest_command(format!(
+                "/tell {} ",
+                self.gameprofile.name
+            )))
+            .hover_event(HoverEvent::show_entity(
+                "minecraft:player",
+                self.uuid(),
+                Some(self.name()),
+            ))
+            .insertion(self.gameprofile.name.clone())
     }
 
     fn plain_text_name(&self) -> String {

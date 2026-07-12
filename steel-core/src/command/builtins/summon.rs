@@ -1,14 +1,11 @@
 //! Entity summoning command.
 
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::{BlockPos, Identifier, translations, types::Difficulty};
-use text_components::{
-    TextComponent,
-    translation::{TranslatedMessage, Translation},
-};
+use text_components::{TextComponent, translation::Translation};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
@@ -19,7 +16,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::{
-    entity::{AddEntityError, ENTITIES, Entity, EntitySpawnReason, SharedEntity, next_entity_id},
+    entity::{AddEntityError, ENTITIES, EntitySpawnReason, SharedEntity, next_entity_id},
     world::World,
 };
 
@@ -53,7 +50,7 @@ fn summon_entity(
     };
     let entity = create_entity(context, entity_type, position)?;
     let message = translations::COMMANDS_SUMMON_SUCCESS
-        .message([entity_display_name(entity.as_ref())])
+        .message([entity.display_name()])
         .component();
     context.source().send_success(&message, true);
     Ok(1)
@@ -101,23 +98,6 @@ pub(super) fn create_entity(
 
 fn command_failed(translation: &'static Translation<0>) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(TextComponent::from(translation))
-}
-
-fn entity_display_name(entity: &dyn Entity) -> TextComponent {
-    entity
-        .custom_name()
-        .unwrap_or_else(|| entity_type_display_name(entity.entity_type()))
-}
-
-fn entity_type_display_name(entity_type: EntityTypeRef) -> TextComponent {
-    TextComponent::translated(TranslatedMessage {
-        key: Cow::Owned(format!(
-            "entity.{}.{}",
-            entity_type.key.namespace, entity_type.key.path
-        )),
-        fallback: None,
-        args: None,
-    })
 }
 
 fn missing_argument(name: &str) -> CommandSyntaxError {
