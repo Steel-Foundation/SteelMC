@@ -442,8 +442,17 @@ fn validate_structure_assets(
 impl StructureGenerator {
     /// Creates a structure generator over all vanilla structure sets.
     #[must_use]
-    pub fn vanilla(seed: i64, biome_provider: &impl StructureBiomeProvider) -> Self {
-        Self::vanilla_with_structure_sets(seed, biome_provider, load_vanilla_structure_sets())
+    pub fn vanilla(
+        seed: i64,
+        biome_provider: &(impl StructureBiomeProvider + Sync),
+        thread_pool: &rayon::ThreadPool,
+    ) -> Self {
+        Self::vanilla_with_structure_sets(
+            seed,
+            biome_provider,
+            load_vanilla_structure_sets(),
+            thread_pool,
+        )
     }
 
     /// Creates a generator over an explicit structure-set list while keeping all
@@ -451,8 +460,9 @@ impl StructureGenerator {
     #[must_use]
     pub fn vanilla_with_structure_sets(
         seed: i64,
-        biome_provider: &impl StructureBiomeProvider,
+        biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
+        thread_pool: &rayon::ThreadPool,
     ) -> Self {
         Self::with_assets_for_ring_seed(
             seed,
@@ -460,6 +470,7 @@ impl StructureGenerator {
             biome_provider,
             structure_sets,
             StructureGeneratorAssets::vanilla(),
+            thread_pool,
         )
     }
 
@@ -471,8 +482,9 @@ impl StructureGenerator {
     #[must_use]
     pub fn vanilla_flat_with_structure_sets(
         seed: i64,
-        biome_provider: &impl StructureBiomeProvider,
+        biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
+        thread_pool: &rayon::ThreadPool,
     ) -> Self {
         Self::with_assets_for_ring_seed(
             seed,
@@ -480,6 +492,7 @@ impl StructureGenerator {
             biome_provider,
             structure_sets,
             StructureGeneratorAssets::vanilla(),
+            thread_pool,
         )
     }
 
@@ -487,19 +500,28 @@ impl StructureGenerator {
     #[must_use]
     pub fn with_assets(
         seed: i64,
-        biome_provider: &impl StructureBiomeProvider,
+        biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         assets: StructureGeneratorAssets,
+        thread_pool: &rayon::ThreadPool,
     ) -> Self {
-        Self::with_assets_for_ring_seed(seed, seed, biome_provider, structure_sets, assets)
+        Self::with_assets_for_ring_seed(
+            seed,
+            seed,
+            biome_provider,
+            structure_sets,
+            assets,
+            thread_pool,
+        )
     }
 
     fn with_assets_for_ring_seed(
         seed: i64,
         ring_position_seed: i64,
-        biome_provider: &impl StructureBiomeProvider,
+        biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         assets: StructureGeneratorAssets,
+        thread_pool: &rayon::ThreadPool,
     ) -> Self {
         validate_structure_sets(&structure_sets);
 
@@ -543,7 +565,8 @@ impl StructureGenerator {
                 preferred_biomes,
             } = &set.placement.kind
             {
-                let mut snap =
+                let preferred_biomes: FxHashSet<_> = preferred_biomes.iter().cloned().collect();
+                let snap =
                     |block_x: i32, block_z: i32, rng: &mut LegacyRandom| -> Option<(i32, i32)> {
                         biome_provider.find_biome_horizontal(
                             block_x,
@@ -558,7 +581,8 @@ impl StructureGenerator {
                     *distance,
                     *spread,
                     *count,
-                    Some(&mut snap),
+                    Some(&snap),
+                    thread_pool,
                 );
                 ring_positions.insert(key.clone(), positions);
             }

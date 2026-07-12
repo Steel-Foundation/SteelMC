@@ -109,7 +109,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
     /// # Panics
     /// Panics if SHA-256 hash output is shorter than 8 bytes (cannot happen).
     #[must_use]
-    pub fn new(biome_source: BiomeSourceKind, seed: u64) -> Self {
+    pub fn new(biome_source: BiomeSourceKind, seed: u64, thread_pool: &rayon::ThreadPool) -> Self {
         // Nether uses Java's LCG; overworld/end use Xoroshiro.
         let splitter = if N::Settings::LEGACY_RANDOM_SOURCE {
             LegacyRandom::from_seed(seed).next_positional()
@@ -140,7 +140,8 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         let possible_biome_refs = biome_source.possible_biome_refs();
         let possible_biomes = biome_source.possible_biomes();
         let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
-        let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
+        let structure_generator =
+            StructureGenerator::vanilla(seed as i64, &biome_source, thread_pool);
         let uniform_carver_biome = Self::uniform_carver_biome(&possible_biomes);
         let feature_runner = FeatureDecorationRunner::new(&possible_biome_refs, &REGISTRY);
 
