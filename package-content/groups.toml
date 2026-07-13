@@ -1,7 +1,6 @@
-#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/groups.schema.json
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/groups.schema.json
+# Documentation: https://steelmc.dev/configuration/permissions/
 
-# Permission groups assigned by the server. Rules may be managed at runtime
-# with `/perms`; successful edits are persisted back to this file.
 default_groups = ["default"]
 
 [groups.default]
@@ -9,18 +8,6 @@ priority = 0
 inherits = []
 allow = []
 deny = []
-# Permission expressions can include domain, world, and identifier-keyed custom
-# contexts. Multiple entries inside `{...}` are combined with AND.
-# allow = [
-#     "minecraft.command.gamemode{domain=lobby}",
-#     "plugin.region.build{world=lobby:spawn,plugin:region=spawn}",
-# ]
-# Namespaced typed values consumed by Steel subsystems and plugins.
-# More-specific contexts win; equally specific entries use group priority.
-# metadata = [
-#     { key = "plugin:prefix", value = "[Builder]" },
-#     { key = "plugin:max_homes{domain=survival}", value = 5 },
-# ]
 metadata = []
 
 [groups.op]

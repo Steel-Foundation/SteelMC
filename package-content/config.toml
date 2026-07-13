@@ -1,4 +1,4 @@
-#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/config.schema.json
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/config.schema.json
 
 [server]
 # Server port
@@ -56,11 +56,11 @@ enable = true
 
 [[server.server_links.links]]
 label = "bug_report"
-url = "https://github.com/4lve/SteelMC/issues"
+url = "https://github.com/Steel-Foundation/SteelMC/issues"
 
 [[server.server_links.links]]
 label = "website"
-url = "https://github.com/4lve/SteelMC"
+url = "https://github.com/Steel-Foundation/SteelMC"
 
 # The news channel on discord
 [[server.server_links.links]]

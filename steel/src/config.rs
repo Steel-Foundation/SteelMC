@@ -32,6 +32,11 @@ const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png
 const DEFAULT_CONFIG: &str = include_str!("../../package-content/config.toml");
 const DEFAULT_WORLDS: &str = include_str!("../../package-content/worlds.toml");
 const DEFAULT_GROUPS: &str = include_str!("../../package-content/groups.toml");
+const GROUPS_CONFIG_HEADER: &str = concat!(
+    "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+    "package-content/groups.schema.json\n",
+    "# Documentation: https://steelmc.dev/configuration/permissions/\n\n",
+);
 
 /// Top-level TOML deserialization target — used once at startup, not stored globally.
 #[derive(Debug, Clone, Deserialize)]
@@ -101,7 +106,7 @@ impl PermissionGroupStore for FilePermissionGroupStore {
 }
 
 fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {
-    let mut output = String::new();
+    let mut output = String::from(GROUPS_CONFIG_HEADER);
     push_toml_field(&mut output, "default_groups", &config.default_groups)?;
 
     for (name, group) in &config.groups {
@@ -596,6 +601,7 @@ mod tests {
         let groups: PermissionGroupsConfig =
             toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
         PermissionGroups::from_config(groups).expect("default groups validate");
+        assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
     }
 
     #[tokio::test]
@@ -635,6 +641,16 @@ mod tests {
         let parsed: PermissionGroupsConfig =
             toml::from_str(&written).expect("written config should parse");
 
+        assert_eq!(
+            written.lines().next(),
+            Some(concat!(
+                "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+                "package-content/groups.schema.json"
+            ))
+        );
+        assert!(
+            written.contains("# Documentation: https://steelmc.dev/configuration/permissions/")
+        );
         assert!(written.contains("{ key = \"plugin:max_homes{domain=survival}\", value = 5 }"));
         assert!(written.contains("{ key = \"plugin:prefix\", value = \"[Builder]\" }"));
         assert!(written.contains("{ key = \"plugin:can_claim\", value = true }"));
