@@ -155,9 +155,11 @@ impl SnbtErrorKind {
             Self::ExpectedValue | Self::ExpectedUnquotedString => {
                 TextComponent::from(&translations::SNBT_PARSER_EXPECTED_UNQUOTED_STRING)
             }
-            Self::ExpectedKey => translations::ARGUMENT_LITERAL_INCORRECT
-                .message(["\""])
-                .component(),
+            Self::ExpectedKey | Self::ExpectedQuotedString => {
+                translations::ARGUMENT_LITERAL_INCORRECT
+                    .message(["\""])
+                    .component()
+            }
             Self::EmptyKey => TextComponent::from(&translations::SNBT_PARSER_EMPTY_KEY),
             Self::ExpectedNumber => translations::ARGUMENT_LITERAL_INCORRECT
                 .message(["+"])
@@ -188,9 +190,6 @@ impl SnbtErrorKind {
                 argument_count,
             } => translations::SNBT_PARSER_NO_SUCH_OPERATION
                 .message([format!("{name}/{argument_count}")])
-                .component(),
-            Self::ExpectedQuotedString => translations::ARGUMENT_LITERAL_INCORRECT
-                .message(["\""])
                 .component(),
             Self::UnclosedQuotedString => {
                 TextComponent::from(&translations::SNBT_PARSER_INVALID_STRING_CONTENTS)
@@ -1252,12 +1251,8 @@ fn try_scan_exponent(bytes: &[u8], cursor: usize) -> Option<usize> {
     try_scan_numeral(bytes, numeral_start, |byte| byte.is_ascii_digit())
 }
 
-fn float_suffix_len(bytes: &[u8]) -> usize {
-    if matches!(bytes.first(), Some(b'f' | b'F' | b'd' | b'D')) {
-        1
-    } else {
-        0
-    }
+const fn float_suffix_len(bytes: &[u8]) -> usize {
+    matches!(bytes.first(), Some(b'f' | b'F' | b'd' | b'D')) as usize
 }
 
 fn integer_suffix_len(bytes: &[u8]) -> usize {
@@ -1269,14 +1264,10 @@ fn integer_suffix_len(bytes: &[u8]) -> usize {
     {
         return 2;
     }
-    if matches!(
+    usize::from(matches!(
         bytes.first(),
         Some(b'b' | b'B' | b's' | b'S' | b'i' | b'I' | b'l' | b'L')
-    ) {
-        1
-    } else {
-        0
-    }
+    ))
 }
 
 fn is_unsuffixed_decimal_integer_token(token: &str) -> bool {
