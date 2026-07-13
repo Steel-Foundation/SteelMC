@@ -25,8 +25,8 @@ use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CPlayerChat,
-    CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
+    CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
+    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
     CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
     CUpdateAttributes, GameEventType, SoundSource,
 };
@@ -1353,6 +1353,16 @@ impl World {
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
+    }
+
+    /// Sets the level difficulty and broadcasts the new value to its players.
+    pub(crate) fn set_difficulty(&self, difficulty: Difficulty) {
+        let locked = {
+            let mut level_data = self.level_data.write();
+            level_data.data_mut().difficulty = difficulty;
+            level_data.data().difficulty_locked
+        };
+        self.broadcast_to_all(CChangeDifficulty { difficulty, locked });
     }
 
     /// Returns the total height of the world in blocks.

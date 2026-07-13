@@ -1111,13 +1111,8 @@ impl Player {
         }
 
         let domain = self.get_world().domain().to_owned();
-        for w in self.server().worlds.worlds_in_domain(&domain) {
-            let mut level_data = w.level_data.write();
-            level_data.data_mut().difficulty = difficulty;
-            let locked = level_data.data().difficulty_locked;
-            drop(level_data);
-
-            w.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+        for world in self.server().worlds.worlds_in_domain(&domain) {
+            world.set_difficulty(difficulty);
         }
     }
 

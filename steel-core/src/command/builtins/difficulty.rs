@@ -1,4 +1,3 @@
-use steel_protocol::packets::game::CChangeDifficulty;
 use steel_utils::{Identifier, translations, types::Difficulty};
 use text_components::{TextComponent, translation::Translation};
 
@@ -54,7 +53,7 @@ fn difficulty_literal(
 fn query_difficulty(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let difficulty = context.source().world().level_data.read().data().difficulty;
+    let difficulty = context.source().world().difficulty();
     let message = translations::COMMANDS_DIFFICULTY_QUERY
         .message([TextComponent::from(difficulty_display_name(difficulty))])
         .component();
@@ -68,10 +67,7 @@ fn set_difficulty(
 ) -> Result<i32, CommandSyntaxError> {
     let domain = context.source().world().domain();
     let worlds = context.source().server().worlds.worlds_in_domain(domain);
-    if worlds
-        .iter()
-        .all(|world| world.level_data.read().data().difficulty == difficulty)
-    {
+    if worlds.iter().all(|world| world.difficulty() == difficulty) {
         return Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_DIFFICULTY_FAILURE
                 .message([TextComponent::from(difficulty_display_name(difficulty))])
@@ -80,11 +76,7 @@ fn set_difficulty(
     }
 
     for world in worlds {
-        let mut level_data = world.level_data.write();
-        level_data.data_mut().difficulty = difficulty;
-        let locked = level_data.data().difficulty_locked;
-        drop(level_data);
-        world.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+        world.set_difficulty(difficulty);
     }
 
     let message = translations::COMMANDS_DIFFICULTY_SUCCESS
