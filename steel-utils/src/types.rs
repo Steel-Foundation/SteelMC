@@ -108,7 +108,7 @@ impl ReadFrom for BlockStateId {
 }
 
 /// A chunk position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ChunkPos(pub IVec2);
 
 impl Hash for ChunkPos {

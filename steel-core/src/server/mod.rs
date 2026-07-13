@@ -1357,6 +1357,7 @@ impl Server {
             })?;
             let generator_output = generator_registry
                 .create(
+                    Some(Path::new(&default_world_path)),
                     &world_entry.generator_config,
                     world_seed,
                     generation_pool.clone(),

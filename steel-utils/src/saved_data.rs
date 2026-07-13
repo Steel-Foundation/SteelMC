@@ -18,6 +18,8 @@ pub mod names {
 
     /// Vanilla `TicketStorage.TYPE`, persisted as `data/chunk_tickets.toml`.
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
+    /// Stronhold generation data, persisted as `data/stronhold_rings.toml`
+    pub const STRONHOLD_RINGS: SavedDataName = SavedDataName::trusted("stronhold_rings");
 }
 
 /// Name of a per-world saved data entry.
@@ -49,7 +51,7 @@ fn is_valid_saved_data_name(name: &str) -> bool {
     !name.is_empty()
         && !name.contains('/')
         && !name.contains('\\')
-        && steel_utils::Identifier::validate_path(name)
+        && crate::Identifier::validate_path(name)
 }
 
 /// Typed saved-data storage for a loaded world.
@@ -67,6 +69,28 @@ impl SavedDataManager {
         Self {
             data_dir: world_dir.map(|path| path.join("data")),
         }
+    }
+
+    /// Loads saved data, or returns `T::default()` when the data file is absent
+    /// or this world has no persistent storage.
+    pub fn sync_load_or_default<T>(&self, name: SavedDataName) -> io::Result<T>
+    where
+        T: DeserializeOwned + Default,
+    {
+        let Some(path) = self.path_for(name) else {
+            return Ok(T::default());
+        };
+        if !path.exists() {
+            return Ok(T::default());
+        }
+
+        let content = std::fs::read_to_string(&path)?;
+        toml::from_str(&content).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid saved data {}: {error}", path.display()),
+            )
+        })
     }
 
     /// Loads saved data, or returns `T::default()` when the data file is absent
@@ -92,6 +116,23 @@ impl SavedDataManager {
     }
 
     /// Saves a typed saved-data value.
+    pub fn sync_save<T>(&self, name: SavedDataName, data: &T) -> io::Result<()>
+    where
+        T: Serialize,
+    {
+        let Some(path) = self.path_for(name) else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let content = toml::to_string_pretty(data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        std::fs::write(path, content)
+    }
+
+    /// Saves a typed saved-data value.
     pub async fn save<T>(&self, name: SavedDataName, data: &T) -> io::Result<()>
     where
         T: Serialize,
@@ -106,6 +147,14 @@ impl SavedDataManager {
         let content = toml::to_string_pretty(data)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         fs::write(path, content).await
+    }
+
+    /// Returns `true` if the path points at an existing data.
+    pub fn exists(&self, name: SavedDataName) -> bool {
+        let Some(path) = self.path_for(name) else {
+            return false;
+        };
+        path.exists()
     }
 
     fn path_for(&self, name: SavedDataName) -> Option<PathBuf> {

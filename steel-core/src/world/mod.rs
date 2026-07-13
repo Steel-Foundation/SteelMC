@@ -17,10 +17,10 @@ use crate::chunk::light::{
 };
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
-use crate::saved_data::{SavedDataManager, names as saved_data_names};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
+use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
 
 use glam::DVec3;
 use sha2::{Digest, Sha256};

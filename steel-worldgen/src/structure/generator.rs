@@ -1,5 +1,6 @@
 //! Shared structure placement/selection engine.
 
+use std::path::Path;
 use std::{iter, slice};
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -10,6 +11,7 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::saved_data::{SavedDataManager, names as saves_names};
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::biomes::BiomeSourceKind;
@@ -31,7 +33,7 @@ use crate::structure::placement::{
 use crate::structure::ruined_portal::RuinedPortalStructure;
 use crate::structure::shipwreck::ShipwreckStructure;
 use crate::structure::single_piece::BuriedTreasureStructure;
-use crate::structure::stronghold::StrongholdStructure;
+use crate::structure::stronghold::{StrongholdStructure, StronholdRingsData};
 use crate::structure::swamp_hut::SwampHutStructure;
 use crate::structure::{GenerationStub, Structure, StructureGenerationContext, StructureStart};
 
@@ -444,11 +446,13 @@ impl StructureGenerator {
     #[must_use]
     pub fn vanilla(
         seed: i64,
+        world_path: Option<&Path>,
         biome_provider: &(impl StructureBiomeProvider + Sync),
         thread_pool: &rayon::ThreadPool,
     ) -> Self {
         Self::vanilla_with_structure_sets(
             seed,
+            world_path,
             biome_provider,
             load_vanilla_structure_sets(),
             thread_pool,
@@ -460,6 +464,7 @@ impl StructureGenerator {
     #[must_use]
     pub fn vanilla_with_structure_sets(
         seed: i64,
+        world_path: Option<&Path>,
         biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         thread_pool: &rayon::ThreadPool,
@@ -467,6 +472,7 @@ impl StructureGenerator {
         Self::with_assets_for_ring_seed(
             seed,
             seed,
+            world_path,
             biome_provider,
             structure_sets,
             StructureGeneratorAssets::vanilla(),
@@ -482,6 +488,7 @@ impl StructureGenerator {
     #[must_use]
     pub fn vanilla_flat_with_structure_sets(
         seed: i64,
+        world_path: Option<&Path>,
         biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         thread_pool: &rayon::ThreadPool,
@@ -489,6 +496,7 @@ impl StructureGenerator {
         Self::with_assets_for_ring_seed(
             seed,
             VANILLA_FLAT_RING_POSITION_SEED,
+            world_path,
             biome_provider,
             structure_sets,
             StructureGeneratorAssets::vanilla(),
@@ -500,6 +508,7 @@ impl StructureGenerator {
     #[must_use]
     pub fn with_assets(
         seed: i64,
+        world_path: Option<&Path>,
         biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         assets: StructureGeneratorAssets,
@@ -508,6 +517,7 @@ impl StructureGenerator {
         Self::with_assets_for_ring_seed(
             seed,
             seed,
+            world_path,
             biome_provider,
             structure_sets,
             assets,
@@ -518,6 +528,7 @@ impl StructureGenerator {
     fn with_assets_for_ring_seed(
         seed: i64,
         ring_position_seed: i64,
+        world_path: Option<&Path>,
         biome_provider: &(impl StructureBiomeProvider + Sync),
         structure_sets: Vec<(Identifier, StructureSet)>,
         assets: StructureGeneratorAssets,
@@ -576,14 +587,29 @@ impl StructureGenerator {
                             rng,
                         )
                     };
-                let positions = generate_ring_positions(
-                    ring_position_seed,
-                    *distance,
-                    *spread,
-                    *count,
-                    Some(&snap),
-                    thread_pool,
-                );
+                let data_manager = SavedDataManager::new(world_path);
+
+                let positions = if data_manager.exists(saves_names::STRONHOLD_RINGS)
+                    && let Ok(rings) = data_manager
+                        .sync_load_or_default::<StronholdRingsData>(saves_names::STRONHOLD_RINGS)
+                {
+                    rings.positions
+                } else {
+                    let data = StronholdRingsData {
+                        positions: generate_ring_positions(
+                            ring_position_seed,
+                            *distance,
+                            *spread,
+                            *count,
+                            Some(&snap),
+                            thread_pool,
+                        ),
+                    };
+                    if let Err(err) = data_manager.sync_save(saves_names::STRONHOLD_RINGS, &data) {
+                        tracing::warn!("Couldn't create the stronhold ring data file: {err:?}");
+                    }
+                    data.positions
+                };
                 ring_positions.insert(key.clone(), positions);
             }
         }
@@ -927,6 +953,7 @@ mod tests {
             .expect("Couldn't create a new thread pool.");
         let _ = StructureGenerator::vanilla_with_structure_sets(
             0,
+            None,
             &biome_provider,
             load_vanilla_structure_sets(),
             &thread_pool,
@@ -964,6 +991,7 @@ mod tests {
 
         let _ = StructureGenerator::with_assets(
             0,
+            None,
             &biome_provider,
             sets,
             StructureGeneratorAssets::new(

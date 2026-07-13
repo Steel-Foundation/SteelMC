@@ -2,10 +2,11 @@
 //! produces bounding boxes only (no blocks).
 
 use glam::IVec3;
+use serde::{Deserialize, Serialize};
 use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Direction, Identifier};
+use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 
 use crate::structure::{
     GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
@@ -183,6 +184,11 @@ pub enum StrongholdPieceData {
         /// Vanilla `steps`.
         steps: i32,
     },
+}
+
+#[derive(Default, Deserialize, Serialize)]
+pub(crate) struct StronholdRingsData {
+    pub positions: Vec<ChunkPos>,
 }
 
 impl StrongholdPieceData {
