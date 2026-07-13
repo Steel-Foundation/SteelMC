@@ -258,7 +258,7 @@ impl StorageSelection {
     #[must_use]
     pub fn default_world_disk() -> Self {
         Self {
-            kind: Identifier::new("steel", "disk"),
+            kind: Identifier::from_steel("disk"),
             config: None,
         }
     }
@@ -267,7 +267,7 @@ impl StorageSelection {
     #[must_use]
     pub fn default_player_file() -> Self {
         Self {
-            kind: Identifier::new("steel", "file"),
+            kind: Identifier::from_steel("file"),
             config: None,
         }
     }
@@ -723,7 +723,7 @@ pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
-    if selection.kind != Identifier::new("steel", "file") {
+    if selection.kind != Identifier::from_steel("file") {
         return Err(format!("unknown player storage {}", selection.kind));
     }
     if selection.config.is_some() {

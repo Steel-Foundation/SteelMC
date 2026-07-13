@@ -28,7 +28,7 @@ pub(super) const GROUP_ALL_PERMISSION: &str = "steel.permission.group.*";
 pub(super) const METADATA_PERMISSION: &str = "steel.permission.metadata";
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::new_static("steel", "perms"), |_| command())
+    CommandRegistration::new(Identifier::from_steel("perms"), |_| command())
         .subcommand_permission(["user", "info"])
         .subcommand_permission(["user", "allow"])
         .subcommand_permission(["user", "deny"])

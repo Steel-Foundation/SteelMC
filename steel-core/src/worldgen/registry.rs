@@ -113,7 +113,7 @@ impl WorldGeneratorRegistry {
             },
         )?;
         registry.register(
-            Identifier::new("steel", "empty"),
+            Identifier::from_steel("empty"),
             WorldGeneratorFactory {
                 validate: validate_empty_world_config,
                 create: create_empty,

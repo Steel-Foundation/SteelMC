@@ -1081,7 +1081,7 @@ fn storage_key_argument_parses_and_suggests_source_domain_keys() {
     };
     assert_eq!(
         chain.top_context().identifier("value"),
-        Some(&Identifier::new_static("steel", "data"))
+        Some(&Identifier::from_steel("data"))
     );
 
     let parse = dispatcher.parse("resource st", TestSource::new());

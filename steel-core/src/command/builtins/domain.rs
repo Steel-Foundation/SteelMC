@@ -15,7 +15,7 @@ use super::super::{
 };
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::new_static("steel", "domain"), |_| command())
+    CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn storage_mutation_reads_and_writes_the_current_compound() {
         let storage = CommandStorage::new();
-        let key = Identifier::new_static("steel", "store_test");
+        let key = Identifier::from_steel("store_test");
         let (first_path, _) = parse_nbt_path_argument("first").expect("first path should parse");
         let (second_path, _) = parse_nbt_path_argument("second").expect("second path should parse");
 

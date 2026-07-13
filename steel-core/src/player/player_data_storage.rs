@@ -137,7 +137,7 @@ struct GlobalPlayerDataFile {
 impl PlayerDataStorage {
     /// Creates player data storage from config.
     pub async fn new(save_root: PathBuf, selection: StorageSelection) -> io::Result<Self> {
-        if selection.kind != Identifier::new("steel", "file") {
+        if selection.kind != Identifier::from_steel("file") {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unknown player storage {}", selection.kind),

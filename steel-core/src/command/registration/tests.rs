@@ -164,7 +164,7 @@ fn permission_entry(value: &str, state: PermissionState) -> PermissionEntry {
 fn unique_commands_do_not_pollute_the_root_with_namespaced_variants() {
     let dispatcher = build([
         command(Identifier::new_static("minecraft", "seed"), "first"),
-        command(Identifier::new_static("steel", "fly"), "second"),
+        command(Identifier::from_steel("fly"), "second"),
     ]);
 
     assert_eq!(root_names(&dispatcher), ["seed", "fly"]);
@@ -517,7 +517,7 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
 
 #[test]
 fn derived_subcommand_permissions_follow_literals_through_arguments() {
-    let registration = CommandRegistration::new(Identifier::new_static("steel", "perms"), |_| {
+    let registration = CommandRegistration::new(Identifier::from_steel("perms"), |_| {
         literal("perms").then(
             literal("user").then(
                 argument("targets", ArgumentType::string()).then(

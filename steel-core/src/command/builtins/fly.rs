@@ -18,7 +18,7 @@ use crate::player::{Abilities, DEFAULT_FLYING_SPEED, Player};
 const MAX_FLY_SPEED_MULTIPLIER: f32 = 30.0;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::new_static("steel", "fly"), |_| command())
+    CommandRegistration::new(Identifier::from_steel("fly"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

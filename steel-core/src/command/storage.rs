@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn missing_and_empty_values_match_vanilla_storage_semantics() {
         let storage = CommandStorage::new();
-        let key = Identifier::new_static("steel", "data");
+        let key = Identifier::from_steel("data");
 
         assert!(storage.get(&key).is_empty());
         let mut value = NbtCompound::new();
@@ -254,7 +254,7 @@ mod tests {
         let path = temp_dir().join(format!("steel-command-storage-{unique}"));
         let manager = SavedDataManager::new(Some(&path));
         let storage = CommandStorage::new();
-        let key = Identifier::new_static("steel", "nested");
+        let key = Identifier::from_steel("nested");
         let mut nested = NbtCompound::new();
         nested.insert("bytes", NbtTag::ByteArray(vec![1, 2, 255]));
         let mut value = NbtCompound::new();
@@ -285,8 +285,8 @@ mod tests {
     #[test]
     fn mutation_after_snapshot_remains_dirty() {
         let storage = CommandStorage::new();
-        let first = Identifier::new_static("steel", "first");
-        let second = Identifier::new_static("steel", "second");
+        let first = Identifier::from_steel("first");
+        let second = Identifier::from_steel("second");
         let mut value = NbtCompound::new();
         value.insert("value", 1);
         storage.set(first, value.clone());
@@ -313,7 +313,7 @@ mod tests {
             .collect(),
             save_lock: AsyncMutex::new(()),
         };
-        let key = Identifier::new_static("steel", "data");
+        let key = Identifier::from_steel("data");
         let mut value = NbtCompound::new();
         value.insert("value", 1);
         storages
