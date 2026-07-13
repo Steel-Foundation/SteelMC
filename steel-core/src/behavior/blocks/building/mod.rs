@@ -23,6 +23,7 @@ mod trapdoor_block;
 mod wall_block;
 mod waterlogged_transparent_block;
 mod weathering_block;
+mod web_block;
 mod wet_sponge_block;
 
 pub use amethyst_cluster::AmethystClusterBlock;
@@ -50,4 +51,5 @@ pub use trapdoor_block::{TrapDoorBlock, WeatheringCopperTrapDoorBlock};
 pub use wall_block::WallBlock;
 pub use waterlogged_transparent_block::{WaterloggedTransparentBlock, WeatheringCopperGrateBlock};
 pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};
+pub use web_block::WebBlock;
 pub use wet_sponge_block::WetSpongeBlock;
