@@ -187,7 +187,7 @@ pub enum StrongholdPieceData {
 }
 
 #[derive(Default, Deserialize, Serialize)]
-pub(crate) struct StronholdRingsData {
+pub(crate) struct StrongholdRingsData {
     pub positions: Vec<ChunkPos>,
 }
 

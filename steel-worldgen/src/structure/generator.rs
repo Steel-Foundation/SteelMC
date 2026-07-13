@@ -33,7 +33,7 @@ use crate::structure::placement::{
 use crate::structure::ruined_portal::RuinedPortalStructure;
 use crate::structure::shipwreck::ShipwreckStructure;
 use crate::structure::single_piece::BuriedTreasureStructure;
-use crate::structure::stronghold::{StrongholdStructure, StronholdRingsData};
+use crate::structure::stronghold::{StrongholdRingsData, StrongholdStructure};
 use crate::structure::swamp_hut::SwampHutStructure;
 use crate::structure::{GenerationStub, Structure, StructureGenerationContext, StructureStart};
 
@@ -589,13 +589,13 @@ impl StructureGenerator {
                     };
                 let data_manager = SavedDataManager::new(world_path);
 
-                let positions = if data_manager.exists(saves_names::STRONHOLD_RINGS)
+                let positions = if data_manager.exists(saves_names::STRONGHOLD_RINGS)
                     && let Ok(rings) = data_manager
-                        .sync_load_or_default::<StronholdRingsData>(saves_names::STRONHOLD_RINGS)
+                        .sync_load_or_default::<StrongholdRingsData>(saves_names::STRONGHOLD_RINGS)
                 {
                     rings.positions
                 } else {
-                    let data = StronholdRingsData {
+                    let data = StrongholdRingsData {
                         positions: generate_ring_positions(
                             ring_position_seed,
                             *distance,
@@ -605,8 +605,8 @@ impl StructureGenerator {
                             thread_pool,
                         ),
                     };
-                    if let Err(err) = data_manager.sync_save(saves_names::STRONHOLD_RINGS, &data) {
-                        tracing::warn!("Couldn't create the stronhold ring data file: {err:?}");
+                    if let Err(err) = data_manager.sync_save(saves_names::STRONGHOLD_RINGS, &data) {
+                        tracing::warn!("Couldn't create the stronghold ring data file: {err:?}");
                     }
                     data.positions
                 };

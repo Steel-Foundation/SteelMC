@@ -18,8 +18,8 @@ pub mod names {
 
     /// Vanilla `TicketStorage.TYPE`, persisted as `data/chunk_tickets.toml`.
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
-    /// Stronhold generation data, persisted as `data/stronhold_rings.toml`
-    pub const STRONHOLD_RINGS: SavedDataName = SavedDataName::trusted("stronhold_rings");
+    /// Stronhold generation data, persisted as `data/stronghold_rings.toml`
+    pub const STRONGHOLD_RINGS: SavedDataName = SavedDataName::trusted("stronghold_rings");
 }
 
 /// Name of a per-world saved data entry.
