@@ -30,7 +30,7 @@ impl JavaTcpClient {
         let id = if self.server.config.online_mode {
             packet.profile_id
         } else {
-            offline_uuid(&packet.name).expect("Failed to generate offline UUID")
+            offline_uuid(&packet.name)
         };
 
         {

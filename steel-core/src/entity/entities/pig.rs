@@ -500,8 +500,8 @@ impl Entity for PigEntity {
         self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, source, amount)
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        LivingEntity::hurt_server(self, world, source, amount)
     }
 
     fn interact(
@@ -809,6 +809,7 @@ mod tests {
     use crate::entity::mob::LeashAttachment;
     use crate::entity::{Animal, DEATH_DURATION, ItemSteerable, RemovalReason, SharedEntity};
     use crate::inventory::equipment::EquipmentSlot;
+    use crate::test_support::test_world;
     use crate::world::LevelReader;
 
     use super::*;
@@ -1314,7 +1315,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
         pig.set_no_action_time(42);
-        assert!(pig.hurt_server(&source, 1.0));
+        assert!(pig.hurt_server(test_world(), &source, 1.0));
 
         assert_eq!(pig.no_action_time(), 0);
     }
@@ -1850,7 +1851,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
         pig.set_in_love_time(20);
 
-        assert!(pig.hurt_server(&source, 1.0));
+        assert!(pig.hurt_server(test_world(), &source, 1.0));
 
         assert_eq!(pig.in_love_time(), 0);
     }

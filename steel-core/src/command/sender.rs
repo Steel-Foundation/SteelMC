@@ -1,6 +1,7 @@
 //! Module defining the sender of a command.
 use std::{fmt, sync::Arc};
 use text_components::TextComponent;
+use uuid::Uuid;
 
 use crate::player::Player;
 
@@ -15,7 +16,23 @@ pub enum CommandSender {
     Rcon,
 }
 
+/// Stable identity used to preserve top-level command ordering while work is suspended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum CommandSenderKey {
+    Player(Uuid),
+    Console,
+    Rcon,
+}
+
 impl CommandSender {
+    pub(crate) fn key(&self) -> CommandSenderKey {
+        match self {
+            Self::Player(player) => CommandSenderKey::Player(player.gameprofile.id),
+            Self::Console => CommandSenderKey::Console,
+            Self::Rcon => CommandSenderKey::Rcon,
+        }
+    }
+
     /// Returns the player if the sender is a player.
     #[must_use]
     pub const fn get_player(&self) -> Option<&Arc<Player>> {
@@ -29,9 +46,9 @@ impl CommandSender {
     pub fn send_message(&self, text: &TextComponent) {
         match self {
             Self::Player(player) => player.send_message(text),
-            Self::Console => log::info!("{:p}", *text),
+            Self::Console => log::info!("{text}"),
             // TODO: Implement Rcon message sending
-            Self::Rcon => unimplemented!(),
+            Self::Rcon => log::warn!("Dropping Rcon command message until Rcon output is wired"),
         }
     }
 }

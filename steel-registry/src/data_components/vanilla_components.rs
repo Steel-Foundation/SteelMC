@@ -2,7 +2,7 @@
 //!
 //! This module defines all vanilla Minecraft data components and provides
 //! the registration function to add them to the registry.
-use steel_utils::Identifier;
+use steel_utils::{Identifier, nbt::NbtNumeric as _};
 use text_components::TextComponent;
 
 use super::component_data::ComponentData;
@@ -15,7 +15,7 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 pub use super::components::{
     AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, PiercingWeapon, Tool, ToolRule, UseCooldown, Weapon,
+    ItemEnchantments, PiercingWeapon, Tool, ToolRule, ToolRuleBlocks, UseCooldown, Weapon,
 };
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
@@ -351,8 +351,8 @@ pub const SHULKER_COLOR: DataComponentType<()> =
 
 /// Helper to create stub reader/writer functions for unimplemented components.
 /// These components use the Todo variant as a placeholder.
-macro_rules! register_stub {
-    ($registry:expr, $key:expr) => {{
+macro_rules! register_stub_with {
+    ($registry:expr, $key:expr, $register_method:ident) => {{
         const fn network_reader(
             cursor: &mut std::io::Cursor<&[u8]>,
         ) -> std::io::Result<ComponentData> {
@@ -378,7 +378,7 @@ macro_rules! register_stub {
             simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new())
         }
 
-        $registry.register_dynamic(
+        $registry.$register_method(
             $key,
             crate::data_components::ComponentDataDiscriminant::Todo,
             network_reader,
@@ -387,6 +387,18 @@ macro_rules! register_stub {
             nbt_writer,
         );
     }};
+}
+
+macro_rules! register_stub {
+    ($registry:expr, $key:expr) => {
+        register_stub_with!($registry, $key, register_with_codecs);
+    };
+}
+
+macro_rules! register_transient_stub {
+    ($registry:expr, $key:expr) => {
+        register_stub_with!($registry, $key, register_transient_with_codecs);
+    };
 }
 
 /// Network reader for VarInt-encoded i32 components.
@@ -406,6 +418,127 @@ fn varint_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<
     }
 }
 
+fn float_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom;
+    Ok(ComponentData::Float(f32::read(cursor)?))
+}
+
+fn float_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo;
+    let ComponentData::Float(value) = data else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn bool_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom;
+    Ok(ComponentData::Bool(bool::read(cursor)?))
+}
+
+fn bool_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo;
+    let ComponentData::Bool(value) = data else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "network reader function pointers return io::Result"
+)]
+const fn unit_reader(_cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    Ok(ComponentData::Empty)
+}
+
+fn unit_writer(data: &ComponentData, _writer: &mut Vec<u8>) -> std::io::Result<()> {
+    if data.is_empty() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("Component type mismatch"))
+    }
+}
+
+fn ranged_i32_nbt_reader<const MIN: i32, const MAX: i32>(
+    tag: simdnbt::borrow::NbtTag,
+) -> Option<ComponentData> {
+    let value = tag.codec_i32()?;
+    (MIN..=MAX)
+        .contains(&value)
+        .then_some(ComponentData::I32(value))
+}
+
+fn i32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+    match data {
+        ComponentData::I32(value) => simdnbt::owned::NbtTag::Int(*value),
+        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
+    }
+}
+
+fn minimum_attack_charge_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    let value = tag.codec_f32()?;
+    (value.is_finite() && !value.is_sign_negative() && value <= 1.0)
+        .then_some(ComponentData::Float(value))
+}
+
+fn potion_duration_scale_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    let value = tag.codec_f32()?;
+    (value.is_finite() && !value.is_sign_negative()).then_some(ComponentData::Float(value))
+}
+
+fn f32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+    match data {
+        ComponentData::Float(value) => simdnbt::owned::NbtTag::Float(*value),
+        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
+    }
+}
+
+fn bool_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    tag.codec_bool().map(ComponentData::Bool)
+}
+
+fn bool_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+    match data {
+        ComponentData::Bool(value) => simdnbt::owned::NbtTag::Byte(i8::from(*value)),
+        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
+    }
+}
+
+fn unit_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    tag.compound().map(|_| ComponentData::Empty)
+}
+
+fn unit_nbt_writer(_data: &ComponentData) -> simdnbt::owned::NbtTag {
+    simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new())
+}
+
+macro_rules! register_ranged_i32 {
+    ($registry:expr, $component:expr, $min:expr, $max:expr) => {
+        $registry.register_with_codecs(
+            $component.key,
+            ComponentDataDiscriminant::I32,
+            varint_reader,
+            varint_writer,
+            ranged_i32_nbt_reader::<{ $min }, { $max }>,
+            i32_nbt_writer,
+        );
+    };
+}
+
+macro_rules! register_unit {
+    ($registry:expr, $component:expr) => {
+        $registry.register_with_codecs(
+            $component.key,
+            ComponentDataDiscriminant::Empty,
+            unit_reader,
+            unit_writer,
+            unit_nbt_reader,
+            unit_nbt_writer,
+        );
+    };
+}
+
 /// Registers all vanilla data components.
 ///
 /// IMPORTANT: The registration order MUST match vanilla's DataComponents.java exactly,
@@ -417,34 +550,26 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 0: custom_data
     register_stub!(registry, CUSTOM_DATA.key.clone());
     // 1: max_stack_size
-    registry.register_custom_network(
-        MAX_STACK_SIZE,
-        ComponentDataDiscriminant::I32,
-        varint_reader,
-        varint_writer,
-    );
+    register_ranged_i32!(registry, MAX_STACK_SIZE, 1, 99);
     // 2: max_damage
-    registry.register_custom_network(
-        MAX_DAMAGE,
-        ComponentDataDiscriminant::I32,
-        varint_reader,
-        varint_writer,
-    );
+    register_ranged_i32!(registry, MAX_DAMAGE, 1, i32::MAX);
     // 3: damage
-    registry.register_custom_network(
-        DAMAGE,
-        ComponentDataDiscriminant::I32,
-        varint_reader,
-        varint_writer,
-    );
+    register_ranged_i32!(registry, DAMAGE, 0, i32::MAX);
     // 4: unbreakable
-    registry.register(UNBREAKABLE, ComponentDataDiscriminant::Empty);
+    register_unit!(registry, UNBREAKABLE);
     // 5: use_effects
     register_stub!(registry, USE_EFFECTS.key.clone());
     // 6: custom_name
     registry.register(CUSTOM_NAME, ComponentDataDiscriminant::TextComponent);
     // 7: minimum_attack_charge
-    registry.register(MINIMUM_ATTACK_CHARGE, ComponentDataDiscriminant::Float);
+    registry.register_with_codecs(
+        MINIMUM_ATTACK_CHARGE.key,
+        ComponentDataDiscriminant::Float,
+        float_reader,
+        float_writer,
+        minimum_attack_charge_nbt_reader,
+        f32_nbt_writer,
+    );
     // 8: damage_type
     registry.register(DAMAGE_TYPE, ComponentDataDiscriminant::DamageType);
     // 9: item_name
@@ -471,18 +596,20 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 18: tooltip_display
     register_stub!(registry, TOOLTIP_DISPLAY.key.clone());
     // 19: repair_cost
-    registry.register_custom_network(
-        REPAIR_COST,
-        ComponentDataDiscriminant::I32,
-        varint_reader,
-        varint_writer,
-    );
+    register_ranged_i32!(registry, REPAIR_COST, 0, i32::MAX);
     // 20: creative_slot_lock
-    registry.register(CREATIVE_SLOT_LOCK, ComponentDataDiscriminant::Empty);
+    registry.register_transient(CREATIVE_SLOT_LOCK, ComponentDataDiscriminant::Empty);
     // 21: enchantment_glint_override
-    registry.register(ENCHANTMENT_GLINT_OVERRIDE, ComponentDataDiscriminant::Bool);
+    registry.register_with_codecs(
+        ENCHANTMENT_GLINT_OVERRIDE.key,
+        ComponentDataDiscriminant::Bool,
+        bool_reader,
+        bool_writer,
+        bool_nbt_reader,
+        bool_nbt_writer,
+    );
     // 22: intangible_projectile
-    registry.register(INTANGIBLE_PROJECTILE, ComponentDataDiscriminant::Empty);
+    register_unit!(registry, INTANGIBLE_PROJECTILE);
     // 23: food
     register_stub!(registry, FOOD.key.clone());
     // 24: consumable
@@ -506,7 +633,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 33: repairable
     register_stub!(registry, REPAIRABLE.key.clone());
     // 34: glider
-    registry.register(GLIDER, ComponentDataDiscriminant::Empty);
+    register_unit!(registry, GLIDER);
     // 35: tooltip_style
     register_stub!(registry, TOOLTIP_STYLE.key.clone());
     // 36: death_protection
@@ -520,7 +647,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 40: swing_animation
     register_stub!(registry, SWING_ANIMATION.key.clone());
     // 41: additional_trade_cost
-    register_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
+    register_transient_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
     // 42: stored_enchantments
     registry.register(STORED_ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
     // 43: dye
@@ -534,7 +661,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 47: map_decorations
     register_stub!(registry, MAP_DECORATIONS.key.clone());
     // 48: map_post_processing
-    register_stub!(registry, MAP_POST_PROCESSING.key.clone());
+    register_transient_stub!(registry, MAP_POST_PROCESSING.key.clone());
     // 49: charged_projectiles
     register_stub!(registry, CHARGED_PROJECTILES.key.clone());
     // 50: bundle_contents
@@ -542,7 +669,14 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 51: potion_contents
     register_stub!(registry, POTION_CONTENTS.key.clone());
     // 52: potion_duration_scale
-    registry.register(POTION_DURATION_SCALE, ComponentDataDiscriminant::Float);
+    registry.register_with_codecs(
+        POTION_DURATION_SCALE.key,
+        ComponentDataDiscriminant::Float,
+        float_reader,
+        float_writer,
+        potion_duration_scale_nbt_reader,
+        f32_nbt_writer,
+    );
     // 53: suspicious_stew_effects
     register_stub!(registry, SUSPICIOUS_STEW_EFFECTS.key.clone());
     // 54: writable_book_content
@@ -664,6 +798,8 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RegistryExt;
+    use simdnbt::owned::{NbtCompound, NbtTag};
 
     #[test]
     fn sulfur_cube_content_keeps_vanilla_26_2_component_order() {
@@ -676,5 +812,77 @@ mod tests {
         assert_eq!(registry.get_key_by_id(80), Some(&CONTAINER_LOOT.key));
         assert_eq!(registry.get_key_by_id(81), Some(&BREAK_SOUND.key));
         assert_eq!(registry.get_key_by_id(82), Some(&VILLAGER_VARIANT.key));
+    }
+
+    #[test]
+    fn vanilla_transient_components_are_marked_non_persistent() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        for key in [
+            &CREATIVE_SLOT_LOCK.key,
+            &ADDITIONAL_TRADE_COST.key,
+            &MAP_POST_PROCESSING.key,
+        ] {
+            assert!(
+                registry
+                    .by_key(key)
+                    .is_some_and(|entry| !entry.is_persistent())
+            );
+        }
+        assert!(matches!(
+            registry.by_key(&MAX_STACK_SIZE.key),
+            Some(entry) if entry.is_persistent()
+        ));
+    }
+
+    #[test]
+    fn persistent_scalar_codecs_coerce_numeric_tags_and_enforce_ranges() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        let max_stack_size = registry
+            .by_key(&MAX_STACK_SIZE.key)
+            .expect("max_stack_size should be registered");
+        assert_eq!(
+            max_stack_size.read_nbt_owned(&NbtTag::Double(16.9)),
+            Some(ComponentData::I32(16))
+        );
+        assert_eq!(max_stack_size.read_nbt_owned(&NbtTag::Int(0)), None);
+
+        let minimum_attack_charge = registry
+            .by_key(&MINIMUM_ATTACK_CHARGE.key)
+            .expect("minimum_attack_charge should be registered");
+        assert_eq!(
+            minimum_attack_charge.read_nbt_owned(&NbtTag::Double(0.5)),
+            Some(ComponentData::Float(0.5))
+        );
+        assert_eq!(
+            minimum_attack_charge.read_nbt_owned(&NbtTag::Double(1.5)),
+            None
+        );
+
+        let glint = registry
+            .by_key(&ENCHANTMENT_GLINT_OVERRIDE.key)
+            .expect("enchantment_glint_override should be registered");
+        assert_eq!(
+            glint.read_nbt_owned(&NbtTag::Long(2)),
+            Some(ComponentData::Bool(true))
+        );
+    }
+
+    #[test]
+    fn unit_component_persistence_requires_a_compound() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+        let unbreakable = registry
+            .by_key(&UNBREAKABLE.key)
+            .expect("unbreakable should be registered");
+
+        assert_eq!(
+            unbreakable.read_nbt_owned(&NbtTag::Compound(NbtCompound::new())),
+            Some(ComponentData::Empty)
+        );
+        assert_eq!(unbreakable.read_nbt_owned(&NbtTag::Byte(1)), None);
     }
 }

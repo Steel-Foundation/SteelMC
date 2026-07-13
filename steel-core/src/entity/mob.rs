@@ -1323,7 +1323,7 @@ pub trait Mob: LivingEntity {
 
     /// Handles vanilla `Mob.doHurtTarget`.
     #[must_use]
-    fn do_hurt_target(&self, target: &SharedEntity) -> bool {
+    fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
             return false;
         };
@@ -1353,7 +1353,7 @@ pub trait Mob: LivingEntity {
             .get_attack_damage_bonus(attacker, target.as_ref(), damage, &damage_source);
 
         let old_movement = target.velocity();
-        let was_hurt = target.hurt(&damage_source, damage);
+        let was_hurt = target.hurt(world, &damage_source, damage);
         if was_hurt {
             self.cause_extra_knockback(
                 target.as_ref(),
@@ -1379,6 +1379,7 @@ pub trait Mob: LivingEntity {
                 &damage_source,
             );
             enchantment_helper::do_post_attack_effects_from_item(
+                world,
                 &weapon_item,
                 &post_attack_context,
             );
@@ -1387,7 +1388,7 @@ pub trait Mob: LivingEntity {
         }
 
         if let Some(user) = self.as_entity_event_source().as_living_entity() {
-            enchantment_helper::do_post_piercing_attack_effects(user);
+            enchantment_helper::do_post_piercing_attack_effects(world, user);
         }
         was_hurt
     }
@@ -2290,7 +2291,8 @@ mod tests {
     use crate::entity::{
         Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity,
     };
-    use crate::world::LevelReader;
+    use crate::test_support::test_world;
+    use crate::world::{LevelReader, World};
 
     #[test]
     fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
@@ -2427,8 +2429,8 @@ mod tests {
             self.controlling_passenger.lock().clone()
         }
 
-        fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-            LivingEntity::hurt_server(self, source, amount)
+        fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+            LivingEntity::hurt_server(self, world, source, amount)
         }
     }
 
@@ -2855,7 +2857,7 @@ mod tests {
         ));
         let target_entity: SharedEntity = target.clone();
 
-        assert!(mob.do_hurt_target(&target_entity));
+        assert!(mob.do_hurt_target(test_world(), &target_entity));
 
         assert_eq!(target.get_health().to_bits(), 6.0_f32.to_bits());
         let stored_target = mob
@@ -2890,7 +2892,7 @@ mod tests {
         ));
         let target_entity: SharedEntity = target.clone();
 
-        assert!(mob.do_hurt_target(&target_entity));
+        assert!(mob.do_hurt_target(test_world(), &target_entity));
 
         assert_eq!(mob.velocity().x.to_bits(), 0.6_f64.to_bits());
         assert_eq!(mob.velocity().z.to_bits(), 0.6_f64.to_bits());

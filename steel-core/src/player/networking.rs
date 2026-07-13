@@ -11,30 +11,30 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    CBundleDelimiter, SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat,
-    SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
-    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SInteract, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
-    SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
-    SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
-    SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    CBundleDelimiter, CCommandSuggestions, SAcceptTeleportation, SAttack, SChangeDifficulty,
+    SChangeGameMode, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
+    SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick,
+    SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayerPos, SMovePlayerPosRot,
+    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::translations;
-use text_components::TextComponent;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
+use text_components::{Modifier, TextComponent, format::Color};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio_util::sync::CancellationToken;
 
-use crate::command::sender::CommandSender;
+use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
@@ -377,21 +377,24 @@ impl JavaConnection {
             }
             play::S_CHAT_COMMAND => {
                 let command = SChatCommand::read_packet(data)?.command;
-                server.command_dispatcher.read().handle_command(
-                    CommandSender::Player(Arc::clone(&player)),
-                    command,
-                    &server,
-                );
+                if server
+                    .submit_command(CommandSender::Player(Arc::clone(&player)), command)
+                    .is_err()
+                {
+                    player.send_message(
+                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
+                    );
+                }
                 player.detect_command_rate_spam();
             }
             play::S_COMMAND_SUGGESTION => {
                 let packet = SCommandSuggestion::read_packet(data)?;
-                server.command_dispatcher.read().handle_player_suggestions(
-                    &player,
-                    packet.id,
-                    &packet.command,
-                    server.clone(),
-                );
+                if server
+                    .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
+                    .is_err()
+                {
+                    player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
+                }
             }
             play::S_CONTAINER_BUTTON_CLICK => {
                 player.handle_container_button_click(SContainerButtonClick::read_packet(data)?);
@@ -457,9 +460,8 @@ impl JavaConnection {
                 player.send_packet(CPongResponse::new(packet.time));
             }
             play::S_CHANGE_GAME_MODE => {
-                // TODO: Check player permission level (Or gamemode permission)
                 let packet = SChangeGameMode::read_packet(data)?;
-                player.set_game_mode(packet.gamemode);
+                handle_client_request(&player, &server, packet.gamemode);
             }
             play::S_CHANGE_DIFFICULTY => {
                 let packet = SChangeDifficulty::read_packet(data)?;

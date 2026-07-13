@@ -9,17 +9,15 @@
 mod authentication;
 mod connection;
 mod handlers;
-mod login;
 mod tcp_client;
 
 // Authentication
 pub use authentication::{AuthError, TextureError, mojang_authenticate, signed_bytes_be_to_hex};
 
-// Login helpers
-pub use login::{is_valid_player_name, offline_uuid};
-
 // Type re-exports from steel-core
-pub use steel_core::player::{ClientInformation, GameProfile, GameProfileAction};
+pub use steel_core::player::{
+    ClientInformation, GameProfile, GameProfileAction, is_valid_player_name, offline_uuid,
+};
 
 // Connection types
 pub use connection::JavaConnection;

@@ -478,7 +478,7 @@ impl Entity for ExperienceOrbEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_base_invulnerable_to(source) {
             return false;
         }
@@ -565,6 +565,8 @@ mod tests {
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::{test_support::init_test_registry, vanilla_damage_types};
 
+    use crate::test_support::test_world;
+
     use super::*;
 
     #[test]
@@ -644,6 +646,7 @@ mod tests {
         );
 
         assert!(orb.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             0.75,
         ));

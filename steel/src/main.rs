@@ -374,6 +374,10 @@ async fn run_server(
 }
 
 async fn shutdown_worlds(server: &Arc<Server>) {
+    if let Err(error) = server.flush_known_players().await {
+        log::error!("Failed to flush known player cache during shutdown: {error}");
+    }
+
     for world in server.worlds.values() {
         world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();
@@ -393,6 +397,15 @@ async fn shutdown_worlds(server: &Arc<Server>) {
 
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
+    let command_data = server.save_command_data().await;
+    match command_data.scoreboards {
+        Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
+        Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
+    }
+    match command_data.storage {
+        Ok(saved) => log::info!("Saved {saved} domain command storages"),
+        Err(error) => log::error!("Failed to save domain command storage: {error}"),
+    }
     let mut total_saved = 0;
     for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;

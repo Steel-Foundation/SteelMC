@@ -28,6 +28,6 @@ pub(crate) fn create_filled_result(
     });
 
     if !overflow.is_empty() {
-        player.drop_item(overflow, false, false);
+        let _ = player.drop_item(overflow, false, false);
     }
 }

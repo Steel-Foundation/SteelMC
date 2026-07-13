@@ -147,9 +147,6 @@ impl Enchantment {
             return true;
         };
         for (existing_key, _) in enchantments.iter() {
-            if *existing_key == enchantment.key {
-                continue;
-            }
             let Some(existing) = REGISTRY.enchantments.by_key(existing_key) else {
                 continue;
             };
@@ -201,12 +198,14 @@ crate::impl_tagged_registry!(EnchantmentRegistry, enchantments_by_key, "enchantm
 
 #[cfg(test)]
 mod tests {
+    use super::Enchantment;
     use crate::enchantment_effect::{
         DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
         EnchantmentEntityEffect, EnchantmentTarget,
     };
     use crate::equipment::EquipmentSlot;
-    use crate::vanilla_enchantments;
+    use crate::item_stack::ItemStack;
+    use crate::{test_support::init_test_registry, vanilla_enchantments, vanilla_items};
     use simdnbt::ToNbtTag;
     use simdnbt::owned::{NbtList, NbtTag};
     use steel_utils::Identifier;
@@ -224,6 +223,26 @@ mod tests {
     fn enchantment_matching_slot_uses_slot_groups() {
         assert!(vanilla_enchantments::BINDING_CURSE.matching_slot(EquipmentSlot::Head));
         assert!(!vanilla_enchantments::BINDING_CURSE.matching_slot(EquipmentSlot::MainHand));
+    }
+
+    #[test]
+    fn existing_identical_or_exclusive_enchantments_are_incompatible() {
+        init_test_registry();
+        let mut sword = ItemStack::new(&vanilla_items::ITEMS.diamond_sword);
+        sword.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 1);
+
+        assert!(!Enchantment::is_compatible_with_existing(
+            &vanilla_enchantments::SHARPNESS,
+            &sword
+        ));
+        assert!(!Enchantment::is_compatible_with_existing(
+            &vanilla_enchantments::SMITE,
+            &sword
+        ));
+        assert!(Enchantment::is_compatible_with_existing(
+            &vanilla_enchantments::UNBREAKING,
+            &sword
+        ));
     }
 
     #[test]

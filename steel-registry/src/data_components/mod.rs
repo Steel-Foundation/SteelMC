@@ -32,7 +32,7 @@ pub mod vanilla_components;
 
 // Re-export core types
 pub use component_data::{Component, ComponentData, ComponentDataDiscriminant};
-pub use components::{Equippable, EquippableAllowedEntities, Tool, ToolRule};
+pub use components::{Equippable, EquippableAllowedEntities, Tool, ToolRule, ToolRuleBlocks};
 pub use registry::{
     ComponentEntry,
     ComponentEntryRef,

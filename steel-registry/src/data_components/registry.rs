@@ -9,7 +9,7 @@
 use rustc_hash::FxHashMap;
 use simdnbt::{
     FromNbtTag, ToNbtTag,
-    borrow::NbtTag as BorrowedNbtTag,
+    borrow::{NbtTag as BorrowedNbtTag, read_tag},
     owned::{NbtCompound, NbtTag as OwnedNbtTag},
 };
 use std::{
@@ -98,6 +98,7 @@ pub struct ComponentEntry {
     pub nbt_reader: NbtReader,
     /// NBT storage writer
     pub nbt_writer: NbtWriter,
+    persistent: bool,
 }
 
 impl ComponentEntry {
@@ -110,6 +111,7 @@ impl ComponentEntry {
         network_writer: NetworkWriter,
         nbt_reader: NbtReader,
         nbt_writer: NbtWriter,
+        persistent: bool,
     ) -> Self {
         Self {
             key,
@@ -118,6 +120,7 @@ impl ComponentEntry {
             network_writer,
             nbt_reader,
             nbt_writer,
+            persistent,
         }
     }
 
@@ -128,6 +131,24 @@ impl ComponentEntry {
     #[must_use]
     pub fn validates(&self, data: &ComponentData) -> bool {
         data.discriminant() == self.expected_discriminant
+    }
+
+    /// Returns whether this component has a persistent storage codec.
+    #[must_use]
+    pub const fn is_persistent(&self) -> bool {
+        self.persistent
+    }
+
+    /// Decodes an owned NBT value with this component's registered persistent codec.
+    #[must_use]
+    pub fn read_nbt_owned(&self, tag: &OwnedNbtTag) -> Option<ComponentData> {
+        if !self.is_persistent() {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed = read_tag(&mut Cursor::new(bytes.as_slice())).ok()?;
+        (self.nbt_reader)(borrowed.as_tag())
     }
 }
 
@@ -170,6 +191,30 @@ impl DataComponentRegistry {
         &mut self,
         component: DataComponentType<T>,
         expected_discriminant: ComponentDataDiscriminant,
+    ) where
+        T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+    {
+        self.register_with_persistence(component, expected_discriminant, true);
+    }
+
+    /// Registers a transient vanilla component type.
+    ///
+    /// Transient components have network data but no persistent component codec.
+    pub fn register_transient<T>(
+        &mut self,
+        component: DataComponentType<T>,
+        expected_discriminant: ComponentDataDiscriminant,
+    ) where
+        T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+    {
+        self.register_with_persistence(component, expected_discriminant, false);
+    }
+
+    fn register_with_persistence<T>(
+        &mut self,
+        component: DataComponentType<T>,
+        expected_discriminant: ComponentDataDiscriminant,
+        persistent: bool,
     ) where
         T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
     {
@@ -233,6 +278,7 @@ impl DataComponentRegistry {
             make_network_writer::<T>(),
             make_nbt_reader::<T>(),
             make_nbt_writer::<T>(),
+            persistent,
         )));
 
         let id = self.entries.len();
@@ -289,6 +335,7 @@ impl DataComponentRegistry {
             network_writer,
             make_nbt_reader::<T>(),
             make_nbt_writer::<T>(),
+            true,
         )));
 
         let id = self.entries.len();
@@ -296,11 +343,8 @@ impl DataComponentRegistry {
         self.entries.push(entry);
     }
 
-    /// Registers a dynamic/plugin component type.
-    ///
-    /// Plugin components use the `ComponentData::Other` variant and handle
-    /// their own serialization. The provided functions read/write raw bytes.
-    pub fn register_dynamic(
+    /// Registers a component with explicit network and persistent codecs.
+    pub fn register_with_codecs(
         &mut self,
         key: Identifier,
         expected_discriminant: ComponentDataDiscriminant,
@@ -308,6 +352,52 @@ impl DataComponentRegistry {
         network_writer: NetworkWriter,
         nbt_reader: NbtReader,
         nbt_writer: NbtWriter,
+    ) -> usize {
+        self.register_with_persistence_codecs(
+            key,
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+            true,
+        )
+    }
+
+    /// Registers a transient component with explicit network codecs.
+    pub fn register_transient_with_codecs(
+        &mut self,
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+    ) -> usize {
+        self.register_with_persistence_codecs(
+            key,
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+            false,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "component registration keeps the four codec functions explicit"
+    )]
+    fn register_with_persistence_codecs(
+        &mut self,
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+        persistent: bool,
     ) -> usize {
         assert!(
             self.allows_registering,
@@ -321,6 +411,7 @@ impl DataComponentRegistry {
             network_writer,
             nbt_reader,
             nbt_writer,
+            persistent,
         )));
 
         let id = self.entries.len();
@@ -458,17 +549,17 @@ impl DataComponentMap {
 
     /// Sets raw component data (for plugin use).
     ///
-    /// Returns `true` if the data was set successfully, `false` if the data type
-    /// doesn't match the registered component type (validation failed).
+    /// Returns `true` if the data was set successfully, or `false` if the key is
+    /// unregistered or the data type does not match it.
     ///
     /// This prevents plugins from setting invalid types on vanilla components.
     pub fn set_raw(&mut self, key: Identifier, data: ComponentData) -> bool {
         use crate::{REGISTRY, RegistryExt};
 
-        // Validate against registry if this component is registered
-        if let Some(entry) = REGISTRY.data_components.by_key(&key)
-            && !entry.validates(&data)
-        {
+        let Some(entry) = REGISTRY.data_components.by_key(&key) else {
+            return false;
+        };
+        if !entry.validates(&data) {
             return false;
         }
 
@@ -543,17 +634,17 @@ impl DataComponentPatch {
 
     /// Sets raw component data (for plugin use).
     ///
-    /// Returns `true` if the data was set successfully, `false` if the data type
-    /// doesn't match the registered component type (validation failed).
+    /// Returns `true` if the data was set successfully, or `false` if the key is
+    /// unregistered or the data type does not match it.
     ///
     /// This prevents plugins from setting invalid types on vanilla components.
     pub fn set_raw(&mut self, key: Identifier, data: ComponentData) -> bool {
         use crate::{REGISTRY, RegistryExt};
 
-        // Validate against registry if this component is registered
-        if let Some(entry) = REGISTRY.data_components.by_key(&key)
-            && !entry.validates(&data)
-        {
+        let Some(entry) = REGISTRY.data_components.by_key(&key) else {
+            return false;
+        };
+        if !entry.validates(&data) {
             return false;
         }
 
@@ -565,6 +656,17 @@ impl DataComponentPatch {
     pub fn remove<T>(&mut self, component: DataComponentType<T>) {
         self.entries
             .insert(component.key.clone(), ComponentPatchEntry::Removed);
+    }
+
+    /// Marks a dynamically resolved component as removed.
+    pub fn remove_raw(&mut self, key: Identifier) -> bool {
+        use crate::{REGISTRY, RegistryExt};
+
+        if REGISTRY.data_components.by_key(&key).is_none() {
+            return false;
+        }
+        self.entries.insert(key, ComponentPatchEntry::Removed);
+        true
     }
 
     /// Clears any patch entry for a component.
@@ -626,12 +728,16 @@ impl DataComponentPatch {
         let mut compound = NbtCompound::new();
 
         for (key, entry) in &self.entries {
+            let Some(component) = REGISTRY.data_components.by_key(key) else {
+                continue;
+            };
+            if !component.is_persistent() {
+                continue;
+            }
             match entry {
                 ComponentPatchEntry::Set(data) => {
-                    if let Some(entry) = REGISTRY.data_components.by_key(key) {
-                        let nbt = (entry.nbt_writer)(data);
-                        compound.insert(key.to_string(), nbt);
-                    }
+                    let nbt = (component.nbt_writer)(data);
+                    compound.insert(key.to_string(), nbt);
                 }
                 ComponentPatchEntry::Removed => {
                     compound.insert(format!("!{key}"), NbtCompound::new());
@@ -657,8 +763,12 @@ impl WriteTo for DataComponentPatch {
             }
         }
 
-        VarInt(added.len() as i32).write(writer)?;
-        VarInt(removed.len() as i32).write(writer)?;
+        let added_count = i32::try_from(added.len())
+            .map_err(|_| std::io::Error::other("Too many added data components"))?;
+        let removed_count = i32::try_from(removed.len())
+            .map_err(|_| std::io::Error::other("Too many removed data components"))?;
+        VarInt(added_count).write(writer)?;
+        VarInt(removed_count).write(writer)?;
 
         // Write added components
         for (key, data) in added {
@@ -696,8 +806,8 @@ impl ReadFrom for DataComponentPatch {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         use crate::{REGISTRY, RegistryExt};
 
-        let added_count = VarInt::read(data)?.0 as usize;
-        let removed_count = VarInt::read(data)?.0 as usize;
+        let added_count = read_component_count(data, "added")?;
+        let removed_count = read_component_count(data, "removed")?;
 
         log::info!("Reading DataComponentPatch: added={added_count}, removed={removed_count}");
 
@@ -706,7 +816,7 @@ impl ReadFrom for DataComponentPatch {
         // Read added components
         for i in 0..added_count {
             let pos_before = data.position();
-            let type_id = VarInt::read(data)?.0 as usize;
+            let type_id = read_non_negative_varint(data, "component type id")?;
 
             let key = REGISTRY
                 .data_components
@@ -738,7 +848,7 @@ impl ReadFrom for DataComponentPatch {
 
         // Read removed component IDs
         for _ in 0..removed_count {
-            let type_id = VarInt::read(data)?.0 as usize;
+            let type_id = read_non_negative_varint(data, "component type id")?;
 
             let key = REGISTRY
                 .data_components
@@ -764,8 +874,8 @@ impl DataComponentPatch {
         use crate::{REGISTRY, RegistryExt};
         use std::io::Read;
 
-        let added_count = VarInt::read(data)?.0 as usize;
-        let removed_count = VarInt::read(data)?.0 as usize;
+        let added_count = read_component_count(data, "added")?;
+        let removed_count = read_component_count(data, "removed")?;
 
         const MAX_COMPONENTS: usize = 65_536;
         const MAX_COMPONENT_BYTES: usize = 2 * 1024 * 1024;
@@ -779,8 +889,8 @@ impl DataComponentPatch {
         let mut patch = Self::new();
 
         for _ in 0..added_count {
-            let type_id = VarInt::read(data)?.0 as usize;
-            let byte_len = VarInt::read(data)?.0 as usize;
+            let type_id = read_non_negative_varint(data, "component type id")?;
+            let byte_len = read_non_negative_varint(data, "component byte length")?;
 
             if byte_len > MAX_COMPONENT_BYTES {
                 return Err(std::io::Error::other(format!(
@@ -796,29 +906,24 @@ impl DataComponentPatch {
                 })?
                 .clone();
 
-            let entry = REGISTRY.data_components.by_id(type_id);
+            let entry = REGISTRY
+                .data_components
+                .by_id(type_id)
+                .ok_or_else(|| std::io::Error::other(format!("No entry for component: {key}")))?;
 
             // Read the component bytes into a sub-buffer
             let mut buf = vec![0u8; byte_len];
             data.read_exact(&mut buf)?;
 
-            if let Some(entry) = entry {
-                let mut sub_cursor = Cursor::new(buf.as_slice());
-                match (entry.network_reader)(&mut sub_cursor) {
-                    Ok(component_data) => {
-                        patch
-                            .entries
-                            .insert(key, ComponentPatchEntry::Set(component_data));
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to read delimited component {key}: {e}");
-                    }
-                }
-            }
+            let mut sub_cursor = Cursor::new(buf.as_slice());
+            let component_data = (entry.network_reader)(&mut sub_cursor)?;
+            patch
+                .entries
+                .insert(key, ComponentPatchEntry::Set(component_data));
         }
 
         for _ in 0..removed_count {
-            let type_id = VarInt::read(data)?.0 as usize;
+            let type_id = read_non_negative_varint(data, "component type id")?;
             let key = REGISTRY
                 .data_components
                 .get_key_by_id(type_id)
@@ -831,6 +936,15 @@ impl DataComponentPatch {
 
         Ok(patch)
     }
+}
+
+fn read_component_count(data: &mut Cursor<&[u8]>, kind: &str) -> Result<usize> {
+    read_non_negative_varint(data, &format!("{kind} component count"))
+}
+
+fn read_non_negative_varint(data: &mut Cursor<&[u8]>, name: &str) -> Result<usize> {
+    let value = VarInt::read(data)?.0;
+    usize::try_from(value).map_err(|_| std::io::Error::other(format!("Negative {name}: {value}")))
 }
 
 impl ToNbtTag for DataComponentPatch {
@@ -850,20 +964,22 @@ impl FromNbtTag for DataComponentPatch {
             let key_str = key.to_str();
 
             if let Some(stripped) = key_str.strip_prefix('!') {
-                // Removed component
-                if let Ok(id) = stripped.parse::<Identifier>() {
-                    patch.entries.insert(id, ComponentPatchEntry::Removed);
+                let id = stripped.parse::<Identifier>().ok()?;
+                let entry = REGISTRY.data_components.by_key(&id)?;
+                if !entry.is_persistent() || value.compound().is_none() {
+                    return None;
                 }
+                patch.entries.insert(id, ComponentPatchEntry::Removed);
             } else {
-                // Set component
-                if let Ok(id) = key_str.parse::<Identifier>()
-                    && let Some(entry) = REGISTRY.data_components.by_key(&id)
-                    && let Some(component_data) = (entry.nbt_reader)(value)
-                {
-                    patch
-                        .entries
-                        .insert(id, ComponentPatchEntry::Set(component_data));
+                let id = key_str.parse::<Identifier>().ok()?;
+                let entry = REGISTRY.data_components.by_key(&id)?;
+                if !entry.is_persistent() {
+                    return None;
                 }
+                let component_data = (entry.nbt_reader)(value)?;
+                patch
+                    .entries
+                    .insert(id, ComponentPatchEntry::Set(component_data));
             }
         }
 
@@ -878,4 +994,75 @@ pub fn component_try_into<T: Component>(
     _component: DataComponentType<T>,
 ) -> Option<&T> {
     T::from_data_ref(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_components::vanilla_components::{
+            ADDITIONAL_TRADE_COST, CREATIVE_SLOT_LOCK, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+        },
+        test_support::init_test_registry,
+    };
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+
+    fn with_borrowed_tag<R>(
+        tag: OwnedNbtTag,
+        visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R,
+    ) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    fn parse_patch(tag: OwnedNbtTag) -> Option<DataComponentPatch> {
+        with_borrowed_tag(tag, DataComponentPatch::from_nbt_tag)
+    }
+
+    #[test]
+    fn persistent_patch_nbt_omits_transient_components() {
+        init_test_registry();
+        let mut patch = DataComponentPatch::new();
+        patch.set(MAX_STACK_SIZE, 16);
+        patch.set(CREATIVE_SLOT_LOCK, ());
+        patch.remove(ADDITIONAL_TRADE_COST);
+        patch.set(MAP_POST_PROCESSING, ());
+
+        let OwnedNbtTag::Compound(compound) = patch.to_nbt_tag_ref() else {
+            panic!("component patch should serialize as a compound");
+        };
+        assert!(compound.get("minecraft:max_stack_size").is_some());
+        assert!(compound.get("minecraft:creative_slot_lock").is_none());
+        assert!(compound.get("!minecraft:additional_trade_cost").is_none());
+        assert!(compound.get("minecraft:map_post_processing").is_none());
+    }
+
+    #[test]
+    fn persistent_patch_decode_fails_on_invalid_entries() {
+        init_test_registry();
+
+        let mut valid = NbtCompound::new();
+        valid.insert("minecraft:max_stack_size", OwnedNbtTag::Double(16.9));
+        let patch = parse_patch(OwnedNbtTag::Compound(valid))
+            .expect("numeric component value should use codec coercion");
+        assert_eq!(
+            patch.get_entry(&MAX_STACK_SIZE.key),
+            Some(&ComponentPatchEntry::Set(ComponentData::I32(16)))
+        );
+
+        let mut out_of_range = NbtCompound::new();
+        out_of_range.insert("minecraft:max_stack_size", 0);
+        assert!(parse_patch(OwnedNbtTag::Compound(out_of_range)).is_none());
+
+        let mut unknown = NbtCompound::new();
+        unknown.insert("minecraft:not_a_component", NbtCompound::new());
+        assert!(parse_patch(OwnedNbtTag::Compound(unknown)).is_none());
+
+        let mut malformed_removal = NbtCompound::new();
+        malformed_removal.insert("!minecraft:max_stack_size", 1);
+        assert!(parse_patch(OwnedNbtTag::Compound(malformed_removal)).is_none());
+    }
 }

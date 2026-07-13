@@ -15,8 +15,20 @@ use crate::chunk::{
     chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
 };
-use crate::command::CommandDispatcher;
-use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
+use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
+use crate::command::execution::{
+    CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
+    ExecutionStop,
+};
+use crate::command::sender::CommandSender;
+use crate::command::storage::DomainCommandStorage;
+use crate::command::{
+    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
+    CommandQueueFull, CommandRegistry, CommandRequest, CommandRequestQueue,
+    PendingCommandExecutionQueue, client_permission_event, command_suggestions_packet,
+    command_tree_packet, create_registered_dispatcher,
+};
+use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
     init_entities,
@@ -24,18 +36,27 @@ use crate::entity::{
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::permission::{
+    OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
+    PermissionSubjectIndex, PermissionSubjectState,
+};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
-use crate::player::{Player, ResetReason};
+use crate::player::{
+    GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player, ProfileLookupError,
+    ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
+};
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
     end_portal, nether_portal,
 };
-use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
+use crate::scoreboard::DomainScoreboards;
+use crate::server::jobs::{FnServerJob, JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
@@ -46,7 +67,8 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::{
-    mem,
+    collections::BTreeSet,
+    io, mem,
     num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
@@ -56,7 +78,7 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CCommandSuggestions, CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
     CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
     CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
 };
@@ -69,11 +91,11 @@ use steel_registry::{
     REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
     vanilla_entities,
 };
-use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::locks::{AsyncMutex, SyncMutex};
+use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
-use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
+use tokio::{runtime::Runtime, sync::Notify, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -82,6 +104,108 @@ const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
+/// Wall-clock interval between saves of command-owned persistent server data.
+/// Matches vanilla's intended five-minute autosave cadence.
+const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
+
+/// Results from saving every command-owned persistent data set.
+pub struct CommandDataSaveResults {
+    /// Number of dirty domain scoreboards written, or the save error.
+    pub scoreboards: io::Result<usize>,
+    /// Number of dirty domain command-storage values written, or the save error.
+    pub storage: io::Result<usize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UncachedPlayerTarget {
+    DirectUuid(Uuid),
+    OfflineName,
+    OnlineName,
+}
+
+fn classify_uncached_player_target(target: &str, online_mode: bool) -> UncachedPlayerTarget {
+    if let Ok(uuid) = Uuid::parse_str(target) {
+        return UncachedPlayerTarget::DirectUuid(uuid);
+    }
+    if online_mode {
+        UncachedPlayerTarget::OnlineName
+    } else {
+        UncachedPlayerTarget::OfflineName
+    }
+}
+
+fn direct_uuid_profile(uuid: Uuid) -> KnownPlayer {
+    KnownPlayer::new(uuid, uuid.to_string())
+}
+
+struct KnownPlayerCacheState {
+    players: KnownPlayers,
+    generation: u64,
+    worker_running: bool,
+    closed: bool,
+}
+
+impl KnownPlayerCacheState {
+    const fn new(players: KnownPlayers) -> Self {
+        Self {
+            players,
+            generation: 0,
+            worker_running: false,
+            closed: false,
+        }
+    }
+
+    fn record(&mut self, uuid: Uuid, name: String) -> bool {
+        if self.closed || !self.players.record(uuid, name) {
+            return false;
+        }
+        self.mark_changed()
+    }
+
+    const fn mark_changed(&mut self) -> bool {
+        if self.closed {
+            return false;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        if self.worker_running {
+            false
+        } else {
+            self.worker_running = true;
+            true
+        }
+    }
+
+    fn snapshot(&self) -> (KnownPlayers, u64) {
+        (self.players.clone(), self.generation)
+    }
+
+    const fn is_current(&self, generation: u64) -> bool {
+        !self.closed && self.generation == generation
+    }
+
+    const fn finish_save(&mut self, generation: u64) -> KnownPlayerSaveStep {
+        if !self.closed && self.generation != generation {
+            KnownPlayerSaveStep::SaveAgain
+        } else {
+            self.worker_running = false;
+            KnownPlayerSaveStep::Finished
+        }
+    }
+
+    fn close_if_idle(&mut self) -> Option<KnownPlayers> {
+        if self.worker_running {
+            return None;
+        }
+        self.closed = true;
+        Some(self.players.clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KnownPlayerSaveStep {
+    SaveAgain,
+    Finished,
+}
 
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
@@ -107,20 +231,189 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::{
+        env::temp_dir,
+        path::{Path, PathBuf},
+        slice,
+        sync::{Arc, Weak},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use glam::DVec3;
+    use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::game_rules::GameRuleValue;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use text_components::TextComponent;
+    use tokio::{fs, runtime::Builder};
     use uuid::Uuid;
 
+    use crate::command::execution::{CommandPermissionSource, CommandSource};
+    use crate::command::sender::CommandSender;
+    use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
     use crate::entity::{Entity, EntityBase};
+    use crate::permission::{
+        OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
+        PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
+        PermissionSubjectIndex, PermissionSubjectState,
+    };
+    use crate::player::connection::NetworkConnection;
+    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
+    use crate::test_support::test_world;
+    use crate::world::World;
 
     use super::{
+        AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
+        DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
+        KnownPlayers, Notify, PlayerDataStorage, PlayerJoinQueue, PlayerMap, RegistryCache, Server,
+        ServerJobQueue, SyncMutex, SyncRwLock, TickRateManager, UncachedPlayerTarget, WorldMap,
         can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-        is_allowed_to_enter_portal_target, is_end_return_transition,
+        classify_uncached_player_target, create_registered_dispatcher, direct_uuid_profile,
+        is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
+        validate_player_permission_group_update,
     };
+
+    struct TestConnection;
+
+    impl NetworkConnection for TestConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, _packet: EncodedPacket) {}
+
+        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            false
+        }
+    }
+
+    fn test_runtime_config() -> Arc<RuntimeConfig> {
+        Arc::new(RuntimeConfig {
+            max_players: 1,
+            view_distance: 2,
+            simulation_distance: 2,
+            online_mode: false,
+            auth_server: None,
+            profile_server: None,
+            encryption: false,
+            allow_flight: false,
+            motd: String::new(),
+            use_favicon: false,
+            favicon: String::new(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: 10,
+            command_spam_threshold_seconds: 10,
+            compression: None,
+            server_links: None,
+            chunk_generation_threads: Some(1),
+        })
+    }
+
+    fn test_storage_root(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        temp_dir().join(format!("steel-server-{name}-{unique}"))
+    }
+
+    async fn test_server(
+        world: Arc<World>,
+        player_permission_states: PermissionSubjectIndex,
+        storage_root: &Path,
+    ) -> Result<Arc<Server>, String> {
+        let domain = ResolvedDomainConfig {
+            name: world.domain().to_owned(),
+            default_world: world.key.clone(),
+            worlds: vec![world.key.clone()],
+        };
+        let mut worlds = WorldMap::new(domain.name.clone(), slice::from_ref(&domain), &[]);
+        worlds.insert(world.key.clone(), world);
+
+        let scoreboards = DomainScoreboards::load(&worlds)
+            .await
+            .map_err(|error| format!("test scoreboards should load: {error}"))?;
+        let command_storage = DomainCommandStorage::load(&worlds)
+            .await
+            .map_err(|error| format!("test command storage should load: {error}"))?;
+        let player_data_storage = PlayerDataStorage::new(
+            storage_root.to_owned(),
+            StorageSelection::default_player_file(),
+        )
+        .await
+        .map_err(|error| format!("test player storage should initialize: {error}"))?;
+        let registered_commands = create_registered_dispatcher(CommandRegistry::new())
+            .map_err(|error| format!("test commands should register: {error}"))?;
+        let command_permission_keys = registered_commands
+            .permissions
+            .iter()
+            .map(|permission| permission.as_str().to_owned())
+            .collect();
+        let permission_groups =
+            PermissionGroupManager::transient(PermissionGroupsConfig::default())
+                .map_err(|error| format!("test permission groups should resolve: {error}"))?;
+        let config = test_runtime_config();
+        let registry_cache = RegistryCache::new(config.compression);
+
+        Ok(Arc::new(Server {
+            config,
+            permission_groups,
+            cancel_token: CancellationToken::new(),
+            key_store: KeyStore::create(),
+            registry_cache,
+            worlds,
+            online_players: PlayerMap::new(),
+            player_admissions: SyncMutex::new(FxHashMap::default()),
+            tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            scoreboards,
+            command_storage,
+            command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
+            command_permission_keys,
+            command_requests: CommandRequestQueue::new(),
+            jobs: ServerJobQueue::new(),
+            player_data_storage,
+            player_permission_states: SyncRwLock::new(player_permission_states),
+            player_permission_updates: AsyncMutex::new(()),
+            known_players: SyncMutex::new(KnownPlayerCacheState::new(KnownPlayers::new())),
+            known_player_save_idle: Notify::new(),
+            profile_lookup_client: reqwest::Client::new(),
+            pending_player_joins: PlayerJoinQueue::new(),
+            pending_world_changes: SyncMutex::new(Vec::new()),
+            pending_domain_switches: SyncMutex::new(Vec::new()),
+        }))
+    }
+
+    fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
+        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
+        Arc::new_cyclic(|weak_player| {
+            Player::new(
+                GameProfile {
+                    id: uuid,
+                    name: "TestPlayer".to_owned(),
+                    properties: Vec::new(),
+                    profile_actions: None,
+                },
+                Arc::clone(&connection),
+                world,
+                Arc::downgrade(server),
+                Arc::clone(&server.config),
+                1,
+                weak_player,
+                ClientInformation::default(),
+            )
+        })
+    }
 
     struct TestEntity {
         base: EntityBase,
@@ -135,6 +428,13 @@ mod tests {
                 entity_type,
                 projectile_owner_uuid,
             }
+        }
+    }
+
+    fn permission_key(value: &str) -> PermissionKey {
+        match PermissionKey::parse(value) {
+            Ok(key) => key,
+            Err(error) => panic!("test permission key should parse: {error}"),
         }
     }
 
@@ -164,6 +464,233 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn uncached_uuid_target_is_preserved_in_online_mode() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let target = "1234567890ABCDEF1234567890ABCDEF";
+
+        assert_eq!(
+            classify_uncached_player_target(target, true),
+            UncachedPlayerTarget::DirectUuid(uuid)
+        );
+    }
+
+    #[test]
+    fn uncached_uuid_target_is_preserved_in_offline_mode() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let target = "1234567890ABCDEF1234567890ABCDEF";
+
+        assert_eq!(
+            classify_uncached_player_target(target, false),
+            UncachedPlayerTarget::DirectUuid(uuid)
+        );
+        assert_ne!(offline_uuid(target), uuid);
+    }
+
+    #[test]
+    fn uncached_uuid_profile_uses_a_canonical_display_label() {
+        let uuid = Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+        let profile = direct_uuid_profile(uuid);
+
+        assert_eq!(profile.uuid(), uuid);
+        assert_eq!(
+            profile.last_known_name(),
+            "12345678-90ab-cdef-1234-567890abcdef"
+        );
+    }
+
+    #[test]
+    fn known_player_changes_are_coalesced_while_a_save_is_running() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, first_generation) = cache.snapshot();
+
+        for value in 2..=1_000 {
+            assert!(!cache.record(Uuid::from_u128(value), format!("Player{value}")));
+        }
+        assert_eq!(
+            cache.finish_save(first_generation),
+            KnownPlayerSaveStep::SaveAgain
+        );
+
+        let (latest, latest_generation) = cache.snapshot();
+        assert_eq!(latest.entries().len(), 1_000);
+        assert_eq!(
+            cache.finish_save(latest_generation),
+            KnownPlayerSaveStep::Finished
+        );
+    }
+
+    #[test]
+    fn known_player_change_cannot_be_lost_when_a_worker_becomes_idle() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, generation) = cache.snapshot();
+        assert_eq!(cache.finish_save(generation), KnownPlayerSaveStep::Finished);
+
+        assert!(cache.record(Uuid::from_u128(2), "Player2".to_owned()));
+    }
+
+    #[test]
+    fn known_player_change_during_a_failed_save_gets_a_follow_up() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        let (_, generation) = cache.snapshot();
+        assert!(!cache.record(Uuid::from_u128(2), "Player2".to_owned()));
+        assert_eq!(
+            cache.finish_save(generation),
+            KnownPlayerSaveStep::SaveAgain
+        );
+
+        let (_, latest_generation) = cache.snapshot();
+        assert_eq!(
+            cache.finish_save(latest_generation),
+            KnownPlayerSaveStep::Finished
+        );
+        assert!(cache.record(Uuid::from_u128(3), "Player3".to_owned()));
+    }
+
+    #[test]
+    fn known_player_cache_closes_only_after_the_worker_is_idle() {
+        let mut cache = KnownPlayerCacheState::new(KnownPlayers::new());
+        assert!(cache.record(Uuid::from_u128(1), "Player1".to_owned()));
+        assert!(cache.close_if_idle().is_none());
+
+        let (_, generation) = cache.snapshot();
+        assert_eq!(cache.finish_save(generation), KnownPlayerSaveStep::Finished);
+        let final_snapshot = cache
+            .close_if_idle()
+            .unwrap_or_else(|| panic!("idle cache should close"));
+        assert_eq!(final_snapshot.entries().len(), 1);
+        assert!(!cache.record(Uuid::from_u128(2), "Player2".to_owned()));
+    }
+
+    #[test]
+    fn permission_updates_reject_only_new_unknown_group_assignments() {
+        let manager = PermissionGroupManager::transient(PermissionGroupsConfig::default());
+        let Ok(manager) = manager else {
+            panic!("default permission groups should resolve");
+        };
+
+        assert!(
+            validate_player_permission_group_update::<()>(&manager, &[], &["op".to_owned()])
+                .is_ok()
+        );
+        assert!(
+            validate_player_permission_group_update::<()>(
+                &manager,
+                &["retired".to_owned()],
+                &["retired".to_owned()],
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_player_permission_group_update::<()>(&manager, &[], &["missing".to_owned()],)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn command_source_and_operator_checks_use_published_subject_state() {
+        let world = Arc::clone(test_world());
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+        runtime.block_on(async {
+            let uuid = Uuid::from_u128(1);
+            let storage_root = test_storage_root("published-permissions");
+            let mut published_states = PermissionSubjectIndex::new();
+            published_states.set(uuid, PermissionSubjectState::default());
+            let server = test_server(Arc::clone(&world), published_states, &storage_root).await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, world, uuid);
+            let permission = permission_key("minecraft.command.stop");
+            let stale_player_permissions =
+                PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
+            player.set_permission_state(
+                vec![OP_GROUP.to_owned()],
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+                stale_player_permissions,
+                PermissionMetadataSet::new(),
+            );
+
+            assert!(!player.is_operator());
+            let revoked_source = CommandSource::new(
+                CommandSender::Player(Arc::clone(&player)),
+                Arc::clone(&server),
+            );
+            assert!(!CommandPermissionSource::has_permission(
+                &revoked_source,
+                &PermissionExpr::key(permission.clone()),
+            ));
+
+            server.player_permission_states.write().set(
+                uuid,
+                PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+            );
+            player.set_permission_state(
+                Vec::new(),
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+                PermissionSet::new(),
+                PermissionMetadataSet::new(),
+            );
+
+            assert!(player.is_operator());
+            let granted_source = CommandSource::new(
+                CommandSender::Player(Arc::clone(&player)),
+                Arc::clone(&server),
+            );
+            assert!(CommandPermissionSource::has_permission(
+                &granted_source,
+                &PermissionExpr::key(permission),
+            ));
+
+            drop(revoked_source);
+            drop(granted_source);
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn effective_permissions_reflect_published_group_revocation() {
+        let mut config = PermissionGroupsConfig::default();
+        config.groups.insert(
+            "staff".to_owned(),
+            PermissionGroupConfig {
+                allow: vec!["minecraft.command.stop".to_owned()],
+                ..PermissionGroupConfig::default()
+            },
+        );
+        let manager = PermissionGroupManager::transient(config);
+        let Ok(manager) = manager else {
+            panic!("test permission groups should resolve");
+        };
+        let subject = PermissionSubjectState::new(vec!["staff".to_owned()], PermissionSet::new());
+        let permission = permission_key("minecraft.command.stop");
+        let stale_player_snapshot =
+            manager.effective_permissions(subject.groups(), subject.overrides());
+        assert!(stale_player_snapshot.allows_key(&permission));
+
+        let mut revoked = manager.config_snapshot();
+        let Some(staff) = revoked.groups.get_mut("staff") else {
+            panic!("test staff group should exist");
+        };
+        staff.allow.clear();
+        assert_eq!(manager.replace_config(revoked).await, Ok(()));
+
+        let command_snapshot = manager.effective_permissions(subject.groups(), subject.overrides());
+        assert!(!command_snapshot.allows_key(&permission));
     }
 
     #[test]
@@ -416,6 +943,40 @@ struct DomainSwitchRequest {
     target_domain: String,
     target_world: Option<Arc<World>>,
     restore_saved_location: bool,
+}
+
+/// Failure while atomically editing one player's persisted permission state.
+#[derive(Debug, thiserror::Error)]
+pub enum PlayerPermissionUpdateError<E> {
+    /// The caller rejected the proposed edit.
+    #[error("{0}")]
+    Edit(E),
+    /// The edit assigns a group that is not configured.
+    #[error("unknown permission group '{0}'")]
+    UnknownGroup(String),
+    /// The permission snapshot could not be persisted.
+    #[error("failed to update player permissions: {0}")]
+    Storage(io::Error),
+}
+
+impl<E> From<io::Error> for PlayerPermissionUpdateError<E> {
+    fn from(value: io::Error) -> Self {
+        Self::Storage(value)
+    }
+}
+
+fn validate_player_permission_group_update<E>(
+    manager: &PermissionGroupManager,
+    previous_groups: &[String],
+    updated_groups: &[String],
+) -> Result<(), PlayerPermissionUpdateError<E>> {
+    for group in updated_groups {
+        let already_assigned = previous_groups.iter().any(|current| current == group);
+        if !already_assigned && !manager.contains_group(group) {
+            return Err(PlayerPermissionUpdateError::UnknownGroup(group.clone()));
+        }
+    }
+    Ok(())
 }
 
 struct PendingPlayerJoin {
@@ -1236,6 +1797,8 @@ fn restore_ender_pearl_for_player(
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
+    /// Runtime permission groups and their persistence boundary.
+    pub permission_groups: PermissionGroupManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -1250,12 +1813,30 @@ pub struct Server {
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// Command scoreboards isolated by Steel domain.
+    pub scoreboards: DomainScoreboards,
+    /// Command NBT storage isolated by Steel domain.
+    pub(crate) command_storage: DomainCommandStorage,
     /// Saves and dispatches commands to appropriate handlers.
-    pub command_dispatcher: SyncRwLock<CommandDispatcher>,
+    command_dispatcher: SyncRwLock<CommandDispatcher>,
+    /// Steel-owned permission keys exposed for command autocomplete.
+    command_permission_keys: Vec<String>,
+    /// Command work submitted from connection and console tasks.
+    command_requests: CommandRequestQueue,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Persisted permission state indexed by player UUID.
+    player_permission_states: SyncRwLock<PermissionSubjectIndex>,
+    /// Serializes persistence and cache publication for player permission edits.
+    player_permission_updates: AsyncMutex<()>,
+    /// Player identities and coalesced persistence state.
+    known_players: SyncMutex<KnownPlayerCacheState>,
+    /// Wakes shutdown when the single known-player save worker becomes idle.
+    known_player_save_idle: Notify,
+    /// HTTP client used by online-mode name-to-profile lookups.
+    profile_lookup_client: reqwest::Client,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
     /// Queued world changes to process after the tick.
@@ -1265,18 +1846,74 @@ pub struct Server {
 }
 
 impl Server {
-    /// Creates a new server.
-    ///
-    #[expect(
-        clippy::too_many_lines,
-        reason = "server initialization is a single cohesive flow"
-    )]
+    pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
+        let mut suggestions = self
+            .command_permission_keys
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let config = self.permission_groups.config_snapshot();
+        for group in config.groups.values() {
+            suggestions.extend(group.allow.iter().cloned());
+            suggestions.extend(group.deny.iter().cloned());
+        }
+        for (_, state) in self.player_permission_states.read().entries() {
+            suggestions.extend(state.overrides().entries().iter().map(|entry| {
+                PermissionRuleExpression::new(entry.key().clone(), entry.context().clone())
+                    .to_string()
+            }));
+        }
+        suggestions.into_iter().collect()
+    }
+
+    pub(crate) fn permission_metadata_suggestions(&self) -> Vec<String> {
+        let mut suggestions = BTreeSet::new();
+        let config = self.permission_groups.config_snapshot();
+        for group in config.groups.values() {
+            suggestions.extend(group.metadata.iter().map(|rule| rule.key.clone()));
+        }
+        for (_, state) in self.player_permission_states.read().entries() {
+            suggestions.extend(state.metadata_overrides().entries().iter().map(|entry| {
+                PermissionMetadataExpression::new(entry.key().clone(), entry.context().clone())
+                    .to_string()
+            }));
+        }
+        suggestions.into_iter().collect()
+    }
+
+    /// Creates a new server with only Steel's built-in commands.
     pub async fn new(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
+        permission_groups: PermissionGroupManager,
     ) -> Result<Self, String> {
+        Self::new_with_commands(
+            chunk_runtime,
+            cancel_token,
+            config,
+            worlds_config,
+            permission_groups,
+            CommandRegistry::new(),
+        )
+        .await
+    }
+
+    /// Creates a new server and atomically merges startup command extensions after built-ins.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "server initialization is a single cohesive flow"
+    )]
+    pub async fn new_with_commands(
+        chunk_runtime: Arc<Runtime>,
+        cancel_token: CancellationToken,
+        config: RuntimeConfig,
+        worlds_config: WorldsConfig,
+        permission_groups: PermissionGroupManager,
+        command_registry: CommandRegistry,
+    ) -> Result<Self, String> {
+        validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
@@ -1325,6 +1962,14 @@ impl Server {
         )
         .await
         .map_err(|e| format!("failed to create player data storage: {e}"))?;
+        let player_permission_states = player_data_storage
+            .load_permission_subjects()
+            .await
+            .map_err(|error| format!("failed to load player permissions: {error}"))?;
+        let known_players = player_data_storage
+            .load_known_players()
+            .await
+            .map_err(|error| format!("failed to load known players: {error}"))?;
         let mut worlds = WorldMap::new(
             resolved_worlds.default_domain.clone(),
             &resolved_worlds.domains,
@@ -1395,8 +2040,23 @@ impl Server {
             worlds.insert(world_entry.key.clone(), world);
         }
 
+        let scoreboards = DomainScoreboards::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain scoreboards: {error}"))?;
+        let command_storage = DomainCommandStorage::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain command storage: {error}"))?;
+        let registered_commands = create_registered_dispatcher(command_registry)
+            .map_err(|error| format!("failed to register commands: {error}"))?;
+        let command_permission_keys = registered_commands
+            .permissions
+            .into_iter()
+            .map(|permission| permission.as_str().to_owned())
+            .collect();
+
         Ok(Server {
             config,
+            permission_groups,
             cancel_token,
             key_store: KeyStore::create(),
             worlds,
@@ -1404,13 +2064,86 @@ impl Server {
             player_admissions: SyncMutex::new(FxHashMap::default()),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
-            command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
+            scoreboards,
+            command_storage,
+            command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
+            command_permission_keys,
+            command_requests: CommandRequestQueue::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
+            player_permission_states: SyncRwLock::new(player_permission_states),
+            player_permission_updates: AsyncMutex::new(()),
+            known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
+            known_player_save_idle: Notify::new(),
+            profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
+    }
+
+    /// Saves all dirty domain command storage through domain default worlds.
+    pub async fn save_command_storage(&self) -> io::Result<usize> {
+        self.command_storage.save(&self.worlds).await
+    }
+
+    /// Saves all command-owned persistent data while allowing each data set to fail independently.
+    pub async fn save_command_data(&self) -> CommandDataSaveResults {
+        CommandDataSaveResults {
+            scoreboards: self.scoreboards.save(&self.worlds).await,
+            storage: self.save_command_storage().await,
+        }
+    }
+
+    /// Queues a command for execution at the start of the next game tick.
+    pub fn submit_command(
+        &self,
+        sender: CommandSender,
+        command: String,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests
+            .submit(CommandRequest::Execute { sender, command })
+    }
+
+    pub(crate) fn submit_command_suggestions(
+        &self,
+        player: Arc<Player>,
+        transaction_id: i32,
+        input: String,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests.submit(CommandRequest::Suggestions {
+            player,
+            transaction_id,
+            input,
+        })
+    }
+
+    /// Returns Brigadier completions visible to a command sender.
+    pub fn command_completions(
+        self: &Arc<Self>,
+        sender: CommandSender,
+        input: &str,
+    ) -> Vec<CommandCompletion> {
+        match self.build_command_suggestions(sender, input) {
+            Ok(suggestions) => {
+                let range = suggestions.range();
+                suggestions
+                    .list()
+                    .iter()
+                    .map(|suggestion| {
+                        CommandCompletion::new(
+                            range.start(),
+                            range.len(),
+                            suggestion.text().to_owned(),
+                        )
+                    })
+                    .collect()
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to build command suggestions");
+                Vec::new()
+            }
+        }
     }
 
     /// Queues initial player join work.
@@ -1473,6 +2206,7 @@ impl Server {
             return;
         }
 
+        self.apply_cached_or_default_permission_state(&player);
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
@@ -1692,6 +2426,342 @@ impl Server {
             }
             Ok(None) => Ok(self.worlds.default_domain().to_owned()),
             Err(e) => Err(format!("failed to load global player data: {e}")),
+        }
+    }
+
+    fn apply_cached_or_default_permission_state(&self, player: &Player) -> u64 {
+        let state = self
+            .player_permission_states
+            .read()
+            .get(player.gameprofile.id)
+            .cloned()
+            .unwrap_or_default();
+        self.apply_player_permission_state(player, state)
+    }
+
+    fn apply_player_permission_state(&self, player: &Player, state: PermissionSubjectState) -> u64 {
+        let (groups, overrides, metadata_overrides) = state.into_parts();
+        for group in &groups {
+            if !self.permission_groups.contains_group(group) {
+                log::warn!(
+                    "Player {} has unknown permission group {group}",
+                    player.gameprofile.name
+                );
+            }
+        }
+        let effective = self
+            .permission_groups
+            .effective_permissions(&groups, &overrides);
+        let effective_metadata = self
+            .permission_groups
+            .effective_metadata(&groups, &metadata_overrides);
+        player.set_permission_state(
+            groups,
+            overrides,
+            metadata_overrides,
+            effective,
+            effective_metadata,
+        )
+    }
+
+    /// Returns one player's cached persisted permission state.
+    #[must_use]
+    pub fn player_permission_state(&self, uuid: Uuid) -> Option<PermissionSubjectState> {
+        self.player_permission_states.read().get(uuid).cloned()
+    }
+
+    /// Returns whether the latest published subject state assigns the operator group.
+    #[must_use]
+    pub(crate) fn is_operator(&self, uuid: Uuid) -> bool {
+        self.player_permission_states
+            .read()
+            .get(uuid)
+            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
+    }
+
+    /// Captures effective command permissions from the latest published subject and group state.
+    #[must_use]
+    pub(crate) fn command_permission_snapshot(&self, uuid: Uuid) -> PermissionSet {
+        let subject = self.player_permission_state(uuid).unwrap_or_default();
+        self.permission_groups
+            .effective_permissions(subject.groups(), subject.overrides())
+    }
+
+    /// Atomically edits one player's persisted permission state.
+    ///
+    /// Persistence completes before the cache is published. An online player is
+    /// refreshed from the latest cached snapshot at the server job tick stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an edit error, an unknown newly assigned group, or a storage error.
+    pub async fn try_update_player_permissions<T, E>(
+        self: &Arc<Self>,
+        uuid: Uuid,
+        update: impl FnOnce(PermissionSubjectState) -> Result<(PermissionSubjectState, T), E> + Send,
+    ) -> Result<(PermissionSubjectState, T), PlayerPermissionUpdateError<E>>
+    where
+        T: Send,
+        E: Send,
+    {
+        let _guard = self.player_permission_updates.lock().await;
+        let mut states = self.player_permission_states.read().clone();
+        let current = states.get(uuid).cloned().unwrap_or_default();
+        let previous_groups = current.groups().to_vec();
+        let (updated, result) = update(current).map_err(PlayerPermissionUpdateError::Edit)?;
+        validate_player_permission_group_update(
+            &self.permission_groups,
+            &previous_groups,
+            updated.groups(),
+        )?;
+
+        if updated.is_empty() {
+            states.remove(uuid);
+        } else {
+            states.set(uuid, updated.clone());
+        }
+        self.player_data_storage
+            .save_permission_subjects(&states)
+            .await?;
+
+        *self.player_permission_states.write() = states;
+        self.queue_player_permission_refresh(uuid);
+        Ok((updated, result))
+    }
+
+    /// Replaces the complete permission group config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn replace_permission_groups(
+        self: &Arc<Self>,
+        config: PermissionGroupsConfig,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.replace_config(config).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Edits the latest permission group config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn update_permission_groups(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionGroupsConfig) + Send,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Applies a fallible permission group edit and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns the caller edit error or a validation/persistence error.
+    pub async fn try_update_permission_groups<T, E>(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionGroupsConfig) -> Result<T, E> + Send,
+    ) -> Result<T, PermissionGroupUpdateError<E>>
+    where
+        T: Send,
+        E: Send,
+    {
+        let result = self.permission_groups.try_update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(result)
+    }
+
+    /// Returns a snapshot of player identities known to this server.
+    #[must_use]
+    pub fn known_players(&self) -> KnownPlayers {
+        self.known_players.lock().players.clone()
+    }
+
+    /// Records a connected player identity in the persistent profile cache.
+    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) {
+        self.record_known_profile(profile.id, profile.name.clone());
+    }
+
+    /// Records a UUID and last-known name in the persistent profile cache.
+    pub fn record_known_profile(self: &Arc<Self>, uuid: Uuid, last_known_name: impl Into<String>) {
+        let start_worker = self
+            .known_players
+            .lock()
+            .record(uuid, last_known_name.into());
+        if start_worker {
+            self.start_known_player_save_worker();
+        }
+    }
+
+    /// Resolves a vanilla game-profile command target by name or UUID.
+    ///
+    /// Online players and cached profiles are checked first. Uncached UUIDs remain
+    /// direct UUID targets in either server mode. Offline-mode names use vanilla's
+    /// deterministic UUID, while online mode queries the configured profile service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the profile is unknown or the profile service fails.
+    pub async fn resolve_player_profile(
+        self: &Arc<Self>,
+        name: &str,
+    ) -> Result<KnownPlayer, ProfileLookupError> {
+        if let Some(profile) = self.cached_player_profile(name) {
+            return Ok(profile);
+        }
+
+        match classify_uncached_player_target(name, self.config.online_mode) {
+            UncachedPlayerTarget::DirectUuid(uuid) => {
+                // No verified name is available, so use the canonical UUID for
+                // feedback without adding a synthetic identity-cache entry.
+                return Ok(direct_uuid_profile(uuid));
+            }
+            UncachedPlayerTarget::OfflineName => {
+                let profile = KnownPlayer::new(offline_uuid(name), name.to_owned());
+                self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
+                return Ok(profile);
+            }
+            UncachedPlayerTarget::OnlineName => {}
+        }
+        if !is_valid_player_name(name) {
+            return Err(ProfileLookupError::UnknownPlayer(name.to_owned()));
+        }
+
+        let profile = lookup_online_profile(
+            &self.profile_lookup_client,
+            self.config.profile_server.as_deref(),
+            name,
+        )
+        .await?;
+        self.record_known_profile(profile.uuid(), profile.last_known_name().to_owned());
+        Ok(profile)
+    }
+
+    fn cached_player_profile(self: &Arc<Self>, name: &str) -> Option<KnownPlayer> {
+        let uuid = Uuid::parse_str(name).ok();
+        if let Some(player) = self.get_players().into_iter().find(|player| {
+            player.gameprofile.name.eq_ignore_ascii_case(name)
+                || uuid.is_some_and(|uuid| player.gameprofile.id == uuid)
+        }) {
+            return Some(KnownPlayer::new(
+                player.gameprofile.id,
+                player.gameprofile.name.clone(),
+            ));
+        }
+
+        let mut known = self.known_players.lock();
+        if let Some(uuid) = uuid {
+            return known.players.resolve_uuid(uuid);
+        }
+        let (profile, start_worker) = match known
+            .players
+            .resolve_name(name, chrono::Utc::now().timestamp_millis())
+        {
+            KnownPlayerNameLookup::Found(profile) => (Some(profile), false),
+            KnownPlayerNameLookup::Missing => (None, false),
+            KnownPlayerNameLookup::Expired => {
+                let start_worker = known.mark_changed();
+                (None, start_worker)
+            }
+        };
+        drop(known);
+        if start_worker {
+            self.start_known_player_save_worker();
+        }
+        profile
+    }
+
+    fn start_known_player_save_worker(self: &Arc<Self>) {
+        let server = Arc::clone(self);
+        tokio::spawn(async move {
+            server.run_known_player_save_worker().await;
+        });
+    }
+
+    async fn run_known_player_save_worker(self: &Arc<Self>) {
+        loop {
+            let (players, generation) = self.known_players.lock().snapshot();
+            let result = self
+                .player_data_storage
+                .save_known_players_if_current(&players, || {
+                    self.known_players.lock().is_current(generation)
+                })
+                .await;
+            match result {
+                Ok(true | false) => {}
+                Err(error) => {
+                    tracing::error!(%error, "failed to save known player cache");
+                }
+            }
+            let step = self.known_players.lock().finish_save(generation);
+            if step == KnownPlayerSaveStep::SaveAgain {
+                continue;
+            }
+            self.known_player_save_idle.notify_one();
+            return;
+        }
+    }
+
+    /// Waits for the coalesced identity-cache writer and persists the final snapshot.
+    ///
+    /// Later identity observations are ignored because the server is shutting down.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the final rebuildable cache snapshot cannot be persisted.
+    pub async fn flush_known_players(&self) -> io::Result<()> {
+        let players = loop {
+            let idle = self.known_player_save_idle.notified();
+            let snapshot = self.known_players.lock().close_if_idle();
+            if let Some(players) = snapshot {
+                break players;
+            }
+            idle.await;
+        };
+        self.player_data_storage
+            .save_known_players_if_current(&players, || true)
+            .await
+            .map(|_| ())
+    }
+
+    fn queue_player_permission_refresh(self: &Arc<Self>, uuid: Uuid) {
+        self.jobs
+            .spawn(FnServerJob::new(move |context: &mut ServerJobContext| {
+                if let Some(server) = context.server() {
+                    server.refresh_player_permission_state(uuid);
+                }
+            }));
+    }
+
+    pub(crate) fn refresh_player_permission_state(self: &Arc<Self>, uuid: Uuid) {
+        let Some(player) = self.online_players.get_by_uuid(&uuid) else {
+            return;
+        };
+        let state = self.player_permission_state(uuid).unwrap_or_default();
+        self.apply_player_permission_state(&player, state);
+        self.resend_player_permission_context(&player);
+    }
+
+    fn queue_online_permission_group_refresh(self: &Arc<Self>) {
+        self.jobs
+            .spawn(FnServerJob::new(|context: &mut ServerJobContext| {
+                if let Some(server) = context.server() {
+                    server.refresh_online_permission_groups();
+                }
+            }));
+    }
+
+    fn refresh_online_permission_groups(self: &Arc<Self>) {
+        for player in self.get_players() {
+            let state = self
+                .player_permission_state(player.gameprofile.id)
+                .unwrap_or_default();
+            self.apply_player_permission_state(&player, state);
+            self.resend_player_permission_context(&player);
         }
     }
 
@@ -2175,7 +3245,9 @@ impl Server {
     /// The main game tick loop (20 TPS, governed by tick rate manager).
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
+        let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
+        let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -2225,6 +3297,8 @@ impl Server {
                 (tick_manager.tick_count, runs_normally)
             };
 
+            Self::tick_pending_command_executions(&mut pending_command_executions);
+            self.tick_command_requests(&mut pending_command_executions);
             self.tick_worlds_game(tick_count, runs_normally).await;
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
@@ -2244,6 +3318,11 @@ impl Server {
 
             self.process_domain_switches().await;
 
+            if Instant::now() >= next_command_data_autosave {
+                self.autosave_command_data().await;
+                next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
+            }
+
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
                 let mut tick_manager = self.tick_rate_manager.write();
@@ -2262,6 +3341,140 @@ impl Server {
         }
 
         self.jobs.cancel_all();
+        pending_command_executions.cancel_all();
+        self.command_requests.clear();
+    }
+
+    async fn autosave_command_data(&self) {
+        tracing::debug!("Command data autosave started");
+        let results = self.save_command_data().await;
+        match results.scoreboards {
+            Ok(saved) => tracing::debug!(saved, "Domain scoreboard autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain scoreboard autosave failed"),
+        }
+        match results.storage {
+            Ok(saved) => tracing::debug!(saved, "Domain command-storage autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain command-storage autosave failed"),
+        }
+    }
+
+    fn tick_pending_command_executions(pending: &mut PendingCommandExecutionQueue<CommandSource>) {
+        let stats = pending.tick(COMMAND_RESUMPTIONS_PER_TICK);
+        if stats.polled == COMMAND_RESUMPTIONS_PER_TICK && stats.pending > 0 {
+            tracing::debug!(
+                polled = stats.polled,
+                finished = stats.finished,
+                pending = stats.pending,
+                "Command resumption tick reached per-tick processing limit"
+            );
+        }
+    }
+
+    fn tick_command_requests(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+    ) {
+        let mut handled = 0;
+        for _ in 0..COMMAND_REQUESTS_PER_TICK {
+            let Some(request) = self
+                .command_requests
+                .pop_front_runnable(|sender| !pending.blocks(sender.key()))
+            else {
+                break;
+            };
+            handled += 1;
+
+            match request {
+                CommandRequest::Execute { sender, command } => {
+                    if sender
+                        .get_player()
+                        .is_some_and(|player| player.connection.closed())
+                    {
+                        continue;
+                    }
+                    self.execute_command_request(pending, sender, &command);
+                }
+                CommandRequest::Suggestions {
+                    player,
+                    transaction_id,
+                    input,
+                } => {
+                    if player.connection.closed() {
+                        continue;
+                    }
+                    self.send_command_suggestions(&player, transaction_id, &input);
+                }
+            }
+        }
+
+        if handled == COMMAND_REQUESTS_PER_TICK {
+            tracing::debug!(handled, "Command request tick reached its processing limit");
+        }
+    }
+
+    fn execute_command_request(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+        sender: CommandSender,
+        command: &str,
+    ) {
+        let sender_key = sender.key();
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let command = command.strip_prefix('/').unwrap_or(command);
+        let chain = {
+            let dispatcher = self.command_dispatcher.read();
+            let parse = dispatcher.parse(command, source.clone());
+            dispatcher.context_chain(parse)
+        };
+        let chain = match chain {
+            Ok(chain) => chain,
+            Err(error) => {
+                source.handle_error(&error, false);
+                return;
+            }
+        };
+
+        let mut execution = CommandExecutionContext::for_source(&source);
+        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+        if execution.run() == ExecutionStop::Suspended
+            && !pending.push_suspended(sender_key, execution)
+        {
+            tracing::error!("suspended command execution could not be retained");
+        }
+    }
+
+    fn send_command_suggestions(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        transaction_id: i32,
+        input: &str,
+    ) {
+        let suggestions =
+            self.build_command_suggestions(CommandSender::Player(Arc::clone(player)), input);
+        match suggestions {
+            Ok(suggestions) => {
+                player.send_packet(command_suggestions_packet(transaction_id, &suggestions));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to build command suggestions");
+                player.send_packet(CCommandSuggestions::new(transaction_id, 0, 0, Vec::new()));
+            }
+        }
+    }
+
+    fn build_command_suggestions(
+        self: &Arc<Self>,
+        sender: CommandSender,
+        input: &str,
+    ) -> Result<Suggestions, SuggestionError> {
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let mut reader = StringReader::new(input);
+        if reader.peek() == Some('/') {
+            reader.skip();
+        }
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse_reader(reader, source);
+        dispatcher.completion_suggestions(&parse)
     }
 
     /// Chunk sending tick loop — encodes and sends chunks to players independently.
@@ -3011,7 +4224,7 @@ impl Server {
     }
 
     /// Broadcasts a sprint completion report to all players.
-    fn broadcast_sprint_report(&self, report: &SprintReport) {
+    pub(crate) fn broadcast_sprint_report(&self, report: &SprintReport) {
         use steel_utils::translations;
 
         let message: TextComponent = translations::COMMANDS_TICK_SPRINT_REPORT
@@ -3057,18 +4270,11 @@ impl Server {
     }
 
     /// Resends client state that is not fully covered by `CRespawn`.
-    pub fn resend_player_context(&self, player: &Player) {
+    pub fn resend_player_context(self: &Arc<Self>, player: &Arc<Player>) {
         player.send_difficulty();
         player.send_inventory_to_remote();
 
-        let commands = self.command_dispatcher.read().get_commands();
-        player.send_packet(commands);
-
-        // TODO: Set permissions level to match player's level.
-        player.send_packet(CEntityEvent {
-            entity_id: player.id(),
-            event: EntityStatus::PermissionLevelOwners,
-        });
+        self.resend_player_permission_context(player);
 
         self.send_ticking_state_to_player(player);
 
@@ -3076,6 +4282,51 @@ impl Server {
             event: GameEventType::ChangeGameMode,
             data: player.game_mode().into(),
         });
+    }
+
+    /// Resends the command tree and vanilla client permission-level projection.
+    pub fn resend_player_permission_context(self: &Arc<Self>, player: &Arc<Player>) {
+        let world = player.get_world();
+        player.send_packet(CEntityEvent {
+            entity_id: player.id(),
+            event: client_permission_event(player, &world),
+        });
+
+        let server = player.server();
+        if !Arc::ptr_eq(&server, self) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands from a different server"
+            );
+            return;
+        }
+        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id) else {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands for a player outside the online player map"
+            );
+            return;
+        };
+        if !Arc::ptr_eq(&shared_player, player) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "cannot project commands for a stale player handle"
+            );
+            return;
+        }
+        let source = CommandSource::new(CommandSender::Player(shared_player), server);
+        let commands = {
+            let dispatcher = self.command_dispatcher.read();
+            command_tree_packet(&dispatcher, &source)
+        };
+        match commands {
+            Ok(commands) => player.send_packet(commands),
+            Err(error) => tracing::error!(
+                player = %player.gameprofile.name,
+                %error,
+                "failed to project the player's command tree"
+            ),
+        }
     }
     /// Queues a world change to be processed after the current tick.
     pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {

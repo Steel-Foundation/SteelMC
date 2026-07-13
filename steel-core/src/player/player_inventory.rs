@@ -4,10 +4,11 @@ use std::{
     array,
     f32::consts::TAU,
     mem,
-    sync::{LazyLock, Weak},
+    sync::{Arc, LazyLock, Weak},
 };
 
 use glam::DVec3;
+use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SSetCarriedItem, SSetCreativeModeSlot,
@@ -19,10 +20,10 @@ use steel_utils::types::{GameType, InteractionHand};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
-    entity::Entity,
+    entity::{Entity, entities::ItemEntity},
     inventory::{
         MenuProvider,
-        container::Container,
+        container::{Container, clear_or_count_matching_stack},
         equipment::{EntityEquipment, EquipmentSlot},
         inventory_menu::InventoryMenu,
         lock::{ContainerId, ContainerLockGuard},
@@ -132,6 +133,27 @@ impl PlayerInventory {
     #[must_use]
     pub const fn get_selected_slot(&self) -> u8 {
         self.selected
+    }
+
+    /// Serializes the main inventory with vanilla's `ItemStackWithSlot` shape.
+    #[must_use]
+    pub(crate) fn to_vanilla_inventory_nbt(&self) -> NbtList {
+        let items = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, item)| {
+                if item.is_empty() {
+                    return None;
+                }
+                let NbtTag::Compound(mut nbt) = item.to_nbt_tag_ref() else {
+                    return None;
+                };
+                nbt.insert("Slot", NbtTag::Byte(slot as i8));
+                Some(nbt)
+            })
+            .collect();
+        NbtList::Compound(items)
     }
 
     /// Sets the selected hotbar slot.
@@ -1024,6 +1046,64 @@ impl Player {
         }
     }
 
+    /// Removes or counts matching stacks across every location used by vanilla `/clear`.
+    pub(crate) fn clear_or_count_matching_items(
+        &self,
+        predicate: &dyn Fn(&ItemStack) -> bool,
+        amount_to_remove: i32,
+    ) -> i32 {
+        let counting_only = amount_to_remove == 0;
+        let mut count = self.inventory.lock().clear_or_count_matching_items(
+            predicate,
+            amount_to_remove,
+            counting_only,
+        );
+
+        {
+            let inventory_menu = self.inventory_menu.lock();
+            count += inventory_menu
+                .crafting_container()
+                .lock()
+                .clear_or_count_matching_items(predicate, amount_to_remove - count, counting_only);
+        }
+
+        let has_open_menu = {
+            let mut open_menu = self.open_menu.lock();
+            if let Some(menu) = open_menu.as_mut() {
+                let behavior = menu.behavior_mut();
+                count += clear_or_count_matching_stack(
+                    &mut behavior.carried,
+                    predicate,
+                    amount_to_remove - count,
+                    counting_only,
+                );
+                if behavior.carried.is_empty() {
+                    behavior.set_carried(ItemStack::empty());
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if !has_open_menu {
+            let mut inventory_menu = self.inventory_menu.lock();
+            let behavior = inventory_menu.behavior_mut();
+            count += clear_or_count_matching_stack(
+                &mut behavior.carried,
+                predicate,
+                amount_to_remove - count,
+                counting_only,
+            );
+            if behavior.carried.is_empty() {
+                behavior.set_carried(ItemStack::empty());
+            }
+        }
+
+        self.inventory_menu.lock().update_crafting_result();
+        self.broadcast_inventory_changes();
+        count
+    }
+
     /// Drops an item from the player's selected hotbar slot.
     ///
     /// Based on Java's `ServerPlayer.drop(boolean all)`.
@@ -1047,7 +1127,7 @@ impl Player {
             }
         };
 
-        self.drop_item(removed, false, true);
+        let _ = self.drop_item(removed, false, true);
     }
 
     /// Drops an item into the world.
@@ -1057,9 +1137,15 @@ impl Player {
     /// - `throw_randomly`: If true, the item is thrown in a random direction.
     ///   If false, it's thrown in the direction the player is facing.
     /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
-    pub fn drop_item(&self, item: ItemStack, throw_randomly: bool, thrown_from_hand: bool) {
+    #[must_use]
+    pub fn drop_item(
+        &self,
+        item: ItemStack,
+        throw_randomly: bool,
+        thrown_from_hand: bool,
+    ) -> Option<Arc<ItemEntity>> {
         if item.is_empty() {
-            return;
+            return None;
         }
 
         let pos = self.position();
@@ -1098,15 +1184,14 @@ impl Player {
 
         let spawn_pos = DVec3::new(pos.x, spawn_y, pos.z);
 
-        if let Some(entity) = self
+        let entity = self
             .get_world()
-            .spawn_item_with_velocity(spawn_pos, item, velocity)
-        {
-            entity.set_pickup_delay(40);
-            if thrown_from_hand {
-                entity.set_thrower(self.gameprofile.id);
-            }
+            .spawn_item_with_velocity(spawn_pos, item, velocity)?;
+        entity.set_pickup_delay(40);
+        if thrown_from_hand {
+            entity.set_thrower(self.gameprofile.id);
         }
+        Some(entity)
     }
 
     /// Returns true if the player can drop items.
@@ -1129,7 +1214,7 @@ impl Player {
 
         let added = self.inventory.lock().add(&mut item);
         if !added || !item.is_empty() {
-            self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, false);
         }
     }
 
@@ -1147,11 +1232,11 @@ impl Player {
         if let Some(inv) = guard.get_mut(inv_id) {
             let added = inv.add(&mut item);
             if !added || !item.is_empty() {
-                self.drop_item(item, false, false);
+                let _ = self.drop_item(item, false, false);
             }
         } else {
             // Inventory not in guard - this shouldn't happen but drop the item to be safe
-            self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, false);
         }
     }
 }
@@ -1412,6 +1497,27 @@ mod tests {
     use steel_utils::Identifier;
 
     use super::*;
+
+    #[test]
+    fn vanilla_inventory_nbt_contains_main_slots_only() {
+        init_test_registry();
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.items[2] = ItemStack::new(&ITEMS.stone);
+        inventory
+            .equipment_mut()
+            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+
+        let NbtList::Compound(items) = inventory.to_vanilla_inventory_nbt() else {
+            panic!("player inventory should serialize as a compound list");
+        };
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].get("Slot"), Some(&NbtTag::Byte(2)));
+        assert_eq!(
+            items[0].string("id").map(ToString::to_string),
+            Some("minecraft:stone".to_owned())
+        );
+    }
 
     #[test]
     fn add_marks_changed_when_stack_fills_existing_slot() {

@@ -1,5 +1,8 @@
 //! Player data storage for global and domain-scoped player state.
 
+mod known_players;
+mod permissions;
+
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
@@ -8,17 +11,30 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
-use tokio::{fs, io};
+use tokio::{
+    fs,
+    io::{self, AsyncWriteExt},
+};
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
+#[cfg(test)]
+use self::permissions::set_permission_subject;
+use self::{
+    known_players::{KnownPlayersFile, decode_known_players_file, encode_known_players_file},
+    permissions::{PlayerPermissionsFile, serialize_player_permissions_file},
+};
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
     PersistentRootVehicle, PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
+use crate::permission::PermissionSubjectIndex;
+#[cfg(test)]
+use crate::permission::PermissionSubjectState;
 use crate::player::Player;
+use crate::player::known_players::KnownPlayers;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -121,7 +137,7 @@ struct GlobalPlayerDataFile {
 impl PlayerDataStorage {
     /// Creates player data storage from config.
     pub async fn new(save_root: PathBuf, selection: StorageSelection) -> io::Result<Self> {
-        if selection.kind != Identifier::new("steel", "file") {
+        if selection.kind != Identifier::from_steel("file") {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unknown player storage {}", selection.kind),
@@ -183,10 +199,51 @@ impl PlayerDataStorage {
         }
     }
 
+    /// Loads all persisted player permission snapshots.
+    pub async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => storage.load_permission_subjects().await,
+        }
+    }
+
+    /// Loads the rebuildable player identity cache, falling back to empty on failure.
+    pub async fn load_known_players(&self) -> io::Result<KnownPlayers> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => storage.load_known_players().await,
+        }
+    }
+
+    /// Persists the identity cache when the caller's snapshot is still current.
+    pub async fn save_known_players_if_current(
+        &self,
+        players: &KnownPlayers,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage
+                    .save_known_players_if_current(players, is_current)
+                    .await
+            }
+        }
+    }
+
     /// Saves server-wide player data.
     pub async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_global(uuid, data).await,
+        }
+    }
+
+    /// Persists the server's complete UUID-keyed permission snapshot.
+    pub async fn save_permission_subjects(
+        &self,
+        subjects: &PermissionSubjectIndex,
+    ) -> io::Result<()> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage.save_permission_subjects(subjects).await
+            }
         }
     }
 
@@ -242,7 +299,7 @@ impl FilePlayerDataStorage {
         let path = Self::player_file(&self.domain_players_dir(domain), uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
         let bytes = fs::read(&path).await?;
@@ -256,7 +313,7 @@ impl FilePlayerDataStorage {
         let path = Self::player_file(&self.global_players_dir(), uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
-        if !path.exists() {
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
         let bytes = fs::read(&path).await?;
@@ -264,6 +321,52 @@ impl FilePlayerDataStorage {
         Ok(Some(GlobalPlayerData {
             last_active_domain: file.last_active_domain,
         }))
+    }
+
+    async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
+        self.load_player_permissions_file()
+            .await?
+            .into_subject_index()
+    }
+
+    async fn load_known_players(&self) -> io::Result<KnownPlayers> {
+        let path = self.known_players_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        match Self::read_known_players_file_locked(&path).await {
+            Ok(players) => Ok(players),
+            Err(error) => {
+                log::warn!(
+                    "Failed to load known player cache from {}: {error}. Starting with an empty cache",
+                    path.display()
+                );
+                Ok(KnownPlayers::new())
+            }
+        }
+    }
+
+    async fn read_known_players_file_locked(path: &Path) -> io::Result<KnownPlayers> {
+        if !Self::recover_missing_atomic_path_locked(path).await? {
+            return Ok(KnownPlayers::new());
+        }
+        let bytes = fs::read(path).await?;
+        decode_known_players_file(&bytes)?.into_known_players()
+    }
+
+    async fn save_known_players_if_current(
+        &self,
+        players: &KnownPlayers,
+        is_current: impl FnOnce() -> bool + Send,
+    ) -> io::Result<bool> {
+        let path = self.known_players_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        if !is_current() {
+            return Ok(false);
+        }
+        let bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(players))?;
+        Self::write_atomic_path_locked(&path, bytes).await?;
+        Ok(true)
     }
 
     async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
@@ -276,8 +379,71 @@ impl FilePlayerDataStorage {
             .await
     }
 
+    async fn save_permission_subjects(&self, subjects: &PermissionSubjectIndex) -> io::Result<()> {
+        let path = self.player_permissions_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        let file = PlayerPermissionsFile::from_subject_index(subjects);
+        self.write_player_permissions_file_locked(&path, &file)
+            .await
+    }
+
+    async fn load_player_permissions_file(&self) -> io::Result<PlayerPermissionsFile> {
+        let path = self.player_permissions_file();
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        self.read_player_permissions_file_locked(&path).await
+    }
+
+    async fn read_player_permissions_file_locked(
+        &self,
+        path: &Path,
+    ) -> io::Result<PlayerPermissionsFile> {
+        if !Self::recover_missing_atomic_path_locked(path).await? {
+            return Ok(PlayerPermissionsFile::default());
+        }
+        let contents = fs::read_to_string(path).await?;
+        let file = toml::from_str::<PlayerPermissionsFile>(&contents).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "invalid player permissions TOML in {}: {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        file.validate()?;
+        Ok(file)
+    }
+
+    async fn write_player_permissions_file_locked(
+        &self,
+        path: &Path,
+        file: &PlayerPermissionsFile,
+    ) -> io::Result<()> {
+        let contents = serialize_player_permissions_file(file).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("failed to serialize player permissions TOML: {error}"),
+            )
+        })?;
+        Self::write_atomic_path_locked(path, contents.into_bytes()).await
+    }
+
+    fn global_dir(&self) -> PathBuf {
+        self.save_root.join("global")
+    }
+
     fn global_players_dir(&self) -> PathBuf {
-        self.save_root.join("global").join("players")
+        self.global_dir().join("players")
+    }
+
+    fn player_permissions_file(&self) -> PathBuf {
+        self.global_dir().join("player_permissions.toml")
+    }
+
+    fn known_players_file(&self) -> PathBuf {
+        self.global_dir().join("known_players.dat")
     }
 
     fn domain_players_dir(&self, domain: &str) -> PathBuf {
@@ -286,14 +452,6 @@ impl FilePlayerDataStorage {
 
     fn player_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
         players_dir.join(format!("{uuid}.dat"))
-    }
-
-    fn temp_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
-        players_dir.join(format!("{uuid}.dat.tmp"))
-    }
-
-    fn backup_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
-        players_dir.join(format!("{uuid}.dat_old"))
     }
 
     fn file_lock(&self, path: &Path) -> Arc<AsyncMutex<()>> {
@@ -305,21 +463,127 @@ impl FilePlayerDataStorage {
     }
 
     async fn write_atomic(&self, players_dir: &Path, uuid: Uuid, bytes: Vec<u8>) -> io::Result<()> {
-        fs::create_dir_all(players_dir).await?;
-        let temp_path = Self::temp_file(players_dir, uuid);
         let final_path = Self::player_file(players_dir, uuid);
-        let backup_path = Self::backup_file(players_dir, uuid);
         let lock = self.file_lock(&final_path);
         let _guard = lock.lock().await;
+        Self::write_atomic_path_locked(&final_path, bytes).await
+    }
 
-        fs::write(&temp_path, bytes).await?;
-        if final_path.exists() {
-            if backup_path.exists() {
-                let _ = fs::remove_file(&backup_path).await;
-            }
-            fs::rename(&final_path, &backup_path).await?;
+    async fn write_atomic_path_locked(final_path: &Path, bytes: Vec<u8>) -> io::Result<()> {
+        let Some(parent) = final_path.parent() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "atomic write path has no parent",
+            ));
+        };
+        fs::create_dir_all(parent).await?;
+        let temp_path = Self::atomic_temp_path(final_path);
+        let backup_path = Self::atomic_backup_path(final_path);
+        let backup_temp_path = Self::atomic_temp_path(&backup_path);
+
+        Self::write_synced_file(&temp_path, &bytes).await?;
+        if fs::try_exists(final_path).await? {
+            Self::copy_synced_file(final_path, &backup_temp_path).await?;
+            fs::rename(&backup_temp_path, &backup_path).await?;
         }
-        fs::rename(&temp_path, &final_path).await
+        fs::rename(&temp_path, final_path).await?;
+        if let Err(error) = Self::sync_parent(parent).await {
+            tracing::error!(
+                %error,
+                path = %final_path.display(),
+                "Atomic data-file replacement committed, but directory sync failed; crash durability is uncertain"
+            );
+        }
+        Ok(())
+    }
+
+    fn atomic_temp_path(path: &Path) -> PathBuf {
+        let extension = path.extension().and_then(|value| value.to_str());
+        path.with_extension(match extension {
+            Some(extension) => format!("{extension}.tmp"),
+            None => "tmp".to_owned(),
+        })
+    }
+
+    fn atomic_backup_path(path: &Path) -> PathBuf {
+        let extension = path.extension().and_then(|value| value.to_str());
+        path.with_extension(match extension {
+            Some(extension) => format!("{extension}_old"),
+            None => "old".to_owned(),
+        })
+    }
+
+    async fn recover_missing_atomic_path_locked(final_path: &Path) -> io::Result<bool> {
+        if fs::try_exists(final_path).await? {
+            return Ok(true);
+        }
+
+        let backup_path = Self::atomic_backup_path(final_path);
+        if fs::try_exists(&backup_path).await? {
+            fs::rename(&backup_path, final_path).await?;
+            let Some(parent) = final_path.parent() else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "atomic recovery path has no parent",
+                ));
+            };
+            Self::sync_parent(parent).await?;
+            let temp_path = Self::atomic_temp_path(final_path);
+            if fs::try_exists(&temp_path).await?
+                && let Err(error) = fs::remove_file(&temp_path).await
+            {
+                tracing::warn!(
+                    %error,
+                    path = %temp_path.display(),
+                    "Failed to remove an uncommitted atomic-write temporary file"
+                );
+            }
+            tracing::warn!(
+                path = %final_path.display(),
+                backup = %backup_path.display(),
+                "Recovered a missing data file from its last committed backup"
+            );
+            return Ok(true);
+        }
+
+        let temp_path = Self::atomic_temp_path(final_path);
+        if fs::try_exists(&temp_path).await? {
+            if let Err(error) = fs::remove_file(&temp_path).await {
+                tracing::warn!(
+                    %error,
+                    path = %temp_path.display(),
+                    "Failed to remove an uncommitted atomic-write temporary file"
+                );
+            }
+            tracing::warn!(
+                path = %final_path.display(),
+                temporary = %temp_path.display(),
+                "Discarded an interrupted data-file publication with no committed generation"
+            );
+        }
+
+        Ok(false)
+    }
+
+    async fn write_synced_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let mut file = fs::File::create(path).await?;
+        file.write_all(bytes).await?;
+        file.sync_all().await
+    }
+
+    async fn copy_synced_file(source: &Path, destination: &Path) -> io::Result<()> {
+        let mut source = fs::File::open(source).await?;
+        let mut destination = fs::File::create(destination).await?;
+        io::copy(&mut source, &mut destination).await?;
+        destination.sync_all().await
+    }
+
+    async fn sync_parent(parent: &Path) -> io::Result<()> {
+        #[cfg(unix)]
+        fs::File::open(parent).await?.sync_all().await?;
+        #[cfg(not(unix))]
+        let _ = parent;
+        Ok(())
     }
 }
 
@@ -556,6 +820,20 @@ fn decode_file(
 mod tests {
     use super::*;
     use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
+    use crate::permission::PermissionSet;
+    use crate::player::known_players::KnownPlayer;
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_storage_root(name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("steelmc-player-storage-{name}-{suffix}"))
+    }
 
     fn sample_player_file(data_version: i32) -> PlayerDataFile {
         PlayerDataFile {
@@ -628,6 +906,325 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn atomic_path_replacement_retains_the_last_committed_generation() {
+        let root = temp_storage_root("atomic-replacement");
+        let path = root.join("state.dat");
+
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"first".to_vec())
+            .await
+            .expect("first generation should publish");
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"second".to_vec())
+            .await
+            .expect("second generation should publish");
+
+        assert_eq!(
+            fs::read(&path).await.expect("live file should be readable"),
+            b"second"
+        );
+        assert_eq!(
+            fs::read(FilePlayerDataStorage::atomic_backup_path(&path))
+                .await
+                .expect("backup should be readable"),
+            b"first"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_permission_publication_recovers_before_the_next_update() {
+        let root = temp_storage_root("permission-recovery");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let mut subjects = PermissionSubjectIndex::new();
+        for (uuid, group) in [
+            (Uuid::from_u128(10), "builder"),
+            (Uuid::from_u128(20), "moderator"),
+        ] {
+            subjects.set(
+                uuid,
+                PermissionSubjectState::new(vec![group.to_owned()], PermissionSet::new()),
+            );
+        }
+        storage
+            .save_permission_subjects(&subjects)
+            .await
+            .expect("permission subjects should persist");
+
+        let path = storage.player_permissions_file();
+        let backup = FilePlayerDataStorage::atomic_backup_path(&path);
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        fs::rename(&path, &backup)
+            .await
+            .expect("legacy publication should reach its interrupted state");
+        fs::write(&temporary, b"uncommitted replacement")
+            .await
+            .expect("uncommitted replacement should be staged");
+
+        let mut recovered = storage
+            .load_permission_subjects()
+            .await
+            .expect("last committed permissions should recover");
+        assert_eq!(recovered.len(), 2);
+        assert_eq!(
+            recovered
+                .get(Uuid::from_u128(10))
+                .map(PermissionSubjectState::groups),
+            Some(["builder".to_owned()].as_slice())
+        );
+        assert_eq!(
+            recovered
+                .get(Uuid::from_u128(20))
+                .map(PermissionSubjectState::groups),
+            Some(["moderator".to_owned()].as_slice())
+        );
+        assert!(!temporary.exists());
+
+        recovered.set(
+            Uuid::from_u128(30),
+            PermissionSubjectState::new(vec!["operator".to_owned()], PermissionSet::new()),
+        );
+        storage
+            .save_permission_subjects(&recovered)
+            .await
+            .expect("an update after recovery should preserve existing subjects");
+        let updated = storage
+            .load_permission_subjects()
+            .await
+            .expect("updated permissions should load");
+        assert_eq!(updated.len(), 3);
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn corrupt_live_permission_file_does_not_fall_back_to_its_backup() {
+        let root = temp_storage_root("corrupt-live-permissions");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let mut subjects = PermissionSubjectIndex::new();
+        subjects.set(
+            Uuid::from_u128(42),
+            PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
+        storage
+            .save_permission_subjects(&subjects)
+            .await
+            .expect("permission subject should persist");
+        let path = storage.player_permissions_file();
+        let backup = FilePlayerDataStorage::atomic_backup_path(&path);
+        fs::copy(&path, &backup)
+            .await
+            .expect("valid backup should be staged");
+        fs::write(&path, b"not valid permission TOML")
+            .await
+            .expect("live permission file should be corrupted for the test");
+
+        let error = storage
+            .load_permission_subjects()
+            .await
+            .expect_err("a corrupt live permission file must remain startup-fatal");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            fs::read_to_string(&path)
+                .await
+                .expect("corrupt live file should remain in place"),
+            "not valid permission TOML"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_first_known_player_publication_discards_its_temporary_file() {
+        let root = temp_storage_root("known-player-interrupted-first-write");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let uuid = Uuid::from_u128(42);
+        let players =
+            KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+        let path = storage.known_players_file();
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        let bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(&players))
+            .expect("known players should encode");
+        fs::write(&temporary, bytes)
+            .await
+            .expect("first publication should reach its interrupted state");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("uncommitted known-player state should be ignored");
+        assert!(loaded.entries().is_empty());
+        assert!(!path.exists());
+        assert!(!temporary.exists());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn corrupt_known_player_cache_loads_as_empty() {
+        let root = temp_storage_root("corrupt-known-players");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let path = storage.known_players_file();
+        fs::write(&path, b"not a known-player cache")
+            .await
+            .expect("known-player cache should be corrupted for the test");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("a corrupt optional cache should not prevent startup");
+        assert!(loaded.entries().is_empty());
+        assert_eq!(
+            fs::read(&path)
+                .await
+                .expect("the corrupt cache should remain available for diagnosis"),
+            b"not a known-player cache"
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn incompatible_known_player_cache_version_loads_as_empty() {
+        let root = temp_storage_root("incompatible-known-player-version");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let uuid = Uuid::from_u128(42);
+        let players = KnownPlayers::from_entries([KnownPlayer::new(uuid, "Steve")]);
+        let mut bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(&players))
+            .expect("known-player cache should encode");
+        bytes[4..6].copy_from_slice(&u16::MAX.to_le_bytes());
+        fs::write(storage.known_players_file(), bytes)
+            .await
+            .expect("incompatible known-player cache should be seeded");
+
+        let loaded = storage
+            .load_known_players()
+            .await
+            .expect("an incompatible optional cache should not prevent startup");
+        assert!(loaded.entries().is_empty());
+        assert!(loaded.by_uuid(uuid).is_none());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn interrupted_first_permission_publication_does_not_apply_uncommitted_access() {
+        let root = temp_storage_root("permission-interrupted-first-write");
+        let storage = FilePlayerDataStorage::new(root.clone())
+            .await
+            .expect("test storage should initialize");
+        let path = storage.player_permissions_file();
+        let temporary = FilePlayerDataStorage::atomic_temp_path(&path);
+        let mut file = PlayerPermissionsFile::default();
+        set_permission_subject(
+            &mut file,
+            Uuid::from_u128(42),
+            &PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
+        let contents = serialize_player_permissions_file(&file)
+            .expect("uncommitted permissions should serialize");
+        fs::write(&temporary, contents)
+            .await
+            .expect("uncommitted permissions should be staged");
+
+        let loaded = storage
+            .load_permission_subjects()
+            .await
+            .expect("uncommitted permissions should be ignored");
+        assert!(loaded.is_empty());
+        assert!(!path.exists());
+        assert!(!temporary.exists());
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[tokio::test]
+    async fn known_player_cache_round_trips_and_rejects_stale_writes() {
+        let root = temp_storage_root("known-players");
+        let storage = match FilePlayerDataStorage::new(root.clone()).await {
+            Ok(storage) => storage,
+            Err(error) => panic!("test storage should initialize: {error}"),
+        };
+        let uuid = Uuid::from_u128(42);
+        let players =
+            KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+
+        let stale = storage
+            .save_known_players_if_current(&players, || false)
+            .await;
+        assert!(matches!(stale, Ok(false)));
+        assert!(!storage.known_players_file().exists());
+
+        let saved = storage
+            .save_known_players_if_current(&players, || true)
+            .await;
+        assert!(matches!(saved, Ok(true)));
+        let loaded = storage.load_known_players().await;
+        let Ok(loaded) = loaded else {
+            panic!("known players should load");
+        };
+        assert_eq!(
+            loaded.by_uuid(uuid).map(KnownPlayer::last_known_name),
+            Some("Steve")
+        );
+        assert_eq!(
+            loaded.by_uuid(uuid).map(KnownPlayer::expires_at_millis),
+            Some(1_234_567)
+        );
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
+    }
+
+    #[test]
+    fn known_player_cache_persists_vanillas_mru_limit() {
+        let players = KnownPlayers::from_entries((0_u128..=1_000).map(|value| {
+            KnownPlayer::with_expiration(
+                Uuid::from_u128(value),
+                format!("Player{value}"),
+                1_234_567,
+            )
+        }));
+        let encoded = encode_known_players_file(&KnownPlayersFile::from_known_players(&players));
+        let Ok(encoded) = encoded else {
+            panic!("known player cache should encode");
+        };
+        let decoded =
+            decode_known_players_file(&encoded).and_then(KnownPlayersFile::into_known_players);
+        let Ok(decoded) = decoded else {
+            panic!("known player cache should decode");
+        };
+
+        assert_eq!(decoded.entries().len(), 1_000);
+        assert!(decoded.by_uuid(Uuid::from_u128(999)).is_some());
+        assert!(decoded.by_uuid(Uuid::from_u128(1_000)).is_none());
+    }
+
     #[test]
     fn player_file_roundtrip_preserves_domain_world_data() {
         let file = sample_player_file(PLAYER_DATA_VERSION);
@@ -643,6 +1240,9 @@ mod tests {
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
         assert_eq!(decoded.experience_level, 7);
+        assert_eq!(decoded.experience_progress.to_bits(), 0.5_f32.to_bits());
+        assert_eq!(decoded.experience_total, 32);
+        assert_eq!(decoded.score, 9);
         assert!(decoded.seen_credits);
     }
 
@@ -675,6 +1275,70 @@ mod tests {
             GLOBAL_STORAGE_VERSION
         );
         assert_eq!(decoded.last_active_domain, "minecraft");
+    }
+
+    #[tokio::test]
+    async fn permission_subject_snapshot_removes_noncanonical_uuid_key() {
+        let root = temp_storage_root("permission-uuid-key");
+        let storage = match FilePlayerDataStorage::new(root.clone()).await {
+            Ok(storage) => storage,
+            Err(error) => panic!("test storage should initialize: {error}"),
+        };
+        let target_uuid = Uuid::from_u128(42);
+        let control_uuid = Uuid::from_u128(84);
+        let mut seed = PermissionSubjectIndex::new();
+        seed.set(
+            target_uuid,
+            PermissionSubjectState::new(vec!["op".to_owned()], PermissionSet::new()),
+        );
+        seed.set(
+            control_uuid,
+            PermissionSubjectState::new(vec!["builder".to_owned()], PermissionSet::new()),
+        );
+        let file = PlayerPermissionsFile::from_subject_index(&seed);
+        let canonical = target_uuid.to_string();
+        let noncanonical = target_uuid.simple().to_string();
+        let contents = serialize_player_permissions_file(&file)
+            .expect("permission subjects should serialize")
+            .replace(&canonical, &noncanonical);
+        fs::write(storage.player_permissions_file(), contents)
+            .await
+            .expect("noncanonical permission UUID should be seeded");
+
+        let mut subjects = storage
+            .load_permission_subjects()
+            .await
+            .expect("valid UUID spellings should load");
+        assert_eq!(subjects.len(), 2);
+        let removed = subjects
+            .remove(target_uuid)
+            .expect("target should be indexed by UUID");
+        assert_eq!(removed.groups(), ["op"]);
+        storage
+            .save_permission_subjects(&subjects)
+            .await
+            .expect("updated UUID index should persist");
+
+        let reloaded = storage
+            .load_permission_subjects()
+            .await
+            .expect("updated permission subjects should load");
+        assert!(reloaded.get(target_uuid).is_none());
+        assert_eq!(
+            reloaded
+                .get(control_uuid)
+                .map(PermissionSubjectState::groups),
+            Some(["builder".to_owned()].as_slice())
+        );
+        let persisted = fs::read_to_string(storage.player_permissions_file())
+            .await
+            .expect("updated permissions should be readable");
+        assert!(!persisted.contains(&canonical));
+        assert!(!persisted.contains(&noncanonical));
+
+        fs::remove_dir_all(root)
+            .await
+            .expect("temporary storage should be removable");
     }
 
     #[test]

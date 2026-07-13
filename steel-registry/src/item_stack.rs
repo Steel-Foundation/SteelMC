@@ -291,7 +291,7 @@ impl ItemStack {
 
     #[must_use]
     pub fn max_stack_size(&self) -> i32 {
-        self.get(MAX_STACK_SIZE).copied().unwrap_or(64)
+        self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
     }
 
     /// Returns the equippable component if this item has one.
@@ -912,8 +912,13 @@ impl ReadFrom for ItemStack {
             return Ok(Self::empty());
         }
 
-        let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item_id = VarInt::read(data)?.0;
+        let item_id = usize::try_from(item_id)
+            .map_err(|_| std::io::Error::other(format!("Negative item id: {item_id}")))?;
+        let item = REGISTRY
+            .items
+            .by_id(item_id)
+            .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
 
         // Read DataComponentPatch
         let patch = DataComponentPatch::read(data)?;
@@ -933,8 +938,13 @@ impl ItemStack {
             return Ok(Self::empty());
         }
 
-        let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item_id = VarInt::read(data)?.0;
+        let item_id = usize::try_from(item_id)
+            .map_err(|_| std::io::Error::other(format!("Negative item id: {item_id}")))?;
+        let item = REGISTRY
+            .items
+            .by_id(item_id)
+            .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
         let patch = DataComponentPatch::read_delimited(data)?;
 
         Ok(Self { item, count, patch })
@@ -946,6 +956,7 @@ use simdnbt::{
     borrow::{NbtCompound as NbtCompoundView, NbtTag as BorrowedNbtTag},
     owned::NbtCompound,
 };
+use steel_utils::nbt::NbtNumeric as _;
 
 impl ToNbtTag for ItemStack {
     /// Converts this item stack to an NBT tag for persistent storage.
@@ -977,7 +988,6 @@ impl ItemStack {
         // id: The item identifier
         compound.insert("id", self.item.key.to_string());
 
-        // count: The stack count (vanilla uses Int for NBT storage)
         compound.insert("count", self.count);
 
         // components: The component patch (only if non-empty)
@@ -1010,14 +1020,12 @@ impl FromNbtTag for ItemStack {
         // Look up the item in the registry
         let item = REGISTRY.items.by_key(&id)?;
 
-        // Get the count (default to 1 if not present)
-        let count = compound.get("count").and_then(|t| t.int()).unwrap_or(1);
+        let count = decode_persistent_count(compound.get("count"))?;
 
-        // Parse components if present
-        let patch = compound
-            .get("components")
-            .and_then(DataComponentPatch::from_nbt_tag)
-            .unwrap_or_default();
+        let patch = match compound.get("components") {
+            Some(tag) => DataComponentPatch::from_nbt_tag(tag)?,
+            None => DataComponentPatch::new(),
+        };
 
         Some(Self { item, count, patch })
     }
@@ -1037,15 +1045,90 @@ impl ItemStack {
         // Look up the item in the registry
         let item = REGISTRY.items.by_key(&id)?;
 
-        // Get the count (default to 1 if not present)
-        let count = compound.int("count").unwrap_or(1);
+        let count = decode_persistent_count(compound.get("count"))?;
 
-        // Parse components if present
-        let patch = compound
-            .get("components")
-            .and_then(DataComponentPatch::from_nbt_tag)
-            .unwrap_or_default();
+        let patch = match compound.get("components") {
+            Some(tag) => DataComponentPatch::from_nbt_tag(tag)?,
+            None => DataComponentPatch::new(),
+        };
 
         Some(Self::with_count_and_patch(item, count, patch))
+    }
+}
+
+fn decode_persistent_count(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<i32> {
+    let count = match tag {
+        Some(tag) => tag.codec_i32()?,
+        None => 1,
+    };
+    (1..=99).contains(&count).then_some(count)
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use std::io::Cursor;
+
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    use super::ItemStack;
+    use crate::test_support::init_test_registry;
+    use crate::vanilla_items::ITEMS;
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    fn parse_stack(compound: NbtCompound) -> Option<ItemStack> {
+        with_borrowed_tag(NbtTag::Compound(compound), ItemStack::from_nbt_tag)
+    }
+
+    fn stone_stack_nbt() -> NbtCompound {
+        let mut compound = NbtCompound::new();
+        compound.insert("id", "minecraft:stone");
+        compound
+    }
+
+    #[test]
+    fn persistent_item_count_uses_vanilla_integer_codec() {
+        init_test_registry();
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", 5.9_f64);
+        assert_eq!(parse_stack(compound).map(|stack| stack.count()), Some(5));
+
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", 100);
+        assert!(parse_stack(compound).is_none());
+
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", "5");
+        assert!(parse_stack(compound).is_none());
+    }
+
+    #[test]
+    fn malformed_present_component_patch_rejects_the_item_stack() {
+        init_test_registry();
+        let mut components = NbtCompound::new();
+        components.insert("minecraft:max_stack_size", 0);
+        let mut compound = stone_stack_nbt();
+        compound.insert("components", components);
+
+        assert!(parse_stack(compound).is_none());
+    }
+
+    #[test]
+    fn default_count_is_always_present_in_persistent_encoding() {
+        init_test_registry();
+        let stack = ItemStack::new(&ITEMS.stone);
+        let NbtTag::Compound(compound) = stack.to_nbt_tag_ref() else {
+            panic!("item stack should encode as a compound");
+        };
+
+        assert_eq!(compound.get("count"), Some(&NbtTag::Int(1)));
     }
 }

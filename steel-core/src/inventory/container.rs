@@ -141,6 +141,37 @@ pub trait Container: ErasedType + Send + Sync {
         count
     }
 
+    /// Removes or counts matching items using vanilla `/clear` semantics.
+    fn clear_or_count_matching_items(
+        &mut self,
+        predicate: &dyn Fn(&ItemStack) -> bool,
+        amount_to_remove: i32,
+        counting_only: bool,
+    ) -> i32 {
+        let mut count = 0;
+        for slot in 0..self.get_container_size() {
+            let stack_count = self.get_item(slot).count();
+            let amount_removed = matching_item_count(
+                self.get_item(slot),
+                predicate,
+                amount_to_remove - count,
+                counting_only,
+            );
+            if amount_removed > 0 && !counting_only {
+                if amount_removed == stack_count {
+                    self.set_item(slot, ItemStack::empty());
+                } else {
+                    self.get_item_mut(slot).shrink(amount_removed);
+                }
+            }
+            count += amount_removed;
+        }
+        if count > 0 && !counting_only {
+            self.set_changed();
+        }
+        count
+    }
+
     /// Returns mutable references to `N` disjoint slots.
     ///
     /// # Panics
@@ -214,6 +245,40 @@ pub trait Container: ErasedType + Send + Sync {
             self.set_changed();
         }
         stack.is_empty()
+    }
+}
+
+/// Removes or counts matching items in one stack using vanilla `/clear` semantics.
+pub(crate) fn clear_or_count_matching_stack(
+    stack: &mut ItemStack,
+    predicate: &dyn Fn(&ItemStack) -> bool,
+    amount_to_remove: i32,
+    counting_only: bool,
+) -> i32 {
+    let amount_removed = matching_item_count(stack, predicate, amount_to_remove, counting_only);
+    if !counting_only {
+        stack.shrink(amount_removed);
+    }
+    amount_removed
+}
+
+fn matching_item_count(
+    stack: &ItemStack,
+    predicate: &dyn Fn(&ItemStack) -> bool,
+    amount_to_remove: i32,
+    counting_only: bool,
+) -> i32 {
+    if stack.is_empty() || !predicate(stack) {
+        return 0;
+    }
+    if counting_only {
+        return stack.count();
+    }
+
+    if amount_to_remove < 0 {
+        stack.count()
+    } else {
+        amount_to_remove.min(stack.count())
     }
 }
 
@@ -292,6 +357,8 @@ pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i3
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_items};
+
     use super::*;
     use steel_utils::{DowncastType, DowncastTypeKey};
 
@@ -357,6 +424,60 @@ mod tests {
     fn test_with_indices_empty() {
         let mut container = TestContainer::new(4);
         let [] = with_indices(&mut container, []);
+    }
+
+    #[test]
+    fn clear_or_count_matching_items_counts_without_mutating() {
+        init_test_registry();
+        let mut container = TestContainer::new(3);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.dirt, 4));
+        container.set_item(2, ItemStack::with_count(&vanilla_items::ITEMS.stone, 2));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            0,
+            true,
+        );
+
+        assert_eq!(count, 5);
+        assert_eq!(container.get_item(0).count(), 3);
+        assert_eq!(container.get_item(2).count(), 2);
+    }
+
+    #[test]
+    fn clear_or_count_matching_items_applies_cap_in_slot_order() {
+        init_test_registry();
+        let mut container = TestContainer::new(2);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            5,
+            false,
+        );
+
+        assert_eq!(count, 5);
+        assert!(container.get_item(0).is_empty());
+        assert_eq!(container.get_item(1).count(), 2);
+    }
+
+    #[test]
+    fn clear_or_count_matching_items_removes_every_match_for_negative_limit() {
+        init_test_registry();
+        let mut container = TestContainer::new(2);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            -1,
+            false,
+        );
+
+        assert_eq!(count, 7);
+        assert!(container.is_empty());
     }
 
     #[test]

@@ -98,7 +98,7 @@ impl BlockBehavior for SweetBerryBushBlock {
     fn entity_inside(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
         _effect_collector: &mut InsideBlockEffectCollector,
@@ -109,7 +109,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         }
 
         entity.make_stuck_in_block(state, DVec3::new(0.8, 0.75, 0.8));
-        Self::apply_contact_damage(state, entity);
+        Self::apply_contact_damage(world, state, entity);
     }
 
     fn use_item_on(
@@ -188,7 +188,7 @@ impl SweetBerryBushBlock {
             && entity.entity_type() != &vanilla_entities::BEE
     }
 
-    fn apply_contact_damage(state: BlockStateId, entity: &dyn Entity) {
+    fn apply_contact_damage(world: &World, state: BlockStateId, entity: &dyn Entity) {
         if state.get_value(&BlockStateProperties::AGE_3) == 0 {
             return;
         }
@@ -204,6 +204,7 @@ impl SweetBerryBushBlock {
                 || movement.z.abs() >= DAMAGE_MOVEMENT_THRESHOLD)
         {
             entity.hurt(
+                world,
                 &DamageSource::environment(&vanilla_damage_types::SWEET_BERRY_BUSH),
                 1.0,
             );
@@ -254,6 +255,7 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityBase;
+    use crate::test_support::test_world;
 
     struct TestEntity {
         base: EntityBase,
@@ -330,7 +332,7 @@ mod tests {
             self.known_movement
         }
 
-        fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
             self.damage
                 .lock()
                 .push((source.damage_type.key.path.as_ref().to_owned(), amount));
@@ -351,7 +353,7 @@ mod tests {
             .with_position(DVec3::new(0.0, 0.0, 0.0))
             .with_old_position(DVec3::new(0.004, 0.0, 0.0));
 
-        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+        SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(1), &entity);
 
         assert_eq!(
             entity.damage_events(),
@@ -366,7 +368,7 @@ mod tests {
             .with_old_position(DVec3::ZERO)
             .with_client_movement(DVec3::new(0.0, 0.0, 0.004));
 
-        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+        SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(1), &entity);
 
         assert_eq!(
             entity.damage_events(),
@@ -380,7 +382,7 @@ mod tests {
             .with_position(DVec3::ZERO)
             .with_old_position(DVec3::new(0.004, 0.0, 0.0));
 
-        SweetBerryBushBlock::apply_contact_damage(state_with_age(0), &entity);
+        SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(0), &entity);
 
         assert!(entity.damage_events().is_empty());
     }
@@ -391,7 +393,7 @@ mod tests {
             .with_position(DVec3::ZERO)
             .with_old_position(DVec3::new(0.002_9, 0.0, 0.002_9));
 
-        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+        SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(1), &entity);
 
         assert!(entity.damage_events().is_empty());
     }

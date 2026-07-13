@@ -236,6 +236,21 @@ mod tests {
     }
 
     #[test]
+    fn full_metadata_includes_type_and_position_after_additional_data() {
+        let gateway = gateway();
+        let nbt = gateway.save_with_full_metadata();
+
+        assert_eq!(
+            nbt.string("id").map(ToString::to_string),
+            Some("minecraft:end_gateway".to_owned())
+        );
+        assert_eq!(nbt.int("x"), Some(4));
+        assert_eq!(nbt.int("y"), Some(65));
+        assert_eq!(nbt.int("z"), Some(-9));
+        assert_eq!(nbt.long("Age"), Some(0));
+    }
+
+    #[test]
     fn end_gateway_loads_vanilla_nbt_keys() {
         let mut nbt = NbtCompound::new();
         nbt.insert("Age", 44_i64);
