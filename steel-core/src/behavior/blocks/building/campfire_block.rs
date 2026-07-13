@@ -108,11 +108,9 @@ impl BlockBehavior for CampfireBlock {
         effect_collector: &mut InsideBlockEffectCollector,
         is_precise: bool,
     ) {
-        if let Some(damage) = self.contact_damage_amount(state, entity.is_living_entity())
-            && let Some(entity_world) = entity.level()
-        {
+        if let Some(damage) = self.contact_damage_amount(state, entity.is_living_entity()) {
             entity.hurt(
-                &entity_world,
+                world,
                 &DamageSource::environment(&vanilla_damage_types::CAMPFIRE),
                 damage,
             );
