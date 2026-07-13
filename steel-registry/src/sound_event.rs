@@ -6,6 +6,7 @@ use std::str::FromStr;
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
@@ -143,7 +144,8 @@ impl FromNbtTag for SoundEventHolder {
             .get("sound_id")?
             .string()
             .and_then(|value| Identifier::from_str(&value.to_str()).ok())?;
-        let fixed_range = compound.get("range").and_then(|tag| tag.float());
+        // Vanilla uses lenientOptionalFieldOf here: malformed values are absent.
+        let fixed_range = compound.get("range").and_then(|tag| tag.codec_f32());
         Some(Self::Direct {
             sound_id,
             fixed_range,
@@ -216,3 +218,51 @@ crate::impl_registry!(
     sound_events_by_key,
     sound_events
 );
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    use super::SoundEventHolder;
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    #[test]
+    fn direct_sound_range_uses_lenient_numeric_codec() {
+        let mut compound = NbtCompound::new();
+        compound.insert("sound_id", "minecraft:test");
+        compound.insert("range", 5.5_f64);
+        let sound = with_borrowed_tag(NbtTag::Compound(compound), SoundEventHolder::from_nbt_tag)
+            .expect("direct sound should parse");
+        assert!(matches!(
+            sound,
+            SoundEventHolder::Direct {
+                fixed_range: Some(5.5),
+                ..
+            }
+        ));
+
+        let mut malformed = NbtCompound::new();
+        malformed.insert("sound_id", "minecraft:test");
+        malformed.insert("range", "far");
+        let sound = with_borrowed_tag(NbtTag::Compound(malformed), SoundEventHolder::from_nbt_tag)
+            .expect("lenient optional range should be ignored");
+        assert!(matches!(
+            sound,
+            SoundEventHolder::Direct {
+                fixed_range: None,
+                ..
+            }
+        ));
+    }
+}

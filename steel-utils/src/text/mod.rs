@@ -121,9 +121,7 @@ fn hash_component_as_map(component: &TextComponent, hasher: &mut ComponentHasher
         let mut value_hasher = ComponentHasher::new();
         value_hasher.start_list();
         for child in &component.children {
-            // Each child is hashed as a complete component, then we write the 4-byte hash
-            let child_hash = child.compute_hash();
-            value_hasher.put_raw_bytes(&child_hash.to_le_bytes());
+            value_hasher.put_component_hash(child);
         }
         value_hasher.end_list();
         entries.push(HashEntry::new(key_hasher, value_hasher));
@@ -181,9 +179,7 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.start_list();
                 for arg in args {
-                    // Each argument is hashed as a complete component, then we write the 4-byte hash
-                    let arg_hash = arg.compute_hash();
-                    value_hasher.put_raw_bytes(&arg_hash.to_le_bytes());
+                    value_hasher.put_component_hash(arg);
                 }
                 value_hasher.end_list();
                 entries.push(HashEntry::new(key_hasher, value_hasher));

@@ -50,23 +50,37 @@ fn generate_tool_component(value: &Value) -> TokenStream {
     let rules = value
         .get("rules")
         .and_then(|r| r.as_array())
-        .map(|rules_arr| rules_arr.iter().map(generate_tool_rule).collect::<Vec<_>>())
-        .unwrap_or_default();
+        .unwrap_or_else(|| panic!("tool component must contain a rules array"))
+        .iter()
+        .map(generate_tool_rule)
+        .collect::<Vec<_>>();
 
-    let default_mining_speed = value
-        .get("default_mining_speed")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(1.0) as f32;
+    let default_mining_speed = value.get("default_mining_speed").map_or(1.0, |value| {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("tool default_mining_speed must be a number"))
+    }) as f32;
 
-    let damage_per_block = value
-        .get("damage_per_block")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(1) as i32;
+    let damage_per_block = value.get("damage_per_block").map_or(1, |value| {
+        let value = value
+            .as_i64()
+            .unwrap_or_else(|| panic!("tool damage_per_block must be an integer"));
+        i32::try_from(value)
+            .unwrap_or_else(|_| panic!("tool damage_per_block is outside the i32 range: {value}"))
+    });
+    assert!(
+        damage_per_block >= 0,
+        "tool damage_per_block must be non-negative"
+    );
 
-    let can_destroy_blocks_in_creative = value
-        .get("can_destroy_blocks_in_creative")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(true);
+    let can_destroy_blocks_in_creative =
+        value
+            .get("can_destroy_blocks_in_creative")
+            .is_none_or(|value| {
+                value.as_bool().unwrap_or_else(|| {
+                    panic!("tool can_destroy_blocks_in_creative must be a boolean")
+                })
+            });
 
     quote! {
         vanilla_components::Tool {
@@ -78,32 +92,16 @@ fn generate_tool_component(value: &Value) -> TokenStream {
     }
 }
 
-/// Parses a block or tag reference string into an Identifier `TokenStream`.
-/// For tags like "#minecraft:mineable/pickaxe", creates Identifier { namespace: "#minecraft", path: "mineable/pickaxe" }
-/// For blocks like "minecraft:stone", creates Identifier { namespace: "minecraft", path: "stone" }
-fn parse_block_or_tag(s: &str) -> TokenStream {
-    let (is_tag, rest) = if let Some(stripped) = s.strip_prefix('#') {
-        (true, stripped)
-    } else {
-        (false, s)
-    };
-
-    // Split namespace:path
-    let parts: Vec<&str> = rest.splitn(2, ':').collect();
-    let (namespace, path) = if parts.len() == 2 {
-        (parts[0], parts[1])
-    } else {
-        // Default to minecraft namespace
-        ("minecraft", rest)
-    };
-
-    if is_tag {
-        // Prefix namespace with # for tags
-        let tag_namespace = format!("#{namespace}");
-        quote! { Identifier::new(#tag_namespace, #path) }
-    } else {
-        quote! { Identifier::new(#namespace, #path) }
-    }
+fn block_ref_token(value: &str) -> TokenStream {
+    let id = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid tool block id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla tool rules must reference minecraft blocks: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &vanilla_blocks::#ident }
 }
 
 fn split_identifier(s: &str) -> (&str, &str) {
@@ -463,33 +461,55 @@ fn generate_piercing_weapon_component(value: &Value) -> TokenStream {
 
 /// Generates the `TokenStream` for a single `ToolRule` from JSON data.
 fn generate_tool_rule(rule: &Value) -> TokenStream {
-    // Parse blocks - can be a string (single block or tag), or an array of strings
-    let blocks_value = rule.get("blocks");
-    let blocks_tokens: Vec<TokenStream> = match blocks_value {
-        Some(Value::String(s)) => {
-            vec![parse_block_or_tag(s)]
+    let blocks_token = match rule.get("blocks") {
+        Some(Value::String(value)) if value.starts_with('#') => {
+            let tag_value = value.trim_start_matches('#');
+            Identifier::from_str(tag_value)
+                .unwrap_or_else(|error| panic!("invalid tool block tag {value:?}: {error}"));
+            let tag = identifier_token(tag_value);
+            quote! { vanilla_components::ToolRuleBlocks::Tag(#tag) }
         }
-        Some(Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(parse_block_or_tag)
-            .collect(),
-        _ => vec![],
+        Some(Value::String(value)) => {
+            let block = block_ref_token(value);
+            quote! { vanilla_components::ToolRuleBlocks::Blocks(vec![#block]) }
+        }
+        Some(Value::Array(values)) => {
+            let blocks = values
+                .iter()
+                .map(|value| {
+                    let value = value
+                        .as_str()
+                        .unwrap_or_else(|| panic!("tool rule block list entries must be strings"));
+                    assert!(
+                        !value.starts_with('#'),
+                        "tool rule direct block lists cannot contain tags: {value}"
+                    );
+                    block_ref_token(value)
+                })
+                .collect::<Vec<_>>();
+            quote! { vanilla_components::ToolRuleBlocks::Blocks(vec![#(#blocks),*]) }
+        }
+        _ => panic!("tool rule must contain blocks as a string or string array"),
     };
 
-    // Parse optional speed
-    let speed_token = if let Some(speed) = rule.get("speed").and_then(serde_json::Value::as_f64) {
-        let speed = speed as f32;
+    let speed_token = if let Some(value) = rule.get("speed") {
+        let speed = value
+            .as_f64()
+            .unwrap_or_else(|| panic!("tool rule speed must be a number"))
+            as f32;
+        assert!(
+            speed.is_finite() && speed > 0.0,
+            "tool rule speed must be a positive finite float"
+        );
         quote! { Some(#speed) }
     } else {
         quote! { None }
     };
 
-    // Parse optional correct_for_drops
-    let correct_for_drops_token = if let Some(correct) = rule
-        .get("correct_for_drops")
-        .and_then(serde_json::Value::as_bool)
-    {
+    let correct_for_drops_token = if let Some(value) = rule.get("correct_for_drops") {
+        let correct = value
+            .as_bool()
+            .unwrap_or_else(|| panic!("tool rule correct_for_drops must be a boolean"));
         quote! { Some(#correct) }
     } else {
         quote! { None }
@@ -497,7 +517,7 @@ fn generate_tool_rule(rule: &Value) -> TokenStream {
 
     quote! {
         vanilla_components::ToolRule {
-            blocks: vec![#(#blocks_tokens),*],
+            blocks: #blocks_token,
             speed: #speed_token,
             correct_for_drops: #correct_for_drops_token,
         }

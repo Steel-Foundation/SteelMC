@@ -11,7 +11,11 @@ use steel_registry::{
     item_stack::ItemStack,
     items::ItemRef,
 };
-use steel_utils::{Identifier, nbt::parse_snbt_argument, translations};
+use steel_utils::{
+    Identifier,
+    nbt::{NbtNumeric as _, parse_snbt_argument},
+    translations,
+};
 
 use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
@@ -172,59 +176,11 @@ fn parse_component_value(
 }
 
 pub(super) fn read_component_value(entry: &ComponentEntry, tag: &NbtTag) -> Option<ComponentData> {
-    let normalized;
-    let tag = match entry.expected_discriminant {
-        ComponentDataDiscriminant::Bool => {
-            normalized = NbtTag::Byte(i8::from(numeric_bool(tag)?));
-            &normalized
-        }
-        ComponentDataDiscriminant::I32 => {
-            normalized = NbtTag::Int(numeric_i32(tag)?);
-            &normalized
-        }
-        ComponentDataDiscriminant::Float => {
-            normalized = NbtTag::Float(numeric_f32(tag)?);
-            &normalized
-        }
-        _ => tag,
-    };
     entry.read_nbt_owned(tag)
 }
 
-fn numeric_bool(tag: &NbtTag) -> Option<bool> {
-    match tag {
-        NbtTag::Byte(value) => Some(*value != 0),
-        NbtTag::Short(value) => Some(*value != 0),
-        NbtTag::Int(value) => Some(*value != 0),
-        NbtTag::Long(value) => Some(*value != 0),
-        NbtTag::Float(value) => Some(*value != 0.0),
-        NbtTag::Double(value) => Some(*value != 0.0),
-        _ => None,
-    }
-}
-
 pub(super) fn numeric_i32(tag: &NbtTag) -> Option<i32> {
-    match tag {
-        NbtTag::Byte(value) => Some(i32::from(*value)),
-        NbtTag::Short(value) => Some(i32::from(*value)),
-        NbtTag::Int(value) => Some(*value),
-        NbtTag::Long(value) => Some(*value as i32),
-        NbtTag::Float(value) => Some(*value as i32),
-        NbtTag::Double(value) => Some(*value as i32),
-        _ => None,
-    }
-}
-
-fn numeric_f32(tag: &NbtTag) -> Option<f32> {
-    match tag {
-        NbtTag::Byte(value) => Some(f32::from(*value)),
-        NbtTag::Short(value) => Some(f32::from(*value)),
-        NbtTag::Int(value) => Some(*value as f32),
-        NbtTag::Long(value) => Some(*value as f32),
-        NbtTag::Float(value) => Some(*value),
-        NbtTag::Double(value) => Some(*value as f32),
-        _ => None,
-    }
+    tag.codec_i32()
 }
 
 pub(super) fn component_value_is_valid(key: &Identifier, value: &ComponentData) -> bool {

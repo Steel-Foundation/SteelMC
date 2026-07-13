@@ -13,5 +13,5 @@ pub use attribute_modifiers::{
 pub use combat::{AttackRange, DamageTypeComponent, PiercingWeapon, Weapon};
 pub use enchantments::ItemEnchantments;
 pub use equippable::{Equippable, EquippableAllowedEntities};
-pub use tool::{Tool, ToolRule};
+pub use tool::{Tool, ToolRule, ToolRuleBlocks};
 pub use use_cooldown::UseCooldown;

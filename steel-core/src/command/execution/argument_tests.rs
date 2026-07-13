@@ -1294,7 +1294,7 @@ fn item_stack_argument_parses_compound_component_values() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
-        "resource stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},max_stack_size=16]",
+        "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},max_stack_size=16]",
         TestSource::new(),
     );
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -1307,7 +1307,7 @@ fn item_stack_argument_parses_compound_component_values() {
         panic!("use cooldown should be retained");
     };
 
-    assert_eq!(cooldown.seconds.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(cooldown.seconds.to_bits(), 5.5_f32.to_bits());
     assert_eq!(
         cooldown.cooldown_group,
         Some(Identifier::vanilla_static("test"))

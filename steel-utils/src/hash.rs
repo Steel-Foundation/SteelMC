@@ -96,6 +96,13 @@ impl ComponentHasher {
         self.data.extend_from_slice(bytes);
     }
 
+    /// Writes the four-byte hash of a nested codec value.
+    ///
+    /// Vanilla lists contain child hashes rather than each child's unhashed payload.
+    pub fn put_component_hash<T: HashComponent + ?Sized>(&mut self, value: &T) {
+        self.put_raw_bytes(&value.compute_hash().to_le_bytes());
+    }
+
     /// Hashes an empty/null value.
     pub fn put_empty(&mut self) {
         self.put_tag(HashTag::Empty);
@@ -402,8 +409,8 @@ impl HashComponent for String {
 
 impl HashComponent for () {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
-        // Unit type hashes as empty
-        hasher.put_empty();
+        hasher.start_map();
+        hasher.end_map();
     }
 }
 
@@ -421,7 +428,7 @@ impl HashComponent for NbtTag {
             NbtTag::List(values) => {
                 hasher.start_list();
                 for value in values.as_nbt_tags() {
-                    hasher.put_raw_bytes(&value.compute_hash().to_le_bytes());
+                    hasher.put_component_hash(&value);
                 }
                 hasher.end_list();
             }
@@ -495,6 +502,15 @@ mod tests {
         let hash = hasher.finish();
         // Format: [TAG_MAP_START=2] [TAG_MAP_END=3]
         assert_ne!(hash, 0);
+    }
+
+    #[test]
+    fn unit_codec_hashes_as_an_empty_map() {
+        let mut hasher = ComponentHasher::new();
+        hasher.start_map();
+        hasher.end_map();
+
+        assert_eq!(().compute_hash(), hasher.finish());
     }
 
     #[test]
