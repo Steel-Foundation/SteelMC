@@ -413,6 +413,23 @@ fn component_argument_reports_codec_errors_at_the_argument_start() {
 }
 
 #[test]
+fn component_argument_preserves_translatable_snbt_errors() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::component());
+    let parse = dispatcher.parse("resource {text:}", TestSource::new());
+    let Err(error) = dispatcher.context_chain(parse) else {
+        panic!("missing SNBT value should be rejected");
+    };
+
+    let CommandSyntaxErrorKind::Dynamic(component) = error.kind() else {
+        panic!("SNBT failure should be a dynamic command error");
+    };
+    assert!(matches!(
+        &component.content,
+        Content::Translate(message) if message.key == "snbt.parser.expected_unquoted_string"
+    ));
+}
+
+#[test]
 fn component_argument_compiles_command_strings_during_parsing() {
     let dispatcher = resource_dispatcher(SteelArgumentType::component());
     let parse = dispatcher.parse(
@@ -1319,6 +1336,30 @@ fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
             dispatcher.context_chain(parse).is_err(),
             "{input} should be rejected"
         );
+    }
+}
+
+#[test]
+fn item_arguments_propagate_translatable_snbt_errors() {
+    init_test_registry();
+    for argument in [
+        SteelArgumentType::item_stack(),
+        SteelArgumentType::item_predicate(),
+    ] {
+        let dispatcher = resource_dispatcher(argument);
+        let parse = dispatcher.parse("resource stone[max_stack_size=]", TestSource::new());
+        let Err(error) = dispatcher.context_chain(parse) else {
+            panic!("missing component value should be rejected");
+        };
+
+        let CommandSyntaxErrorKind::Dynamic(component) = error.kind() else {
+            panic!("component failure should be a dynamic command error");
+        };
+        assert!(matches!(
+            &component.content,
+            Content::Translate(message)
+                if message.key == "snbt.parser.expected_unquoted_string"
+        ));
     }
 }
 

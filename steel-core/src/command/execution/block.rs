@@ -199,10 +199,7 @@ fn parse_optional_nbt(
             if !reader.advance_bytes(error.cursor()) {
                 return Err(dynamic_error(reader, "Invalid block entity NBT cursor"));
             }
-            return Err(dynamic_error(
-                reader,
-                format!("Invalid block entity NBT: {}", error.message()),
-            ));
+            return Err(dynamic_error(reader, error.component()));
         }
     };
     if !reader.advance_bytes(consumed) {
@@ -211,10 +208,11 @@ fn parse_optional_nbt(
     Ok(Some(nbt))
 }
 
-fn dynamic_error(reader: &StringReader<'_>, message: impl Into<String>) -> CommandSyntaxError {
-    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-        TextComponent::from(message.into()),
-    )))
+fn dynamic_error(
+    reader: &StringReader<'_>,
+    message: impl Into<TextComponent>,
+) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into())))
 }
 
 pub(super) fn suggest_blocks(builder: &mut SuggestionsBuilder<'_>) {

@@ -1165,7 +1165,7 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
     let start = reader.checkpoint();
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
-        component_snbt_error(reader, error.message())
+        component_snbt_error(reader, error.component())
     })?;
     if !reader.advance_bytes(consumed) {
         return Err(component_snbt_error(
@@ -1185,10 +1185,11 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
     Ok(component)
 }
 
-fn component_snbt_error(reader: &StringReader<'_>, message: &str) -> CommandSyntaxError {
-    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-        TextComponent::plain(message.to_owned()),
-    )))
+fn component_snbt_error(
+    reader: &StringReader<'_>,
+    message: impl Into<TextComponent>,
+) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into())))
 }
 
 fn invalid_component(reader: &StringReader<'_>, message: String) -> CommandSyntaxError {

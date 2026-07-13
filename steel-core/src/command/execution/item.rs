@@ -138,7 +138,7 @@ fn parse_component_value(
 
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
-        malformed_component(reader, &key, error.message())
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.component())))
     })?;
     if !reader.advance_bytes(consumed) {
         return Err(malformed_component(

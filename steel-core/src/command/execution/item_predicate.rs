@@ -367,10 +367,7 @@ fn read_nbt(
     reader.skip_whitespace();
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
-        dynamic_error(
-            reader,
-            format!("Malformed item {description} '{key}': {}", error.message()),
-        )
+        dynamic_error(reader, error.component())
     })?;
     if !reader.advance_bytes(consumed) {
         return Err(dynamic_error(
@@ -408,10 +405,11 @@ fn malformed_or_unsupported_predicate(
     )
 }
 
-fn dynamic_error(reader: &StringReader<'_>, message: String) -> CommandSyntaxError {
-    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-        TextComponent::from(message),
-    )))
+fn dynamic_error(
+    reader: &StringReader<'_>,
+    message: impl Into<TextComponent>,
+) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into())))
 }
 
 fn is_count_key(key: &Identifier) -> bool {

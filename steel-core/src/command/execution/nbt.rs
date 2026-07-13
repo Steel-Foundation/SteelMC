@@ -17,13 +17,14 @@ pub(super) fn parse_nbt_path(reader: &mut StringReader<'_>) -> Result<NbtPath, C
             if !reader.advance_bytes(error.cursor()) {
                 return Err(dynamic_error(reader, "Invalid NBT path cursor"));
             }
-            Err(dynamic_error(reader, error.message()))
+            Err(dynamic_error(reader, error.component()))
         }
     }
 }
 
-fn dynamic_error(reader: &StringReader<'_>, message: impl Into<String>) -> CommandSyntaxError {
-    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-        TextComponent::from(message.into()),
-    )))
+fn dynamic_error(
+    reader: &StringReader<'_>,
+    message: impl Into<TextComponent>,
+) -> CommandSyntaxError {
+    reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into())))
 }

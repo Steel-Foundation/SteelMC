@@ -1,22 +1,21 @@
 use std::{error::Error, fmt};
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use text_components::TextComponent;
 
-use super::{compare_nbt, list_as_tags, parse_snbt_compound_argument};
+use super::{SnbtErrorKind, compare_nbt, list_as_tags, parse_snbt_compound_argument};
+use crate::translations;
 
 /// Error returned when parsing an NBT path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NbtPathError {
     cursor: usize,
-    message: String,
+    kind: NbtPathErrorKind,
 }
 
 impl NbtPathError {
-    fn new(cursor: usize, message: impl Into<String>) -> Self {
-        Self {
-            cursor,
-            message: message.into(),
-        }
+    const fn new(cursor: usize, kind: NbtPathErrorKind) -> Self {
+        Self { cursor, kind }
     }
 
     /// Returns the byte cursor where parsing failed.
@@ -25,10 +24,16 @@ impl NbtPathError {
         self.cursor
     }
 
-    /// Returns the parse failure message.
+    /// Returns the specific parse failure.
     #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
+    pub const fn kind(&self) -> &NbtPathErrorKind {
+        &self.kind
+    }
+
+    /// Returns the parse failure as a text component.
+    #[must_use]
+    pub fn component(&self) -> TextComponent {
+        self.kind.component()
     }
 }
 
@@ -37,12 +42,83 @@ impl fmt::Display for NbtPathError {
         write!(
             f,
             "NBT path parse error at byte {}: {}",
-            self.cursor, self.message
+            self.cursor, self.kind
         )
     }
 }
 
 impl Error for NbtPathError {}
+
+/// Specific reason why NBT path parsing failed.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NbtPathErrorKind {
+    /// Non-whitespace input remained after a complete path.
+    TrailingData,
+    /// No path node was present.
+    ExpectedPath,
+    /// A path node used invalid syntax.
+    InvalidNode,
+    /// A grammar symbol was required at the cursor.
+    ExpectedSymbol(char),
+    /// A quoted path key was required.
+    ExpectedQuotedString,
+    /// A quoted path key was not terminated.
+    UnclosedQuotedString,
+    /// A quoted path key contained an unsupported escape.
+    InvalidEscape(char),
+    /// A list index was required.
+    ExpectedIndex,
+    /// A list index could not be parsed as an integer.
+    InvalidIndex(String),
+    /// An embedded compound pattern contained invalid SNBT.
+    InvalidSnbt(SnbtErrorKind),
+}
+
+impl NbtPathErrorKind {
+    fn component(&self) -> TextComponent {
+        match self {
+            Self::TrailingData => TextComponent::from(&translations::ARGUMENT_NBT_TRAILING),
+            Self::ExpectedPath | Self::InvalidNode => {
+                TextComponent::from(&translations::ARGUMENTS_NBTPATH_NODE_INVALID)
+            }
+            Self::ExpectedIndex => TextComponent::from(&translations::PARSING_INT_EXPECTED),
+            Self::InvalidIndex(value) => translations::PARSING_INT_INVALID
+                .message([value.to_owned()])
+                .component(),
+            Self::ExpectedSymbol(symbol) => translations::PARSING_EXPECTED
+                .message([symbol.to_string()])
+                .component(),
+            Self::ExpectedQuotedString => {
+                TextComponent::from(&translations::PARSING_QUOTE_EXPECTED_START)
+            }
+            Self::UnclosedQuotedString => {
+                TextComponent::from(&translations::PARSING_QUOTE_EXPECTED_END)
+            }
+            Self::InvalidEscape(character) => translations::PARSING_QUOTE_ESCAPE
+                .message([character.to_string()])
+                .component(),
+            Self::InvalidSnbt(kind) => kind.component(),
+        }
+    }
+}
+
+impl fmt::Display for NbtPathErrorKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TrailingData => formatter.write_str("trailing data"),
+            Self::ExpectedPath => formatter.write_str("expected NBT path"),
+            Self::InvalidNode => formatter.write_str("invalid NBT path node"),
+            Self::ExpectedSymbol(symbol) => write!(formatter, "expected '{symbol}'"),
+            Self::ExpectedQuotedString => formatter.write_str("expected quoted string"),
+            Self::UnclosedQuotedString => formatter.write_str("unclosed quoted string"),
+            Self::InvalidEscape(character) => write!(formatter, "invalid escape '{character}'"),
+            Self::ExpectedIndex => formatter.write_str("expected list index"),
+            Self::InvalidIndex(value) => write!(formatter, "invalid list index '{value}'"),
+            Self::InvalidSnbt(kind) => fmt::Display::fmt(kind, formatter),
+        }
+    }
+}
 
 /// Error returned when mutating NBT through a path.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -188,7 +264,7 @@ struct SetOutcome {
 pub fn parse_nbt_path(input: &str) -> Result<NbtPath, NbtPathError> {
     let (path, cursor) = parse_nbt_path_argument(input)?;
     if cursor != input.len() {
-        return Err(NbtPathError::new(cursor, "trailing data"));
+        return Err(NbtPathError::new(cursor, NbtPathErrorKind::TrailingData));
     }
     Ok(path)
 }
@@ -886,7 +962,7 @@ impl<'a> Parser<'a> {
         }
 
         if nodes.is_empty() {
-            return Err(self.error("expected NBT path"));
+            return Err(self.error(NbtPathErrorKind::ExpectedPath));
         }
 
         Ok(NbtPath {
@@ -904,7 +980,7 @@ impl<'a> Parser<'a> {
             Some('[') => self.parse_element_node(),
             Some('{') => {
                 if !first_node {
-                    return Err(self.error("invalid NBT path node"));
+                    return Err(self.error(NbtPathErrorKind::InvalidNode));
                 }
                 let pattern = self.parse_compound_pattern()?;
                 Ok(NbtPathNode::MatchRootObject(pattern))
@@ -913,13 +989,13 @@ impl<'a> Parser<'a> {
                 let name = self.parse_unquoted_name()?;
                 self.read_object_node(name)
             }
-            None => Err(self.error("expected NBT path node")),
+            None => Err(self.error(NbtPathErrorKind::ExpectedPath)),
         }
     }
 
     fn read_object_node(&mut self, name: String) -> Result<NbtPathNode, NbtPathError> {
         if name.is_empty() {
-            return Err(self.error("expected NBT path node"));
+            return Err(self.error(NbtPathErrorKind::ExpectedPath));
         }
         if self.peek() == Some('{') {
             let pattern = self.parse_compound_pattern()?;
@@ -953,7 +1029,11 @@ impl<'a> Parser<'a> {
         let start = self.cursor;
         let (compound, consumed) =
             parse_snbt_compound_argument(&self.input[start..]).map_err(|error| {
-                NbtPathError::new(start + error.cursor(), error.message().to_owned())
+                let cursor = error.cursor();
+                NbtPathError::new(
+                    start + cursor,
+                    NbtPathErrorKind::InvalidSnbt(error.into_kind()),
+                )
             })?;
         self.cursor += consumed;
         Ok(compound)
@@ -965,16 +1045,15 @@ impl<'a> Parser<'a> {
             self.read();
         }
         if self.cursor == start {
-            return Err(self.error("invalid NBT path node"));
+            return Err(self.error(NbtPathErrorKind::InvalidNode));
         }
         Ok(self.input[start..self.cursor].to_owned())
     }
 
     fn parse_quoted_string(&mut self) -> Result<String, NbtPathError> {
         let Some(terminator) = self.peek().filter(|ch| matches!(ch, '"' | '\'')) else {
-            return Err(self.error("expected quoted string"));
+            return Err(self.error(NbtPathErrorKind::ExpectedQuotedString));
         };
-        let quote_cursor = self.cursor;
         self.read();
 
         let mut value = String::new();
@@ -982,11 +1061,15 @@ impl<'a> Parser<'a> {
             match ch {
                 ch if ch == terminator => return Ok(value),
                 '\\' => {
+                    let escape_cursor = self.cursor;
                     let escaped = self
                         .read()
-                        .ok_or_else(|| Self::error_at(quote_cursor, "unclosed quoted string"))?;
+                        .ok_or_else(|| self.error(NbtPathErrorKind::UnclosedQuotedString))?;
                     if escaped != terminator && escaped != '\\' {
-                        return Err(self.error(format!("invalid escape '{escaped}'")));
+                        return Err(Self::error_at(
+                            escape_cursor,
+                            NbtPathErrorKind::InvalidEscape(escaped),
+                        ));
                     }
                     value.push(escaped);
                 }
@@ -994,24 +1077,27 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Err(Self::error_at(quote_cursor, "unclosed quoted string"))
+        Err(self.error(NbtPathErrorKind::UnclosedQuotedString))
     }
 
     fn parse_i32(&mut self) -> Result<i32, NbtPathError> {
         let start = self.cursor;
-        if self.peek() == Some('-') {
+        while self
+            .peek()
+            .is_some_and(|ch| ch.is_ascii_digit() || matches!(ch, '.' | '-'))
+        {
             self.read();
         }
-        let digit_start = self.cursor;
-        while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-            self.read();
+        let value = &self.input[start..self.cursor];
+        if value.is_empty() {
+            return Err(Self::error_at(start, NbtPathErrorKind::ExpectedIndex));
         }
-        if self.cursor == digit_start {
-            return Err(Self::error_at(start, "expected list index"));
+        if let Ok(value) = value.parse() {
+            return Ok(value);
         }
-        self.input[start..self.cursor]
-            .parse()
-            .map_err(|_| Self::error_at(start, "invalid list index"))
+        let value = value.to_owned();
+        self.cursor = start;
+        Err(Self::error_at(start, NbtPathErrorKind::InvalidIndex(value)))
     }
 
     const fn can_read(&self) -> bool {
@@ -1033,16 +1119,16 @@ impl<'a> Parser<'a> {
             self.read();
             Ok(())
         } else {
-            Err(self.error(format!("expected '{expected}'")))
+            Err(self.error(NbtPathErrorKind::ExpectedSymbol(expected)))
         }
     }
 
-    fn error(&self, message: impl Into<String>) -> NbtPathError {
-        NbtPathError::new(self.cursor, message)
+    const fn error(&self, kind: NbtPathErrorKind) -> NbtPathError {
+        NbtPathError::new(self.cursor, kind)
     }
 
-    fn error_at(cursor: usize, message: impl Into<String>) -> NbtPathError {
-        NbtPathError::new(cursor, message)
+    const fn error_at(cursor: usize, kind: NbtPathErrorKind) -> NbtPathError {
+        NbtPathError::new(cursor, kind)
     }
 }
 
@@ -1142,6 +1228,59 @@ mod tests {
         ]);
 
         assert_eq!(path.count_matching(&tag), 1);
+    }
+
+    #[test]
+    fn preserves_embedded_snbt_error_kind() {
+        let error = parse_nbt_path("items[{id:}]").expect_err("invalid pattern should fail");
+
+        assert_eq!(
+            error.kind(),
+            &NbtPathErrorKind::InvalidSnbt(SnbtErrorKind::ExpectedValue)
+        );
+        assert_eq!(
+            error.component(),
+            TextComponent::from(&translations::SNBT_PARSER_EXPECTED_UNQUOTED_STRING)
+        );
+    }
+
+    #[test]
+    fn quoted_key_errors_use_brigadier_cursors() {
+        let unclosed = parse_nbt_path(r#""items"#).expect_err("unclosed key should fail");
+        assert_eq!(unclosed.cursor(), r#""items"#.len());
+        assert_eq!(unclosed.kind(), &NbtPathErrorKind::UnclosedQuotedString);
+
+        let invalid_escape =
+            parse_nbt_path(r#""a\q""#).expect_err("invalid key escape should fail");
+        assert_eq!(invalid_escape.cursor(), r#""a\"#.len());
+        assert_eq!(invalid_escape.kind(), &NbtPathErrorKind::InvalidEscape('q'));
+    }
+
+    #[test]
+    fn index_errors_use_brigadier_integer_components() {
+        let expected = parse_nbt_path("items[x]").expect_err("missing integer should fail");
+        assert_eq!(expected.cursor(), "items[".len());
+        assert_eq!(expected.kind(), &NbtPathErrorKind::ExpectedIndex);
+        assert_eq!(
+            expected.component(),
+            TextComponent::from(&translations::PARSING_INT_EXPECTED)
+        );
+
+        for value in ["-", "1.2", "999999999999999999999"] {
+            let input = format!("items[{value}]");
+            let invalid = parse_nbt_path(&input).expect_err("invalid integer should fail");
+            assert_eq!(invalid.cursor(), "items[".len());
+            assert_eq!(
+                invalid.kind(),
+                &NbtPathErrorKind::InvalidIndex(value.to_owned())
+            );
+            assert_eq!(
+                invalid.component(),
+                translations::PARSING_INT_INVALID
+                    .message([value.to_owned()])
+                    .component()
+            );
+        }
     }
 
     #[test]

@@ -384,7 +384,7 @@ struct SelectorParseError {
 enum SelectorParseErrorKind {
     NotAllowed,
     AdvancedNotAllowed,
-    Invalid(String),
+    Invalid(Box<TextComponent>),
     Unsupported(String),
 }
 
@@ -403,16 +403,16 @@ impl SelectorParseError {
         }
     }
 
-    fn invalid(message: impl Into<String>) -> Self {
+    fn invalid(message: impl Into<TextComponent>) -> Self {
         Self {
-            kind: SelectorParseErrorKind::Invalid(message.into()),
+            kind: SelectorParseErrorKind::Invalid(Box::new(message.into())),
             cursor: 0,
         }
     }
 
-    fn invalid_at(message: impl Into<String>, cursor: usize) -> Self {
+    fn invalid_at(message: impl Into<TextComponent>, cursor: usize) -> Self {
         Self {
-            kind: SelectorParseErrorKind::Invalid(message.into()),
+            kind: SelectorParseErrorKind::Invalid(Box::new(message.into())),
             cursor,
         }
     }
@@ -432,7 +432,7 @@ impl SelectorParseError {
             SelectorParseErrorKind::AdvancedNotAllowed => {
                 TextComponent::from("Advanced entity selectors are not allowed")
             }
-            SelectorParseErrorKind::Invalid(message) => TextComponent::from(message),
+            SelectorParseErrorKind::Invalid(message) => *message,
             SelectorParseErrorKind::Unsupported(option) => {
                 TextComponent::from(format!("Unsupported entity selector option: {option}"))
             }
@@ -1814,10 +1814,12 @@ fn parse_name_option(
         .map_err(|error| {
             SelectorParseError::invalid_at(
                 match error.kind {
-                    SelectorParseErrorKind::Invalid(message) => message,
+                    SelectorParseErrorKind::Invalid(message) => *message,
                     SelectorParseErrorKind::NotAllowed
                     | SelectorParseErrorKind::AdvancedNotAllowed
-                    | SelectorParseErrorKind::Unsupported(_) => "invalid name option".to_owned(),
+                    | SelectorParseErrorKind::Unsupported(_) => {
+                        TextComponent::from("invalid name option")
+                    }
                 },
                 value_cursor,
             )
@@ -2364,10 +2366,7 @@ impl<'a> SelectorReader<'a> {
         let nbt_cursor = self.cursor;
         let (nbt, consumed) =
             parse_snbt_compound_argument(&self.input[self.cursor..]).map_err(|error| {
-                SelectorParseError::invalid_at(
-                    format!("invalid entity selector NBT: {}", error.message()),
-                    nbt_cursor + error.cursor(),
-                )
+                SelectorParseError::invalid_at(error.component(), nbt_cursor + error.cursor())
             })?;
         self.cursor += consumed;
         Ok(nbt)
@@ -2479,7 +2478,7 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{test_support::init_test_registry, vanilla_entities};
     use steel_utils::types::GameType;
-    use text_components::TextComponent;
+    use text_components::{TextComponent, content::Content};
 
     use crate::{
         command::{
@@ -2491,10 +2490,10 @@ mod tests {
     };
 
     use super::{
-        EntitySelector, IntRange, SelectorFilter, SelectorKind, SelectorType,
-        entity_name_filter_matches, entity_nbt_filter_matches, game_mode_filter_matches,
-        parse_entity_selector, parse_selector_plan, read_selector_argument, score_filter_matches,
-        suggest_entity_selector, team_filter_matches,
+        EntitySelector, IntRange, SelectorFilter, SelectorKind, SelectorParseErrorKind,
+        SelectorType, entity_name_filter_matches, entity_nbt_filter_matches,
+        game_mode_filter_matches, parse_entity_selector, parse_selector_plan,
+        read_selector_argument, score_filter_matches, suggest_entity_selector, team_filter_matches,
     };
 
     struct SelectorTestEntity {
@@ -2643,6 +2642,22 @@ mod tests {
             filter,
             SelectorFilter::Team { value, inverted: true } if value == "red"
         )));
+    }
+
+    #[test]
+    fn selector_preserves_translatable_snbt_errors() {
+        let Err(error) = parse_selector_plan("@e[nbt={id:}]", true) else {
+            panic!("missing selector NBT value should fail");
+        };
+
+        let SelectorParseErrorKind::Invalid(component) = error.kind else {
+            panic!("selector error should preserve its text component");
+        };
+        assert!(matches!(
+            component.content,
+            Content::Translate(ref message)
+                if message.key == "snbt.parser.expected_unquoted_string"
+        ));
     }
 
     #[test]
