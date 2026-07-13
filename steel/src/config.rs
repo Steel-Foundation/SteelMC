@@ -592,11 +592,21 @@ mod tests {
     #[test]
     fn packaged_configs_parse() {
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        assert!(DEFAULT_CONFIG.starts_with(concat!(
+            "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+            "package-content/config.schema.json\n",
+            "# Documentation: https://steelmc.dev/configuration/server-configuration/\n\n",
+        )));
         assert!(!config.server.allow_flight);
         assert_eq!(config.server.chat_spam_threshold_seconds, 10);
         assert_eq!(config.server.command_spam_threshold_seconds, 10);
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
+        assert!(DEFAULT_WORLDS.starts_with(concat!(
+            "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+            "package-content/worlds.schema.json\n",
+            "# Documentation: https://steelmc.dev/configuration/world-configuration/\n\n",
+        )));
         assert!(!worlds.domains.is_empty());
         let groups: PermissionGroupsConfig =
             toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
