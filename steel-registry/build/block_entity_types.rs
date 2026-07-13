@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted block entity type data"
+)]
+
 use std::fs;
 
 use heck::ToShoutySnakeCase;
@@ -16,7 +21,7 @@ pub(crate) fn build() -> TokenStream {
     let block_entity_types_file = "build_assets/block_entities.json";
     let content = fs::read_to_string(block_entity_types_file).unwrap();
     let block_entity_types: BlockEntityTypesJson = serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse block_entities.json: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to parse block_entities.json: {e}"));
 
     let mut stream = TokenStream::new();
 

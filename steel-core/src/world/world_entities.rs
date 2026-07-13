@@ -1,9 +1,7 @@
 //! This module contains the implementation of the world's entity-related methods.
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{
-    CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
-};
+use steel_protocol::packets::game::{CGameEvent, CPlayerInfoUpdate, GameEventType};
 use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
 use tokio::time::Instant;
@@ -15,7 +13,6 @@ use crate::{
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
-    player::player_data_storage::GlobalPlayerData,
     player::{Player, ResetReason, ServerPlayer},
     world::World,
 };
@@ -92,6 +89,9 @@ impl World {
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<ServerPlayer>) {
         let Some(player) = self.players.remove_player(&player).await else {
+            if player.entity.lock().has_won_game() {
+                self.remove_detached_end_credits_player(player).await;
+            }
             return;
         };
         let domain = self.domain().to_owned();
@@ -101,6 +101,8 @@ impl World {
             let guard = player.entity.lock();
             let uuid = guard.gameprofile.id;
             let entity_id = guard.id();
+            // Ender pearls persist with the player, so hand them over before snapshotting.
+            guard.store_ender_pearls_with_player();
             let player_data = PersistentPlayerData::from_player(&guard);
             let server = guard.server();
 
@@ -119,31 +121,39 @@ impl World {
         let start = Instant::now();
 
         // Save after world indexes are cleared so a fast reconnect cannot collide
-        // with this player's stale entity ID/UUID cache entries.
-        if let Err(e) = server
-            .player_data_storage
-            .save_domain_data(&domain, uuid, &player_data)
-            .await
-        {
-            log::error!("Failed to save player domain data for {uuid}: {e}");
-        }
-        if let Err(e) = server
-            .player_data_storage
-            .save_global(
-                uuid,
-                &GlobalPlayerData {
-                    last_active_domain: domain,
-                },
-            )
-            .await
-        {
-            log::error!("Failed to save global player data for {uuid}: {e}");
-        }
-
-        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
-
-        player.entity.lock().cleanup();
+        // with this player's stale entity ID/UUID cache entries. This also drops the
+        // player from the server-wide online set and the tab list.
+        server
+            .remove_online_player_after_disconnect(player, domain, player_data)
+            .await;
         log::info!("Player {uuid} removed in {:?}", start.elapsed());
+    }
+
+    /// Removes a player who left while detached in the End credits flow.
+    ///
+    /// The player is no longer attached to a live world, so there is no world
+    /// index teardown to do — only persistence and session cleanup.
+    async fn remove_detached_end_credits_player(self: &Arc<Self>, player: Arc<ServerPlayer>) {
+        let domain = self.domain().to_owned();
+        let start = Instant::now();
+
+        let (uuid, player_data, server) = {
+            let guard = player.entity.lock();
+            guard.store_ender_pearls_with_player();
+            (
+                guard.gameprofile.id,
+                PersistentPlayerData::from_player(&guard),
+                guard.server(),
+            )
+        };
+
+        server
+            .remove_online_player_after_disconnect(player, domain, player_data)
+            .await;
+        log::info!(
+            "Detached End credits player {uuid} removed in {:?}",
+            start.elapsed()
+        );
     }
 
     /// Removes a player from the world during a world change.
@@ -187,6 +197,21 @@ impl World {
     /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     #[must_use]
+    /// Re-inserts a respawning player into this world.
+    pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<ServerPlayer>) -> bool {
+        if !self.players.insert(player.clone()) {
+            player.connection.close();
+            return false;
+        }
+
+        self.register_respawned_player_entity(&player);
+        player.entity.lock().send_packet(CGameEvent {
+            event: GameEventType::LevelChunksLoadStart,
+            data: 0.0,
+        });
+        true
+    }
+
     pub fn add_player(self: &Arc<Self>, player: Arc<ServerPlayer>, reason: ResetReason) -> bool {
         if !self.players.insert(player.clone()) {
             player.connection.close();

@@ -3,7 +3,7 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::Identifier;
 
-/// Represents a world_clock definition from a data pack JSON file.
+/// Represents a `world_clock` definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct WorldClock {
     pub key: Identifier,

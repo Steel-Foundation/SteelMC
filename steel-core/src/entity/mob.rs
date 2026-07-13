@@ -6,7 +6,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::floor;
+use steel_math::fast_floor;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
@@ -20,7 +20,6 @@ use steel_registry::{
     vanilla_game_events, vanilla_items,
 };
 use steel_utils::UuidExt;
-use steel_utils::random::Random as _;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, ChunkPos, Identifier, WorldAabb, axis::Axis};
 use uuid::Uuid;
@@ -534,7 +533,7 @@ pub trait Mob: LivingEntity {
                 !equipment.get_ref(slot).is_empty() && self.equipment_drop_chance(slot) <= 1.0
             };
             if should_increase {
-                result += 1 + self.base().random().lock().next_i32_bounded(3);
+                result += 1 + rand::random_range(0..3);
             }
         }
         result
@@ -566,7 +565,7 @@ pub trait Mob: LivingEntity {
         }
 
         let ambient_sound_time = self.mob_base().get_and_increment_ambient_sound_time();
-        if self.base().random().lock().next_i32_bounded(1000) < ambient_sound_time {
+        if rand::random_range(0..1000) < ambient_sound_time {
             self.reset_ambient_sound_time();
             self.play_ambient_sound();
         }
@@ -590,13 +589,9 @@ pub trait Mob: LivingEntity {
         let needs_random_spawn_bonus = !self
             .attributes()
             .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
-        let (random_spawn_bonus, left_handed) = {
-            let mut random = world.random().lock();
-            let random_spawn_bonus =
-                needs_random_spawn_bonus.then(|| random.triangle(0.0, RANDOM_SPAWN_BONUS_SCALE));
-            let left_handed = random.next_f32() < LEFT_HANDED_SPAWN_CHANCE;
-            (random_spawn_bonus, left_handed)
-        };
+        let random_spawn_bonus = needs_random_spawn_bonus
+            .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
+        let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
 
         if let Some(amount) = random_spawn_bonus {
             self.attributes_mut().add_modifier(
@@ -722,7 +717,7 @@ pub trait Mob: LivingEntity {
 
             // TODO: Apply EquipmentDrops enchantment value effects once damage
             // sources can resolve their living attacker context.
-            let random_roll = self.base().random().lock().next_f32();
+            let random_roll = rand::random::<f32>();
             if random_roll >= drop_chance {
                 continue;
             }
@@ -741,12 +736,8 @@ pub trait Mob: LivingEntity {
             };
             if !preserve && item_stack.is_damageable_item() {
                 let max_damage = item_stack.get_max_damage();
-                let damage = {
-                    let self_base = self.base();
-                    let mut random = self_base.random().lock();
-                    let inner = random.next_i32_bounded((max_damage - 3).max(1));
-                    max_damage - random.next_i32_bounded(1 + inner)
-                };
+                let inner = rand::random_range(0..(max_damage - 3).max(1));
+                let damage = max_damage - rand::random_range(0..=inner);
                 item_stack.set_damage_value(damage);
             }
 
@@ -1212,11 +1203,7 @@ pub trait Mob: LivingEntity {
             && nearest_player_dist_sqr > f64::from(no_despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
-            let should_discard = {
-                let self_base = self.base();
-                let mut random = self_base.random().lock();
-                random.next_i32_bounded(800) == 0
-            };
+            let should_discard = rand::random_range(0..800) == 0;
             if should_discard {
                 self.set_removed(RemovalReason::Discarded);
             }
@@ -1617,9 +1604,9 @@ pub trait Mob: LivingEntity {
         };
         let position = self.position();
         let pos = BlockPos::new(
-            floor(position.x + f64::from(dx)),
-            floor(position.y),
-            floor(position.z + f64::from(dz)),
+            fast_floor(position.x + f64::from(dx)),
+            fast_floor(position.y),
+            fast_floor(position.z + f64::from(dz)),
         );
         let mut context = PathfindingContext::new(world.as_ref(), self.block_position());
         WalkPathEvaluator::path_type_static(&mut context, pos) == PathType::Walkable
@@ -1789,7 +1776,7 @@ fn ground_navigation_temp_mob_pos<M: Mob + ?Sized>(
 
 fn ground_navigation_surface_y<M: Mob + ?Sized>(mob: &M, world: &World, can_float: bool) -> i32 {
     if !mob.is_in_water() || !can_float {
-        return floor(mob.position().y + 0.5);
+        return fast_floor(mob.position().y + 0.5);
     }
 
     let position = mob.position();
@@ -2460,6 +2447,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(DespawnTestMob);
+
     impl Entity for DespawnTestMob {
         fn base_weak(&self) -> &Weak<EntityBase> {
             &self.base
@@ -2541,6 +2530,8 @@ mod tests {
             )
         }
     }
+
+    crate::entity::impl_test_downcast_type!(HiddenTarget);
 
     impl Entity for HiddenTarget {
         fn base_weak(&self) -> &Weak<EntityBase> {
@@ -2629,6 +2620,8 @@ mod tests {
             )
         }
     }
+
+    crate::entity::impl_test_downcast_type!(MobControlVehicleEntity);
 
     impl Entity for MobControlVehicleEntity {
         fn base_weak(&self) -> &Weak<EntityBase> {

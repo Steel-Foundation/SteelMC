@@ -47,6 +47,15 @@ impl<V: Hash + Eq + Copy, const DIM: usize> HeterogeneousPalette<V, DIM> {
         self.cube[y][z][x]
     }
 
+    fn get_at_index(&self, index: usize) -> V {
+        debug_assert!(index < DIM * DIM * DIM);
+
+        let y = index / (DIM * DIM);
+        let z = (index / DIM) % DIM;
+        let x = index % DIM;
+        self.cube[y][z][x]
+    }
+
     /// Returns an iterator over all values in the cube in y, z, x order.
     pub fn iter_values(&self) -> impl Iterator<Item = &V> {
         self.cube.iter().flatten().flatten()
@@ -169,6 +178,25 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         }
     }
 
+    /// Gets the value at a y,z,x linear index.
+    ///
+    /// The index layout is `x + z * DIM + y * DIM * DIM`, matching the flat
+    /// order used when serializing palette data and by `ScalableLux` light propagation.
+    pub fn get_at_index(&self, index: usize) -> V {
+        debug_assert!(index < Self::VOLUME);
+
+        match self {
+            Self::Homogeneous(value) => *value,
+            Self::Heterogeneous(data) => data.get_at_index(index),
+            Self::Building(cube) => {
+                let y = index / (DIM * DIM);
+                let z = (index / DIM) % DIM;
+                let x = index % DIM;
+                cube[y][z][x]
+            }
+        }
+    }
+
     /// Copies the full vertical column at `(x, z)` into `out`.
     pub(crate) fn copy_column_into(&self, x: usize, z: usize, out: &mut [V]) {
         debug_assert!(x < DIM);
@@ -191,6 +219,23 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                     *slot = cube[y][z][x];
                 }
             }
+        }
+    }
+
+    /// Returns whether this container's palette may contain a matching value.
+    ///
+    /// This checks palette entries instead of every cell, matching vanilla and
+    /// `ScalableLux`'s fast pre-scan before doing a full section pass.
+    #[must_use]
+    pub fn maybe_has(&self, mut predicate: impl FnMut(V) -> bool) -> bool {
+        match self {
+            Self::Homogeneous(value) => predicate(*value),
+            Self::Heterogeneous(data) => data.palette.iter().any(|(value, _)| predicate(*value)),
+            Self::Building(cube) => cube
+                .iter()
+                .flatten()
+                .flatten()
+                .any(|value| predicate(*value)),
         }
     }
 
@@ -475,6 +520,39 @@ mod tests {
         for (y, state) in column.into_iter().enumerate() {
             assert_eq!(state, container.get(x, y, z));
         }
+    }
+
+    #[test]
+    fn get_at_index_reads_homogeneous_palette_values() {
+        let container = BlockPalette::Homogeneous(BlockStateId(42));
+
+        assert_eq!(container.get_at_index(0), BlockStateId(42));
+        assert_eq!(
+            container.get_at_index(BlockPalette::VOLUME - 1),
+            BlockStateId(42)
+        );
+    }
+
+    #[test]
+    fn get_at_index_uses_y_z_x_linear_order_for_blocks() {
+        let mut container = BlockPalette::Homogeneous(BlockStateId(0));
+
+        container.set(3, 4, 5, BlockStateId(99));
+
+        assert_eq!(
+            container.get_at_index(3 + 5 * 16 + 4 * 16 * 16),
+            BlockStateId(99)
+        );
+    }
+
+    #[test]
+    fn maybe_has_checks_palette_values_without_scanning_cells() {
+        let mut container = BlockPalette::Homogeneous(BlockStateId(0));
+        assert!(!container.maybe_has(|state| state == BlockStateId(7)));
+
+        container.set(1, 2, 3, BlockStateId(7));
+        assert!(container.maybe_has(|state| state == BlockStateId(7)));
+        assert!(!container.maybe_has(|state| state == BlockStateId(9)));
     }
 
     #[test]

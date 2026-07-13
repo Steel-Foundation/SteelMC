@@ -4,6 +4,7 @@
 //! `structuresReferences` (pointing at nearby origin chunks). The structure key
 //! is `Identifier` until a structure registry is added.
 
+mod box_octree;
 pub mod desert_pyramid;
 pub mod end_city;
 pub mod fortress;

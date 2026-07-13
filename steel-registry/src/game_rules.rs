@@ -33,7 +33,7 @@ pub enum GameRuleValue {
 impl GameRuleValue {
     /// Returns the boolean value if this is a Bool variant.
     #[must_use]
-    pub fn as_bool(&self) -> Option<bool> {
+    pub const fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
             Self::Int(_) => None,
@@ -42,7 +42,7 @@ impl GameRuleValue {
 
     /// Returns the integer value if this is an Int variant.
     #[must_use]
-    pub fn as_int(&self) -> Option<i32> {
+    pub const fn as_int(&self) -> Option<i32> {
         match self {
             Self::Bool(_) => None,
             Self::Int(i) => Some(*i),
@@ -51,19 +51,19 @@ impl GameRuleValue {
 
     /// Returns true if this is a Bool variant.
     #[must_use]
-    pub fn is_bool(&self) -> bool {
+    pub const fn is_bool(&self) -> bool {
         matches!(self, Self::Bool(_))
     }
 
     /// Returns true if this is an Int variant.
     #[must_use]
-    pub fn is_int(&self) -> bool {
+    pub const fn is_int(&self) -> bool {
         matches!(self, Self::Int(_))
     }
 
     /// Returns true if this value matches the given type.
     #[must_use]
-    pub fn matches_type(&self, value_type: GameRuleType) -> bool {
+    pub const fn matches_type(&self, value_type: GameRuleType) -> bool {
         matches!(
             (self, value_type),
             (Self::Bool(_), GameRuleType::Bool) | (Self::Int(_), GameRuleType::Int)
@@ -83,7 +83,7 @@ impl std::fmt::Display for GameRuleValue {
 /// A game rule definition.
 #[derive(Debug)]
 pub struct GameRule {
-    /// The key/name of the game rule (e.g., "keep_inventory").
+    /// The key/name of the game rule (e.g., "`keep_inventory`").
     pub key: Identifier,
     /// The category this game rule belongs to.
     pub category: GameRuleCategory,

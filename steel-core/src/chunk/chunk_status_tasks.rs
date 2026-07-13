@@ -113,6 +113,15 @@ impl ChunkStatusTasks {
         stages::light::generate(context, step, cache, holder);
     }
 
+    pub fn load_light(
+        context: Arc<WorldGenContext>,
+        step: &ChunkStep,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
+    ) {
+        stages::light::load(context, step, cache, holder);
+    }
+
     pub fn generate_spawn(
         context: Arc<WorldGenContext>,
         step: &ChunkStep,

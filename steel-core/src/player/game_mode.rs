@@ -20,11 +20,10 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
-use steel_utils::Identifier;
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::translations;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
-use steel_utils::{BlockPos, WorldAabb};
+use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
@@ -43,6 +42,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::menu::Menu;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
+use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 
@@ -133,12 +133,13 @@ pub fn use_item_on(
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
-        // TODO: Check item cooldowns
-        // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
 
         let mut context = UseOnContext::new(
             player,
@@ -174,14 +175,15 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         return InteractionResult::Pass;
     }
 
-    // TODO: Check item cooldowns
-    // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
-
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
+
         let mut context =
             crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
@@ -198,6 +200,10 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
                     item.count = original_count;
                 }
             });
+        }
+
+        if result.should_apply_item_use_side_effects() {
+            player.apply_item_use_cooldown(&stack_before_use);
         }
 
         return result;
@@ -570,8 +576,7 @@ impl Player {
                 // the attacking player, and `with_entity` would re-lock the
                 // already-held `Player` mutex (the `id() != self.id()` guard in
                 // `can_piercing_hit_entity` runs too late, inside the lock).
-                entity.id() != self.id()
-                    && entity.with_entity(|e| self.can_piercing_hit_entity(e))
+                entity.id() != self.id() && entity.with_entity(|e| self.can_piercing_hit_entity(e))
             })
             .into_iter()
             .filter_map(|entity| {
@@ -1017,7 +1022,7 @@ impl Player {
 
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.get_world().broadcast_to_all(update_packet);
+        self.server().broadcast_to_online(update_packet);
 
         self.send_message(
             &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
@@ -1366,6 +1371,20 @@ impl Player {
 
         self.ack_block_changes_up_to(packet.sequence);
 
+        let item_stack_is_empty = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(packet.hand).is_empty()
+        };
+        if item_stack_is_empty {
+            return;
+        }
+
+        let target_yaw = wrap_degrees(packet.y_rot);
+        let target_pitch = wrap_degrees(packet.x_rot);
+        if self.rotation() != (target_yaw, target_pitch) {
+            self.set_rotation((target_yaw, target_pitch));
+        }
+
         let world = self.get_world();
         let result = use_item(self, &world, packet.hand);
 
@@ -1448,7 +1467,7 @@ impl Player {
         };
 
         let mut guard = block_entity.lock();
-        let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
             return;
         };
 
@@ -1496,7 +1515,7 @@ impl Player {
 
         if let Some(block_entity) = world.get_block_entity(pos) {
             let mut guard = block_entity.lock();
-            if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
+            if let Some(sign) = guard.downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
             }
         }

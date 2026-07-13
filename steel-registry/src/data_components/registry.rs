@@ -756,7 +756,7 @@ impl ReadFrom for DataComponentPatch {
 }
 
 impl DataComponentPatch {
-    /// Reads a patch where each component value is prefixed with a VarInt byte length.
+    /// Reads a patch where each component value is prefixed with a `VarInt` byte length.
     ///
     /// Vanilla uses this for untrusted client packets (e.g., creative mode slot)
     /// via `DataComponentPatch.DELIMITED_STREAM_CODEC`.

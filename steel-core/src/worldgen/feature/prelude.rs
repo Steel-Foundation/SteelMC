@@ -1,7 +1,7 @@
 pub(super) use std::sync::LazyLock;
 
 pub(super) use rustc_hash::FxHashSet;
-pub(super) use steel_math::{floor, lerp};
+pub(super) use steel_math::{fast_floor, lerp};
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
 pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{

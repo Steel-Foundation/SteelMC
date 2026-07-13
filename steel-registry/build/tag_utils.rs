@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted tag data"
+)]
+
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{fs, path::Path};
 
@@ -32,7 +37,7 @@ pub fn read_all_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
 
                 let content = fs::read_to_string(&path).unwrap();
                 let tag: TagJson = serde_json::from_str(&content)
-                    .unwrap_or_else(|e| panic!("Failed to parse {}: {}", tag_name, e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {tag_name}: {e}"));
 
                 tags.insert(tag_name, tag.values);
             }
@@ -58,15 +63,16 @@ pub fn resolve_tag(
         return cached.clone();
     }
 
-    if visiting.contains(&tag_name.to_string()) {
-        panic!("Circular tag dependency detected: {:?}", visiting);
-    }
+    assert!(
+        !visiting.contains(&tag_name.to_string()),
+        "Circular tag dependency detected: {visiting:?}"
+    );
 
     visiting.push(tag_name.to_string());
 
     let values = all_tags
         .get(tag_name)
-        .unwrap_or_else(|| panic!("Tag not found: {}", tag_name));
+        .unwrap_or_else(|| panic!("Tag not found: {tag_name}"));
 
     let mut resolved = Vec::new();
 
@@ -129,7 +135,7 @@ pub fn build_simple_tags(
     let registry_module_ident = Ident::new(registry_module, Span::call_site());
     let registry_type_ident = Ident::new(registry_type, Span::call_site());
     let register_fn_ident = Ident::new(
-        &format!("register_{}_tags", registry_module),
+        &format!("register_{registry_module}_tags"),
         Span::call_site(),
     );
     let tag_category_ident = Ident::new(
@@ -156,7 +162,7 @@ pub fn build_simple_tags(
         );
         let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
 
-        let entry_strs = entries.iter().map(|s| s.as_str());
+        let entry_strs = entries.iter().map(std::string::String::as_str);
         let tag_key = tag_name.as_str();
 
         static_arrays.extend(quote! {

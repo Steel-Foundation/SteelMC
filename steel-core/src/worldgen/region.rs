@@ -30,12 +30,12 @@ use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
     heightmap::{Heightmap, HeightmapType},
-    section::{BlockStateSectionCounts, ChunkSection, SectionHolder},
+    section::{ChunkSection, SectionHolder},
 };
 
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
 use crate::{
@@ -824,7 +824,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     pub(crate) fn replace_ore_target_block_state(
         &mut self,
         pos: BlockPos,
-        replacement: impl FnOnce(BlockStateId) -> Option<(BlockStateId, BlockStateSectionCounts)>,
+        replacement: impl FnOnce(BlockStateId) -> Option<BlockStateId>,
     ) -> bool {
         self.with_ore_profile(OreFeatureStats::record_target_read);
         let ore_profile = self.ore_profile;
@@ -851,17 +851,18 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let local_y = Self::local_coord(pos.y());
         let local_z = Self::local_coord(pos.z());
         let old_state = section_guard.states.get(local_x, local_y, local_z);
-        let Some((state, state_counts)) = replacement(old_state) else {
+        let Some(state) = replacement(old_state) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
         };
 
-        let old_state = section_guard.set_block_state_with_known_new_counts(
+        let old_state = Self::set_bulk_block_state(
+            &chunk.guard,
+            &mut section_guard,
             local_x,
             local_y,
             local_z,
             state,
-            state_counts,
         );
         Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
         if old_state != state {
@@ -879,7 +880,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         section_index: usize,
         positions: &[PackedSectionBlockPos],
-        mut replacement: impl FnMut(BlockStateId) -> Option<(BlockStateId, BlockStateSectionCounts)>,
+        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
@@ -921,13 +922,14 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some((state, state_counts)) = replacement(old_state) {
-                    let old_state = section_guard.set_block_state_with_known_new_counts(
+                if let Some(state) = replacement(old_state) {
+                    let old_state = Self::set_bulk_block_state(
+                        &chunk.guard,
+                        &mut section_guard,
                         local_x,
                         local_y,
                         local_z,
                         state,
-                        state_counts,
                     );
                     Self::with_ore_profile_ref(Some(profile), OreFeatureStats::record_write);
                     dirty |= old_state != state;
@@ -940,13 +942,14 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some((state, state_counts)) = replacement(old_state) {
-                    let old_state = section_guard.set_block_state_with_known_new_counts(
+                if let Some(state) = replacement(old_state) {
+                    let old_state = Self::set_bulk_block_state(
+                        &chunk.guard,
+                        &mut section_guard,
                         local_x,
                         local_y,
                         local_z,
                         state,
-                        state_counts,
                     );
                     dirty |= old_state != state;
                     placed += 1;
@@ -1022,9 +1025,10 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     /// Writes a block state directly to the containing section.
     ///
-    /// This intentionally mirrors vanilla `LevelChunkSection.setBlockState` as used through
-    /// `BulkSectionAccess`: section block counts are updated, but heightmaps, neighbor updates,
-    /// block entity callbacks, and other `WorldGenRegion.setBlock` side effects are skipped.
+    /// This mirrors vanilla `BulkSectionAccess` by skipping heightmaps, neighbor updates,
+    /// block entity callbacks, and other `WorldGenRegion.setBlock` side effects. Steel also
+    /// defers section block counts until light initialization, matching the rest of its
+    /// pre-light worldgen write paths.
     #[must_use]
     pub(crate) fn set_block_state(&mut self, pos: BlockPos, state: BlockStateId) -> bool {
         let ore_profile = self.ore_profile;
@@ -1046,7 +1050,9 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         };
 
         let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
-        let old_state = section_guard.set_block_state(
+        let old_state = Self::set_bulk_block_state(
+            &chunk.guard,
+            &mut section_guard,
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),
             Self::local_coord(pos.z()),
@@ -1073,6 +1079,23 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             status,
             section_index,
         })
+    }
+
+    fn set_bulk_block_state(
+        chunk: &ChunkAccess,
+        section: &mut ChunkSection,
+        local_x: usize,
+        local_y: usize,
+        local_z: usize,
+        state: BlockStateId,
+    ) -> BlockStateId {
+        if matches!(chunk, ChunkAccess::Proto(proto) if proto.status() < ChunkStatus::InitializeLight)
+        {
+            return section.set_block_state_for_generation(local_x, local_y, local_z, state);
+        }
+
+        section.finalize_generation_counts_if_needed();
+        section.set_block_state(local_x, local_y, local_z, state)
     }
 
     fn ore_section_write_guard<'section>(
@@ -1286,9 +1309,25 @@ impl ScheduledTickAccess for WorldGenRegion<'_> {
     }
 }
 
+impl LevelAccessor for WorldGenRegion<'_> {
+    fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
+        WorldGenRegion::set_block_state(self, pos, state, flags)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Weak;
+
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::ChunkPos;
+
+    use crate::behavior::init_behaviors;
+    use crate::chunk::{
+        chunk_access::{ChunkAccess, ChunkStatus},
+        proto_chunk::ProtoChunk,
+        section::{ChunkSection, Sections},
+    };
 
     use super::{WorldGenBulkSectionAccess, WorldGenRegion};
 
@@ -1347,5 +1386,71 @@ mod tests {
         assert_eq!(WorldGenBulkSectionAccess::local_coord(-1), 15);
         assert_eq!(WorldGenBulkSectionAccess::local_coord(0), 0);
         assert_eq!(WorldGenBulkSectionAccess::local_coord(31), 15);
+    }
+
+    #[test]
+    fn bulk_write_defers_counts_only_for_pre_light_proto_chunks() {
+        init_test_registry();
+        init_behaviors();
+        let stone = vanilla_blocks::STONE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        let pre_light_proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pre_light_chunk = ChunkAccess::Proto(pre_light_proto);
+        let mut pre_light_section = ChunkSection::new_empty();
+
+        WorldGenBulkSectionAccess::set_bulk_block_state(
+            &pre_light_chunk,
+            &mut pre_light_section,
+            1,
+            2,
+            3,
+            stone,
+        );
+
+        assert_eq!(pre_light_section.non_empty_block_count(), 0);
+
+        let initialized_proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        initialized_proto.set_status(ChunkStatus::InitializeLight);
+        let initialized_chunk = ChunkAccess::Proto(initialized_proto);
+        let mut initialized_section = ChunkSection::new_empty();
+
+        WorldGenBulkSectionAccess::set_bulk_block_state(
+            &initialized_chunk,
+            &mut initialized_section,
+            1,
+            2,
+            3,
+            stone,
+        );
+
+        assert_eq!(initialized_section.non_empty_block_count(), 1);
+
+        let mut initialized_building_section = ChunkSection::new_empty();
+        initialized_building_section.set_block_state_for_generation(1, 2, 3, stone);
+
+        let old_state = WorldGenBulkSectionAccess::set_bulk_block_state(
+            &initialized_chunk,
+            &mut initialized_building_section,
+            4,
+            5,
+            6,
+            stone,
+        );
+
+        assert_eq!(old_state, air);
+        assert_eq!(initialized_building_section.non_empty_block_count(), 2);
     }
 }

@@ -6,9 +6,12 @@
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::game_events::GameEventRef;
+use steel_registry::sound_event::SoundEventRef;
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::world::game_event_context::GameEventContext;
 
 const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
 
@@ -104,6 +107,34 @@ pub trait ScheduledTickAccess: LevelReader {
 
     /// Schedules a fluid tick using vanilla's default priority.
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool;
+}
+
+/// Mutable level access needed by vanilla `LevelAccessor` block hooks.
+pub trait LevelAccessor: ScheduledTickAccess {
+    /// Sets a block state with vanilla update flags.
+    fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool;
+
+    /// Plays a block sound when this level surface supports runtime side effects.
+    #[expect(
+        unused_variables,
+        reason = "worldgen and test level surfaces do not emit sounds"
+    )]
+    fn play_block_sound(
+        &self,
+        sound: SoundEventRef,
+        pos: BlockPos,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+    }
+
+    /// Dispatches a game event when this level surface supports runtime listeners.
+    #[expect(
+        unused_variables,
+        reason = "worldgen and test level surfaces do not emit game events"
+    )]
+    fn game_event(&self, event: GameEventRef, pos: BlockPos, context: &GameEventContext<'_>) {}
 }
 
 #[cfg(test)]

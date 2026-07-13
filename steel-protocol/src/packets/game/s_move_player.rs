@@ -1,11 +1,11 @@
 use glam::DVec3;
 use steel_macros::{ReadFrom, ServerPacket};
 
-fn unpack_on_ground(packed_byte: u8) -> bool {
+const fn unpack_on_ground(packed_byte: u8) -> bool {
     packed_byte & 0b0000_0001 != 0
 }
 
-fn unpack_horizontal_collision(packed_byte: u8) -> bool {
+const fn unpack_horizontal_collision(packed_byte: u8) -> bool {
     packed_byte & 0b0000_0010 != 0
 }
 
@@ -23,7 +23,7 @@ pub struct SMovePlayer {
 
 impl SMovePlayer {
     #[must_use]
-    pub fn get_x(&self, fallback: f64) -> f64 {
+    pub const fn get_x(&self, fallback: f64) -> f64 {
         if self.has_pos {
             self.position.x
         } else {
@@ -32,7 +32,7 @@ impl SMovePlayer {
     }
 
     #[must_use]
-    pub fn get_y(&self, fallback: f64) -> f64 {
+    pub const fn get_y(&self, fallback: f64) -> f64 {
         if self.has_pos {
             self.position.y
         } else {
@@ -41,7 +41,7 @@ impl SMovePlayer {
     }
 
     #[must_use]
-    pub fn get_z(&self, fallback: f64) -> f64 {
+    pub const fn get_z(&self, fallback: f64) -> f64 {
         if self.has_pos {
             self.position.z
         } else {
@@ -50,12 +50,12 @@ impl SMovePlayer {
     }
 
     #[must_use]
-    pub fn get_x_rot(&self, fallback: f32) -> f32 {
+    pub const fn get_x_rot(&self, fallback: f32) -> f32 {
         if self.has_rot { self.x_rot } else { fallback }
     }
 
     #[must_use]
-    pub fn get_y_rot(&self, fallback: f32) -> f32 {
+    pub const fn get_y_rot(&self, fallback: f32) -> f32 {
         if self.has_rot { self.y_rot } else { fallback }
     }
 }
@@ -123,7 +123,7 @@ impl From<SMovePlayerRot> for SMovePlayer {
     }
 }
 
-/// Status-only movement packet (no position or rotation, just on_ground flag).
+/// Status-only movement packet (no position or rotation, just `on_ground` flag).
 ///
 /// Sent by the client when they haven't moved but want to update their ground status.
 #[derive(ReadFrom, Clone, Debug, ServerPacket)]

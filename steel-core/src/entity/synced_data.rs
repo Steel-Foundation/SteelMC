@@ -1,8 +1,9 @@
 use steel_registry::{
     entity_data::{DataValue, EntityPose},
     vanilla_entity_data::{
-        BlockDisplayEntityData, EndCrystalEntityData, ExperienceOrbEntityData, ItemEntityData,
-        ItemFrameEntityData, LivingEntityData, PigEntityData, PlayerEntityData, VanillaEntityData,
+        BlockDisplayEntityData, EndCrystalEntityData, EnderPearlEntityData,
+        ExperienceOrbEntityData, ItemEntityData, ItemFrameEntityData, LivingEntityData,
+        PigEntityData, PlayerEntityData, VanillaEntityData,
     },
 };
 use steel_utils::locks::SyncMutex;
@@ -180,6 +181,7 @@ macro_rules! impl_entity_synced_data {
 
 impl_entity_synced_data!(
     ItemEntityData,
+    EnderPearlEntityData,
     BlockDisplayEntityData,
     ExperienceOrbEntityData,
     EndCrystalEntityData,

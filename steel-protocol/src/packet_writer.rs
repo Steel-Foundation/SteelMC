@@ -97,7 +97,7 @@ pub struct TCPNetworkEncoder<W: AsyncWrite + Unpin> {
 
 impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     /// Creates a new `TCPNetworkEncoder`.
-    pub fn new(writer: W) -> Self {
+    pub const fn new(writer: W) -> Self {
         Self {
             writer: EncryptionWriter::None(writer),
         }

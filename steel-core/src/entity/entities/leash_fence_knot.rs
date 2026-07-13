@@ -9,7 +9,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
-use steel_utils::{BlockPos, WorldAabb};
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, RemovalReason, SharedEntity, next_entity_id,
@@ -23,6 +23,11 @@ pub struct LeashFenceKnotEntity {
     /// blockpos of the entity
     pub block_pos: BlockPos,
     check_interval: i32,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `LeashFenceKnotEntity`.
+unsafe impl DowncastType for LeashFenceKnotEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/leash_fence_knot");
 }
 
 impl LeashFenceKnotEntity {

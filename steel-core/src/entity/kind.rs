@@ -10,12 +10,12 @@
 //! ```ignore
 //! // Hold the lock for multiple operations:
 //! let mut guard = base.lock_entity();
-//! if let Some(pig) = guard.downcast::<PigEntity>() {
+//! if let Some(pig) = guard.downcast::<Pig>() {
 //!     println!("age = {}", pig.get_age());
 //! }
 //!
 //! // Closure form (lock acquired and released automatically):
-//! base.with_entity_as::<PigEntity, _>(|pig| pig.is_baby());
+//! base.with_entity_as::<Pig, _>(|pig| pig.is_baby());
 //! ```
 //!
 //! [`RawEntity`] is a many-to-one fallback and is only accessed via `&dyn Entity`.

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted dimension type data"
+)]
+
 use std::fs;
 
 use crate::generator_functions::{generate_option, generate_sound_event_ref};
@@ -259,7 +264,7 @@ pub(crate) fn build() -> TokenStream {
             let dimension_type_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let mut dimension_type: DimensionTypeJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", dimension_type_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {dimension_type_name}: {e}"));
 
             // Extract fixed_time from attributes if has_fixed_time is true but fixed_time is None
             if dimension_type.has_fixed_time && dimension_type.fixed_time.is_none() {
@@ -437,7 +442,7 @@ pub(crate) fn build() -> TokenStream {
                 .attributes
                 .bed_rule
                 .as_ref()
-                .unwrap_or_else(|| panic!("Missing bed_rule in {}", dimension_type_name)),
+                .unwrap_or_else(|| panic!("Missing bed_rule in {dimension_type_name}")),
         );
 
         // Audio attributes

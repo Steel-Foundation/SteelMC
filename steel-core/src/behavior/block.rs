@@ -12,7 +12,6 @@ use steel_registry::blocks::shapes::{
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
@@ -30,11 +29,11 @@ use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
-    pub filled_bucket: ItemRef,
+    pub filled_bucket: ItemStack,
     pub sound: Option<SoundEventRef>,
 }
 
@@ -63,7 +62,7 @@ pub(crate) fn pickup_waterlogged_block(
     }
 
     Some(PickupResult {
-        filled_bucket: &vanilla_items::ITEMS.water_bucket,
+        filled_bucket: ItemStack::new(&vanilla_items::ITEMS.water_bucket),
         sound: Some(&sound_events::ITEM_BUCKET_FILL),
     })
 }
@@ -76,6 +75,39 @@ fn can_pick_up_drained_waterlogged_state(state: BlockStateId, player: Option<&Pl
     }
 
     player.is_some_and(|player| player.game_mode() == GameType::Creative)
+}
+
+pub(crate) fn schedule_placed_liquid_tick(
+    level: &dyn LevelAccessor,
+    pos: BlockPos,
+    fluid_state: FluidState,
+) {
+    let delay = level.fluid_tick_delay(fluid_state.fluid_id);
+    level.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+}
+
+pub(crate) fn place_simple_waterlogged_liquid(
+    level: &dyn LevelAccessor,
+    pos: BlockPos,
+    state: BlockStateId,
+    fluid_state: FluidState,
+) -> bool {
+    if state.try_get_value(&BlockStateProperties::WATERLOGGED) != Some(false)
+        || fluid_state.fluid_id != &vanilla_fluids::WATER
+    {
+        return false;
+    }
+
+    let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
+    level.set_block_state(pos, new_state, UpdateFlags::UPDATE_ALL);
+    schedule_placed_liquid_tick(level, pos, fluid_state);
+    true
+}
+
+pub(crate) fn simple_waterlogged_is_liquid_container(state: BlockStateId) -> bool {
+    state
+        .try_get_value(&BlockStateProperties::WATERLOGGED)
+        .is_some()
 }
 
 const COLLISION_CONTEXT_ABOVE_EPSILON: f64 = 1.0e-5;
@@ -457,7 +489,7 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Should:
     /// - Remove or modify the block
-    /// - Return the filled bucket item to give
+    /// - Return the filled bucket stack to give
     ///
     /// Return None if pickup failed.
     #[expect(
@@ -1085,23 +1117,61 @@ pub trait BlockBehavior: Send + Sync {
         }
     }
 
+    /// Vanilla parity: whether this block implements `LiquidBlockContainer`.
+    ///
+    /// This is a block behavior capability, not just a state property. Most
+    /// simple waterlogged blocks expose it through `WATERLOGGED`, but vanilla
+    /// also has liquid containers without that property, such as kelp and
+    /// seagrass.
+    fn is_liquid_container(&self, state: BlockStateId) -> bool {
+        simple_waterlogged_is_liquid_container(state)
+    }
+
     /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
     ///
     /// Returns `true` if the given fluid type may be placed into this block at the
     /// given state.  Called by the fluid-spread logic; there is no player context
     /// here (fluid spreading has no associated player).
     ///
-    /// Default (`SimpleWaterloggedBlock`): accepts water when the block has a
-    /// `WATERLOGGED` property that is currently `false`.  Override for blocks
-    /// that need different restrictions (e.g. double-slabs, barriers).
+    /// Default (`SimpleWaterloggedBlock`): accepts source water for blocks with
+    /// a `WATERLOGGED` property. Override for blocks that need different
+    /// restrictions (e.g. double-slabs, barriers).
     ///
     /// Vanilla signature: `canPlaceLiquid(@Nullable LivingEntity, BlockGetter, BlockPos, BlockState, Fluid)`
     /// — the Fluid parameter is a type, not a state.
     fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
-        match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-            Some(false) => is_water_fluid(fluid),
-            _ => false,
+        state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+            && fluid == &vanilla_fluids::WATER
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()` with a user.
+    ///
+    /// Runtime bucket placement supplies the acting player; fluid spread and
+    /// other no-user callers should use [`can_place_liquid`].
+    ///
+    /// [`can_place_liquid`]: BlockBehavior::can_place_liquid
+    fn can_place_liquid_with_player(
+        &self,
+        state: BlockStateId,
+        fluid: FluidRef,
+        _player: Option<&Player>,
+    ) -> bool {
+        self.can_place_liquid(state, fluid)
+    }
+
+    /// Vanilla parity: `BlockBehaviour.BlockStateBase.canBeReplaced(Fluid)`.
+    ///
+    /// This is a behavior hook because vanilla block subclasses can override the
+    /// base replacement rule. The default mirrors `Block.canBeReplaced(Fluid)`.
+    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid_block: BlockRef) -> bool {
+        if state.is_air() {
+            return true;
         }
+
+        let block = state.get_block();
+        block.config.replaceable || !state.is_solid()
     }
 
     /// Vanilla parity: `LiquidBlockContainer.placeLiquid()`.
@@ -1110,26 +1180,16 @@ pub trait BlockBehavior: Send + Sync {
     /// `false` if placement was rejected.
     ///
     /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
-    /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
-    ///
-    /// [`can_place_liquid`]: BlockBehavior::can_place_liquid
+    /// a fluid tick. Vanilla's default `placeLiquid` directly accepts source
+    /// water and does not delegate to `canPlaceLiquid`.
     fn place_liquid(
         &self,
-        world: &Arc<World>,
+        level: &dyn LevelAccessor,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
-        if !self.can_place_liquid(state, fluid_state.fluid_id) {
-            return false;
-        }
-        let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-        let delay = super::fluid::FLUID_BEHAVIORS
-            .get_behavior(fluid_state.fluid_id)
-            .tick_delay(world);
-        world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
-        true
+        place_simple_waterlogged_liquid(level, pos, state, fluid_state)
     }
 
     /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
@@ -1152,6 +1212,9 @@ impl DefaultBlockBehavior {
 }
 
 impl BlockBehavior for DefaultBlockBehavior {
+    // TODO: This fallback only preserves generic block placement. Unported
+    // SimpleWaterloggedBlock implementations still need vanilla placement and
+    // update_shape water tick handling when they get real behaviors.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -1222,10 +1285,12 @@ impl Default for BlockBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestLevel;
+
     use super::*;
 
     use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
     use steel_registry::sound_events;
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_blocks;
@@ -1275,6 +1340,44 @@ mod tests {
             waterlogged_barrier,
             None
         ));
+    }
+
+    #[test]
+    fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
+        init_test_registry();
+        let double_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Double)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
+
+        assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_blocks::WATER));
+    }
+
+    #[test]
+    fn default_behavior_preserves_unported_simple_waterlogged_blocks() {
+        init_test_registry();
+        let dry_ladder = vanilla_blocks::LADDER
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let wet_ladder = dry_ladder.set_value(&BlockStateProperties::WATERLOGGED, true);
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::LADDER);
+        let level = TestLevel::default();
+
+        assert_eq!(
+            behavior.get_fluid_state(wet_ladder),
+            FluidState::source(&vanilla_fluids::WATER)
+        );
+        assert!(behavior.is_liquid_container(dry_ladder));
+        assert!(behavior.can_place_liquid(dry_ladder, &vanilla_fluids::WATER));
+        assert!(behavior.place_liquid(
+            &level,
+            BlockPos::ZERO,
+            dry_ladder,
+            FluidState::source(&vanilla_fluids::WATER),
+        ));
+        assert_eq!(level.last_placed_state(), Some(wet_ladder));
+        assert!(level.scheduled_water_tick());
     }
 
     #[test]

@@ -10,7 +10,6 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::random::Random as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Identifier, UuidExt};
 use uuid::Uuid;
@@ -133,7 +132,7 @@ pub trait Animal: AgeableMob {
 
     /// Returns vanilla `Animal.getBaseExperienceReward`.
     fn base_experience_reward_animal(&self) -> i32 {
-        1 + self.base().random().lock().next_i32_bounded(3)
+        1 + rand::random_range(0..3)
     }
 
     /// Returns vanilla `Animal.getAmbientSoundInterval`.
@@ -331,7 +330,7 @@ pub trait Animal: AgeableMob {
         self.broadcast_entity_event(EntityStatus::InLoveHearts);
 
         if world.get_game_rule(&MOB_DROPS).as_bool() == Some(true) {
-            let xp = self.base().random().lock().next_i32_bounded(7) + 1;
+            let xp = rand::random_range(0..7) + 1;
             ExperienceOrb::award(world, self.position(), xp);
         }
     }

@@ -1,5 +1,3 @@
-use steel_utils::random::Random as _;
-
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::{MobBase, PathfinderMob};
 
@@ -30,7 +28,7 @@ impl Goal for FloatGoal {
     }
 
     fn tick(&mut self, mob: &mut dyn PathfinderMob) {
-        if mob.base().random().lock().next_f32() < FLOAT_JUMP_CHANCE {
+        if rand::random::<f32>() < FLOAT_JUMP_CHANCE {
             mob.mob_base().controls.jump_control.jump();
         }
     }
@@ -85,6 +83,8 @@ mod tests {
             }
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TestPathfinderMob);
 
     impl Entity for TestPathfinderMob {
         fn base_weak(&self) -> &Weak<EntityBase> {

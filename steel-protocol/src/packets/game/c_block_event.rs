@@ -22,7 +22,7 @@ pub struct CBlockEvent {
     /// The action parameter (block-specific meaning).
     pub action_param: u8,
     /// The block registry ID.
-    /// Written as VarInt.
+    /// Written as `VarInt`.
     #[write(as = VarInt)]
     pub block_id: i32,
 }
@@ -30,7 +30,7 @@ pub struct CBlockEvent {
 impl CBlockEvent {
     /// Creates a new block event packet.
     #[must_use]
-    pub fn new(pos: BlockPos, action_id: u8, action_param: u8, block_id: i32) -> Self {
+    pub const fn new(pos: BlockPos, action_id: u8, action_param: u8, block_id: i32) -> Self {
         Self {
             pos,
             action_id,

@@ -49,6 +49,20 @@ impl ValidatedWorldGeneratorConfig {
     pub const fn generator(&self) -> &Identifier {
         &self.generator
     }
+
+    /// Dimension type selected by this validated generator config.
+    #[must_use]
+    pub fn dimension_type(&self) -> DimensionTypeRef {
+        match &self.data {
+            WorldGeneratorConfigData::Empty => fixed_generator_dimension_type(&self.generator),
+            WorldGeneratorConfigData::EmptyWorld(config) => {
+                validated_dimension_type_by_key(&config.dimension_type)
+            }
+            WorldGeneratorConfigData::Flat(config) => {
+                validated_dimension_type_by_key(&config.dimension_type)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -433,6 +447,25 @@ fn dimension_type_by_key(key: &Identifier) -> Result<DimensionTypeRef, String> {
         .dimension_types
         .by_key(key)
         .ok_or_else(|| format!("unknown dimension type {key}"))
+}
+
+fn validated_dimension_type_by_key(key: &Identifier) -> DimensionTypeRef {
+    match dimension_type_by_key(key) {
+        Ok(dimension_type) => dimension_type,
+        Err(error) => panic!("validated generator config should have a dimension type: {error}"),
+    }
+}
+
+fn fixed_generator_dimension_type(generator: &Identifier) -> DimensionTypeRef {
+    if generator == &Identifier::vanilla_static("overworld") {
+        &OVERWORLD
+    } else if generator == &Identifier::vanilla_static("the_nether") {
+        &THE_NETHER
+    } else if generator == &Identifier::vanilla_static("the_end") {
+        &THE_END
+    } else {
+        panic!("validated empty config does not have a fixed dimension type for {generator}")
+    }
 }
 
 fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {

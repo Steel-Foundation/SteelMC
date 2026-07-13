@@ -192,13 +192,13 @@ impl SpeleothemBlockBehavior {
         let default_tip_direction = context.get_nearest_looking_vertical_direction().opposite();
         let tip_direction = self.calculate_tip_direction(
             context.world.as_ref(),
-            context.relative_pos,
+            context.place_pos,
             default_tip_direction,
         )?;
         let merge_opposing_tips = !context.is_secondary_use_active;
         let thickness = self.calculate_thickness(
             context.world.as_ref(),
-            context.relative_pos,
+            context.place_pos,
             tip_direction,
             merge_opposing_tips,
         );
@@ -473,7 +473,7 @@ impl SpeleothemBlockBehavior {
         let grow_direction = tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
         let grow_pos = tip_pos.relative(grow_direction);
         let state_at_grow_pos = world.get_block_state(grow_pos);
-        if !state_at_grow_pos.get_fluid_state().is_empty() {
+        if state_at_grow_pos.has_fluid() {
             return false;
         }
 
@@ -558,7 +558,7 @@ impl SpeleothemBlockBehavior {
         for _ in 0..MAX_STALAGMITE_SEARCH_RANGE_WHEN_GROWING {
             pos = pos.below();
             let state = world.get_block_state(pos);
-            if !state.get_fluid_state().is_empty() {
+            if state.has_fluid() {
                 return;
             }
 
@@ -607,7 +607,7 @@ impl SpeleothemBlockBehavior {
             return true;
         }
 
-        if state.is_solid_render() || !state.get_fluid_state().is_empty() {
+        if state.is_solid_render() || state.has_fluid() {
             return false;
         }
 

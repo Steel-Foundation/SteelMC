@@ -9,7 +9,7 @@ use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData, SharedEntity};
 use crate::world::World;
@@ -23,6 +23,11 @@ use crate::world::World;
 pub struct EndCrystal {
     base: Weak<EntityBase>,
     entity_data: EndCrystalEntityData,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `EndCrystal`.
+unsafe impl DowncastType for EndCrystal {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/end_crystal");
 }
 
 impl EndCrystal {

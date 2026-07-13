@@ -204,6 +204,41 @@ pub enum TraversalNodeStatus {
     Stop,
 }
 
+/// Iterator returned by [`BlockPos::spiral_around`].
+#[derive(Clone, Debug)]
+pub struct SpiralAround {
+    directions: [Direction; 4],
+    cursor: BlockPos,
+    legs: i32,
+    leg: i32,
+    leg_size: i32,
+    leg_index: i32,
+    last: BlockPos,
+}
+
+impl Iterator for SpiralAround {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let direction_index = (self.leg + 4).rem_euclid(4) as usize;
+        self.cursor = self.last.relative(self.directions[direction_index]);
+        self.last = self.cursor;
+
+        if self.leg_index >= self.leg_size {
+            if self.leg >= self.legs {
+                return None;
+            }
+
+            self.leg += 1;
+            self.leg_index = 0;
+            self.leg_size = self.leg / 2 + 1;
+        }
+
+        self.leg_index += 1;
+        Some(self.cursor)
+    }
+}
+
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -380,6 +415,41 @@ impl BlockPos {
             *self
         } else {
             Self(self.0 + direction.offset_vec() * n)
+        }
+    }
+
+    /// Returns vanilla `BlockPos.spiralAround`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `radius` is negative or if both directions are on the same axis.
+    #[must_use]
+    pub fn spiral_around(
+        center: Self,
+        radius: i32,
+        first_direction: Direction,
+        second_direction: Direction,
+    ) -> SpiralAround {
+        assert!(radius >= 0, "spiral radius must be non-negative");
+        assert!(
+            first_direction.get_axis() != second_direction.get_axis(),
+            "spiral directions cannot be on the same axis"
+        );
+
+        let cursor = center.relative(second_direction);
+        SpiralAround {
+            directions: [
+                first_direction,
+                second_direction,
+                first_direction.opposite(),
+                second_direction.opposite(),
+            ],
+            cursor,
+            legs: 4 * radius,
+            leg: -1,
+            leg_size: 0,
+            leg_index: 0,
+            last: cursor,
         }
     }
 
@@ -1494,6 +1564,38 @@ mod tests {
                 BlockPos::new(10, 20, 29),
                 BlockPos::new(10, 21, 30),
                 BlockPos::new(11, 20, 30),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_pos_spiral_around_radius_zero_returns_center() {
+        let center = BlockPos::new(10, 20, 30);
+
+        assert_eq!(
+            BlockPos::spiral_around(center, 0, Direction::East, Direction::South)
+                .collect::<Vec<_>>(),
+            [center]
+        );
+    }
+
+    #[test]
+    fn block_pos_spiral_around_matches_vanilla_order() {
+        let center = BlockPos::new(10, 20, 30);
+
+        assert_eq!(
+            BlockPos::spiral_around(center, 1, Direction::East, Direction::South)
+                .collect::<Vec<_>>(),
+            [
+                center,
+                center.east(),
+                center.east().south(),
+                center.south(),
+                center.west().south(),
+                center.west(),
+                center.west().north(),
+                center.north(),
+                center.east().north(),
             ]
         );
     }

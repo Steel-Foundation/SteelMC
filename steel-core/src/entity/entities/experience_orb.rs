@@ -12,8 +12,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_registry::{vanilla_damage_type_tags, vanilla_entities};
-use steel_utils::random::Random as _;
-use steel_utils::{BlockPos, ChunkPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -49,6 +48,11 @@ pub struct ExperienceOrb {
     health: i32,
     count: i32,
     following_player_id: Option<i32>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrb`.
+unsafe impl DowncastType for ExperienceOrb {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/experience_orb");
 }
 
 impl ExperienceOrb {
@@ -162,17 +166,12 @@ impl ExperienceOrb {
     }
 
     fn initialize_spawn_movement(&self) {
-        let (yaw, velocity) = {
-            let base = self.base();
-            let mut random = base.random().lock();
-            let yaw = random.next_f32() * 360.0;
-            let velocity = DVec3::new(
-                (f64::from(random.next_f32()) * 0.2 - 0.1) * 2.0,
-                f64::from(random.next_f32()) * 0.2 * 2.0,
-                (f64::from(random.next_f32()) * 0.2 - 0.1) * 2.0,
-            );
-            (yaw, velocity)
-        };
+        let yaw = rand::random::<f32>() * 360.0;
+        let velocity = DVec3::new(
+            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+            f64::from(rand::random::<f32>()) * 0.2 * 2.0,
+            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+        );
         self.set_rotation((yaw, 0.0));
         self.set_velocity(velocity);
     }
@@ -186,7 +185,7 @@ impl ExperienceOrb {
             position.y + 0.5,
             position.z + 0.5,
         );
-        let merge_id = world.random().lock().next_i32_bounded(ORB_GROUPS_PER_AREA);
+        let merge_id = rand::random_range(0..ORB_GROUPS_PER_AREA);
         for entity in world.get_entities_in_aabb(&search_box) {
             // Filter by type lock-free before locking: `with_entity_as` locks the
             // entity's behavior mutex, and the AABB includes the dying entity whose
@@ -258,15 +257,11 @@ impl ExperienceOrb {
             return;
         }
 
-        let velocity = {
-            let base = self.base();
-            let mut random = base.random().lock();
-            DVec3::new(
-                f64::from(random.next_f32() - random.next_f32()) * 0.2,
-                0.2,
-                f64::from(random.next_f32() - random.next_f32()) * 0.2,
-            )
-        };
+        let velocity = DVec3::new(
+            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+            0.2,
+            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+        );
         self.set_velocity(velocity);
     }
 
@@ -364,12 +359,10 @@ impl ExperienceOrb {
             );
         }
 
-        let remaining = {
-            let mut inventory = player.inventory.lock();
-            let player_base = player.base();
-            let mut random = player_base.random().lock();
-            inventory.repair_random_equipped_item_with_xp(self.value(), &mut *random)
-        };
+        let remaining = player
+            .inventory
+            .lock()
+            .repair_random_equipped_item_with_xp(self.value());
         if remaining > 0 {
             player.give_experience_points(remaining);
         }

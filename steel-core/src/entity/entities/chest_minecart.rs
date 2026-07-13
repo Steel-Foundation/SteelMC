@@ -9,8 +9,15 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::Identifier;
+use steel_utils::axis::Axis;
+use steel_utils::block_util::FoundRectangle;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, SharedEntity};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, SharedEntity,
+    reset_forward_direction_of_relative_portal_position,
+};
+use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
 
 /// Chest minecart entity state used by mineshaft generation.
@@ -25,6 +32,11 @@ pub struct ChestMinecartEntity {
     first_tick: bool,
     loot_table: Option<Identifier>,
     loot_table_seed: i64,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ChestMinecartEntity`.
+unsafe impl DowncastType for ChestMinecartEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/chest_minecart");
 }
 
 impl ChestMinecartEntity {
@@ -87,6 +99,15 @@ impl Entity for ChestMinecartEntity {
 
     fn blocks_building(&self) -> bool {
         true
+    }
+
+    fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
+        reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
+            portal_area,
+            axis,
+            self.position(),
+            self.dimensions_for_pose(self.pose()),
+        ))
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -162,5 +183,31 @@ mod tests {
             assert!(e.is_pushable());
             assert!(e.blocks_building());
         });
+    }
+
+    #[test]
+    fn chest_minecart_relative_portal_position_resets_forward_offset() {
+        let minecart = ChestMinecartEntity::new(
+            &vanilla_entities::CHEST_MINECART,
+            1,
+            DVec3::new(12.0, 66.0, 20.75),
+            Weak::new(),
+        );
+        let portal_area = FoundRectangle {
+            min_corner: steel_utils::BlockPos::new(10, 64, 20),
+            axis1_size: 4,
+            axis2_size: 5,
+        };
+
+        let mut guard = minecart.lock_entity();
+        let minecart: &mut ChestMinecartEntity = guard.downcast().unwrap();
+
+        assert!(
+            minecart
+                .get_relative_portal_position(Axis::X, portal_area)
+                .z
+                .abs()
+                < f64::EPSILON
+        );
     }
 }

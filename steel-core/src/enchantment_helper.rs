@@ -6,7 +6,6 @@ use steel_registry::enchantment_effect::{
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities};
-use steel_utils::random::Random;
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance};
@@ -166,8 +165,9 @@ pub(crate) fn do_post_attack_effects_from_item(
     item: &ItemStack,
     context: &mut EnchantmentPostAttackContext<'_>,
 ) {
-    apply_post_attack_effects(
-        item,
+    let mut item = item.copy_with_count(item.count());
+    let _ = apply_post_attack_effects(
+        &mut item,
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
@@ -193,12 +193,27 @@ pub(crate) fn do_post_attack_effects_with_item_source(
             });
         }
     }
-    for (slot, item) in &victim_items {
-        apply_post_attack_effects(item, Some(*slot), EnchantmentTarget::Victim, context);
+    for (slot, item) in &mut victim_items {
+        let item_broke =
+            apply_post_attack_effects(item, Some(*slot), EnchantmentTarget::Victim, context);
+
+        // The effects ran against a snapshot (the context holds the victim), so
+        // commit any durability damage back onto the victim's real equipment.
+        if let Some(victim) = context.affected_entity(EnchantmentTarget::Victim)
+            && let Some(living_victim) = victim.as_living_entity_mut()
+        {
+            living_victim.with_equipment_slot_mut(*slot, &mut |stack| {
+                *stack = item.copy_with_count(item.count());
+            });
+            if item_broke {
+                living_victim.on_equipped_item_broken(*slot);
+            }
+        }
     }
 
-    apply_post_attack_effects(
-        source,
+    let mut source = source.copy_with_count(source.count());
+    let _ = apply_post_attack_effects(
+        &mut source,
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
@@ -278,15 +293,16 @@ fn item_damage_immunity_matches(
 }
 
 fn apply_post_attack_effects(
-    item: &ItemStack,
+    item: &mut ItemStack,
     slot: Option<EquipmentSlot>,
     enchanted_target: EnchantmentTarget,
     context: &mut EnchantmentPostAttackContext,
-) {
-    let Some(enchantments) = item.get_enchantments() else {
-        return;
+) -> bool {
+    let Some(enchantments) = item.get_enchantments().cloned() else {
+        return false;
     };
     let damage_context = context.damage_context();
+    let mut enchanted_item_broke = false;
 
     for (key, level) in enchantments.iter() {
         if *level == 0 {
@@ -304,14 +320,30 @@ fn apply_post_attack_effects(
             if effect.enchanted != enchanted_target {
                 continue;
             }
-            if !requirements_match(effect.requirements, &damage_context) {
+            let Some(enchanted_entity) = context.affected_entity(enchanted_target) else {
+                continue;
+            };
+            // Copy what the effect reads off the enchanted entity before taking a
+            // second borrow of the context for the affected entity.
+            let enchanted = EnchantedSource {
+                entity_id: enchanted_entity.id(),
+                has_infinite_materials: enchanted_entity
+                    .as_living_entity()
+                    .is_some_and(LivingEntity::has_infinite_materials),
+            };
+            let requirements_match =
+                post_attack_requirements_match(effect.requirements, &damage_context, level);
+            if !requirements_match {
                 continue;
             }
             if let Some(affected_entity) = context.affected_entity(effect.affected) {
-                apply_entity_effect(&effect.effect, level, affected_entity);
+                enchanted_item_broke |=
+                    apply_entity_effect(&effect.effect, level, affected_entity, enchanted, item);
             }
         }
     }
+
+    enchanted_item_broke
 }
 
 pub(crate) fn do_post_piercing_attack_effects(user: &mut dyn LivingEntity) {
@@ -349,13 +381,23 @@ fn apply_entity_effect(
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &mut dyn Entity,
+    enchanted: EnchantedSource,
+    enchanted_item: &mut ItemStack,
 ) -> bool {
     if !entity_effect_is_supported(effect) {
         return false;
     }
 
-    apply_supported_entity_effect(effect, level, entity);
-    true
+    apply_supported_entity_effect(effect, level, entity, enchanted, enchanted_item)
+}
+
+/// The scalars vanilla reads off the enchanted (attacking) entity while a
+/// post-attack effect mutates the affected entity. Copied up front because the
+/// two entities are reached through the same context.
+#[derive(Clone, Copy)]
+struct EnchantedSource {
+    entity_id: i32,
+    has_infinite_materials: bool,
 }
 
 fn entity_effect_is_supported(effect: &EnchantmentEntityEffect) -> bool {
@@ -363,13 +405,13 @@ fn entity_effect_is_supported(effect: &EnchantmentEntityEffect) -> bool {
         EnchantmentEntityEffect::AllOf(effects) => effects
             .iter()
             .all(|effect| entity_effect_is_supported(effect)),
-        EnchantmentEntityEffect::ChangeItemDamage { .. }
-        | EnchantmentEntityEffect::ApplyExhaustion { .. }
+        EnchantmentEntityEffect::ApplyExhaustion { .. }
         | EnchantmentEntityEffect::ApplyImpulse { .. }
         | EnchantmentEntityEffect::PlaySound { .. }
-        | EnchantmentEntityEffect::DamageEntity { .. }
         | EnchantmentEntityEffect::Unsupported { .. } => false,
-        EnchantmentEntityEffect::Ignite { .. } => true,
+        EnchantmentEntityEffect::ChangeItemDamage { .. }
+        | EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::Ignite { .. } => true,
         EnchantmentEntityEffect::ApplyMobEffect { to_apply, .. } => {
             matches!(to_apply, MobEffectSelection::Single(_))
         }
@@ -380,16 +422,40 @@ fn apply_supported_entity_effect(
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &mut dyn Entity,
-) {
+    enchanted: EnchantedSource,
+    enchanted_item: &mut ItemStack,
+) -> bool {
     match effect {
         EnchantmentEntityEffect::AllOf(effects) => {
+            let mut enchanted_item_broke = false;
             for effect in *effects {
-                apply_supported_entity_effect(effect, level, entity);
+                enchanted_item_broke |=
+                    apply_supported_entity_effect(effect, level, entity, enchanted, enchanted_item);
             }
+            enchanted_item_broke
+        }
+        EnchantmentEntityEffect::ChangeItemDamage { amount } => {
+            let amount = amount.calculate(level) as i32;
+            enchanted_item.hurt_and_break(amount, enchanted.has_infinite_materials)
+        }
+        EnchantmentEntityEffect::DamageEntity {
+            min_damage,
+            max_damage,
+            damage_type,
+        } => {
+            let min_damage = min_damage.calculate(level);
+            let max_damage = max_damage.calculate(level);
+            let damage = random_between(min_damage, max_damage);
+            let source = DamageSource::environment(damage_type)
+                .with_causing_entity(enchanted.entity_id)
+                .with_direct_entity(enchanted.entity_id);
+            entity.hurt(&source, damage);
+            false
         }
         EnchantmentEntityEffect::Ignite { duration } => {
             let ticks = (duration.calculate(level) * 20.0).floor() as i32;
             entity.ignite_for_ticks(ticks);
+            false
         }
         EnchantmentEntityEffect::ApplyMobEffect {
             to_apply: MobEffectSelection::Single(effect),
@@ -399,20 +465,14 @@ fn apply_supported_entity_effect(
             max_amplifier,
         } => {
             if !entity.is_living_entity() {
-                return;
-            };
+                return false;
+            }
             let min_duration = min_duration.calculate(level);
             let max_duration = max_duration.calculate(level);
             let min_amplifier = min_amplifier.calculate(level);
             let max_amplifier = max_amplifier.calculate(level);
-            let (duration_seconds, amplifier) = {
-                let entity_base = entity.base();
-                let mut random = entity_base.random().lock();
-                (
-                    random_between(&mut *random, min_duration, max_duration),
-                    random_between(&mut *random, min_amplifier, max_amplifier),
-                )
-            };
+            let duration_seconds = random_between(min_duration, max_duration);
+            let amplifier = random_between(min_amplifier, max_amplifier);
             let duration_ticks = java_round(duration_seconds * 20.0);
             let amplifier = java_round(amplifier).max(0);
 
@@ -422,14 +482,13 @@ fn apply_supported_entity_effect(
                 duration_ticks,
                 amplifier,
             ));
+            false
         }
         EnchantmentEntityEffect::ApplyMobEffect { .. }
-        | EnchantmentEntityEffect::ChangeItemDamage { .. }
         | EnchantmentEntityEffect::ApplyExhaustion { .. }
         | EnchantmentEntityEffect::ApplyImpulse { .. }
         | EnchantmentEntityEffect::PlaySound { .. }
-        | EnchantmentEntityEffect::DamageEntity { .. }
-        | EnchantmentEntityEffect::Unsupported { .. } => {}
+        | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
 }
 
@@ -509,15 +568,20 @@ fn apply_supported_post_piercing_entity_effect(
             user.play_sound(sounds[index], *volume, *pitch);
         }
         EnchantmentEntityEffect::Ignite { .. } | EnchantmentEntityEffect::ApplyMobEffect { .. } => {
-            apply_supported_entity_effect(effect, level, user);
+            let enchanted = EnchantedSource {
+                entity_id: user.id(),
+                has_infinite_materials: user.has_infinite_materials(),
+            };
+            let mut enchanted_item = ItemStack::empty();
+            apply_supported_entity_effect(effect, level, user, enchanted, &mut enchanted_item);
         }
         EnchantmentEntityEffect::DamageEntity { .. }
         | EnchantmentEntityEffect::Unsupported { .. } => {}
     }
 }
 
-fn random_between(random: &mut impl Random, min: f32, max: f32) -> f32 {
-    min + random.next_f32() * (max - min)
+fn random_between(min: f32, max: f32) -> f32 {
+    min + rand::random::<f32>() * (max - min)
 }
 
 fn java_round(value: f32) -> i32 {
@@ -533,6 +597,21 @@ fn requirements_match(
     };
 
     matches!(requirements_state(requirements, context), Some(true))
+}
+
+fn post_attack_requirements_match(
+    requirements: Option<&'static EnchantmentEffectRequirements>,
+    context: &EnchantmentDamageContext<'_>,
+    level: i32,
+) -> bool {
+    let Some(requirements) = requirements else {
+        return true;
+    };
+
+    matches!(
+        requirements_state_with_random(requirements, context, level),
+        Some(true)
+    )
 }
 
 fn requirements_state(
@@ -573,6 +652,50 @@ fn requirements_state(
         ),
         EnchantmentEffectRequirements::RandomChance { .. }
         | EnchantmentEffectRequirements::Unsupported { .. } => None,
+    }
+}
+
+fn requirements_state_with_random(
+    requirements: &'static EnchantmentEffectRequirements,
+    context: &EnchantmentDamageContext<'_>,
+    level: i32,
+) -> Option<bool> {
+    match requirements {
+        EnchantmentEffectRequirements::AllOf(terms) => {
+            let mut has_unknown = false;
+            for term in *terms {
+                match requirements_state_with_random(term, context, level) {
+                    Some(true) => {}
+                    Some(false) => return Some(false),
+                    None => has_unknown = true,
+                }
+            }
+            if has_unknown { None } else { Some(true) }
+        }
+        EnchantmentEffectRequirements::AnyOf(terms) => {
+            let mut has_unknown = false;
+            for term in *terms {
+                match requirements_state_with_random(term, context, level) {
+                    Some(true) => return Some(true),
+                    Some(false) => {}
+                    None => has_unknown = true,
+                }
+            }
+            if has_unknown { None } else { Some(false) }
+        }
+        EnchantmentEffectRequirements::Inverted(term) => {
+            requirements_state_with_random(term, context, level).map(|matched| !matched)
+        }
+        EnchantmentEffectRequirements::EntityProperties { entity, predicate } => context
+            .entity_type(*entity)
+            .and_then(|entity_type| entity_predicate_matches_type(predicate, entity_type)),
+        EnchantmentEffectRequirements::DamageSourceProperties(predicate) => Some(
+            damage_source_predicate_matches(predicate, context.damage_source),
+        ),
+        EnchantmentEffectRequirements::RandomChance { chance } => {
+            Some(rand::random::<f32>() < chance.calculate(level))
+        }
+        EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
 
@@ -806,6 +929,8 @@ mod tests {
             self.living_base.equipment().set(slot, stack);
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
     impl Entity for TestLivingEntity {
         fn base_weak(&self) -> &Weak<EntityBase> {
@@ -1049,7 +1174,7 @@ mod tests {
 
         let mut attacker = TestLivingEntity::new(&vanilla_entities::PLAYER);
         let mut victim = TestLivingEntity::new(&vanilla_entities::ZOMBIE);
-        let stack = enchanted_item(
+        let mut stack = enchanted_item(
             &vanilla_items::ITEMS.diamond_sword,
             Identifier::vanilla_static("fire_aspect"),
             1,
@@ -1065,8 +1190,8 @@ mod tests {
             true,
         );
 
-        apply_post_attack_effects(
-            &stack,
+        let _ = apply_post_attack_effects(
+            &mut stack,
             Some(EquipmentSlot::Head),
             EnchantmentTarget::Attacker,
             &mut context,
@@ -1081,8 +1206,8 @@ mod tests {
             true,
         );
 
-        apply_post_attack_effects(
-            &stack,
+        let _ = apply_post_attack_effects(
+            &mut stack,
             Some(EquipmentSlot::MainHand),
             EnchantmentTarget::Attacker,
             &mut context,

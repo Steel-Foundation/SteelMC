@@ -12,7 +12,6 @@ use steel_registry::{
     vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_items,
 };
-use steel_utils::random::Random as _;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
@@ -66,7 +65,7 @@ impl BlockBehavior for CocoaBlock {
                 .block
                 .default_state()
                 .set_value(&FACING_PROPERTY, direction);
-            if self.can_survive(state, context.world, context.relative_pos) {
+            if self.can_survive(state, context.world, context.place_pos) {
                 return Some(state);
             }
         }
@@ -104,7 +103,7 @@ impl BlockBehavior for CocoaBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.random().lock().next_i32_bounded(5) != 0 {
+        if rand::random_range(0..5) != 0 {
             return;
         }
 

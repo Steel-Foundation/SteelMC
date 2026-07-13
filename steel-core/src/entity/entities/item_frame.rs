@@ -11,7 +11,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
-use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, SharedEntity, next_entity_id,
@@ -28,6 +28,11 @@ pub struct ItemFrame {
     base: Weak<EntityBase>,
     entity_data: ItemFrameEntityData,
     block_pos: BlockPos,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ItemFrame`.
+unsafe impl DowncastType for ItemFrame {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item_frame");
 }
 
 impl ItemFrame {

@@ -378,6 +378,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TestPathfinderMob);
+
     impl Entity for TestPathfinderMob {
         fn base_weak(&self) -> &Weak<EntityBase> {
             &self.base

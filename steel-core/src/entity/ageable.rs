@@ -7,7 +7,6 @@ use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
-use steel_utils::random::Random as _;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
@@ -196,7 +195,7 @@ pub trait AgeableMob: Mob {
             Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
             None => AgeableMobGroupData::with_should_spawn_baby(true),
         };
-        if group_data.finalize_ageable_spawn(|| world.random().lock().next_f32()) {
+        if group_data.finalize_ageable_spawn(rand::random::<f32>) {
             self.set_age(self.get_baby_start_age());
         }
 
@@ -334,6 +333,8 @@ mod tests {
             )
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TestAgeableMob);
 
     impl Entity for TestAgeableMob {
         fn base_weak(&self) -> &Weak<EntityBase> {

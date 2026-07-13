@@ -1,3 +1,30 @@
+#![expect(
+    missing_docs,
+    reason = "registry build-script helpers are internal code generation plumbing"
+)]
+#![expect(
+    clippy::absolute_paths,
+    clippy::allow_attributes_without_reason,
+    clippy::collapsible_match,
+    clippy::float_cmp,
+    clippy::items_after_statements,
+    clippy::manual_let_else,
+    clippy::many_single_char_names,
+    clippy::match_same_arms,
+    clippy::match_wild_err_arm,
+    clippy::nonminimal_bool,
+    clippy::redundant_else,
+    clippy::ref_option,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unnecessary_debug_formatting,
+    clippy::unnecessary_wraps,
+    clippy::unreadable_literal,
+    clippy::unwrap_used,
+    reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
+)]
+
 use std::{env, fs, path::Path, process::Command};
 
 mod attributes;

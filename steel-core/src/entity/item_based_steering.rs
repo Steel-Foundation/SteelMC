@@ -2,8 +2,6 @@
 
 use std::f32::consts::PI;
 
-use steel_utils::random::Random;
-
 use crate::entity::Entity;
 
 const MIN_BOOST_TIME: i32 = 140;
@@ -34,14 +32,14 @@ impl ItemBasedSteering {
     }
 
     /// Mirrors vanilla `ItemBasedSteering.boost`.
-    pub fn boost(&mut self, random: &mut impl Random) -> Option<i32> {
+    pub fn boost(&mut self) -> Option<i32> {
         if self.boosting {
             return None;
         }
 
         self.boosting = true;
         self.boost_time = 0;
-        Some(random.next_i32_bounded(BOOST_TIME_BOUND) + MIN_BOOST_TIME)
+        Some(rand::random_range(0..BOOST_TIME_BOUND) + MIN_BOOST_TIME)
     }
 
     /// Mirrors vanilla `ItemBasedSteering.tickBoost`.
@@ -94,10 +92,8 @@ pub trait ItemSteerable: Entity {
     /// Attempts to start an item-steering boost.
     fn boost(&mut self) -> bool {
         let boost_time_total = {
-            let self_base = self.base_weak().upgrade().unwrap();
             let steering = self.item_based_steering();
-            let mut random = self_base.random().lock();
-            steering.boost(&mut *random)
+            steering.boost()
         };
         let Some(boost_time_total) = boost_time_total else {
             return false;
@@ -122,23 +118,20 @@ pub trait ItemSteerable: Entity {
 
 #[cfg(test)]
 mod tests {
-    use steel_utils::random::legacy_random::LegacyRandom;
-
     use super::ItemBasedSteering;
 
     #[test]
     fn boost_starts_once_and_returns_vanilla_total_range() {
         let mut steering = ItemBasedSteering::new();
-        let mut random = LegacyRandom::from_seed(1);
 
-        let Some(total) = steering.boost(&mut random) else {
+        let Some(total) = steering.boost() else {
             panic!("first boost should start");
         };
 
         assert!((140..=980).contains(&total));
         assert!(steering.is_boosting());
         assert_eq!(steering.boost_time(), 0);
-        assert!(steering.boost(&mut random).is_none());
+        assert!(steering.boost().is_none());
     }
 
     #[test]

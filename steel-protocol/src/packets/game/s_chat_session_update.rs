@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// Sent when the player first joins or when their key needs to be updated.
 /// Contains the session ID and the player's public key signed by Mojang.
 ///
-/// Equivalent to ServerboundChatSessionUpdatePacket in Minecraft.
+/// Equivalent to `ServerboundChatSessionUpdatePacket` in Minecraft.
 #[derive(ServerPacket, Clone, Debug)]
 pub struct SChatSessionUpdate {
     /// The session ID for this chat session

@@ -24,9 +24,9 @@ use steel_registry::{
     vanilla_entities, vanilla_items, vanilla_particle_types, vanilla_pig_sound_variants,
     vanilla_pig_variants,
 };
-use steel_utils::random::Random as _;
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
@@ -64,6 +64,11 @@ pub struct Pig {
     animal_base: AnimalBase,
     steering: ItemBasedSteering,
     entity_data: PigEntityData,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `Pig`.
+unsafe impl DowncastType for Pig {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/pig");
 }
 
 impl Pig {
@@ -770,7 +775,7 @@ impl Animal for Pig {
     }
 
     fn initialize_breed_offspring(&mut self, partner: &mut dyn Animal, offspring: &mut dyn Animal) {
-        let use_self_variant = self.base().random().lock().next_bool();
+        let use_self_variant = rand::random::<bool>();
         let variant_key = if use_self_variant {
             self.breed_variant_key()
         } else {
@@ -840,13 +845,13 @@ impl Mob for Pig {
     ) -> Option<SpawnGroupData> {
         let biome = world.biome_at(self.block_position());
         let (variant, sound_variant) = {
-            let mut random = world.random().lock();
+            let mut random = LegacyRandom::from_seed(rand::random());
             let variant = biome.and_then(|biome| {
                 REGISTRY
                     .pig_variants
-                    .select_spawn_variant(biome, &mut *random)
+                    .select_spawn_variant(biome, &mut random)
             });
-            let sound_variant = REGISTRY.pig_sound_variants.pick_random(&mut *random);
+            let sound_variant = REGISTRY.pig_sound_variants.pick_random(&mut random);
             (variant, sound_variant)
         };
 

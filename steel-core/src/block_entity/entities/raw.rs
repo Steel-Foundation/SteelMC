@@ -1,12 +1,11 @@
 //! NBT-preserving fallback block entity.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::world::World;
@@ -22,6 +21,12 @@ pub struct RawBlockEntity {
     state: BlockStateId,
     removed: bool,
     data: NbtCompound,
+}
+
+// SAFETY: This key identifies the Steel fallback implementation, independently
+// of the Minecraft block-entity registry entry stored inside it.
+unsafe impl DowncastType for RawBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/raw");
 }
 
 impl RawBlockEntity {
@@ -57,14 +62,6 @@ impl RawBlockEntity {
 }
 
 impl BlockEntity for RawBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         self.block_entity_type
     }

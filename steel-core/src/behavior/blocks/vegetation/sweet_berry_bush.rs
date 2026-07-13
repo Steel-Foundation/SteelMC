@@ -49,9 +49,9 @@ impl SweetBerryBushBlock {
 impl BlockBehavior for SweetBerryBushBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.relative_pos.below()),
+            context.world.get_block_state(context.place_pos.below()),
             context.world,
-            context.relative_pos.below(),
+            context.place_pos.below(),
         ) {
             Some(
                 self.block
@@ -291,6 +291,8 @@ mod tests {
             self.damage.lock().clone()
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TestEntity);
 
     impl Entity for TestEntity {
         fn base_weak(&self) -> &Weak<EntityBase> {

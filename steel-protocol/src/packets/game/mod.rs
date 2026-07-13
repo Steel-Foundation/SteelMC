@@ -15,6 +15,7 @@ mod c_container_close;
 mod c_container_set_content;
 mod c_container_set_data;
 mod c_container_set_slot;
+mod c_cooldown;
 mod c_damage_event;
 mod c_disguised_chat;
 mod c_entity_event;
@@ -25,6 +26,7 @@ mod c_hurt_animation;
 mod c_initialize_border;
 mod c_level_chunk_with_light;
 mod c_level_event;
+mod c_light_update;
 mod c_login;
 mod c_move_entity;
 mod c_move_vehicle;
@@ -65,6 +67,7 @@ mod c_system_chat;
 mod c_system_chat_message;
 mod c_tab_list;
 mod c_take_item_entity;
+mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
 mod c_update_attributes;
@@ -122,6 +125,7 @@ pub use c_container_close::CContainerClose;
 pub use c_container_set_content::CContainerSetContent;
 pub use c_container_set_data::CContainerSetData;
 pub use c_container_set_slot::CContainerSetSlot;
+pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
 pub use c_disguised_chat::CDisguisedChat;
 pub use c_entity_event::CEntityEvent;
@@ -136,6 +140,7 @@ pub use c_level_chunk_with_light::{
     LightUpdatePacketData,
 };
 pub use c_level_event::CLevelEvent;
+pub use c_light_update::CLightUpdate;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
@@ -181,6 +186,7 @@ pub use c_system_chat::CSystemChat;
 pub use c_system_chat_message::CSystemChatMessage;
 pub use c_tab_list::CTabList;
 pub use c_take_item_entity::CTakeItemEntity;
+pub use c_teleport_entity::CTeleportEntity;
 pub use c_ticking_state::CTickingState;
 pub use c_ticking_step::CTickingStep;
 pub use c_update_attributes::{

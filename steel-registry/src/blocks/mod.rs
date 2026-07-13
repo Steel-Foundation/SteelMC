@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    expect(
+        clippy::unwrap_used,
+        reason = "block registry tests assert required vanilla properties are present"
+    )
+)]
+
 pub mod behavior;
 pub mod block_state_ext;
 pub mod properties;
@@ -16,6 +24,23 @@ use steel_utils::{BlockPos, BlockStateId};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
+/// Function type for light-property lookups. Takes a state offset and returns extracted vanilla properties.
+pub type LightPropertiesFn = fn(u16) -> BlockLightProperties;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockLightProperties {
+    pub light_emission: u8,
+    pub light_dampening: u8,
+    pub use_shape_for_light_occlusion: bool,
+}
+
+impl BlockLightProperties {
+    pub const OPAQUE_FULL_BLOCK: Self = Self {
+        light_emission: 0,
+        light_dampening: 15,
+        use_shape_for_light_occlusion: false,
+    };
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct StateBooleanOverwrite {
@@ -24,6 +49,7 @@ pub struct StateBooleanOverwrite {
 }
 
 impl StateBooleanOverwrite {
+    #[must_use]
     pub const fn new(offset: u16, value: bool) -> Self {
         Self { offset, value }
     }
@@ -39,6 +65,7 @@ impl StateBooleanData {
     pub const TRUE: Self = Self::new(true, &[]);
     pub const FALSE: Self = Self::new(false, &[]);
 
+    #[must_use]
     pub const fn new(default: bool, overwrites: &'static [StateBooleanOverwrite]) -> Self {
         Self {
             default,
@@ -46,6 +73,7 @@ impl StateBooleanData {
         }
     }
 
+    #[must_use]
     pub fn value(self, offset: u16) -> bool {
         self.overwrites
             .iter()
@@ -61,6 +89,8 @@ pub struct Block {
     pub default_state_offset: u16,
     /// Vanilla `BlockState.isSuffocating` values indexed by block-local state offset.
     pub suffocating: StateBooleanData,
+    /// Extracted vanilla light properties indexed by block-local state offset.
+    pub light_properties: LightPropertiesFn,
     /// Function to get collision shape for a state offset
     pub collision_shape: ShapeFn,
     /// Function to get block support shape for a state offset
@@ -95,6 +125,10 @@ const fn full_block_shape(_offset: u16) -> shapes::VoxelShape {
     shapes::VoxelShape::FULL_BLOCK
 }
 
+const fn opaque_full_block_light_properties(_offset: u16) -> BlockLightProperties {
+    BlockLightProperties::OPAQUE_FULL_BLOCK
+}
+
 /// Default interaction shape function that returns an empty shape.
 const fn empty_shape(_offset: u16) -> shapes::VoxelShape {
     shapes::VoxelShape::EMPTY
@@ -112,6 +146,7 @@ impl Block {
             properties,
             default_state_offset: 0,
             suffocating: StateBooleanData::TRUE,
+            light_properties: opaque_full_block_light_properties,
             collision_shape: full_block_shape,
             support_shape: full_block_shape,
             outline_shape: full_block_shape,
@@ -145,6 +180,12 @@ impl Block {
     /// Sets the extracted vanilla `BlockState.isSuffocating` values for this block.
     pub const fn with_suffocating(mut self, suffocating: StateBooleanData) -> Self {
         self.suffocating = suffocating;
+        self
+    }
+
+    /// Sets the extracted vanilla light properties for this block.
+    pub const fn with_light_properties(mut self, light_properties: LightPropertiesFn) -> Self {
+        self.light_properties = light_properties;
         self
     }
 
@@ -188,6 +229,11 @@ impl Block {
     #[inline]
     pub fn get_visual_shape(&self, offset: u16) -> shapes::VoxelShape {
         (self.visual_shape)(offset)
+    }
+
+    #[inline]
+    pub fn get_light_properties(&self, offset: u16) -> BlockLightProperties {
+        (self.light_properties)(offset)
     }
 
     /// Returns the vanilla block-state positional offset for this block.
@@ -236,6 +282,15 @@ impl Block {
     #[must_use]
     pub fn default_state(&'static self) -> BlockStateId {
         crate::REGISTRY.blocks.get_default_state_id(self)
+    }
+
+    /// Total number of distinct states (the product of every property's value count).
+    #[must_use]
+    pub fn state_count(&self) -> u16 {
+        self.properties
+            .iter()
+            .map(|p| p.get_possible_values().len() as u16)
+            .product()
     }
 
     /// Returns `true` if this block is tagged with the given tag.
@@ -298,17 +353,13 @@ impl BlockRegistry {
         self.blocks_by_id.push(block);
         self.block_to_base_state.push(base_state_id);
 
-        let mut state_count = 1;
-        for property in block.properties {
-            state_count *= property.get_possible_values().len();
-        }
-
+        let state_count = block.state_count();
         for _ in 0..state_count {
             self.state_to_block_lookup.push(block);
             self.state_to_block_id.push(id);
         }
 
-        self.next_state_id += state_count as u16;
+        self.next_state_id += state_count;
 
         id
     }
@@ -432,6 +483,26 @@ impl BlockRegistry {
         Some(BlockStateId(
             base_state_id + Self::encode_property_indices(block, &property_indices),
         ))
+    }
+
+    /// Returns every state id of `block` whose properties match all `(name, value)` pairs
+    /// in `filter`. An empty filter yields all states of the block (vanilla's
+    /// `getStatesOfBlock`); a non-empty filter keeps only matching states (vanilla's
+    /// `BED_HEADS`-style predicate).
+    #[must_use]
+    pub fn matching_states(&self, block: BlockRef, filter: &[(&str, &str)]) -> Vec<BlockStateId> {
+        let block_id = self.block_index(block);
+        let base_state_id = self.block_to_base_state[block_id];
+
+        (0..block.state_count())
+            .map(|offset| BlockStateId(base_state_id + offset))
+            .filter(|&state_id| {
+                let properties = self.get_properties(state_id);
+                filter
+                    .iter()
+                    .all(|(name, value)| properties.iter().any(|(n, v)| n == name && v == value))
+            })
+            .collect()
     }
 
     fn decode_property_indices(block: BlockRef, mut offset: u16) -> Vec<usize> {
@@ -791,6 +862,14 @@ impl BlockRegistry {
         )
     }
 
+    #[must_use]
+    pub fn get_light_properties(&self, state_id: BlockStateId) -> BlockLightProperties {
+        let Some((block, offset)) = self.block_and_state_offset(state_id) else {
+            return BlockLightProperties::OPAQUE_FULL_BLOCK;
+        };
+        block.get_light_properties(offset)
+    }
+
     pub fn copy_matching_properties(&self, source: BlockStateId, target: BlockRef) -> BlockStateId {
         let props = self.get_properties(source);
         let matching: Vec<(&str, &str)> = props
@@ -911,7 +990,7 @@ mod tests {
                 "power" => {
                     assert_eq!(*value, "0", "Default power should be '0'");
                 }
-                _ => panic!("Unexpected property: {}", name),
+                _ => panic!("Unexpected property: {name}"),
             }
         }
     }
@@ -943,7 +1022,7 @@ mod tests {
                 .iter()
                 .find(|(n, _)| n == name)
                 .expect("Property should exist");
-            assert_eq!(found.1, *value, "Property {} mismatch", name);
+            assert_eq!(found.1, *value, "Property {name} mismatch");
         }
     }
 
@@ -1126,15 +1205,14 @@ mod tests {
 
             let state_id = registry
                 .state_id_from_properties(&key, &props)
-                .unwrap_or_else(|| panic!("Should find state for power {}", power));
+                .unwrap_or_else(|| panic!("Should find state for power {power}"));
 
             let retrieved = registry.get_properties(state_id);
             let found_power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
             assert_eq!(
                 found_power.1,
                 power_str.as_str(),
-                "Power level {} mismatch",
-                power
+                "Power level {power} mismatch"
             );
         }
     }
@@ -1185,7 +1263,7 @@ mod tests {
             );
 
             let Some(block) = registry.by_key(&key) else {
-                errors.push(format!("Block {} not found in registry", block_name));
+                errors.push(format!("Block {block_name} not found in registry"));
                 continue;
             };
 
@@ -1212,8 +1290,7 @@ mod tests {
 
                 let Some(our_state_id) = registry.state_id_from_properties(&key, &props) else {
                     errors.push(format!(
-                        "{}: failed to get state for properties {:?}",
-                        block_name, props
+                        "{block_name}: failed to get state for properties {props:?}"
                     ));
                     continue;
                 };

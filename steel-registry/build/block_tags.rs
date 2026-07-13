@@ -19,7 +19,7 @@ fn read_all_fabric_tags(tag_file: &str) -> FxHashMap<String, Vec<String>> {
         && let Ok(content) = fs::read_to_string(tag_file)
     {
         let tag: TagFile = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", tag_file, e));
+            .unwrap_or_else(|e| panic!("Failed to parse {tag_file}: {e}"));
         return tag.block;
     }
     FxHashMap::default()
@@ -50,7 +50,7 @@ pub(crate) fn build() -> TokenStream {
             Span::call_site(),
         );
 
-        let block_strs = blocks.iter().map(|s| s.as_str());
+        let block_strs = blocks.iter().map(std::string::String::as_str);
 
         static_array.extend(quote! {
             static #tag_ident_array: &[&str] = &[#(#block_strs),*];

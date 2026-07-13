@@ -1,13 +1,17 @@
 //! Build script for generating vanilla recipe definitions.
 //!
 //! This module generates recipe definitions using a hybrid approach:
-//! - `LazyLock` for the RECIPES struct (required because ITEMS uses LazyLock)
+//! - `LazyLock` for the RECIPES struct (required because ITEMS uses `LazyLock`)
 //! - `Box::leak` to create `&'static [Ingredient]` slices at runtime
 //! - `#[inline(never)]` creator functions to prevent stack overflow
 //!
 //! The `Box::leak` pattern is intentional: vanilla recipes live for the entire
 //! program lifetime, so leaking the memory is correct. This gives us zero-cost
 //! access to recipe data after initialization.
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted recipe data"
+)]
 
 use std::{fs, path::Path};
 
@@ -53,7 +57,7 @@ struct RecipeResult {
     count: i32,
 }
 
-fn default_count() -> i32 {
+const fn default_count() -> i32 {
     1
 }
 
@@ -165,7 +169,7 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
     let mut char_grid: Vec<char> = Vec::new();
     for row in pattern {
         // Pad row to width
-        let padded: String = format!("{:width$}", row, width = width);
+        let padded: String = format!("{row:width$}");
         for c in padded.chars() {
             char_grid.push(c);
             let ingredient = ingredient_map
@@ -278,8 +282,8 @@ fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Smelt
     })
 }
 
-/// Generates a TokenStream for an ingredient.
-/// For Choice ingredients, uses Box::leak to create a static slice.
+/// Generates a `TokenStream` for an ingredient.
+/// For Choice ingredients, uses `Box::leak` to create a static slice.
 fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
     match ingredient {
         ParsedIngredient::Empty => quote! { Ingredient::Empty },

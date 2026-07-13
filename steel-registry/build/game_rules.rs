@@ -55,14 +55,16 @@ pub fn build() -> TokenStream {
             _ => panic!("Unknown game rule type: {}", rule.value_type),
         };
 
-        let min_value = match rule.min {
-            Some(v) => quote! { Some(#v) },
-            None => quote! { None },
+        let min_value = if let Some(v) = rule.min {
+            quote! { Some(#v) }
+        } else {
+            quote! { None }
         };
 
-        let max_value = match rule.max {
-            Some(v) => quote! { Some(#v) },
-            None => quote! { None },
+        let max_value = if let Some(v) = rule.max {
+            quote! { Some(#v) }
+        } else {
+            quote! { None }
         };
 
         constants.extend(quote! {

@@ -302,31 +302,17 @@ impl simdnbt::FromNbtTag for Equippable {
         let allowed_entities = compound
             .get("allowed_entities")
             .and_then(parse_allowed_entities_nbt);
-        let dispensable = compound
-            .get("dispensable")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
-        let swappable = compound
-            .get("swappable")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
-        let damage_on_hurt = compound
-            .get("damage_on_hurt")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
+        let dispensable = compound.get("dispensable").and_then(|tag| tag.byte()) != Some(0);
+        let swappable = compound.get("swappable").and_then(|tag| tag.byte()) != Some(0);
+        let damage_on_hurt = compound.get("damage_on_hurt").and_then(|tag| tag.byte()) != Some(0);
         let equip_on_interact = compound
             .get("equip_on_interact")
             .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(false);
+            .is_some_and(|value| value != 0);
         let can_be_sheared = compound
             .get("can_be_sheared")
             .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(false);
+            .is_some_and(|value| value != 0);
         let shearing_sound = compound
             .get("shearing_sound")
             .and_then(SoundEventHolder::from_nbt_tag)

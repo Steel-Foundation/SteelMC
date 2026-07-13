@@ -27,6 +27,8 @@ pub enum ChunkTicketKind {
     Pregen,
     /// Generic command-owned chunk request.
     Command,
+    /// Chunks loaded while preparing a portal destination.
+    Portal,
 }
 
 /// Request for a set of chunks at a minimum generation status.

@@ -194,17 +194,30 @@ impl EntityLevelCallback for PlayerEntityCallback {
             // behavior lock (entity threaded in as `Some`), reuse it — re-locking self
             // here deadlocks under the tick. Only lock when no behavior lock is held.
             if let Some(view) = self_view {
+                // The sent-chunk set lives on the session, so it is readable without
+                // the behavior lock.
+                let sent_chunks = world
+                    .players
+                    .get_by_entity_id(self.entity_id)
+                    .map(|session| session.chunk_sender.lock().sent_chunks_snapshot())
+                    .unwrap_or_default();
+                let is_chunk_sent = |chunk| sent_chunks.contains(&chunk);
+
                 match entity.as_deref() {
                     Some(e) => {
                         if let Some(player) = e.as_player_ref() {
-                            world.entity_tracker().update_player(player, &view);
+                            world
+                                .entity_tracker()
+                                .update_player(player, &view, is_chunk_sent);
                         }
                     }
                     None => {
                         if let Some(player) = world.players.get_by_entity_id(self.entity_id) {
-                            world
-                                .entity_tracker()
-                                .update_player(&player.entity.lock(), &view);
+                            world.entity_tracker().update_player(
+                                &player.entity.lock(),
+                                &view,
+                                is_chunk_sent,
+                            );
                         }
                     }
                 }
@@ -215,7 +228,7 @@ impl EntityLevelCallback for PlayerEntityCallback {
                 entity,
                 update.old_chunk,
                 update.new_chunk,
-                |chunk| world.player_area_map.get_tracking_players(chunk),
+                |chunk| world.get_packet_tracking_players(chunk),
                 |player_id| world.players.get_by_entity_id(player_id),
                 |player_id| {
                     world
@@ -303,7 +316,7 @@ impl EntityLevelCallback for EntityChunkCallback {
                     entity,
                     update.old_chunk,
                     update.new_chunk,
-                    |chunk| world.player_area_map.get_tracking_players(chunk),
+                    |chunk| world.get_packet_tracking_players(chunk),
                     |player_id| world.players.get_by_entity_id(player_id),
                     |player_id| {
                         world

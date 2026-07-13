@@ -450,7 +450,7 @@ define_pyramid! {
         },
         Light => {
             requirements: [(InitializeLight, 1)],
-            task: ChunkStatusTasks::light,
+            task: ChunkStatusTasks::load_light,
         },
         Spawn => {
             task: noop_task,

@@ -6,7 +6,8 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier, UuidExt};
+use uuid::Uuid;
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityIdentifier, SharedEntity, next_entity_id,
@@ -20,6 +21,12 @@ pub struct RawEntity {
     base: Weak<EntityBase>,
     entity_type: EntityTypeRef,
     data: NbtCompound,
+}
+
+// SAFETY: This key identifies the Steel fallback implementation, independently
+// of the Minecraft entity registry entry stored inside it.
+unsafe impl DowncastType for RawEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/raw");
 }
 
 impl RawEntity {
@@ -108,6 +115,14 @@ impl Entity for RawEntity {
         false
     }
 
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        if !self.entity_type.is_projectile {
+            return None;
+        }
+
+        self.projectile_owner_uuid_from_nbt()
+    }
+
     fn load_additional(&mut self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.data = nbt.to_owned();
     }
@@ -119,4 +134,39 @@ impl Entity for RawEntity {
 
 impl EntityIdentifier for RawEntity {
     const KEY: Identifier = Identifier::new_static("steel", "unimplemented");
+}
+
+impl RawEntity {
+    fn projectile_owner_uuid_from_nbt(&self) -> Option<Uuid> {
+        let owner = self.data.int_array("Owner")?;
+        Uuid::from_int_array(owner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use simdnbt::owned::{NbtCompound, NbtTag};
+    use steel_registry::vanilla_entities;
+    use steel_utils::UuidExt;
+    use uuid::Uuid;
+
+    use crate::entity::Entity as _;
+
+    use super::RawEntity;
+
+    #[test]
+    fn raw_projectile_reads_vanilla_owner_uuid() {
+        let owner = Uuid::from_u128(42);
+        let mut data = NbtCompound::new();
+        data.insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
+        let entity = RawEntity {
+            base: Weak::new(),
+            entity_type: &vanilla_entities::ENDER_PEARL,
+            data,
+        };
+
+        assert_eq!(entity.projectile_owner_uuid(), Some(owner));
+    }
 }

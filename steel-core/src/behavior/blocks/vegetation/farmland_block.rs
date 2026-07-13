@@ -7,7 +7,6 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{vanilla_blocks, vanilla_game_events, vanilla_game_rules};
-use steel_utils::random::Random as _;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::{
@@ -169,7 +168,7 @@ impl BlockBehavior for FarmlandBlock {
             .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
             .as_bool()
             == Some(true);
-        let random_float = world.random().lock().next_f32();
+        let random_float = rand::random::<f32>();
         if Self::should_turn_to_dirt_on_fall(context, mob_griefing, random_float) {
             Self::turn_to_dirt(state, world, pos, context.source_entity());
         }

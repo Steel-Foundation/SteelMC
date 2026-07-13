@@ -222,12 +222,14 @@ fn teleport_player(
     yaw: f32,
     pitch: f32,
 ) -> Result<(), CommandError> {
-    player.teleport(x, y, z, yaw, pitch).map_err(|error| {
-        CommandError::CommandFailed(Box::new(TextComponent::plain(format!(
-            "Failed to teleport {}: {error}",
-            player.gameprofile.name
-        ))))
-    })?;
+    player
+        .teleport(DVec3::new(x, y, z), yaw, pitch)
+        .map_err(|error| {
+            CommandError::CommandFailed(Box::new(TextComponent::plain(format!(
+                "Failed to teleport {}: {error}",
+                player.gameprofile.name
+            ))))
+        })?;
     player.reset_flying_ticks();
 
     if !player.is_fall_flying() {

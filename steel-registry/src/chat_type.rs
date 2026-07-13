@@ -51,7 +51,11 @@ impl ChatType {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
         compound.insert("translation_key", dec.translation_key);
-        let params: Vec<String> = dec.parameters.iter().map(|s| s.to_string()).collect();
+        let params: Vec<String> = dec
+            .parameters
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         compound.insert("parameters", params);
         if let Some(style) = &dec.style {
             let mut style_compound = NbtCompound::new();

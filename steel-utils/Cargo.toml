@@ -40,6 +40,7 @@ crc32c = "0.6"
 # Utilities
 enum_dispatch.workspace = true
 num-traits.workspace = true
+rand.workspace = true
 text_components.workspace = true
 
 [dev-dependencies]

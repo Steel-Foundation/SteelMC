@@ -12,6 +12,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
 use steel_utils::BlockStateId;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use glam::DVec3;
 
@@ -29,6 +30,11 @@ pub struct BlockDisplayEntity {
     base: Weak<EntityBase>,
     /// Synced entity data for network serialization.
     entity_data: BlockDisplayEntityData,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `BlockDisplayEntity`.
+unsafe impl DowncastType for BlockDisplayEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/block_display");
 }
 
 impl BlockDisplayEntity {

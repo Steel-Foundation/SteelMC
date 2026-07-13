@@ -27,14 +27,13 @@ pub mod entities;
 mod registry;
 mod storage;
 
-use std::any::Any;
 use std::sync::Arc;
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::game_events::GameEventRef;
-use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, ErasedType, locks::SyncMutex, types::UpdateFlags};
 
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub use storage::BlockEntityStorage;
@@ -65,14 +64,10 @@ pub enum BlockEntityTickAction {
 /// Trait for all block entities.
 ///
 /// Block entities are attached to specific blocks in the world and provide
-/// additional data storage beyond what block states can hold.
-pub trait BlockEntity: Send + Sync {
-    /// Returns a reference to the block entity as `Any` for downcasting.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Returns a mutable reference to the block entity as `Any` for downcasting.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
+/// additional data storage beyond what block states can hold. Concrete
+/// implementations must claim a unique [`steel_utils::DowncastTypeKey`] through
+/// [`steel_utils::DowncastType`].
+pub trait BlockEntity: ErasedType + Send + Sync {
     /// Returns the type of this block entity.
     fn get_type(&self) -> BlockEntityTypeRef;
 

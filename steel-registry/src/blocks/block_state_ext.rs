@@ -3,7 +3,7 @@ use crate::{
     REGISTRY,
     blocks::{
         self, BlockRef,
-        properties::{BlockStateProperties, Direction, Property},
+        properties::{Direction, Property},
         shapes::{OffsetVoxelShape, SupportType},
     },
 };
@@ -32,6 +32,12 @@ pub trait BlockStateExt {
     fn get_interaction_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
     fn get_static_visual_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_visual_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
+    /// Returns this block state's block light emission, in vanilla's 0-15 range.
+    fn get_light_emission(&self) -> u8;
+    /// Returns this block state's light dampening, in vanilla's 0-15 range.
+    fn get_light_dampening(&self) -> u8;
+    /// Returns true if vanilla uses face shapes for light occlusion on this state.
+    fn use_shape_for_light_occlusion(&self) -> bool;
     /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
     fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
@@ -62,9 +68,6 @@ pub trait BlockStateExt {
     fn is_suffocating(&self) -> bool;
     /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
-    /// Returns true if this block state contains fluid — either a liquid block or a waterlogged block.
-    /// Mirrors vanilla's `!blockState.getFluidState().isEmpty()`.
-    fn has_fluid(&self) -> bool;
 }
 
 impl BlockStateExt for BlockStateId {
@@ -149,6 +152,21 @@ impl BlockStateExt for BlockStateId {
         REGISTRY.blocks.get_visual_shape_at(*self, pos)
     }
 
+    fn get_light_emission(&self) -> u8 {
+        REGISTRY.blocks.get_light_properties(*self).light_emission
+    }
+
+    fn get_light_dampening(&self) -> u8 {
+        REGISTRY.blocks.get_light_properties(*self).light_dampening
+    }
+
+    fn use_shape_for_light_occlusion(&self) -> bool {
+        REGISTRY
+            .blocks
+            .get_light_properties(*self)
+            .use_shape_for_light_occlusion
+    }
+
     fn get_offset(&self, pos: BlockPos) -> DVec3 {
         self.get_block().offset_at(pos)
     }
@@ -208,36 +226,6 @@ impl BlockStateExt for BlockStateId {
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
     }
-
-    fn has_fluid(&self) -> bool {
-        self.get_block().config.liquid
-            || self
-                .try_get_value(&BlockStateProperties::WATERLOGGED)
-                .unwrap_or(false)
-    }
-}
-
-pub trait FluidReplaceableExt {
-    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool;
-}
-
-impl FluidReplaceableExt for BlockStateId {
-    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool {
-        let block = self.get_block();
-
-        if self.is_air() {
-            return true;
-        }
-
-        if fluid == &vanilla_blocks::WATER
-            && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
-        {
-            return true;
-        }
-
-        // Vanilla: `state.canBeReplaced() || !state.isSolid()`
-        block.config.replaceable || !self.is_solid()
-    }
 }
 
 #[cfg(test)]
@@ -264,6 +252,34 @@ mod tests {
     }
 
     #[test]
+    fn light_properties_match_generated_state_offsets() {
+        init_test_registry();
+
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        assert_eq!(air.get_light_emission(), 0);
+        assert_eq!(air.get_light_dampening(), 0);
+        assert!(!air.use_shape_for_light_occlusion());
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        assert_eq!(stone.get_light_emission(), 0);
+        assert_eq!(stone.get_light_dampening(), 15);
+        assert!(!stone.use_shape_for_light_occlusion());
+
+        let light = vanilla_blocks::LIGHT.default_state();
+        assert_eq!(light.get_light_emission(), 15);
+        let dim_light = light.set_value(&BlockStateProperties::LEVEL, 7);
+        assert_eq!(dim_light.get_light_emission(), 7);
+
+        let sticky_piston = vanilla_blocks::STICKY_PISTON.default_state();
+        assert_eq!(sticky_piston.get_light_dampening(), 15);
+        assert!(!sticky_piston.use_shape_for_light_occlusion());
+
+        let extended_piston = sticky_piston.set_value(&BlockStateProperties::EXTENDED, true);
+        assert_eq!(extended_piston.get_light_dampening(), 0);
+        assert!(extended_piston.use_shape_for_light_occlusion());
+    }
+
+    #[test]
     fn blocks_motion_matches_vanilla_base_predicate() {
         init_test_registry();
 
@@ -272,7 +288,6 @@ mod tests {
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         assert!(!water.blocks_motion());
-        assert!(water.has_fluid());
 
         let cobweb = REGISTRY
             .blocks

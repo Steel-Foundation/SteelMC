@@ -5,7 +5,7 @@
 //! components use the `Other` variant with opaque bytes.
 use super::components::{
     AttackRange, DamageTypeComponent, Equippable, ItemAttributeModifiers, ItemEnchantments,
-    PiercingWeapon, Tool, Weapon,
+    PiercingWeapon, Tool, UseCooldown, Weapon,
 };
 use text_components::TextComponent;
 
@@ -23,6 +23,7 @@ pub enum ComponentDataDiscriminant {
     Tool,
     Weapon,
     AttackRange,
+    UseCooldown,
     PiercingWeapon,
     Equippable,
     AttributeModifiers,
@@ -60,34 +61,36 @@ pub enum ComponentDataDiscriminant {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ComponentData {
-    /// Component with no data (e.g., Unbreakable, Glider, CreativeSlotLock)
+    /// Component with no data (e.g., Unbreakable, Glider, `CreativeSlotLock`)
     Empty,
 
-    /// Boolean component (e.g., EnchantmentGlintOverride)
+    /// Boolean component (e.g., `EnchantmentGlintOverride`)
     Bool(bool),
-    /// i32 component (e.g., MaxStackSize, MaxDamage, Damage, RepairCost)
-    /// Stored as VarInt on network.
+    /// i32 component (e.g., `MaxStackSize`, `MaxDamage`, Damage, `RepairCost`)
+    /// Stored as `VarInt` on network.
     I32(i32),
-    /// Float component (e.g., PotionDurationScale)
+    /// Float component (e.g., `PotionDurationScale`)
     Float(f32),
-    /// minecraft:damage_type
+    /// `minecraft:damage_type`
     DamageType(DamageTypeComponent),
 
     /// minecraft:tool
     Tool(Tool),
     /// minecraft:weapon
     Weapon(Weapon),
-    /// minecraft:attack_range
+    /// `minecraft:attack_range`
     AttackRange(AttackRange),
-    /// minecraft:piercing_weapon
+    /// `minecraft:use_cooldown`
+    UseCooldown(UseCooldown),
+    /// `minecraft:piercing_weapon`
     PiercingWeapon(PiercingWeapon),
     /// minecraft:equippable
     Equippable(Equippable),
-    /// minecraft:attribute_modifiers
+    /// `minecraft:attribute_modifiers`
     AttributeModifiers(ItemAttributeModifiers),
-    /// minecraft:enchantments / minecraft:stored_enchantments
+    /// minecraft:enchantments / `minecraft:stored_enchantments`
     Enchantments(ItemEnchantments),
-    /// TextComponent component (e.g., CustomName, ItemName)
+    /// `TextComponent` component (e.g., `CustomName`, `ItemName`)
     TextComponent(Box<TextComponent>),
 
     /// Placeholder for components that aren't implemented yet.
@@ -127,6 +130,7 @@ impl ComponentData {
             Self::Tool(_) => ComponentDataDiscriminant::Tool,
             Self::Weapon(_) => ComponentDataDiscriminant::Weapon,
             Self::AttackRange(_) => ComponentDataDiscriminant::AttackRange,
+            Self::UseCooldown(_) => ComponentDataDiscriminant::UseCooldown,
             Self::PiercingWeapon(_) => ComponentDataDiscriminant::PiercingWeapon,
             Self::Equippable(_) => ComponentDataDiscriminant::Equippable,
             Self::AttributeModifiers(_) => ComponentDataDiscriminant::AttributeModifiers,
@@ -158,6 +162,7 @@ impl ComponentData {
             Self::Tool(v) => v.hash_component(&mut hasher),
             Self::Weapon(v) => v.hash_component(&mut hasher),
             Self::AttackRange(v) => v.hash_component(&mut hasher),
+            Self::UseCooldown(v) => v.hash_component(&mut hasher),
             Self::PiercingWeapon(v) => v.hash_component(&mut hasher),
             Self::Equippable(v) => v.hash_component(&mut hasher),
             Self::AttributeModifiers(v) => v.hash_component(&mut hasher),
@@ -386,6 +391,26 @@ impl Component for PiercingWeapon {
     fn from_data_ref(data: &ComponentData) -> Option<&Self> {
         match data {
             ComponentData::PiercingWeapon(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+impl Component for UseCooldown {
+    fn into_data(self) -> ComponentData {
+        ComponentData::UseCooldown(self)
+    }
+
+    fn from_data(data: ComponentData) -> Option<Self> {
+        match data {
+            ComponentData::UseCooldown(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
+        match data {
+            ComponentData::UseCooldown(v) => Some(v),
             _ => None,
         }
     }

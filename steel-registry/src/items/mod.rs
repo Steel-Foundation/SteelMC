@@ -15,7 +15,7 @@ use crate::{
 pub struct Item {
     pub key: Identifier,
     pub components: DataComponentMap,
-    /// The item key returned when this item is used in crafting (e.g., "bucket" from milk_bucket).
+    /// The item key returned when this item is used in crafting (e.g., "bucket" from `milk_bucket`).
     /// Stored as an Identifier to avoid circular reference issues during initialization.
     pub craft_remainder: Option<Identifier>,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
@@ -61,7 +61,7 @@ impl Item {
     }
 
     /// Returns the item stack that remains after this item is used in crafting.
-    /// For example, milk_bucket returns an empty bucket.
+    /// For example, `milk_bucket` returns an empty bucket.
     #[must_use]
     pub fn get_crafting_remainder(&self) -> ItemStack {
         match &self.craft_remainder {

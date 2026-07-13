@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted dialog data"
+)]
+
 use std::fs;
 
 use crate::generator_functions::generate_text_component;
@@ -67,7 +72,7 @@ pub(crate) fn build() -> TokenStream {
             let dialog_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let dialog: DialogJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", dialog_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {dialog_name}: {e}"));
 
             dialogs.push((dialog_name, dialog));
         }

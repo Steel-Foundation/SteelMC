@@ -14,7 +14,17 @@ use steel_utils::{Direction, Identifier, Rotation};
 #[path = "feature_data.rs"]
 mod feature_data;
 
-use feature_data::*;
+use feature_data::{
+    AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
+    BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
+    DualNoiseProvider, EndSpike, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
+    FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings,
+    GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement,
+    NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
+    PlacementModifier, RootPlacer, RuleBasedStateProviderRule, RuleTest, TemplateEntry,
+    TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
+    WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
+};
 
 fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
     let mut files: Vec<_> = fs::read_dir(dir)
@@ -22,7 +32,7 @@ fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
         .filter_map(Result::ok)
         .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
         .collect();
-    files.sort_by_key(|entry| entry.file_name());
+    files.sort_by_key(std::fs::DirEntry::file_name);
     files
 }
 
@@ -46,9 +56,10 @@ fn generate_identifier(identifier: &Identifier) -> TokenStream {
 }
 
 fn vanilla_registry_ident(identifier: &Identifier, kind: &str) -> Ident {
-    if identifier.namespace != Identifier::VANILLA_NAMESPACE {
-        panic!("vanilla feature references non-vanilla {kind} {identifier}");
-    }
+    assert!(
+        identifier.namespace == Identifier::VANILLA_NAMESPACE,
+        "vanilla feature references non-vanilla {kind} {identifier}"
+    );
 
     Ident::new(&identifier.path.to_shouty_snake_case(), Span::call_site())
 }
@@ -79,12 +90,11 @@ fn generate_vec<T>(values: &[T], f: impl Fn(&T) -> TokenStream) -> TokenStream {
 }
 
 fn generate_option<T>(value: &Option<T>, f: impl Fn(&T) -> TokenStream) -> TokenStream {
-    match value {
-        Some(value) => {
-            let value = f(value);
-            quote! { Some(#value) }
-        }
-        None => quote! { None },
+    if let Some(value) = value {
+        let value = f(value);
+        quote! { Some(#value) }
+    } else {
+        quote! { None }
     }
 }
 

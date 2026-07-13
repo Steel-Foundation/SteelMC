@@ -29,7 +29,7 @@ pub struct CTakeItemEntity {
 impl CTakeItemEntity {
     /// Creates a new take item entity packet.
     #[must_use]
-    pub fn new(item_id: i32, player_id: i32, amount: i32) -> Self {
+    pub const fn new(item_id: i32, player_id: i32, amount: i32) -> Self {
         Self {
             item_id,
             player_id,

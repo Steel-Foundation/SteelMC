@@ -72,10 +72,9 @@ impl FluidBehavior for WaterFluid {
         direction == Direction::Down && !is_water_fluid(other_fluid)
     }
 
-    /// Drops block resources and plays destruction particles when water replaces a non-air block.
+    /// Drops block resources when water replaces a non-air block.
     fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         world.drop_resources(state, pos);
-        world.destroy_block_effect(pos, u32::from(state.0), None);
     }
 
     /// Vanilla parity: `WaterFluid.entityInside()` extinguishes fire.

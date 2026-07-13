@@ -259,7 +259,12 @@ impl EntityTracker {
     /// Mirrors vanilla `TrackedEntity.updatePlayer`: each tracked entity checks
     /// whether the player tracks the entity chunk, passes the entity-specific
     /// broadcast predicate, and is inside the effective horizontal range.
-    pub fn update_player(&self, player: &Player, view: &PlayerChunkView) {
+    pub fn update_player(
+        &self,
+        player: &Player,
+        view: &PlayerChunkView,
+        is_chunk_sent: impl Fn(ChunkPos) -> bool,
+    ) {
         let player_id = player.id();
         let player_pos = player.position();
         let player_view_distance = view.view_distance;
@@ -278,6 +283,7 @@ impl EntityTracker {
             let visible = !entity.is_removed()
                 && entity_id != player_id
                 && view.contains(tracked.registered_chunk)
+                && is_chunk_sent(tracked.registered_chunk)
                 && entity.with_entity(|e| e.broadcast_to_player(player))
                 && is_within_tracking_distance(
                     entity.position(),
@@ -1180,6 +1186,7 @@ mod tests {
             Self::new(1, attributes).entity()
         }
     }
+    crate::entity::impl_test_downcast_type!(PairingTestEntity);
 
     impl Entity for PairingTestEntity {
         fn base_weak(&self) -> &Weak<EntityBase> {
@@ -1674,7 +1681,10 @@ mod tests {
         let tracker = EntityTracker::new();
         let pig: SharedEntity = Pig::new(1, DVec3::ZERO, Weak::new());
         let holder: SharedEntity = PairingTestEntity::new(2, Vec::new()).entity();
-        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder, None)).unwrap());
+        assert!(
+            pig.with_mob(|mob| mob.set_leashed_to(&holder, None))
+                .unwrap()
+        );
 
         let pairing = tracker.spawn_pairing(&pig, 99);
 
@@ -1708,7 +1718,10 @@ mod tests {
         );
         assert!(updates.is_empty());
 
-        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder, None)).unwrap());
+        assert!(
+            pig.with_mob(|mob| mob.set_leashed_to(&holder, None))
+                .unwrap()
+        );
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,

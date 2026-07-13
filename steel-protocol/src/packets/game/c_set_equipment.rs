@@ -53,7 +53,7 @@ pub struct CSetEquipment {
 impl CSetEquipment {
     /// Creates a new equipment update packet.
     #[must_use]
-    pub fn new(entity_id: i32, slots: Vec<EquipmentSlotItem>) -> Self {
+    pub const fn new(entity_id: i32, slots: Vec<EquipmentSlotItem>) -> Self {
         Self { entity_id, slots }
     }
 }

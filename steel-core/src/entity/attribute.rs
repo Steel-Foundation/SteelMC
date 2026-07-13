@@ -82,7 +82,7 @@ pub struct AttributeInstance {
 }
 
 impl AttributeInstance {
-    fn new(attribute: AttributeRef, base_value: f64) -> Self {
+    const fn new(attribute: AttributeRef, base_value: f64) -> Self {
         let cached = attribute.sanitize_value(base_value);
         Self {
             attribute,

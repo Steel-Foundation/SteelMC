@@ -13,6 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
+use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -85,6 +86,11 @@ pub struct ItemEntity {
     /// UUID of the only entity that can pick up this item.
     /// If `None`, any player can pick it up. Vanilla calls this `target`.
     owner: Option<Uuid>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ItemEntity`.
+unsafe impl DowncastType for ItemEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item");
 }
 
 impl ItemEntity {

@@ -18,6 +18,6 @@ pub struct CBlockEntityData {
     /// Type ID of the block entity (from the block entity type registry).
     #[write(as = VarInt)]
     pub block_entity_type: i32,
-    /// NBT data for the block entity (uses OptionalNbt format with tag type prefix).
+    /// NBT data for the block entity (uses `OptionalNbt` format with tag type prefix).
     pub nbt: OptionalNbt,
 }

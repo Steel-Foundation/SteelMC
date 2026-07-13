@@ -1,31 +1,38 @@
-use core::simd::{Simd, f64x4};
-use std::simd::StdFloat;
+use std::ops;
 use std::simd::cmp::SimdPartialOrd;
+use std::simd::num::SimdFloat;
+use std::simd::{Mask, Simd, SimdCast};
+use std::simd::{SimdElement, StdFloat};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
 const ROUND_OFF: f64 = 33_554_432.0;
 const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
 
-/// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
-#[inline]
-#[must_use]
-pub fn wrap_4x(x: f64x4) -> f64x4 {
-    wrap_simd::<4>(x)
-}
-
 /// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
+///
+/// Fast path: at normal game coordinates all lanes are within `[-HALF_ROUND_OFF, HALF_ROUND_OFF)`,
+/// so the expensive `div + floor + mul` is skipped almost always.
 #[inline]
 #[must_use]
-pub fn wrap_simd<const N: usize>(x: Simd<f64, N>) -> Simd<f64, N> {
-    let in_fast_range =
-        x.simd_ge(Simd::splat(-HALF_ROUND_OFF)) & x.simd_lt(Simd::splat(HALF_ROUND_OFF));
+pub fn wrap_simd<F, const N: usize>(x: Simd<F, N>) -> Simd<F, N>
+where
+    F: SimdElement + SimdCast,
+    Simd<F, N>: ops::Div<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>
+        + ops::Mul<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>
+        + SimdPartialOrd<Mask = Mask<<F as SimdElement>::Mask, N>>
+        + StdFloat,
+{
+    let in_fast_range = x.simd_ge(Simd::splat(-HALF_ROUND_OFF).cast())
+        & x.simd_lt(Simd::splat(HALF_ROUND_OFF).cast());
     if in_fast_range.all() {
         return x;
     }
 
-    let round_off = Simd::splat(ROUND_OFF);
-    x - (x / round_off + Simd::splat(0.5)).floor() * round_off
+    let round_off = Simd::splat(ROUND_OFF).cast();
+    x - (x / round_off + Simd::splat(0.5).cast()).floor() * round_off
 }
 
 /// Wrap a coordinate to prevent precision loss at large values.
@@ -47,6 +54,7 @@ pub fn wrap(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::simd::f64x4;
     #[test]
     fn test_wrap() {
         fn wrap_reference(x: f64) -> f64 {
@@ -92,7 +100,7 @@ mod tests {
         ];
 
         for case in cases {
-            let wrapped = wrap_4x(f64x4::from_array(case)).to_array();
+            let wrapped = wrap_simd(f64x4::from_array(case)).to_array();
             for (input, actual) in case.into_iter().zip(wrapped) {
                 #[expect(
                     clippy::float_cmp,

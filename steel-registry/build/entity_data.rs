@@ -15,7 +15,10 @@ use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
 struct EntityEntry {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "extracted entity data keeps vanilla ids for validation context"
+    )]
     id: i32,
     name: String,
     synched_data: SynchedData,
@@ -23,18 +26,30 @@ struct EntityEntry {
 
 #[derive(Deserialize, Debug)]
 struct SynchedData {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     java_class: String,
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     class_hierarchy: Vec<ClassEntry>,
     layers: Vec<SynchedDataLayer>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ClassEntry {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     java_class: String,
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     simple_name: String,
 }
 
@@ -64,7 +79,7 @@ struct LayerDefinition {
     fields: Vec<SynchedDataEntry>,
 }
 
-/// Maps a serializer name to (Rust type, EntityData variant, vanilla serializer ID).
+/// Maps a serializer name to (Rust type, `EntityData` variant, vanilla serializer ID).
 fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str, i32)> {
     Some(match serializer {
         "byte" => ("i8", "Byte", 0),
@@ -553,7 +568,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
     }
 }
 
-/// Generate the EntityData conversion expression for packing.
+/// Generate the `EntityData` conversion expression for packing.
 fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
     let (_, variant, _) = serializer_info(serializer)
         .unwrap_or_else(|| panic!("Unknown entity data serializer: {serializer}"));

@@ -11,7 +11,7 @@ use crate::rsa_utils::CryptError;
 
 /// A function that updates signature data by writing bytes.
 ///
-/// Equivalent to SignatureUpdater in Minecraft.
+/// Equivalent to `SignatureUpdater` in Minecraft.
 pub trait SignatureUpdater {
     /// Updates the signature with the given bytes.
     fn update(&self, output: &mut dyn SignatureOutput) -> Result<(), CryptError>;
@@ -25,7 +25,7 @@ pub trait SignatureOutput {
     fn update(&mut self, data: &[u8]) -> Result<(), CryptError>;
 }
 
-/// Implementation of SignatureUpdater for raw byte slices.
+/// Implementation of `SignatureUpdater` for raw byte slices.
 impl SignatureUpdater for &[u8] {
     fn update(&self, output: &mut dyn SignatureOutput) -> Result<(), CryptError> {
         output.update(self)
@@ -42,7 +42,7 @@ pub trait Signer {
 
 /// A trait for validating RSA signatures.
 ///
-/// Equivalent to SignatureValidator interface in Minecraft.
+/// Equivalent to `SignatureValidator` interface in Minecraft.
 pub trait SignatureValidator {
     /// Validates that the signature is valid for the data provided by the updater.
     fn validate(
@@ -52,14 +52,15 @@ pub trait SignatureValidator {
     ) -> Result<bool, CryptError>;
 }
 
-/// Creates a signer from an RSA private key using SHA256withRSA.
+/// Creates a signer from an RSA private key using `SHA256withRSA`.
 ///
-/// Equivalent to Signer.from(PrivateKey, "SHA256withRSA") in Minecraft.
+/// Equivalent to Signer.from(PrivateKey, "`SHA256withRSA`") in Minecraft.
 pub struct RsaPrivateKeySigner {
     signing_key: SigningKey<Sha256>,
 }
 
 impl RsaPrivateKeySigner {
+    #[must_use]
     pub fn new(private_key: RsaPrivateKey) -> Self {
         Self {
             signing_key: SigningKey::new(private_key),
@@ -79,14 +80,15 @@ impl Signer for RsaPrivateKeySigner {
     }
 }
 
-/// Creates a signature validator from an RSA public key using SHA256withRSA.
+/// Creates a signature validator from an RSA public key using `SHA256withRSA`.
 ///
-/// Equivalent to SignatureValidator.from(PublicKey, "SHA256withRSA") in Minecraft.
+/// Equivalent to SignatureValidator.from(PublicKey, "`SHA256withRSA`") in Minecraft.
 pub struct RsaPublicKeyValidator {
     verifying_key: rsa::pkcs1v15::VerifyingKey<Sha256>,
 }
 
 impl RsaPublicKeyValidator {
+    #[must_use]
     pub fn new(public_key: RsaPublicKey) -> Self {
         Self {
             verifying_key: rsa::pkcs1v15::VerifyingKey::new(public_key),
@@ -155,7 +157,7 @@ impl SignatureValidator for MultiKeyValidator {
 
 /// A no-validation validator that always returns true.
 ///
-/// Equivalent to SignatureValidator.NO_VALIDATION in Minecraft.
+/// Equivalent to `SignatureValidator.NO_VALIDATION` in Minecraft.
 pub struct NoValidation;
 
 impl SignatureValidator for NoValidation {
@@ -174,7 +176,7 @@ struct ByteCollector {
 }
 
 impl ByteCollector {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self { bytes: Vec::new() }
     }
 }
