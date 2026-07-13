@@ -20,17 +20,15 @@ use crate::world::World;
 #[entity_behavior(class = "leash_fence_knot_entity", identifier = "leash_knot")]
 pub struct LeashFenceKnotEntity {
     base: Weak<EntityBase>,
-    entity_type: EntityTypeRef,
     /// blockpos of the entity
     pub block_pos: BlockPos,
     check_interval: i32,
 }
 
 impl LeashFenceKnotEntity {
-    fn build(base: Weak<EntityBase>, entity_type: EntityTypeRef, block_pos: BlockPos) -> Self {
+    fn build(base: Weak<EntityBase>, block_pos: BlockPos) -> Self {
         Self {
             base,
-            entity_type,
             block_pos,
             check_interval: 0,
         }
@@ -40,12 +38,7 @@ impl LeashFenceKnotEntity {
     ///
     /// The attachment block position is derived from `position`.
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
         let block_pos = BlockPos::new(
             position.x.floor() as i32,
             position.y.floor() as i32,
@@ -54,35 +47,35 @@ impl LeashFenceKnotEntity {
         EntityBase::pack_with(
             id,
             Self::knot_center(block_pos),
-            entity_type.dimensions,
+            vanilla_entities::LEASH_KNOT.dimensions,
             world,
-            |base| Self::build(base, entity_type, block_pos),
+            |base| Self::build(base, block_pos),
         )
     }
 
     /// Creates a fresh leash knot attached to `block_pos`.
     #[must_use]
-    pub fn new_attached(entity_type: EntityTypeRef, block_pos: BlockPos) -> SharedEntity {
+    pub fn new_attached(block_pos: BlockPos) -> SharedEntity {
         EntityBase::pack_with(
             next_entity_id(),
             Self::knot_center(block_pos),
-            entity_type.dimensions,
+            vanilla_entities::LEASH_KNOT.dimensions,
             Weak::new(),
-            |base| Self::build(base, entity_type, block_pos),
+            |base| Self::build(base, block_pos),
         )
     }
 
     /// Creates a leash knot from persistent entity data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
         let position = load.position;
         let block_pos = BlockPos::new(
             position.x.floor() as i32,
             position.y.floor() as i32,
             position.z.floor() as i32,
         );
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| {
-            Self::build(base, entity_type, block_pos)
+        EntityBase::pack_loaded_with(load, vanilla_entities::LEASH_KNOT.dimensions, |base| {
+            Self::build(base, block_pos)
         })
     }
 
@@ -127,7 +120,7 @@ impl LeashFenceKnotEntity {
             return Some(knot);
         }
 
-        let knot: SharedEntity = Self::new_attached(&vanilla_entities::LEASH_KNOT, pos);
+        let knot: SharedEntity = Self::new_attached(pos);
         if let Err(error) = world.try_add_entity(Arc::clone(&knot)) {
             log::warn!("Failed to spawn leash knot entity: {error}");
             return None;
@@ -160,10 +153,10 @@ impl LeashFenceKnotEntity {
 
     /// Todo
     #[allow(unused)]
-    fn knot_bounding_box(entity_type: EntityTypeRef, block_pos: BlockPos) -> WorldAabb {
+    fn knot_bounding_box(block_pos: BlockPos) -> WorldAabb {
         let center = Self::knot_center(block_pos);
-        let half_width = f64::from(entity_type.dimensions.width) / 2.0;
-        let height = f64::from(entity_type.dimensions.height);
+        let half_width = f64::from(vanilla_entities::LEASH_KNOT.dimensions.width) / 2.0;
+        let height = f64::from(vanilla_entities::LEASH_KNOT.dimensions.height);
         WorldAabb::new(
             center.x - half_width,
             center.y,
@@ -181,7 +174,7 @@ impl Entity for LeashFenceKnotEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::LEASH_KNOT
     }
 
     fn spawn_position(&self) -> DVec3 {
@@ -216,27 +209,18 @@ mod tests {
 
     #[test]
     fn leash_knot_uses_vanilla_position_and_bounding_box() {
-        let knot = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
+        let knot = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
 
         assert_eq!(knot.position(), DVec3::new(4.5, 65.375, -8.5));
         assert_eq!(
             knot.bounding_box(),
-            LeashFenceKnotEntity::knot_bounding_box(
-                &vanilla_entities::LEASH_KNOT,
-                BlockPos::new(4, 65, -9)
-            )
+            LeashFenceKnotEntity::knot_bounding_box(BlockPos::new(4, 65, -9))
         );
     }
 
     #[test]
     fn leash_knot_spawn_packet_uses_attached_block_pos() {
-        let knot = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
+        let knot = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
 
         assert_eq!(
             knot.with_entity(|e| e.spawn_position()),
@@ -246,23 +230,17 @@ mod tests {
 
     #[test]
     fn leash_knot_saves_no_type_specific_block_pos() {
-        let knot = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
+        let knot = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
 
         let mut nbt = NbtCompound::new();
-        knot.save_additional(&mut nbt);
+        knot.with_entity(|e| e.save_additional(&mut nbt));
 
         assert!(nbt.is_empty());
     }
 
     #[test]
     fn leash_knot_survival_check_matches_vanilla_interval() {
-        let knot = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
+        let knot = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
 
         {
             let mut knot = knot.lock_entity();

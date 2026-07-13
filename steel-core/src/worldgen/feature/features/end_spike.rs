@@ -2,7 +2,6 @@ use std::f64::consts::PI;
 use std::sync::Weak;
 
 use glam::DVec3;
-use steel_registry::vanilla_entities;
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
@@ -177,12 +176,7 @@ impl FeatureDecorationRunner {
             f64::from(spike.height + 1),
             f64::from(spike.center_z) + 0.5,
         );
-        let crystal = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            position,
-            Weak::new(),
-        );
+        let crystal = EndCrystal::new(next_entity_id(), position, Weak::new());
         {
             let mut crystal = crystal.lock_entity();
             let crystal: &mut EndCrystal = crystal.downcast().unwrap();

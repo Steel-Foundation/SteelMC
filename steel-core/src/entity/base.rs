@@ -7,10 +7,7 @@ use std::{
     collections::{BTreeSet, VecDeque},
     mem,
     ops::DerefMut,
-    sync::{
-        Arc, OnceLock, Weak,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, OnceLock, Weak},
 };
 
 use glam::DVec3;
@@ -21,22 +18,20 @@ use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_entities};
 use steel_registry::{entity_data::EntityPose, entity_type::EntityTypeRef};
 use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
-use steel_utils::{locks::SyncMutex, types::InteractionHand};
+use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::{
-    behavior::InteractionResult,
     entity::{
         Animal, Entity, EntityLevelCallback, EntityMoveError, InsideBlockEffectType, LockedEntity,
         Mob, NullEntityCallback, PathfinderMob, RemovalReason, SharedEntity, WeakEntity,
-        damage::DamageSource,
     },
     player::Player,
 };
 use crate::{entity::EntityIdentifier, physics::EntityPhysicsState};
 use crate::{entity::LivingEntity, world::World};
-use crate::{entity::fluid_contact::EntityFluidContact, portal::TeleportTransition};
+use crate::entity::fluid_contact::EntityFluidContact;
 
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
 const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
@@ -1011,16 +1006,6 @@ pub struct EntityBase {
     /// `Player::attack`, or player registration during join). Going through
     /// `with_entity` there would re-lock the held `Player` mutex and deadlock.
     static_info: StaticEntityInfo,
-    /// Scoped, lock-free override that forces [`uses_client_movement_packets`]
-    /// to report `true` without re-deriving the controlling passenger.
-    ///
-    /// Set while a vehicle is moved on behalf of its already-confirmed client
-    /// controller (e.g. `Player::handle_move_vehicle`), where the controller's
-    /// player mutex is held by the caller. Re-deriving control there goes through
-    /// `controlling_passenger` → re-locks the held controller → self-deadlock.
-    ///
-    /// [`uses_client_movement_packets`]: Entity::uses_client_movement_packets
-    client_movement_override: AtomicBool,
 }
 
 /// Constant, type-derived entity properties cached on [`EntityBase`] for
@@ -1179,7 +1164,6 @@ impl EntityBase {
                 is_living_entity: true,
                 is_mob: false,
             },
-            client_movement_override: AtomicBool::new(false),
         }
     }
 
@@ -1317,7 +1301,11 @@ impl EntityBase {
     /// Pass the `EntityTypeRef` that belongs to `T`, e.g. `&vanilla_entities::PIG`.
     /// Returns `None` if no entity is attached or the entity type does not match `kind`.
     pub fn with_entity_as<T: EntityIdentifier, R>(&self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.lock_entity().downcast::<T>().map(f)
+        if self.entity_type().key != T::KEY {
+            return None;
+        } else {
+            self.lock_entity().downcast::<T>().map(f)
+        }
     }
 
     /// Returns a [`LockedEntity`] guard that holds the entity mutex and exposes typed downcast.
@@ -1388,99 +1376,6 @@ impl EntityBase {
         self.static_info().always_ticking
     }
 
-    /// Returns `true` if players can pick up this entity (items, orbs, etc.).
-    pub fn is_pickable(&self) -> bool {
-        self.with_entity(|e| e.is_pickable())
-    }
-
-    /// Returns `true` if another entity can push this entity via physics.
-    pub fn is_pushable(&self) -> bool {
-        self.with_entity(|e| e.is_pushable())
-    }
-
-    /// Returns `true` if the entity is a spectator (no physical presence).
-    pub fn is_spectator(&self) -> bool {
-        self.with_entity(|e| e.is_spectator())
-    }
-
-    /// Returns `true` if the entity is alive (not dead/removed).
-    pub fn is_alive(&self) -> bool {
-        self.with_entity(|e| e.is_alive())
-    }
-
-    /// Returns `true` if this entity can accept an additional passenger.
-    pub fn could_accept_passenger(&self) -> bool {
-        self.with_entity(|e| e.could_accept_passenger())
-    }
-
-    /// Returns `true` if `passenger` may board this entity.
-    pub fn can_add_passenger(&self, passenger: &EntityBase) -> bool {
-        passenger.with_entity(|pass| self.with_entity(|e| e.can_add_passenger(pass)))
-    }
-
-    /// Returns `true` if this entity should be broadcast to the given player.
-    pub fn broadcast_to_player(&self, player: &crate::player::Player) -> bool {
-        self.with_entity(|e| e.broadcast_to_player(player))
-    }
-
-    /// Runs vanilla despawn checking for this entity.
-    pub fn check_despawn(&self) {
-        self.with_entity(|e| e.check_despawn());
-    }
-
-    /// Saves entity-type-specific NBT data.
-    pub fn save_additional(&self, nbt: &mut simdnbt::owned::NbtCompound) {
-        self.with_entity(|e| e.save_additional(nbt));
-    }
-
-    /// Handles a player touching this entity during pickup processing.
-    pub fn player_touch(&self, player: &mut Player) {
-        self.with_entity(|e| e.player_touch(player));
-    }
-
-    /// Positions a rider on this vehicle entity.
-    pub fn position_rider(&self, passenger: &mut dyn Entity) {
-        self.with_entity(|e| e.position_rider(passenger));
-    }
-
-    /// Returns whether this entity uses client-authoritative movement packets.
-    pub fn uses_client_movement_packets(&self) -> bool {
-        self.with_entity(|e| e.uses_client_movement_packets())
-    }
-
-    /// Sets the scoped [`client_movement_override`](Self::client_movement_override)
-    /// flag. Lock-free.
-    pub fn set_client_movement_override(&self, value: bool) {
-        self.client_movement_override
-            .store(value, Ordering::Relaxed);
-    }
-
-    /// Returns the scoped client-movement override. Lock-free; see the field doc
-    /// on [`EntityBase`] for when it is set.
-    pub fn client_movement_override(&self) -> bool {
-        self.client_movement_override.load(Ordering::Relaxed)
-    }
-
-    /// Teleports this entity to a new world dimension.
-    pub fn change_world(&self, transition: &TeleportTransition) {
-        self.with_entity(|e| e.change_world(transition));
-    }
-
-    /// Returns whether this entity blocks structure building.
-    pub fn blocks_building(&self) -> bool {
-        self.with_entity(|e| e.blocks_building())
-    }
-
-    /// Returns whether exactly one player is a passenger.
-    pub fn has_exactly_one_player_passenger(&self) -> bool {
-        self.with_entity(|e| e.has_exactly_one_player_passenger())
-    }
-
-    /// Returns the number of player passengers.
-    pub fn count_player_passengers(&self) -> usize {
-        self.with_entity(|e| e.count_player_passengers())
-    }
-
     /// Todo
     pub fn is_passenger(&self) -> bool {
         self.vehicle().is_some()
@@ -1518,89 +1413,12 @@ impl EntityBase {
         self.static_info().is_mob
     }
 
-    /// Todo
-    pub fn forces_fall_flying_velocity_sync(&self) -> bool {
-        self.with_entity(|e| e.forces_fall_flying_velocity_sync())
-    }
-
-    /// Todo
-    pub fn can_be_collided_with(&self) -> bool {
-        self.with_entity(|e| e.can_be_collided_with(None))
-    }
-
-    /// Todo
-    pub fn can_interact_with_level(&self) -> bool {
-        self.with_entity(|e| e.can_interact_with_level())
-    }
-
-    /// Todo
-    pub fn get_eye_y(&self) -> f64 {
-        self.with_entity(|e| e.get_eye_y())
-    }
-
-    /// Todo
-    pub fn get_gravity(&self) -> f64 {
-        self.with_entity(|e| e.get_gravity())
-    }
-
-    /// Todo
-    pub fn known_movement(&self) -> DVec3 {
-        self.with_entity(|e| e.known_movement())
-    }
-
-    /// Todo
-    pub fn on_climbable(&self) -> bool {
-        self.with_entity(|e| e.on_climbable())
-    }
-
-    /// Todo
-    pub fn refresh_fluid_contact(&self) -> EntityFluidContact {
-        self.with_entity(|e| e.refresh_fluid_contact())
-    }
-
-    /// Todo
-    pub fn set_pose(&self, pose: EntityPose) {
-        self.with_entity(|e| e.set_pose(pose));
-    }
-
-    /// Notifies this entity that `leashable` is no longer leashed to it.
-    ///
-    /// Takes `&dyn Entity` because callers invoke this from inside the
-    /// leashee's own behavior code, where re-locking the leashee would deadlock.
-    //pub fn notify_leashee_removed(&self, leashable: &dyn Entity) {
-    //    self.with_entity(|e| e.notify_leashee_removed(leashable));
-    //}
-
     /// Pushes this entity away from `pusher` via vanilla physics.
     ///
     /// Takes `&dyn Entity` because pushers call this from inside their own
     /// behavior code, where re-locking the pusher would deadlock.
     pub fn push_entity(&self, pusher: &mut dyn Entity) {
         self.with_entity(|e| e.push_entity(pusher));
-    }
-
-    /// Todo
-    pub fn can_ride(&self, vehicle: &EntityBase) -> bool {
-        vehicle.with_entity(|v| self.with_entity(|e| e.can_ride(v)))
-    }
-
-    /// Todo
-    pub fn move_entity(
-        &self,
-        mover_type: crate::physics::entity_move::MoverType,
-        delta: DVec3,
-    ) -> Option<crate::physics::entity_move::MoveResult> {
-        self.with_entity(|e| e.move_entity(mover_type, delta))
-    }
-
-    /// Applies accepted client-authored vehicle movement.
-    /// Returns `None` if nothing is attached.
-    pub fn apply_accepted_client_vehicle_movement(
-        &self,
-        world: &Arc<World>,
-        accepted: crate::entity::AcceptedClientMovement,
-    ) -> Result<crate::entity::AcceptedClientMovementOutcome, EntityMoveError> {
-        self.with_entity(|e| e.apply_accepted_client_vehicle_movement(world, accepted))
     }
 
     /// Gets the entity's unique network ID.
@@ -2782,25 +2600,6 @@ impl EntityBase {
         }
     }
 
-    /// Handles vanilla entity right-click interaction.
-    pub fn interact(
-        &mut self,
-        player: &mut Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        self.with_entity(|e| e.interact(player, hand, location))
-    }
-
-    /// Applies vanilla fall damage. Base entities only propagate to passengers.
-    pub fn cause_fall_damage(
-        &self,
-        fall_distance: f64,
-        damage_modifier: f32,
-        source: &DamageSource,
-    ) -> bool {
-        self.with_entity(|e| e.cause_fall_damage(fall_distance, damage_modifier, source))
-    }
 }
 
 #[cfg(test)]
@@ -2900,6 +2699,7 @@ mod tests {
             fall_distance: f64,
             damage_modifier: f32,
             _source: &DamageSource,
+            _rider: Option<&mut dyn Entity>,
         ) -> bool {
             self.fall_damage_calls
                 .lock()
@@ -3470,11 +3270,12 @@ mod tests {
 
         link_vehicle_and_passenger(&vehicle, &passenger_entity);
 
-        assert!(!vehicle.cause_fall_damage(
+        assert!(!vehicle.with_entity(|v| v.cause_fall_damage(
             8.0,
             1.5,
             &DamageSource::environment(&vanilla_damage_types::FALL),
-        ));
+            None,
+        )));
         {
             let mut passenger = passenger.lock_entity();
             let passenger: &FallDamageTestEntity = unsafe { passenger.downcast_unchecked() };

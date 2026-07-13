@@ -59,7 +59,7 @@ impl Goal for MoveTowardsTargetGoal {
         };
 
         !mob.mob_base().navigation.is_done()
-            && target.is_alive()
+            && target.with_entity(|e| e.is_alive())
             && target.position().distance_squared(mob.position()) < self.within_distance_sqr()
     }
 

@@ -7,6 +7,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::BlockPos;
 
@@ -21,33 +22,33 @@ use crate::world::World;
 #[entity_behavior(class = "end_crystal")]
 pub struct EndCrystal {
     base: Weak<EntityBase>,
-    entity_type: EntityTypeRef,
     entity_data: EndCrystalEntityData,
 }
 
 impl EndCrystal {
     /// Creates a new End Crystal entity.
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        EntityBase::pack_with(id, position, entity_type.dimensions, world, |base| Self {
-            base,
-            entity_type,
-            entity_data: EndCrystalEntityData::new(),
-        })
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        EntityBase::pack_with(
+            id,
+            position,
+            vanilla_entities::END_CRYSTAL.dimensions,
+            world,
+            |base| Self {
+                base,
+                entity_data: EndCrystalEntityData::new(),
+            },
+        )
     }
 
     /// Restores an End Crystal `SharedEntity` from persistent data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| Self {
-            base,
-            entity_type,
-            entity_data: EndCrystalEntityData::new(),
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
+        EntityBase::pack_loaded_with(load, vanilla_entities::END_CRYSTAL.dimensions, |base| {
+            Self {
+                base,
+                entity_data: EndCrystalEntityData::new(),
+            }
         })
     }
 
@@ -101,7 +102,7 @@ impl Entity for EndCrystal {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::END_CRYSTAL
     }
 
     fn tick(&mut self) {
@@ -152,44 +153,27 @@ impl Entity for EndCrystal {
 mod tests {
     use super::*;
 
-    use steel_registry::vanilla_entities;
-
     #[test]
     fn end_crystal_does_not_duplicate_shared_invulnerable_state() {
-        let crystal = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            crate::entity::next_entity_id(),
-            DVec3::ZERO,
-            Weak::new(),
-        );
+        let crystal = EndCrystal::new(crate::entity::next_entity_id(), DVec3::ZERO, Weak::new());
 
         let mut nbt = NbtCompound::new();
-        crystal.save_additional(&mut nbt);
+        crystal.with_entity(|e| e.save_additional(&mut nbt));
 
         assert_eq!(nbt.byte("Invulnerable"), None);
     }
 
     #[test]
     fn end_crystal_is_pickable_like_vanilla() {
-        let crystal = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            crate::entity::next_entity_id(),
-            DVec3::ZERO,
-            Weak::new(),
-        );
+        let crystal = EndCrystal::new(crate::entity::next_entity_id(), DVec3::ZERO, Weak::new());
 
-        assert!(crystal.is_pickable());
+        assert!(crystal.with_entity(|e| e.is_pickable()));
     }
 
     #[test]
     fn end_crystal_blocks_building_like_vanilla() {
-        let crystal = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            crate::entity::next_entity_id(),
-            DVec3::ZERO,
-            Weak::new(),
-        );
+        let crystal = EndCrystal::new(crate::entity::next_entity_id(), DVec3::ZERO, Weak::new());
 
-        assert!(crystal.blocks_building());
+        assert!(crystal.with_entity(|e| e.blocks_building()));
     }
 }

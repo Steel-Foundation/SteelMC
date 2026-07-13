@@ -345,7 +345,11 @@ fn restore_root_vehicle_for_player(
 
     let player_entity: SharedEntity = player.lock().shared_entity();
     EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-    attach_entity.position_rider(&mut *player.lock());
+    // Lock the player first (matching the argument-evaluation order the old
+    // `EntityBase::position_rider` wrapper had), then the vehicle.
+    let mut player_guard = player.lock();
+    attach_entity.with_entity(|v| v.position_rider(&mut *player_guard));
+    drop(player_guard);
 
     world.mark_chunk_dirty(root_chunk);
     for entity in &entities {
@@ -1147,11 +1151,11 @@ impl Server {
             }
             match request {
                 WorldChangeRequest::Computed(transition) => {
-                    entity.change_world(&transition);
+                    entity.with_entity(|e| e.change_world(&transition));
                 }
                 WorldChangeRequest::WorldSpawn { target_world } => {
                     let transition = world_spawn_transition(target_world);
-                    entity.change_world(&transition);
+                    entity.with_entity(|e| e.change_world(&transition));
                 }
                 WorldChangeRequest::Portal { .. } => {
                     // TODO: portal destination calculation + async chunk pre-warming

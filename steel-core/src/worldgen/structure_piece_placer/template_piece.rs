@@ -509,7 +509,7 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         direction: Direction,
     ) {
-        let entity = ItemFrame::new_attached(&vanilla_entities::ITEM_FRAME, pos, direction);
+        let entity = ItemFrame::new_attached(pos, direction);
         {
             let mut frame = entity.lock_entity();
             let frame: &mut ItemFrame = frame.downcast().unwrap();

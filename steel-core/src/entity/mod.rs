@@ -149,7 +149,11 @@ fn leash_scan_area(center: DVec3) -> WorldAabb {
     )
 }
 
-fn transfer_leashables_to_holder(leashables: Vec<SharedEntity>, new_holder: &SharedEntity) -> bool {
+fn transfer_leashables_to_holder(
+    leashables: Vec<SharedEntity>,
+    new_holder: &SharedEntity,
+    caller: Option<&dyn Entity>,
+) -> bool {
     let mut transferred = false;
     for leashable in leashables {
         let accepted = leashable
@@ -157,7 +161,7 @@ fn transfer_leashables_to_holder(leashables: Vec<SharedEntity>, new_holder: &Sha
                 let can_attach =
                     new_holder.with_entity(|holder| mob.can_have_a_leash_attached_to(holder));
                 if can_attach {
-                    let _ = mob.set_leashed_to(new_holder);
+                    let _ = mob.set_leashed_to(new_holder, caller);
                 }
                 can_attach
             })
@@ -1476,7 +1480,7 @@ pub trait Entity: EntityEventSource {
         self.set_velocity(DVec3::ZERO);
         self.tick();
         if let Some(vehicle) = self.vehicle() {
-            vehicle.position_rider(self.as_entity_event_source_mut());
+            vehicle.with_entity(|v| v.position_rider(self.as_entity_event_source_mut()));
         }
     }
 
@@ -1696,6 +1700,11 @@ pub trait Entity: EntityEventSource {
         transfer_leashables_to_holder(
             self.leashables_leashed_to_holder_in_area(old_holder),
             &new_holder,
+            // The leashables' current holder is `old_holder`, which is already
+            // locked by the caller (e.g. the interacting player transferring
+            // its own leashables). Thread it through so re-notifying it does not
+            // re-lock and deadlock.
+            Some(old_holder),
         )
     }
 
@@ -1707,12 +1716,16 @@ pub trait Entity: EntityEventSource {
         if let Some(mob) = self.as_mob_mut()
             && mob.is_leashed()
         {
-            mob.drop_leash();
+            // This entity's own holder may be the interacting player, whose
+            // lock is already held; thread it through to avoid a re-lock.
+            mob.drop_leash(player.map(|player| player as &dyn Entity));
             dropped = true;
         }
 
         for leashable in leashables {
-            leashable.with_mob(|mob| mob.drop_leash());
+            // These leashables are all held by `self`, whose behavior lock is
+            // held up the stack; notify through it instead of re-locking.
+            leashable.with_mob(|mob| mob.drop_leash(Some(self.as_entity_event_source())));
         }
 
         if !dropped {
@@ -1882,10 +1895,12 @@ pub trait Entity: EntityEventSource {
 
         if let Some(holder) = mob.leash_holder() {
             if holder.id() == player.id() {
+                // The holder is the interacting player, whose lock is already
+                // held; pass it so the leash-removal notify uses it directly.
                 if player.has_infinite_materials() {
-                    mob.remove_leash();
+                    mob.remove_leash(Some(player as &dyn Entity));
                 } else {
-                    mob.drop_leash();
+                    mob.drop_leash(Some(player as &dyn Entity));
                 }
 
                 if let Some(world) = self.level() {
@@ -1924,9 +1939,9 @@ pub trait Entity: EntityEventSource {
         let mob = self.as_animal_mut().unwrap();
 
         if mob.is_leashed() {
-            mob.drop_leash();
+            mob.drop_leash(Some(player as &dyn Entity));
         }
-        if !mob.set_leashed_to(&player_entity) {
+        if !mob.set_leashed_to(&player_entity, Some(player as &dyn Entity)) {
             return InteractionResult::Pass;
         }
 
@@ -2043,19 +2058,16 @@ pub trait Entity: EntityEventSource {
 
     /// Returns true when movement is driven by serverbound movement packets.
     fn uses_client_movement_packets(&self) -> bool {
-        // Scoped lock-free fast path: while a vehicle is being moved on behalf of
-        // its already-confirmed client controller, re-deriving the controlling
-        // passenger here would re-lock the held controller and self-deadlock.
-        if self.base().client_movement_override() {
-            return true;
-        }
-
         if !self.is_removed()
             && let Some(controller) = self.controlling_passenger()
             && controller.id() != self.id()
-            && controller.uses_client_movement_packets()
         {
-            return true;
+            // A player controller answers unconditionally `true` (vanilla
+            // `Player.isClientAuthoritative`); the lock-free `is_player` check
+            // keeps this safe while that player's mutex is held (e.g.
+            // `Player::handle_move_vehicle` moving the vehicle it controls).
+            return controller.is_player()
+                || controller.with_entity(|c| c.uses_client_movement_packets());
         }
 
         false
@@ -2086,7 +2098,7 @@ pub trait Entity: EntityEventSource {
             return if controller.id() == rider.id() {
                 Entity::uses_client_movement_packets(rider)
             } else {
-                controller.uses_client_movement_packets()
+                controller.with_entity(|c| c.uses_client_movement_packets())
             };
         }
 
@@ -2213,7 +2225,7 @@ pub trait Entity: EntityEventSource {
             && !self.is_removed()
             && controller.entity_type() == &vanilla_entities::PLAYER
         {
-            return controller.known_movement();
+            return controller.with_entity(|c| c.known_movement());
         }
 
         self.velocity()
@@ -2719,9 +2731,23 @@ pub trait Entity: EntityEventSource {
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        mut rider: Option<&mut dyn Entity>,
     ) {
         for passenger in self.passengers() {
-            passenger.cause_fall_damage(fall_distance, damage_modifier, source);
+            // `rider`, when set, is a passenger whose behavior lock is already
+            // held higher up the stack (the player driving this vehicle via a
+            // move-vehicle packet). Re-locking it through `with_entity` would
+            // deadlock, so damage it through the borrow we already hold; every
+            // other passenger is locked normally.
+            if let Some(rider) = rider.as_deref_mut()
+                && rider.id() == passenger.id()
+            {
+                rider.cause_fall_damage(fall_distance, damage_modifier, source, None);
+            } else {
+                passenger.with_entity(|p| {
+                    p.cause_fall_damage(fall_distance, damage_modifier, source, None)
+                });
+            }
         }
     }
 
@@ -2734,15 +2760,16 @@ pub trait Entity: EntityEventSource {
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        rider: Option<&mut dyn Entity>,
     ) -> bool {
         if let Some(living) = self.as_living_entity_mut() {
-            return living.cause_living_fall_damage(fall_distance, damage_modifier, source);
+            return living.cause_living_fall_damage(fall_distance, damage_modifier, source, rider);
         }
         if self.is_fall_damage_immune() {
             return false;
         }
 
-        self.propagate_fall_to_passengers(fall_distance, damage_modifier, source);
+        self.propagate_fall_to_passengers(fall_distance, damage_modifier, source, rider);
         false
     }
 
@@ -2899,6 +2926,7 @@ pub trait Entity: EntityEventSource {
         &mut self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
+        rider: Option<&mut dyn Entity>,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
             self.try_set_position(position)?;
@@ -2911,7 +2939,7 @@ pub trait Entity: EntityEventSource {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
+        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world, rider) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -2927,18 +2955,24 @@ pub trait Entity: EntityEventSource {
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
-        self.default_apply_accepted_client_movement(world, accepted)
+        self.default_apply_accepted_client_movement(world, accepted, None)
     }
 
     /// Applies final state accepted from a controlled-vehicle movement packet.
+    ///
+    /// `rider` is the controlling passenger whose lock is already held (it drove
+    /// this movement via a move-vehicle packet); it is threaded down so vehicle
+    /// fall damage reaches that passenger through the held borrow instead of
+    /// re-locking it. See [`propagate_fall_to_passengers`].
     fn apply_accepted_client_vehicle_movement(
         &mut self,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
+        rider: Option<&mut dyn Entity>,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         accepted.horizontal_collision = self.horizontal_collision();
         accepted.reset_fall_distance = false;
-        self.default_apply_accepted_client_movement(world, accepted)
+        self.default_apply_accepted_client_movement(world, accepted, rider)
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
@@ -3640,6 +3674,23 @@ pub trait Entity: EntityEventSource {
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
     fn move_entity(&mut self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.move_entity_for_rider(mover_type, delta, None)
+    }
+
+    /// [`move_entity`](Self::move_entity) that resolves movement authority
+    /// against the already-locked `rider` instead of re-deriving the controlling
+    /// passenger.
+    ///
+    /// Pass `Some(rider)` when moving a vehicle on behalf of its controlling
+    /// player while that player's lock is held (`Player::handle_move_vehicle`) —
+    /// deriving the controller there re-locks the rider (e.g. `Pig`'s
+    /// carrot-on-a-stick check in `controlling_passenger`) and self-deadlocks.
+    fn move_entity_for_rider(
+        &mut self,
+        mover_type: MoverType,
+        delta: DVec3,
+        rider: Option<&Player>,
+    ) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3686,8 +3737,12 @@ pub trait Entity: EntityEventSource {
                 return None;
             }
         }
+        let server_driven = rider.map_or_else(
+            || self.is_server_driven_movement(),
+            |rider| self.is_server_driven_movement_for_rider(rider),
+        );
         let vertical_state_update =
-            EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
+            EntityVerticalMovementStateUpdate::for_move(movement, server_driven);
         let movement_flags = EntityMovementFlags::after_move_with_previous(
             self.base().movement_flags(),
             vertical_state_update,
@@ -3705,7 +3760,7 @@ pub trait Entity: EntityEventSource {
             .set_movement_flags(movement_flags, ground_contact);
         self.refresh_fluid_contact();
 
-        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
+        if server_driven && self.apply_fall_damage_after_move(&result, &world) {
             return Some(result);
         }
 
@@ -3722,7 +3777,11 @@ pub trait Entity: EntityEventSource {
                 if result.z_collision { 0.0 } else { vel.z },
             ));
         }
-        if result.vertical_collision && self.can_simulate_movement() {
+        let can_simulate = rider.map_or_else(
+            || self.can_simulate_movement(),
+            |rider| self.can_simulate_movement_for_rider(rider),
+        );
+        if result.vertical_collision && can_simulate {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
                 velocity,
@@ -3760,7 +3819,7 @@ pub trait Entity: EntityEventSource {
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
     fn apply_fall_damage_after_move(&mut self, result: &MoveResult, world: &Arc<World>) -> bool {
-        self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
+        self.do_check_fall_damage(result.actual_movement, result.on_ground, world, None)
     }
 
     /// Resets fall distance when vanilla's fall-damage-resetting clip hits.
@@ -3792,12 +3851,13 @@ pub trait Entity: EntityEventSource {
         movement: DVec3,
         on_ground: bool,
         world: &Arc<World>,
+        rider: Option<&mut dyn Entity>,
     ) -> bool {
         let Some(effect_pos) = self.on_pos_legacy() else {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
+        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world, rider);
         self.is_removed()
     }
 
@@ -3815,6 +3875,7 @@ pub trait Entity: EntityEventSource {
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
+        rider: Option<&mut dyn Entity>,
     ) {
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
@@ -3834,6 +3895,7 @@ pub trait Entity: EntityEventSource {
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,
+                    rider,
                 );
                 behavior.after_fall_on_damage(
                     on_state,
@@ -4854,6 +4916,7 @@ pub trait LivingEntity: Entity {
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        rider: Option<&mut dyn Entity>,
     ) -> bool {
         let effective_fall_distance =
             if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
@@ -4872,7 +4935,7 @@ pub trait LivingEntity: Entity {
             return false;
         }
 
-        self.propagate_fall_to_passengers(effective_fall_distance, damage_modifier, source);
+        self.propagate_fall_to_passengers(effective_fall_distance, damage_modifier, source, rider);
 
         let attributes = self.attributes();
         let safe_fall_distance = attributes
@@ -8123,13 +8186,14 @@ mod tests {
         let leashable: SharedEntity = Pig::new(3, DVec3::new(1.0, 0.0, 0.0), Weak::new());
         assert!(
             leashable
-                .with_mob(|mob| mob.set_leashed_to(&old_holder))
+                .with_mob(|mob| mob.set_leashed_to(&old_holder, None))
                 .unwrap()
         );
 
         assert!(transfer_leashables_to_holder(
             vec![Arc::clone(&leashable)],
-            &new_holder
+            &new_holder,
+            None
         ));
 
         let Some(holder) = leashable.with_mob(|mob| mob.leash_holder()).unwrap() else {
@@ -8147,13 +8211,14 @@ mod tests {
         let leashable: SharedEntity = Pig::new(3, DVec3::new(20.0, 0.0, 0.0), Weak::new());
         assert!(
             leashable
-                .with_mob(|mob| mob.set_leashed_to(&old_holder))
+                .with_mob(|mob| mob.set_leashed_to(&old_holder, None))
                 .unwrap()
         );
 
         assert!(!transfer_leashables_to_holder(
             vec![Arc::clone(&leashable)],
-            &new_holder
+            &new_holder,
+            None
         ));
 
         let Some(holder) = leashable.with_mob(|mob| mob.leash_holder()).unwrap() else {
@@ -8173,8 +8238,8 @@ mod tests {
         let leashable: SharedEntity = Pig::new(3, DVec3::ZERO, Weak::new());
 
         leashable.with_mob(|mob| {
-            assert!(mob.set_leashed_to(&old_holder));
-            assert!(mob.set_leashed_to(&new_holder));
+            assert!(mob.set_leashed_to(&old_holder, None));
+            assert!(mob.set_leashed_to(&new_holder, None));
         });
 
         assert_eq!(old_holder_typed.removed_notifications(), vec![3]);
@@ -8191,7 +8256,7 @@ mod tests {
 
         let still_leashed = leashable
             .with_mob(|mob| {
-                assert!(mob.set_leashed_to(&holder));
+                assert!(mob.set_leashed_to(&holder, None));
                 mob.tick_leash();
                 mob.is_leashed()
             })
@@ -8212,7 +8277,7 @@ mod tests {
 
         let still_leashed = leashable
             .with_mob(|mob| {
-                assert!(mob.set_leashed_to(&holder));
+                assert!(mob.set_leashed_to(&holder, None));
                 mob.tick_leash();
                 mob.is_leashed()
             })
@@ -8285,8 +8350,8 @@ mod tests {
         );
         let vehicle = ControlledVehicleTestEntity::shared(2, Some(controller));
 
-        assert!(vehicle.uses_client_movement_packets());
         vehicle.with_entity(|v| {
+            assert!(v.uses_client_movement_packets());
             assert!(!v.is_server_driven_movement());
             assert!(!v.can_simulate_movement());
             assert!(!v.is_effective_ai());

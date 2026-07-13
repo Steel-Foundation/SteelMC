@@ -394,6 +394,35 @@ impl Player {
         Arc::clone(&self.server_player().chunk_sender)
     }
 
+    /// Repositions this riding player onto its vehicle's seat.
+    ///
+    /// Mirrors vanilla `Entity.positionRider` (which Steel would run from
+    /// `ride_tick`, a no-op for players). The seat world-position is read under
+    /// the vehicle's behavior lock, but the position commit runs *after* that
+    /// lock is released: [`try_set_position`](Entity::try_set_position) triggers
+    /// the player's move-committed tracker refresh, which re-locks nearby tracked
+    /// entities — including this very vehicle — and would self-deadlock if the
+    /// vehicle lock were still held.
+    fn follow_vehicle(&mut self) {
+        let Some(vehicle) = self.vehicle() else {
+            return;
+        };
+        let riding_position = vehicle.with_entity(|v| {
+            if v.has_passenger(self.as_entity_event_source()) {
+                Some(v.passenger_riding_position(self.as_entity_event_source()))
+            } else {
+                None
+            }
+        });
+        let Some(riding_position) = riding_position else {
+            return;
+        };
+        let vehicle_attachment = self.vehicle_attachment_point(self.as_entity_event_source());
+        if let Err(error) = self.try_set_position(riding_position - vehicle_attachment) {
+            log::debug!("Failed to position riding player {}: {error}", self.id());
+        }
+    }
+
     /// Ticks the player.
     ///
     /// # Panics
@@ -405,6 +434,21 @@ impl Player {
         reason = "world coordinates are always within i32 range in a valid Minecraft world"
     )]
     pub fn tick(&mut self) {
+        // Vanilla `Player.rideTick`: Steel never ride-ticks players (they tick
+        // outside the entity manager, and their `EntityBase` entity cell is empty
+        // so `ride_tick_entity` no-ops), so the passenger-tick work lives here.
+        // A sneaking passenger dismounts; otherwise the player follows its vehicle
+        // server-side. Without the reposition the player's server position stays
+        // frozen at the mount point for the whole ride (client rides fine, but the
+        // server sees the player where they boarded — breaks summon, tracking, etc).
+        if self.is_passenger() {
+            if self.wants_to_stop_riding() {
+                Entity::stop_riding(self);
+            } else {
+                self.follow_vehicle();
+            }
+        }
+
         self.flush_equipment_attribute_refreshes();
         self.advance_tick();
         self.tick_attack_strength();
@@ -1650,11 +1694,13 @@ impl Entity for Player {
 
     fn known_movement(&self) -> DVec3 {
         if let Some(vehicle) = self.vehicle()
-            && vehicle
-                .controlling_passenger_for_rider(self)
-                .is_none_or(|controller| controller.id() != self.id())
+            && let Some(movement) = vehicle.with_entity(|v| {
+                v.controlling_passenger_for_rider(self)
+                    .is_none_or(|controller| controller.id() != self.id())
+                    .then(|| v.known_movement())
+            })
         {
-            return vehicle.known_movement();
+            return movement;
         }
 
         self.movement.last_known_client_movement()
@@ -1681,13 +1727,14 @@ impl Entity for Player {
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        rider: Option<&mut dyn Entity>,
     ) -> bool {
         if self.abilities.may_fly {
             return false;
         }
 
         // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
-        LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
+        LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source, rider)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {

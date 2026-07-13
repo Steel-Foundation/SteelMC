@@ -227,7 +227,9 @@ impl PersistentPlayerData {
     fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {
         let vehicle = player.vehicle()?;
         let root_vehicle = player.root_vehicle()?;
-        if root_vehicle.id() == player.id() || !root_vehicle.has_exactly_one_player_passenger() {
+        if root_vehicle.id() == player.id()
+            || !root_vehicle.with_entity(|e| e.has_exactly_one_player_passenger())
+        {
             return None;
         }
 

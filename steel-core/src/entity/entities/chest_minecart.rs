@@ -157,8 +157,10 @@ mod tests {
             Weak::new(),
         );
 
-        assert!(minecart.is_pickable());
-        assert!(minecart.is_pushable());
-        assert!(minecart.blocks_building());
+        minecart.with_entity(|e| {
+            assert!(e.is_pickable());
+            assert!(e.is_pushable());
+            assert!(e.blocks_building());
+        });
     }
 }

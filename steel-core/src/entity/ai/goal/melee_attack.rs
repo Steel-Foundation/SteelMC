@@ -5,7 +5,7 @@ use steel_utils::types::InteractionHand;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{Entity, LivingEntity, PathfinderMob, SharedEntity};
 
 const ATTACK_INTERVAL_TICKS: i32 = 20;
 const COOLDOWN_BETWEEN_CAN_USE_CHECKS: i64 = 20;
@@ -172,7 +172,7 @@ impl Goal for MeleeAttackGoal {
         let Some(target) = mob.target() else {
             return false;
         };
-        if !target.is_alive() {
+        if !target.with_entity(|e| e.is_alive()) {
             return false;
         }
         if !self.following_target_even_if_not_seen {
@@ -219,8 +219,9 @@ impl Goal for MeleeAttackGoal {
         };
 
         let target_position = target.position();
+        let target_eye_y = target.with_entity(|e| e.get_eye_y());
         mob.mob_base().controls.look_control.set_look_at(
-            DVec3::new(target_position.x, target.get_eye_y(), target_position.z),
+            DVec3::new(target_position.x, target_eye_y, target_position.z),
             30.0,
             30.0,
         );
@@ -237,9 +238,10 @@ impl Goal for MeleeAttackGoal {
 }
 
 fn is_no_creative_or_spectator(entity: &SharedEntity) -> bool {
-    !entity
-        .player()
-        .is_some_and(|player| entity.is_spectator() || player.lock().has_infinite_materials())
+    !entity.player().is_some_and(|player| {
+        let player = player.lock();
+        player.is_spectator() || player.has_infinite_materials()
+    })
 }
 
 #[cfg(test)]

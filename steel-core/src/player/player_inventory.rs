@@ -748,7 +748,7 @@ impl Player {
 
             // `self` is borrowed mutably and passed straight through to the touched
             // entity (locked via `with_entity`) — no Arc, no relock of this player.
-            entity.player_touch(self);
+            entity.with_entity(|e| e.player_touch(self));
         }
     }
 

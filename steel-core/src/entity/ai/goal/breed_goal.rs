@@ -71,7 +71,7 @@ impl Goal for BreedGoal {
         let Some(partner) = &self.partner else {
             return false;
         };
-        if !partner.is_alive() {
+        if !partner.with_entity(|e| e.is_alive()) {
             return false;
         }
         if self.love_time >= BREED_TIME {
@@ -106,9 +106,10 @@ impl Goal for BreedGoal {
         }
 
         let partner_position = partner.position();
+        let partner_eye_y = partner.with_entity(|e| e.get_eye_y());
         let max_head_x_rot = mob.max_head_x_rot();
         mob.mob_base().controls.look_control.set_look_at(
-            DVec3::new(partner_position.x, partner.get_eye_y(), partner_position.z),
+            DVec3::new(partner_position.x, partner_eye_y, partner_position.z),
             10.0,
             max_head_x_rot,
         );

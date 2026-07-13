@@ -44,7 +44,6 @@ const FOLLOW_ACCELERATION: f64 = 0.1;
 #[entity_behavior(class = "experience_orb")]
 pub struct ExperienceOrb {
     base: Weak<EntityBase>,
-    entity_type: EntityTypeRef,
     entity_data: ExperienceOrbEntityData,
     age: i32,
     health: i32,
@@ -53,10 +52,10 @@ pub struct ExperienceOrb {
 }
 
 impl ExperienceOrb {
-    fn build(base: Weak<EntityBase>, entity_type: EntityTypeRef) -> Self {
+    fn build(base: Weak<EntityBase>) -> Self {
         Self {
             base,
-            entity_type,
+
             entity_data: ExperienceOrbEntityData::new(),
             age: 0,
             health: DEFAULT_HEALTH,
@@ -67,31 +66,25 @@ impl ExperienceOrb {
 
     /// Creates a new experience orb with value 0.
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        EntityBase::pack_with(id, position, entity_type.dimensions, world, |base| {
-            Self::build(base, entity_type)
-        })
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        EntityBase::pack_with(
+            id,
+            position,
+            vanilla_entities::EXPERIENCE_ORB.dimensions,
+            world,
+            |base| Self::build(base),
+        )
     }
 
     /// Creates a new experience orb with a value and vanilla spawn motion.
     #[must_use]
-    pub fn with_value(
-        entity_type: EntityTypeRef,
-        position: DVec3,
-        value: i32,
-        world: Weak<World>,
-    ) -> SharedEntity {
+    pub fn with_value(position: DVec3, value: i32, world: Weak<World>) -> SharedEntity {
         let entity = EntityBase::pack_with(
             next_entity_id(),
             position,
-            entity_type.dimensions,
+            vanilla_entities::EXPERIENCE_ORB.dimensions,
             world,
-            |base| Self::build(base, entity_type),
+            |base| Self::build(base),
         );
 
         {
@@ -107,9 +100,9 @@ impl ExperienceOrb {
 
     /// Creates an experience orb from saved base data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| {
-            Self::build(base, entity_type)
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
+        EntityBase::pack_loaded_with(load, vanilla_entities::EXPERIENCE_ORB.dimensions, |base| {
+            Self::build(base)
         })
     }
 
@@ -122,12 +115,7 @@ impl ExperienceOrb {
                 continue;
             }
 
-            let entity: SharedEntity = Self::with_value(
-                &vanilla_entities::EXPERIENCE_ORB,
-                position,
-                value,
-                Arc::downgrade(world),
-            );
+            let entity: SharedEntity = Self::with_value(position, value, Arc::downgrade(world));
             if let Err(error) = world.try_add_entity(entity) {
                 log::debug!("failed to add experience orb: {error}");
             }
@@ -403,7 +391,7 @@ impl Entity for ExperienceOrb {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::EXPERIENCE_ORB
     }
 
     fn tick(&mut self) {
@@ -566,7 +554,7 @@ mod tests {
         let base_weak = Arc::downgrade(&base);
         // Leak the base so the weak back-reference stays upgradable.
         std::mem::forget(base);
-        ExperienceOrb::build(base_weak, &vanilla_entities::EXPERIENCE_ORB)
+        ExperienceOrb::build(base_weak)
     }
 
     #[test]

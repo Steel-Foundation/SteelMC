@@ -278,7 +278,7 @@ impl EntityTracker {
             let visible = !entity.is_removed()
                 && entity_id != player_id
                 && view.contains(tracked.registered_chunk)
-                && entity.broadcast_to_player(player)
+                && entity.with_entity(|e| e.broadcast_to_player(player))
                 && is_within_tracking_distance(
                     entity.position(),
                     player_pos,
@@ -1394,10 +1394,7 @@ mod tests {
     fn spawn_pairing_uses_entity_spawn_packet_position() {
         test_support::init_test_registry();
 
-        let entity: SharedEntity = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
+        let entity: SharedEntity = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
         let pairing = EntitySpawnPairing::from_entity(&entity, Vec::new());
 
         assert_eq!(pairing.spawn_packet.position, DVec3::new(4.0, 65.0, -9.0));
@@ -1677,7 +1674,7 @@ mod tests {
         let tracker = EntityTracker::new();
         let pig: SharedEntity = Pig::new(1, DVec3::ZERO, Weak::new());
         let holder: SharedEntity = PairingTestEntity::new(2, Vec::new()).entity();
-        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder)).unwrap());
+        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder, None)).unwrap());
 
         let pairing = tracker.spawn_pairing(&pig, 99);
 
@@ -1711,7 +1708,7 @@ mod tests {
         );
         assert!(updates.is_empty());
 
-        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder)).unwrap());
+        assert!(pig.with_mob(|mob| mob.set_leashed_to(&holder, None)).unwrap());
         tracker.send_changes(
             |_| Vec::new(),
             |_| None,

@@ -50,7 +50,7 @@ impl World {
         if store_root_vehicle
             && let Some(root_vehicle) = player.root_vehicle()
             && root_vehicle.id() != player.id()
-            && root_vehicle.has_exactly_one_player_passenger()
+            && root_vehicle.with_entity(|e| e.has_exactly_one_player_passenger())
         {
             Self::remove_root_vehicle_tree_stored_with_player(root_vehicle);
             return;

@@ -918,7 +918,7 @@ impl ChunkStorage {
         }
 
         let mut nbt = NbtCompound::new();
-        entity.save_additional(&mut nbt);
+        entity.with_entity(|e| e.save_additional(&mut nbt));
         let mut nbt_bytes = Vec::new();
         nbt.write(&mut nbt_bytes);
 
@@ -2989,12 +2989,7 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let entity_pos = DVec3::new(5.5, 6.0, 7.5);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-        let crystal = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            entity_pos,
-            Weak::new(),
-        );
+        let crystal = EndCrystal::new(next_entity_id(), entity_pos, Weak::new());
         {
             let mut guard = crystal.lock_entity();
             let crystal: &mut EndCrystal = guard.downcast().unwrap();
@@ -3082,12 +3077,8 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
-        let entity: SharedEntity = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            DVec3::new(5.5, 6.0, 7.5),
-            Weak::new(),
-        );
+        let entity: SharedEntity =
+            EndCrystal::new(next_entity_id(), DVec3::new(5.5, 6.0, 7.5), Weak::new());
 
         let Some(prepared) =
             ChunkStorage::prepare_chunk_save(&chunk, slice::from_ref(&entity), true)
@@ -3106,12 +3097,8 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
-        let entity: SharedEntity = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            DVec3::new(5.5, 6.0, 7.5),
-            Weak::new(),
-        );
+        let entity: SharedEntity =
+            EndCrystal::new(next_entity_id(), DVec3::new(5.5, 6.0, 7.5), Weak::new());
 
         let Some(prepared) =
             ChunkStorage::prepare_chunk_save(&chunk, slice::from_ref(&entity), true)
@@ -3141,18 +3128,10 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
-        let vehicle: SharedEntity = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            DVec3::new(5.5, 6.0, 7.5),
-            Weak::new(),
-        );
-        let passenger: SharedEntity = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            DVec3::new(5.5, 8.0, 7.5),
-            Weak::new(),
-        );
+        let vehicle: SharedEntity =
+            EndCrystal::new(next_entity_id(), DVec3::new(5.5, 6.0, 7.5), Weak::new());
+        let passenger: SharedEntity =
+            EndCrystal::new(next_entity_id(), DVec3::new(5.5, 8.0, 7.5), Weak::new());
         EntityBase::restore_passenger_relationship(&vehicle, &passenger);
         let vehicle_uuid = vehicle.uuid();
         let passenger_uuid = passenger.uuid();
@@ -3205,12 +3184,8 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         let chunk = ChunkAccess::Proto(proto);
-        let vehicle: SharedEntity = EndCrystal::new(
-            &vanilla_entities::END_CRYSTAL,
-            next_entity_id(),
-            DVec3::new(5.5, 6.0, 7.5),
-            Weak::new(),
-        );
+        let vehicle: SharedEntity =
+            EndCrystal::new(next_entity_id(), DVec3::new(5.5, 6.0, 7.5), Weak::new());
         let passenger: SharedEntity = RawEntity::new(&vanilla_entities::PLAYER);
         EntityBase::restore_passenger_relationship(&vehicle, &passenger);
         let vehicle_uuid = vehicle.uuid();

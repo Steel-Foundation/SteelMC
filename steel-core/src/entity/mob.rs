@@ -207,10 +207,10 @@ impl LeashData {
     /// Computes the vanilla leash attachment for a holder handle: fence knots
     /// attach by block position, everything else by UUID.
     fn holder_attachment(holder: &SharedEntity) -> LeashAttachment {
-        let mut entity = holder.lock_entity();
-        entity
-            .downcast::<LeashFenceKnotEntity>()
-            .map(|knot| LeashAttachment::FenceKnot(knot.block_pos))
+        holder
+            .with_entity_as::<LeashFenceKnotEntity, _>(|knot| {
+                LeashAttachment::FenceKnot(knot.block_pos)
+            })
             .unwrap_or_else(|| LeashAttachment::Entity(holder.uuid()))
     }
 
@@ -896,7 +896,7 @@ pub trait Mob: LivingEntity {
     }
 
     fn leash_too_far_behaviour(&mut self) {
-        self.drop_leash();
+        self.drop_leash(None);
     }
 
     fn on_elastic_leash_pull(&self) {
@@ -980,7 +980,7 @@ pub trait Mob: LivingEntity {
             && self.can_be_leashed()
     }
 
-    fn set_leashed_to(&mut self, holder: &SharedEntity) -> bool {
+    fn set_leashed_to(&mut self, holder: &SharedEntity, caller: Option<&dyn Entity>) -> bool {
         if self.id() == holder.id() {
             return false;
         }
@@ -1001,33 +1001,42 @@ pub trait Mob: LivingEntity {
         if let Some(old_holder) = old_holder
             && old_holder.id() != holder.id()
         {
-            old_holder.with_entity(|e| e.notify_leashee_removed(self.as_entity_event_source()));
+            self.notify_leash_holder_removed(&old_holder, caller);
         }
         true
     }
 
     fn tick_leash(&mut self) {
         if let Some(holder) = self.leash_holder() {
-            if !self.can_interact_with_level() || !holder.can_interact_with_level() {
+            // Hold the holder's behavior lock once for all holder-dependent
+            // reads. Branches that end the leash re-lock the holder to notify
+            // it (`drop_leash`/`remove_leash`), so the guard is dropped first.
+            let mut locked = holder.lock_entity();
+            let h = locked.get_mut();
+
+            if !self.can_interact_with_level() || !h.can_interact_with_level() {
+                drop(locked);
                 if let Some(world) = self.level()
                     && world.get_game_rule(&ENTITY_DROPS).as_bool() == Some(true)
                 {
-                    self.drop_leash();
+                    self.drop_leash(None);
                 } else {
-                    self.remove_leash();
+                    self.remove_leash(None);
                 }
                 return;
             }
 
-            let distance_to = holder.with_entity(|h| self.leash_distance_to(h));
-            holder.with_entity(|h| self.when_leashed_to(h));
+            let distance_to = self.leash_distance_to(h);
+            self.when_leashed_to(h);
             let angular_momentum_before_distance_action = self.leash_angular_momentum();
             if distance_to > self.leash_snap_distance() {
+                let holder_position = h.position();
+                drop(locked);
                 if let Some(world) = self.level() {
                     world.play_sound_at(
                         &sound_events::ITEM_LEAD_BREAK,
                         SoundSource::Neutral,
-                        holder.position(),
+                        holder_position,
                         1.0,
                         1.0,
                         None,
@@ -1036,13 +1045,13 @@ pub trait Mob: LivingEntity {
                 self.leash_too_far_behaviour();
             } else if distance_to
                 > self.leash_elastic_distance()
-                    - f64::from(holder.dimensions().width)
+                    - f64::from(h.base().dimensions().width)
                     - f64::from(self.base().dimensions().width)
-                && holder.with_entity(|h| self.check_elastic_interactions(h))
+                && self.check_elastic_interactions(h)
             {
                 self.on_elastic_leash_pull();
             } else {
-                holder.with_entity(|h| self.close_range_leash_behaviour(h));
+                self.close_range_leash_behaviour(h);
             }
             if !self.apply_leash_angular_momentum()
                 && let Some(angular_momentum) = angular_momentum_before_distance_action
@@ -1063,7 +1072,7 @@ pub trait Mob: LivingEntity {
         match attachment {
             LeashAttachment::Entity(uuid) => {
                 if let Some(holder) = world.get_entity_by_uuid(&uuid) {
-                    let _ = self.set_leashed_to(&holder);
+                    let _ = self.set_leashed_to(&holder, None);
                     return;
                 }
 
@@ -1074,7 +1083,7 @@ pub trait Mob: LivingEntity {
             }
             LeashAttachment::FenceKnot(pos) => {
                 if let Some(holder) = LeashFenceKnotEntity::get_or_create_knot(&world, pos) {
-                    let _ = self.set_leashed_to(&holder);
+                    let _ = self.set_leashed_to(&holder, None);
                     return;
                 }
 
@@ -1086,7 +1095,7 @@ pub trait Mob: LivingEntity {
         }
     }
 
-    fn drop_leash(&mut self) {
+    fn drop_leash(&mut self, caller: Option<&dyn Entity>) {
         if self.leash_holder().is_none() {
             return;
         }
@@ -1094,14 +1103,14 @@ pub trait Mob: LivingEntity {
         let holder = self.remove_leash_state();
         let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::ITEMS.lead), 0.0);
         if let Some(holder) = holder {
-            holder.with_entity(|e| e.notify_leashee_removed(self.as_entity_event_source()));
+            self.notify_leash_holder_removed(&holder, caller);
         }
     }
 
-    fn remove_leash(&mut self) {
+    fn remove_leash(&mut self, caller: Option<&dyn Entity>) {
         if self.leash_holder().is_some() {
             if let Some(holder) = self.remove_leash_state() {
-                holder.with_entity(|e| e.notify_leashee_removed(self.as_entity_event_source()));
+                self.notify_leash_holder_removed(&holder, caller);
             }
         }
     }
@@ -1111,6 +1120,25 @@ pub trait Mob: LivingEntity {
             .leash_data
             .take()
             .and_then(|leash_data| leash_data.holder())
+    }
+
+    /// Notifies a former leash holder that this mob is no longer leashed to it.
+    ///
+    /// `caller`, when present, is an entity whose behavior lock is already held
+    /// higher up the stack (the one driving this removal). If it is the holder,
+    /// we notify it through that borrow instead of taking its lock again —
+    /// `parking_lot` mutexes are not reentrant, so re-locking would deadlock
+    /// when e.g. a player un-leashes a mob tied to itself, or transfers its own
+    /// leashables, while its `Player` mutex is held during inbound-packet
+    /// handling. Any other holder is locked normally.
+    fn notify_leash_holder_removed(&self, holder: &SharedEntity, caller: Option<&dyn Entity>) {
+        if let Some(caller) = caller
+            && caller.id() == holder.id()
+        {
+            caller.notify_leashee_removed(self.as_entity_event_source());
+        } else {
+            holder.with_entity(|e| e.notify_leashee_removed(self.as_entity_event_source()));
+        }
     }
 
     fn is_within_home(&self) -> bool {
@@ -2971,7 +2999,7 @@ mod tests {
 
         let mut mob = mob.lock_entity();
         let mob: &mut DespawnTestMob = unsafe { mob.downcast_unchecked() };
-        assert!(mob.set_leashed_to(&holder));
+        assert!(mob.set_leashed_to(&holder, None));
 
         mob.tick_leash();
 

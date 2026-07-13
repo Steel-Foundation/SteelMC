@@ -9,6 +9,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
 use steel_utils::BlockStateId;
 
@@ -26,32 +27,29 @@ use crate::world::World;
 pub struct BlockDisplayEntity {
     /// Weak back-reference to the containing `EntityBase`.
     base: Weak<EntityBase>,
-    /// Vanilla entity type registered for this implementation.
-    entity_type: EntityTypeRef,
     /// Synced entity data for network serialization.
     entity_data: BlockDisplayEntityData,
 }
 
 impl BlockDisplayEntity {
-    fn build(base: Weak<EntityBase>, entity_type: EntityTypeRef) -> Self {
+    fn build(base: Weak<EntityBase>) -> Self {
         Self {
             base,
-            entity_type,
+
             entity_data: BlockDisplayEntityData::new(),
         }
     }
 
     /// Creates a new block display entity.
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        EntityBase::pack_with(id, position, entity_type.dimensions, world, |base| {
-            Self::build(base, entity_type)
-        })
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        EntityBase::pack_with(
+            id,
+            position,
+            vanilla_entities::BLOCK_DISPLAY.dimensions,
+            world,
+            |base| Self::build(base),
+        )
     }
 
     /// Creates a block display entity from saved data.
@@ -59,9 +57,9 @@ impl BlockDisplayEntity {
     /// Display entities have no physical collision, but vanilla base state is
     /// still persisted and should round-trip through the shared base.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| {
-            Self::build(base, entity_type)
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
+        EntityBase::pack_loaded_with(load, vanilla_entities::BLOCK_DISPLAY.dimensions, |base| {
+            Self::build(base)
         })
     }
 
@@ -82,7 +80,7 @@ impl Entity for BlockDisplayEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::BLOCK_DISPLAY
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {

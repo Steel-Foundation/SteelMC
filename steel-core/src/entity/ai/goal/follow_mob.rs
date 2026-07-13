@@ -122,13 +122,10 @@ impl Goal for FollowMobGoal {
         }
 
         let following_position = following_mob.position();
+        let following_eye_y = following_mob.with_entity(|e| e.get_eye_y());
         let max_head_x_rot = mob.max_head_x_rot();
         mob.mob_base().controls.look_control.set_look_at(
-            DVec3::new(
-                following_position.x,
-                following_mob.get_eye_y(),
-                following_position.z,
-            ),
+            DVec3::new(following_position.x, following_eye_y, following_position.z),
             10.0,
             max_head_x_rot,
         );
@@ -233,7 +230,7 @@ mod tests {
         assert_eq!(wanted_position.x.to_bits(), 4.0_f64.to_bits());
         assert_eq!(
             wanted_position.y.to_bits(),
-            following_mob.get_eye_y().to_bits()
+            following_mob.with_entity(|e| e.get_eye_y()).to_bits()
         );
         assert_eq!(wanted_position.z.to_bits(), 0.0_f64.to_bits());
     }

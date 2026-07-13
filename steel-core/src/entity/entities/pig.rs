@@ -1567,7 +1567,7 @@ mod tests {
         pig.set_death_loot_table(Some(Identifier::vanilla_static("entities/pig")));
         pig.set_death_loot_table_seed(1234);
         let leash_holder: SharedEntity = Pig::new(2, DVec3::ZERO, Weak::new());
-        assert!(pig.set_leashed_to(&leash_holder));
+        assert!(pig.set_leashed_to(&leash_holder, None));
         pig.set_no_ai(true);
         pig.set_left_handed(true);
         pig.set_age(-24_000);
@@ -1711,11 +1711,8 @@ mod tests {
         init_test_registry();
 
         let mut pig = Pig::create(1, DVec3::ZERO, Weak::new());
-        let knot: SharedEntity = LeashFenceKnotEntity::new_attached(
-            &vanilla_entities::LEASH_KNOT,
-            BlockPos::new(4, 65, -9),
-        );
-        assert!(pig.set_leashed_to(&knot));
+        let knot: SharedEntity = LeashFenceKnotEntity::new_attached(BlockPos::new(4, 65, -9));
+        assert!(pig.set_leashed_to(&knot, None));
 
         let mut nbt = NbtCompound::new();
         pig.save_additional(&mut nbt);
@@ -1755,9 +1752,9 @@ mod tests {
 
         let mut pig = Pig::create(1, DVec3::ZERO, Weak::new());
         let holder: SharedEntity = Pig::new(2, DVec3::ZERO, Weak::new());
-        assert!(pig.set_leashed_to(&holder));
+        assert!(pig.set_leashed_to(&holder, None));
 
-        pig.drop_leash();
+        pig.drop_leash(None);
 
         assert!(!pig.is_leashed());
         assert!(!pig.may_be_leashed());
@@ -1769,9 +1766,9 @@ mod tests {
 
         let mut pig = Pig::create(1, DVec3::ZERO, Weak::new());
         let holder: SharedEntity = Pig::new(2, DVec3::ZERO, Weak::new());
-        assert!(pig.set_leashed_to(&holder));
+        assert!(pig.set_leashed_to(&holder, None));
 
-        pig.remove_leash();
+        pig.remove_leash(None);
 
         assert!(!pig.is_leashed());
         assert!(!pig.may_be_leashed());
@@ -1783,7 +1780,7 @@ mod tests {
 
         let mut pig = Pig::create(1, DVec3::ZERO, Weak::new());
         let holder: SharedEntity = Pig::new(2, DVec3::ZERO, Weak::new());
-        assert!(pig.set_leashed_to(&holder));
+        assert!(pig.set_leashed_to(&holder, None));
 
         assert!(pig.drop_all_leash_connections(None));
 

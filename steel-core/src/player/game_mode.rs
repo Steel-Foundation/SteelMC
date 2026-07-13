@@ -566,7 +566,12 @@ impl Player {
             .inflate(1.0);
         let mut hits = world
             .get_entities_in_aabb_matching(&search_area, |entity| {
-                entity.with_entity(|e| self.can_piercing_hit_entity(e))
+                // Exclude self lock-free before locking: the scan box includes
+                // the attacking player, and `with_entity` would re-lock the
+                // already-held `Player` mutex (the `id() != self.id()` guard in
+                // `can_piercing_hit_entity` runs too late, inside the lock).
+                entity.id() != self.id()
+                    && entity.with_entity(|e| self.can_piercing_hit_entity(e))
             })
             .into_iter()
             .filter_map(|entity| {

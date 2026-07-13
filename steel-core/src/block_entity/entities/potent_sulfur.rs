@@ -200,16 +200,15 @@ impl PotentSulfurBlockEntity {
             BASE_VELOCITY_THRESHOLD + f64::from(water_blocks) * VELOCITY_THRESHOLD_SCALE;
 
         for entity in world.get_entities_in_aabb(&aabb) {
-            if !entity.is_alive() || entity.is_spectator() {
-                continue;
-            }
             let vel = entity.velocity();
-            entity.with_entity(|e| e.check_fall_distance_accumulation());
-
-            if !entity.with_entity(|e| e.can_simulate_movement()) {
-                continue;
-            }
-            if entity.with_entity(|e| e.is_flying_player()) {
+            let launchable = entity.with_entity(|e| {
+                if !e.is_alive() || e.is_spectator() {
+                    return false;
+                }
+                e.check_fall_distance_accumulation();
+                e.can_simulate_movement() && !e.is_flying_player()
+            });
+            if !launchable {
                 continue;
             }
             if entity.is_passenger() {

@@ -286,7 +286,9 @@ impl EntityEntry {
                     .removal_reason()
                     .is_some_and(RemovalReason::should_save))
             && !self.entity.is_passenger()
-            && !self.entity.has_exactly_one_player_passenger()
+            && !self
+                .entity
+                .with_entity(|e| e.has_exactly_one_player_passenger())
             && self.entity.entity_type().can_serialize
     }
 }
@@ -1189,7 +1191,7 @@ impl WorldEntityManager {
             }
 
             let entity_chunk = self.live_manager_owned_entity_chunk(entity.id());
-            entity.check_despawn();
+            entity.with_entity(|e| e.check_despawn());
             if entity.is_removed() {
                 if let Some(chunk) = entity_chunk {
                     dirty_chunks.insert(chunk);
@@ -1344,7 +1346,7 @@ impl WorldEntityManager {
     fn is_entity_frozen_by_tick_rate(entity: &EntityBase, runs_normally: bool) -> bool {
         !runs_normally
             && entity.entity_type() != &vanilla_entities::PLAYER
-            && entity.count_player_passengers() == 0
+            && entity.with_entity(|e| e.count_player_passengers()) == 0
     }
 
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {

@@ -151,7 +151,7 @@ impl Goal for LookAtPlayerGoal {
         let Some(look_at) = &self.look_at else {
             return false;
         };
-        if !look_at.is_alive() {
+        if !look_at.with_entity(|e| e.is_alive()) {
             return false;
         }
         if mob.position().distance_squared(look_at.position())
@@ -175,15 +175,18 @@ impl Goal for LookAtPlayerGoal {
         let Some(look_at) = &self.look_at else {
             return;
         };
-        if !look_at.is_alive() {
+        // One lock for both the liveness check and the eye height.
+        let Some(look_at_eye_y) =
+            look_at.with_entity(|e| e.is_alive().then(|| e.get_eye_y()))
+        else {
             return;
-        }
+        };
 
         let position = look_at.position();
         let target_y = if self.only_horizontal {
             mob.get_eye_y()
         } else {
-            look_at.get_eye_y()
+            look_at_eye_y
         };
         mob.mob_base().controls.look_control.set_look_at(
             DVec3::new(position.x, target_y, position.z),

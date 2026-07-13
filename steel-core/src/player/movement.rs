@@ -15,8 +15,8 @@ use steel_utils::translations;
 use steel_utils::types::GameType;
 
 use crate::entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityBase, EntityMoveError,
-    LivingEntity, get_input_vector,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
+    get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -99,7 +99,7 @@ impl Player {
         false
     }
 
-    fn move_vehicle_packet_from_entity(entity: &EntityBase) -> CMoveVehicle {
+    fn move_vehicle_packet_from_entity(entity: &dyn Entity) -> CMoveVehicle {
         let rotation = entity.rotation();
         CMoveVehicle {
             position: entity.position(),
@@ -373,7 +373,7 @@ impl Player {
                 );
             }
             self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
-            self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+            self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world, None);
             self.remove_latest_movement_recording();
             return;
         }
@@ -469,19 +469,12 @@ impl Player {
         let Some(vehicle) = self.root_vehicle() else {
             return;
         };
-        let controlled_by_player = vehicle
-            .controlling_passenger_for_rider(self)
-            .is_some_and(|controller| controller.id() == self.id());
-        if !controlled_by_player {
-            return;
-        }
         let Some((first_good, last_good)) = self.movement.vehicle_good_positions(vehicle.id())
         else {
             return;
         };
 
         let world = self.get_world();
-        let old_position = vehicle.position();
         let target_pos = DVec3::new(
             clamp_horizontal(packet.pos.x),
             clamp_vertical(packet.pos.y),
@@ -489,60 +482,71 @@ impl Player {
         );
         let target_yaw = wrap_degrees(packet.y_rot);
         let target_pitch = wrap_degrees(packet.x_rot);
+
+        // Vanilla works on the vehicle entity directly for the whole handler;
+        // hold its behavior lock once instead of re-acquiring it per call. Our
+        // own (already-held) `Player` lock is threaded through as the rider
+        // wherever the vehicle would otherwise re-derive its controller.
+        let mut locked = vehicle.lock_entity();
+        let vehicle_entity = locked.get_mut();
+
+        let controlled_by_player = vehicle_entity
+            .controlling_passenger_for_rider(self)
+            .is_some_and(|controller| controller.id() == self.id());
+        if !controlled_by_player {
+            return;
+        }
+
+        let old_position = vehicle_entity.position();
         let first_good_delta = target_pos - first_good;
         let moved_dist_sq = first_good_delta.length_squared();
-        let expected_dist_sq = vehicle.velocity().length_squared();
+        let expected_dist_sq = vehicle_entity.velocity().length_squared();
         if moved_dist_sq - expected_dist_sq > SPEED_THRESHOLD_NORMAL {
             log::warn!(
                 "{} (vehicle of {}) moved too quickly! {},{},{}",
-                vehicle.id(),
+                vehicle_entity.id(),
                 self.gameprofile.name,
                 first_good_delta.x,
                 first_good_delta.y,
                 first_good_delta.z
             );
-            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+            self.send_packet(Self::move_vehicle_packet_from_entity(&*vehicle_entity));
             return;
         }
 
-        let old_aabb = vehicle.bounding_box();
+        let old_aabb = vehicle_entity.bounding_box();
         let move_delta = target_pos - last_good;
-        let vehicle_rests_on_something = vehicle.vertical_collision_below();
-        if vehicle.is_living_entity() && vehicle.on_climbable() {
-            vehicle.reset_fall_distance();
+        let vehicle_rests_on_something = vehicle_entity.vertical_collision_below();
+        if vehicle_entity.is_living_entity() && vehicle_entity.on_climbable() {
+            vehicle_entity.reset_fall_distance();
         }
 
-        // We confirmed above that this player controls the vehicle. Moving it
-        // re-derives `uses_client_movement_packets`, which would re-lock this
-        // (already-held) player; the scoped override answers it lock-free.
-        vehicle.set_client_movement_override(true);
-        let move_result = vehicle.move_entity(MoverType::Player, move_delta);
-        vehicle.set_client_movement_override(false);
+        let move_result =
+            vehicle_entity.move_entity_for_rider(MoverType::Player, move_delta, Some(self));
         if move_result.is_none() {
-            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
+            self.send_packet(Self::move_vehicle_packet_from_entity(&*vehicle_entity));
             return;
         }
 
-        let error_delta = movement_error_delta(target_pos, vehicle.position());
+        let error_delta = movement_error_delta(target_pos, vehicle_entity.position());
         let error_dist_sq = error_delta.length_squared();
         let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD;
         if fail {
             log::warn!(
                 "{} (vehicle of {}) moved wrongly! {}",
-                vehicle.id(),
+                vehicle_entity.id(),
                 self.gameprofile.name,
                 error_dist_sq.sqrt()
             );
         }
 
-        let new_aabb = vehicle
+        let new_aabb = vehicle_entity
             .bounding_box()
-            .translate(target_pos - vehicle.position());
-        let vehicle_y = vehicle.position().y;
+            .translate(target_pos - vehicle_entity.position());
+        let vehicle_y = vehicle_entity.position().y;
         let (old_collision, new_collision) = {
-            let vehicle_entity = vehicle.lock_entity();
-            let descending = vehicle_entity.get().is_descending();
-            let collision_world = WorldCollisionProvider::for_entity(&world, vehicle_entity.get());
+            let descending = vehicle_entity.is_descending();
+            let collision_world = WorldCollisionProvider::for_entity(&world, &*vehicle_entity);
             (
                 collision_world.has_entity_context_collision(old_aabb, vehicle_y, descending),
                 is_colliding_with_new_shapes(&collision_world, old_aabb, new_aabb, descending),
@@ -557,30 +561,34 @@ impl Player {
         })
         .rejects()
         {
-            if let Err(error) = vehicle.try_set_position(old_position) {
+            if let Err(error) = vehicle_entity.try_set_position(old_position) {
                 log::warn!(
                     "Failed to roll vehicle {} back after rejected movement: {error}",
-                    vehicle.id()
+                    vehicle_entity.id()
                 );
             }
-            vehicle.refresh_fluid_contact();
-            vehicle.set_rotation((target_yaw, target_pitch));
-            self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
-            vehicle.remove_latest_movement_recording();
+            vehicle_entity.refresh_fluid_contact();
+            vehicle_entity.set_rotation((target_yaw, target_pitch));
+            self.send_packet(Self::move_vehicle_packet_from_entity(&*vehicle_entity));
+            vehicle_entity.remove_latest_movement_recording();
             return;
         }
 
         let client_delta = target_pos - old_position;
-        let outcome = vehicle.apply_accepted_client_vehicle_movement(
+        let outcome = vehicle_entity.apply_accepted_client_vehicle_movement(
             &world,
             AcceptedClientMovement {
                 position: Some(target_pos),
                 rotation: (target_yaw, target_pitch),
                 on_ground: packet.on_ground,
-                horizontal_collision: vehicle.horizontal_collision(),
+                horizontal_collision: vehicle_entity.horizontal_collision(),
                 movement: client_delta,
                 reset_fall_distance: false,
             },
+            // We are the controlling passenger and our `Player` lock is already
+            // held; thread ourselves through so vehicle fall damage reaches us
+            // without re-locking (which would deadlock).
+            Some(self as &mut dyn Entity),
         );
         match outcome {
             Ok(AcceptedClientMovementOutcome::Applied) => {}
@@ -588,33 +596,36 @@ impl Player {
             Err(error) => {
                 log::warn!(
                     "Rejected accepted vehicle movement for entity {}: {error}",
-                    vehicle.id()
+                    vehicle_entity.id()
                 );
-                if let Err(rollback_error) = vehicle.try_set_position(old_position) {
+                if let Err(rollback_error) = vehicle_entity.try_set_position(old_position) {
                     log::warn!(
                         "Failed to roll vehicle {} back after rejected movement: {rollback_error}",
-                        vehicle.id()
+                        vehicle_entity.id()
                     );
                 }
-                vehicle.refresh_fluid_contact();
-                vehicle.set_rotation((target_yaw, target_pitch));
-                self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
-                vehicle.remove_latest_movement_recording();
+                vehicle_entity.refresh_fluid_contact();
+                vehicle_entity.set_rotation((target_yaw, target_pitch));
+                self.send_packet(Self::move_vehicle_packet_from_entity(&*vehicle_entity));
+                vehicle_entity.remove_latest_movement_recording();
                 return;
             }
         }
         self.movement.set_last_known_client_movement(client_delta);
-        world.chunk_map.update_player_status(self);
-        vehicle.with_entity(|v| {
-            self.record_client_vehicle_floating(
-                &world,
-                v,
-                move_delta.y,
-                vehicle_rests_on_something,
-            );
-        });
+        self.record_client_vehicle_floating(
+            &world,
+            &*vehicle_entity,
+            move_delta.y,
+            vehicle_rests_on_something,
+        );
         self.movement
-            .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
+            .mark_vehicle_last_good_position(vehicle_entity.id(), vehicle_entity.position());
+        drop(locked);
+
+        // Chunk-map bookkeeping reads no vehicle state (vanilla runs it earlier,
+        // but the two are independent); run it after releasing the vehicle lock
+        // so the lock isn't held across chunk tracking.
+        world.chunk_map.update_player_status(self);
     }
 
     fn record_client_floating(
@@ -710,15 +721,15 @@ impl Player {
             self.movement.clear_vehicle_for_tick();
             return false;
         };
-        let controlled_by_player = vehicle
-            .controlling_passenger_for_rider(self)
-            .is_some_and(|controller| controller.id() == self.id());
-        if !controlled_by_player {
+        // One vehicle lock for both the controller check and the gravity read.
+        let Some(maximum_flying_ticks) = vehicle.with_entity(|v| {
+            v.controlling_passenger_for_rider(self)
+                .is_some_and(|controller| controller.id() == self.id())
+                .then(|| Self::maximum_flying_ticks_for_gravity(v.get_gravity()))
+        }) else {
             self.movement.clear_vehicle_for_tick();
             return false;
-        }
-
-        let maximum_flying_ticks = Self::maximum_flying_ticks_for_gravity(vehicle.get_gravity());
+        };
         let should_disconnect = self
             .movement
             .tick_vehicle_client_floating(vehicle.id(), maximum_flying_ticks);
@@ -818,6 +829,15 @@ impl Player {
     #[must_use]
     pub fn last_client_input(&self) -> PlayerInput {
         self.movement.last_client_input()
+    }
+
+    /// Returns vanilla `Player.wantsToStopRiding()`.
+    ///
+    /// Vanilla defines it as `isShiftKeyDown()` (Player.java:295), i.e. the
+    /// shared shift-key-down entity flag
+    #[must_use]
+    pub fn wants_to_stop_riding(&self) -> bool {
+        self.last_client_input().shift()
     }
 
     /// Returns vanilla `ServerPlayer.getLastClientMoveIntent()`.

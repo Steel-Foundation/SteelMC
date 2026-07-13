@@ -80,7 +80,7 @@ impl Goal for FollowParentGoal {
         let Some(parent) = &self.parent else {
             return false;
         };
-        if !parent.is_alive() {
+        if !parent.with_entity(|e| e.is_alive()) {
             return false;
         }
 

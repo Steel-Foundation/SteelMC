@@ -324,7 +324,7 @@ mod tests {
         assert!(entity.invulnerable());
 
         let mut saved = NbtCompound::new();
-        entity.save_additional(&mut saved);
+        entity.with_entity(|e| e.save_additional(&mut saved));
         assert_eq!(
             saved.string("SteelRawMarker").map(ToString::to_string),
             Some("raw".to_owned())

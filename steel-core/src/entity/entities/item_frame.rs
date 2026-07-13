@@ -9,6 +9,7 @@ use steel_macros::entity_behavior;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
@@ -25,23 +26,16 @@ use crate::world::World;
 #[entity_behavior(class = "item_frame")]
 pub struct ItemFrame {
     base: Weak<EntityBase>,
-    entity_type: EntityTypeRef,
     entity_data: ItemFrameEntityData,
     block_pos: BlockPos,
 }
 
 impl ItemFrame {
-    fn build(
-        base: Weak<EntityBase>,
-        entity_type: EntityTypeRef,
-        block_pos: BlockPos,
-        direction: Direction,
-    ) -> Self {
+    fn build(base: Weak<EntityBase>, block_pos: BlockPos, direction: Direction) -> Self {
         let mut entity_data = ItemFrameEntityData::new();
         entity_data.hanging_entity.set_direction(direction);
         Self {
             base,
-            entity_type,
             entity_data,
             block_pos,
         }
@@ -49,44 +43,39 @@ impl ItemFrame {
 
     /// Creates a fresh item frame (generated factory convention).
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        EntityBase::pack_with(id, position, entity_type.dimensions, world, |base| {
-            Self::build(base, entity_type, BlockPos::ZERO, Direction::South)
-        })
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        EntityBase::pack_with(
+            id,
+            position,
+            vanilla_entities::ITEM_FRAME.dimensions,
+            world,
+            |base| Self::build(base, BlockPos::ZERO, Direction::South),
+        )
     }
 
     /// Creates a fresh item frame attached to `block_pos` facing `direction`.
     #[must_use]
-    pub fn new_attached(
-        entity_type: EntityTypeRef,
-        block_pos: BlockPos,
-        direction: Direction,
-    ) -> SharedEntity {
+    pub fn new_attached(block_pos: BlockPos, direction: Direction) -> SharedEntity {
         EntityBase::pack_with(
             next_entity_id(),
             ItemFrame::frame_center(block_pos, direction),
-            entity_type.dimensions,
+            vanilla_entities::ITEM_FRAME.dimensions,
             Weak::new(),
-            |base| Self::build(base, entity_type, block_pos, direction),
+            |base| Self::build(base, block_pos, direction),
         )
     }
 
     /// Creates an item frame from persistent entity data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
         let position = load.position;
         let block_pos = BlockPos::new(
             position.x.floor() as i32,
             position.y.floor() as i32,
             position.z.floor() as i32,
         );
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| {
-            Self::build(base, entity_type, block_pos, Direction::South)
+        EntityBase::pack_loaded_with(load, vanilla_entities::ITEM_FRAME.dimensions, |base| {
+            Self::build(base, block_pos, Direction::South)
         })
     }
 
@@ -193,7 +182,7 @@ impl Entity for ItemFrame {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::ITEM_FRAME
     }
 
     fn spawn_data(&self) -> i32 {
@@ -309,15 +298,11 @@ const fn direction_2d_data_value(direction: Direction) -> u8 {
 mod tests {
     use super::*;
     use std::string::ToString;
-    use steel_registry::{vanilla_entities, vanilla_items};
+    use steel_registry::vanilla_items;
 
     #[test]
     fn item_frame_persists_structure_marker_state() {
-        let frame = ItemFrame::new_attached(
-            &vanilla_entities::ITEM_FRAME,
-            BlockPos::new(12, 80, 14),
-            Direction::West,
-        );
+        let frame = ItemFrame::new_attached(BlockPos::new(12, 80, 14), Direction::West);
         {
             let mut frame = frame.lock_entity();
             let frame: &mut ItemFrame = frame.downcast().unwrap();
@@ -325,7 +310,7 @@ mod tests {
         }
 
         let mut nbt = NbtCompound::new();
-        frame.save_additional(&mut nbt);
+        frame.with_entity(|e| e.save_additional(&mut nbt));
 
         assert_eq!(nbt.byte("Facing"), Some(4));
         assert_eq!(nbt.byte("ItemRotation"), Some(0));
@@ -344,12 +329,8 @@ mod tests {
 
     #[test]
     fn item_frame_is_pickable_like_vanilla() {
-        let frame = ItemFrame::new_attached(
-            &vanilla_entities::ITEM_FRAME,
-            BlockPos::new(12, 80, 14),
-            Direction::West,
-        );
+        let frame = ItemFrame::new_attached(BlockPos::new(12, 80, 14), Direction::West);
 
-        assert!(frame.is_pickable());
+        assert!(frame.with_entity(|e| e.is_pickable()));
     }
 }

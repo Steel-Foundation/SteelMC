@@ -71,8 +71,6 @@ const MERGE_MAX_STACK_SIZE: i32 = 64;
 pub struct ItemEntity {
     /// Weak back-reference to the containing `EntityBase`.
     base: Weak<EntityBase>,
-    /// Vanilla entity type registered for this implementation.
-    entity_type: EntityTypeRef,
     /// Entity data containing the `ItemStack`.
     entity_data: ItemEntityData,
 
@@ -92,20 +90,8 @@ pub struct ItemEntity {
 impl ItemEntity {
     /// Creates a new item entity with an empty item. Returns a full `SharedEntity`.
     #[must_use]
-    pub fn new(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        Self::with_item_and_velocity(
-            entity_type,
-            id,
-            position,
-            ItemStack::empty(),
-            DVec3::ZERO,
-            world,
-        )
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        Self::with_item_and_velocity(id, position, ItemStack::empty(), DVec3::ZERO, world)
     }
 
     /// Creates an item entity `SharedEntity` from saved data.
@@ -113,17 +99,16 @@ impl ItemEntity {
     /// Type-specific data (item, age, etc.) is restored via `load_additional()`
     /// after this constructor.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> SharedEntity {
-        EntityBase::pack_loaded_with(load, entity_type.dimensions, |base| {
-            Self::from_weak_base(base, entity_type)
+    pub fn from_saved(load: EntityBaseLoad) -> SharedEntity {
+        EntityBase::pack_loaded_with(load, vanilla_entities::ITEM.dimensions, |base| {
+            Self::from_weak_base(base)
         })
     }
 
     #[must_use]
-    fn from_weak_base(base: Weak<EntityBase>, entity_type: EntityTypeRef) -> Self {
+    fn from_weak_base(base: Weak<EntityBase>) -> Self {
         Self {
             base,
-            entity_type,
             entity_data: ItemEntityData::new(),
             age: 0,
             pickup_delay: 0,
@@ -135,39 +120,19 @@ impl ItemEntity {
 
     /// Creates a new item entity with an empty item. Returns a full `SharedEntity`.
     #[must_use]
-    pub fn create(
-        entity_type: EntityTypeRef,
-        id: i32,
-        position: DVec3,
-        world: Weak<World>,
-    ) -> SharedEntity {
-        Self::with_item_and_velocity(
-            entity_type,
-            id,
-            position,
-            ItemStack::empty(),
-            DVec3::ZERO,
-            world,
-        )
+    pub fn create(id: i32, position: DVec3, world: Weak<World>) -> SharedEntity {
+        Self::with_item_and_velocity(id, position, ItemStack::empty(), DVec3::ZERO, world)
     }
 
     /// Creates a new item entity with the specified item.
     #[must_use]
     pub fn with_item(
-        entity_type: EntityTypeRef,
         id: i32,
         position: DVec3,
         item: ItemStack,
         world: Weak<World>,
     ) -> SharedEntity {
-        Self::with_item_and_velocity(
-            entity_type,
-            id,
-            position,
-            item,
-            Self::default_spawn_velocity(),
-            world,
-        )
+        Self::with_item_and_velocity(id, position, item, Self::default_spawn_velocity(), world)
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
@@ -175,7 +140,6 @@ impl ItemEntity {
     /// Mirrors vanilla's `ItemEntity(Level, double, double, double, ItemStack, double, double, double)`.
     #[must_use]
     pub fn with_item_and_velocity(
-        entity_type: EntityTypeRef,
         id: i32,
         position: DVec3,
         item: ItemStack,
@@ -188,7 +152,6 @@ impl ItemEntity {
             entity_data.set_item(item);
             let inner = Self {
                 base: weak.clone(),
-                entity_type,
                 entity_data: entity_data,
                 age: 0,
                 pickup_delay: 0,
@@ -198,7 +161,7 @@ impl ItemEntity {
             };
             let mut base = EntityBase::new_with_state(
                 id,
-                EntityBaseState::new(position, entity_type.dimensions)
+                EntityBaseState::new(position, vanilla_entities::ITEM.dimensions)
                     .with_velocity(velocity)
                     .with_rotation((yaw, 0.0)),
                 world,
@@ -463,7 +426,7 @@ impl Entity for ItemEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
+        &vanilla_entities::ITEM
     }
 
     fn tick(&mut self) {
@@ -694,9 +657,7 @@ mod tests {
 
     use glam::DVec3;
 
-    use steel_registry::{
-        item_stack::ItemStack, vanilla_damage_types, vanilla_entities, vanilla_items,
-    };
+    use steel_registry::{item_stack::ItemStack, vanilla_damage_types, vanilla_items};
 
     use crate::entity::{Entity, damage::DamageSource};
 
@@ -704,14 +665,14 @@ mod tests {
 
     #[test]
     fn item_entities_do_not_obstruct_block_placement() {
-        let item = ItemEntity::create(&vanilla_entities::ITEM, 1, DVec3::ZERO, Weak::new());
+        let item = ItemEntity::create(1, DVec3::ZERO, Weak::new());
 
-        assert!(!item.blocks_building());
+        assert!(!item.with_entity(|e| e.blocks_building()));
     }
 
     #[test]
     fn item_lava_hurt_sound_uses_vanilla_interval() {
-        let item = ItemEntity::create(&vanilla_entities::ITEM, 1, DVec3::ZERO, Weak::new());
+        let item = ItemEntity::create(1, DVec3::ZERO, Weak::new());
 
         {
             let mut item = item.lock_entity();
@@ -735,7 +696,6 @@ mod tests {
     #[test]
     fn item_with_stack_uses_vanilla_default_velocity() {
         let item = ItemEntity::with_item(
-            &vanilla_entities::ITEM,
             1,
             DVec3::ZERO,
             ItemStack::new(&vanilla_items::ITEMS.stone),
@@ -752,7 +712,7 @@ mod tests {
 
     #[test]
     fn item_damage_truncates_after_fractional_subtraction() {
-        let item = ItemEntity::create(&vanilla_entities::ITEM, 1, DVec3::ZERO, Weak::new());
+        let item = ItemEntity::create(1, DVec3::ZERO, Weak::new());
 
         assert!(item.with_entity(|e| e.hurt(
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
