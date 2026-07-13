@@ -5,7 +5,7 @@
 //! the same per-world saved-data boundary.
 
 use std::{
-    io,
+    fs as sync_fs, io,
     path::{Path, PathBuf},
 };
 
@@ -84,7 +84,7 @@ impl SavedDataManager {
             return Ok(T::default());
         }
 
-        let content = std::fs::read_to_string(&path)?;
+        let content = sync_fs::read_to_string(&path)?;
         toml::from_str(&content).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -124,12 +124,12 @@ impl SavedDataManager {
             return Ok(());
         };
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            sync_fs::create_dir_all(parent)?;
         }
 
         let content = toml::to_string_pretty(data)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        std::fs::write(path, content)
+        sync_fs::write(path, content)
     }
 
     /// Saves a typed saved-data value.
@@ -150,6 +150,7 @@ impl SavedDataManager {
     }
 
     /// Returns `true` if the path points at an existing data.
+    #[must_use]
     pub fn exists(&self, name: SavedDataName) -> bool {
         let Some(path) = self.path_for(name) else {
             return false;

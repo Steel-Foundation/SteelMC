@@ -2922,6 +2922,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rand 0.10.0",
+ "rayon",
  "reqwest 0.13.2",
  "rustc-hash 2.1.2",
  "serde",

@@ -20,6 +20,7 @@ wincode.workspace = true
 
 # Concurrency
 parking_lot.workspace = true
+rayon.workspace = true
 
 # Data structures
 bitflags.workspace = true
