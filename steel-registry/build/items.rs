@@ -116,6 +116,33 @@ fn identifier_token(s: &str) -> TokenStream {
     quote! { Identifier::new_static(#namespace, #path) }
 }
 
+fn jukebox_song_ref_token(value: &Value) -> TokenStream {
+    let song = value
+        .as_str()
+        .unwrap_or_else(|| panic!("jukebox_playable component must be an identifier string"));
+    let id = Identifier::from_str(song)
+        .unwrap_or_else(|error| panic!("invalid jukebox song id {song:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item prototype references a non-vanilla jukebox song: {id}"
+    );
+    let ident = if id
+        .path
+        .chars()
+        .next()
+        .is_some_and(|value| value.is_ascii_digit())
+    {
+        Ident::new(
+            &format!("MUSIC_DISC_{}", id.path.to_shouty_snake_case()),
+            Span::call_site(),
+        )
+    } else {
+        Ident::new(&id.path.to_shouty_snake_case(), Span::call_site())
+    };
+    quote! { &vanilla_jukebox_songs::#ident }
+}
+
 fn dye_color_token(value: &Value) -> TokenStream {
     let color = value
         .as_str()
@@ -868,6 +895,17 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:jukebox_playable" => {
+                let song = jukebox_song_ref_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::JUKEBOX_PLAYABLE,
+                        Some(vanilla_components::JukeboxPlayable::new(
+                            #song,
+                        )),
+                    )
+                });
+            }
             "minecraft:tooltip_style" | "minecraft:note_block_sound" => {
                 let identifier = value
                     .as_str()
@@ -1185,7 +1223,7 @@ pub(crate) fn build() -> TokenStream {
     quote! {
         use crate::{
             data_components::vanilla_components,
-            vanilla_attributes, vanilla_blocks, vanilla_entities,
+            vanilla_attributes, vanilla_blocks, vanilla_entities, vanilla_jukebox_songs,
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;

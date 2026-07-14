@@ -985,7 +985,9 @@ impl ItemStack {
             .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
         let patch = DataComponentPatch::read_delimited(data)?;
 
-        Ok(Self { item, count, patch })
+        let stack = Self { item, count, patch };
+        stack.validate_persistent_encoding()?;
+        Ok(stack)
     }
 }
 
@@ -1013,6 +1015,21 @@ impl ToNbtTag for ItemStack {
 }
 
 impl ItemStack {
+    /// Checks that this stack can be encoded by Vanilla's persistent
+    /// `ItemStack.CODEC` before untrusted network data enters server state.
+    pub fn validate_persistent_encoding(&self) -> Result<()> {
+        if self.is_empty() {
+            return Ok(());
+        }
+        if !(1..=99).contains(&self.count) {
+            return Err(std::io::Error::other(format!(
+                "Item stack count {} is outside the persistent range 1..=99",
+                self.count
+            )));
+        }
+        self.patch.try_to_nbt_tag_ref().map(|_| ())
+    }
+
     /// Converts this item stack to an NBT tag for persistent storage without consuming it.
     #[must_use]
     pub fn to_nbt_tag_ref(&self) -> simdnbt::owned::NbtTag {
@@ -1030,7 +1047,10 @@ impl ItemStack {
 
         // components: The component patch (only if non-empty)
         if !self.patch.is_empty() {
-            compound.insert("components", self.patch.to_nbt_tag_ref());
+            let components = self.patch.to_nbt_tag_ref();
+            if !matches!(&components, simdnbt::owned::NbtTag::Compound(value) if value.is_empty()) {
+                compound.insert("components", components);
+            }
         }
 
         simdnbt::owned::NbtTag::Compound(compound)
@@ -1109,12 +1129,16 @@ mod persistence_tests {
     use simdnbt::FromNbtTag;
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use simdnbt::owned::{NbtCompound, NbtTag};
+    use steel_utils::codec::VarInt;
+    use steel_utils::serial::WriteTo;
 
     use super::ItemStack;
-    use crate::data_components::CustomData;
-    use crate::data_components::vanilla_components::{CUSTOM_DATA, LORE, TOOLTIP_DISPLAY};
+    use crate::data_components::vanilla_components::{
+        CUSTOM_DATA, JUKEBOX_PLAYABLE, LORE, MAX_STACK_SIZE, TOOLTIP_DISPLAY,
+    };
+    use crate::data_components::{CustomData, JukeboxPlayable};
     use crate::test_support::init_test_registry;
-    use crate::vanilla_items;
+    use crate::{REGISTRY, RegistryEntry, RegistryExt, vanilla_items, vanilla_jukebox_songs};
 
     fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
         let mut bytes = Vec::new();
@@ -1132,6 +1156,47 @@ mod persistence_tests {
         let mut compound = NbtCompound::new();
         compound.insert("id", "minecraft:stone");
         compound
+    }
+
+    fn untrusted_stack_bytes(
+        count: i32,
+        component: Option<(&steel_utils::Identifier, Vec<u8>)>,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        VarInt(count)
+            .write(&mut bytes)
+            .expect("test stack count should encode");
+        VarInt(vanilla_items::STONE.id() as i32)
+            .write(&mut bytes)
+            .expect("test item id should encode");
+
+        if let Some((component, value)) = component {
+            VarInt(1)
+                .write(&mut bytes)
+                .expect("added component count should encode");
+            VarInt(0)
+                .write(&mut bytes)
+                .expect("removed component count should encode");
+            let component_id = REGISTRY
+                .data_components
+                .id_from_key(component)
+                .expect("test component should be registered");
+            VarInt(component_id as i32)
+                .write(&mut bytes)
+                .expect("component id should encode");
+            VarInt(value.len() as i32)
+                .write(&mut bytes)
+                .expect("component length should encode");
+            bytes.extend_from_slice(&value);
+        } else {
+            VarInt(0)
+                .write(&mut bytes)
+                .expect("added component count should encode");
+            VarInt(0)
+                .write(&mut bytes)
+                .expect("removed component count should encode");
+        }
+        bytes
     }
 
     #[test]
@@ -1170,6 +1235,76 @@ mod persistence_tests {
         };
 
         assert_eq!(compound.get("count"), Some(&NbtTag::Int(1)));
+    }
+
+    #[test]
+    fn untrusted_stack_rejects_direct_jukebox_holders() {
+        init_test_registry();
+        let mut component_bytes = Vec::new();
+        VarInt(0)
+            .write(&mut component_bytes)
+            .expect("direct holder discriminator should encode");
+        let bytes = untrusted_stack_bytes(1, Some((&JUKEBOX_PLAYABLE.key, component_bytes)));
+
+        assert!(ItemStack::read_untrusted(&mut Cursor::new(bytes.as_slice())).is_err());
+    }
+
+    #[test]
+    fn untrusted_stack_accepts_persistable_registry_holders() {
+        init_test_registry();
+        let reference = JukeboxPlayable::new(&vanilla_jukebox_songs::CAT);
+        let mut component_bytes = Vec::new();
+        reference
+            .write(&mut component_bytes)
+            .expect("registry holder should have a network representation");
+        let bytes = untrusted_stack_bytes(1, Some((&JUKEBOX_PLAYABLE.key, component_bytes)));
+
+        let stack = ItemStack::read_untrusted(&mut Cursor::new(bytes.as_slice()))
+            .expect("persistable untrusted stack should decode");
+        assert_eq!(stack.get(JUKEBOX_PLAYABLE), Some(&reference));
+    }
+
+    #[test]
+    fn untrusted_stack_uses_persistent_count_range() {
+        init_test_registry();
+        let bytes = untrusted_stack_bytes(100, None);
+
+        assert!(ItemStack::read_untrusted(&mut Cursor::new(bytes.as_slice())).is_err());
+    }
+
+    #[test]
+    fn untrusted_stack_validates_component_persistent_constraints() {
+        init_test_registry();
+        let mut component_bytes = Vec::new();
+        VarInt(0)
+            .write(&mut component_bytes)
+            .expect("max stack size should encode on the network");
+        let bytes = untrusted_stack_bytes(
+            1,
+            Some((
+                &crate::data_components::vanilla_components::MAX_STACK_SIZE.key,
+                component_bytes,
+            )),
+        );
+
+        assert!(ItemStack::read_untrusted(&mut Cursor::new(bytes.as_slice())).is_err());
+    }
+
+    #[test]
+    fn save_contains_invalid_component_encoding() {
+        init_test_registry();
+        let mut stack = ItemStack::new(&vanilla_items::STONE);
+        stack.set(MAX_STACK_SIZE, 0);
+
+        assert!(stack.validate_persistent_encoding().is_err());
+        let NbtTag::Compound(compound) = stack.to_nbt_tag_ref() else {
+            panic!("item stack should still encode as a compound");
+        };
+        assert_eq!(
+            compound.string("id").map(|value| value.to_str()),
+            Some("minecraft:stone".into())
+        );
+        assert!(compound.get("components").is_none());
     }
 
     #[test]

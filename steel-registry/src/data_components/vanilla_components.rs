@@ -16,9 +16,10 @@ pub use super::components::{
     AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
     Enchantable, Equippable, EquippableAllowedEntities, InvalidEnchantableValue,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, ItemLore, ItemLoreTooLong, MapId, MapItemColor, MapPostProcessing,
-    OminousBottleAmplifier, PiercingWeapon, Rarity, Repairable, SwingAnimation, SwingAnimationType,
-    Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    ItemEnchantments, ItemLore, ItemLoreTooLong, JukeboxPlayable, MapId, MapItemColor,
+    MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, Repairable, SwingAnimation,
+    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
+    Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 pub use crate::{
@@ -231,7 +232,7 @@ pub const PROVIDES_TRIM_MATERIAL: DataComponentType<UnimplementedComponent> =
 pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<OminousBottleAmplifier> =
     DataComponentType::new(Identifier::vanilla_static("ominous_bottle_amplifier"));
 
-pub const JUKEBOX_PLAYABLE: DataComponentType<UnimplementedComponent> =
+pub const JUKEBOX_PLAYABLE: DataComponentType<JukeboxPlayable> =
     DataComponentType::new(Identifier::vanilla_static("jukebox_playable"));
 
 pub const PROVIDES_BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
@@ -450,11 +451,18 @@ fn ranged_i32_nbt_reader<const MIN: i32, const MAX: i32>(
         .then(|| ComponentData::new(value))
 }
 
-fn i32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+fn ranged_i32_nbt_writer<const MIN: i32, const MAX: i32>(
+    data: &ComponentData,
+) -> std::io::Result<simdnbt::owned::NbtTag> {
     let Some(value) = data.downcast_ref::<i32>() else {
-        panic!("validated i32 component failed to downcast");
+        return Err(std::io::Error::other("Component type mismatch"));
     };
-    simdnbt::owned::NbtTag::Int(*value)
+    if !(MIN..=MAX).contains(value) {
+        return Err(std::io::Error::other(format!(
+            "Value {value} outside of range [{MIN}:{MAX}]"
+        )));
+    }
+    Ok(simdnbt::owned::NbtTag::Int(*value))
 }
 
 fn minimum_attack_charge_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
@@ -468,30 +476,85 @@ fn potion_duration_scale_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<Comp
     (value.is_finite() && !value.is_sign_negative()).then(|| ComponentData::new(value))
 }
 
-fn f32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+fn minimum_attack_charge_nbt_writer(
+    data: &ComponentData,
+) -> std::io::Result<simdnbt::owned::NbtTag> {
     let Some(value) = data.downcast_ref::<f32>() else {
-        panic!("validated f32 component failed to downcast");
+        return Err(std::io::Error::other("Component type mismatch"));
     };
-    simdnbt::owned::NbtTag::Float(*value)
+    if !value.is_finite() || value.is_sign_negative() || *value > 1.0 {
+        return Err(std::io::Error::other(format!(
+            "Value {value} outside of range [0:1]"
+        )));
+    }
+    Ok(simdnbt::owned::NbtTag::Float(*value))
+}
+
+fn potion_duration_scale_nbt_writer(
+    data: &ComponentData,
+) -> std::io::Result<simdnbt::owned::NbtTag> {
+    let Some(value) = data.downcast_ref::<f32>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    if !value.is_finite() || value.is_sign_negative() {
+        return Err(std::io::Error::other(format!(
+            "Value {value} must be non-negative and finite"
+        )));
+    }
+    Ok(simdnbt::owned::NbtTag::Float(*value))
 }
 
 fn bool_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
     tag.codec_bool().map(ComponentData::new)
 }
 
-fn bool_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
+fn bool_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
     let Some(value) = data.downcast_ref::<bool>() else {
-        panic!("validated bool component failed to downcast");
+        return Err(std::io::Error::other("Component type mismatch"));
     };
-    simdnbt::owned::NbtTag::Byte(i8::from(*value))
+    Ok(simdnbt::owned::NbtTag::Byte(i8::from(*value)))
 }
 
 fn unit_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
     tag.compound().map(|_| ComponentData::new(()))
 }
 
-fn unit_nbt_writer(_data: &ComponentData) -> simdnbt::owned::NbtTag {
-    simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new())
+fn unit_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
+    if data.downcast_ref::<()>().is_none() {
+        return Err(std::io::Error::other("Component type mismatch"));
+    }
+    Ok(simdnbt::owned::NbtTag::Compound(
+        simdnbt::owned::NbtCompound::new(),
+    ))
+}
+
+fn jukebox_playable_network_reader(
+    cursor: &mut std::io::Cursor<&[u8]>,
+) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom;
+    JukeboxPlayable::read(cursor).map(ComponentData::new)
+}
+
+fn jukebox_playable_network_writer(
+    data: &ComponentData,
+    writer: &mut Vec<u8>,
+) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo;
+    let Some(value) = data.downcast_ref::<JukeboxPlayable>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn jukebox_playable_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    JukeboxPlayable::from_persistent_nbt(tag).map(ComponentData::new)
+}
+
+fn jukebox_playable_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
+    let Some(value) = data.downcast_ref::<JukeboxPlayable>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    Ok(value.to_persistent_nbt())
 }
 
 macro_rules! register_ranged_i32 {
@@ -501,7 +564,7 @@ macro_rules! register_ranged_i32 {
             varint_reader,
             varint_writer,
             ranged_i32_nbt_reader::<{ $min }, { $max }>,
-            i32_nbt_writer,
+            ranged_i32_nbt_writer::<{ $min }, { $max }>,
         );
     };
 }
@@ -544,7 +607,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         float_reader,
         float_writer,
         minimum_attack_charge_nbt_reader,
-        f32_nbt_writer,
+        minimum_attack_charge_nbt_writer,
     );
     // 8: damage_type
     registry.register(DAMAGE_TYPE);
@@ -646,7 +709,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         float_reader,
         float_writer,
         potion_duration_scale_nbt_reader,
-        f32_nbt_writer,
+        potion_duration_scale_nbt_writer,
     );
     // 53: suspicious_stew_effects
     registry.register_unimplemented(SUSPICIOUS_STEW_EFFECTS, true);
@@ -671,7 +734,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 63: ominous_bottle_amplifier
     registry.register(OMINOUS_BOTTLE_AMPLIFIER);
     // 64: jukebox_playable
-    registry.register_unimplemented(JUKEBOX_PLAYABLE, true);
+    registry.register_with_codecs(
+        JUKEBOX_PLAYABLE,
+        jukebox_playable_network_reader,
+        jukebox_playable_network_writer,
+        jukebox_playable_nbt_reader,
+        jukebox_playable_nbt_writer,
+    );
     // 65: provides_banner_patterns
     registry.register_unimplemented(PROVIDES_BANNER_PATTERNS, true);
     // 66: recipes

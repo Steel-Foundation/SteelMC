@@ -34,8 +34,8 @@ pub mod vanilla_components;
 pub use component_data::{Component, ComponentData};
 pub use components::{
     CustomData, CustomModelData, DyedItemColor, Enchantable, Equippable, EquippableAllowedEntities,
-    InvalidEnchantableValue, MapId, MapItemColor, OminousBottleAmplifier, Tool, ToolRule,
-    ToolRuleBlocks,
+    InvalidEnchantableValue, JukeboxPlayable, MapId, MapItemColor, OminousBottleAmplifier, Tool,
+    ToolRule, ToolRuleBlocks,
 };
 pub use registry::{
     ComponentEntry,

@@ -103,7 +103,7 @@ pub type NetworkWriter = fn(&ComponentData, &mut Vec<u8>) -> Result<()>;
 pub type NbtReader = fn(BorrowedNbtTag) -> Option<ComponentData>;
 
 /// Writer function for serializing a component to NBT format.
-pub type NbtWriter = fn(&ComponentData) -> OwnedNbtTag;
+pub type NbtWriter = fn(&ComponentData) -> Result<OwnedNbtTag>;
 
 /// Function for hashing a component through its persistent codec shape.
 type ComponentHash = fn(&ComponentData) -> Result<i32>;
@@ -135,11 +135,13 @@ fn read_typed_nbt<T: Component + FromNbtTag>(tag: BorrowedNbtTag) -> Option<Comp
     T::from_nbt_tag(tag).map(ComponentData::new)
 }
 
-fn write_typed_nbt<T: DowncastType + ToNbtTag + Clone>(data: &ComponentData) -> OwnedNbtTag {
+fn write_typed_nbt<T: DowncastType + ToNbtTag + Clone>(
+    data: &ComponentData,
+) -> Result<OwnedNbtTag> {
     let Some(value) = data.downcast_ref::<T>() else {
-        panic!("validated component type key failed to downcast");
+        return Err(std::io::Error::other("Component type mismatch"));
     };
-    value.clone().to_nbt_tag()
+    Ok(value.clone().to_nbt_tag())
 }
 
 struct NetworkCodecs {
@@ -304,7 +306,20 @@ impl ComponentEntry {
                 self.key
             )));
         };
-        Ok((persistent.writer)(data))
+        (persistent.writer)(data)
+    }
+
+    /// Checks that a value accepted by the stream codec is also accepted by
+    /// the persistent codec.
+    pub fn validate_persistent_encoding(&self, data: &ComponentData) -> Result<OwnedNbtTag> {
+        let tag = self.write_nbt(data)?;
+        if self.read_nbt_owned(&tag).is_none() {
+            return Err(std::io::Error::other(format!(
+                "Persistent codec for component {} rejected its encoded value",
+                self.key
+            )));
+        }
+        Ok(tag)
     }
 
     /// Computes the vanilla `HashOps` value through this component's persistent codec.
@@ -873,12 +888,11 @@ impl DataComponentPatch {
         })
     }
 
-    /// Converts this component patch to NBT without consuming it.
-    #[must_use]
-    pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
+    fn encode_nbt(&self, validate: bool) -> (OwnedNbtTag, Vec<std::io::Error>) {
         use crate::{REGISTRY, RegistryExt};
 
         let mut compound = NbtCompound::new();
+        let mut errors = Vec::new();
 
         for (key, entry) in &self.entries {
             let Some(component) = REGISTRY.data_components.by_key(key) else {
@@ -889,11 +903,19 @@ impl DataComponentPatch {
             }
             match entry {
                 ComponentPatchEntry::Set(data) => {
-                    let nbt = match component.write_nbt(data) {
-                        Ok(nbt) => nbt,
-                        Err(error) => panic!("invalid component patch value for {key}: {error}"),
+                    let encoded = if validate {
+                        component.validate_persistent_encoding(data)
+                    } else {
+                        component.write_nbt(data)
                     };
-                    compound.insert(key.to_string(), nbt);
+                    match encoded {
+                        Ok(nbt) => {
+                            compound.insert(key.to_string(), nbt);
+                        }
+                        Err(error) => errors.push(std::io::Error::other(format!(
+                            "failed to encode component {key}: {error}"
+                        ))),
+                    }
                 }
                 ComponentPatchEntry::Removed => {
                     compound.insert(format!("!{key}"), NbtCompound::new());
@@ -901,7 +923,33 @@ impl DataComponentPatch {
             }
         }
 
-        OwnedNbtTag::Compound(compound)
+        (OwnedNbtTag::Compound(compound), errors)
+    }
+
+    /// Strictly encodes this component patch through its persistent codecs.
+    ///
+    /// This is the equivalent of Vanilla encoding an untrusted stack through
+    /// `ItemStack.CODEC` before accepting it into server state.
+    pub fn try_to_nbt_tag_ref(&self) -> Result<OwnedNbtTag> {
+        let (tag, errors) = self.encode_nbt(true);
+        match errors.into_iter().next() {
+            Some(error) => Err(error),
+            None => Ok(tag),
+        }
+    }
+
+    /// Converts this component patch to NBT without consuming it.
+    ///
+    /// Save-time encoding mirrors Vanilla's `TagValueOutput`: invalid fields
+    /// are reported and omitted from the partial result rather than aborting
+    /// the owner save.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
+        let (tag, errors) = self.encode_nbt(false);
+        for error in errors {
+            log::warn!("Item component serialization error: {error}");
+        }
+        tag
     }
 }
 
@@ -1313,6 +1361,14 @@ mod tests {
         );
         assert!(golden_sword.is_enchantable());
         assert!(!ItemStack::new(&vanilla_items::STONE).is_enchantable());
+
+        let music_disc_cat = ItemStack::new(&vanilla_items::MUSIC_DISC_CAT);
+        assert_eq!(
+            music_disc_cat
+                .get(crate::data_components::vanilla_components::JUKEBOX_PLAYABLE)
+                .map(crate::data_components::JukeboxPlayable::song),
+            Some(&crate::vanilla_jukebox_songs::CAT)
+        );
 
         for (item, color) in [
             (&vanilla_items::WHITE_DYE, crate::DyeColor::White),
