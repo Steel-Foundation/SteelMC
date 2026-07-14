@@ -4,15 +4,39 @@ on:
   push:
     branches:
       - master
-    tags:
-      - v**
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      current: ${{ steps.version.outputs.current }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check version change
+        id: version
+        shell: bash
+        run: |
+          previous=$(git show HEAD^:Cargo.toml | grep -m1 '^version' | sed 's/.*"\(.*\)".*/\1/')
+          current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+          if [[ "${previous}" == "${current}" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -36,18 +60,14 @@ jobs:
           path: target/release/${{ matrix.artifact }}
 
   release:
-    needs: build
+    needs:
+      - version
+      - build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v4
         with:
@@ -63,14 +83,16 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: ${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.version.outputs.current }}
+          name: v${{ needs.version.outputs.current }}
+          target_commitish: ${{ github.sha }}
           draft: false
           prerelease: false
           files: release/*
           generate_release_notes: true
 
   notify:
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch to SteelDocs
