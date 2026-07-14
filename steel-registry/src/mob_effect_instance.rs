@@ -147,7 +147,6 @@ impl PartialEq for MobEffectInstance {
             && self.ambient == other.ambient
             && self.show_particles == other.show_particles
             && self.show_icon == other.show_icon
-            && self.hidden_effect == other.hidden_effect
     }
 }
 
@@ -430,5 +429,28 @@ mod tests {
                 .expect("effect should decode"),
             value
         );
+    }
+
+    #[test]
+    fn effect_instance_equality_ignores_hidden_effects_like_vanilla() {
+        init_test_registry();
+        let speed = REGISTRY
+            .mob_effects
+            .by_key(&steel_utils::Identifier::vanilla_static("speed"))
+            .expect("speed should be registered");
+        let without_hidden = MobEffectInstance::simple(speed, 200, 1);
+        let with_hidden = MobEffectInstance::new(
+            speed,
+            200,
+            1,
+            false,
+            true,
+            true,
+            Some(MobEffectInstanceDetails::new(
+                2, 400, false, true, true, None,
+            )),
+        );
+
+        assert_eq!(with_hidden, without_hidden);
     }
 }

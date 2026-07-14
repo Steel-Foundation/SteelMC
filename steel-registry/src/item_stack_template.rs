@@ -6,13 +6,18 @@ use std::str::FromStr;
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
+use steel_utils::{DowncastType, Identifier};
 
-use crate::data_components::DataComponentPatch;
+use crate::data_components::vanilla_components::{
+    BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, MAX_DAMAGE, MAX_STACK_SIZE,
+};
+use crate::data_components::{
+    Component, ComponentPatchEntry, DataComponentPatch, DataComponentType,
+};
 use crate::item_stack::ItemStack;
 use crate::items::ItemRef;
 use crate::{REGISTRY, RegistryEntry, RegistryExt, vanilla_items};
@@ -127,6 +132,10 @@ impl ItemStackTemplate {
 
     #[must_use]
     pub fn create(&self) -> ItemStack {
+        if let Err(error) = self.validate_strict() {
+            log::warn!("Can't create item stack with properties {self:?}, error: {error}");
+            return ItemStack::empty();
+        }
         ItemStack::with_count_and_patch(self.item, self.count, self.components.clone())
     }
 
@@ -145,7 +154,8 @@ impl ItemStackTemplate {
     pub(crate) fn from_nbt_identifier(value: &str) -> Option<Self> {
         let _depth = TemplateDepthGuard::enter().ok()?;
         let key = Identifier::from_str(value).ok()?;
-        REGISTRY.items.by_key(&key).map(Self::new)
+        let item = REGISTRY.items.by_key(&key)?;
+        (item != &*vanilla_items::AIR).then(|| Self::new(item))
     }
 
     pub(crate) fn from_nbt_compound(
@@ -164,6 +174,64 @@ impl ItemStackTemplate {
         };
         Self::try_with_count_and_patch(item, count, components).ok()
     }
+
+    fn validate_strict(&self) -> Result<()> {
+        let max_stack_size = self.max_stack_size();
+        if self.get(MAX_DAMAGE).is_some() && max_stack_size > 1 {
+            return Err(Error::other("Item cannot be both damageable and stackable"));
+        }
+
+        if let Some(container) = self.get(CONTAINER) {
+            validate_contained_item_sizes(container.items().iter().flatten())?;
+        }
+
+        if let Some(bundle) = self.get(BUNDLE_CONTENTS) {
+            validate_contained_item_sizes(bundle.items().iter())?;
+            bundle.validate_weight()?;
+        }
+
+        if let Some(projectiles) = self.get(CHARGED_PROJECTILES) {
+            validate_contained_item_sizes(projectiles.items().iter())?;
+        }
+
+        if self.count > max_stack_size {
+            return Err(Error::other(format!(
+                "Item stack with stack size of {} was larger than maximum: {max_stack_size}",
+                self.count
+            )));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn get<T: Component + DowncastType>(
+        &self,
+        component: DataComponentType<T>,
+    ) -> Option<&T> {
+        match self.components.get_entry(&component.key) {
+            Some(ComponentPatchEntry::Set(value)) => value.downcast_ref::<T>(),
+            Some(ComponentPatchEntry::Removed) => None,
+            None => self.item.components.get_ref(component),
+        }
+    }
+
+    pub(crate) fn max_stack_size(&self) -> i32 {
+        self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
+    }
+}
+
+fn validate_contained_item_sizes<'a>(
+    items: impl IntoIterator<Item = &'a ItemStackTemplate>,
+) -> Result<()> {
+    for item in items {
+        let max_stack_size = item.max_stack_size();
+        if item.count > max_stack_size {
+            return Err(Error::other(format!(
+                "Item stack with count of {} was larger than maximum: {max_stack_size}",
+                item.count
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl WriteTo for ItemStackTemplate {
@@ -258,7 +326,13 @@ mod tests {
 
     use super::ItemStackTemplate;
     use crate::data_components::DataComponentPatch;
-    use crate::data_components::vanilla_components::ENCHANTMENT_GLINT_OVERRIDE;
+    use crate::data_components::components::{
+        BundleContents, ChargedProjectiles, ItemContainerContents,
+    };
+    use crate::data_components::vanilla_components::{
+        BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, ENCHANTMENT_GLINT_OVERRIDE, MAX_DAMAGE,
+        MAX_STACK_SIZE,
+    };
     use crate::test_support::init_test_registry;
     use crate::vanilla_items;
 
@@ -323,5 +397,102 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn item_only_air_alternative_returns_codec_failure() {
+        init_test_registry();
+
+        assert!(parse(NbtTag::String("minecraft:air".into())).is_none());
+    }
+
+    #[test]
+    fn create_rejects_invalid_effective_stack_constraints() {
+        init_test_registry();
+
+        let mut oversized_patch = DataComponentPatch::new();
+        oversized_patch.set(MAX_STACK_SIZE, 1);
+        let oversized =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 2, oversized_patch)
+                .expect("template codec permits counts above the effective stack maximum");
+        assert!(oversized.create().is_empty());
+
+        let mut damageable_patch = DataComponentPatch::new();
+        damageable_patch.set(MAX_DAMAGE, 1);
+        let damageable =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, damageable_patch)
+                .expect("individually valid components should construct a template");
+        assert!(damageable.create().is_empty());
+
+        assert!(
+            !ItemStackTemplate::new(&vanilla_items::STONE)
+                .create()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn create_rejects_oversized_recursive_contents() {
+        init_test_registry();
+
+        let mut container_patch = DataComponentPatch::new();
+        container_patch.set(
+            CONTAINER,
+            ItemContainerContents::new(vec![Some(oversized_stone_template())])
+                .expect("one container slot should be valid"),
+        );
+        let container =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, container_patch)
+                .expect("container component should persist");
+        assert!(container.create().is_empty());
+
+        let mut bundle_patch = DataComponentPatch::new();
+        bundle_patch.set(
+            BUNDLE_CONTENTS,
+            BundleContents::new(vec![oversized_stone_template()]),
+        );
+        let bundle =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, bundle_patch)
+                .expect("bundle component should persist");
+        assert!(bundle.create().is_empty());
+
+        let mut projectile_patch = DataComponentPatch::new();
+        projectile_patch.set(
+            CHARGED_PROJECTILES,
+            ChargedProjectiles::new(vec![oversized_stone_template()])
+                .expect("one charged projectile should be valid"),
+        );
+        let projectiles =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, projectile_patch)
+                .expect("charged-projectiles component should persist");
+        assert!(projectiles.create().is_empty());
+    }
+
+    #[test]
+    fn create_rejects_excessive_bundle_weight_arithmetic() {
+        init_test_registry();
+
+        let items = [97, 89, 83, 79, 73]
+            .into_iter()
+            .map(|max_stack_size| {
+                let mut patch = DataComponentPatch::new();
+                patch.set(MAX_STACK_SIZE, max_stack_size);
+                ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, patch)
+                    .expect("prime max stack size should be persistable")
+            })
+            .collect();
+        let mut patch = DataComponentPatch::new();
+        patch.set(BUNDLE_CONTENTS, BundleContents::new(items));
+        let template = ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, patch)
+            .expect("bundle with individually valid entries should persist");
+
+        assert!(template.create().is_empty());
+    }
+
+    fn oversized_stone_template() -> ItemStackTemplate {
+        let mut patch = DataComponentPatch::new();
+        patch.set(MAX_STACK_SIZE, 1);
+        ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 2, patch)
+            .expect("template codec permits counts above the effective stack maximum")
     }
 }

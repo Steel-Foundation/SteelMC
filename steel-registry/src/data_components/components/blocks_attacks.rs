@@ -31,7 +31,7 @@ impl DamageReduction {
         base: f32,
         factor: f32,
     ) -> Result<Self> {
-        if horizontal_blocking_angle <= 0.0 || horizontal_blocking_angle.is_nan() {
+        if !is_positive_float(horizontal_blocking_angle) {
             return Err(Error::other("Horizontal blocking angle must be positive"));
         }
         Ok(Self {
@@ -181,7 +181,7 @@ impl ItemDamageFunction {
     };
 
     pub fn new(threshold: f32, base: f32, factor: f32) -> Result<Self> {
-        if threshold < 0.0 || threshold.is_nan() {
+        if !is_non_negative_float(threshold) {
             return Err(Error::other(
                 "Block item-damage threshold must be non-negative",
             ));
@@ -195,7 +195,7 @@ impl ItemDamageFunction {
 
     pub(crate) const fn from_extracted(threshold: f32, base: f32, factor: f32) -> Self {
         assert!(
-            threshold >= 0.0 && !threshold.is_nan(),
+            is_non_negative_float(threshold),
             "extracted block item-damage threshold must be non-negative"
         );
         Self {
@@ -293,10 +293,10 @@ impl BlocksAttacks {
         block_sound: Option<SoundEventHolder>,
         disabled_sound: Option<SoundEventHolder>,
     ) -> Result<Self> {
-        if block_delay_seconds < 0.0 || block_delay_seconds.is_nan() {
+        if !is_non_negative_float(block_delay_seconds) {
             return Err(Error::other("Block delay must be non-negative"));
         }
-        if disable_cooldown_scale < 0.0 || disable_cooldown_scale.is_nan() {
+        if !is_non_negative_float(disable_cooldown_scale) {
             return Err(Error::other("Disable cooldown scale must be non-negative"));
         }
         Ok(Self {
@@ -318,7 +318,7 @@ impl BlocksAttacks {
         disabled_sound: SoundEventHolder,
     ) -> Self {
         assert!(
-            block_delay_seconds >= 0.0 && !block_delay_seconds.is_nan(),
+            is_non_negative_float(block_delay_seconds),
             "extracted shield block delay must be non-negative"
         );
         Self {
@@ -586,6 +586,14 @@ const fn float_equals(left: f32, right: f32) -> bool {
     (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
 }
 
+const fn is_non_negative_float(value: f32) -> bool {
+    value.is_finite() && !value.is_sign_negative()
+}
+
+const fn is_positive_float(value: f32) -> bool {
+    value > 0.0 && value <= f32::MAX
+}
+
 fn optional_f32(tag: Option<&NbtTag>, default: f32) -> Option<f32> {
     match tag {
         Some(tag) => tag.codec_f32(),
@@ -630,7 +638,7 @@ mod tests {
     use simdnbt::{FromNbtTag as _, ToNbtTag as _};
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
-    use super::{BlocksAttacks, ItemDamageFunction};
+    use super::{BlocksAttacks, DamageReduction, ItemDamageFunction};
     use crate::data_components::vanilla_components::BLOCKS_ATTACKS;
     use crate::test_support::init_test_registry;
     use crate::{REGISTRY, RegistryExt};
@@ -687,5 +695,27 @@ mod tests {
             )
             .is_err()
         );
+
+        for invalid in [-0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(ItemDamageFunction::new(invalid, 0.0, 1.0).is_err());
+            assert!(
+                BlocksAttacks::new(
+                    invalid,
+                    1.0,
+                    Vec::new(),
+                    ItemDamageFunction::DEFAULT,
+                    None,
+                    None,
+                    None,
+                )
+                .is_err()
+            );
+        }
+        assert!(ItemDamageFunction::new(0.0, 0.0, 1.0).is_ok());
+
+        for invalid in [0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(DamageReduction::new(invalid, None, 0.0, 1.0).is_err());
+        }
+        assert!(DamageReduction::new(f32::MAX, None, 0.0, 1.0).is_ok());
     }
 }

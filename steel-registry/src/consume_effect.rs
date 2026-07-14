@@ -238,7 +238,7 @@ pub struct ApplyStatusEffectsConsumeEffect {
 
 impl ApplyStatusEffectsConsumeEffect {
     pub fn new(effects: Vec<MobEffectInstance>, probability: f32) -> Result<Self> {
-        if probability.is_nan() || !(0.0..=1.0).contains(&probability) {
+        if !is_float_in_unit_range(probability) {
             return Err(Error::other("Consume-effect probability must be in 0..=1"));
         }
         Ok(Self {
@@ -249,7 +249,7 @@ impl ApplyStatusEffectsConsumeEffect {
 
     pub(crate) const fn from_extracted(effects: Vec<MobEffectInstance>, probability: f32) -> Self {
         assert!(
-            !probability.is_nan() && probability >= 0.0 && probability <= 1.0,
+            is_float_in_unit_range(probability),
             "extracted consume-effect probability must be in 0..=1"
         );
         Self {
@@ -419,7 +419,7 @@ impl TeleportRandomlyConsumeEffect {
     pub const DEFAULT_DIAMETER: f32 = 16.0;
 
     pub fn new(diameter: f32) -> Result<Self> {
-        if diameter <= 0.0 || diameter.is_nan() {
+        if !is_positive_float(diameter) {
             return Err(Error::other("Random teleport diameter must be positive"));
         }
         Ok(Self { diameter })
@@ -427,7 +427,7 @@ impl TeleportRandomlyConsumeEffect {
 
     pub(crate) const fn from_extracted(diameter: f32) -> Self {
         assert!(
-            diameter > 0.0 && !diameter.is_nan(),
+            is_positive_float(diameter),
             "extracted random teleport diameter must be positive"
         );
         Self { diameter }
@@ -626,6 +626,14 @@ impl HashComponent for MobEffectList<'_> {
 
 const fn float_equals(left: f32, right: f32) -> bool {
     (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+}
+
+const fn is_positive_float(value: f32) -> bool {
+    value > 0.0 && value <= f32::MAX
+}
+
+const fn is_float_in_unit_range(value: f32) -> bool {
+    value.is_finite() && !value.is_sign_negative() && value <= 1.0
 }
 
 fn optional_f32(tag: Option<&NbtTag>, default: f32) -> Option<f32> {

@@ -432,7 +432,7 @@ fn write_canonical_snbt(tag: &NbtTag, output: &mut String) -> Option<()> {
         }
         NbtTag::List(values) => {
             output.push('[');
-            for (index, value) in values.as_nbt_tags().iter().enumerate() {
+            for (index, value) in super::nbt_list_values(values).iter().enumerate() {
                 if index != 0 {
                     output.push(',');
                 }
@@ -1688,6 +1688,28 @@ mod tests {
                     .to_owned()
             )
         );
+    }
+
+    #[test]
+    fn canonical_writer_uses_semantic_heterogeneous_list_values() {
+        let list = NbtTag::List(NbtList::from(vec![
+            NbtTag::Int(7),
+            NbtTag::String("value".into()),
+        ]));
+
+        assert_eq!(to_canonical_snbt(&list), Some("[7,\"value\"]".to_owned()));
+    }
+
+    #[test]
+    fn canonical_writer_preserves_wrapper_shaped_compound_values() {
+        let mut compound = NbtCompound::new();
+        compound.insert("", 7);
+        let list = NbtTag::List(NbtList::from(vec![
+            NbtTag::Int(1),
+            NbtTag::Compound(compound),
+        ]));
+
+        assert_eq!(to_canonical_snbt(&list), Some("[1,{\"\":7}]".to_owned()));
     }
 
     #[test]

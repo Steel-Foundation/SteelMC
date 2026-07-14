@@ -12,11 +12,19 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 use crate::sound_event::SoundEventHolder;
 
 /// Time and speed thresholds for one kinetic-weapon action.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct KineticWeaponCondition {
     max_duration_ticks: i32,
     min_speed: f32,
     min_relative_speed: f32,
+}
+
+impl PartialEq for KineticWeaponCondition {
+    fn eq(&self, other: &Self) -> bool {
+        self.max_duration_ticks == other.max_duration_ticks
+            && java_float_equals(self.min_speed, other.min_speed)
+            && java_float_equals(self.min_relative_speed, other.min_relative_speed)
+    }
 }
 
 impl KineticWeaponCondition {
@@ -114,7 +122,7 @@ impl HashComponent for KineticWeaponCondition {
 }
 
 /// Data controlling a spear-like continuous kinetic attack.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct KineticWeapon {
     contact_cooldown_ticks: i32,
     delay_ticks: i32,
@@ -125,6 +133,20 @@ pub struct KineticWeapon {
     damage_multiplier: f32,
     sound: Option<SoundEventHolder>,
     hit_sound: Option<SoundEventHolder>,
+}
+
+impl PartialEq for KineticWeapon {
+    fn eq(&self, other: &Self) -> bool {
+        self.contact_cooldown_ticks == other.contact_cooldown_ticks
+            && self.delay_ticks == other.delay_ticks
+            && self.dismount_conditions == other.dismount_conditions
+            && self.knockback_conditions == other.knockback_conditions
+            && self.damage_conditions == other.damage_conditions
+            && java_float_equals(self.forward_movement, other.forward_movement)
+            && java_float_equals(self.damage_multiplier, other.damage_multiplier)
+            && self.sound == other.sound
+            && self.hit_sound == other.hit_sound
+    }
 }
 
 impl KineticWeapon {
@@ -383,6 +405,10 @@ fn optional_owned_f32(tag: Option<&NbtTag>, default: f32) -> Option<f32> {
     }
 }
 
+const fn java_float_equals(left: f32, right: f32) -> bool {
+    (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+}
+
 #[expect(
     clippy::option_option,
     reason = "the outer option reports codec failure while the inner option represents an absent field"
@@ -480,6 +506,33 @@ mod tests {
     fn negative_persistent_durations_are_rejected() {
         assert!(KineticWeaponCondition::new(-1, 0.0, 0.0).is_err());
         assert!(KineticWeapon::new(-1, 0, None, None, None, 0.0, 1.0, None, None).is_err());
+    }
+
+    #[test]
+    fn equality_uses_java_record_float_semantics() {
+        let first_nan = f32::from_bits(0x7fc0_0001);
+        let second_nan = f32::from_bits(0x7fc0_0002);
+        assert_eq!(
+            KineticWeaponCondition::new(1, first_nan, 0.0).expect("valid condition"),
+            KineticWeaponCondition::new(1, second_nan, 0.0).expect("valid condition")
+        );
+        assert_ne!(
+            KineticWeaponCondition::new(1, 0.0, 0.0).expect("valid condition"),
+            KineticWeaponCondition::new(1, -0.0, 0.0).expect("valid condition")
+        );
+
+        assert_eq!(
+            KineticWeapon::new(10, 0, None, None, None, first_nan, 1.0, None, None)
+                .expect("valid weapon"),
+            KineticWeapon::new(10, 0, None, None, None, second_nan, 1.0, None, None)
+                .expect("valid weapon")
+        );
+        assert_ne!(
+            KineticWeapon::new(10, 0, None, None, None, 0.0, 1.0, None, None)
+                .expect("valid weapon"),
+            KineticWeapon::new(10, 0, None, None, None, -0.0, 1.0, None, None)
+                .expect("valid weapon")
+        );
     }
 
     #[test]

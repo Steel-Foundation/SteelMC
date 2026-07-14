@@ -10,11 +10,19 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 /// Nutrition restored by consuming an item.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct FoodProperties {
     nutrition: i32,
     saturation: f32,
     can_always_eat: bool,
+}
+
+impl PartialEq for FoodProperties {
+    fn eq(&self, other: &Self) -> bool {
+        self.nutrition == other.nutrition
+            && java_float_equals(self.saturation, other.saturation)
+            && self.can_always_eat == other.can_always_eat
+    }
 }
 
 impl FoodProperties {
@@ -127,6 +135,10 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
     entries.push(HashEntry::new(key_hasher, value_hasher));
 }
 
+const fn java_float_equals(left: f32, right: f32) -> bool {
+    (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -174,6 +186,18 @@ mod tests {
         invalid.insert("nutrition", -1);
         invalid.insert("saturation", 0.0_f32);
         assert!(parse(NbtTag::Compound(invalid)).is_none());
+    }
+
+    #[test]
+    fn equality_uses_java_record_float_semantics() {
+        assert_eq!(
+            FoodProperties::new(1, f32::from_bits(0x7fc0_0001), false).expect("valid food"),
+            FoodProperties::new(1, f32::from_bits(0x7fc0_0002), false).expect("valid food")
+        );
+        assert_ne!(
+            FoodProperties::new(1, 0.0, false).expect("valid food"),
+            FoodProperties::new(1, -0.0, false).expect("valid food")
+        );
     }
 
     #[test]

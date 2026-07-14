@@ -1016,6 +1016,10 @@ impl ToNbtTag for ItemStack {
 impl ItemStack {
     /// Checks that this stack can be encoded by Vanilla's persistent
     /// `ItemStack.CODEC` before untrusted network data enters server state.
+    ///
+    /// This is an ingress check rather than a type invariant: programmatic
+    /// component mutation can still create values whose save codec reports
+    /// and omits invalid fields.
     pub fn validate_persistent_encoding(&self) -> Result<()> {
         if self.is_empty() {
             return Ok(());

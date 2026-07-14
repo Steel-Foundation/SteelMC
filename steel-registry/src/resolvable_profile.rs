@@ -1,6 +1,7 @@
 //! Vanilla resolvable player profiles used by item components and entity data.
 
 use std::io::{Cursor, Error, Result, Write};
+use std::ops::Deref;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -93,22 +94,88 @@ impl HashComponent for ProfileProperty {
     }
 }
 
+/// Authlib property-map values grouped by first key occurrence.
+#[derive(Debug, Default, Clone)]
+struct ProfileProperties(Vec<ProfileProperty>);
+
+impl ProfileProperties {
+    fn new(properties: Vec<ProfileProperty>) -> Result<Self> {
+        validate_properties(&properties)?;
+        let mut grouped = Vec::with_capacity(properties.len());
+        for property in properties {
+            let insertion_index = grouped
+                .iter()
+                .rposition(|existing: &ProfileProperty| existing.name() == property.name())
+                .map(|index| index + 1);
+            if let Some(index) = insertion_index {
+                grouped.insert(index, property);
+            } else {
+                grouped.push(property);
+            }
+        }
+        Ok(Self(grouped))
+    }
+}
+
+impl Deref for ProfileProperties {
+    type Target = [ProfileProperty];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for ProfileProperties {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        let mut left_start = 0;
+        while let Some(first) = self.get(left_start) {
+            let name = first.name();
+            let left_end = property_group_end(self, left_start);
+            let Some(right_start) = other.iter().position(|property| property.name() == name)
+            else {
+                return false;
+            };
+            let right_end = property_group_end(other, right_start);
+            if self[left_start..left_end] != other[right_start..right_end] {
+                return false;
+            }
+            left_start = left_end;
+        }
+        true
+    }
+}
+
+impl Eq for ProfileProperties {}
+
+fn property_group_end(properties: &[ProfileProperty], start: usize) -> usize {
+    let Some(first) = properties.get(start) else {
+        return start;
+    };
+    properties[start + 1..]
+        .iter()
+        .position(|property| property.name() != first.name())
+        .map_or(properties.len(), |offset| start + offset + 1)
+}
+
 /// Complete authlib profile contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredGameProfile {
     id: Uuid,
     name: String,
-    properties: Vec<ProfileProperty>,
+    properties: ProfileProperties,
 }
 
 impl StoredGameProfile {
     pub fn new(id: Uuid, name: String, properties: Vec<ProfileProperty>) -> Result<Self> {
         validate_player_name(&name)?;
-        validate_properties(&properties)?;
         Ok(Self {
             id,
             name,
-            properties,
+            properties: ProfileProperties::new(properties)?,
         })
     }
 
@@ -133,7 +200,7 @@ impl StoredGameProfile {
 pub struct PartialProfile {
     name: Option<String>,
     id: Option<Uuid>,
-    properties: Vec<ProfileProperty>,
+    properties: ProfileProperties,
 }
 
 impl PartialProfile {
@@ -145,11 +212,10 @@ impl PartialProfile {
         if let Some(name) = &name {
             validate_player_name(name)?;
         }
-        validate_properties(&properties)?;
         Ok(Self {
             name,
             id,
-            properties,
+            properties: ProfileProperties::new(properties)?,
         })
     }
 
@@ -796,7 +862,8 @@ mod tests {
 
     use super::{
         PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
-        ResolvableProfileContents, StoredGameProfile,
+        ResolvableProfileContents, StoredGameProfile, read_properties_network,
+        write_properties_network,
     };
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<ResolvableProfile> {
@@ -851,6 +918,71 @@ mod tests {
             &ResolvableProfileContents::DynamicName("Alex".to_owned())
         );
         assert_eq!(parse(parsed.clone().to_nbt_tag()), Some(parsed));
+    }
+
+    #[test]
+    fn properties_use_authlib_multimap_order_and_equality() {
+        let first = StoredGameProfile::new(
+            Uuid::nil(),
+            "Alex".to_owned(),
+            vec![
+                ProfileProperty::new("textures".to_owned(), "first".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("cape".to_owned(), "only".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("textures".to_owned(), "second".to_owned(), None)
+                    .expect("valid property"),
+            ],
+        )
+        .expect("valid profile");
+        let cross_key_reordered = StoredGameProfile::new(
+            Uuid::nil(),
+            "Alex".to_owned(),
+            vec![
+                ProfileProperty::new("cape".to_owned(), "only".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("textures".to_owned(), "first".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("textures".to_owned(), "second".to_owned(), None)
+                    .expect("valid property"),
+            ],
+        )
+        .expect("valid profile");
+        let same_key_reordered = StoredGameProfile::new(
+            Uuid::nil(),
+            "Alex".to_owned(),
+            vec![
+                ProfileProperty::new("textures".to_owned(), "second".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("textures".to_owned(), "first".to_owned(), None)
+                    .expect("valid property"),
+                ProfileProperty::new("cape".to_owned(), "only".to_owned(), None)
+                    .expect("valid property"),
+            ],
+        )
+        .expect("valid profile");
+
+        assert_eq!(
+            first
+                .properties()
+                .iter()
+                .map(|property| (property.name(), property.value()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("textures", "first"),
+                ("textures", "second"),
+                ("cape", "only")
+            ]
+        );
+        assert_eq!(first, cross_key_reordered);
+        assert_ne!(first, same_key_reordered);
+
+        let mut network = Vec::new();
+        write_properties_network(first.properties(), &mut network)
+            .expect("properties should encode");
+        let decoded = read_properties_network(&mut Cursor::new(network.as_slice()))
+            .expect("properties should decode");
+        assert_eq!(decoded, first.properties());
     }
 
     #[test]

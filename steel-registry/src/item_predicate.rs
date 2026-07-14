@@ -922,7 +922,9 @@ pub(crate) fn hash_entries(hasher: &mut ComponentHasher, entries: &mut [HashEntr
 
 #[cfg(test)]
 mod tests {
-    use super::DoubleBounds;
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+
+    use super::{DoubleBounds, NbtPredicate};
 
     #[test]
     fn double_bounds_use_java_ordering() {
@@ -931,5 +933,19 @@ mod tests {
         assert!(DoubleBounds::new(Some(f64::NAN), Some(f64::NAN)).is_some());
         assert!(DoubleBounds::new(Some(1.0), Some(f64::NAN)).is_some());
         assert!(DoubleBounds::new(Some(f64::NAN), Some(1.0)).is_none());
+    }
+
+    #[test]
+    fn nbt_predicate_persistence_round_trips_heterogeneous_lists() {
+        let mut tag = NbtCompound::new();
+        tag.insert(
+            "values",
+            NbtList::from(vec![NbtTag::Int(7), NbtTag::String("value".into())]),
+        );
+        let predicate = NbtPredicate::new(tag).expect("predicate NBT should normalize");
+
+        let encoded = predicate.to_nbt_tag_ref();
+        assert_eq!(encoded, NbtTag::String("{values:[7,\"value\"]}".into()));
+        assert_eq!(NbtPredicate::from_owned_nbt(&encoded), Some(predicate));
     }
 }

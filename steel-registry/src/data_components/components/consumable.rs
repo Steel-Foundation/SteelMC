@@ -136,7 +136,7 @@ impl Consumable {
         has_consume_particles: bool,
         on_consume_effects: Vec<ConsumeEffectData>,
     ) -> Result<Self> {
-        if consume_seconds < 0.0 || consume_seconds.is_nan() {
+        if !is_non_negative_float(consume_seconds) {
             return Err(Error::other("Consume duration must be non-negative"));
         }
         Ok(Self {
@@ -156,7 +156,7 @@ impl Consumable {
         on_consume_effects: Vec<ConsumeEffectData>,
     ) -> Self {
         assert!(
-            consume_seconds >= 0.0 && !consume_seconds.is_nan(),
+            is_non_negative_float(consume_seconds),
             "extracted consume duration must be non-negative"
         );
         Self {
@@ -458,6 +458,10 @@ const fn float_equals(left: f32, right: f32) -> bool {
     (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
 }
 
+const fn is_non_negative_float(value: f32) -> bool {
+    value.is_finite() && !value.is_sign_negative()
+}
+
 fn optional_f32(tag: Option<&NbtTag>, default: f32) -> Option<f32> {
     match tag {
         Some(tag) => tag.codec_f32(),
@@ -493,7 +497,7 @@ mod tests {
     use super::{Consumable, DeathProtection, ItemUseAnimation};
     use crate::consume_effect::{
         ApplyStatusEffectsConsumeEffect, ClearAllStatusEffectsConsumeEffect,
-        RemoveStatusEffectsConsumeEffect,
+        RemoveStatusEffectsConsumeEffect, TeleportRandomlyConsumeEffect,
     };
     use crate::data_components::vanilla_components::{CONSUMABLE, DEATH_PROTECTION};
     use crate::test_support::init_test_registry;
@@ -615,5 +619,30 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn persistent_float_ranges_match_vanilla_float_compare_bounds() {
+        let sound = || crate::sound_event::SoundEventHolder::Direct {
+            sound_id: steel_utils::Identifier::vanilla_static("test"),
+            fixed_range: None,
+        };
+        for invalid in [-0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(
+                Consumable::new(invalid, ItemUseAnimation::Eat, sound(), true, Vec::new()).is_err()
+            );
+        }
+        assert!(Consumable::new(0.0, ItemUseAnimation::Eat, sound(), true, Vec::new()).is_ok());
+
+        for invalid in [0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(TeleportRandomlyConsumeEffect::new(invalid).is_err());
+        }
+        assert!(TeleportRandomlyConsumeEffect::new(f32::MAX).is_ok());
+
+        for invalid in [-0.0, 1.1, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(ApplyStatusEffectsConsumeEffect::new(Vec::new(), invalid).is_err());
+        }
+        assert!(ApplyStatusEffectsConsumeEffect::new(Vec::new(), 0.0).is_ok());
+        assert!(ApplyStatusEffectsConsumeEffect::new(Vec::new(), 1.0).is_ok());
     }
 }

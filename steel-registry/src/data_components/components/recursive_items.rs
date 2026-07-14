@@ -9,7 +9,9 @@ use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entr
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
+use super::Bees;
 use crate::ItemStackTemplate;
+use crate::data_components::vanilla_components::{BEES, BUNDLE_CONTENTS};
 
 macro_rules! impl_template_wrapper_codecs {
     ($type:ty, $field:ident) => {
@@ -147,6 +149,142 @@ impl BundleContents {
     pub fn items(&self) -> &[ItemStackTemplate] {
         &self.items
     }
+
+    /// Validates the checked rational weight used by Vanilla's strict item-stack validation.
+    pub(crate) fn validate_weight(&self) -> Result<()> {
+        self.compute_weight().map(|_| ())
+    }
+
+    fn compute_weight(&self) -> Result<CheckedFraction> {
+        let mut weight = CheckedFraction::ZERO;
+        for item in &self.items {
+            let item_weight = bundle_item_weight(item)?.multiply(item.count())?;
+            weight = weight.add(item_weight)?;
+        }
+        Ok(weight)
+    }
+}
+
+fn bundle_item_weight(item: &ItemStackTemplate) -> Result<CheckedFraction> {
+    if let Some(bundle) = item.get(BUNDLE_CONTENTS) {
+        return bundle.compute_weight()?.add(CheckedFraction::new(1, 16)?);
+    }
+    if item
+        .get(BEES)
+        .is_some_and(|bees: &Bees| !bees.bees().is_empty())
+    {
+        return Ok(CheckedFraction::ONE);
+    }
+    CheckedFraction::new(1, item.max_stack_size())
+}
+
+/// Positive subset of Commons Lang `Fraction` used by `BundleContents`.
+#[derive(Clone, Copy)]
+struct CheckedFraction {
+    numerator: i32,
+    denominator: i32,
+}
+
+impl CheckedFraction {
+    const ZERO: Self = Self {
+        numerator: 0,
+        denominator: 1,
+    };
+    const ONE: Self = Self {
+        numerator: 1,
+        denominator: 1,
+    };
+
+    fn new(numerator: i32, denominator: i32) -> Result<Self> {
+        if numerator < 0 || denominator <= 0 {
+            return Err(Error::other("Invalid bundle weight fraction"));
+        }
+        let divisor = gcd(numerator, denominator);
+        Ok(Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        })
+    }
+
+    /// Mirrors the positive-number branches of Commons Lang `Fraction.addSub`.
+    fn add(self, other: Self) -> Result<Self> {
+        if self.numerator == 0 {
+            return Ok(other);
+        }
+        if other.numerator == 0 {
+            return Ok(self);
+        }
+
+        let denominator_gcd = gcd(self.denominator, other.denominator);
+        if denominator_gcd == 1 {
+            let left = checked_mul(self.numerator, other.denominator)?;
+            let right = checked_mul(other.numerator, self.denominator)?;
+            return Ok(Self {
+                numerator: checked_add(left, right)?,
+                denominator: checked_mul(self.denominator, other.denominator)?,
+            });
+        }
+
+        let left = i64::from(self.numerator) * i64::from(other.denominator / denominator_gcd);
+        let right = i64::from(other.numerator) * i64::from(self.denominator / denominator_gcd);
+        let sum = left + right;
+        let reduction = gcd_i64(sum % i64::from(denominator_gcd), i64::from(denominator_gcd));
+        let numerator = i32::try_from(sum / reduction)
+            .map_err(|_| Error::other("Excessive total bundle weight"))?;
+        let reduction =
+            i32::try_from(reduction).map_err(|_| Error::other("Excessive total bundle weight"))?;
+        let denominator = checked_mul(
+            self.denominator / denominator_gcd,
+            other.denominator / reduction,
+        )?;
+        Ok(Self {
+            numerator,
+            denominator,
+        })
+    }
+
+    /// Mirrors multiplying by Commons Lang `Fraction.getFraction(value, 1)`.
+    fn multiply(self, value: i32) -> Result<Self> {
+        if value < 0 {
+            return Err(Error::other("Invalid bundle item count"));
+        }
+        if self.numerator == 0 || value == 0 {
+            return Ok(Self::ZERO);
+        }
+        let reduction = gcd(value, self.denominator);
+        Self::new(
+            checked_mul(self.numerator, value / reduction)?,
+            self.denominator / reduction,
+        )
+    }
+}
+
+const fn gcd(mut left: i32, mut right: i32) -> i32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.abs()
+}
+
+const fn gcd_i64(mut left: i64, mut right: i64) -> i64 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.abs()
+}
+
+fn checked_mul(left: i32, right: i32) -> Result<i32> {
+    left.checked_mul(right)
+        .ok_or_else(|| Error::other("Excessive total bundle weight"))
+}
+
+fn checked_add(left: i32, right: i32) -> Result<i32> {
+    left.checked_add(right)
+        .ok_or_else(|| Error::other("Excessive total bundle weight"))
 }
 
 impl WriteTo for BundleContents {
@@ -485,11 +623,13 @@ mod tests {
     use super::{
         BundleContents, ChargedProjectiles, ItemContainerContents, SulfurCubeContent, UseRemainder,
     };
+    use crate::data_components::DataComponentPatch;
+    use crate::data_components::components::{BeehiveOccupant, Bees, CustomData, EntityData};
     use crate::data_components::vanilla_components::{
-        BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, USE_REMAINDER,
+        BEES, BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, MAX_STACK_SIZE, USE_REMAINDER,
     };
     use crate::test_support::init_test_registry;
-    use crate::{ItemStackTemplate, REGISTRY, vanilla_items};
+    use crate::{ItemStackTemplate, REGISTRY, vanilla_entities, vanilla_items};
 
     fn round_trip<T>(value: T)
     where
@@ -569,6 +709,62 @@ mod tests {
         assert!(
             ItemContainerContents::new(vec![None; ItemContainerContents::MAX_SIZE + 1]).is_err()
         );
+    }
+
+    #[test]
+    fn bundle_weight_matches_nested_bundle_and_beehive_rules() {
+        init_test_registry();
+
+        let mut inner_patch = DataComponentPatch::new();
+        inner_patch.set(
+            BUNDLE_CONTENTS,
+            BundleContents::new(vec![ItemStackTemplate::new(&vanilla_items::STONE)]),
+        );
+        let nested_bundle =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, inner_patch)
+                .expect("nested bundle should persist");
+        let nested_weight = BundleContents::new(vec![nested_bundle])
+            .compute_weight()
+            .expect("small nested bundle weight should compute");
+        assert_eq!(
+            (nested_weight.numerator, nested_weight.denominator),
+            (5, 64)
+        );
+
+        let occupant = BeehiveOccupant::new(
+            EntityData::new(&vanilla_entities::BEE, CustomData::default()),
+            0,
+            0,
+        );
+        let mut beehive_patch = DataComponentPatch::new();
+        beehive_patch.set(BEES, Bees::new(vec![occupant]));
+        let beehive =
+            ItemStackTemplate::try_with_count_and_patch(&vanilla_items::BEEHIVE, 1, beehive_patch)
+                .expect("occupied beehive should persist");
+        let beehive_weight = BundleContents::new(vec![beehive])
+            .compute_weight()
+            .expect("occupied beehive weight should compute");
+        assert_eq!(
+            (beehive_weight.numerator, beehive_weight.denominator),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn bundle_weight_rejects_commons_fraction_denominator_overflow() {
+        init_test_registry();
+
+        let items = [97, 89, 83, 79, 73]
+            .into_iter()
+            .map(|max_stack_size| {
+                let mut patch = DataComponentPatch::new();
+                patch.set(MAX_STACK_SIZE, max_stack_size);
+                ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 1, patch)
+                    .expect("prime max stack size should be persistable")
+            })
+            .collect();
+
+        assert!(BundleContents::new(items).validate_weight().is_err());
     }
 
     #[test]

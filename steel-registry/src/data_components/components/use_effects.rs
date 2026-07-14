@@ -9,11 +9,19 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 /// Controls movement and vibration behavior while an item is being used.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub struct UseEffects {
     pub can_sprint: bool,
     pub interact_vibrations: bool,
     pub speed_multiplier: f32,
+}
+
+impl PartialEq for UseEffects {
+    fn eq(&self, other: &Self) -> bool {
+        self.can_sprint == other.can_sprint
+            && self.interact_vibrations == other.interact_vibrations
+            && java_float_equals(self.speed_multiplier, other.speed_multiplier)
+    }
 }
 
 impl UseEffects {
@@ -87,7 +95,10 @@ impl FromNbtTag for UseEffects {
         let speed_multiplier = compound
             .get("speed_multiplier")
             .map_or(Some(Self::DEFAULT.speed_multiplier), |tag| tag.codec_f32())?;
-        if !speed_multiplier.is_finite() || !(0.0..=1.0).contains(&speed_multiplier) {
+        if !speed_multiplier.is_finite()
+            || speed_multiplier.is_sign_negative()
+            || speed_multiplier > 1.0
+        {
             return None;
         }
         Some(Self {
@@ -132,6 +143,10 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
     entries.push(HashEntry::new(key_hasher, value_hasher));
 }
 
+const fn java_float_equals(left: f32, right: f32) -> bool {
+    (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -160,11 +175,23 @@ mod tests {
 
     #[test]
     fn persistent_codec_rejects_out_of_range_speed() {
-        for speed in [-0.1_f32, 1.1, f32::NAN] {
+        for speed in [-0.0_f32, -0.1, 1.1, f32::NAN] {
             let mut compound = NbtCompound::new();
             compound.insert("speed_multiplier", speed);
             assert_eq!(parse(NbtTag::Compound(compound)), None);
         }
+    }
+
+    #[test]
+    fn equality_uses_java_record_float_semantics() {
+        assert_eq!(
+            UseEffects::new(false, true, f32::from_bits(0x7fc0_0001)),
+            UseEffects::new(false, true, f32::from_bits(0x7fc0_0002))
+        );
+        assert_ne!(
+            UseEffects::new(false, true, 0.0),
+            UseEffects::new(false, true, -0.0)
+        );
     }
 
     #[test]
