@@ -6,9 +6,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _,
     attribute::{AttributeModifierOperation, AttributeRef},
-    data_components::{
-        ComponentData, ComponentDataDiscriminant, ComponentEntry, vanilla_components,
-    },
+    data_components::{ComponentData, ComponentEntry, vanilla_components},
     enchantment::EnchantmentRef,
     equipment::EquipmentSlotGroup,
     item_stack::ItemStack,
@@ -309,7 +307,7 @@ fn parse_component_value_test(
             format!("Unknown item component '{key}'"),
         ));
     };
-    if entry.expected_discriminant == ComponentDataDiscriminant::Todo {
+    if !entry.is_implemented() {
         return Err(dynamic_error(
             reader,
             format!("Component value '{key}' is not implemented by Steel yet"),

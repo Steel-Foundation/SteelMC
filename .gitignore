@@ -23,6 +23,7 @@ CLAUDE.md
 /minecraft-src
 .agents
 skills-lock.json
+docs
 
 # Package
 profile.json.gz

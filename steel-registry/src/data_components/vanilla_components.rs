@@ -66,13 +66,20 @@ pub const ENCHANTMENT_GLINT_OVERRIDE: DataComponentType<bool> =
 pub const POTION_DURATION_SCALE: DataComponentType<f32> =
     DataComponentType::new(Identifier::vanilla_static("potion_duration_scale"));
 
-// These components are registered but use placeholder serialization.
-// They use the Todo ComponentData variant.
+/// Type marker for vanilla component IDs whose value and codecs are not ported.
+///
+/// The empty enum cannot be constructed and deliberately does not implement
+/// [`super::Component`], so an unimplemented component cannot be inserted into
+/// an item through the typed component APIs.
+pub enum UnimplementedComponent {}
 
-pub const CUSTOM_DATA: DataComponentType<()> =
+// These component IDs are reserved in vanilla order until their concrete value
+// types and codecs are ported.
+
+pub const CUSTOM_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("custom_data"));
 
-pub const USE_EFFECTS: DataComponentType<()> =
+pub const USE_EFFECTS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("use_effects"));
 
 pub const MINIMUM_ATTACK_CHARGE: DataComponentType<f32> =
@@ -81,337 +88,291 @@ pub const MINIMUM_ATTACK_CHARGE: DataComponentType<f32> =
 pub const DAMAGE_TYPE: DataComponentType<DamageTypeComponent> =
     DataComponentType::new(Identifier::vanilla_static("damage_type"));
 
-pub const ITEM_MODEL: DataComponentType<()> =
+pub const ITEM_MODEL: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("item_model"));
 
-pub const LORE: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("lore"));
+pub const LORE: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("lore"));
 
-pub const RARITY: DataComponentType<()> =
+pub const RARITY: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("rarity"));
 
 pub const ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("enchantments"));
 
-pub const CAN_PLACE_ON: DataComponentType<()> =
+pub const CAN_PLACE_ON: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("can_place_on"));
 
-pub const CAN_BREAK: DataComponentType<()> =
+pub const CAN_BREAK: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("can_break"));
 
 pub const ATTRIBUTE_MODIFIERS: DataComponentType<ItemAttributeModifiers> =
     DataComponentType::new(Identifier::vanilla_static("attribute_modifiers"));
 
-pub const CUSTOM_MODEL_DATA: DataComponentType<()> =
+pub const CUSTOM_MODEL_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("custom_model_data"));
 
-pub const TOOLTIP_DISPLAY: DataComponentType<()> =
+pub const TOOLTIP_DISPLAY: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tooltip_display"));
 
-pub const TOOLTIP_STYLE: DataComponentType<()> =
+pub const TOOLTIP_STYLE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tooltip_style"));
 
-pub const NOTE_BLOCK_SOUND: DataComponentType<()> =
+pub const NOTE_BLOCK_SOUND: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("note_block_sound"));
 
-pub const FOOD: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("food"));
+pub const FOOD: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("food"));
 
-pub const CONSUMABLE: DataComponentType<()> =
+pub const CONSUMABLE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("consumable"));
 
-pub const USE_REMAINDER: DataComponentType<()> =
+pub const USE_REMAINDER: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("use_remainder"));
 
 pub const USE_COOLDOWN: DataComponentType<UseCooldown> =
     DataComponentType::new(Identifier::vanilla_static("use_cooldown"));
 
-pub const DAMAGE_RESISTANT: DataComponentType<()> =
+pub const DAMAGE_RESISTANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("damage_resistant"));
 
-pub const ENCHANTABLE: DataComponentType<()> =
+pub const ENCHANTABLE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("enchantable"));
 
-pub const REPAIRABLE: DataComponentType<()> =
+pub const REPAIRABLE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("repairable"));
 
-pub const DEATH_PROTECTION: DataComponentType<()> =
+pub const DEATH_PROTECTION: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("death_protection"));
 
-pub const BLOCKS_ATTACKS: DataComponentType<()> =
+pub const BLOCKS_ATTACKS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("blocks_attacks"));
 
 pub const PIERCING_WEAPON: DataComponentType<PiercingWeapon> =
     DataComponentType::new(Identifier::vanilla_static("piercing_weapon"));
 
-pub const KINETIC_WEAPON: DataComponentType<()> =
+pub const KINETIC_WEAPON: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("kinetic_weapon"));
 
-pub const SWING_ANIMATION: DataComponentType<()> =
+pub const SWING_ANIMATION: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("swing_animation"));
 
-pub const ADDITIONAL_TRADE_COST: DataComponentType<()> =
+pub const ADDITIONAL_TRADE_COST: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("additional_trade_cost"));
 
 pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
 
-pub const DYE: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("dye"));
+pub const DYE: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("dye"));
 
-pub const DYED_COLOR: DataComponentType<()> =
+pub const DYED_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("dyed_color"));
 
-pub const MAP_COLOR: DataComponentType<()> =
+pub const MAP_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("map_color"));
 
-pub const MAP_ID: DataComponentType<()> =
+pub const MAP_ID: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("map_id"));
 
-pub const MAP_DECORATIONS: DataComponentType<()> =
+pub const MAP_DECORATIONS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("map_decorations"));
 
-pub const MAP_POST_PROCESSING: DataComponentType<()> =
+pub const MAP_POST_PROCESSING: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("map_post_processing"));
 
-pub const CHARGED_PROJECTILES: DataComponentType<()> =
+pub const CHARGED_PROJECTILES: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("charged_projectiles"));
 
-pub const BUNDLE_CONTENTS: DataComponentType<()> =
+pub const BUNDLE_CONTENTS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("bundle_contents"));
 
-pub const POTION_CONTENTS: DataComponentType<()> =
+pub const POTION_CONTENTS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("potion_contents"));
 
-pub const SUSPICIOUS_STEW_EFFECTS: DataComponentType<()> =
+pub const SUSPICIOUS_STEW_EFFECTS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("suspicious_stew_effects"));
 
-pub const WRITABLE_BOOK_CONTENT: DataComponentType<()> =
+pub const WRITABLE_BOOK_CONTENT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("writable_book_content"));
 
-pub const WRITTEN_BOOK_CONTENT: DataComponentType<()> =
+pub const WRITTEN_BOOK_CONTENT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("written_book_content"));
 
-pub const TRIM: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("trim"));
+pub const TRIM: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("trim"));
 
-pub const DEBUG_STICK_STATE: DataComponentType<()> =
+pub const DEBUG_STICK_STATE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("debug_stick_state"));
 
-pub const ENTITY_DATA: DataComponentType<()> =
+pub const ENTITY_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("entity_data"));
 
-pub const BUCKET_ENTITY_DATA: DataComponentType<()> =
+pub const BUCKET_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("bucket_entity_data"));
 
-pub const BLOCK_ENTITY_DATA: DataComponentType<()> =
+pub const BLOCK_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("block_entity_data"));
 
-pub const INSTRUMENT: DataComponentType<()> =
+pub const INSTRUMENT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("instrument"));
 
-pub const PROVIDES_TRIM_MATERIAL: DataComponentType<()> =
+pub const PROVIDES_TRIM_MATERIAL: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("provides_trim_material"));
 
-pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<()> =
+pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("ominous_bottle_amplifier"));
 
-pub const JUKEBOX_PLAYABLE: DataComponentType<()> =
+pub const JUKEBOX_PLAYABLE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("jukebox_playable"));
 
-pub const PROVIDES_BANNER_PATTERNS: DataComponentType<()> =
+pub const PROVIDES_BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("provides_banner_patterns"));
 
-pub const RECIPES: DataComponentType<()> =
+pub const RECIPES: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("recipes"));
 
-pub const LODESTONE_TRACKER: DataComponentType<()> =
+pub const LODESTONE_TRACKER: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("lodestone_tracker"));
 
-pub const FIREWORK_EXPLOSION: DataComponentType<()> =
+pub const FIREWORK_EXPLOSION: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("firework_explosion"));
 
-pub const FIREWORKS: DataComponentType<()> =
+pub const FIREWORKS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("fireworks"));
 
-pub const PROFILE: DataComponentType<()> =
+pub const PROFILE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("profile"));
 
-pub const BANNER_PATTERNS: DataComponentType<()> =
+pub const BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("banner_patterns"));
 
-pub const BASE_COLOR: DataComponentType<()> =
+pub const BASE_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("base_color"));
 
-pub const POT_DECORATIONS: DataComponentType<()> =
+pub const POT_DECORATIONS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("pot_decorations"));
 
-pub const CONTAINER: DataComponentType<()> =
+pub const CONTAINER: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("container"));
 
-pub const BLOCK_STATE: DataComponentType<()> =
+pub const BLOCK_STATE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("block_state"));
 
-pub const BEES: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("bees"));
+pub const BEES: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("bees"));
 
-pub const SULFUR_CUBE_CONTENT: DataComponentType<()> =
+pub const SULFUR_CUBE_CONTENT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
 
-pub const LOCK: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("lock"));
+pub const LOCK: DataComponentType<UnimplementedComponent> =
+    DataComponentType::new(Identifier::vanilla_static("lock"));
 
-pub const CONTAINER_LOOT: DataComponentType<()> =
+pub const CONTAINER_LOOT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("container_loot"));
 
-pub const BREAK_SOUND: DataComponentType<()> =
+pub const BREAK_SOUND: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("break_sound"));
 
 // Entity variant components
-pub const VILLAGER_VARIANT: DataComponentType<()> =
+pub const VILLAGER_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("villager/variant"));
 
-pub const WOLF_VARIANT: DataComponentType<()> =
+pub const WOLF_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("wolf/variant"));
 
-pub const WOLF_SOUND_VARIANT: DataComponentType<()> =
+pub const WOLF_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("wolf/sound_variant"));
 
-pub const WOLF_COLLAR: DataComponentType<()> =
+pub const WOLF_COLLAR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("wolf/collar"));
 
-pub const FOX_VARIANT: DataComponentType<()> =
+pub const FOX_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("fox/variant"));
 
-pub const SALMON_SIZE: DataComponentType<()> =
+pub const SALMON_SIZE: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("salmon/size"));
 
-pub const PARROT_VARIANT: DataComponentType<()> =
+pub const PARROT_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("parrot/variant"));
 
-pub const TROPICAL_FISH_PATTERN: DataComponentType<()> =
+pub const TROPICAL_FISH_PATTERN: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern"));
 
-pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<()> =
+pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/base_color"));
 
-pub const TROPICAL_FISH_PATTERN_COLOR: DataComponentType<()> =
+pub const TROPICAL_FISH_PATTERN_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern_color"));
 
-pub const MOOSHROOM_VARIANT: DataComponentType<()> =
+pub const MOOSHROOM_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("mooshroom/variant"));
 
-pub const RABBIT_VARIANT: DataComponentType<()> =
+pub const RABBIT_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("rabbit/variant"));
 
-pub const PIG_VARIANT: DataComponentType<()> =
+pub const PIG_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("pig/variant"));
 
-pub const PIG_SOUND_VARIANT: DataComponentType<()> =
+pub const PIG_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("pig/sound_variant"));
 
-pub const COW_VARIANT: DataComponentType<()> =
+pub const COW_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cow/variant"));
 
-pub const COW_SOUND_VARIANT: DataComponentType<()> =
+pub const COW_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cow/sound_variant"));
 
-pub const CHICKEN_VARIANT: DataComponentType<()> =
+pub const CHICKEN_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("chicken/variant"));
 
-pub const CHICKEN_SOUND_VARIANT: DataComponentType<()> =
+pub const CHICKEN_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("chicken/sound_variant"));
 
-pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<()> =
+pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("zombie_nautilus/variant"));
 
-pub const FROG_VARIANT: DataComponentType<()> =
+pub const FROG_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("frog/variant"));
 
-pub const HORSE_VARIANT: DataComponentType<()> =
+pub const HORSE_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("horse/variant"));
 
-pub const PAINTING_VARIANT: DataComponentType<()> =
+pub const PAINTING_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("painting/variant"));
 
-pub const LLAMA_VARIANT: DataComponentType<()> =
+pub const LLAMA_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("llama/variant"));
 
-pub const AXOLOTL_VARIANT: DataComponentType<()> =
+pub const AXOLOTL_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("axolotl/variant"));
 
-pub const CAT_VARIANT: DataComponentType<()> =
+pub const CAT_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cat/variant"));
 
-pub const CAT_SOUND_VARIANT: DataComponentType<()> =
+pub const CAT_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cat/sound_variant"));
 
-pub const CAT_COLLAR: DataComponentType<()> =
+pub const CAT_COLLAR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cat/collar"));
 
-pub const SHEEP_COLOR: DataComponentType<()> =
+pub const SHEEP_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("sheep/color"));
 
-pub const SHULKER_COLOR: DataComponentType<()> =
+pub const SHULKER_COLOR: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("shulker/color"));
-
-/// Helper to create stub reader/writer functions for unimplemented components.
-/// These components use the Todo variant as a placeholder.
-macro_rules! register_stub_with {
-    ($registry:expr, $key:expr, $register_method:ident) => {{
-        const fn network_reader(
-            cursor: &mut std::io::Cursor<&[u8]>,
-        ) -> std::io::Result<ComponentData> {
-            // Stub: read nothing, return Todo
-            let _ = cursor;
-            Ok(ComponentData::Todo)
-        }
-
-        const fn network_writer(
-            data: &ComponentData,
-            _writer: &mut Vec<u8>,
-        ) -> std::io::Result<()> {
-            // Stub: write nothing
-            let _ = data;
-            Ok(())
-        }
-
-        const fn nbt_reader(_tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
-            Some(ComponentData::Todo)
-        }
-
-        fn nbt_writer(_data: &ComponentData) -> simdnbt::owned::NbtTag {
-            simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new())
-        }
-
-        $registry.$register_method(
-            $key,
-            crate::data_components::ComponentDataDiscriminant::Todo,
-            network_reader,
-            network_writer,
-            nbt_reader,
-            nbt_writer,
-        );
-    }};
-}
-
-macro_rules! register_stub {
-    ($registry:expr, $key:expr) => {
-        register_stub_with!($registry, $key, register_with_codecs);
-    };
-}
-
-macro_rules! register_transient_stub {
-    ($registry:expr, $key:expr) => {
-        register_stub_with!($registry, $key, register_transient_with_codecs);
-    };
-}
 
 /// Network reader for VarInt-encoded i32 components.
 fn varint_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
     use steel_utils::{codec::VarInt, serial::ReadFrom};
     let value = VarInt::read(cursor)?;
-    Ok(ComponentData::I32(value.0))
+    Ok(ComponentData::new(value.0))
 }
 
 /// Network writer for VarInt-encoded i32 components.
 fn varint_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
     use steel_utils::{codec::VarInt, serial::WriteTo};
-    if let ComponentData::I32(v) = data {
+    if let Some(v) = data.downcast_ref::<i32>() {
         VarInt(*v).write(writer)
     } else {
         Err(std::io::Error::other("Component type mismatch"))
@@ -420,12 +381,12 @@ fn varint_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<
 
 fn float_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
     use steel_utils::serial::ReadFrom;
-    Ok(ComponentData::Float(f32::read(cursor)?))
+    Ok(ComponentData::new(f32::read(cursor)?))
 }
 
 fn float_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
     use steel_utils::serial::WriteTo;
-    let ComponentData::Float(value) = data else {
+    let Some(value) = data.downcast_ref::<f32>() else {
         return Err(std::io::Error::other("Component type mismatch"));
     };
     value.write(writer)
@@ -433,12 +394,12 @@ fn float_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<(
 
 fn bool_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
     use steel_utils::serial::ReadFrom;
-    Ok(ComponentData::Bool(bool::read(cursor)?))
+    Ok(ComponentData::new(bool::read(cursor)?))
 }
 
 fn bool_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
     use steel_utils::serial::WriteTo;
-    let ComponentData::Bool(value) = data else {
+    let Some(value) = data.downcast_ref::<bool>() else {
         return Err(std::io::Error::other("Component type mismatch"));
     };
     value.write(writer)
@@ -448,12 +409,12 @@ fn bool_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()
     clippy::unnecessary_wraps,
     reason = "network reader function pointers return io::Result"
 )]
-const fn unit_reader(_cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
-    Ok(ComponentData::Empty)
+fn unit_reader(_cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    Ok(ComponentData::new(()))
 }
 
 fn unit_writer(data: &ComponentData, _writer: &mut Vec<u8>) -> std::io::Result<()> {
-    if data.is_empty() {
+    if data.downcast_ref::<()>().is_some() {
         Ok(())
     } else {
         Err(std::io::Error::other("Component type mismatch"))
@@ -466,47 +427,47 @@ fn ranged_i32_nbt_reader<const MIN: i32, const MAX: i32>(
     let value = tag.codec_i32()?;
     (MIN..=MAX)
         .contains(&value)
-        .then_some(ComponentData::I32(value))
+        .then(|| ComponentData::new(value))
 }
 
 fn i32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
-    match data {
-        ComponentData::I32(value) => simdnbt::owned::NbtTag::Int(*value),
-        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
-    }
+    let Some(value) = data.downcast_ref::<i32>() else {
+        panic!("validated i32 component failed to downcast");
+    };
+    simdnbt::owned::NbtTag::Int(*value)
 }
 
 fn minimum_attack_charge_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
     let value = tag.codec_f32()?;
     (value.is_finite() && !value.is_sign_negative() && value <= 1.0)
-        .then_some(ComponentData::Float(value))
+        .then(|| ComponentData::new(value))
 }
 
 fn potion_duration_scale_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
     let value = tag.codec_f32()?;
-    (value.is_finite() && !value.is_sign_negative()).then_some(ComponentData::Float(value))
+    (value.is_finite() && !value.is_sign_negative()).then(|| ComponentData::new(value))
 }
 
 fn f32_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
-    match data {
-        ComponentData::Float(value) => simdnbt::owned::NbtTag::Float(*value),
-        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
-    }
+    let Some(value) = data.downcast_ref::<f32>() else {
+        panic!("validated f32 component failed to downcast");
+    };
+    simdnbt::owned::NbtTag::Float(*value)
 }
 
 fn bool_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
-    tag.codec_bool().map(ComponentData::Bool)
+    tag.codec_bool().map(ComponentData::new)
 }
 
 fn bool_nbt_writer(data: &ComponentData) -> simdnbt::owned::NbtTag {
-    match data {
-        ComponentData::Bool(value) => simdnbt::owned::NbtTag::Byte(i8::from(*value)),
-        _ => simdnbt::owned::NbtTag::Compound(simdnbt::owned::NbtCompound::new()),
-    }
+    let Some(value) = data.downcast_ref::<bool>() else {
+        panic!("validated bool component failed to downcast");
+    };
+    simdnbt::owned::NbtTag::Byte(i8::from(*value))
 }
 
 fn unit_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
-    tag.compound().map(|_| ComponentData::Empty)
+    tag.compound().map(|_| ComponentData::new(()))
 }
 
 fn unit_nbt_writer(_data: &ComponentData) -> simdnbt::owned::NbtTag {
@@ -516,8 +477,7 @@ fn unit_nbt_writer(_data: &ComponentData) -> simdnbt::owned::NbtTag {
 macro_rules! register_ranged_i32 {
     ($registry:expr, $component:expr, $min:expr, $max:expr) => {
         $registry.register_with_codecs(
-            $component.key,
-            ComponentDataDiscriminant::I32,
+            $component,
             varint_reader,
             varint_writer,
             ranged_i32_nbt_reader::<{ $min }, { $max }>,
@@ -529,8 +489,7 @@ macro_rules! register_ranged_i32 {
 macro_rules! register_unit {
     ($registry:expr, $component:expr) => {
         $registry.register_with_codecs(
-            $component.key,
-            ComponentDataDiscriminant::Empty,
+            $component,
             unit_reader,
             unit_writer,
             unit_nbt_reader,
@@ -544,11 +503,9 @@ macro_rules! register_unit {
 /// IMPORTANT: The registration order MUST match vanilla's DataComponents.java exactly,
 /// as the component's network ID is determined by its registration order.
 pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
-    use crate::data_components::ComponentDataDiscriminant;
-
     // Order must match vanilla's DataComponents.java exactly!
     // 0: custom_data
-    register_stub!(registry, CUSTOM_DATA.key.clone());
+    registry.register_unimplemented(CUSTOM_DATA, true);
     // 1: max_stack_size
     register_ranged_i32!(registry, MAX_STACK_SIZE, 1, 99);
     // 2: max_damage
@@ -558,51 +515,46 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 4: unbreakable
     register_unit!(registry, UNBREAKABLE);
     // 5: use_effects
-    register_stub!(registry, USE_EFFECTS.key.clone());
+    registry.register_unimplemented(USE_EFFECTS, true);
     // 6: custom_name
-    registry.register(CUSTOM_NAME, ComponentDataDiscriminant::TextComponent);
+    registry.register(CUSTOM_NAME);
     // 7: minimum_attack_charge
     registry.register_with_codecs(
-        MINIMUM_ATTACK_CHARGE.key,
-        ComponentDataDiscriminant::Float,
+        MINIMUM_ATTACK_CHARGE,
         float_reader,
         float_writer,
         minimum_attack_charge_nbt_reader,
         f32_nbt_writer,
     );
     // 8: damage_type
-    registry.register(DAMAGE_TYPE, ComponentDataDiscriminant::DamageType);
+    registry.register(DAMAGE_TYPE);
     // 9: item_name
-    registry.register(ITEM_NAME, ComponentDataDiscriminant::TextComponent);
+    registry.register(ITEM_NAME);
     // 10: item_model
-    register_stub!(registry, ITEM_MODEL.key.clone());
+    registry.register_unimplemented(ITEM_MODEL, true);
     // 11: lore
-    register_stub!(registry, LORE.key.clone());
+    registry.register_unimplemented(LORE, true);
     // 12: rarity
-    register_stub!(registry, RARITY.key.clone());
+    registry.register_unimplemented(RARITY, true);
     // 13: enchantments
-    registry.register(ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
+    registry.register(ENCHANTMENTS);
     // 14: can_place_on
-    register_stub!(registry, CAN_PLACE_ON.key.clone());
+    registry.register_unimplemented(CAN_PLACE_ON, true);
     // 15: can_break
-    register_stub!(registry, CAN_BREAK.key.clone());
+    registry.register_unimplemented(CAN_BREAK, true);
     // 16: attribute_modifiers
-    registry.register(
-        ATTRIBUTE_MODIFIERS,
-        ComponentDataDiscriminant::AttributeModifiers,
-    );
+    registry.register(ATTRIBUTE_MODIFIERS);
     // 17: custom_model_data
-    register_stub!(registry, CUSTOM_MODEL_DATA.key.clone());
+    registry.register_unimplemented(CUSTOM_MODEL_DATA, true);
     // 18: tooltip_display
-    register_stub!(registry, TOOLTIP_DISPLAY.key.clone());
+    registry.register_unimplemented(TOOLTIP_DISPLAY, true);
     // 19: repair_cost
     register_ranged_i32!(registry, REPAIR_COST, 0, i32::MAX);
     // 20: creative_slot_lock
-    registry.register_transient(CREATIVE_SLOT_LOCK, ComponentDataDiscriminant::Empty);
+    registry.register_transient(CREATIVE_SLOT_LOCK);
     // 21: enchantment_glint_override
     registry.register_with_codecs(
-        ENCHANTMENT_GLINT_OVERRIDE.key,
-        ComponentDataDiscriminant::Bool,
+        ENCHANTMENT_GLINT_OVERRIDE,
         bool_reader,
         bool_writer,
         bool_nbt_reader,
@@ -611,188 +563,187 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 22: intangible_projectile
     register_unit!(registry, INTANGIBLE_PROJECTILE);
     // 23: food
-    register_stub!(registry, FOOD.key.clone());
+    registry.register_unimplemented(FOOD, true);
     // 24: consumable
-    register_stub!(registry, CONSUMABLE.key.clone());
+    registry.register_unimplemented(CONSUMABLE, true);
     // 25: use_remainder
-    register_stub!(registry, USE_REMAINDER.key.clone());
+    registry.register_unimplemented(USE_REMAINDER, true);
     // 26: use_cooldown
-    registry.register(USE_COOLDOWN, ComponentDataDiscriminant::UseCooldown);
+    registry.register(USE_COOLDOWN);
     // 27: damage_resistant
-    register_stub!(registry, DAMAGE_RESISTANT.key.clone());
+    registry.register_unimplemented(DAMAGE_RESISTANT, true);
     // 28: tool
-    registry.register(TOOL, ComponentDataDiscriminant::Tool);
+    registry.register(TOOL);
     // 29: weapon
-    registry.register(WEAPON, ComponentDataDiscriminant::Weapon);
+    registry.register(WEAPON);
     // 30: attack_range
-    registry.register(ATTACK_RANGE, ComponentDataDiscriminant::AttackRange);
+    registry.register(ATTACK_RANGE);
     // 31: enchantable
-    register_stub!(registry, ENCHANTABLE.key.clone());
+    registry.register_unimplemented(ENCHANTABLE, true);
     // 32: equippable
-    registry.register(EQUIPPABLE, ComponentDataDiscriminant::Equippable);
+    registry.register(EQUIPPABLE);
     // 33: repairable
-    register_stub!(registry, REPAIRABLE.key.clone());
+    registry.register_unimplemented(REPAIRABLE, true);
     // 34: glider
     register_unit!(registry, GLIDER);
     // 35: tooltip_style
-    register_stub!(registry, TOOLTIP_STYLE.key.clone());
+    registry.register_unimplemented(TOOLTIP_STYLE, true);
     // 36: death_protection
-    register_stub!(registry, DEATH_PROTECTION.key.clone());
+    registry.register_unimplemented(DEATH_PROTECTION, true);
     // 37: blocks_attacks
-    register_stub!(registry, BLOCKS_ATTACKS.key.clone());
+    registry.register_unimplemented(BLOCKS_ATTACKS, true);
     // 38: piercing_weapon
-    registry.register(PIERCING_WEAPON, ComponentDataDiscriminant::PiercingWeapon);
+    registry.register(PIERCING_WEAPON);
     // 39: kinetic_weapon
-    register_stub!(registry, KINETIC_WEAPON.key.clone());
+    registry.register_unimplemented(KINETIC_WEAPON, true);
     // 40: swing_animation
-    register_stub!(registry, SWING_ANIMATION.key.clone());
+    registry.register_unimplemented(SWING_ANIMATION, true);
     // 41: additional_trade_cost
-    register_transient_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
+    registry.register_unimplemented(ADDITIONAL_TRADE_COST, false);
     // 42: stored_enchantments
-    registry.register(STORED_ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
+    registry.register(STORED_ENCHANTMENTS);
     // 43: dye
-    register_stub!(registry, DYE.key.clone());
+    registry.register_unimplemented(DYE, true);
     // 44: dyed_color
-    register_stub!(registry, DYED_COLOR.key.clone());
+    registry.register_unimplemented(DYED_COLOR, true);
     // 45: map_color
-    register_stub!(registry, MAP_COLOR.key.clone());
+    registry.register_unimplemented(MAP_COLOR, true);
     // 46: map_id
-    register_stub!(registry, MAP_ID.key.clone());
+    registry.register_unimplemented(MAP_ID, true);
     // 47: map_decorations
-    register_stub!(registry, MAP_DECORATIONS.key.clone());
+    registry.register_unimplemented(MAP_DECORATIONS, true);
     // 48: map_post_processing
-    register_transient_stub!(registry, MAP_POST_PROCESSING.key.clone());
+    registry.register_unimplemented(MAP_POST_PROCESSING, false);
     // 49: charged_projectiles
-    register_stub!(registry, CHARGED_PROJECTILES.key.clone());
+    registry.register_unimplemented(CHARGED_PROJECTILES, true);
     // 50: bundle_contents
-    register_stub!(registry, BUNDLE_CONTENTS.key.clone());
+    registry.register_unimplemented(BUNDLE_CONTENTS, true);
     // 51: potion_contents
-    register_stub!(registry, POTION_CONTENTS.key.clone());
+    registry.register_unimplemented(POTION_CONTENTS, true);
     // 52: potion_duration_scale
     registry.register_with_codecs(
-        POTION_DURATION_SCALE.key,
-        ComponentDataDiscriminant::Float,
+        POTION_DURATION_SCALE,
         float_reader,
         float_writer,
         potion_duration_scale_nbt_reader,
         f32_nbt_writer,
     );
     // 53: suspicious_stew_effects
-    register_stub!(registry, SUSPICIOUS_STEW_EFFECTS.key.clone());
+    registry.register_unimplemented(SUSPICIOUS_STEW_EFFECTS, true);
     // 54: writable_book_content
-    register_stub!(registry, WRITABLE_BOOK_CONTENT.key.clone());
+    registry.register_unimplemented(WRITABLE_BOOK_CONTENT, true);
     // 55: written_book_content
-    register_stub!(registry, WRITTEN_BOOK_CONTENT.key.clone());
+    registry.register_unimplemented(WRITTEN_BOOK_CONTENT, true);
     // 56: trim
-    register_stub!(registry, TRIM.key.clone());
+    registry.register_unimplemented(TRIM, true);
     // 57: debug_stick_state
-    register_stub!(registry, DEBUG_STICK_STATE.key.clone());
+    registry.register_unimplemented(DEBUG_STICK_STATE, true);
     // 58: entity_data
-    register_stub!(registry, ENTITY_DATA.key.clone());
+    registry.register_unimplemented(ENTITY_DATA, true);
     // 59: bucket_entity_data
-    register_stub!(registry, BUCKET_ENTITY_DATA.key.clone());
+    registry.register_unimplemented(BUCKET_ENTITY_DATA, true);
     // 60: block_entity_data
-    register_stub!(registry, BLOCK_ENTITY_DATA.key.clone());
+    registry.register_unimplemented(BLOCK_ENTITY_DATA, true);
     // 61: instrument
-    register_stub!(registry, INSTRUMENT.key.clone());
+    registry.register_unimplemented(INSTRUMENT, true);
     // 62: provides_trim_material
-    register_stub!(registry, PROVIDES_TRIM_MATERIAL.key.clone());
+    registry.register_unimplemented(PROVIDES_TRIM_MATERIAL, true);
     // 63: ominous_bottle_amplifier
-    register_stub!(registry, OMINOUS_BOTTLE_AMPLIFIER.key.clone());
+    registry.register_unimplemented(OMINOUS_BOTTLE_AMPLIFIER, true);
     // 64: jukebox_playable
-    register_stub!(registry, JUKEBOX_PLAYABLE.key.clone());
+    registry.register_unimplemented(JUKEBOX_PLAYABLE, true);
     // 65: provides_banner_patterns
-    register_stub!(registry, PROVIDES_BANNER_PATTERNS.key.clone());
+    registry.register_unimplemented(PROVIDES_BANNER_PATTERNS, true);
     // 66: recipes
-    register_stub!(registry, RECIPES.key.clone());
+    registry.register_unimplemented(RECIPES, true);
     // 67: lodestone_tracker
-    register_stub!(registry, LODESTONE_TRACKER.key.clone());
+    registry.register_unimplemented(LODESTONE_TRACKER, true);
     // 68: firework_explosion
-    register_stub!(registry, FIREWORK_EXPLOSION.key.clone());
+    registry.register_unimplemented(FIREWORK_EXPLOSION, true);
     // 69: fireworks
-    register_stub!(registry, FIREWORKS.key.clone());
+    registry.register_unimplemented(FIREWORKS, true);
     // 70: profile
-    register_stub!(registry, PROFILE.key.clone());
+    registry.register_unimplemented(PROFILE, true);
     // 71: note_block_sound
-    register_stub!(registry, NOTE_BLOCK_SOUND.key.clone());
+    registry.register_unimplemented(NOTE_BLOCK_SOUND, true);
     // 72: banner_patterns
-    register_stub!(registry, BANNER_PATTERNS.key.clone());
+    registry.register_unimplemented(BANNER_PATTERNS, true);
     // 73: base_color
-    register_stub!(registry, BASE_COLOR.key.clone());
+    registry.register_unimplemented(BASE_COLOR, true);
     // 74: pot_decorations
-    register_stub!(registry, POT_DECORATIONS.key.clone());
+    registry.register_unimplemented(POT_DECORATIONS, true);
     // 75: container
-    register_stub!(registry, CONTAINER.key.clone());
+    registry.register_unimplemented(CONTAINER, true);
     // 76: block_state
-    register_stub!(registry, BLOCK_STATE.key.clone());
+    registry.register_unimplemented(BLOCK_STATE, true);
     // 77: bees
-    register_stub!(registry, BEES.key.clone());
+    registry.register_unimplemented(BEES, true);
     // 78: sulfur_cube_content
-    register_stub!(registry, SULFUR_CUBE_CONTENT.key.clone());
+    registry.register_unimplemented(SULFUR_CUBE_CONTENT, true);
     // 79: lock
-    register_stub!(registry, LOCK.key.clone());
+    registry.register_unimplemented(LOCK, true);
     // 80: container_loot
-    register_stub!(registry, CONTAINER_LOOT.key.clone());
+    registry.register_unimplemented(CONTAINER_LOOT, true);
     // 81: break_sound
-    register_stub!(registry, BREAK_SOUND.key.clone());
+    registry.register_unimplemented(BREAK_SOUND, true);
     // 82: villager/variant
-    register_stub!(registry, VILLAGER_VARIANT.key.clone());
+    registry.register_unimplemented(VILLAGER_VARIANT, true);
     // 83: wolf/variant
-    register_stub!(registry, WOLF_VARIANT.key.clone());
+    registry.register_unimplemented(WOLF_VARIANT, true);
     // 84: wolf/sound_variant
-    register_stub!(registry, WOLF_SOUND_VARIANT.key.clone());
+    registry.register_unimplemented(WOLF_SOUND_VARIANT, true);
     // 85: wolf/collar
-    register_stub!(registry, WOLF_COLLAR.key.clone());
+    registry.register_unimplemented(WOLF_COLLAR, true);
     // 86: fox/variant
-    register_stub!(registry, FOX_VARIANT.key.clone());
+    registry.register_unimplemented(FOX_VARIANT, true);
     // 87: salmon/size
-    register_stub!(registry, SALMON_SIZE.key.clone());
+    registry.register_unimplemented(SALMON_SIZE, true);
     // 88: parrot/variant
-    register_stub!(registry, PARROT_VARIANT.key.clone());
+    registry.register_unimplemented(PARROT_VARIANT, true);
     // 89: tropical_fish/pattern
-    register_stub!(registry, TROPICAL_FISH_PATTERN.key.clone());
+    registry.register_unimplemented(TROPICAL_FISH_PATTERN, true);
     // 90: tropical_fish/base_color
-    register_stub!(registry, TROPICAL_FISH_BASE_COLOR.key.clone());
+    registry.register_unimplemented(TROPICAL_FISH_BASE_COLOR, true);
     // 91: tropical_fish/pattern_color
-    register_stub!(registry, TROPICAL_FISH_PATTERN_COLOR.key.clone());
+    registry.register_unimplemented(TROPICAL_FISH_PATTERN_COLOR, true);
     // 92: mooshroom/variant
-    register_stub!(registry, MOOSHROOM_VARIANT.key.clone());
+    registry.register_unimplemented(MOOSHROOM_VARIANT, true);
     // 93: rabbit/variant
-    register_stub!(registry, RABBIT_VARIANT.key.clone());
+    registry.register_unimplemented(RABBIT_VARIANT, true);
     // 94: pig/variant
-    register_stub!(registry, PIG_VARIANT.key.clone());
+    registry.register_unimplemented(PIG_VARIANT, true);
     // 95: pig/sound_variant
-    register_stub!(registry, PIG_SOUND_VARIANT.key.clone());
+    registry.register_unimplemented(PIG_SOUND_VARIANT, true);
     // 96: cow/variant
-    register_stub!(registry, COW_VARIANT.key.clone());
+    registry.register_unimplemented(COW_VARIANT, true);
     // 97: cow/sound_variant
-    register_stub!(registry, COW_SOUND_VARIANT.key.clone());
+    registry.register_unimplemented(COW_SOUND_VARIANT, true);
     // 98: chicken/variant
-    register_stub!(registry, CHICKEN_VARIANT.key.clone());
+    registry.register_unimplemented(CHICKEN_VARIANT, true);
     // 99: chicken/sound_variant
-    register_stub!(registry, CHICKEN_SOUND_VARIANT.key.clone());
+    registry.register_unimplemented(CHICKEN_SOUND_VARIANT, true);
     // 100: zombie_nautilus/variant
-    register_stub!(registry, ZOMBIE_NAUTILUS_VARIANT.key.clone());
+    registry.register_unimplemented(ZOMBIE_NAUTILUS_VARIANT, true);
     // 101: frog/variant
-    register_stub!(registry, FROG_VARIANT.key.clone());
+    registry.register_unimplemented(FROG_VARIANT, true);
     // 102: horse/variant
-    register_stub!(registry, HORSE_VARIANT.key.clone());
+    registry.register_unimplemented(HORSE_VARIANT, true);
     // 103: painting/variant
-    register_stub!(registry, PAINTING_VARIANT.key.clone());
+    registry.register_unimplemented(PAINTING_VARIANT, true);
     // 104: llama/variant
-    register_stub!(registry, LLAMA_VARIANT.key.clone());
+    registry.register_unimplemented(LLAMA_VARIANT, true);
     // 105: axolotl/variant
-    register_stub!(registry, AXOLOTL_VARIANT.key.clone());
+    registry.register_unimplemented(AXOLOTL_VARIANT, true);
     // 106: cat/variant
-    register_stub!(registry, CAT_VARIANT.key.clone());
+    registry.register_unimplemented(CAT_VARIANT, true);
     // 107: cat/sound_variant
-    register_stub!(registry, CAT_SOUND_VARIANT.key.clone());
+    registry.register_unimplemented(CAT_SOUND_VARIANT, true);
     // 108: cat/collar
-    register_stub!(registry, CAT_COLLAR.key.clone());
+    registry.register_unimplemented(CAT_COLLAR, true);
     // 109: sheep/color
-    register_stub!(registry, SHEEP_COLOR.key.clone());
+    registry.register_unimplemented(SHEEP_COLOR, true);
     // 110: shulker/color
-    register_stub!(registry, SHULKER_COLOR.key.clone());
+    registry.register_unimplemented(SHULKER_COLOR, true);
 }
 
 #[cfg(test)]
@@ -846,7 +797,7 @@ mod tests {
             .expect("max_stack_size should be registered");
         assert_eq!(
             max_stack_size.read_nbt_owned(&NbtTag::Double(16.9)),
-            Some(ComponentData::I32(16))
+            Some(ComponentData::new(16_i32))
         );
         assert_eq!(max_stack_size.read_nbt_owned(&NbtTag::Int(0)), None);
 
@@ -855,7 +806,7 @@ mod tests {
             .expect("minimum_attack_charge should be registered");
         assert_eq!(
             minimum_attack_charge.read_nbt_owned(&NbtTag::Double(0.5)),
-            Some(ComponentData::Float(0.5))
+            Some(ComponentData::new(0.5_f32))
         );
         assert_eq!(
             minimum_attack_charge.read_nbt_owned(&NbtTag::Double(1.5)),
@@ -867,7 +818,7 @@ mod tests {
             .expect("enchantment_glint_override should be registered");
         assert_eq!(
             glint.read_nbt_owned(&NbtTag::Long(2)),
-            Some(ComponentData::Bool(true))
+            Some(ComponentData::new(true))
         );
     }
 
@@ -881,8 +832,31 @@ mod tests {
 
         assert_eq!(
             unbreakable.read_nbt_owned(&NbtTag::Compound(NbtCompound::new())),
-            Some(ComponentData::Empty)
+            Some(ComponentData::new(()))
         );
         assert_eq!(unbreakable.read_nbt_owned(&NbtTag::Byte(1)), None);
+    }
+
+    #[test]
+    fn registry_validation_uses_concrete_downcast_keys() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        let max_stack_size = registry
+            .by_key(&MAX_STACK_SIZE.key)
+            .expect("max_stack_size should be registered");
+        assert!(max_stack_size.validates(&ComponentData::new(16_i32)));
+        assert!(!max_stack_size.validates(&ComponentData::new(16.0_f32)));
+
+        let custom_data = registry
+            .by_key(&CUSTOM_DATA.key)
+            .expect("custom_data should reserve its vanilla registry ID");
+        assert!(!custom_data.is_implemented());
+        assert!(!custom_data.validates(&ComponentData::new(())));
+        assert!(
+            custom_data
+                .read_network(&mut std::io::Cursor::new(&[]))
+                .is_err()
+        );
     }
 }

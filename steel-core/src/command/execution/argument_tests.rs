@@ -1568,16 +1568,10 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
-    for (path, component) in [
-        ("creative_slot_lock", vanilla_components::CREATIVE_SLOT_LOCK),
-        (
-            "additional_trade_cost",
-            vanilla_components::ADDITIONAL_TRADE_COST,
-        ),
-        (
-            "map_post_processing",
-            vanilla_components::MAP_POST_PROCESSING,
-        ),
+    for path in [
+        "creative_slot_lock",
+        "additional_trade_cost",
+        "map_post_processing",
     ] {
         let input = format!("resource stone[{path}~{{ignored:1}}]");
         let parse = dispatcher.parse(&input, TestSource::new());
@@ -1588,9 +1582,11 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
             panic!("item predicate should be retained");
         };
         let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
-        stack.set(component, ());
+        if path == "creative_slot_lock" {
+            stack.set(vanilla_components::CREATIVE_SLOT_LOCK, ());
+        }
 
-        assert!(predicate.matches(&stack));
+        assert_eq!(predicate.matches(&stack), path == "creative_slot_lock");
     }
 }
 

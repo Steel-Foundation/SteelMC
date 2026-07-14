@@ -533,8 +533,8 @@ mod tests {
             panic!("diamond helmet should have equippable data");
         };
 
-        let saddle_hash = ComponentData::Equippable(saddle_equippable.clone()).compute_hash();
-        let helmet_hash = ComponentData::Equippable(helmet_equippable.clone()).compute_hash();
+        let saddle_hash = ComponentData::new(saddle_equippable.clone()).compute_hash();
+        let helmet_hash = ComponentData::new(helmet_equippable.clone()).compute_hash();
         assert_ne!(saddle_hash, helmet_hash);
     }
 

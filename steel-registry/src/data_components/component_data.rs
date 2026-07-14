@@ -1,501 +1,175 @@
-//! ABI-stable component data storage.
-//!
-//! This module provides the core types for storing component values in an ABI-stable way.
-//! Vanilla components get dedicated enum variants for zero-cost access, while plugin
-//! components use the `Other` variant with opaque bytes.
+//! Type-erased data component values.
+
+use std::fmt::{self, Debug, Formatter};
+
+use steel_utils::{
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType,
+    hash::{ComponentHasher, HashComponent},
+};
+
 use super::components::{
     AttackRange, DamageTypeComponent, Equippable, ItemAttributeModifiers, ItemEnchantments,
     PiercingWeapon, Tool, UseCooldown, Weapon,
 };
-use text_components::TextComponent;
 
-/// Discriminant for [`ComponentData`] variants.
+/// Behavior required from a value stored in a [`ComponentData`].
 ///
-/// Used for runtime type validation to ensure plugins don't
-/// set wrong types on vanilla components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ComponentDataDiscriminant {
-    Empty,
-    Bool,
-    I32,
-    Float,
-    DamageType,
-    Tool,
-    Weapon,
-    AttackRange,
-    UseCooldown,
-    PiercingWeapon,
-    Equippable,
-    AttributeModifiers,
-    Enchantments,
-    TextComponent,
-    Todo,
-    Other,
+/// Concrete type recovery is provided by Steel's deterministic keyed
+/// downcasting foundation. A value is eligible for the blanket implementation
+/// when it also supports cloning, comparison, debugging, hashing, and shared
+/// server access.
+pub trait Component: ErasedType + Debug + Send + Sync + 'static {
+    #[doc(hidden)]
+    fn clone_component(&self) -> Box<dyn Component>;
+
+    #[doc(hidden)]
+    fn component_eq(&self, other: &dyn Component) -> bool;
+
+    #[doc(hidden)]
+    fn hash_component_value(&self, hasher: &mut ComponentHasher);
 }
 
-/// ABI-stable component value storage.
-///
-/// Each vanilla component type gets its own variant for type-safe, zero-cost access.
-/// Plugin-defined components use the `Other` variant with serialized bytes that
-/// the plugin is responsible for interpreting.
-///
-/// # Example (vanilla code)
-/// ```ignore
-/// let data = ComponentData::I32(10);
-/// if let ComponentData::I32(d) = data {
-///     println!("Value: {}", d);
-/// }
-/// ```
-///
-/// # Example (plugin code)
-/// ```ignore
-/// // Plugin stores its own serialized data
-/// let my_bytes = my_energy.serialize();
-/// let data = ComponentData::Other(my_bytes);
-///
-/// // Plugin retrieves and deserializes
-/// if let ComponentData::Other(bytes) = data {
-///     let energy = MyEnergy::deserialize(&bytes)?;
-/// }
-/// ```
-#[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
-pub enum ComponentData {
-    /// Component with no data (e.g., Unbreakable, Glider, `CreativeSlotLock`)
-    Empty,
+impl<T> Component for T
+where
+    T: DowncastType + Clone + Debug + PartialEq + HashComponent + Send + Sync,
+{
+    fn clone_component(&self) -> Box<dyn Component> {
+        Box::new(self.clone())
+    }
 
-    /// Boolean component (e.g., `EnchantmentGlintOverride`)
-    Bool(bool),
-    /// i32 component (e.g., `MaxStackSize`, `MaxDamage`, Damage, `RepairCost`)
-    /// Stored as `VarInt` on network.
-    I32(i32),
-    /// Float component (e.g., `PotionDurationScale`)
-    Float(f32),
-    /// `minecraft:damage_type`
-    DamageType(DamageTypeComponent),
+    fn component_eq(&self, other: &dyn Component) -> bool {
+        other.downcast_ref::<T>() == Some(self)
+    }
 
-    /// minecraft:tool
-    Tool(Tool),
-    /// minecraft:weapon
-    Weapon(Weapon),
-    /// `minecraft:attack_range`
-    AttackRange(AttackRange),
-    /// `minecraft:use_cooldown`
-    UseCooldown(UseCooldown),
-    /// `minecraft:piercing_weapon`
-    PiercingWeapon(PiercingWeapon),
-    /// minecraft:equippable
-    Equippable(Equippable),
-    /// `minecraft:attribute_modifiers`
-    AttributeModifiers(ItemAttributeModifiers),
-    /// minecraft:enchantments / `minecraft:stored_enchantments`
-    Enchantments(ItemEnchantments),
-    /// `TextComponent` component (e.g., `CustomName`, `ItemName`)
-    TextComponent(Box<TextComponent>),
+    fn hash_component_value(&self, hasher: &mut ComponentHasher) {
+        self.hash_component(hasher);
+    }
+}
 
-    /// Placeholder for components that aren't implemented yet.
-    Todo,
-
-    /// Opaque bytes for plugin-defined components.
-    /// The plugin is responsible for serialization/deserialization.
-    Other(Vec<u8>),
+/// A type-erased component value.
+///
+/// Implemented component values retain their concrete Rust type and can be
+/// recovered with [`Self::downcast_ref`]. The unimplemented state is kept only
+/// for the existing vanilla prototype placeholders until their real component
+/// types and codecs are ported.
+pub struct ComponentData {
+    value: Option<Box<dyn Component>>,
 }
 
 impl ComponentData {
-    /// Returns true if this is the empty/unit variant.
+    /// Erases a typed component value.
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        matches!(self, Self::Empty)
-    }
-
-    /// Returns the raw bytes if this is an `Other` variant.
-    #[must_use]
-    pub fn as_other(&self) -> Option<&[u8]> {
-        match self {
-            Self::Other(bytes) => Some(bytes),
-            _ => None,
+    pub fn new(value: impl Component) -> Self {
+        Self {
+            value: Some(Box::new(value)),
         }
     }
 
-    /// Returns the discriminant of this component data variant.
-    /// Used for runtime type validation.
-    #[must_use]
-    pub const fn discriminant(&self) -> ComponentDataDiscriminant {
-        match self {
-            Self::Empty => ComponentDataDiscriminant::Empty,
-            Self::Bool(_) => ComponentDataDiscriminant::Bool,
-            Self::I32(_) => ComponentDataDiscriminant::I32,
-            Self::Float(_) => ComponentDataDiscriminant::Float,
-            Self::DamageType(_) => ComponentDataDiscriminant::DamageType,
-            Self::Tool(_) => ComponentDataDiscriminant::Tool,
-            Self::Weapon(_) => ComponentDataDiscriminant::Weapon,
-            Self::AttackRange(_) => ComponentDataDiscriminant::AttackRange,
-            Self::UseCooldown(_) => ComponentDataDiscriminant::UseCooldown,
-            Self::PiercingWeapon(_) => ComponentDataDiscriminant::PiercingWeapon,
-            Self::Equippable(_) => ComponentDataDiscriminant::Equippable,
-            Self::AttributeModifiers(_) => ComponentDataDiscriminant::AttributeModifiers,
-            Self::Enchantments(_) => ComponentDataDiscriminant::Enchantments,
-            Self::TextComponent(_) => ComponentDataDiscriminant::TextComponent,
-            Self::Todo => ComponentDataDiscriminant::Todo,
-            Self::Other(_) => ComponentDataDiscriminant::Other,
-        }
+    pub(crate) const fn unimplemented() -> Self {
+        Self { value: None }
     }
 
-    /// Computes a hash of this component value for validation.
-    ///
-    /// Uses CRC32C hashing matching Minecraft's `HashOps` implementation.
+    /// Returns the concrete value when it has type `T`.
+    #[must_use]
+    pub fn downcast_ref<T: DowncastType>(&self) -> Option<&T> {
+        self.value.as_deref()?.downcast_ref::<T>()
+    }
+
+    /// Returns the concrete type key, or `None` for an unimplemented value.
+    #[must_use]
+    pub fn type_key(&self) -> Option<DowncastTypeKey> {
+        self.value.as_deref().map(ErasedType::downcast_type_key)
+    }
+
+    /// Returns whether this contains a real typed value.
+    #[must_use]
+    pub const fn is_implemented(&self) -> bool {
+        self.value.is_some()
+    }
+
+    /// Computes the vanilla validation hash for this component value.
     #[must_use]
     pub fn compute_hash(&self) -> i32 {
-        use steel_utils::hash::{ComponentHasher, HashComponent};
-
         let mut hasher = ComponentHasher::new();
 
-        match self {
-            // Primitives
-            Self::Empty => ().hash_component(&mut hasher),
-            Self::Bool(v) => v.hash_component(&mut hasher),
-            Self::I32(v) => v.hash_component(&mut hasher),
-            Self::Float(v) => v.hash_component(&mut hasher),
-            Self::DamageType(v) => v.hash_component(&mut hasher),
-
-            // Complex types
-            Self::Tool(v) => v.hash_component(&mut hasher),
-            Self::Weapon(v) => v.hash_component(&mut hasher),
-            Self::AttackRange(v) => v.hash_component(&mut hasher),
-            Self::UseCooldown(v) => v.hash_component(&mut hasher),
-            Self::PiercingWeapon(v) => v.hash_component(&mut hasher),
-            Self::Equippable(v) => v.hash_component(&mut hasher),
-            Self::AttributeModifiers(v) => v.hash_component(&mut hasher),
-            Self::Enchantments(v) => v.hash_component(&mut hasher),
-            Self::TextComponent(v) => v.hash_component(&mut hasher),
-
-            // Stub/plugin types - hash as empty map for now
-            // TODO: Implement proper hashing when these types are implemented
-            Self::Todo | Self::Other(_) => {
-                hasher.start_map();
-                hasher.end_map();
-            }
+        if let Some(value) = &self.value {
+            value.hash_component_value(&mut hasher);
+        } else {
+            // Existing unimplemented prototype values retain their old hash
+            // until their concrete vanilla codecs are ported.
+            hasher.start_map();
+            hasher.end_map();
         }
 
         hasher.finish()
     }
 }
 
-/// Trait for types that can be converted to/from [`ComponentData`].
-///
-/// This provides compile-time type safety for vanilla components while
-/// the actual storage uses the ABI-stable `ComponentData` enum.
-///
-/// # Example
-/// ```ignore
-/// impl Component for Damage {
-///     fn into_data(self) -> ComponentData {
-///         ComponentData::Damage(self)
-///     }
-///
-///     fn from_data(data: ComponentData) -> Option<Self> {
-///         match data {
-///             ComponentData::Damage(d) => Some(d),
-///             _ => None,
-///         }
-///     }
-/// }
-/// ```
-pub trait Component: Sized + Clone {
-    /// Converts this component value into `ComponentData`.
-    fn into_data(self) -> ComponentData;
-
-    /// Attempts to extract this component type from `ComponentData`.
-    /// Returns `None` if the data is a different variant.
-    fn from_data(data: ComponentData) -> Option<Self>;
-
-    /// Attempts to get a reference to this component type from `ComponentData`.
-    /// Returns `None` if the data is a different variant or if the type
-    /// cannot be referenced directly (e.g., needs conversion).
-    fn from_data_ref(data: &ComponentData) -> Option<&Self>;
-}
-
-// Unit type for marker components
-impl Component for () {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Empty
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Empty => Some(()),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Empty => Some(&()),
-            _ => None,
+impl Clone for ComponentData {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.as_ref().map(|value| value.clone_component()),
         }
     }
 }
 
-impl Component for bool {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Bool(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Bool(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Bool(v) => Some(v),
-            _ => None,
+impl Debug for ComponentData {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match &self.value {
+            Some(value) => formatter.debug_tuple("ComponentData").field(value).finish(),
+            None => formatter.write_str("ComponentData(Unimplemented)"),
         }
     }
 }
 
-impl Component for i32 {
-    fn into_data(self) -> ComponentData {
-        ComponentData::I32(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::I32(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::I32(v) => Some(v),
-            _ => None,
+impl PartialEq for ComponentData {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.value, &other.value) {
+            (Some(value), Some(other)) => value.component_eq(other.as_ref()),
+            (None, None) => true,
+            _ => false,
         }
     }
 }
 
-impl Component for f32 {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Float(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Float(v) => Some(v),
-            _ => None,
+macro_rules! impl_component_downcast_type {
+    ($type:ty, $key:literal) => {
+        // SAFETY: This Steel-owned key uniquely identifies the concrete
+        // component implementation within the process.
+        unsafe impl DowncastType for $type {
+            const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new($key);
         }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Float(v) => Some(v),
-            _ => None,
-        }
-    }
+    };
 }
 
-impl Component for DamageTypeComponent {
-    fn into_data(self) -> ComponentData {
-        ComponentData::DamageType(self)
+impl_component_downcast_type!(DamageTypeComponent, "steel:item_component/damage_type");
+impl_component_downcast_type!(Tool, "steel:item_component/tool");
+impl_component_downcast_type!(Weapon, "steel:item_component/weapon");
+impl_component_downcast_type!(AttackRange, "steel:item_component/attack_range");
+impl_component_downcast_type!(UseCooldown, "steel:item_component/use_cooldown");
+impl_component_downcast_type!(PiercingWeapon, "steel:item_component/piercing_weapon");
+impl_component_downcast_type!(Equippable, "steel:item_component/equippable");
+impl_component_downcast_type!(
+    ItemAttributeModifiers,
+    "steel:item_component/attribute_modifiers"
+);
+impl_component_downcast_type!(ItemEnchantments, "steel:item_component/enchantments");
+
+#[cfg(test)]
+mod tests {
+    use super::ComponentData;
+
+    #[test]
+    fn typed_values_downcast_by_deterministic_key() {
+        let value = ComponentData::new(17_i32);
+
+        assert_eq!(value.downcast_ref::<i32>(), Some(&17));
+        assert_eq!(value.downcast_ref::<bool>(), None);
     }
 
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::DamageType(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::DamageType(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for Tool {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Tool(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Tool(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Tool(v) => Some(v),
-            _ => None,
-        }
+    #[test]
+    fn equality_requires_the_same_concrete_type() {
+        assert_eq!(ComponentData::new(17_i32), ComponentData::new(17_i32));
+        assert_ne!(ComponentData::new(17_i32), ComponentData::new(17.0_f32));
     }
 }
-
-impl Component for Weapon {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Weapon(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Weapon(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Weapon(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for AttackRange {
-    fn into_data(self) -> ComponentData {
-        ComponentData::AttackRange(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::AttackRange(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::AttackRange(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for PiercingWeapon {
-    fn into_data(self) -> ComponentData {
-        ComponentData::PiercingWeapon(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::PiercingWeapon(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::PiercingWeapon(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for UseCooldown {
-    fn into_data(self) -> ComponentData {
-        ComponentData::UseCooldown(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::UseCooldown(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::UseCooldown(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for ItemEnchantments {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Enchantments(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Enchantments(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Enchantments(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for Equippable {
-    fn into_data(self) -> ComponentData {
-        ComponentData::Equippable(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::Equippable(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::Equippable(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for ItemAttributeModifiers {
-    fn into_data(self) -> ComponentData {
-        ComponentData::AttributeModifiers(self)
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::AttributeModifiers(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::AttributeModifiers(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-impl Component for TextComponent {
-    fn into_data(self) -> ComponentData {
-        ComponentData::TextComponent(Box::new(self))
-    }
-
-    fn from_data(data: ComponentData) -> Option<Self> {
-        match data {
-            ComponentData::TextComponent(v) => Some(*v),
-            _ => None,
-        }
-    }
-
-    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
-        match data {
-            ComponentData::TextComponent(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
-// TextComponent and Identifier need special handling since they're used
-// for multiple component types. We'll handle these through the DataComponentType
-// registration rather than a blanket Component impl.

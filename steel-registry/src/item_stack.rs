@@ -5,7 +5,7 @@ use std::io::{Cursor, Result, Write};
 use rand::RngExt;
 
 use steel_utils::{
-    Identifier,
+    DowncastType, Identifier,
     codec::VarInt,
     serial::{ReadFrom, WriteTo},
 };
@@ -331,19 +331,23 @@ impl ItemStack {
     /// Gets the effective value of a component, considering the patch and prototype.
     /// Returns `None` if the component is not present or has been removed.
     #[must_use]
-    pub fn get<T: Component>(&self, component: DataComponentType<T>) -> Option<&T> {
+    pub fn get<T: Component + DowncastType>(&self, component: DataComponentType<T>) -> Option<&T> {
         let data = self.get_effective_value_raw(&component.key)?;
-        T::from_data_ref(data)
+        data.downcast_ref::<T>()
     }
 
     /// Gets the effective value of a component, or returns the default value if not present.
     #[must_use]
-    pub fn get_or_default<T: Component>(&self, component: DataComponentType<T>, default: T) -> T {
+    pub fn get_or_default<T: Component + DowncastType + Clone>(
+        &self,
+        component: DataComponentType<T>,
+        default: T,
+    ) -> T {
         self.get(component).cloned().unwrap_or(default)
     }
 
     /// Sets a component value in this item's patch, overriding the prototype.
-    pub fn set<T: Component>(&mut self, component: DataComponentType<T>, value: T) {
+    pub fn set<T: Component + DowncastType>(&mut self, component: DataComponentType<T>, value: T) {
         self.patch.set(component, value);
     }
 

@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, Identifier};
 
 pub mod item;
 
@@ -51,7 +51,7 @@ impl Item {
 
     /// Builder method to set a component on this item. Used during static initialization.
     #[must_use]
-    pub fn builder_set<T: crate::data_components::Component>(
+    pub fn builder_set<T: crate::data_components::Component + DowncastType>(
         mut self,
         component: crate::data_components::DataComponentType<T>,
         value: Option<T>,
