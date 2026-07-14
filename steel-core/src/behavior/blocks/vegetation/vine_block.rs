@@ -138,6 +138,147 @@ impl VineBlock {
 
         state
     }
+    fn try_spread_horizontal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        test_direction: Direction,
+    ) {
+        if !self.can_spread(world, pos) {
+            return;
+        }
+
+        let test_pos = pos.relative(test_direction);
+        let edge_state = world.get_block_state(test_pos);
+
+        if edge_state.is_air() {
+            let cw = test_direction.rotate_y_clockwise();
+            let cocw = test_direction.rotate_y_counter_clockwise();
+            let cw_property = get_property_for_face(cw);
+            let cocw_property = get_property_for_face(cocw);
+            let cw_has_connecting_face = state.get_value(cw_property);
+            let cocw_has_connecting_face = state.get_value(cocw_property);
+            let cw_test_pos = test_pos.relative(cw);
+            let cocw_test_pos = test_pos.relative(cocw);
+
+            if cw_has_connecting_face && Self::is_acceptable_neighbour(world, cw_test_pos, cw) {
+                world.set_block(
+                    test_pos,
+                    self.block.default_state().set_value(cw_property, true),
+                    UpdateFlags::UPDATE_CLIENTS,
+                );
+            } else if cocw_has_connecting_face
+                && Self::is_acceptable_neighbour(world, cocw_test_pos, cocw)
+            {
+                world.set_block(
+                    test_pos,
+                    self.block.default_state().set_value(cocw_property, true),
+                    UpdateFlags::UPDATE_CLIENTS,
+                );
+            } else {
+                let opposite = test_direction.opposite();
+                if cw_has_connecting_face
+                    && world.get_block_state(cw_test_pos).is_air()
+                    && Self::is_acceptable_neighbour(world, pos.relative(cw), opposite)
+                {
+                    world.set_block(
+                        cw_test_pos,
+                        self.block
+                            .default_state()
+                            .set_value(get_property_for_face(opposite), true),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                } else if cocw_has_connecting_face
+                    && world.get_block_state(cocw_test_pos).is_air()
+                    && Self::is_acceptable_neighbour(world, pos.relative(cocw), opposite)
+                {
+                    world.set_block(
+                        cocw_test_pos,
+                        self.block
+                            .default_state()
+                            .set_value(get_property_for_face(opposite), true),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                } else if rand::random_range(0.0..1.0) < 0.05
+                    && Self::is_acceptable_neighbour(world, test_pos.above(), Direction::Up)
+                {
+                    world.set_block(
+                        test_pos,
+                        self.block
+                            .default_state()
+                            .set_value(get_property_for_face(Direction::Up), true),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                }
+            }
+        } else if Self::is_acceptable_neighbour(world, test_pos, test_direction) {
+            world.set_block(
+                pos,
+                state.set_value(get_property_for_face(test_direction), true),
+                UpdateFlags::UPDATE_CLIENTS,
+            );
+        }
+    }
+
+    fn try_spread_vertical(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        test_direction: Direction,
+    ) {
+        let above_pos = pos.above();
+
+        if test_direction == Direction::Up && pos.y() < world.max_build_height() {
+            if self.can_support_at_face(world, pos, test_direction) {
+                world.set_block(
+                    pos,
+                    state.set_value(get_property_for_face(Direction::Up), true),
+                    UpdateFlags::UPDATE_CLIENTS,
+                );
+                return;
+            }
+            if world.get_block_state(above_pos).is_air() {
+                if !self.can_spread(world, pos) {
+                    return;
+                }
+                let mut above_state = state;
+                for direction in Direction::HORIZONTAL {
+                    if rand::random_bool(0.5)
+                        || !Self::is_acceptable_neighbour(
+                            world,
+                            above_pos.relative(direction),
+                            direction,
+                        )
+                    {
+                        above_state =
+                            above_state.set_value(get_property_for_face(direction), false);
+                    }
+                }
+                if Self::has_horizontal_connection(above_state) {
+                    world.set_block(above_pos, above_state, UpdateFlags::UPDATE_CLIENTS);
+                }
+                return;
+            }
+        }
+
+        if pos.y() > world.min_y() {
+            let below_pos = pos.below();
+            let below_state = world.get_block_state(below_pos);
+            if below_state.is_air() || below_state.get_block() == self.block {
+                let before = if below_state.is_air() {
+                    self.block.default_state()
+                } else {
+                    below_state
+                };
+                let after = Self::copy_random_faces(state, before);
+                if before != after && Self::has_horizontal_connection(after) {
+                    world.set_block(below_pos, after, UpdateFlags::UPDATE_CLIENTS);
+                }
+            }
+        }
+    }
 }
 
 const VINE_FACE_DIRECTIONS: [Direction; 5] = [
@@ -194,164 +335,21 @@ impl BlockBehavior for VineBlock {
         if world.get_game_rule(&vanilla_game_rules::SPREAD_VINES) != GameRuleValue::Bool(true) {
             return;
         }
-
         if rand::random_range(0..4) != 0 {
             return;
         }
 
         let test_direction = Direction::random();
-        let above_pos = pos.above();
+
         if test_direction.axis().is_horizontal()
             && !state.get_value(get_property_for_face(test_direction))
         {
-            if self.can_spread(world, pos) {
-                let test_pos = pos.relative(test_direction);
-                let edge_state = world.get_block_state(test_pos);
-
-                if edge_state.is_air() {
-                    let cw_direction = test_direction.rotate_y_clockwise();
-                    let ccw_direction = test_direction.rotate_y_counter_clockwise();
-
-                    let cw_has_connecting_face =
-                        state.get_value(get_property_for_face(cw_direction));
-                    let ccw_has_connecting_face =
-                        state.get_value(get_property_for_face(ccw_direction));
-
-                    let cw_test_pos = test_pos.relative(cw_direction);
-                    let ccw_test_pos = test_pos.relative(ccw_direction);
-
-                    if cw_has_connecting_face
-                        && Self::is_acceptable_neighbour(world, cw_test_pos, cw_direction)
-                    {
-                        world.set_block(
-                            test_pos,
-                            self.block
-                                .default_state()
-                                .set_value(get_property_for_face(cw_direction), true),
-                            UpdateFlags::UPDATE_CLIENTS,
-                        );
-                    } else if ccw_has_connecting_face
-                        && Self::is_acceptable_neighbour(world, ccw_test_pos, ccw_direction)
-                    {
-                        world.set_block(
-                            test_pos,
-                            self.block
-                                .default_state()
-                                .set_value(get_property_for_face(ccw_direction), true),
-                            UpdateFlags::UPDATE_CLIENTS,
-                        );
-                    } else {
-                        let opposite = test_direction.opposite();
-
-                        if cw_has_connecting_face
-                            && world.get_block_state(cw_test_pos).is_air()
-                            && Self::is_acceptable_neighbour(
-                                world,
-                                pos.relative(cw_direction),
-                                opposite,
-                            )
-                        {
-                            world.set_block(
-                                cw_test_pos,
-                                self.block
-                                    .default_state()
-                                    .set_value(get_property_for_face(opposite), true),
-                                UpdateFlags::UPDATE_CLIENTS,
-                            );
-                        } else if ccw_has_connecting_face
-                            && world.get_block_state(ccw_test_pos).is_air()
-                            && Self::is_acceptable_neighbour(
-                                world,
-                                pos.relative(ccw_direction),
-                                opposite,
-                            )
-                        {
-                            world.set_block(
-                                ccw_test_pos,
-                                self.block
-                                    .default_state()
-                                    .set_value(get_property_for_face(opposite), true),
-                                UpdateFlags::UPDATE_CLIENTS,
-                            );
-                        } else if rand::random_range(0.0..1.0) < 0.05
-                            && Self::is_acceptable_neighbour(world, test_pos.above(), Direction::Up)
-                        {
-                            world.set_block(
-                                test_pos,
-                                self.block
-                                    .default_state()
-                                    .set_value(get_property_for_face(Direction::Up), true),
-                                UpdateFlags::UPDATE_CLIENTS,
-                            );
-                        }
-                    }
-                } else if Self::is_acceptable_neighbour(world, test_pos, test_direction) {
-                    world.set_block(
-                        pos,
-                        state.set_value(get_property_for_face(test_direction), true),
-                        UpdateFlags::UPDATE_CLIENTS,
-                    );
-                }
-            }
+            self.try_spread_horizontal(state, world, pos, test_direction);
         } else {
-            if test_direction == Direction::Up && pos.y() < world.max_build_height() {
-                if self.can_support_at_face(world, pos, test_direction) {
-                    world.set_block(
-                        pos,
-                        state.set_value(get_property_for_face(Direction::Up), true),
-                        UpdateFlags::UPDATE_CLIENTS,
-                    );
-                    return;
-                }
-
-                if world.get_block_state(above_pos).is_air() {
-                    if !self.can_spread(world, pos) {
-                        return;
-                    }
-
-                    let mut above_state = state;
-
-                    for direction in Direction::HORIZONTAL {
-                        if rand::random_bool(0.5)
-                            || !Self::is_acceptable_neighbour(
-                                world,
-                                above_pos.relative(direction),
-                                direction,
-                            )
-                        {
-                            above_state =
-                                above_state.set_value(get_property_for_face(direction), false);
-                        }
-                    }
-
-                    if Self::has_horizontal_connection(above_state) {
-                        world.set_block(above_pos, above_state, UpdateFlags::UPDATE_CLIENTS);
-                    }
-
-                    return;
-                }
-            }
-
-            if pos.y() > world.min_y() {
-                let below_pos = pos.below();
-                let below_state = world.get_block_state(below_pos);
-
-                if below_state.is_air() || below_state.get_block() == self.block {
-                    let before = if below_state.is_air() {
-                        self.block.default_state()
-                    } else {
-                        below_state
-                    };
-
-                    let after = Self::copy_random_faces(state, before);
-
-                    if before != after && Self::has_horizontal_connection(after) {
-                        world.set_block(below_pos, after, UpdateFlags::UPDATE_CLIENTS);
-                    }
-                }
-            }
+            self.try_spread_vertical(state, world, pos, test_direction);
         }
     }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let clicked_state = context.world.get_block_state(context.get_clicked_pos());
         let clicked_vine = clicked_state.get_block() == self.block;
