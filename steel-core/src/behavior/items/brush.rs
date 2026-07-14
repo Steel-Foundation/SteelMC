@@ -7,6 +7,7 @@ use steel_registry::entity_data::{ParticleData, ParticleOptions};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
 use steel_registry::vanilla_particle_types;
+use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Direction};
 
@@ -83,7 +84,7 @@ impl ItemBehavior for BrushItem {
             return;
         };
         let mut guard = block_entity.lock();
-        let Some(brushable) = guard.as_any_mut().downcast_mut::<BrushableBlockEntity>() else {
+        let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
             return;
         };
 

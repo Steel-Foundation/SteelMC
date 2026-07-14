@@ -6,6 +6,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_entity_types;
+use steel_utils::Downcast as _;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
@@ -80,9 +81,8 @@ impl BlockBehavior for BrushableBlock {
             return;
         };
         let mut guard = block_entity.lock();
-        let Some(brushable) = guard
-            .as_any_mut()
-            .downcast_mut::<crate::block_entity::entities::BrushableBlockEntity>()
+        let Some(brushable) =
+            guard.downcast_mut::<crate::block_entity::entities::BrushableBlockEntity>()
         else {
             return;
         };

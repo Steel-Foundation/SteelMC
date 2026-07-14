@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 
@@ -13,7 +12,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::LootContext;
 use steel_registry::{REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::BlockEntity;
@@ -39,6 +38,9 @@ pub struct BrushableBlockEntity {
     hit_direction: Option<Direction>,
     loot_table: Option<Identifier>,
     loot_table_seed: i64,
+}
+unsafe impl DowncastType for BrushableBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/brushable");
 }
 
 impl BrushableBlockEntity {
@@ -95,7 +97,7 @@ impl BrushableBlockEntity {
         }
 
         self.set_changed();
-        true
+        false
     }
 
     /// Applies vanilla delayed progress decay after brushing stops.
@@ -151,6 +153,7 @@ impl BrushableBlockEntity {
         rng: &mut R,
         brush: &ItemStack,
     ) {
+        // TODO: wire player luck
         let mut ctx = LootContext::new(rng)
             .with_block_state(self.state)
             .with_tool(brush)
@@ -256,14 +259,6 @@ impl BrushableBlockEntity {
 }
 
 impl BlockEntity for BrushableBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::BRUSHABLE_BLOCK
     }
