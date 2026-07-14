@@ -18,9 +18,10 @@ pub struct PigVariantJson {
 }
 
 fn generate_pig_model_type(model: &str) -> TokenStream {
-    match model {
-        "cold" => quote! { PigModelType::Cold },
-        _ => quote! { PigModelType::Normal },
+    if model == "cold" {
+        quote! { PigModelType::Cold }
+    } else {
+        quote! { PigModelType::Normal }
     }
 }
 

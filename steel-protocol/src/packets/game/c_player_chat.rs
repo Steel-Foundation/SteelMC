@@ -38,7 +38,8 @@ pub struct CPlayerChat {
 
 impl CPlayerChat {
     #[expect(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         global_index: i32,
         sender: Uuid,
         index: i32,
@@ -86,7 +87,7 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
         self.salt.write(writer)?;
 
         VarInt(self.previous_messages.len() as i32).write(writer)?;
-        for msg in self.previous_messages.iter() {
+        for msg in &self.previous_messages {
             // Write ID. In Minecraft's packed format:
             // - If id is 0: write 0 (VarInt(0)), then write full signature (256 bytes)
             // - If id is N > 0: write N (VarInt(N)), no signature bytes

@@ -42,7 +42,7 @@ impl Ingredient {
 
     /// Returns true if this ingredient matches an empty slot.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 
@@ -52,11 +52,7 @@ impl Ingredient {
         match self {
             Self::Empty => Vec::new(),
             Self::Item(item) => vec![*item],
-            Self::Tag(tag) => REGISTRY
-                .items
-                .get_tag(tag)
-                .map(|items| items.to_vec())
-                .unwrap_or_default(),
+            Self::Tag(tag) => REGISTRY.items.get_tag(tag).unwrap_or_default(),
             Self::Choice(items) => items.to_vec(),
         }
     }

@@ -1,15 +1,110 @@
 use std::cell::{Cell, RefCell};
+use std::sync::{Arc, OnceLock};
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::{vanilla_blocks, vanilla_fluids};
-use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::{
+    test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
+};
+use steel_utils::types::{Difficulty, GameType, UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Identifier};
+use tokio::runtime::{Builder, Runtime};
+use toml::map::Map;
 
+use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event_context::GameEventContext;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
+use crate::world::{
+    LevelAccessor, LevelReader, ScheduledTickAccess, World, WorldConfig, WorldStorageConfig,
+};
+use crate::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
+
+pub(crate) fn test_world() -> &'static Arc<World> {
+    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
+    WORLD.get_or_init(|| create_test_world("test"))
+}
+
+pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
+    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
+    WORLD.get_or_init(|| {
+        let world = create_test_world("test_cross_world_damage");
+        world.level_data.write().set_game_time(100);
+        world
+    })
+}
+
+pub(crate) fn hard_damage_test_world() -> &'static Arc<World> {
+    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
+    WORLD.get_or_init(|| create_test_world_with_difficulty("test_hard_damage", Difficulty::Hard))
+}
+
+struct TestWorldResources {
+    runtime: Arc<Runtime>,
+    generation_pool: Arc<rayon::ThreadPool>,
+}
+
+fn test_world_resources() -> &'static TestWorldResources {
+    static RESOURCES: OnceLock<TestWorldResources> = OnceLock::new();
+    RESOURCES.get_or_init(|| TestWorldResources {
+        runtime: Arc::new(
+            Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .expect("test world runtime should start"),
+        ),
+        generation_pool: Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .thread_name(|index| format!("steel-test-world-{index}"))
+                .build()
+                .expect("test world generation pool should start"),
+        ),
+    })
+}
+
+fn create_test_world(key: &'static str) -> Arc<World> {
+    create_test_world_with_difficulty(key, Difficulty::Normal)
+}
+
+fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) -> Arc<World> {
+    init_test_registry();
+    let resources = test_world_resources();
+    let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
+    let generator_config = toml::Value::Table(Map::new());
+    let generation_settings = WorldGenerationSettings::from_generator_config(
+        Identifier::vanilla_static("empty"),
+        &generator_config,
+        vanilla_dimension_types::OVERWORLD.key.clone(),
+        vanilla_dimension_types::OVERWORLD.min_y,
+        vanilla_dimension_types::OVERWORLD.height,
+    );
+
+    resources
+        .runtime
+        .block_on(World::new_with_config(
+            Arc::clone(&resources.runtime),
+            Identifier::vanilla_static(key),
+            &vanilla_dimension_types::OVERWORLD,
+            0,
+            WorldConfig {
+                storage: WorldStorageConfig::RamOnly,
+                level_data_path: None,
+                generator,
+                generation_settings,
+                view_distance: 2,
+                simulation_distance: 2,
+                compression: None,
+                is_flat: false,
+                sea_level: 63,
+                default_gamemode: GameType::Survival,
+                difficulty,
+            },
+            Arc::clone(&resources.generation_pool),
+        ))
+        .expect("test world should initialize")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PlacedBlockState {

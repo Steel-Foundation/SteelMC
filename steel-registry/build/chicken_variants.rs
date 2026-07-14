@@ -18,9 +18,10 @@ pub struct ChickenVariantJson {
 }
 
 fn generate_chicken_model_type(model: &str) -> TokenStream {
-    match model {
-        "cold" => quote! { ChickenModelType::Cold },
-        _ => quote! { ChickenModelType::Normal },
+    if model == "cold" {
+        quote! { ChickenModelType::Cold }
+    } else {
+        quote! { ChickenModelType::Normal }
     }
 }
 

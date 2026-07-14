@@ -2,6 +2,7 @@ use steel_macros::item_behavior;
 use steel_registry::{
     REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, vanilla_game_events,
 };
+use steel_utils::Downcast as _;
 use steel_utils::types::UpdateFlags;
 
 use crate::{
@@ -61,7 +62,7 @@ impl ItemBehavior for HoneycombItem {
         };
 
         let mut guard = block_entity.lock();
-        let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
             return InteractionResult::Pass;
         };
 

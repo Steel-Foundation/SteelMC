@@ -1,0 +1,18 @@
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/groups.schema.json
+# Documentation: https://steelmc.dev/configuration/permissions/
+
+default_groups = ["default"]
+
+[groups.default]
+priority = 0
+inherits = []
+allow = []
+deny = []
+metadata = []
+
+[groups.op]
+priority = 0
+inherits = []
+allow = ["*"]
+deny = []
+metadata = []

@@ -54,7 +54,7 @@ impl CUpdateMobEffect {
     }
 }
 
-fn mob_effect_flags(packet_flags: MobEffectPacketFlags) -> u8 {
+const fn mob_effect_flags(packet_flags: MobEffectPacketFlags) -> u8 {
     let mut flags = 0;
     if packet_flags.ambient {
         flags |= FLAG_AMBIENT;

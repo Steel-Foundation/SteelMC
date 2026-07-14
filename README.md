@@ -1,10 +1,10 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=plastic&logo=rust&logoColor=white)](https://www.youtube.com/watch?v=cE0wfjsybIQ&t=73s)
-[![License](https://img.shields.io/github/license/4lve/SteelMC?style=social)](https://github.com/4lve/SteelMC/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/Steel-Foundation/SteelMC?style=social)](https://github.com/Steel-Foundation/SteelMC/blob/master/LICENSE)
 [![SteelMC](https://dcbadge.limes.pink/api/server/MwChEHnAbh?style=social)](https://discord.gg/MwChEHnAbh)
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/4lve/SteelMC)
-![Tests](https://github.com/4lve/SteelMC/actions/workflows/test.yml/badge.svg)
-![Lint](https://github.com/4lve/SteelMC/actions/workflows/lint.yml/badge.svg)
-![Build](https://github.com/4lve/SteelMC/actions/workflows/release.yml/badge.svg)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Steel-Foundation/SteelMC)
+![Tests](https://github.com/Steel-Foundation/SteelMC/actions/workflows/test.yml/badge.svg)
+![Lint](https://github.com/Steel-Foundation/SteelMC/actions/workflows/lint.yml/badge.svg)
+![Build](https://github.com/Steel-Foundation/SteelMC/actions/workflows/release.yml/badge.svg)
 
 
 

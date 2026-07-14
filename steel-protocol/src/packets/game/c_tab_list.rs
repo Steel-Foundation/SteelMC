@@ -29,7 +29,7 @@ impl CTabList {
 
     /// Creates a tab list packet with empty header and footer (clears them).
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             header: TextComponent::new(),
             footer: TextComponent::new(),

@@ -1008,6 +1008,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(PairingTestEntity);
+
     impl Entity for PairingTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base

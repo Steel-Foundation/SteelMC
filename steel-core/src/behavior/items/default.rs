@@ -29,7 +29,7 @@ impl ItemBehavior for DefaultItemBehavior {
         match result {
             EquipmentSwapResult::Success(overflow) => {
                 if !overflow.is_empty() {
-                    context.player.drop_item(overflow, false, false);
+                    let _ = context.player.drop_item(overflow, false, false);
                 }
                 InteractionResult::Success
             }

@@ -3,7 +3,6 @@
 //! Barrels are container block entities with 27 slots (3x9 grid),
 //! functioning similarly to chests but without double-chest behavior.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::ToNbtTag;
@@ -14,7 +13,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::inventory::container::Container;
@@ -40,6 +39,11 @@ pub struct BarrelBlockEntity {
     items: Vec<ItemStack>,
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies `BarrelBlockEntity`.
+unsafe impl DowncastType for BarrelBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/barrel");
+}
+
 impl BarrelBlockEntity {
     /// Creates a new barrel block entity.
     #[must_use]
@@ -55,14 +59,6 @@ impl BarrelBlockEntity {
 }
 
 impl BlockEntity for BarrelBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::BARREL
     }

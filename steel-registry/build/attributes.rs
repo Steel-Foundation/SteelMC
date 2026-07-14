@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted attribute data"
+)]
+
 use std::fs;
 
 use heck::ToShoutySnakeCase;
@@ -21,7 +26,7 @@ pub(crate) fn build() -> TokenStream {
 
     let content = fs::read_to_string("build_assets/attributes.json").unwrap();
     let mut attributes: Vec<AttributeEntry> = serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse attributes.json: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to parse attributes.json: {e}"));
 
     // Sort by ID to guarantee registration order matches vanilla IDs
     attributes.sort_by_key(|a| a.id);

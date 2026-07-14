@@ -110,6 +110,7 @@ impl BlockBehavior for CampfireBlock {
     ) {
         if let Some(damage) = self.contact_damage_amount(state, entity.is_living_entity()) {
             entity.hurt(
+                world,
                 &DamageSource::environment(&vanilla_damage_types::CAMPFIRE),
                 damage,
             );

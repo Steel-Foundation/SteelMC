@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted packet data"
+)]
+
 use rustc_hash::FxHashMap;
 use std::{collections::BTreeMap, fs};
 
@@ -64,7 +69,7 @@ pub(crate) fn parse_packets(
 
         for (id, packet_name) in packet.1.iter().enumerate() {
             let packet_id = id as i32;
-            let packet_name = packet_name.replace("/", "_");
+            let packet_name = packet_name.replace('/', "_");
             let name = format!("{prefix}_{packet_name}").to_uppercase();
             let name = format_ident!("{}", name);
             inner.extend([quote! {

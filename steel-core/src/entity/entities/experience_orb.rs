@@ -13,7 +13,7 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_registry::{vanilla_damage_type_tags, vanilla_entities};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, ChunkPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -65,6 +65,11 @@ pub struct ExperienceOrbEntity {
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<ExperienceOrbEntityData>,
     state: SyncMutex<ExperienceOrbState>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrbEntity`.
+unsafe impl DowncastType for ExperienceOrbEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/experience_orb");
 }
 
 impl ExperienceOrbEntity {
@@ -473,7 +478,7 @@ impl Entity for ExperienceOrbEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_base_invulnerable_to(source) {
             return false;
         }
@@ -560,6 +565,8 @@ mod tests {
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::{test_support::init_test_registry, vanilla_damage_types};
 
+    use crate::test_support::test_world;
+
     use super::*;
 
     #[test]
@@ -639,6 +646,7 @@ mod tests {
         );
 
         assert!(orb.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             0.75,
         ));

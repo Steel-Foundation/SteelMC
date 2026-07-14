@@ -1,4 +1,31 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
+#![expect(
+    missing_docs,
+    reason = "registry APIs mirror large generated vanilla data surfaces that are not individually documented yet"
+)]
+#![expect(
+    clippy::absolute_paths,
+    clippy::allow_attributes_without_reason,
+    clippy::fn_params_excessive_bools,
+    clippy::items_after_statements,
+    clippy::match_same_arms,
+    clippy::missing_fields_in_debug,
+    clippy::missing_panics_doc,
+    clippy::ref_option,
+    clippy::return_self_not_must_use,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unreadable_literal,
+    clippy::unused_self,
+    reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::float_cmp,
+        reason = "registry tests compare exact extracted floating-point constants"
+    )
+)]
 
 use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
@@ -421,6 +448,11 @@ pub mod vanilla_structure_sets;
 #[path = "generated/vanilla_structure_processors.rs"]
 pub mod vanilla_structure_processors;
 
+#[expect(
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    reason = "generated vanilla template pool data is emitted by the registry build script"
+)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_template_pools.rs"]
 pub mod vanilla_template_pools;
@@ -634,8 +666,8 @@ pub struct Registry {
 impl Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Registry {")
-            .and_then(|_| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
-            .and_then(|_| f.write_str("}"))
+            .and_then(|()| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
+            .and_then(|()| f.write_str("}"))
     }
 }
 
@@ -801,6 +833,59 @@ impl Registry {
     }
 
     fn validate_references(&self) {
+        let mut time_markers = rustc_hash::FxHashSet::default();
+        for (_, timeline) in self.timelines.iter() {
+            assert!(
+                self.world_clocks.by_key(&timeline.clock.key).is_some(),
+                "timeline {} references unknown world clock {}",
+                timeline.key,
+                timeline.clock.key
+            );
+            if let Some(period_ticks) = timeline.period_ticks {
+                assert!(
+                    period_ticks > 0,
+                    "timeline {} has invalid period_ticks {}",
+                    timeline.key,
+                    period_ticks
+                );
+            }
+            for marker in timeline.time_markers {
+                assert!(
+                    marker.ticks >= 0,
+                    "time marker {} has invalid tick {}",
+                    marker.key,
+                    marker.ticks
+                );
+                if let Some(period_ticks) = timeline.period_ticks {
+                    assert!(
+                        marker.ticks < period_ticks,
+                        "time marker {} tick {} is outside timeline {} period {}",
+                        marker.key,
+                        marker.ticks,
+                        timeline.key,
+                        period_ticks
+                    );
+                }
+                assert!(
+                    time_markers.insert((timeline.clock.key.clone(), marker.key.clone())),
+                    "time marker {} is defined multiple times for world clock {}",
+                    marker.key,
+                    timeline.clock.key
+                );
+            }
+        }
+
+        for (_, dimension_type) in self.dimension_types.iter() {
+            if let Some(clock) = dimension_type.default_clock {
+                assert!(
+                    self.world_clocks.by_key(&clock.key).is_some(),
+                    "dimension type {} references unknown default world clock {}",
+                    dimension_type.key,
+                    clock.key
+                );
+            }
+        }
+
         for (_, biome) in self.biomes.iter() {
             for carver_key in &biome.carvers {
                 assert!(

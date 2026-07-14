@@ -26,3 +26,6 @@ reqwest.workspace = true
 rsa.workspace = true
 rand.workspace = true
 base64.workspace = true
+
+[lints]
+workspace = true

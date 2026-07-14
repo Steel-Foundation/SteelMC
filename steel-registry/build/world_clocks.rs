@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted world clock data"
+)]
+
 use std::fs;
 
 use heck::ToShoutySnakeCase;
@@ -6,7 +11,6 @@ use quote::quote;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct WorldClockJson {}
 
 pub(crate) fn build() -> TokenStream {
@@ -23,7 +27,7 @@ pub(crate) fn build() -> TokenStream {
             let world_clock_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let _world_clock: WorldClockJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", world_clock_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {world_clock_name}: {e}"));
 
             world_clocks.push(world_clock_name);
         }

@@ -4,6 +4,7 @@ use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 use crate::sound_event::SoundEventRef;
+use crate::world_clock::WorldClockRef;
 
 #[derive(Debug)]
 pub struct BedRule {
@@ -48,7 +49,7 @@ pub struct DimensionType {
     pub logical_height: i32,
     pub infiniburn: &'static str,
     pub ambient_light: f32,
-    pub default_clock: Option<&'static str>,
+    pub default_clock: Option<WorldClockRef>,
     pub timelines: Option<&'static str>,
     pub has_ender_dragon_fight: bool,
     pub monster_spawn_light_level: MonsterSpawnLightLevel,
@@ -124,7 +125,7 @@ impl ToNbtTag for &DimensionType {
         compound.insert("ambient_light", self.ambient_light);
         compound.insert("has_ender_dragon_fight", self.has_ender_dragon_fight);
         if let Some(clock) = self.default_clock {
-            compound.insert("default_clock", clock);
+            compound.insert("default_clock", clock.key.to_string().as_str());
         }
         if let Some(timelines) = self.timelines {
             compound.insert("timelines", timelines);

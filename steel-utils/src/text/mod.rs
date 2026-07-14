@@ -1,4 +1,8 @@
 //! This module contains everything related to text components.
+mod nbt;
+
+pub use nbt::command_nbt_component;
+
 use crate::{
     hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
     serial::ReadFrom,
@@ -8,10 +12,10 @@ use simdnbt::owned::read_tag;
 use std::io::{self, Cursor};
 use text_components::{
     TextComponent,
-    content::{Content, NbtSource, Object, Resolvable},
-    custom::CustomData,
+    content::{Content, NbtSource, Object, PlayerModel, Resolvable},
+    custom::{CustomData, Payload},
     format::Format,
-    interactivity::{ClickEvent, HoverEvent},
+    interactivity::{ClickEvent, Dialog, HoverEvent},
     resolving::TextResolutor,
 };
 
@@ -117,9 +121,7 @@ fn hash_component_as_map(component: &TextComponent, hasher: &mut ComponentHasher
         let mut value_hasher = ComponentHasher::new();
         value_hasher.start_list();
         for child in &component.children {
-            // Each child is hashed as a complete component, then we write the 4-byte hash
-            let child_hash = child.compute_hash();
-            value_hasher.put_raw_bytes(&child_hash.to_le_bytes());
+            value_hasher.put_component_hash(child);
         }
         value_hasher.end_list();
         entries.push(HashEntry::new(key_hasher, value_hasher));
@@ -177,9 +179,7 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.start_list();
                 for arg in args {
-                    // Each argument is hashed as a complete component, then we write the 4-byte hash
-                    let arg_hash = arg.compute_hash();
-                    value_hasher.put_raw_bytes(&arg_hash.to_le_bytes());
+                    value_hasher.put_component_hash(arg);
                 }
                 value_hasher.end_list();
                 entries.push(HashEntry::new(key_hasher, value_hasher));
@@ -192,7 +192,11 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
             value_hasher.put_string(keybind);
             entries.push(HashEntry::new(key_hasher, value_hasher));
         }
-        Content::Object(Object::Atlas { atlas, sprite }) => {
+        Content::Object(Object::Atlas {
+            atlas,
+            sprite,
+            fallback,
+        }) => {
             {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("sprite");
@@ -200,15 +204,26 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 value_hasher.put_string(sprite);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            if let Some(atlas) = atlas {
+            if atlas != "minecraft:blocks" {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("atlas");
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.put_string(atlas);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
+            if let Some(fallback) = fallback {
+                let mut key_hasher = ComponentHasher::new();
+                key_hasher.put_string("fallback");
+                let mut value_hasher = ComponentHasher::new();
+                fallback.hash_component(&mut value_hasher);
+                entries.push(HashEntry::new(key_hasher, value_hasher));
+            }
         }
-        Content::Object(Object::Player { player, hat }) => {
+        Content::Object(Object::Player {
+            player,
+            hat,
+            fallback,
+        }) => {
             {
                 let mut inner_entries: Vec<HashEntry> = Vec::new();
                 if let Some(id) = &player.id {
@@ -230,6 +245,30 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                     key_hasher.put_string("texture");
                     let mut value_hasher = ComponentHasher::new();
                     value_hasher.put_string(texture);
+                    inner_entries.push(HashEntry::new(key_hasher, value_hasher));
+                }
+                if let Some(cape) = &player.cape {
+                    let mut key_hasher = ComponentHasher::new();
+                    key_hasher.put_string("cape");
+                    let mut value_hasher = ComponentHasher::new();
+                    value_hasher.put_string(cape);
+                    inner_entries.push(HashEntry::new(key_hasher, value_hasher));
+                }
+                if let Some(elytra) = &player.elytra {
+                    let mut key_hasher = ComponentHasher::new();
+                    key_hasher.put_string("elytra");
+                    let mut value_hasher = ComponentHasher::new();
+                    value_hasher.put_string(elytra);
+                    inner_entries.push(HashEntry::new(key_hasher, value_hasher));
+                }
+                if let Some(model) = player.model {
+                    let mut key_hasher = ComponentHasher::new();
+                    key_hasher.put_string("model");
+                    let mut value_hasher = ComponentHasher::new();
+                    value_hasher.put_string(match model {
+                        PlayerModel::Slim => "slim",
+                        PlayerModel::Wide => "wide",
+                    });
                     inner_entries.push(HashEntry::new(key_hasher, value_hasher));
                 }
                 if !player.properties.is_empty() {
@@ -292,11 +331,18 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 value_hasher.end_map();
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            {
+            if !hat {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("hat");
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.put_bool(*hat);
+                entries.push(HashEntry::new(key_hasher, value_hasher));
+            }
+            if let Some(fallback) = fallback {
+                let mut key_hasher = ComponentHasher::new();
+                key_hasher.put_string("fallback");
+                let mut value_hasher = ComponentHasher::new();
+                fallback.hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
         }
@@ -312,8 +358,8 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 value_hasher.put_string(selector);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            // "separator" field
-            {
+            // "separator" field (optional)
+            if let Some(separator) = separator {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("separator");
                 let mut value_hasher = ComponentHasher::new();
@@ -359,6 +405,7 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
         Content::Resolvable(Resolvable::NBT {
             path,
             interpret,
+            plain,
             separator,
             source,
         }) => {
@@ -370,16 +417,24 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 value_hasher.put_string(path);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            // "interpret" field (optional)
-            if let Some(interpret) = interpret {
+            // "interpret" field (optional, defaults to false)
+            if *interpret {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("interpret");
                 let mut value_hasher = ComponentHasher::new();
-                value_hasher.put_bool(*interpret);
+                value_hasher.put_bool(true);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            // "separator" field
-            {
+            // "plain" field (optional, defaults to false)
+            if *plain {
+                let mut key_hasher = ComponentHasher::new();
+                key_hasher.put_string("plain");
+                let mut value_hasher = ComponentHasher::new();
+                value_hasher.put_bool(true);
+                entries.push(HashEntry::new(key_hasher, value_hasher));
+            }
+            // "separator" field (optional)
+            if let Some(separator) = separator {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("separator");
                 let mut value_hasher = ComponentHasher::new();
@@ -441,7 +496,7 @@ fn hash_format_fields(format: &Format, entries: &mut Vec<HashEntry>) {
         let mut key_hasher = ComponentHasher::new();
         key_hasher.put_string("shadow_color");
         let mut value_hasher = ComponentHasher::new();
-        value_hasher.put_long(*shadow_color);
+        value_hasher.put_int(*shadow_color);
         entries.push(HashEntry::new(key_hasher, value_hasher));
     }
 
@@ -516,7 +571,7 @@ fn hash_hover_fields(event: &HoverEvent, hasher: &mut ComponentHasher) {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("value");
                 let mut value_hasher = ComponentHasher::new();
-                hash_component_as_map(value, &mut value_hasher);
+                value.hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
         }
@@ -539,18 +594,21 @@ fn hash_hover_fields(event: &HoverEvent, hasher: &mut ComponentHasher) {
                 value_hasher.put_string(id);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            if let Some(count) = count {
+            if *count != 1 {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("count");
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.put_int(*count);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
-            if let Some(components) = components {
+            if let Some(components) = components
+                && !components.is_empty_compound()
+            {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("components");
                 let mut value_hasher = ComponentHasher::new();
-                value_hasher.put_string(components);
+                // TODO: Hash through DataComponentPatch::CODEC once HashComponent has registry context.
+                components.as_nbt().hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
         }
@@ -573,14 +631,20 @@ fn hash_hover_fields(event: &HoverEvent, hasher: &mut ComponentHasher) {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("uuid");
                 let mut value_hasher = ComponentHasher::new();
-                value_hasher.put_string(&uuid.to_string());
+                let (most, least) = uuid.as_u64_pair();
+                value_hasher.put_int_array(&[
+                    (most >> 32) as i32,
+                    most as i32,
+                    (least >> 32) as i32,
+                    least as i32,
+                ]);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
             if let Some(name) = name {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("name");
                 let mut value_hasher = ComponentHasher::new();
-                hash_component_as_map(name, &mut value_hasher);
+                name.hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
         }
@@ -698,7 +762,13 @@ fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("dialog");
                 let mut value_hasher = ComponentHasher::new();
-                value_hasher.put_string(dialog);
+                match dialog {
+                    Dialog::Reference(reference) => value_hasher.put_string(reference),
+                    Dialog::Inline(value) => {
+                        // TODO: Hash through Dialog::CODEC once HashComponent has registry context.
+                        value.as_nbt().hash_component(&mut value_hasher);
+                    }
+                }
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
         }
@@ -708,6 +778,13 @@ fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
                 key_hasher.put_string("action");
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.put_string("custom");
+                entries.push(HashEntry::new(key_hasher, value_hasher));
+            }
+            if let Payload::Nbt(payload) = &custom_data.payload {
+                let mut key_hasher = ComponentHasher::new();
+                key_hasher.put_string("payload");
+                let mut value_hasher = ComponentHasher::new();
+                payload.as_nbt().hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
             {

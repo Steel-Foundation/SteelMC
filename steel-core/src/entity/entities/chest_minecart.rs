@@ -12,6 +12,7 @@ use steel_utils::Identifier;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
@@ -29,6 +30,11 @@ pub struct ChestMinecartEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     state: SyncMutex<ChestMinecartState>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ChestMinecartEntity`.
+unsafe impl DowncastType for ChestMinecartEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/chest_minecart");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

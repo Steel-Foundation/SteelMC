@@ -3,7 +3,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::serial::ReadFrom;
 
 /// Creative mode slot packet uses the delimited (untrusted) item format
-/// where each component value is prefixed with a VarInt byte length.
+/// where each component value is prefixed with a `VarInt` byte length.
 #[derive(ServerPacket, Clone, Debug)]
 pub struct SSetCreativeModeSlot {
     pub slot_num: i16,

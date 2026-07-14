@@ -2,6 +2,7 @@ use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::region::WorldGenRegion;
 use glam::IVec3;
+use steel_registry::{biome::BiomeRef, vanilla_biomes};
 use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
 use steel_worldgen::noise::Beardifier;
@@ -25,6 +26,10 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn gen_depth(&self) -> i32 {
         384
+    }
+
+    fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
+        &vanilla_biomes::PLAINS
     }
 
     fn create_structures(&self, _chunk: &ChunkAccess) {}

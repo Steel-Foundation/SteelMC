@@ -57,7 +57,10 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
     BLOCK_DROPS, GLOBAL_SOUND_EVENTS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
 };
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
+use steel_registry::{
+    REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef,
+    world_clock::WorldClockRef,
+};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
@@ -65,6 +68,7 @@ use steel_registry::{
 use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_poi_types};
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
+    Downcast as _,
     locks::{SyncMutex, SyncRwLock},
     random::{Random as _, RandomSource, legacy_random::LegacyRandom},
 };
@@ -189,6 +193,7 @@ impl ClipHitResult {
 }
 
 mod border;
+pub(crate) mod clock;
 mod environment;
 pub mod game_event_context;
 pub mod game_event_listener;
@@ -392,7 +397,7 @@ pub struct World {
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Per-world saved data storage.
-    saved_data: SavedDataManager,
+    pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Server view distance (maximum chunk radius).
@@ -427,7 +432,7 @@ pub struct World {
     /// Section-indexed listeners for vanilla game events.
     game_event_listeners: GameEventListenerStorage,
     /// World-change requests queued by world-local ticks for server safe-point processing.
-    pending_world_changes: SyncMutex<Vec<(i32, WorldChangeRequest)>>,
+    pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
 }
 
 impl World {
@@ -1063,10 +1068,7 @@ impl World {
             return false;
         };
         let mut block_entity = block_entity.lock();
-        let Some(gateway) = block_entity
-            .as_any_mut()
-            .downcast_mut::<EndGatewayBlockEntity>()
-        else {
+        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
             return false;
         };
         gateway.set_exit_position(exit, exact);
@@ -1278,19 +1280,90 @@ impl World {
         }
     }
 
-    fn set_game_time(&self, tick_count: u64) {
-        let mut level_data = self.level_data.write();
-        level_data.data_mut().game_time = tick_count as i64;
-    }
-
     /// Returns vanilla level game time.
     pub fn game_time(&self) -> i64 {
         self.level_data.read().game_time()
     }
 
+    /// Returns the total ticks of one clock in this world.
+    pub(crate) fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+        self.level_data.read().world_clocks().total_ticks(clock)
+    }
+
+    /// Creates a full per-world time synchronization packet.
+    pub(crate) fn time_sync_packet(&self) -> CSetTime {
+        let level_data = self.level_data.read();
+        let advance_time = self.advance_time_with_guard(&level_data);
+        CSetTime::new(
+            level_data.game_time(),
+            level_data.world_clocks().network_updates(advance_time),
+        )
+    }
+
+    /// Broadcasts all clock states to players in this world.
+    pub(crate) fn broadcast_time_sync(&self) {
+        self.broadcast_to_all(self.time_sync_packet());
+    }
+
+    pub(crate) fn set_clock_total_ticks(
+        &self,
+        clock: WorldClockRef,
+        total_ticks: i64,
+    ) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_total_ticks(clock, total_ticks))
+    }
+
+    pub(crate) fn add_clock_ticks(&self, clock: WorldClockRef, ticks: i32) -> Option<i64> {
+        self.modify_clock(clock, |manager| manager.add_ticks(clock, ticks))
+    }
+
+    pub(crate) fn set_clock_paused(&self, clock: WorldClockRef, paused: bool) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_paused(clock, paused))
+    }
+
+    pub(crate) fn set_clock_rate(&self, clock: WorldClockRef, rate: f32) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_rate(clock, rate))
+    }
+
+    pub(crate) fn move_clock_to_time_marker(
+        &self,
+        clock: WorldClockRef,
+        marker: &Identifier,
+    ) -> Option<bool> {
+        self.modify_clock(clock, |manager| manager.move_to_time_marker(clock, marker))
+    }
+
+    fn modify_clock<R>(
+        &self,
+        clock: WorldClockRef,
+        action: impl FnOnce(&mut clock::WorldClockManager) -> Option<R>,
+    ) -> Option<R> {
+        let (result, packet) = {
+            let mut level_data = self.level_data.write();
+            let result = action(level_data.world_clocks_mut())?;
+            let advance_time = self.advance_time_with_guard(&level_data);
+            let update = level_data
+                .world_clocks()
+                .network_update(clock, advance_time)?;
+            (result, CSetTime::new(level_data.game_time(), vec![update]))
+        };
+        self.broadcast_to_all(packet);
+        Some(result)
+    }
+
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
+    }
+
+    /// Sets the level difficulty and broadcasts the new value to its players.
+    pub(crate) fn set_difficulty(&self, difficulty: Difficulty) {
+        let locked = {
+            let mut level_data = self.level_data.write();
+            level_data.data_mut().difficulty = difficulty;
+            level_data.data().difficulty_locked
+        };
+        self.broadcast_to_all(CChangeDifficulty { difficulty, locked });
     }
 
     /// Returns the total height of the world in blocks.
@@ -1499,7 +1572,7 @@ impl World {
         None
     }
 
-    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
+    pub(crate) fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
         let chunk_pos = ChunkPos::new(
             SectionPos::block_to_section_coord(x),
             SectionPos::block_to_section_coord(z),
@@ -1619,8 +1692,14 @@ impl World {
     /// WARNING: this function acquires a write lock on the level data.
     /// if you already have a read or write lock on level data, this will DEADLOCK
     pub fn set_game_rule(&self, rule: GameRuleRef, value: GameRuleValue) -> bool {
-        let mut guard = self.level_data.write();
-        self.set_game_rule_with_guard(rule, value, &mut guard)
+        let updated = {
+            let mut guard = self.level_data.write();
+            self.set_game_rule_with_guard(rule, value, &mut guard)
+        };
+        if updated && rule == &ADVANCE_TIME {
+            self.broadcast_time_sync();
+        }
+        updated
     }
 
     /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
@@ -1635,6 +1714,13 @@ impl World {
             .data_mut()
             .game_rules_values
             .set(rule, value, &REGISTRY.game_rules)
+    }
+
+    fn advance_time_with_guard(&self, guard: &LevelDataManager) -> bool {
+        matches!(
+            self.get_game_rule_with_guard(&ADVANCE_TIME, guard),
+            GameRuleValue::Bool(true)
+        )
     }
 
     /// Gets the world seed.
@@ -1664,17 +1750,28 @@ impl World {
 
     /// Gets the block state at the given position.
     ///
-    /// Returns the default block state (void air) if the position is out of bounds or the chunk is not loaded.
+    /// Returns void air out of bounds and air when the containing chunk is not loaded.
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    pub(crate) fn is_entity_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
+    pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
+            .is_some()
     }
 
     pub(crate) fn queue_light_change_after_block_set(
@@ -2092,6 +2189,14 @@ impl World {
         self.mark_chunk_dirty(chunk_pos);
     }
 
+    /// Queues a same-state block update and its block-entity update packet.
+    ///
+    /// Mirrors vanilla `Level.sendBlockUpdated` for callers that changed only
+    /// block-entity data.
+    pub(crate) fn send_block_updated(&self, pos: BlockPos) {
+        self.chunk_map.block_changed(pos);
+    }
+
     /// Marks a chunk as dirty (unsaved) so it will be persisted to disk.
     ///
     /// Called when entities move, are added/removed, or when block entities change.
@@ -2117,7 +2222,6 @@ impl World {
         runs_normally: bool,
     ) -> WorldGameTickTimings {
         let world_start = Instant::now();
-        self.set_game_time(tick_count);
         self.set_tick_runs_normally(runs_normally);
         if runs_normally {
             self.tick_world_border();
@@ -2372,6 +2476,25 @@ impl World {
         }
     }
 
+    /// Sets this world's weather timers and flags.
+    ///
+    /// Minecraft 26.2 owns this state at server scope. Steel intentionally owns
+    /// it per world so multiple worlds in one domain can have independent weather.
+    pub(crate) fn set_weather_parameters(
+        &self,
+        clear_time: i32,
+        rain_time: i32,
+        raining: bool,
+        thundering: bool,
+    ) {
+        let mut level_data = self.level_data.write();
+        level_data.set_clear_weather_time(clear_time);
+        level_data.set_rain_time(rain_time);
+        level_data.set_thunder_time(rain_time);
+        level_data.set_raining(raining);
+        level_data.set_thundering(thundering);
+    }
+
     /// Checks whether the rain level is high enough to be considered raining.
     /// Used for both visual rendering and gameplay logic (crop growth, fire, mob behavior).
     ///
@@ -2418,7 +2541,6 @@ impl World {
 
     /// Returns the current vanilla `SKY_LIGHT_LEVEL` environment attribute.
     pub fn sky_light_level(&self) -> f32 {
-        let day_time = self.level_data.read().day_time();
         let (rain_level, thunder_level) = if self.can_have_weather() {
             let weather = self.weather.lock();
             (weather.rain_level, weather.thunder_level)
@@ -2426,9 +2548,10 @@ impl World {
             (0.0, 0.0)
         };
 
+        let level_data = self.level_data.read();
         environment::sky_light_level(
             self.dimension_type,
-            day_time,
+            level_data.world_clocks(),
             rain_level,
             thunder_level,
             self.can_have_weather(),
@@ -2496,7 +2619,7 @@ impl World {
         let local_quart_x = (quart_x & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+        if let Some(Some(biome_id)) = self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             let sections = chunk.sections();
             let (section_index, local_quart_y) =
                 Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
@@ -2507,7 +2630,16 @@ impl World {
                     .biomes
                     .get(local_quart_x, local_quart_y, local_quart_z),
             )
-        })?
+        }) {
+            return Some(biome_id);
+        }
+
+        let biome = self
+            .chunk_map
+            .world_gen_context
+            .generator
+            .noise_biome(quart_x, quart_y, quart_z);
+        u16::try_from(biome.try_id()?).ok()
     }
 
     fn biome_quart_y_indices(
@@ -2654,32 +2786,19 @@ impl World {
             .unwrap_or(false)
     }
 
-    /// Advances the gametime and the daytime (if `ADVANCE_TIME` gamerule is true) by one tick, and
-    /// then sends an update to all clients in this world every 20th tick.
+    /// Advances game time and this world's clock instances, then periodically synchronizes game time.
     fn tick_time(&self) {
-        let advance_time = self
-            .get_game_rule(&ADVANCE_TIME)
-            .as_bool()
-            .expect("gamerule advance_time should always be a bool.");
-
-        let (game_time, day_time) = {
+        let game_time = {
             let mut lock = self.level_data.write();
-            let updated_game_time = lock.game_time() + 1;
+            let updated_game_time = lock.game_time().wrapping_add(1);
             lock.set_game_time(updated_game_time);
-            let current_day_time = lock.day_time();
-
-            if advance_time {
-                let updated_day_time = (current_day_time + 1) % 24000;
-                lock.set_day_time(updated_day_time);
-                (updated_game_time, updated_day_time)
-            } else {
-                (updated_game_time, current_day_time)
-            }
+            let advance_time = self.advance_time_with_guard(&lock);
+            lock.world_clocks_mut().tick(advance_time);
+            updated_game_time
         };
 
         if game_time % 20 == 0 {
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
+            self.broadcast_to_all(CSetTime::new(game_time, Vec::new()));
         }
     }
 
@@ -3088,6 +3207,23 @@ impl World {
         };
 
         self.broadcast_to_nearby(chunk, packet, None);
+    }
+
+    /// Broadcasts the current block-entity update packet when that entity type
+    /// exposes client-visible update data.
+    pub(crate) fn broadcast_block_entity_if_needed(&self, pos: BlockPos) {
+        let Some(block_entity) = self.get_block_entity(pos) else {
+            return;
+        };
+        let update = {
+            let block_entity = block_entity.lock();
+            block_entity
+                .get_update_tag()
+                .map(|tag| (block_entity.get_type(), tag))
+        };
+        if let Some((block_entity_type, tag)) = update {
+            self.broadcast_block_entity_update(pos, block_entity_type, tag);
+        }
     }
 
     /// Drops an item stack at the given position with scatter behavior.
@@ -4003,9 +4139,9 @@ impl World {
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
     ///
-    /// The sound is sent to all players within 64 blocks of the position,
-    /// except for the excluded player (if any). The excluded player is typically
-    /// the one who triggered the sound, as they hear it client-side.
+    /// The sound is sent to players within its vanilla range, except for the
+    /// excluded player (if any). The excluded player is typically the one who
+    /// triggered the sound, as they hear it client-side.
     ///
     /// # Arguments
     /// * `sound` - The sound event to play
@@ -4047,8 +4183,6 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -4056,7 +4190,6 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-
         let packet = CSound::new(sound, source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -4065,7 +4198,7 @@ impl World {
             return;
         };
 
-        // Get players tracking this chunk, then filter by 64-block distance
+        // Get players tracking this chunk, then apply vanilla's strict range check.
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
             if exclude == Some(entity_id) {
@@ -4078,7 +4211,7 @@ impl World {
                 let dz = player_pos.z - pos.z;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if dist_sq <= MAX_DISTANCE_SQ {
+                if sound_is_within_range(sound, volume, dist_sq) {
                     player.connection.send_encoded(encoded.clone());
                 }
             }
@@ -4165,7 +4298,7 @@ impl World {
 
     /// Returns the runtime entity manager.
     #[must_use]
-    pub const fn entity_manager(&self) -> &WorldEntityManager {
+    pub(crate) const fn entity_manager(&self) -> &WorldEntityManager {
         &self.entity_manager
     }
 
@@ -4564,19 +4697,19 @@ impl World {
         self.entity_manager.get_by_id(id)
     }
 
+    /// Returns true if this exact entity is live or retained for chunk-unload recovery.
+    pub(crate) fn contains_live_or_unloading_entity(&self, entity: &SharedEntity) -> bool {
+        self.entity_manager
+            .contains_live_or_unloading_entity(entity)
+    }
+
     /// Queues a world change from world-local code for server safe-point processing.
-    pub fn queue_world_change(&self, entity_id: i32, request: WorldChangeRequest) {
-        self.pending_world_changes.lock().push((entity_id, request));
+    pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {
+        self.pending_world_changes.lock().push((entity, request));
     }
 
     pub(crate) fn drain_world_changes(&self) -> Vec<(SharedEntity, WorldChangeRequest)> {
         mem::take(&mut *self.pending_world_changes.lock())
-            .into_iter()
-            .filter_map(|(entity_id, request)| {
-                self.get_entity_by_id(entity_id)
-                    .map(|entity| (entity, request))
-            })
-            .collect()
     }
 
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.
@@ -4773,6 +4906,11 @@ fn nearest_player_distance_in_range(
     max_distance < 0.0 || distance_sqr < max_distance_sqr
 }
 
+fn sound_is_within_range(sound: SoundEventRef, volume: f32, distance_squared: f64) -> bool {
+    let range = f64::from(sound.range(volume));
+    distance_squared < range * range
+}
+
 impl LevelReader for World {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         Self::get_block_state(self, pos)
@@ -4892,11 +5030,14 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_fluids};
+    use steel_registry::{
+        sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
+    };
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
     use crate::entity::{EntityBase, entities::PigEntity};
+    use crate::test_support::test_world;
 
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
@@ -4906,6 +5047,15 @@ mod tests {
     fn global_sound_events_gamerule_controls_global_level_event_packet_mode() {
         assert!(global_sound_events_enabled(GameRuleValue::Bool(true)));
         assert!(!global_sound_events_enabled(GameRuleValue::Bool(false)));
+    }
+
+    #[test]
+    fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
+        init_test_registry();
+        let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
+
+        assert!(sound_is_within_range(sound, 0.75, 255.0));
+        assert!(!sound_is_within_range(sound, 0.75, 256.0));
     }
 
     #[test]
@@ -4973,6 +5123,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TrackerTestEntity);
+
     impl Entity for TrackerTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -5021,6 +5173,21 @@ mod tests {
         assert!(!World::is_in_spawnable_bounds(BlockPos::new(
             0, 20_000_000, 0
         )));
+    }
+
+    #[test]
+    fn block_state_outside_world_bounds_is_void_air() {
+        init_test_registry();
+        let world = test_world();
+
+        assert_eq!(
+            world.get_block_state(BlockPos::new(0, world.get_min_y() - 1, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
+        assert_eq!(
+            world.get_block_state(BlockPos::new(BlockPos::MAX_HORIZONTAL_COORDINATE, 0, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
     }
 
     #[test]

@@ -50,12 +50,11 @@ pub fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
 where
     F: FnOnce(&T) -> TokenStream,
 {
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
+    if let Some(val) = opt {
+        let inner = f(val);
+        quote! { Some(#inner) }
+    } else {
+        quote! { None }
     }
 }
 
@@ -129,7 +128,7 @@ pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> V
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
         let value: T = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", name, e));
+            .unwrap_or_else(|e| panic!("Failed to parse {name}: {e}"));
         out.push((name, value));
     }
     let order = vanilla_variant_order(subdir);

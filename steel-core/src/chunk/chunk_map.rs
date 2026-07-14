@@ -27,8 +27,9 @@ use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::{ChunkHolder, ChunkSaveDependency};
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, PersistentChunkTickets,
-    TimedChunkTickets, generation_status, is_block_ticking, is_entity_ticking,
+    ChunkTicket, ChunkTicketLevel, ChunkTicketManager, ENDER_PEARL_TICKET_TIMEOUT_TICKS,
+    LevelChange, PersistentChunkTickets, TimedChunkTickets, generation_status, is_block_ticking,
+    is_entity_ticking,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -50,6 +51,11 @@ use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 use crate::{entity::Entity, player::Player};
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
+
+/// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
+/// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
+/// `ENDER_PEARL_TICKET_TIMEOUT - 1` ticks while it flies.
+pub const ENDER_PEARL_TICKET_TIMEOUT: u32 = ENDER_PEARL_TICKET_TIMEOUT_TICKS;
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -1081,6 +1087,7 @@ impl ChunkMap {
                             player.connection.send_encoded(encoded.clone());
                         }
                     }
+                    world.broadcast_block_entity_if_needed(block_pos);
                 } else {
                     // Multiple block changes - use CSectionBlocksUpdate
                     let changes: Vec<BlockChange> = changed_positions
@@ -1120,6 +1127,10 @@ impl ChunkMap {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
                             player.connection.send_encoded(encoded.clone());
                         }
+                    }
+                    for &packed in &changed_positions {
+                        let block_pos = section_pos.relative_to_block_pos(packed);
+                        world.broadcast_block_entity_if_needed(block_pos);
                     }
                 }
             }
@@ -1415,8 +1426,7 @@ impl ChunkMap {
         let changes: Vec<LevelChange> = {
             let _span = tracing::trace_span!("ticket_updates").entered();
             let start = Instant::now();
-            let mut ct = self.chunk_tickets.lock();
-            let result = ct.run_all_updates().to_vec();
+            let result = self.chunk_tickets.lock().run_all_updates().to_vec();
             timings.ticket_updates = start.elapsed();
             result
         };
@@ -1484,6 +1494,13 @@ impl ChunkMap {
             true
         });
         chunks
+    }
+
+    /// Returns whether the chunk is full and currently allows entity ticks.
+    pub(crate) fn is_entity_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&pos, |_, holder| holder.entity_visibility().is_ticking())
+            .unwrap_or(false)
     }
 
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
@@ -1765,6 +1782,22 @@ impl ChunkMap {
             let ticket = ChunkTicket::player(last_view.view_distance, world.simulation_distance);
             chunk_tickets.remove_ticket(last_view.center, ticket);
         }
+    }
+
+    /// Places (or refreshes) the timeout ticket that keeps a thrown ender pearl's
+    /// chunk loaded and ticking while it flies.
+    ///
+    /// Mirrors vanilla `ServerPlayer.placeEnderPearlTicket` →
+    /// `chunkSource.addTicketWithRadius(ENDER_PEARL, chunk, 2)`. Re-placing the
+    /// same ticket resets its countdown rather than stacking duplicates.
+    // TODO: vanilla's ENDER_PEARL ticket also sets FLAG_KEEP_DIMENSION_ACTIVE
+    // (`resetEmptyTime`/`shouldKeepDimensionActive`); SteelMC has no idle-dimension
+    // unload concept yet, so that flag has no analog here.
+    pub fn place_ender_pearl_ticket(&self, chunk: ChunkPos) {
+        let mut chunk_tickets = self.chunk_tickets.lock();
+        self.timed_chunk_tickets
+            .lock()
+            .add_ender_pearl_ticket(&mut chunk_tickets, chunk);
     }
 
     /// Saves all dirty chunks to disk.

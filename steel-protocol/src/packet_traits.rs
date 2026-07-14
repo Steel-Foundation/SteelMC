@@ -64,6 +64,10 @@ pub struct CompressionInfo {
 }
 
 impl Default for CompressionInfo {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "256 is a known nonzero compression threshold"
+    )]
     fn default() -> Self {
         Self {
             threshold: NonZeroU32::new(256).unwrap(),

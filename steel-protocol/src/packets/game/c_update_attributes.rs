@@ -20,7 +20,7 @@ pub struct AttributeModifierData {
 /// A snapshot of a single attribute's state, including its base value and active modifiers.
 #[derive(WriteTo, Clone, Debug)]
 pub struct AttributeSnapshot {
-    /// The registry ID of the attribute (VarInt on the wire).
+    /// The registry ID of the attribute (`VarInt` on the wire).
     #[write(as = VarInt)]
     pub attribute_id: i32,
     /// The base value of the attribute.
@@ -48,7 +48,7 @@ pub struct CUpdateAttributes {
 impl CUpdateAttributes {
     /// Creates a new update attributes packet.
     #[must_use]
-    pub fn new(entity_id: i32, attributes: Vec<AttributeSnapshot>) -> Self {
+    pub const fn new(entity_id: i32, attributes: Vec<AttributeSnapshot>) -> Self {
         Self {
             entity_id,
             attributes,

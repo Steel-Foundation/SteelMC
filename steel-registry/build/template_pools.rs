@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted template pool data"
+)]
+
 use std::fs;
 use std::io::Read;
 
@@ -227,9 +232,7 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 // ── Code generation helpers ──
 
 fn gen_identifier(id: &str) -> TokenStream {
-    if id.is_empty() {
-        panic!("Cannot generate an empty identifier");
-    }
+    assert!(!id.is_empty(), "Cannot generate an empty identifier");
     if let Some((namespace, path)) = id.split_once(':') {
         quote! { Identifier::new(#namespace, #path) }
     } else {
@@ -257,9 +260,10 @@ fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenSt
             quote! { ProcessorList::Registry(#id) }
         }
         Some(ProcessorsJson::Direct { processors }) => {
-            if !processors.is_empty() {
-                panic!("Direct non-empty processor lists are not generated yet in {context}");
-            }
+            assert!(
+                processors.is_empty(),
+                "Direct non-empty processor lists are not generated yet in {context}"
+            );
             quote! { ProcessorList::Empty }
         }
         None => panic!("Missing required field processors in {context}"),
@@ -290,9 +294,10 @@ fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
         }
         "minecraft:list_pool_element" => {
             let elems = required(elem.elements.as_ref(), context, "elements");
-            if elems.is_empty() {
-                panic!("Field elements must be non-empty in {context}");
-            }
+            assert!(
+                !elems.is_empty(),
+                "Field elements must be non-empty in {context}"
+            );
             let sub_elements: Vec<TokenStream> = elems
                 .iter()
                 .enumerate()
@@ -355,9 +360,10 @@ pub(crate) fn build() -> TokenStream {
             .iter()
             .enumerate()
             .map(|(index, we)| {
-                if we.weight <= 0 {
-                    panic!("Template pool {name} element {index} has non-positive weight");
-                }
+                assert!(
+                    we.weight > 0,
+                    "Template pool {name} element {index} has non-positive weight"
+                );
                 let elem = gen_element(&we.element, &format!("{name}.elements[{index}]"));
                 let weight = we.weight;
                 quote! { (#elem, #weight) }

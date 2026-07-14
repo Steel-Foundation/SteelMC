@@ -19,6 +19,8 @@ const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
 const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
 pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
 const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
+pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: u32 = 40;
+const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
 
 /// A chunk ticket level.
 ///
@@ -315,7 +317,7 @@ impl TimedChunkTickets {
                 .tickets
                 .iter()
                 .copied()
-                .map(TimedChunkTicket::to_persistent)
+                .filter_map(TimedChunkTicket::to_persistent)
                 .collect(),
         }
     }
@@ -339,6 +341,21 @@ impl TimedChunkTickets {
             pos,
             portal_ticket(),
             PORTAL_TICKET_TIMEOUT_TICKS,
+        );
+    }
+
+    /// Adds or refreshes vanilla's in-flight ender pearl ticket.
+    pub(crate) fn add_ender_pearl_ticket(
+        &mut self,
+        ticket_manager: &mut ChunkTicketManager,
+        pos: ChunkPos,
+    ) {
+        self.add_or_reset(
+            ticket_manager,
+            TimedChunkTicketKind::EnderPearl,
+            pos,
+            ender_pearl_ticket(),
+            i64::from(ENDER_PEARL_TICKET_TIMEOUT_TICKS),
         );
     }
 
@@ -442,14 +459,15 @@ impl TimedChunkTicket {
         }
     }
 
-    const fn to_persistent(self) -> PersistentChunkTicket {
+    const fn to_persistent(self) -> Option<PersistentChunkTicket> {
         match self.kind {
-            TimedChunkTicketKind::Portal => PersistentChunkTicket {
+            TimedChunkTicketKind::Portal => Some(PersistentChunkTicket {
                 kind: PersistentChunkTicketKind::Portal,
                 chunk_x: self.pos.0.x,
                 chunk_z: self.pos.0.y,
                 ticks_left: self.ticks_left,
-            },
+            }),
+            TimedChunkTicketKind::EnderPearl => None,
         }
     }
 }
@@ -457,11 +475,17 @@ impl TimedChunkTicket {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TimedChunkTicketKind {
     Portal,
+    EnderPearl,
 }
 
 #[must_use]
 const fn portal_ticket() -> ChunkTicket {
     ChunkTicket::simulated_full_chunks(PORTAL_TICKET_RADIUS)
+}
+
+#[must_use]
+const fn ender_pearl_ticket() -> ChunkTicket {
+    ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS)
 }
 
 /// A level change for a chunk position.
@@ -504,7 +528,7 @@ impl ChunkTicketManager {
         }
     }
 
-    /// Adds a ticket. Multiple tickets can exist at the same position.
+    /// Adds a ticket source. Multiple tickets can exist at the same position.
     pub fn add_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) {
         self.tickets.entry(pos).or_default().push(ticket);
         self.dirty = true;
@@ -513,7 +537,7 @@ impl ChunkTicketManager {
     /// Removes one ticket matching `(pos, ticket)`. Returns true if found.
     pub fn remove_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) -> bool {
         if let Some(tickets) = self.tickets.get_mut(&pos)
-            && let Some(idx) = tickets.iter().position(|&existing| existing == ticket)
+            && let Some(idx) = tickets.iter().position(|stored| *stored == ticket)
         {
             tickets.swap_remove(idx);
             self.dirty = true;
@@ -525,10 +549,10 @@ impl ChunkTicketManager {
         false
     }
 
-    /// Removes all tickets at position.
-    pub fn remove_all_tickets_at(&mut self, pos: ChunkPos) -> Option<TicketLevels> {
-        let removed = self.tickets.remove(&pos);
-        if removed.is_some() {
+    /// Removes all tickets at position. Returns true if any were present.
+    pub fn remove_all_tickets_at(&mut self, pos: ChunkPos) -> bool {
+        let removed = self.tickets.remove(&pos).is_some();
+        if removed {
             self.dirty = true;
         }
         removed
@@ -542,9 +566,12 @@ impl ChunkTicketManager {
             .and_then(|tickets| tickets.iter().map(|ticket| ticket.load_level()).min())
     }
 
-    #[must_use]
-    pub fn get_tickets_at(&self, pos: ChunkPos) -> Option<&[ChunkTicket]> {
-        self.tickets.get(&pos).map(smallvec::SmallVec::as_slice)
+    /// Iterator over the tickets currently held at `pos`.
+    pub fn tickets_at(&self, pos: ChunkPos) -> impl Iterator<Item = ChunkTicket> + '_ {
+        self.tickets
+            .get(&pos)
+            .into_iter()
+            .flat_map(|tickets| tickets.iter().copied())
     }
 
     /// Iterator over (position, `min_level`) for all ticket sources.
@@ -1188,5 +1215,111 @@ mod tests {
                 "{status:?} request maps to level {ticket_level:?}, propagation radius {propagation_radius}, required radius {required_radius}"
             );
         }
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        manager.run_all_updates();
+
+        assert_eq!(timed_tickets.len(), 1);
+        assert_eq!(manager.ticket_count(), 1);
+        assert!(is_full(
+            manager.get_level(center).expect("ticket should load")
+        ));
+        assert!(is_full(
+            manager
+                .get_level(ChunkPos::new(i32::from(ENDER_PEARL_TICKET_RADIUS), 0))
+                .expect("ender pearl ticket should load the full outer ring")
+        ));
+        assert!(
+            !manager
+                .get_level(ChunkPos::new(i32::from(ENDER_PEARL_TICKET_RADIUS) + 1, 0))
+                .is_some_and(is_full)
+        );
+
+        for _ in 0..ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        timed_tickets.tick(&mut manager, |_| true);
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+        assert_eq!(manager.get_level(center), None);
+        assert_eq!(manager.get_simulation_level(center), None);
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_does_not_age_until_chunk_can_expire() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let center = ChunkPos::new(0, 0);
+
+        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| false);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
+            timed_tickets.tick(&mut manager, |_| true);
+        }
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 0);
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_propagates_like_a_manual_simulated_ticket() {
+        let mut timed = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+        let mut manual = ChunkTicketManager::new();
+        let pos = ChunkPos::new(0, 0);
+        timed_tickets.add_ender_pearl_ticket(&mut timed, pos);
+        manual.add_ticket(
+            pos,
+            ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS),
+        );
+        timed.run_all_updates();
+        manual.run_all_updates();
+
+        for dx in -i32::from(ENDER_PEARL_TICKET_RADIUS)..=i32::from(ENDER_PEARL_TICKET_RADIUS) {
+            for dz in -i32::from(ENDER_PEARL_TICKET_RADIUS)..=i32::from(ENDER_PEARL_TICKET_RADIUS) {
+                let p = ChunkPos::new(dx, dz);
+                assert_eq!(timed.get_level(p), manual.get_level(p));
+                assert_eq!(
+                    timed.get_simulation_level(p),
+                    manual.get_simulation_level(p)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ender_pearl_timed_ticket_is_not_persisted() {
+        let mut manager = ChunkTicketManager::new();
+        let mut timed_tickets = TimedChunkTickets::default();
+
+        timed_tickets.add_portal_ticket(&mut manager, ChunkPos::new(0, 0));
+        timed_tickets.add_ender_pearl_ticket(&mut manager, ChunkPos::new(1, 0));
+
+        assert_eq!(
+            timed_tickets.to_persistent(),
+            PersistentChunkTickets {
+                tickets: vec![PersistentChunkTicket {
+                    kind: PersistentChunkTicketKind::Portal,
+                    chunk_x: 0,
+                    chunk_z: 0,
+                    ticks_left: PORTAL_TICKET_TIMEOUT_TICKS,
+                }],
+            }
+        );
     }
 }

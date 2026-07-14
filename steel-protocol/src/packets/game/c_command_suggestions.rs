@@ -50,7 +50,8 @@ impl SuggestionEntry {
 
 impl CCommandSuggestions {
     /// Creates a new command suggestions response.
-    pub fn new(id: i32, start: i32, length: i32, suggestions: Vec<SuggestionEntry>) -> Self {
+    #[must_use]
+    pub const fn new(id: i32, start: i32, length: i32, suggestions: Vec<SuggestionEntry>) -> Self {
         Self {
             id,
             start,

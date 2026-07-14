@@ -1030,12 +1030,11 @@ fn attribute_modifier_operation_token(operation: &str) -> TokenStream {
 }
 
 fn option_sound_event_ref_token(sound: Option<&Identifier>) -> TokenStream {
-    match sound {
-        Some(sound) => {
-            let sound = generate_sound_event_ref(sound);
-            quote! { Some(#sound) }
-        }
-        None => quote! { None },
+    if let Some(sound) = sound {
+        let sound = generate_sound_event_ref(sound);
+        quote! { Some(#sound) }
+    } else {
+        quote! { None }
     }
 }
 
@@ -1169,13 +1168,15 @@ fn entity_vehicle_predicate_token(predicate: &EntityVehiclePredicateJson) -> Tok
 }
 
 fn entity_flags_predicate_token(predicate: &EntityFlagsPredicateJson) -> TokenStream {
-    let is_fall_flying = match predicate.is_fall_flying {
-        Some(value) => quote! { Some(#value) },
-        None => quote! { None },
+    let is_fall_flying = if let Some(value) = predicate.is_fall_flying {
+        quote! { Some(#value) }
+    } else {
+        quote! { None }
     };
-    let is_in_water = match predicate.is_in_water {
-        Some(value) => quote! { Some(#value) },
-        None => quote! { None },
+    let is_in_water = if let Some(value) = predicate.is_in_water {
+        quote! { Some(#value) }
+    } else {
+        quote! { None }
     };
     let unsupported = predicate.unsupported;
 
@@ -1195,9 +1196,10 @@ fn entity_type_specific_predicate_token(
         EntityTypeSpecificPredicateJson::Any => quote! { EntityTypeSpecificPredicate::Any },
         EntityTypeSpecificPredicateJson::Player(player) => {
             let game_modes = player.game_modes.iter().copied().map(game_type_token);
-            let food_level_min = match player.food_level_min {
-                Some(min) => quote! { Some(#min) },
-                None => quote! { None },
+            let food_level_min = if let Some(min) = player.food_level_min {
+                quote! { Some(#min) }
+            } else {
+                quote! { None }
             };
             let unsupported = player.unsupported;
             quote! {
@@ -1242,9 +1244,10 @@ fn damage_source_predicate_token(predicate: &DamageSourcePredicateJson) -> Token
             }
         }
     });
-    let is_direct = match predicate.is_direct {
-        Some(is_direct) => quote! { Some(#is_direct) },
-        None => quote! { None },
+    let is_direct = if let Some(is_direct) = predicate.is_direct {
+        quote! { Some(#is_direct) }
+    } else {
+        quote! { None }
     };
 
     quote! { DamageSourcePredicate { tags: &[#(#tags),*], is_direct: #is_direct } }
@@ -1469,12 +1472,11 @@ fn generate_optional_requirements(
     statics: &mut TokenStream,
     counter: &mut usize,
 ) -> TokenStream {
-    match requirements {
-        Some(requirements) => {
-            let requirements = generate_requirements_ref(prefix, requirements, statics, counter);
-            quote! { Some(#requirements) }
-        }
-        None => quote! { None },
+    if let Some(requirements) = requirements {
+        let requirements = generate_requirements_ref(prefix, requirements, statics, counter);
+        quote! { Some(#requirements) }
+    } else {
+        quote! { None }
     }
 }
 
@@ -1625,12 +1627,11 @@ fn generate_optional_value_effect(
     statics: &mut TokenStream,
     counter: &mut usize,
 ) -> TokenStream {
-    match effect {
-        Some(effect) => {
-            let effect = generate_value_effect(prefix, effect, statics, counter);
-            quote! { Some(#effect) }
-        }
-        None => quote! { None },
+    if let Some(effect) = effect {
+        let effect = generate_value_effect(prefix, effect, statics, counter);
+        quote! { Some(#effect) }
+    } else {
+        quote! { None }
     }
 }
 
@@ -1803,7 +1804,7 @@ fn nbt_object_child_hint(object_type: Option<&str>, key: &str) -> NbtValueHint {
             "radius" | "knockback_multiplier" => NbtValueHint::LevelBasedValue,
             _ => NbtValueHint::Infer,
         },
-        Some("minecraft:change_item_damage") | Some("minecraft:apply_exhaustion") => match key {
+        Some("minecraft:change_item_damage" | "minecraft:apply_exhaustion") => match key {
             "amount" => NbtValueHint::LevelBasedValue,
             _ => NbtValueHint::Infer,
         },
@@ -1821,7 +1822,7 @@ fn nbt_object_child_hint(object_type: Option<&str>, key: &str) -> NbtValueHint {
             }
             _ => NbtValueHint::Infer,
         },
-        Some("minecraft:add") | Some("minecraft:set") => match key {
+        Some("minecraft:add" | "minecraft:set") => match key {
             "value" => NbtValueHint::LevelBasedValue,
             _ => NbtValueHint::Infer,
         },
@@ -2195,19 +2196,17 @@ pub(crate) fn build() -> TokenStream {
         let slots: Vec<TokenStream> = ench.slots.iter().map(|s| slot_to_tokens(s)).collect();
 
         let supported_items = ench.supported_items.as_str();
-        let primary_items = match &ench.primary_items {
-            Some(s) => {
-                let s = s.as_str();
-                quote! { Some(#s) }
-            }
-            None => quote! { None },
+        let primary_items = if let Some(s) = &ench.primary_items {
+            let s = s.as_str();
+            quote! { Some(#s) }
+        } else {
+            quote! { None }
         };
-        let exclusive_set = match &ench.exclusive_set {
-            Some(s) => {
-                let s = s.as_str();
-                quote! { Some(#s) }
-            }
-            None => quote! { None },
+        let exclusive_set = if let Some(s) = &ench.exclusive_set {
+            let s = s.as_str();
+            quote! { Some(#s) }
+        } else {
+            quote! { None }
         };
         let effects = generate_enchantment_effects(
             name,

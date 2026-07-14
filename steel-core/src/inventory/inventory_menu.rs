@@ -150,13 +150,13 @@ impl InventoryMenu {
     /// Returns a `ContainerRef` for the crafting container.
     #[must_use]
     pub fn crafting_container_ref(&self) -> ContainerRef {
-        ContainerRef::CraftingContainer(Arc::clone(&self.crafting_container))
+        ContainerRef::from(Arc::clone(&self.crafting_container))
     }
 
     /// Returns a `ContainerRef` for the result container.
     #[must_use]
     pub fn result_container_ref(&self) -> ContainerRef {
-        ContainerRef::ResultContainer(Arc::clone(&self.result_container))
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     /// Returns true if the given slot index is in the hotbar or offhand.
@@ -371,7 +371,7 @@ impl Menu for InventoryMenu {
             // Java: if (slotIndex == 0) { player.drop(stack, false); }
             // Drop any items from the result slot that couldn't fit in the inventory
             if !stack_mut.is_empty() {
-                player.drop_item(stack_mut, false, true);
+                let _ = player.drop_item(stack_mut, false, true);
             }
         }
 

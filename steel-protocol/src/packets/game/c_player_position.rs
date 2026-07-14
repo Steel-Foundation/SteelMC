@@ -43,10 +43,7 @@ impl RelativeMovement {
     pub const DELTA: RelativeMovement =
         RelativeMovement(Self::DELTA_X | Self::DELTA_Y | Self::DELTA_Z | Self::ROTATE_DELTA);
 
-    /// All rotation flags.
-    pub const ALL_ROTATION: RelativeMovement = Self::ROTATION;
-
-    /// Creates a new RelativeMovement with the given flags.
+    /// Creates a new `RelativeMovement` with the given flags.
     #[must_use]
     pub const fn new(flags: i32) -> Self {
         Self(flags)
@@ -165,7 +162,7 @@ impl CPlayerPosition {
 
     /// Creates a new absolute teleport packet.
     #[must_use]
-    pub fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
+    pub const fn absolute(teleport_id: i32, pos: DVec3, yaw: f32, pitch: f32) -> Self {
         Self::absolute_with_velocity(teleport_id, pos, DVec3::ZERO, yaw, pitch)
     }
 
@@ -183,7 +180,7 @@ impl CPlayerPosition {
 
     /// Creates a teleport packet with relative rotation (keeps current rotation).
     #[must_use]
-    pub fn with_relative_rotation(teleport_id: i32, pos: DVec3) -> Self {
+    pub const fn with_relative_rotation(teleport_id: i32, pos: DVec3) -> Self {
         Self {
             teleport_id,
             pos,
@@ -200,6 +197,17 @@ mod tests {
     use glam::DVec3;
 
     use super::{CPlayerPosition, RelativeMovement};
+
+    #[test]
+    fn delta_matches_vanilla_relative_delta_set() {
+        assert_eq!(
+            RelativeMovement::DELTA.0,
+            RelativeMovement::DELTA_X
+                | RelativeMovement::DELTA_Y
+                | RelativeMovement::DELTA_Z
+                | RelativeMovement::ROTATE_DELTA
+        );
+    }
 
     #[test]
     fn absolute_with_velocity_preserves_delta_movement() {

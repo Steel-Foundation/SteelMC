@@ -75,12 +75,16 @@ impl ItemStack {
 
     /// Creates a new item stack with the specified count and component patch.
     #[must_use]
-    pub fn with_count_and_patch(item: ItemRef, count: i32, patch: DataComponentPatch) -> Self {
+    pub const fn with_count_and_patch(
+        item: ItemRef,
+        count: i32,
+        patch: DataComponentPatch,
+    ) -> Self {
         Self { item, count, patch }
     }
 
     #[must_use]
-    fn prototype(&self) -> &'static DataComponentMap {
+    const fn prototype(&self) -> &'static DataComponentMap {
         &self.item.components
     }
 
@@ -103,17 +107,17 @@ impl ItemStack {
         if self.is_empty() { 0 } else { self.count }
     }
 
-    pub fn set_count(&mut self, count: i32) {
+    pub const fn set_count(&mut self, count: i32) {
         self.count = count;
     }
 
     /// Increases the count by the given amount.
-    pub fn grow(&mut self, amount: i32) {
+    pub const fn grow(&mut self, amount: i32) {
         self.count += amount;
     }
 
     /// Decreases the count by the given amount.
-    pub fn shrink(&mut self, amount: i32) {
+    pub const fn shrink(&mut self, amount: i32) {
         self.count -= amount;
     }
 
@@ -285,8 +289,9 @@ impl ItemStack {
         self.item().key == item.key
     }
 
+    #[must_use]
     pub fn max_stack_size(&self) -> i32 {
-        self.get(MAX_STACK_SIZE).copied().unwrap_or(64)
+        self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
     }
 
     /// Returns the equippable component if this item has one.
@@ -356,7 +361,7 @@ impl ItemStack {
 
     /// Returns a reference to the component patch.
     #[must_use]
-    pub fn patch(&self) -> &DataComponentPatch {
+    pub const fn patch(&self) -> &DataComponentPatch {
         &self.patch
     }
 
@@ -372,7 +377,7 @@ impl ItemStack {
         self.get(WEAPON)
     }
 
-    /// Gets the AttackRange component if present.
+    /// Gets the `AttackRange` component if present.
     #[must_use]
     pub fn get_attack_range(&self) -> Option<&AttackRange> {
         self.get(ATTACK_RANGE)
@@ -396,7 +401,7 @@ impl ItemStack {
         self.has(PIERCING_WEAPON)
     }
 
-    /// Gets the PiercingWeapon component if present.
+    /// Gets the `PiercingWeapon` component if present.
     #[must_use]
     pub fn get_piercing_weapon(&self) -> Option<&PiercingWeapon> {
         self.get(PIERCING_WEAPON)
@@ -407,25 +412,21 @@ impl ItemStack {
     #[must_use]
     pub fn get_destroy_speed(&self, block_state_id: steel_utils::BlockStateId) -> f32 {
         self.get_tool()
-            .map(|tool| tool.get_mining_speed(block_state_id))
-            .unwrap_or(1.0)
+            .map_or(1.0, |tool| tool.get_mining_speed(block_state_id))
     }
 
     /// Returns true if this tool is correct for getting drops from the block.
     #[must_use]
     pub fn is_correct_tool_for_drops(&self, block_state_id: steel_utils::BlockStateId) -> bool {
         self.get_tool()
-            .map(|tool| tool.is_correct_for_drops(block_state_id))
-            .unwrap_or(false)
+            .is_some_and(|tool| tool.is_correct_for_drops(block_state_id))
     }
 
     /// Returns the damage per block for this tool (how much durability is consumed per block mined).
     /// Returns 0 if no Tool component is present.
     #[must_use]
     pub fn get_tool_damage_per_block(&self) -> i32 {
-        self.get_tool()
-            .map(|tool| tool.damage_per_block)
-            .unwrap_or(0)
+        self.get_tool().map_or(0, |tool| tool.damage_per_block)
     }
 
     /// Returns true if this tool can destroy blocks in creative mode.
@@ -433,15 +434,13 @@ impl ItemStack {
     #[must_use]
     pub fn can_destroy_blocks_in_creative(&self) -> bool {
         self.get_tool()
-            .map(|tool| tool.can_destroy_blocks_in_creative)
-            .unwrap_or(true)
+            .is_none_or(|tool| tool.can_destroy_blocks_in_creative)
     }
 
     #[must_use]
     pub fn get_enchantment_level(&self, enchantment: &Identifier) -> i32 {
         self.get_enchantments()
-            .map(|e| e.get_level(enchantment) as i32)
-            .unwrap_or(0)
+            .map_or(0, |e| e.get_level(enchantment) as i32)
     }
 
     #[must_use]
@@ -512,7 +511,7 @@ impl ItemStack {
 
     /// Sets the damage/durability as a fraction (0.0 = broken, 1.0 = full).
     /// If `add` is true, adds to current damage instead of setting.
-    pub fn set_damage_fraction(&mut self, _fraction: f32, _add: bool) {
+    pub const fn set_damage_fraction(&mut self, _fraction: f32, _add: bool) {
         // TODO: Implement when damage component system is ready
         // let max_damage = self.get_max_damage();
         // let damage_value = ((1.0 - fraction) * max_damage as f32) as i32;
@@ -520,7 +519,7 @@ impl ItemStack {
     }
 
     /// Enchants this item randomly with enchantments from the given options.
-    pub fn enchant_randomly<R: rand::Rng>(
+    pub const fn enchant_randomly<R: rand::Rng>(
         &mut self,
         _options: &crate::loot_table::EnchantmentOptions,
         _rng: &mut R,
@@ -534,7 +533,7 @@ impl ItemStack {
     }
 
     /// Enchants this item as if using an enchanting table at the given level.
-    pub fn enchant_with_levels<R: rand::Rng>(
+    pub const fn enchant_with_levels<R: rand::Rng>(
         &mut self,
         _level: i32,
         _options: &crate::loot_table::EnchantmentOptions,
@@ -549,7 +548,7 @@ impl ItemStack {
     }
 
     /// Copies components from a source (block entity, attacker, etc.) to this item.
-    pub fn copy_components<R: rand::Rng>(
+    pub const fn copy_components<R: rand::Rng>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _include: &[Identifier],
@@ -560,8 +559,8 @@ impl ItemStack {
         // 2. For each component in `include`, copy it to this item's patch
     }
 
-    /// Copies block state properties to this item (for blocks like note_block).
-    pub fn copy_block_state<R: rand::Rng>(
+    /// Copies block state properties to this item (for blocks like `note_block`).
+    pub const fn copy_block_state<R: rand::Rng>(
         &mut self,
         _block: &Identifier,
         _properties: &[&str],
@@ -573,13 +572,13 @@ impl ItemStack {
     }
 
     /// Sets components from a JSON string representation.
-    pub fn set_components_from_json(&mut self, _components: &str) {
+    pub const fn set_components_from_json(&mut self, _components: &str) {
         // TODO: Implement component parsing from JSON
         // Parse the JSON and set each component in the patch
     }
 
-    /// Sets custom NBT data on this item (merges with existing custom_data).
-    pub fn set_custom_data(&mut self, _tag: &str) {
+    /// Sets custom NBT data on this item (merges with existing `custom_data`).
+    pub const fn set_custom_data(&mut self, _tag: &str) {
         // TODO: Implement when NBT/SNBT parsing is available
         // 1. Parse the tag string as SNBT (Stringified NBT)
         // 2. Merge it with existing CUSTOM_DATA component
@@ -594,7 +593,7 @@ impl ItemStack {
     }
 
     /// Creates an exploration map pointing to a structure.
-    pub fn create_exploration_map(
+    pub const fn create_exploration_map(
         &mut self,
         _destination: &Identifier,
         _decoration: &Identifier,
@@ -609,25 +608,25 @@ impl ItemStack {
     }
 
     /// Sets the custom name or item name of this item.
-    pub fn set_name(&mut self, _name: &str, _target: crate::loot_table::NameTarget) {
+    pub const fn set_name(&mut self, _name: &str, _target: crate::loot_table::NameTarget) {
         // TODO: Implement name setting
         // Parse the name as a text component and set CUSTOM_NAME or ITEM_NAME
     }
 
     /// Sets the ominous bottle amplifier.
-    pub fn set_ominous_bottle_amplifier(&mut self, _amplifier: i32) {
+    pub const fn set_ominous_bottle_amplifier(&mut self, _amplifier: i32) {
         // TODO: Implement ominous bottle amplifier component
         // Set the OMINOUS_BOTTLE_AMPLIFIER component
     }
 
     /// Sets the potion type for this item.
-    pub fn set_potion(&mut self, _id: &Identifier) {
+    pub const fn set_potion(&mut self, _id: &Identifier) {
         // TODO: Implement potion type setting
         // Set the POTION_CONTENTS component with the potion ID
     }
 
     /// Sets the suspicious stew effects for this item.
-    pub fn set_stew_effects<R: rand::Rng>(
+    pub const fn set_stew_effects<R: rand::Rng>(
         &mut self,
         _effects: &[crate::loot_table::StewEffect],
         _rng: &mut R,
@@ -638,7 +637,7 @@ impl ItemStack {
     }
 
     /// Sets the instrument for a goat horn.
-    pub fn set_instrument<R: rand::Rng>(&mut self, _options: &Identifier, _rng: &mut R) {
+    pub const fn set_instrument<R: rand::Rng>(&mut self, _options: &Identifier, _rng: &mut R) {
         // TODO: Implement instrument setting
         // Pick a random instrument from the tag and set INSTRUMENT component
     }
@@ -680,7 +679,7 @@ impl ItemStack {
     }
 
     /// Copies the name from a source entity/block to this item.
-    pub fn copy_name<R: rand::Rng>(
+    pub const fn copy_name<R: rand::Rng>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _ctx: &crate::loot_table::LootContext<'_, R>,
@@ -691,14 +690,14 @@ impl ItemStack {
     }
 
     /// Sets lore lines on this item.
-    pub fn set_lore(&mut self, _lore: &[&str], _mode: crate::loot_table::ListOperation) {
+    pub const fn set_lore(&mut self, _lore: &[&str], _mode: crate::loot_table::ListOperation) {
         // TODO: Implement lore setting
         // Parse lore strings as text components and set LORE component
         // Apply mode (replace, append, insert, etc.)
     }
 
     /// Sets container inventory contents.
-    pub fn set_contents<R: rand::Rng>(
+    pub const fn set_contents<R: rand::Rng>(
         &mut self,
         _entries: &[crate::loot_table::LootEntry],
         _component_type: &Identifier,
@@ -709,7 +708,7 @@ impl ItemStack {
     }
 
     /// Modifies existing container contents.
-    pub fn modify_contents<R: rand::Rng>(
+    pub const fn modify_contents<R: rand::Rng>(
         &mut self,
         _modifier: &[crate::loot_table::ConditionalLootFunction],
         _component_type: &Identifier,
@@ -720,13 +719,13 @@ impl ItemStack {
     }
 
     /// Sets the container's loot table reference.
-    pub fn set_loot_table(&mut self, _loot_table: &Identifier, _seed: Option<i64>) {
+    pub const fn set_loot_table(&mut self, _loot_table: &Identifier, _seed: Option<i64>) {
         // TODO: Implement loot table reference setting
         // Set CONTAINER_LOOT component with table reference and seed
     }
 
     /// Sets attribute modifiers on this item.
-    pub fn set_attributes<R: rand::Rng>(
+    pub const fn set_attributes<R: rand::Rng>(
         &mut self,
         _modifiers: &[crate::loot_table::AttributeModifier],
         _replace: bool,
@@ -737,7 +736,7 @@ impl ItemStack {
     }
 
     /// Fills a player head with texture from an entity.
-    pub fn fill_player_head<R: rand::Rng>(
+    pub const fn fill_player_head<R: rand::Rng>(
         &mut self,
         _entity: crate::loot_table::LootContextEntity,
         _ctx: &crate::loot_table::LootContext<'_, R>,
@@ -747,7 +746,7 @@ impl ItemStack {
     }
 
     /// Copies custom NBT data from a source.
-    pub fn copy_custom_data<R: rand::Rng>(
+    pub const fn copy_custom_data<R: rand::Rng>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _operations: &[crate::loot_table::CopyDataOperation],
@@ -758,7 +757,7 @@ impl ItemStack {
     }
 
     /// Sets banner pattern layers.
-    pub fn set_banner_pattern(
+    pub const fn set_banner_pattern(
         &mut self,
         _patterns: &[crate::loot_table::BannerPattern],
         _append: bool,
@@ -768,7 +767,7 @@ impl ItemStack {
     }
 
     /// Sets firework rocket properties.
-    pub fn set_fireworks(
+    pub const fn set_fireworks(
         &mut self,
         _explosions: Option<&[crate::loot_table::FireworkExplosion]>,
         _flight_duration: Option<i32>,
@@ -778,13 +777,16 @@ impl ItemStack {
     }
 
     /// Sets firework star explosion properties.
-    pub fn set_firework_explosion(&mut self, _explosion: &crate::loot_table::FireworkExplosion) {
+    pub const fn set_firework_explosion(
+        &mut self,
+        _explosion: &crate::loot_table::FireworkExplosion,
+    ) {
         // TODO: Implement firework explosion setting
         // Set FIREWORK_EXPLOSION component
     }
 
     /// Sets book cover (title/author for written books).
-    pub fn set_book_cover(
+    pub const fn set_book_cover(
         &mut self,
         _title: Option<&str>,
         _author: Option<&str>,
@@ -795,7 +797,7 @@ impl ItemStack {
     }
 
     /// Sets written book page contents.
-    pub fn set_written_book_pages(
+    pub const fn set_written_book_pages(
         &mut self,
         _pages: &[&str],
         _mode: crate::loot_table::ListOperation,
@@ -805,7 +807,7 @@ impl ItemStack {
     }
 
     /// Sets writable book page contents.
-    pub fn set_writable_book_pages(
+    pub const fn set_writable_book_pages(
         &mut self,
         _pages: &[&str],
         _mode: crate::loot_table::ListOperation,
@@ -815,17 +817,18 @@ impl ItemStack {
     }
 
     /// Toggles tooltip visibility for components.
-    pub fn toggle_tooltips(&mut self, _toggles: &[(Identifier, bool)]) {
+    pub const fn toggle_tooltips(&mut self, _toggles: &[(Identifier, bool)]) {
         // TODO: Implement tooltip toggling
         // For each component, set its show_in_tooltip flag
     }
 
     /// Sets custom model data.
-    pub fn set_custom_model_data(&mut self, _value: i32) {
+    pub const fn set_custom_model_data(&mut self, _value: i32) {
         // TODO: Implement custom model data setting
         // Set CUSTOM_MODEL_DATA component
     }
 
+    #[must_use]
     pub fn components_equal(&self, other: &Self) -> bool {
         let mut all_keys = rustc_hash::FxHashSet::default();
 
@@ -909,8 +912,13 @@ impl ReadFrom for ItemStack {
             return Ok(Self::empty());
         }
 
-        let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item_id = VarInt::read(data)?.0;
+        let item_id = usize::try_from(item_id)
+            .map_err(|_| std::io::Error::other(format!("Negative item id: {item_id}")))?;
+        let item = REGISTRY
+            .items
+            .by_id(item_id)
+            .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
 
         // Read DataComponentPatch
         let patch = DataComponentPatch::read(data)?;
@@ -930,8 +938,13 @@ impl ItemStack {
             return Ok(Self::empty());
         }
 
-        let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item_id = VarInt::read(data)?.0;
+        let item_id = usize::try_from(item_id)
+            .map_err(|_| std::io::Error::other(format!("Negative item id: {item_id}")))?;
+        let item = REGISTRY
+            .items
+            .by_id(item_id)
+            .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
         let patch = DataComponentPatch::read_delimited(data)?;
 
         Ok(Self { item, count, patch })
@@ -943,6 +956,7 @@ use simdnbt::{
     borrow::{NbtCompound as NbtCompoundView, NbtTag as BorrowedNbtTag},
     owned::NbtCompound,
 };
+use steel_utils::nbt::NbtNumeric as _;
 
 impl ToNbtTag for ItemStack {
     /// Converts this item stack to an NBT tag for persistent storage.
@@ -974,7 +988,6 @@ impl ItemStack {
         // id: The item identifier
         compound.insert("id", self.item.key.to_string());
 
-        // count: The stack count (vanilla uses Int for NBT storage)
         compound.insert("count", self.count);
 
         // components: The component patch (only if non-empty)
@@ -1007,14 +1020,12 @@ impl FromNbtTag for ItemStack {
         // Look up the item in the registry
         let item = REGISTRY.items.by_key(&id)?;
 
-        // Get the count (default to 1 if not present)
-        let count = compound.get("count").and_then(|t| t.int()).unwrap_or(1);
+        let count = decode_persistent_count(compound.get("count"))?;
 
-        // Parse components if present
-        let patch = compound
-            .get("components")
-            .and_then(DataComponentPatch::from_nbt_tag)
-            .unwrap_or_default();
+        let patch = match compound.get("components") {
+            Some(tag) => DataComponentPatch::from_nbt_tag(tag)?,
+            None => DataComponentPatch::new(),
+        };
 
         Some(Self { item, count, patch })
     }
@@ -1034,15 +1045,90 @@ impl ItemStack {
         // Look up the item in the registry
         let item = REGISTRY.items.by_key(&id)?;
 
-        // Get the count (default to 1 if not present)
-        let count = compound.int("count").unwrap_or(1);
+        let count = decode_persistent_count(compound.get("count"))?;
 
-        // Parse components if present
-        let patch = compound
-            .get("components")
-            .and_then(DataComponentPatch::from_nbt_tag)
-            .unwrap_or_default();
+        let patch = match compound.get("components") {
+            Some(tag) => DataComponentPatch::from_nbt_tag(tag)?,
+            None => DataComponentPatch::new(),
+        };
 
         Some(Self::with_count_and_patch(item, count, patch))
+    }
+}
+
+fn decode_persistent_count(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<i32> {
+    let count = match tag {
+        Some(tag) => tag.codec_i32()?,
+        None => 1,
+    };
+    (1..=99).contains(&count).then_some(count)
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use std::io::Cursor;
+
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    use super::ItemStack;
+    use crate::test_support::init_test_registry;
+    use crate::vanilla_items::ITEMS;
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    fn parse_stack(compound: NbtCompound) -> Option<ItemStack> {
+        with_borrowed_tag(NbtTag::Compound(compound), ItemStack::from_nbt_tag)
+    }
+
+    fn stone_stack_nbt() -> NbtCompound {
+        let mut compound = NbtCompound::new();
+        compound.insert("id", "minecraft:stone");
+        compound
+    }
+
+    #[test]
+    fn persistent_item_count_uses_vanilla_integer_codec() {
+        init_test_registry();
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", 5.9_f64);
+        assert_eq!(parse_stack(compound).map(|stack| stack.count()), Some(5));
+
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", 100);
+        assert!(parse_stack(compound).is_none());
+
+        let mut compound = stone_stack_nbt();
+        compound.insert("count", "5");
+        assert!(parse_stack(compound).is_none());
+    }
+
+    #[test]
+    fn malformed_present_component_patch_rejects_the_item_stack() {
+        init_test_registry();
+        let mut components = NbtCompound::new();
+        components.insert("minecraft:max_stack_size", 0);
+        let mut compound = stone_stack_nbt();
+        compound.insert("components", components);
+
+        assert!(parse_stack(compound).is_none());
+    }
+
+    #[test]
+    fn default_count_is_always_present_in_persistent_encoding() {
+        init_test_registry();
+        let stack = ItemStack::new(&ITEMS.stone);
+        let NbtTag::Compound(compound) = stack.to_nbt_tag_ref() else {
+            panic!("item stack should encode as a compound");
+        };
+
+        assert_eq!(compound.get("count"), Some(&NbtTag::Int(1)));
     }
 }

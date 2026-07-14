@@ -18,7 +18,7 @@ pub struct CSetPassengers {
 impl CSetPassengers {
     /// Creates a passenger-list packet for one vehicle.
     #[must_use]
-    pub fn new(vehicle_id: i32, passenger_ids: Vec<i32>) -> Self {
+    pub const fn new(vehicle_id: i32, passenger_ids: Vec<i32>) -> Self {
         Self {
             vehicle_id,
             passenger_ids,

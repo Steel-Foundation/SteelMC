@@ -9,7 +9,7 @@ use steel_utils::serial::ReadFrom;
 /// The client sends this to indicate it has received and processed
 /// messages up to the specified offset.
 ///
-/// Equivalent to ServerboundChatAckPacket in Minecraft.
+/// Equivalent to `ServerboundChatAckPacket` in Minecraft.
 #[derive(ServerPacket, Clone, Debug)]
 pub struct SChatAck {
     /// The message offset being acknowledged

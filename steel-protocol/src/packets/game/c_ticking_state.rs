@@ -15,7 +15,7 @@ pub struct CTickingState {
 impl CTickingState {
     /// Creates a new ticking state packet.
     #[must_use]
-    pub fn new(tick_rate: f32, is_frozen: bool) -> Self {
+    pub const fn new(tick_rate: f32, is_frozen: bool) -> Self {
         Self {
             tick_rate,
             is_frozen,

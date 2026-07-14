@@ -1,13 +1,12 @@
 //! Beehive block entity implementation.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::{vanilla_block_entity_types, vanilla_entities};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::world::World;
@@ -77,6 +76,11 @@ pub struct BeehiveBlockEntity {
     stored: Vec<BeeOccupant>,
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies `BeehiveBlockEntity`.
+unsafe impl DowncastType for BeehiveBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/beehive");
+}
+
 impl BeehiveBlockEntity {
     /// Creates a new beehive block entity.
     #[must_use]
@@ -122,14 +126,6 @@ impl BeehiveBlockEntity {
 }
 
 impl BlockEntity for BeehiveBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::BEEHIVE
     }

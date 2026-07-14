@@ -78,7 +78,7 @@ impl ReadFrom for HashedPatchMap {
     }
 }
 
-/// A hashed representation of an ItemStack sent from client to server.
+/// A hashed representation of an `ItemStack` sent from client to server.
 /// Used for verification without trusting client data.
 #[derive(Debug, Clone)]
 pub enum HashedStack {

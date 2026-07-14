@@ -1,5 +1,11 @@
-#![expect(unused)]
-// Todo! Remove this^
+#![expect(
+    unused,
+    reason = "block generator deserializes extracted fields ahead of full behavior generation"
+)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted block data"
+)]
 
 use core::panic;
 use std::{borrow::Cow, fs};
@@ -120,7 +126,10 @@ pub struct StateBooleanData {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Block {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "extracted block ids are retained for validation context"
+    )]
     pub id: u16,
     pub name: String,
     pub properties: Vec<String>,
@@ -149,7 +158,7 @@ pub struct BlockAssets {
     pub shapes: Vec<Shape>,
 }
 
-/// Converts a push reaction string to a TokenStream representing the enum variant
+/// Converts a push reaction string to a `TokenStream` representing the enum variant
 fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
     match reaction {
         "NORMAL" => quote! { PushReaction::Normal },
@@ -157,11 +166,11 @@ fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
         "BLOCK" => quote! { PushReaction::Block },
         "IGNORE" => quote! { PushReaction::Ignore },
         "PUSH_ONLY" => quote! { PushReaction::PushOnly },
-        _ => panic!("Unknown push reaction: {}", reaction),
+        _ => panic!("Unknown push reaction: {reaction}"),
     }
 }
 
-/// Converts an instrument string to a TokenStream representing the enum variant
+/// Converts an instrument string to a `TokenStream` representing the enum variant
 fn instrument_to_tokens(instrument: &str) -> TokenStream {
     match instrument.to_uppercase().as_str() {
         "HARP" => quote! { NoteBlockInstrument::Harp },
@@ -195,7 +204,7 @@ fn instrument_to_tokens(instrument: &str) -> TokenStream {
         }
         "PIGLIN" => quote! { NoteBlockInstrument::Piglin },
         "CUSTOM_HEAD" => quote! { NoteBlockInstrument::CustomHead },
-        _ => panic!("Unknown instrument: {}", instrument),
+        _ => panic!("Unknown instrument: {instrument}"),
     }
 }
 
@@ -204,7 +213,7 @@ fn offset_type_to_tokens(offset_type: &str) -> TokenStream {
         "NONE" => quote! { OffsetType::None },
         "XZ" => quote! { OffsetType::Xz },
         "XYZ" => quote! { OffsetType::Xyz },
-        _ => panic!("Unknown offset type: {}", offset_type),
+        _ => panic!("Unknown offset type: {offset_type}"),
     }
 }
 
@@ -370,8 +379,8 @@ fn generate_default_state(block: &Block) -> TokenStream {
     }
 }
 
-/// VoxelShape pool that deduplicates shape combinations.
-/// Maps block-local box index combinations to a ShapeId.
+/// `VoxelShape` pool that deduplicates shape combinations.
+/// Maps block-local box index combinations to a `ShapeId`.
 struct VoxelShapePool {
     // Maps sorted block-local box indices to ShapeId.
     shapes: FxHashMap<Vec<u16>, u16>,
@@ -492,7 +501,7 @@ fn generate_shape_match(
     let mut arms: Vec<(Vec<u16>, u16)> = shape_to_offsets
         .into_iter()
         .map(|(shapes, mut offsets)| {
-            offsets.sort();
+            offsets.sort_unstable();
             let shape_id = voxel_pool.get_or_insert(shapes);
             (offsets, shape_id)
         })
@@ -533,7 +542,7 @@ fn generate_light_match(light_data: &LightPropertiesData) -> LightFunctionSignat
     let mut arms: Vec<(Vec<u16>, LightProperties)> = properties_to_offsets
         .into_iter()
         .map(|(properties, mut offsets)| {
-            offsets.sort();
+            offsets.sort_unstable();
             (offsets, properties)
         })
         .collect();
@@ -656,7 +665,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .enumerate()
         .map(|(i, shape)| {
-            let name = Ident::new(&format!("BOX_{}", i), Span::call_site());
+            let name = Ident::new(&format!("BOX_{i}"), Span::call_site());
             let min_x = shape.min[0];
             let min_y = shape.min[1];
             let min_z = shape.min[2];
@@ -676,7 +685,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .enumerate()
         .map(|(id, aabb_indices)| {
-            let name = Ident::new(&format!("VSHAPE_{}", id), Span::call_site());
+            let name = Ident::new(&format!("VSHAPE_{id}"), Span::call_site());
             if aabb_indices.is_empty() {
                 quote! {
                     const #name: VoxelShape = VoxelShape::EMPTY;
@@ -689,7 +698,7 @@ pub(crate) fn build() -> TokenStream {
                 let aabb_refs: Vec<TokenStream> = aabb_indices
                     .iter()
                     .map(|&idx| {
-                        let aabb_name = Ident::new(&format!("BOX_{}", idx), Span::call_site());
+                        let aabb_name = Ident::new(&format!("BOX_{idx}"), Span::call_site());
                         quote! { #aabb_name }
                     })
                     .collect();
@@ -704,7 +713,7 @@ pub(crate) fn build() -> TokenStream {
     let mut shape_fns = TokenStream::new();
 
     for (fn_id, sig) in shape_fn_pool.function_list.iter().enumerate() {
-        let fn_name = Ident::new(&format!("shape_fn_{}", fn_id), Span::call_site());
+        let fn_name = Ident::new(&format!("shape_fn_{fn_id}"), Span::call_site());
         let default_shape = Ident::new(&format!("VSHAPE_{}", sig.default_id), Span::call_site());
 
         if sig.arms.is_empty() {
@@ -719,7 +728,7 @@ pub(crate) fn build() -> TokenStream {
                 .arms
                 .iter()
                 .map(|(offsets, shape_id)| {
-                    let shape_name = Ident::new(&format!("VSHAPE_{}", shape_id), Span::call_site());
+                    let shape_name = Ident::new(&format!("VSHAPE_{shape_id}"), Span::call_site());
                     let patterns: Vec<TokenStream> = offsets
                         .iter()
                         .map(|&o| {
@@ -748,7 +757,7 @@ pub(crate) fn build() -> TokenStream {
     let mut light_fns = TokenStream::new();
 
     for (fn_id, sig) in light_fn_pool.function_list.iter().enumerate() {
-        let fn_name = Ident::new(&format!("light_fn_{}", fn_id), Span::call_site());
+        let fn_name = Ident::new(&format!("light_fn_{fn_id}"), Span::call_site());
         let default_properties = light_properties_to_tokens(&sig.default);
 
         if sig.arms.is_empty() {
