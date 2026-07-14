@@ -18,7 +18,8 @@ use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::{
-    DyeColor,
+    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
+    ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishPattern,
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
@@ -1409,6 +1410,59 @@ fn item_stack_argument_parses_color_map_and_amplifier_components() {
 }
 
 #[test]
+fn item_stack_argument_parses_direct_entity_variant_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[fox/variant='snow',salmon/size='large',parrot/variant='gray',tropical_fish/pattern='clayfish',mooshroom/variant='brown',rabbit/variant='evil',horse/variant='dark_brown',llama/variant='gray',axolotl/variant='blue']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("direct entity variant components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(
+        stack.get(vanilla_components::FOX_VARIANT),
+        Some(&FoxVariant::Snow)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::SALMON_SIZE),
+        Some(&SalmonVariant::Large)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::PARROT_VARIANT),
+        Some(&ParrotVariant::Gray)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::TROPICAL_FISH_PATTERN),
+        Some(&TropicalFishPattern::Clayfish)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::MOOSHROOM_VARIANT),
+        Some(&MooshroomVariant::Brown)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::RABBIT_VARIANT),
+        Some(&RabbitVariant::Evil)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::HORSE_VARIANT),
+        Some(&HorseVariant::DarkBrown)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::LLAMA_VARIANT),
+        Some(&LlamaVariant::Gray)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::AXOLOTL_VARIANT),
+        Some(&AxolotlVariant::Blue)
+    );
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
@@ -1484,6 +1538,7 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
         "resource stone[dye='not_a_color']",
         "resource stone[dyed_color=[1f,0f]]",
         "resource stone[ominous_bottle_amplifier=5]",
+        "resource stone[fox/variant='not_a_variant']",
     ] {
         let parse = dispatcher.parse(input, TestSource::new());
         assert!(

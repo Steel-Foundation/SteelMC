@@ -20,8 +20,11 @@ pub use super::components::{
     PiercingWeapon, Rarity, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
     TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
-pub use crate::DyeColor;
 pub use crate::sound_event::SoundEventHolder;
+pub use crate::{
+    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
+    ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishPattern,
+};
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("max_stack_size"));
@@ -292,16 +295,16 @@ pub const WOLF_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
 pub const WOLF_COLLAR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("wolf/collar"));
 
-pub const FOX_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const FOX_VARIANT: DataComponentType<FoxVariant> =
     DataComponentType::new(Identifier::vanilla_static("fox/variant"));
 
-pub const SALMON_SIZE: DataComponentType<UnimplementedComponent> =
+pub const SALMON_SIZE: DataComponentType<SalmonVariant> =
     DataComponentType::new(Identifier::vanilla_static("salmon/size"));
 
-pub const PARROT_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const PARROT_VARIANT: DataComponentType<ParrotVariant> =
     DataComponentType::new(Identifier::vanilla_static("parrot/variant"));
 
-pub const TROPICAL_FISH_PATTERN: DataComponentType<UnimplementedComponent> =
+pub const TROPICAL_FISH_PATTERN: DataComponentType<TropicalFishPattern> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern"));
 
 pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<DyeColor> =
@@ -310,10 +313,10 @@ pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<DyeColor> =
 pub const TROPICAL_FISH_PATTERN_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern_color"));
 
-pub const MOOSHROOM_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const MOOSHROOM_VARIANT: DataComponentType<MooshroomVariant> =
     DataComponentType::new(Identifier::vanilla_static("mooshroom/variant"));
 
-pub const RABBIT_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const RABBIT_VARIANT: DataComponentType<RabbitVariant> =
     DataComponentType::new(Identifier::vanilla_static("rabbit/variant"));
 
 pub const PIG_VARIANT: DataComponentType<UnimplementedComponent> =
@@ -340,16 +343,16 @@ pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<UnimplementedComponent> =
 pub const FROG_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("frog/variant"));
 
-pub const HORSE_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const HORSE_VARIANT: DataComponentType<HorseVariant> =
     DataComponentType::new(Identifier::vanilla_static("horse/variant"));
 
 pub const PAINTING_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("painting/variant"));
 
-pub const LLAMA_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const LLAMA_VARIANT: DataComponentType<LlamaVariant> =
     DataComponentType::new(Identifier::vanilla_static("llama/variant"));
 
-pub const AXOLOTL_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const AXOLOTL_VARIANT: DataComponentType<AxolotlVariant> =
     DataComponentType::new(Identifier::vanilla_static("axolotl/variant"));
 
 pub const CAT_VARIANT: DataComponentType<UnimplementedComponent> =
@@ -712,21 +715,21 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 85: wolf/collar
     registry.register(WOLF_COLLAR);
     // 86: fox/variant
-    registry.register_unimplemented(FOX_VARIANT, true);
+    registry.register(FOX_VARIANT);
     // 87: salmon/size
-    registry.register_unimplemented(SALMON_SIZE, true);
+    registry.register(SALMON_SIZE);
     // 88: parrot/variant
-    registry.register_unimplemented(PARROT_VARIANT, true);
+    registry.register(PARROT_VARIANT);
     // 89: tropical_fish/pattern
-    registry.register_unimplemented(TROPICAL_FISH_PATTERN, true);
+    registry.register(TROPICAL_FISH_PATTERN);
     // 90: tropical_fish/base_color
     registry.register(TROPICAL_FISH_BASE_COLOR);
     // 91: tropical_fish/pattern_color
     registry.register(TROPICAL_FISH_PATTERN_COLOR);
     // 92: mooshroom/variant
-    registry.register_unimplemented(MOOSHROOM_VARIANT, true);
+    registry.register(MOOSHROOM_VARIANT);
     // 93: rabbit/variant
-    registry.register_unimplemented(RABBIT_VARIANT, true);
+    registry.register(RABBIT_VARIANT);
     // 94: pig/variant
     registry.register_unimplemented(PIG_VARIANT, true);
     // 95: pig/sound_variant
@@ -744,13 +747,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 101: frog/variant
     registry.register_unimplemented(FROG_VARIANT, true);
     // 102: horse/variant
-    registry.register_unimplemented(HORSE_VARIANT, true);
+    registry.register(HORSE_VARIANT);
     // 103: painting/variant
     registry.register_unimplemented(PAINTING_VARIANT, true);
     // 104: llama/variant
-    registry.register_unimplemented(LLAMA_VARIANT, true);
+    registry.register(LLAMA_VARIANT);
     // 105: axolotl/variant
-    registry.register_unimplemented(AXOLOTL_VARIANT, true);
+    registry.register(AXOLOTL_VARIANT);
     // 106: cat/variant
     registry.register_unimplemented(CAT_VARIANT, true);
     // 107: cat/sound_variant
@@ -1051,6 +1054,37 @@ mod tests {
             let entry = registry
                 .by_key(key)
                 .unwrap_or_else(|| panic!("missing component {key}"));
+            assert!(entry.is_implemented(), "{key}");
+            assert!(entry.validates(&value), "{key}");
+            assert!(!entry.validates(&ComponentData::new(())), "{key}");
+        }
+
+        for (key, value) in [
+            (&FOX_VARIANT.key, ComponentData::new(FoxVariant::Snow)),
+            (&SALMON_SIZE.key, ComponentData::new(SalmonVariant::Large)),
+            (&PARROT_VARIANT.key, ComponentData::new(ParrotVariant::Gray)),
+            (
+                &TROPICAL_FISH_PATTERN.key,
+                ComponentData::new(TropicalFishPattern::Clayfish),
+            ),
+            (
+                &MOOSHROOM_VARIANT.key,
+                ComponentData::new(MooshroomVariant::Brown),
+            ),
+            (&RABBIT_VARIANT.key, ComponentData::new(RabbitVariant::Evil)),
+            (
+                &HORSE_VARIANT.key,
+                ComponentData::new(HorseVariant::DarkBrown),
+            ),
+            (&LLAMA_VARIANT.key, ComponentData::new(LlamaVariant::Gray)),
+            (
+                &AXOLOTL_VARIANT.key,
+                ComponentData::new(AxolotlVariant::Blue),
+            ),
+        ] {
+            let entry = registry
+                .by_key(key)
+                .unwrap_or_else(|| panic!("missing variant component {key}"));
             assert!(entry.is_implemented(), "{key}");
             assert!(entry.validates(&value), "{key}");
             assert!(!entry.validates(&ComponentData::new(())), "{key}");

@@ -105,6 +105,7 @@ pub mod enchantment;
 pub mod enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
+pub mod entity_variant;
 pub mod equipment;
 pub mod feature;
 pub mod fluid;
@@ -141,6 +142,10 @@ pub mod world_clock;
 pub mod zombie_nautilus_variant;
 
 pub use dye_color::DyeColor;
+pub use entity_variant::{
+    AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
+    RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
+};
 
 #[expect(warnings)]
 #[rustfmt::skip]

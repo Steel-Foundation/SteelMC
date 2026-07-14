@@ -10,7 +10,10 @@ use super::components::{
     MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, SwingAnimation, Tool,
     TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
-use crate::DyeColor;
+use crate::{
+    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
+    ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishPattern,
+};
 
 /// Behavior required from a value stored in a [`ComponentData`].
 ///
@@ -107,6 +110,15 @@ impl_component_downcast_type!(DamageTypeComponent, "steel:item_component/damage_
 impl_component_downcast_type!(CustomData, "steel:item_component/custom_data");
 impl_component_downcast_type!(CustomModelData, "steel:item_component/custom_model_data");
 impl_component_downcast_type!(DyeColor, "steel:dye_color");
+impl_component_downcast_type!(FoxVariant, "steel:fox_variant");
+impl_component_downcast_type!(SalmonVariant, "steel:salmon_variant");
+impl_component_downcast_type!(ParrotVariant, "steel:parrot_variant");
+impl_component_downcast_type!(TropicalFishPattern, "steel:tropical_fish_pattern");
+impl_component_downcast_type!(MooshroomVariant, "steel:mooshroom_variant");
+impl_component_downcast_type!(RabbitVariant, "steel:rabbit_variant");
+impl_component_downcast_type!(HorseVariant, "steel:horse_variant");
+impl_component_downcast_type!(LlamaVariant, "steel:llama_variant");
+impl_component_downcast_type!(AxolotlVariant, "steel:axolotl_variant");
 impl_component_downcast_type!(DyedItemColor, "steel:item_component/dyed_item_color");
 impl_component_downcast_type!(MapItemColor, "steel:item_component/map_item_color");
 impl_component_downcast_type!(MapId, "steel:item_component/map_id");
