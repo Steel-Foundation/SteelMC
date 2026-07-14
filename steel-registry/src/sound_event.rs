@@ -42,13 +42,44 @@ impl SoundEvent {
 pub type SoundEventRef = &'static SoundEvent;
 
 /// Vanilla `Holder<SoundEvent>`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum SoundEventHolder {
     Registry(SoundEventRef),
     Direct {
         sound_id: Identifier,
         fixed_range: Option<f32>,
     },
+}
+
+impl PartialEq for SoundEventHolder {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Registry(left), Self::Registry(right)) => left == right,
+            (
+                Self::Direct {
+                    sound_id: left_id,
+                    fixed_range: left_range,
+                },
+                Self::Direct {
+                    sound_id: right_id,
+                    fixed_range: right_range,
+                },
+            ) => left_id == right_id && optional_float_equals(*left_range, *right_range),
+            (Self::Registry(_), Self::Direct { .. }) | (Self::Direct { .. }, Self::Registry(_)) => {
+                false
+            }
+        }
+    }
+}
+
+const fn optional_float_equals(left: Option<f32>, right: Option<f32>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+        }
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+    }
 }
 
 // SAFETY: This Steel-owned key uniquely identifies `SoundEventHolder` within
@@ -232,6 +263,7 @@ mod tests {
     use simdnbt::FromNbtTag;
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use simdnbt::owned::{NbtCompound, NbtTag};
+    use steel_utils::Identifier;
 
     use super::SoundEventHolder;
 
@@ -270,5 +302,16 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn direct_sound_equality_matches_java_float_rules() {
+        let direct = |range| SoundEventHolder::Direct {
+            sound_id: Identifier::vanilla_static("test"),
+            fixed_range: Some(range),
+        };
+
+        assert_eq!(direct(f32::NAN), direct(f32::NAN));
+        assert_ne!(direct(0.0), direct(-0.0));
     }
 }

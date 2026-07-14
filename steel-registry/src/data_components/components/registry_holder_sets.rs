@@ -8,9 +8,13 @@ use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::RegistryHolderSet;
+use crate::banner_pattern::BannerPattern;
 use crate::damage_type::{DamageType, DamageTypeRef};
 use crate::item_stack::ItemStack;
 use crate::items::Item;
+
+/// Banner patterns unlocked by an ingredient in the loom.
+pub type ProvidesBannerPatterns = RegistryHolderSet<BannerPattern>;
 
 /// Damage types that cannot hurt an item stack.
 #[derive(Debug, Clone, PartialEq)]
@@ -139,12 +143,16 @@ mod tests {
     use steel_utils::hash::HashComponent as _;
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
-    use super::{DamageResistant, Repairable};
+    use super::{DamageResistant, ProvidesBannerPatterns, Repairable};
     use crate::REGISTRY;
     use crate::RegistryHolderSet;
-    use crate::data_components::vanilla_components::{DAMAGE_RESISTANT, REPAIRABLE};
+    use crate::data_components::vanilla_components::{
+        DAMAGE_RESISTANT, PROVIDES_BANNER_PATTERNS, REPAIRABLE,
+    };
     use crate::item_stack::ItemStack;
     use crate::test_support::init_test_registry;
+    use crate::vanilla_banner_pattern_tags::BannerPatternTag;
+    use crate::vanilla_banner_patterns;
     use crate::vanilla_damage_type_tags::DamageTypeTag;
     use crate::vanilla_damage_types;
     use crate::vanilla_item_tags::ItemTag;
@@ -209,7 +217,35 @@ mod tests {
     }
 
     #[test]
-    fn extracted_item_prototypes_include_all_resistance_and_repair_components() {
+    fn provides_banner_patterns_uses_fixed_registry_holder_sets() {
+        init_test_registry();
+
+        let component = ProvidesBannerPatterns::Tag(BannerPatternTag::PATTERN_ITEM_FLOWER);
+        assert!(component.contains(&vanilla_banner_patterns::FLOWER));
+        assert_eq!(
+            component.clone().to_nbt_tag(),
+            simdnbt::owned::NbtTag::String("#minecraft:pattern_item/flower".into())
+        );
+        assert_eq!(
+            parse::<ProvidesBannerPatterns>(component.clone().to_nbt_tag()),
+            Some(component.clone())
+        );
+        assert_eq!(
+            component.compute_hash(),
+            component.clone().to_nbt_tag().compute_hash()
+        );
+
+        let mut bytes = Vec::new();
+        component.write(&mut bytes).expect("component should write");
+        assert_eq!(
+            ProvidesBannerPatterns::read(&mut Cursor::new(bytes.as_slice()))
+                .expect("component should read"),
+            component
+        );
+    }
+
+    #[test]
+    fn extracted_item_prototypes_include_all_holder_set_components() {
         init_test_registry();
 
         let damage_resistant_count = REGISTRY
@@ -224,6 +260,20 @@ mod tests {
             .count();
         assert_eq!(damage_resistant_count, 17);
         assert_eq!(repairable_count, 75);
+
+        let banner_pattern_count = REGISTRY
+            .items
+            .iter()
+            .filter(|(_, item)| item.components.has(PROVIDES_BANNER_PATTERNS))
+            .count();
+        assert_eq!(banner_pattern_count, 10);
+
+        let flower_pattern = ItemStack::new(&vanilla_items::FLOWER_BANNER_PATTERN);
+        assert!(
+            flower_pattern
+                .get(PROVIDES_BANNER_PATTERNS)
+                .is_some_and(|patterns| patterns.contains(&vanilla_banner_patterns::FLOWER))
+        );
 
         let netherite = ItemStack::new(&vanilla_items::NETHERITE_INGOT);
         assert!(!netherite.can_be_hurt_by(&vanilla_damage_types::IN_FIRE));

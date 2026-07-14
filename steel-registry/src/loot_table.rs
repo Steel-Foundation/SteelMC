@@ -1,7 +1,7 @@
 pub use crate::{DyeColor, equipment::EquipmentSlotGroup};
 use crate::{
     REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
-    item_stack::ItemStack,
+    instrument::InstrumentRef, item_stack::ItemStack,
 };
 use rand::RngExt;
 use rustc_hash::FxHashMap;
@@ -969,6 +969,31 @@ pub enum EnchantmentOptions {
     List(&'static [Identifier]),
 }
 
+/// Options for selecting an instrument from a registry tag or explicit list.
+#[derive(Debug, Clone)]
+pub enum InstrumentOptions {
+    Tag(Identifier),
+    Direct(&'static [InstrumentRef]),
+}
+
+impl InstrumentOptions {
+    fn get_random<R: rand::Rng>(&self, rng: &mut R) -> Option<InstrumentRef> {
+        match self {
+            Self::Tag(tag) => {
+                let instruments = REGISTRY.instruments.get_tag(tag)?;
+                (!instruments.is_empty()).then(|| {
+                    let index = rng.random_range(0..instruments.len());
+                    instruments[index]
+                })
+            }
+            Self::Direct(instruments) => (!instruments.is_empty()).then(|| {
+                let index = rng.random_range(0..instruments.len());
+                instruments[index]
+            }),
+        }
+    }
+}
+
 /// A function with optional conditions.
 #[derive(Debug, Clone)]
 pub struct ConditionalLootFunction {
@@ -1042,7 +1067,7 @@ pub enum LootFunction {
     /// Set the suspicious stew effects.
     SetStewEffect { effects: &'static [StewEffect] },
     /// Set the instrument for goat horns.
-    SetInstrument { options: Identifier },
+    SetInstrument { options: InstrumentOptions },
     /// Set enchantments on the item.
     SetEnchantments {
         enchantments: &'static [(Identifier, NumberProvider)],
@@ -1837,7 +1862,14 @@ impl LootFunction {
                 item.set_stew_effects(effects, ctx.rng);
             }
             LootFunction::SetInstrument { options } => {
-                item.set_instrument(options, ctx.rng);
+                if let Some(instrument) = options.get_random(ctx.rng) {
+                    item.set(
+                        crate::data_components::vanilla_components::INSTRUMENT,
+                        crate::data_components::InstrumentComponent::new(
+                            crate::RegistryHolder::reference(instrument),
+                        ),
+                    );
+                }
             }
             LootFunction::SetEnchantments { enchantments, add } => {
                 let resolved: Vec<_> = enchantments
@@ -2024,6 +2056,9 @@ crate::impl_registry!(
 
 #[cfg(test)]
 mod tests {
+    use crate::data_components::vanilla_components::INSTRUMENT;
+    use crate::vanilla_instrument_tags::InstrumentTag;
+    use crate::vanilla_items;
     use crate::{test_support::init_test_registry, vanilla_loot_tables};
 
     use super::*;
@@ -2048,6 +2083,29 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].count, 1);
         assert_eq!(items[0].item.key, Identifier::vanilla_static("oak_log"));
+    }
+
+    #[test]
+    fn set_instrument_selects_from_the_configured_holder_set() {
+        init_test_registries();
+        let mut rng = test_rng();
+        let mut ctx = LootContext::new(&mut rng);
+        let mut goat_horn = ItemStack::new(&vanilla_items::GOAT_HORN);
+        let function = LootFunction::SetInstrument {
+            options: InstrumentOptions::Tag(InstrumentTag::REGULAR_GOAT_HORNS),
+        };
+
+        function.apply(&mut goat_horn, &mut ctx);
+
+        let selected = goat_horn
+            .get(INSTRUMENT)
+            .and_then(|component| component.instrument().as_reference())
+            .expect("set_instrument should select a registered instrument");
+        assert!(
+            REGISTRY
+                .instruments
+                .is_in_tag(selected, &InstrumentTag::REGULAR_GOAT_HORNS)
+        );
     }
 
     #[test]

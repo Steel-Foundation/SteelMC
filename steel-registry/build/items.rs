@@ -143,6 +143,21 @@ fn jukebox_song_ref_token(value: &Value) -> TokenStream {
     quote! { &vanilla_jukebox_songs::#ident }
 }
 
+fn instrument_ref_token(value: &Value) -> TokenStream {
+    let instrument = value
+        .as_str()
+        .unwrap_or_else(|| panic!("instrument component must be an identifier string"));
+    let id = Identifier::from_str(instrument)
+        .unwrap_or_else(|error| panic!("invalid instrument id {instrument:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item prototype references a non-vanilla instrument: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &vanilla_instruments::#ident }
+}
+
 fn dye_color_token(value: &Value) -> TokenStream {
     let color = value
         .as_str()
@@ -354,6 +369,19 @@ fn damage_type_ref_token(value: &str) -> TokenStream {
 
     let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
     quote! { &crate::vanilla_damage_types::#ident }
+}
+
+fn banner_pattern_ref_token(value: &str) -> TokenStream {
+    let id = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid banner pattern id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item banner patterns must use the minecraft namespace: {id}"
+    );
+
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_banner_patterns::#ident }
 }
 
 fn item_ref_token(value: &str, component: &str) -> TokenStream {
@@ -895,6 +923,17 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:instrument" => {
+                let instrument = instrument_ref_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::INSTRUMENT,
+                        Some(vanilla_components::InstrumentComponent::new(
+                            crate::RegistryHolder::reference(#instrument),
+                        )),
+                    )
+                });
+            }
             "minecraft:jukebox_playable" => {
                 let song = jukebox_song_ref_token(value);
                 builder_calls.push(quote! {
@@ -903,6 +942,16 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         Some(vanilla_components::JukeboxPlayable::new(
                             #song,
                         )),
+                    )
+                });
+            }
+            "minecraft:provides_banner_patterns" => {
+                let patterns =
+                    holder_set_token(value, "provides_banner_patterns", banner_pattern_ref_token);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::PROVIDES_BANNER_PATTERNS,
+                        Some(#patterns),
                     )
                 });
             }
@@ -1223,7 +1272,8 @@ pub(crate) fn build() -> TokenStream {
     quote! {
         use crate::{
             data_components::vanilla_components,
-            vanilla_attributes, vanilla_blocks, vanilla_entities, vanilla_jukebox_songs,
+            vanilla_attributes, vanilla_blocks, vanilla_entities, vanilla_instruments,
+            vanilla_jukebox_songs,
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;

@@ -672,12 +672,6 @@ impl ItemStack {
         // Duration is determined by each effect's NumberProvider
     }
 
-    /// Sets the instrument for a goat horn.
-    pub const fn set_instrument<R: rand::Rng>(&mut self, _options: &Identifier, _rng: &mut R) {
-        // TODO: Implement instrument setting
-        // Pick a random instrument from the tag and set INSTRUMENT component
-    }
-
     pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
         let mut current = self
             .get(ENCHANTMENTS)

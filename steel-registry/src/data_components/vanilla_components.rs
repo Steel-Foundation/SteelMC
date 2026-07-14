@@ -14,12 +14,12 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 // Re-export component types for convenience
 pub use super::components::{
     AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
-    Enchantable, Equippable, EquippableAllowedEntities, InvalidEnchantableValue,
-    ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, ItemLore, ItemLoreTooLong, JukeboxPlayable, MapId, MapItemColor,
-    MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, Repairable, SwingAnimation,
-    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
-    Weapon,
+    Enchantable, Equippable, EquippableAllowedEntities, InstrumentComponent,
+    InvalidEnchantableValue, ItemAttributeModifierDisplay, ItemAttributeModifierEntry,
+    ItemAttributeModifiers, ItemEnchantments, ItemLore, ItemLoreTooLong, JukeboxPlayable, MapId,
+    MapItemColor, MapPostProcessing, OminousBottleAmplifier, PiercingWeapon,
+    ProvidesBannerPatterns, Rarity, Repairable, SwingAnimation, SwingAnimationType, Tool, ToolRule,
+    ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 pub use crate::{
@@ -223,7 +223,7 @@ pub const BUCKET_ENTITY_DATA: DataComponentType<CustomData> =
 pub const BLOCK_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("block_entity_data"));
 
-pub const INSTRUMENT: DataComponentType<UnimplementedComponent> =
+pub const INSTRUMENT: DataComponentType<InstrumentComponent> =
     DataComponentType::new(Identifier::vanilla_static("instrument"));
 
 pub const PROVIDES_TRIM_MATERIAL: DataComponentType<UnimplementedComponent> =
@@ -235,7 +235,7 @@ pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<OminousBottleAmplifier> =
 pub const JUKEBOX_PLAYABLE: DataComponentType<JukeboxPlayable> =
     DataComponentType::new(Identifier::vanilla_static("jukebox_playable"));
 
-pub const PROVIDES_BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
+pub const PROVIDES_BANNER_PATTERNS: DataComponentType<ProvidesBannerPatterns> =
     DataComponentType::new(Identifier::vanilla_static("provides_banner_patterns"));
 
 pub const RECIPES: DataComponentType<UnimplementedComponent> =
@@ -728,7 +728,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 60: block_entity_data
     registry.register_unimplemented(BLOCK_ENTITY_DATA, true);
     // 61: instrument
-    registry.register_unimplemented(INSTRUMENT, true);
+    registry.register(INSTRUMENT);
     // 62: provides_trim_material
     registry.register_unimplemented(PROVIDES_TRIM_MATERIAL, true);
     // 63: ominous_bottle_amplifier
@@ -742,7 +742,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         jukebox_playable_nbt_writer,
     );
     // 65: provides_banner_patterns
-    registry.register_unimplemented(PROVIDES_BANNER_PATTERNS, true);
+    registry.register(PROVIDES_BANNER_PATTERNS);
     // 66: recipes
     registry.register_unimplemented(RECIPES, true);
     // 67: lodestone_tracker

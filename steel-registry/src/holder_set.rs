@@ -13,6 +13,7 @@ use steel_utils::{
     serial::{ReadFrom, WriteTo},
 };
 
+use crate::banner_pattern::BannerPattern;
 use crate::blocks::Block;
 use crate::damage_type::DamageType;
 use crate::entity_type::EntityType;
@@ -238,6 +239,7 @@ macro_rules! impl_registry_holder_set_entry {
 }
 
 impl_registry_holder_set_entry!(Block, blocks, "block");
+impl_registry_holder_set_entry!(BannerPattern, banner_patterns, "banner pattern");
 impl_registry_holder_set_entry!(EntityType, entity_types, "entity type");
 impl_registry_holder_set_entry!(Item, items, "item");
 impl_registry_holder_set_entry!(DamageType, damage_types, "damage type");
