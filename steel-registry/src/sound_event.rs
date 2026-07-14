@@ -3,11 +3,11 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
-use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
@@ -49,6 +49,12 @@ pub enum SoundEventHolder {
         sound_id: Identifier,
         fixed_range: Option<f32>,
     },
+}
+
+// SAFETY: This Steel-owned key uniquely identifies `SoundEventHolder` within
+// the linked process.
+unsafe impl DowncastType for SoundEventHolder {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/sound_event_holder");
 }
 
 impl SoundEventHolder {

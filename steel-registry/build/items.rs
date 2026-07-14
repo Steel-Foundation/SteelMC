@@ -125,17 +125,13 @@ fn entity_type_ref_token(s: &str) -> Option<TokenStream> {
 
 fn registry_sound_event_holder_token(sound: &str, field: &str) -> TokenStream {
     let id = Identifier::from_str(sound).unwrap_or_else(|error| {
-        panic!("invalid sound event id {sound:?} in equippable field {field}: {error}")
+        panic!("invalid sound event id {sound:?} in item component field {field}: {error}")
     });
     let sound = generate_sound_event_ref(&id);
     quote! { crate::sound_event::SoundEventHolder::registry(#sound) }
 }
 
-fn sound_event_holder_token(value: &Value, field: &str, default: &str) -> TokenStream {
-    let Some(value) = value.get(field) else {
-        return registry_sound_event_holder_token(default, field);
-    };
-
+fn sound_event_value_token(value: &Value, field: &str) -> TokenStream {
     if let Some(sound) = value.as_str() {
         return registry_sound_event_holder_token(sound, field);
     }
@@ -167,6 +163,103 @@ fn sound_event_holder_token(value: &Value, field: &str, default: &str) -> TokenS
             fixed_range: #fixed_range,
         }
     }
+}
+
+fn sound_event_holder_token(value: &Value, field: &str, default: &str) -> TokenStream {
+    value.get(field).map_or_else(
+        || registry_sound_event_holder_token(default, field),
+        |value| sound_event_value_token(value, field),
+    )
+}
+
+fn rarity_component_token(value: &Value) -> Option<TokenStream> {
+    match value
+        .as_str()
+        .unwrap_or_else(|| panic!("rarity component must be a string"))
+    {
+        "common" => None,
+        "uncommon" => Some(quote! { vanilla_components::Rarity::Uncommon }),
+        "rare" => Some(quote! { vanilla_components::Rarity::Rare }),
+        "epic" => Some(quote! { vanilla_components::Rarity::Epic }),
+        rarity => panic!("unknown rarity component value: {rarity}"),
+    }
+}
+
+fn use_effects_component_token(value: &Value) -> Option<TokenStream> {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("use_effects component must be an object"));
+    assert!(
+        object.keys().all(|key| matches!(
+            key.as_str(),
+            "can_sprint" | "interact_vibrations" | "speed_multiplier"
+        )),
+        "use_effects component contains an unknown field: {value}"
+    );
+    let can_sprint = object.get("can_sprint").is_some_and(|value| {
+        value
+            .as_bool()
+            .expect("use_effects.can_sprint must be a boolean")
+    });
+    let interact_vibrations = object.get("interact_vibrations").is_none_or(|value| {
+        value
+            .as_bool()
+            .expect("use_effects.interact_vibrations must be a boolean")
+    });
+    let speed_multiplier = object.get("speed_multiplier").map_or(0.2_f32, |value| {
+        value
+            .as_f64()
+            .expect("use_effects.speed_multiplier must be a number") as f32
+    });
+    assert!(
+        speed_multiplier.is_finite() && (0.0..=1.0).contains(&speed_multiplier),
+        "use_effects.speed_multiplier must be between 0 and 1"
+    );
+    if !can_sprint && interact_vibrations && speed_multiplier.to_bits() == 0.2_f32.to_bits() {
+        return None;
+    }
+    Some(quote! {
+        vanilla_components::UseEffects::new(
+            #can_sprint,
+            #interact_vibrations,
+            #speed_multiplier,
+        )
+    })
+}
+
+fn swing_animation_component_token(value: &Value) -> Option<TokenStream> {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("swing_animation component must be an object"));
+    assert!(
+        object
+            .keys()
+            .all(|key| matches!(key.as_str(), "type" | "duration")),
+        "swing_animation component contains an unknown field: {value}"
+    );
+    let animation_type = match object.get("type").map_or("whack", |value| {
+        value
+            .as_str()
+            .expect("swing_animation.type must be a string")
+    }) {
+        "none" => quote! { vanilla_components::SwingAnimationType::None },
+        "whack" => quote! { vanilla_components::SwingAnimationType::Whack },
+        "stab" => quote! { vanilla_components::SwingAnimationType::Stab },
+        animation_type => panic!("unknown swing_animation type: {animation_type}"),
+    };
+    let duration = object.get("duration").map_or(6_i32, |value| {
+        let duration = value
+            .as_i64()
+            .expect("swing_animation.duration must be an integer");
+        i32::try_from(duration).expect("swing_animation.duration is outside the i32 range")
+    });
+    assert!(duration > 0, "swing_animation.duration must be positive");
+    if object.is_empty() {
+        return None;
+    }
+    Some(quote! {
+        vanilla_components::SwingAnimation::new(#animation_type, #duration)
+    })
 }
 
 fn damage_type_ref_token(value: &str) -> TokenStream {
@@ -584,6 +677,49 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     builder_calls.push(
                         quote! { .builder_set(vanilla_components::#component_ident, Some(#val)) },
                     );
+                }
+            }
+            "minecraft:use_effects" => {
+                if let Some(use_effects) = use_effects_component_token(value) {
+                    builder_calls.push(quote! {
+                        .builder_set(vanilla_components::USE_EFFECTS, Some(#use_effects))
+                    });
+                }
+            }
+            "minecraft:lore" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty lore, got {value}"
+                );
+            }
+            "minecraft:rarity" => {
+                if let Some(rarity) = rarity_component_token(value) {
+                    builder_calls
+                        .push(quote! { .builder_set(vanilla_components::RARITY, Some(#rarity)) });
+                }
+            }
+            "minecraft:tooltip_display" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla item prototypes currently require the default tooltip display, got {value}"
+                );
+            }
+            "minecraft:swing_animation" => {
+                if let Some(swing_animation) = swing_animation_component_token(value) {
+                    builder_calls.push(quote! {
+                        .builder_set(
+                            vanilla_components::SWING_ANIMATION,
+                            Some(#swing_animation),
+                        )
+                    });
+                }
+            }
+            "minecraft:break_sound" => {
+                if value.as_str() != Some("minecraft:entity.item.break") {
+                    let break_sound = sound_event_value_token(value, "break_sound");
+                    builder_calls.push(quote! {
+                        .builder_set(vanilla_components::BREAK_SOUND, Some(#break_sound))
+                    });
                 }
             }
             "minecraft:unbreakable" => {

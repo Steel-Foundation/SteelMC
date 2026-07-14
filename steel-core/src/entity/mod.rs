@@ -19,7 +19,9 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
-use steel_registry::data_components::vanilla_components::GLIDER;
+use steel_registry::data_components::vanilla_components::{
+    GLIDER, SWING_ANIMATION, SwingAnimation,
+};
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::{EntityAttachment, EntityDimensions, EntityTypeRef};
@@ -4979,8 +4981,22 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getCurrentSwingDuration`.
     fn current_swing_duration(&self) -> i32 {
-        // TODO: Use the held item's SWING_ANIMATION component once it has typed component data.
-        let swing_duration = DEFAULT_SWING_DURATION;
+        let hand = self
+            .living_swing_state()
+            .swinging_arm()
+            .unwrap_or(InteractionHand::MainHand);
+        let slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+        let mut swing_duration = SwingAnimation::DEFAULT.duration;
+        self.with_equipment_slot(slot, &mut |item_stack| {
+            swing_duration = item_stack
+                .get(SWING_ANIMATION)
+                .copied()
+                .unwrap_or(SwingAnimation::DEFAULT)
+                .duration;
+        });
         if let Some(haste) = self.mob_effect(vanilla_mob_effects::HASTE) {
             swing_duration - (1 + haste.amplifier())
         } else if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
@@ -8711,6 +8727,19 @@ mod tests {
 
         entity.set_mob_effect(vanilla_mob_effects::HASTE, 1);
         assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION - 2);
+    }
+
+    #[test]
+    fn current_swing_duration_uses_held_item_component() {
+        init_test_registry();
+
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::ITEMS.wooden_spear),
+        );
+
+        assert_eq!(entity.current_swing_duration(), 13);
     }
 
     #[test]

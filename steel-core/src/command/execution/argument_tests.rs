@@ -1294,7 +1294,7 @@ fn item_stack_argument_parses_compound_component_values() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
-        "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},max_stack_size=16]",
+        "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},lore=[],max_stack_size=16]",
         TestSource::new(),
     );
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -1312,16 +1312,21 @@ fn item_stack_argument_parses_compound_component_values() {
         cooldown.cooldown_group,
         Some(Identifier::vanilla_static("test"))
     );
+    assert!(
+        stack
+            .get(vanilla_components::LORE)
+            .is_some_and(|lore| lore.lines().is_empty())
+    );
     assert_eq!(stack.max_stack_size(), 16);
 }
 
 #[test]
-fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
+fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
 
     for input in [
-        "resource stone[lore=[]]",
+        "resource stone[custom_data={}]",
         "resource stone[creative_slot_lock={}]",
         "resource stone[additional_trade_cost={}]",
         "resource stone[map_post_processing={}]",

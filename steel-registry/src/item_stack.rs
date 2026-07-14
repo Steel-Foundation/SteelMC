@@ -820,10 +820,18 @@ impl ItemStack {
         // Set WRITABLE_BOOK_CONTENT pages
     }
 
-    /// Toggles tooltip visibility for components.
-    pub const fn toggle_tooltips(&mut self, _toggles: &[(Identifier, bool)]) {
-        // TODO: Implement tooltip toggling
-        // For each component, set its show_in_tooltip flag
+    /// Runs vanilla `ToggleTooltips`: each boolean says whether the component is shown.
+    pub fn toggle_tooltips(&mut self, toggles: &[(Identifier, bool)]) {
+        use crate::data_components::vanilla_components::{TOOLTIP_DISPLAY, TooltipDisplay};
+
+        let mut display = self
+            .get(TOOLTIP_DISPLAY)
+            .cloned()
+            .unwrap_or(TooltipDisplay::DEFAULT);
+        for (component, shown) in toggles {
+            display = display.with_hidden_key(component.clone(), !shown);
+        }
+        self.set(TOOLTIP_DISPLAY, display);
     }
 
     /// Sets custom model data.
@@ -1077,6 +1085,7 @@ mod persistence_tests {
     use simdnbt::owned::{NbtCompound, NbtTag};
 
     use super::ItemStack;
+    use crate::data_components::vanilla_components::{LORE, TOOLTIP_DISPLAY};
     use crate::test_support::init_test_registry;
     use crate::vanilla_items::ITEMS;
 
@@ -1134,5 +1143,25 @@ mod persistence_tests {
         };
 
         assert_eq!(compound.get("count"), Some(&NbtTag::Int(1)));
+    }
+
+    #[test]
+    fn toggle_tooltips_updates_the_typed_display_component() {
+        init_test_registry();
+        let mut stack = ItemStack::new(&ITEMS.stone);
+
+        stack.toggle_tooltips(&[(LORE.key.clone(), false)]);
+        let display = stack
+            .get(TOOLTIP_DISPLAY)
+            .expect("tooltip display should be set");
+        assert!(!display.shows(LORE));
+
+        stack.toggle_tooltips(&[(LORE.key.clone(), true)]);
+        assert!(
+            stack
+                .get(TOOLTIP_DISPLAY)
+                .expect("tooltip display should remain set")
+                .shows(LORE)
+        );
     }
 }

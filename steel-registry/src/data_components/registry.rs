@@ -25,11 +25,15 @@ use steel_utils::{
 };
 
 use super::component_data::{Component, ComponentData};
-use super::components::{ItemAttributeModifiers, ItemEnchantments};
+use super::components::{
+    ItemAttributeModifiers, ItemEnchantments, ItemLore, Rarity, SwingAnimation, TooltipDisplay,
+    UseEffects,
+};
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
-    TOOLTIP_DISPLAY,
+    SWING_ANIMATION, TOOLTIP_DISPLAY, USE_EFFECTS,
 };
+use crate::{sound_event::SoundEventHolder, sound_events};
 
 /// A typed handle for a data component.
 ///
@@ -142,7 +146,7 @@ impl ComponentEntry {
     #[must_use]
     pub fn validates(&self, data: &ComponentData) -> bool {
         self.expected_type_key
-            .is_some_and(|key| data.type_key() == Some(key))
+            .is_some_and(|key| data.type_key() == key)
     }
 
     /// Returns whether Steel has a concrete value type and codecs for this entry.
@@ -552,19 +556,33 @@ impl DataComponentMap {
     pub fn common_item_components() -> Self {
         let mut map = FxHashMap::default();
         map.insert(MAX_STACK_SIZE.key.clone(), ComponentData::new(64_i32));
-        map.insert(LORE.key.clone(), ComponentData::unimplemented());
+        map.insert(LORE.key.clone(), ComponentData::new(ItemLore::empty()));
         map.insert(
             ENCHANTMENTS.key.clone(),
             ComponentData::new(ItemEnchantments::empty()),
         );
         map.insert(REPAIR_COST.key.clone(), ComponentData::new(0_i32));
         map.insert(
+            USE_EFFECTS.key.clone(),
+            ComponentData::new(UseEffects::DEFAULT),
+        );
+        map.insert(
             ATTRIBUTE_MODIFIERS.key.clone(),
             ComponentData::new(ItemAttributeModifiers::empty()),
         );
-        map.insert(RARITY.key.clone(), ComponentData::unimplemented());
-        map.insert(BREAK_SOUND.key.clone(), ComponentData::unimplemented());
-        map.insert(TOOLTIP_DISPLAY.key.clone(), ComponentData::unimplemented());
+        map.insert(RARITY.key.clone(), ComponentData::new(Rarity::Common));
+        map.insert(
+            BREAK_SOUND.key.clone(),
+            ComponentData::new(SoundEventHolder::registry(&sound_events::ENTITY_ITEM_BREAK)),
+        );
+        map.insert(
+            TOOLTIP_DISPLAY.key.clone(),
+            ComponentData::new(TooltipDisplay::DEFAULT),
+        );
+        map.insert(
+            SWING_ANIMATION.key.clone(),
+            ComponentData::new(SwingAnimation::DEFAULT),
+        );
         Self { map }
     }
 
@@ -1095,9 +1113,14 @@ mod tests {
     use super::*;
     use crate::{
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, CREATIVE_SLOT_LOCK, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, CREATIVE_SLOT_LOCK, LORE, MAP_POST_PROCESSING,
+            MAX_STACK_SIZE, RARITY, SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY,
+            USE_EFFECTS,
         },
+        item_stack::ItemStack,
+        sound_events,
         test_support::init_test_registry,
+        vanilla_items,
     };
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
 
@@ -1158,5 +1181,51 @@ mod tests {
         let mut malformed_removal = NbtCompound::new();
         malformed_removal.insert("!minecraft:max_stack_size", 1);
         assert!(parse_patch(OwnedNbtTag::Compound(malformed_removal)).is_none());
+    }
+
+    #[test]
+    fn common_defaults_and_extracted_item_overrides_match_vanilla() {
+        init_test_registry();
+
+        let common = DataComponentMap::common_item_components();
+        assert_eq!(common.len(), 10);
+        assert_eq!(common.get_ref(LORE), Some(&ItemLore::empty()));
+        assert_eq!(common.get_ref(USE_EFFECTS), Some(&UseEffects::DEFAULT));
+        assert_eq!(common.get_ref(RARITY), Some(&Rarity::Common));
+        assert_eq!(
+            common
+                .get_ref(BREAK_SOUND)
+                .and_then(SoundEventHolder::registry_ref),
+            Some(&sound_events::ENTITY_ITEM_BREAK)
+        );
+        assert_eq!(
+            common.get_ref(TOOLTIP_DISPLAY),
+            Some(&TooltipDisplay::DEFAULT)
+        );
+        assert_eq!(
+            common.get_ref(SWING_ANIMATION),
+            Some(&SwingAnimation::DEFAULT)
+        );
+
+        let wooden_spear = ItemStack::new(&vanilla_items::ITEMS.wooden_spear);
+        assert_eq!(
+            wooden_spear.get(USE_EFFECTS),
+            Some(&UseEffects::new(true, false, 1.0))
+        );
+        assert_eq!(
+            wooden_spear.get(SWING_ANIMATION),
+            Some(&SwingAnimation::new(SwingAnimationType::Stab, 13))
+        );
+
+        let heavy_core = ItemStack::new(&vanilla_items::ITEMS.heavy_core);
+        assert_eq!(heavy_core.get(RARITY), Some(&Rarity::Epic));
+
+        let shield = ItemStack::new(&vanilla_items::ITEMS.shield);
+        assert_eq!(
+            shield
+                .get(BREAK_SOUND)
+                .and_then(SoundEventHolder::registry_ref),
+            Some(&sound_events::ITEM_SHIELD_BREAK)
+        );
     }
 }

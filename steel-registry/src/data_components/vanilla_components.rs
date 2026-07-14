@@ -15,8 +15,11 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 pub use super::components::{
     AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, PiercingWeapon, Tool, ToolRule, ToolRuleBlocks, UseCooldown, Weapon,
+    ItemEnchantments, ItemLore, ItemLoreTooLong, PiercingWeapon, Rarity, SwingAnimation,
+    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
+    Weapon,
 };
+pub use crate::sound_event::SoundEventHolder;
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("max_stack_size"));
@@ -79,7 +82,7 @@ pub enum UnimplementedComponent {}
 pub const CUSTOM_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("custom_data"));
 
-pub const USE_EFFECTS: DataComponentType<UnimplementedComponent> =
+pub const USE_EFFECTS: DataComponentType<UseEffects> =
     DataComponentType::new(Identifier::vanilla_static("use_effects"));
 
 pub const MINIMUM_ATTACK_CHARGE: DataComponentType<f32> =
@@ -91,10 +94,10 @@ pub const DAMAGE_TYPE: DataComponentType<DamageTypeComponent> =
 pub const ITEM_MODEL: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("item_model"));
 
-pub const LORE: DataComponentType<UnimplementedComponent> =
+pub const LORE: DataComponentType<ItemLore> =
     DataComponentType::new(Identifier::vanilla_static("lore"));
 
-pub const RARITY: DataComponentType<UnimplementedComponent> =
+pub const RARITY: DataComponentType<Rarity> =
     DataComponentType::new(Identifier::vanilla_static("rarity"));
 
 pub const ENCHANTMENTS: DataComponentType<ItemEnchantments> =
@@ -112,7 +115,7 @@ pub const ATTRIBUTE_MODIFIERS: DataComponentType<ItemAttributeModifiers> =
 pub const CUSTOM_MODEL_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("custom_model_data"));
 
-pub const TOOLTIP_DISPLAY: DataComponentType<UnimplementedComponent> =
+pub const TOOLTIP_DISPLAY: DataComponentType<TooltipDisplay> =
     DataComponentType::new(Identifier::vanilla_static("tooltip_display"));
 
 pub const TOOLTIP_STYLE: DataComponentType<UnimplementedComponent> =
@@ -154,7 +157,7 @@ pub const PIERCING_WEAPON: DataComponentType<PiercingWeapon> =
 pub const KINETIC_WEAPON: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("kinetic_weapon"));
 
-pub const SWING_ANIMATION: DataComponentType<UnimplementedComponent> =
+pub const SWING_ANIMATION: DataComponentType<SwingAnimation> =
     DataComponentType::new(Identifier::vanilla_static("swing_animation"));
 
 pub const ADDITIONAL_TRADE_COST: DataComponentType<UnimplementedComponent> =
@@ -271,7 +274,7 @@ pub const LOCK: DataComponentType<UnimplementedComponent> =
 pub const CONTAINER_LOOT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("container_loot"));
 
-pub const BREAK_SOUND: DataComponentType<UnimplementedComponent> =
+pub const BREAK_SOUND: DataComponentType<SoundEventHolder> =
     DataComponentType::new(Identifier::vanilla_static("break_sound"));
 
 // Entity variant components
@@ -515,7 +518,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 4: unbreakable
     register_unit!(registry, UNBREAKABLE);
     // 5: use_effects
-    registry.register_unimplemented(USE_EFFECTS, true);
+    registry.register(USE_EFFECTS);
     // 6: custom_name
     registry.register(CUSTOM_NAME);
     // 7: minimum_attack_charge
@@ -533,9 +536,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 10: item_model
     registry.register_unimplemented(ITEM_MODEL, true);
     // 11: lore
-    registry.register_unimplemented(LORE, true);
+    registry.register(LORE);
     // 12: rarity
-    registry.register_unimplemented(RARITY, true);
+    registry.register(RARITY);
     // 13: enchantments
     registry.register(ENCHANTMENTS);
     // 14: can_place_on
@@ -547,7 +550,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 17: custom_model_data
     registry.register_unimplemented(CUSTOM_MODEL_DATA, true);
     // 18: tooltip_display
-    registry.register_unimplemented(TOOLTIP_DISPLAY, true);
+    registry.register(TOOLTIP_DISPLAY);
     // 19: repair_cost
     register_ranged_i32!(registry, REPAIR_COST, 0, i32::MAX);
     // 20: creative_slot_lock
@@ -597,7 +600,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 39: kinetic_weapon
     registry.register_unimplemented(KINETIC_WEAPON, true);
     // 40: swing_animation
-    registry.register_unimplemented(SWING_ANIMATION, true);
+    registry.register(SWING_ANIMATION);
     // 41: additional_trade_cost
     registry.register_unimplemented(ADDITIONAL_TRADE_COST, false);
     // 42: stored_enchantments
@@ -685,7 +688,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 80: container_loot
     registry.register_unimplemented(CONTAINER_LOOT, true);
     // 81: break_sound
-    registry.register_unimplemented(BREAK_SOUND, true);
+    registry.register(BREAK_SOUND);
     // 82: villager/variant
     registry.register_unimplemented(VILLAGER_VARIANT, true);
     // 83: wolf/variant

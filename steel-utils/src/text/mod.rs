@@ -40,17 +40,7 @@ impl TextResolutor for DisplayResolutor {
 
 impl ReadFrom for TextComponent {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
-        use crate::codec::VarInt;
-
-        // Minecraft's network format: VarInt length prefix, then NBT tag data
-        let nbt_length = VarInt::read(data)?.0 as usize;
-
-        if nbt_length == 0 {
-            // Empty NBT means empty/default text component
-            return Ok(Self::new());
-        }
-
-        // Read exactly one NBT tag using simdnbt
+        // ComponentSerialization.STREAM_CODEC writes one unnamed NBT tag.
         let nbt_tag =
             read_tag(data).map_err(|e| io::Error::other(format!("Failed to read NBT: {e:?}")))?;
 
@@ -807,4 +797,28 @@ fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
         hasher.put_raw_bytes(&entry.value_bytes);
     }
     hasher.end_map();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use text_components::TextComponent;
+
+    use crate::serial::{ReadFrom as _, WriteTo as _};
+
+    #[test]
+    fn component_stream_codec_round_trips_an_unnamed_nbt_tag() {
+        let component = TextComponent::plain("hello");
+        let mut encoded = Vec::new();
+        component
+            .write(&mut encoded)
+            .expect("text component should encode");
+
+        assert_eq!(
+            TextComponent::read(&mut Cursor::new(encoded.as_slice()))
+                .expect("text component should decode"),
+            component
+        );
+    }
 }

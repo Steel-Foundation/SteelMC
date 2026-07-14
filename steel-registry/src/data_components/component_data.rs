@@ -9,7 +9,8 @@ use steel_utils::{
 
 use super::components::{
     AttackRange, DamageTypeComponent, Equippable, ItemAttributeModifiers, ItemEnchantments,
-    PiercingWeapon, Tool, UseCooldown, Weapon,
+    ItemLore, PiercingWeapon, Rarity, SwingAnimation, Tool, TooltipDisplay, UseCooldown,
+    UseEffects, Weapon,
 };
 
 /// Behavior required from a value stored in a [`ComponentData`].
@@ -48,12 +49,10 @@ where
 
 /// A type-erased component value.
 ///
-/// Implemented component values retain their concrete Rust type and can be
-/// recovered with [`Self::downcast_ref`]. The unimplemented state is kept only
-/// for the existing vanilla prototype placeholders until their real component
-/// types and codecs are ported.
+/// Component values retain their concrete Rust type and can be recovered with
+/// [`Self::downcast_ref`].
 pub struct ComponentData {
-    value: Option<Box<dyn Component>>,
+    value: Box<dyn Component>,
 }
 
 impl ComponentData {
@@ -61,30 +60,20 @@ impl ComponentData {
     #[must_use]
     pub fn new(value: impl Component) -> Self {
         Self {
-            value: Some(Box::new(value)),
+            value: Box::new(value),
         }
-    }
-
-    pub(crate) const fn unimplemented() -> Self {
-        Self { value: None }
     }
 
     /// Returns the concrete value when it has type `T`.
     #[must_use]
     pub fn downcast_ref<T: DowncastType>(&self) -> Option<&T> {
-        self.value.as_deref()?.downcast_ref::<T>()
+        self.value.downcast_ref::<T>()
     }
 
-    /// Returns the concrete type key, or `None` for an unimplemented value.
+    /// Returns the concrete type key.
     #[must_use]
-    pub fn type_key(&self) -> Option<DowncastTypeKey> {
-        self.value.as_deref().map(ErasedType::downcast_type_key)
-    }
-
-    /// Returns whether this contains a real typed value.
-    #[must_use]
-    pub const fn is_implemented(&self) -> bool {
-        self.value.is_some()
+    pub fn type_key(&self) -> DowncastTypeKey {
+        self.value.downcast_type_key()
     }
 
     /// Computes the vanilla validation hash for this component value.
@@ -92,14 +81,7 @@ impl ComponentData {
     pub fn compute_hash(&self) -> i32 {
         let mut hasher = ComponentHasher::new();
 
-        if let Some(value) = &self.value {
-            value.hash_component_value(&mut hasher);
-        } else {
-            // Existing unimplemented prototype values retain their old hash
-            // until their concrete vanilla codecs are ported.
-            hasher.start_map();
-            hasher.end_map();
-        }
+        self.value.hash_component_value(&mut hasher);
 
         hasher.finish()
     }
@@ -108,27 +90,23 @@ impl ComponentData {
 impl Clone for ComponentData {
     fn clone(&self) -> Self {
         Self {
-            value: self.value.as_ref().map(|value| value.clone_component()),
+            value: self.value.clone_component(),
         }
     }
 }
 
 impl Debug for ComponentData {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        match &self.value {
-            Some(value) => formatter.debug_tuple("ComponentData").field(value).finish(),
-            None => formatter.write_str("ComponentData(Unimplemented)"),
-        }
+        formatter
+            .debug_tuple("ComponentData")
+            .field(&self.value)
+            .finish()
     }
 }
 
 impl PartialEq for ComponentData {
     fn eq(&self, other: &Self) -> bool {
-        match (&self.value, &other.value) {
-            (Some(value), Some(other)) => value.component_eq(other.as_ref()),
-            (None, None) => true,
-            _ => false,
-        }
+        self.value.component_eq(other.value.as_ref())
     }
 }
 
@@ -147,6 +125,11 @@ impl_component_downcast_type!(Tool, "steel:item_component/tool");
 impl_component_downcast_type!(Weapon, "steel:item_component/weapon");
 impl_component_downcast_type!(AttackRange, "steel:item_component/attack_range");
 impl_component_downcast_type!(UseCooldown, "steel:item_component/use_cooldown");
+impl_component_downcast_type!(UseEffects, "steel:item_component/use_effects");
+impl_component_downcast_type!(ItemLore, "steel:item_component/lore");
+impl_component_downcast_type!(Rarity, "steel:item_component/rarity");
+impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_display");
+impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
 impl_component_downcast_type!(PiercingWeapon, "steel:item_component/piercing_weapon");
 impl_component_downcast_type!(Equippable, "steel:item_component/equippable");
 impl_component_downcast_type!(

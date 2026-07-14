@@ -15,7 +15,7 @@ use crate::{
 impl ReadFrom for bool {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let byte = u8::read(data)?;
-        Ok(byte == 1)
+        Ok(byte != 0)
     }
 }
 
