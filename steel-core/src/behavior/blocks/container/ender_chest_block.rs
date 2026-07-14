@@ -1,6 +1,4 @@
-//! Ender chest block behavior implementation.
-//!
-//! Opens the player's personal 27-slot ender chest container.
+/// Ender chest block behavior implementation.
 
 use std::sync::{Arc, Weak};
 
@@ -18,12 +16,9 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::inventory::chest_menu::ChestMenuProvider;
-use crate::inventory::lock::ContainerRef;
 use crate::player::Player;
 use crate::world::World;
 
-/// Behavior for ender chest blocks.
-/// persistent ender chest inventory.
 
 #[block_behavior]
 pub struct EnderChestBlock {
@@ -31,7 +26,6 @@ pub struct EnderChestBlock {
 }
 
 impl EnderChestBlock {
-    /// Creates a new ender chest block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -40,10 +34,8 @@ impl EnderChestBlock {
 
 impl BlockBehavior for EnderChestBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Faces horizontally opposite to the player's look direction
         let facing = context.horizontal_direction.opposite();
 
-        // Check if waterlogged
         let waterlogged = context.world.get_block_state(context.place_pos).has_fluid();
 
         Some(
@@ -84,7 +76,7 @@ impl BlockBehavior for EnderChestBlock {
         drop(ender_chest_inventory);
 
         // Open the menu using the player's ender chest container
-        let container_ref = ContainerRef::Other(player.ender_chest_inventory.clone() as _);
+        let container_ref = player.ender_chest_inventory.clone().into();
         player.open_menu(&ChestMenuProvider::three_rows(
             player.inventory.clone(),
             container_ref,
@@ -110,7 +102,6 @@ impl BlockBehavior for EnderChestBlock {
         BLOCK_ENTITIES.create(&vanilla_block_entity_types::ENDER_CHEST, level, pos, state)
     }
 
-    // Ender chests do not have analog output signals.
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
         false
     }

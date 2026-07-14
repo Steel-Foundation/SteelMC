@@ -1,6 +1,4 @@
-//! Ender chest container implementation.
-//!
-//! Provides the player-specific ender chest inventory with 27 slots.
+/// Ender chest container implementation.
 
 use std::sync::Weak;
 
@@ -8,6 +6,7 @@ use std::sync::Arc;
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::inventory::container::Container;
@@ -22,15 +21,14 @@ type WeakBlockEntity = Weak<SyncMutex<dyn BlockEntity>>;
 /// Thread-safe reference to a player's ender chest container.
 pub type SyncPlayerEnderChest = Arc<SyncMutex<PlayerEnderChestContainer>>;
 
-/// Player's personal ender chest inventory.
-///
-/// Contains 27 slots and manages the active block entity that the player
-/// is currently interacting with to track open states and play animations.
+
 pub struct PlayerEnderChestContainer {
-    /// The 27 item slots.
     items: Vec<ItemStack>,
-    /// The block entity the player is currently viewing (if any).
     active_chest: Option<WeakBlockEntity>,
+}
+
+unsafe impl DowncastType for PlayerEnderChestContainer {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:inventory/player_ender_chest");
 }
 
 impl Default for PlayerEnderChestContainer {

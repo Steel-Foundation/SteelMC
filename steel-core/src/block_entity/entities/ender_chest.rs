@@ -2,23 +2,18 @@
 //!
 //! Handles lid animations and sound effects for ender chests.
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::BlockEntity;
 use crate::world::World;
 
 /// Ender chest block entity.
-///
-/// Unlike regular chests, this block entity does not store items. The items are
-/// stored in the player's ender chest inventory. This block entity handles lid
-/// animations and sounds.
 pub struct EnderChestBlockEntity {
     /// Weak reference to the world.
     level: Weak<World>,
@@ -28,6 +23,10 @@ pub struct EnderChestBlockEntity {
     state: BlockStateId,
     /// Whether this entity has been marked for removal.
     removed: bool,
+}
+
+unsafe impl DowncastType for EnderChestBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/ender_chest");
 }
 
 impl EnderChestBlockEntity {
@@ -64,14 +63,6 @@ impl EnderChestBlockEntity {
 }
 
 impl BlockEntity for EnderChestBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::ENDER_CHEST
     }
