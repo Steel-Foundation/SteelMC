@@ -108,8 +108,8 @@ impl ToNbtTag for ItemLore {
     fn to_nbt_tag(self) -> NbtTag {
         NbtTag::List(NbtList::from(
             self.lines
-                .into_iter()
-                .map(ToNbtTag::to_nbt_tag)
+                .iter()
+                .map(TextComponent::to_codec_nbt)
                 .collect::<Vec<_>>(),
         ))
     }
@@ -203,5 +203,19 @@ mod tests {
 
         assert_eq!(lore.lines().len(), 2);
         assert_eq!(parse(lore.clone().to_nbt_tag()), Some(lore));
+    }
+
+    #[test]
+    fn persistent_codec_collapses_plain_lines_to_strings() {
+        let lore = ItemLore::new(vec![
+            TextComponent::plain("first"),
+            TextComponent::plain("second"),
+        ])
+        .expect("two lore lines should fit");
+
+        assert_eq!(
+            lore.to_nbt_tag(),
+            NbtTag::List(NbtList::String(vec!["first".into(), "second".into()]))
+        );
     }
 }

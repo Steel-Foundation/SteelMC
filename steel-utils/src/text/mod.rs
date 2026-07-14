@@ -8,10 +8,7 @@ use crate::{
     serial::ReadFrom,
     translations_registry::TRANSLATIONS,
 };
-use simdnbt::{
-    ToNbtTag as _,
-    owned::{NbtTag, read_tag},
-};
+use simdnbt::owned::read_tag;
 use std::io::{self, Cursor};
 use text_components::{
     TextComponent,
@@ -21,30 +18,6 @@ use text_components::{
     interactivity::{ClickEvent, Dialog, HoverEvent},
     resolving::TextResolutor,
 };
-
-/// Encodes a component through Vanilla's persistent component codec shape.
-///
-/// The component crate's NBT representation always emits a compound, while
-/// Vanilla's codec collapses unstyled plain text to a string.
-#[must_use]
-pub fn text_component_codec_nbt(component: &TextComponent) -> NbtTag {
-    if let Content::Text { text } = &component.content
-        && component.format.is_none()
-        && component.interactions.is_none()
-        && component.children.is_empty()
-    {
-        return NbtTag::String(text.as_ref().into());
-    }
-    let mut tag = component.to_nbt_tag();
-    if let Some(color) = &component.format.color
-        && let NbtTag::Compound(compound) = &mut tag
-        && let Some(encoded_color) = compound.get_mut("color")
-    {
-        // TextColor formats RGB values with uppercase hexadecimal digits.
-        *encoded_color = NbtTag::String(color.to_string().into());
-    }
-    tag
-}
 
 /// A [`TextResolutor`] for the console
 pub struct DisplayResolutor;
@@ -624,7 +597,7 @@ fn hash_hover_fields(event: &HoverEvent, hasher: &mut ComponentHasher) {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("components");
                 let mut value_hasher = ComponentHasher::new();
-                // TODO: Hash through DataComponentPatch::CODEC once HashComponent has registry context.
+                // Embedded payloads are already DataComponentPatch::CODEC output.
                 components.as_nbt().hash_component(&mut value_hasher);
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
@@ -782,7 +755,7 @@ fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
                 match dialog {
                     Dialog::Reference(reference) => value_hasher.put_string(reference),
                     Dialog::Inline(value) => {
-                        // TODO: Hash through Dialog::CODEC once HashComponent has registry context.
+                        // Embedded payloads are already Dialog::CODEC output.
                         value.as_nbt().hash_component(&mut value_hasher);
                     }
                 }
@@ -828,9 +801,12 @@ fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{borrow::Cow, io::Cursor};
 
-    use text_components::TextComponent;
+    use simdnbt::owned::{NbtList, NbtTag, read_tag};
+    use text_components::{
+        Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
+    };
 
     use crate::serial::{ReadFrom as _, WriteTo as _};
 
@@ -847,5 +823,45 @@ mod tests {
                 .expect("text component should decode"),
             component
         );
+    }
+
+    #[test]
+    fn component_codec_recursively_collapses_plain_components() {
+        let component = TextComponent::translated(TranslatedMessage {
+            key: Cow::Borrowed("test.message"),
+            fallback: None,
+            args: Some(Box::new([TextComponent::plain("argument")])),
+        })
+        .add_child(TextComponent::plain("child"))
+        .hover_event(HoverEvent::show_text("hover"));
+
+        let NbtTag::Compound(encoded) = component.to_codec_nbt() else {
+            panic!("styled component should encode as a compound");
+        };
+        assert_eq!(
+            encoded.get("with"),
+            Some(&NbtTag::List(NbtList::String(vec!["argument".into()])))
+        );
+        assert_eq!(
+            encoded.get("extra"),
+            Some(&NbtTag::List(NbtList::String(vec!["child".into()])))
+        );
+        let hover = encoded
+            .get("hover_event")
+            .and_then(NbtTag::compound)
+            .expect("hover event should encode as a compound");
+        assert_eq!(hover.get("value"), Some(&NbtTag::String("hover".into())));
+    }
+
+    #[test]
+    fn component_stream_codec_writes_collapsed_string_tag() {
+        let mut encoded = Vec::new();
+        TextComponent::plain("hello")
+            .write(&mut encoded)
+            .expect("text component should encode");
+        let tag = read_tag(&mut Cursor::new(encoded.as_slice()))
+            .expect("encoded component should be NBT");
+
+        assert_eq!(tag, NbtTag::String("hello".into()));
     }
 }

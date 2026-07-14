@@ -431,6 +431,36 @@ fn bool_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()
     value.write(writer)
 }
 
+fn text_component_network_reader(
+    cursor: &mut std::io::Cursor<&[u8]>,
+) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom as _;
+    TextComponent::read(cursor).map(ComponentData::new)
+}
+
+fn text_component_network_writer(
+    data: &ComponentData,
+    writer: &mut Vec<u8>,
+) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo as _;
+    let Some(value) = data.downcast_ref::<TextComponent>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn text_component_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    use simdnbt::FromNbtTag as _;
+    TextComponent::from_nbt_tag(tag).map(ComponentData::new)
+}
+
+fn text_component_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
+    let Some(value) = data.downcast_ref::<TextComponent>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    Ok(value.to_codec_nbt())
+}
+
 fn custom_data_codec_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
     CustomData::read_codec_network(cursor).map(ComponentData::new)
 }
@@ -617,7 +647,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 5: use_effects
     registry.register(USE_EFFECTS);
     // 6: custom_name
-    registry.register(CUSTOM_NAME);
+    registry.register_with_codecs(
+        CUSTOM_NAME,
+        text_component_network_reader,
+        text_component_network_writer,
+        text_component_nbt_reader,
+        text_component_nbt_writer,
+    );
     // 7: minimum_attack_charge
     registry.register_with_codecs(
         MINIMUM_ATTACK_CHARGE,
@@ -629,7 +665,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 8: damage_type
     registry.register(DAMAGE_TYPE);
     // 9: item_name
-    registry.register(ITEM_NAME);
+    registry.register_with_codecs(
+        ITEM_NAME,
+        text_component_network_reader,
+        text_component_network_writer,
+        text_component_nbt_reader,
+        text_component_nbt_writer,
+    );
     // 10: item_model
     registry.register(ITEM_MODEL);
     // 11: lore

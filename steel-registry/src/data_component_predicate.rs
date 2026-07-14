@@ -1448,7 +1448,7 @@ impl WrittenBookPagePredicate {
     }
 
     fn to_nbt_value(&self) -> NbtTag {
-        steel_utils::text::text_component_codec_nbt(&self.0)
+        self.0.to_codec_nbt()
     }
 }
 

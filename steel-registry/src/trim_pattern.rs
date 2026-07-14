@@ -9,7 +9,6 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use steel_utils::text::text_component_codec_nbt;
 use text_components::TextComponent;
 
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
@@ -50,7 +49,7 @@ impl TrimPatternValue {
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("asset_id", self.asset_id.clone());
-        compound.insert("description", text_component_codec_nbt(&self.description));
+        compound.insert("description", self.description.to_codec_nbt());
         compound.insert("decal", self.decal);
         NbtTag::Compound(compound)
     }
@@ -59,7 +58,7 @@ impl TrimPatternValue {
 impl WriteTo for TrimPatternValue {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.asset_id.write(writer)?;
-        WriteTo::write(&text_component_codec_nbt(&self.description), writer)?;
+        WriteTo::write(&self.description.to_codec_nbt(), writer)?;
         self.decal.write(writer)
     }
 }

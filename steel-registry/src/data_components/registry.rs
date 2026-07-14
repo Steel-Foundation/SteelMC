@@ -24,6 +24,7 @@ use steel_utils::{
     hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
     serial::{ReadFrom, WriteTo},
 };
+use text_components::EmbeddedNbtCodec;
 
 use super::component_data::{Component, ComponentData};
 use super::components::{
@@ -726,6 +727,10 @@ impl DataComponentPatch {
         );
     }
 
+    pub(crate) fn set_component_data(&mut self, key: Identifier, data: ComponentData) {
+        self.entries.insert(key, ComponentPatchEntry::Set(data));
+    }
+
     /// Sets raw component data (for plugin use).
     ///
     /// Returns `true` if the data was set successfully, or `false` if the key is
@@ -801,6 +806,16 @@ impl DataComponentPatch {
     /// Iterates over all entries.
     pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentPatchEntry)> {
         self.entries.iter()
+    }
+
+    pub(crate) fn sanitize_against(&mut self, prototype: &DataComponentMap) {
+        self.entries.retain(|key, entry| {
+            let default = prototype.get_raw(key);
+            match entry {
+                ComponentPatchEntry::Set(value) => default != Some(value),
+                ComponentPatchEntry::Removed => default.is_some(),
+            }
+        });
     }
 
     /// Computes Vanilla's `HashOps` value for the persistent patch codec.
@@ -1125,6 +1140,14 @@ impl ToNbtTag for DataComponentPatch {
     }
 }
 
+impl EmbeddedNbtCodec for &DataComponentPatch {
+    type Error = std::io::Error;
+
+    fn encode_embedded_nbt(self) -> Result<OwnedNbtTag> {
+        self.try_to_nbt_tag_ref()
+    }
+}
+
 impl FromNbtTag for DataComponentPatch {
     fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
         use crate::{REGISTRY, RegistryExt};
@@ -1172,11 +1195,12 @@ pub fn component_try_into<T: Component + DowncastType>(
 mod tests {
     use super::*;
     use crate::{
+        REGISTRY, RegistryExt as _,
         data_components::CustomData,
         data_components::vanilla_components::{
             ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CHICKEN_VARIANT,
-            CREATIVE_SLOT_LOCK, DYE, ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE, ITEM_MODEL,
-            ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+            CREATIVE_SLOT_LOCK, CUSTOM_NAME, DYE, ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE,
+            ITEM_MODEL, ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING, MAX_STACK_SIZE,
             OMINOUS_BOTTLE_AMPLIFIER, POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS,
             SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
         },
@@ -1277,6 +1301,23 @@ mod tests {
         let mut malformed_removal = NbtCompound::new();
         malformed_removal.insert("!minecraft:max_stack_size", 1);
         assert!(parse_patch(OwnedNbtTag::Compound(malformed_removal)).is_none());
+    }
+
+    #[test]
+    fn text_component_persistent_codec_collapses_plain_text() {
+        init_test_registry();
+        let entry = REGISTRY
+            .data_components
+            .by_key(&CUSTOM_NAME.key)
+            .expect("custom_name should be registered");
+        let value = ComponentData::new(text_components::TextComponent::plain("name"));
+
+        assert_eq!(
+            entry
+                .write_nbt(&value)
+                .expect("plain custom name should encode"),
+            OwnedNbtTag::String("name".into())
+        );
     }
 
     #[test]

@@ -8,7 +8,6 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use steel_utils::text::text_component_codec_nbt;
 use text_components::TextComponent;
 
 use crate::sound_event::SoundEventHolder;
@@ -89,7 +88,7 @@ impl InstrumentValue {
         compound.insert("sound_event", self.sound_event.clone().to_nbt_tag());
         compound.insert("use_duration", self.use_duration);
         compound.insert("range", self.range);
-        compound.insert("description", text_component_codec_nbt(&self.description));
+        compound.insert("description", self.description.to_codec_nbt());
         NbtTag::Compound(compound)
     }
 }
@@ -116,7 +115,7 @@ impl WriteTo for InstrumentValue {
         self.sound_event.write(writer)?;
         self.use_duration.write(writer)?;
         self.range.write(writer)?;
-        WriteTo::write(&text_component_codec_nbt(&self.description), writer)
+        WriteTo::write(&self.description.to_codec_nbt(), writer)
     }
 }
 

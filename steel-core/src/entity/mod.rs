@@ -8,7 +8,6 @@ use std::{
 use glam::DVec3;
 use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
-use simdnbt::ToNbtTag as _;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::{
@@ -1635,7 +1634,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         );
 
         if let Some(custom_name) = self.custom_name() {
-            nbt.insert("CustomName", custom_name.to_nbt_tag());
+            nbt.insert("CustomName", custom_name.to_codec_nbt());
         }
         if self.is_custom_name_visible() {
             nbt.insert("CustomNameVisible", nbt_bool(true));

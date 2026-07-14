@@ -10,7 +10,6 @@ use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
-use steel_utils::text::text_component_codec_nbt;
 use text_components::TextComponent;
 
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
@@ -205,7 +204,7 @@ impl TrimMaterialValue {
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         self.assets.insert_nbt_fields(&mut compound);
-        compound.insert("description", text_component_codec_nbt(&self.description));
+        compound.insert("description", self.description.to_codec_nbt());
         NbtTag::Compound(compound)
     }
 }
@@ -213,7 +212,7 @@ impl TrimMaterialValue {
 impl WriteTo for TrimMaterialValue {
     fn write(&self, writer: &mut impl Write) -> IoResult<()> {
         self.assets.write(writer)?;
-        WriteTo::write(&text_component_codec_nbt(&self.description), writer)
+        WriteTo::write(&self.description.to_codec_nbt(), writer)
     }
 }
 

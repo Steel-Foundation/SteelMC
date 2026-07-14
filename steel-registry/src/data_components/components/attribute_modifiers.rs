@@ -125,7 +125,7 @@ impl ItemAttributeModifierDisplay {
         let mut compound = NbtCompound::new();
         compound.insert("type", self.name());
         if let Self::OverrideText(text) = self {
-            compound.insert("value", text.as_ref().to_nbt_tag());
+            compound.insert("value", text.to_codec_nbt());
         }
         NbtTag::Compound(compound)
     }

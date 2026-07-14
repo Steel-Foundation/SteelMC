@@ -11,10 +11,9 @@ use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entr
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{DowncastType, Identifier};
+use text_components::{EncodedNbt, interactivity::HoverEvent};
 
-use crate::data_components::vanilla_components::{
-    BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, MAX_DAMAGE, MAX_STACK_SIZE,
-};
+use crate::data_components::vanilla_components::MAX_STACK_SIZE;
 use crate::data_components::{
     Component, ComponentPatchEntry, DataComponentPatch, DataComponentType,
 };
@@ -132,11 +131,27 @@ impl ItemStackTemplate {
 
     #[must_use]
     pub fn create(&self) -> ItemStack {
-        if let Err(error) = self.validate_strict() {
+        let result =
+            ItemStack::with_count_and_patch(self.item, self.count, self.components.clone());
+        if let Err(error) = result.validate_strict() {
             log::warn!("Can't create item stack with properties {self:?}, error: {error}");
             return ItemStack::empty();
         }
-        ItemStack::with_count_and_patch(self.item, self.count, self.components.clone())
+        result
+    }
+
+    /// Creates the Vanilla hover event for this item template.
+    pub fn to_hover_event(&self) -> Result<HoverEvent> {
+        let components = if self.components.is_empty() {
+            None
+        } else {
+            Some(EncodedNbt::encode(&self.components)?)
+        };
+        Ok(HoverEvent::show_item(
+            self.item.key.to_string(),
+            Some(self.count),
+            components,
+        ))
     }
 
     pub(crate) fn to_nbt_tag_ref(&self) -> NbtTag {
@@ -175,34 +190,6 @@ impl ItemStackTemplate {
         Self::try_with_count_and_patch(item, count, components).ok()
     }
 
-    fn validate_strict(&self) -> Result<()> {
-        let max_stack_size = self.max_stack_size();
-        if self.get(MAX_DAMAGE).is_some() && max_stack_size > 1 {
-            return Err(Error::other("Item cannot be both damageable and stackable"));
-        }
-
-        if let Some(container) = self.get(CONTAINER) {
-            validate_contained_item_sizes(container.items().iter().flatten())?;
-        }
-
-        if let Some(bundle) = self.get(BUNDLE_CONTENTS) {
-            validate_contained_item_sizes(bundle.items().iter())?;
-            bundle.validate_weight()?;
-        }
-
-        if let Some(projectiles) = self.get(CHARGED_PROJECTILES) {
-            validate_contained_item_sizes(projectiles.items().iter())?;
-        }
-
-        if self.count > max_stack_size {
-            return Err(Error::other(format!(
-                "Item stack with stack size of {} was larger than maximum: {max_stack_size}",
-                self.count
-            )));
-        }
-        Ok(())
-    }
-
     pub(crate) fn get<T: Component + DowncastType>(
         &self,
         component: DataComponentType<T>,
@@ -217,21 +204,6 @@ impl ItemStackTemplate {
     pub(crate) fn max_stack_size(&self) -> i32 {
         self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
     }
-}
-
-fn validate_contained_item_sizes<'a>(
-    items: impl IntoIterator<Item = &'a ItemStackTemplate>,
-) -> Result<()> {
-    for item in items {
-        let max_stack_size = item.max_stack_size();
-        if item.count > max_stack_size {
-            return Err(Error::other(format!(
-                "Item stack with count of {} was larger than maximum: {max_stack_size}",
-                item.count
-            )));
-        }
-    }
-    Ok(())
 }
 
 impl WriteTo for ItemStackTemplate {
@@ -330,11 +302,12 @@ mod tests {
         BundleContents, ChargedProjectiles, ItemContainerContents,
     };
     use crate::data_components::vanilla_components::{
-        BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, ENCHANTMENT_GLINT_OVERRIDE, MAX_DAMAGE,
-        MAX_STACK_SIZE,
+        BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, CUSTOM_NAME, ENCHANTMENT_GLINT_OVERRIDE,
+        MAX_DAMAGE, MAX_STACK_SIZE,
     };
     use crate::test_support::init_test_registry;
     use crate::vanilla_items;
+    use text_components::{Modifier as _, TextComponent};
 
     fn parse(tag: NbtTag) -> Option<ItemStackTemplate> {
         let mut bytes = Vec::new();
@@ -373,6 +346,34 @@ mod tests {
             ItemStackTemplate::read(&mut Cursor::new(network.as_slice()))
                 .expect("template should decode"),
             template
+        );
+    }
+
+    #[test]
+    fn hover_events_embed_the_typed_component_patch_codec_output() {
+        init_test_registry();
+        let mut patch = DataComponentPatch::new();
+        patch.set(CUSTOM_NAME, TextComponent::plain("Stone"));
+        let template = ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 2, patch)
+            .expect("valid template should construct");
+        let component = TextComponent::plain("item").hover_event(
+            template
+                .to_hover_event()
+                .expect("valid template should encode for a hover event"),
+        );
+
+        let NbtTag::Compound(component) = component.to_codec_nbt() else {
+            panic!("hover component should encode as a compound");
+        };
+        let components = component
+            .get("hover_event")
+            .and_then(NbtTag::compound)
+            .and_then(|hover| hover.get("components"))
+            .and_then(NbtTag::compound)
+            .expect("hover event should contain a component patch");
+        assert_eq!(
+            components.get("minecraft:custom_name"),
+            Some(&NbtTag::String("Stone".into()))
         );
     }
 

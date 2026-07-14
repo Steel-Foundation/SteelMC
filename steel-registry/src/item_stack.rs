@@ -17,15 +17,17 @@ use crate::{
         Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
         DataComponentPatch, DataComponentType,
         vanilla_components::{
-            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_RESISTANT,
-            DAMAGE_TYPE, ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers,
-            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
-            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
-            REPAIRABLE, TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
+            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
+            CONTAINER, CUSTOM_DATA, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE, ENCHANTABLE,
+            ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments,
+            MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, OMINOUS_BOTTLE_AMPLIFIER,
+            OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon, REPAIRABLE, TOOL, Tool,
+            UNBREAKABLE, WEAPON, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
+    item_stack_template::ItemStackTemplate,
     items::ItemRef,
     vanilla_items,
 };
@@ -76,11 +78,8 @@ impl ItemStack {
 
     /// Creates a new item stack with the specified count and component patch.
     #[must_use]
-    pub const fn with_count_and_patch(
-        item: ItemRef,
-        count: i32,
-        patch: DataComponentPatch,
-    ) -> Self {
+    pub fn with_count_and_patch(item: ItemRef, count: i32, mut patch: DataComponentPatch) -> Self {
+        patch.sanitize_against(&item.components);
         Self { item, count, patch }
     }
 
@@ -300,6 +299,37 @@ impl ItemStack {
         self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
     }
 
+    /// Validates the complete stack constraints enforced by Vanilla's `ItemStack.validateStrict`.
+    pub fn validate_strict(&self) -> Result<()> {
+        let max_stack_size = self.max_stack_size();
+        if self.has(MAX_DAMAGE) && max_stack_size > 1 {
+            return Err(std::io::Error::other(
+                "Item cannot be both damageable and stackable",
+            ));
+        }
+
+        if let Some(container) = self.get(CONTAINER) {
+            validate_contained_item_sizes(container.items().iter().flatten())?;
+        }
+
+        if let Some(bundle) = self.get(BUNDLE_CONTENTS) {
+            validate_contained_item_sizes(bundle.items())?;
+            bundle.validate_weight()?;
+        }
+
+        if let Some(projectiles) = self.get(CHARGED_PROJECTILES) {
+            validate_contained_item_sizes(projectiles.items())?;
+        }
+
+        if self.count > max_stack_size {
+            return Err(std::io::Error::other(format!(
+                "Item stack with stack size of {} was larger than maximum: {max_stack_size}",
+                self.count
+            )));
+        }
+        Ok(())
+    }
+
     /// Returns the equippable component if this item has one.
     #[must_use]
     pub fn get_equippable(&self) -> Option<&Equippable> {
@@ -354,13 +384,23 @@ impl ItemStack {
 
     /// Sets a component value in this item's patch, overriding the prototype.
     pub fn set<T: Component + DowncastType>(&mut self, component: DataComponentType<T>, value: T) {
-        self.patch.set(component, value);
+        let value = ComponentData::new(value);
+        let is_default = self.prototype().get_raw(&component.key) == Some(&value);
+        if is_default {
+            self.patch.clear(component);
+        } else {
+            self.patch.set_component_data(component.key, value);
+        }
     }
 
     /// Removes a component from this item (marks it as removed in the patch).
     /// This will hide the component even if it exists in the prototype.
     pub fn remove<T: 'static>(&mut self, component: DataComponentType<T>) {
-        self.patch.remove(component);
+        if self.prototype().get_raw(&component.key).is_some() {
+            self.patch.remove(component);
+        } else {
+            self.patch.clear(component);
+        }
     }
 
     /// Clears any patch entry for this component (neither set nor removed).
@@ -709,7 +749,7 @@ impl ItemStack {
     pub fn set_item(&mut self, new_item: &Identifier) {
         if let Some(item_ref) = REGISTRY.items.by_key(new_item) {
             self.item = item_ref;
-            // Note: Components patch may need adjustment for new item type
+            self.patch.sanitize_against(&item_ref.components);
         }
     }
 
@@ -917,6 +957,21 @@ fn should_consume_durability(unbreaking_level: i32) -> bool {
     rand::rng().random_range(0..unbreaking_level + 1) == 0
 }
 
+fn validate_contained_item_sizes<'a>(
+    items: impl IntoIterator<Item = &'a ItemStackTemplate>,
+) -> Result<()> {
+    for item in items {
+        let max_stack_size = item.max_stack_size();
+        if item.count() > max_stack_size {
+            return Err(std::io::Error::other(format!(
+                "Item stack with count of {} was larger than maximum: {max_stack_size}",
+                item.count()
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl std::fmt::Display for ItemStack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_empty() {
@@ -960,7 +1015,7 @@ impl ReadFrom for ItemStack {
         // Read DataComponentPatch
         let patch = DataComponentPatch::read(data)?;
 
-        Ok(Self { item, count, patch })
+        Ok(Self::with_count_and_patch(item, count, patch))
     }
 }
 
@@ -984,7 +1039,7 @@ impl ItemStack {
             .ok_or_else(|| std::io::Error::other(format!("Unknown item id: {item_id}")))?;
         let patch = DataComponentPatch::read_delimited(data)?;
 
-        let stack = Self { item, count, patch };
+        let stack = Self::with_count_and_patch(item, count, patch);
         stack.validate_persistent_encoding()?;
         Ok(stack)
     }
@@ -1085,7 +1140,7 @@ impl FromNbtTag for ItemStack {
             None => DataComponentPatch::new(),
         };
 
-        Some(Self { item, count, patch })
+        Some(Self::with_count_and_patch(item, count, patch))
     }
 }
 
@@ -1134,7 +1189,7 @@ mod persistence_tests {
 
     use super::ItemStack;
     use crate::data_components::vanilla_components::{
-        CUSTOM_DATA, JUKEBOX_PLAYABLE, LORE, MAX_STACK_SIZE, TOOLTIP_DISPLAY,
+        CUSTOM_DATA, JUKEBOX_PLAYABLE, LORE, MAX_DAMAGE, MAX_STACK_SIZE, TOOLTIP_DISPLAY,
     };
     use crate::data_components::{CustomData, JukeboxPlayable};
     use crate::test_support::init_test_registry;
@@ -1224,6 +1279,45 @@ mod persistence_tests {
         compound.insert("components", components);
 
         assert!(parse_stack(compound).is_none());
+    }
+
+    #[test]
+    fn component_patches_stay_sanitized_against_the_item_prototype() {
+        init_test_registry();
+        let mut patch = crate::data_components::DataComponentPatch::new();
+        patch.set(MAX_STACK_SIZE, 64);
+        patch.remove(CUSTOM_DATA);
+        let mut stack = ItemStack::with_count_and_patch(&vanilla_items::STONE, 1, patch);
+        assert!(stack.components_patch().is_empty());
+
+        stack.set(MAX_STACK_SIZE, 16);
+        assert_eq!(stack.components_patch().len(), 1);
+        stack.set(MAX_STACK_SIZE, 64);
+        assert!(stack.components_patch().is_empty());
+
+        stack.remove(MAX_STACK_SIZE);
+        assert!(stack.components_patch().is_removed(&MAX_STACK_SIZE.key));
+        stack.set(MAX_STACK_SIZE, 64);
+        assert!(stack.components_patch().is_empty());
+
+        stack.remove(CUSTOM_DATA);
+        assert!(stack.components_patch().is_empty());
+
+        stack.set(MAX_STACK_SIZE, 16);
+        stack.set_item(&vanilla_items::ENDER_PEARL.key);
+        assert_eq!(stack.max_stack_size(), 16);
+        assert!(stack.components_patch().is_empty());
+    }
+
+    #[test]
+    fn strict_validation_checks_components_even_when_the_stack_is_empty() {
+        init_test_registry();
+        let mut patch = crate::data_components::DataComponentPatch::new();
+        patch.set(MAX_DAMAGE, 1);
+        let stack = ItemStack::with_count_and_patch(&vanilla_items::STONE, 0, patch);
+
+        assert!(stack.is_empty());
+        assert!(stack.validate_strict().is_err());
     }
 
     #[test]

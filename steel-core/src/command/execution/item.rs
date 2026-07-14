@@ -201,19 +201,9 @@ fn validate_item_stack(
     reader: &StringReader<'_>,
     stack: &ItemStack,
 ) -> Result<(), CommandSyntaxError> {
-    if stack.has(vanilla_components::MAX_DAMAGE) && stack.max_stack_size() > 1 {
-        return Err(malformed_item(
-            reader,
-            "item cannot be both damageable and stackable",
-        ));
-    }
-    if stack.count() > stack.max_stack_size() {
-        return Err(malformed_item(
-            reader,
-            "item count exceeds its maximum stack size",
-        ));
-    }
-    Ok(())
+    stack
+        .validate_strict()
+        .map_err(|error| malformed_item(reader, &error.to_string()))
 }
 
 fn expected_component(reader: &StringReader<'_>) -> CommandSyntaxError {

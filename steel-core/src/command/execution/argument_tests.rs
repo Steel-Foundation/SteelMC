@@ -1572,6 +1572,36 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
 }
 
 #[test]
+fn item_stack_argument_rejects_invalid_recursive_contents() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        r"resource stone[bundle_contents=[{id:'minecraft:stone',count:2,components:{'minecraft:max_stack_size':1}}]]",
+        TestSource::new(),
+    );
+
+    assert!(dispatcher.context_chain(parse).is_err());
+}
+
+#[test]
+fn item_stack_argument_sanitizes_redundant_component_changes() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[max_stack_size=64,!custom_data]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("redundant component changes should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(stack.components_patch().is_empty());
+}
+
+#[test]
 fn item_arguments_propagate_translatable_snbt_errors() {
     init_test_registry();
     for argument in [

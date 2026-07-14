@@ -1,8 +1,3 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "painting variant NBT conversion unwraps known text-component compound output"
-)]
-
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -29,16 +24,10 @@ impl ToNbtTag for &PaintingVariant {
         compound.insert("width", self.width);
         compound.insert("height", self.height);
         if let Some(title) = &self.title {
-            compound.insert(
-                "title",
-                NbtTag::Compound(title.to_nbt_tag().into_compound().unwrap()),
-            );
+            compound.insert("title", title.to_codec_nbt());
         }
         if let Some(author) = &self.author {
-            compound.insert(
-                "author",
-                NbtTag::Compound(author.to_nbt_tag().into_compound().unwrap()),
-            );
+            compound.insert("author", author.to_codec_nbt());
         }
         NbtTag::Compound(compound)
     }

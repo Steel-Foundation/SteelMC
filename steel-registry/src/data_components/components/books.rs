@@ -8,7 +8,6 @@ use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
-use steel_utils::text::text_component_codec_nbt;
 use text_components::TextComponent;
 
 const MAX_NETWORK_STRING_LENGTH: usize = 32_767;
@@ -387,9 +386,9 @@ fn filterable_string_from_nbt(tag: &NbtTag, max_length: usize) -> Option<Filtera
 
 fn filterable_component_nbt(value: &Filterable<TextComponent>) -> NbtCompound {
     let mut compound = NbtCompound::new();
-    compound.insert("raw", text_component_codec_nbt(&value.raw));
+    compound.insert("raw", value.raw.to_codec_nbt());
     if let Some(filtered) = &value.filtered {
-        compound.insert("filtered", text_component_codec_nbt(filtered));
+        compound.insert("filtered", filtered.to_codec_nbt());
     }
     compound
 }
@@ -464,7 +463,7 @@ fn read_filterable_component(data: &mut Cursor<&[u8]>) -> Result<Filterable<Text
 
 fn write_component_network(component: &TextComponent, writer: &mut impl Write) -> Result<()> {
     let mut encoded = Vec::new();
-    text_component_codec_nbt(component).write(&mut encoded);
+    component.to_codec_nbt().write(&mut encoded);
     writer.write_all(&encoded)
 }
 

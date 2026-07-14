@@ -22,7 +22,7 @@ impl ToNbtTag for &JukeboxSong {
         let mut compound = NbtCompound::new();
         let sound_event = self.sound_event.key.to_string();
         compound.insert("sound_event", sound_event.as_str());
-        compound.insert("description", (&self.description).to_nbt_tag());
+        compound.insert("description", self.description.to_codec_nbt());
         compound.insert("length_in_seconds", self.length_in_seconds);
         compound.insert("comparator_output", self.comparator_output);
         NbtTag::Compound(compound)
