@@ -2,16 +2,17 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::vanilla_blocks;
+use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
+use super::{BlockRef, can_attach_to_multiface};
 
 /// Vanilla `VineBlock` survival and neighbor shape updates.
-// TODO: Implement placement and random tick spread.
+// TODO: Implement random tick spread.
 #[block_behavior]
 pub struct VineBlock {
     block: BlockRef,
@@ -27,7 +28,7 @@ impl VineBlock {
     fn has_faces(state: BlockStateId) -> bool {
         VINE_FACE_DIRECTIONS
             .into_iter()
-            .any(|direction| state.get_value(face_property(direction)))
+            .any(|direction| state.get_value(get_property_for_face(direction)))
     }
 
     fn can_support_at_face(
@@ -44,11 +45,11 @@ impl VineBlock {
             return true;
         }
 
-        if !direction.is_horizontal() {
+        if direction.get_axis() == Axis::Y {
             return false;
         }
 
-        let property = face_property(direction);
+        let property = get_property_for_face(direction);
         let above = world.get_block_state(pos.above());
         above.get_block() == self.block && above.get_value(property)
     }
@@ -68,8 +69,8 @@ impl VineBlock {
         }
 
         let mut above_state: Option<BlockStateId> = None;
-        for direction in VINE_HORIZONTAL_DIRECTIONS {
-            let property = face_property(direction);
+        for direction in Direction::HORIZONTAL {
+            let property = get_property_for_face(direction);
             if !state.get_value(property) {
                 continue;
             }
@@ -95,15 +96,7 @@ const VINE_FACE_DIRECTIONS: [Direction; 5] = [
     Direction::West,
 ];
 
-const VINE_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
-    Direction::North,
-    Direction::East,
-    Direction::South,
-    Direction::West,
-];
-
-/// Vanilla `VineBlock.getPropertyForFace`; vines have no `Down` face property.
-fn face_property(direction: Direction) -> &'static BoolProperty {
+fn get_property_for_face(direction: Direction) -> &'static BoolProperty {
     match direction {
         Direction::Up => &BlockStateProperties::UP,
         Direction::North => &BlockStateProperties::NORTH,
@@ -136,14 +129,36 @@ impl BlockBehavior for VineBlock {
         if Self::has_faces(updated) {
             updated
         } else {
-            vanilla_blocks::AIR.default_state()
+            if Self::has_faces(state) {
+                return vanilla_blocks::AIR.default_state();
+            }
+            state
         }
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // TODO: Vanilla picks a face based on nearest looking direction and
-        // supports replacing an existing vine. Placeholder: default state if it
-        // survives.
-        default_surviving_state(self.block, self, context)
+        let clicked_state = context.world.get_block_state(context.get_clicked_pos());
+        let clicked_vine = clicked_state.get_block() == self.block;
+        let result = if clicked_vine {
+            clicked_state
+        } else {
+            self.block.default_state()
+        };
+
+        for direction in context.get_nearest_looking_directions() {
+            if direction != Direction::Down {
+                let face = get_property_for_face(direction);
+                let face_occupied = clicked_vine && clicked_state.get_value(face);
+                if !face_occupied
+                    && self.can_support_at_face(context.world, context.get_clicked_pos(), direction)
+                {
+                    return Some(result.set_value(face, true));
+                }
+            }
+        }
+        if clicked_vine {
+            return Some(result);
+        }
+        None
     }
 }

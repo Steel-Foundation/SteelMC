@@ -131,6 +131,11 @@ impl BlockPlaceContext<'_> {
             Direction::Down
         }
     }
+    /// Equivalent to vanilla .getClickedPos()
+    #[must_use]
+    pub fn get_clicked_pos(&self) -> BlockPos {
+        self.place_pos
+    }
 
     /// Returns all 6 directions ordered by how closely the player is looking at them.
     ///
