@@ -60,6 +60,7 @@ mod items;
 mod jukebox_songs;
 mod level_events;
 mod loot_tables;
+mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
 mod packets;
@@ -97,6 +98,7 @@ mod generator_functions;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;
+mod potion_tags;
 mod shared_structs;
 mod tag_utils;
 
@@ -143,7 +145,9 @@ const DIALOGS: &str = "dialogs";
 const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const MOB_EFFECTS: &str = "mob_effects";
+const MAP_DECORATION_TYPES: &str = "map_decoration_types";
 const POTIONS: &str = "potions";
+const POTION_TAGS: &str = "potion_tags";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
@@ -224,6 +228,7 @@ pub fn main() {
         (dialog_tags::build(), DIALOG_TAGS),
         (menu_types::build(), MENU_TYPES),
         (mob_effects::build(), MOB_EFFECTS),
+        (map_decoration_types::build(), MAP_DECORATION_TYPES),
         (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
         (timeline_tags::build(), TIMELINE_TAGS),
@@ -252,6 +257,7 @@ pub fn main() {
         (instrument_tags::build(), INSTRUMENT_TAGS),
         (painting_variant_tags::build(), PAINTING_VARIANT_TAGS),
         (poi_type_tags::build(), POI_TYPE_TAGS),
+        (potion_tags::build(), POTION_TAGS),
         (enchantment_tags::build(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),

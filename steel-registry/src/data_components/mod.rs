@@ -31,15 +31,16 @@ mod registry;
 pub mod vanilla_components;
 
 // Re-export core types
+pub use crate::item_predicate::{AdventureModePredicate, BlockPredicate, LockCode};
 pub use component_data::{Component, ComponentData};
 pub use components::{
     ArmorTrim, BannerPatternLayer, BannerPatternLayers, BlocksAttacks, BundleContents,
     ChargedProjectiles, Consumable, CustomData, CustomModelData, DeathProtection, DyedItemColor,
     Enchantable, Equippable, EquippableAllowedEntities, InstrumentComponent,
-    InvalidEnchantableValue, ItemContainerContents, JukeboxPlayable, MapId, MapItemColor,
-    OminousBottleAmplifier, PaintingVariantComponent, PotDecorations, PotionContents,
-    ProvidesBannerPatterns, ProvidesTrimMaterial, Recipes, SulfurCubeContent, Tool, ToolRule,
-    ToolRuleBlocks, UseRemainder,
+    InvalidEnchantableValue, ItemContainerContents, JukeboxPlayable, MapDecorationEntry,
+    MapDecorations, MapId, MapItemColor, OminousBottleAmplifier, PaintingVariantComponent,
+    PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Recipes,
+    SulfurCubeContent, Tool, ToolRule, ToolRuleBlocks, UseRemainder,
 };
 pub use registry::{
     ComponentEntry,

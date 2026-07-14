@@ -155,13 +155,10 @@ struct PersistentCodecs {
     hash: ComponentHash,
 }
 
-enum ComponentCodecs {
-    Unsupported,
-    Implemented {
-        expected_type_key: DowncastTypeKey,
-        network: NetworkCodecs,
-        persistent: Option<PersistentCodecs>,
-    },
+struct ComponentCodecs {
+    expected_type_key: DowncastTypeKey,
+    network: NetworkCodecs,
+    persistent: Option<PersistentCodecs>,
 }
 
 /// Metadata for a registered component type.
@@ -172,7 +169,6 @@ pub struct ComponentEntry {
     /// The component's identifier (e.g., "minecraft:damage")
     pub key: Identifier,
     codecs: ComponentCodecs,
-    persistent: bool,
     ignore_swap_animation: bool,
 }
 
@@ -186,10 +182,9 @@ impl ComponentEntry {
         persistent_codecs: Option<(NbtReader, NbtWriter, ComponentHash)>,
         ignore_swap_animation: bool,
     ) -> Self {
-        let persistent = persistent_codecs.is_some();
         Self {
             key,
-            codecs: ComponentCodecs::Implemented {
+            codecs: ComponentCodecs {
                 expected_type_key,
                 network: NetworkCodecs {
                     reader: network_reader,
@@ -201,16 +196,6 @@ impl ComponentEntry {
                     hash,
                 }),
             },
-            persistent,
-            ignore_swap_animation,
-        }
-    }
-
-    const fn unimplemented(key: Identifier, persistent: bool, ignore_swap_animation: bool) -> Self {
-        Self {
-            key,
-            codecs: ComponentCodecs::Unsupported,
-            persistent,
             ignore_swap_animation,
         }
     }
@@ -221,34 +206,16 @@ impl ComponentEntry {
     /// This prevents plugins from setting wrong types on vanilla components.
     #[must_use]
     pub fn validates(&self, data: &ComponentData) -> bool {
-        matches!(
-            &self.codecs,
-            ComponentCodecs::Implemented {
-                expected_type_key,
-                ..
-            } if data.type_key() == *expected_type_key
-        )
-    }
-
-    /// Returns whether Steel has a concrete value type and codecs for this entry.
-    #[must_use]
-    pub const fn is_implemented(&self) -> bool {
-        matches!(&self.codecs, ComponentCodecs::Implemented { .. })
+        data.type_key() == self.codecs.expected_type_key
     }
 
     /// Decodes this component's network value.
     pub fn read_network(&self, data: &mut Cursor<&[u8]>) -> Result<ComponentData> {
-        let ComponentCodecs::Implemented {
+        let ComponentCodecs {
             network,
             expected_type_key,
             ..
-        } = &self.codecs
-        else {
-            return Err(std::io::Error::other(format!(
-                "Network codec for component {} is not implemented",
-                self.key
-            )));
-        };
+        } = &self.codecs;
         let value = (network.reader)(data)?;
         if value.type_key() != *expected_type_key {
             return Err(std::io::Error::other(format!(
@@ -267,25 +234,17 @@ impl ComponentEntry {
                 self.key
             )));
         }
-        let ComponentCodecs::Implemented { network, .. } = &self.codecs else {
-            unreachable!("validated component entry must have network codecs");
-        };
-        (network.writer)(data, writer)
+        (self.codecs.network.writer)(data, writer)
     }
 
     /// Decodes this component's persistent NBT value.
     #[must_use]
     pub fn read_nbt(&self, tag: BorrowedNbtTag) -> Option<ComponentData> {
-        let ComponentCodecs::Implemented {
-            expected_type_key,
-            persistent: Some(persistent),
-            ..
-        } = &self.codecs
-        else {
+        let Some(persistent) = &self.codecs.persistent else {
             return None;
         };
         let value = (persistent.reader)(tag)?;
-        (value.type_key() == *expected_type_key).then_some(value)
+        (value.type_key() == self.codecs.expected_type_key).then_some(value)
     }
 
     /// Encodes this component's persistent NBT value after validating its concrete type.
@@ -296,13 +255,9 @@ impl ComponentEntry {
                 self.key
             )));
         }
-        let ComponentCodecs::Implemented {
-            persistent: Some(persistent),
-            ..
-        } = &self.codecs
-        else {
+        let Some(persistent) = &self.codecs.persistent else {
             return Err(std::io::Error::other(format!(
-                "Persistent codec for component {} is not implemented",
+                "Transient component {} has no persistent codec",
                 self.key
             )));
         };
@@ -336,13 +291,9 @@ impl ComponentEntry {
                 self.key
             )));
         }
-        let ComponentCodecs::Implemented {
-            persistent: Some(persistent),
-            ..
-        } = &self.codecs
-        else {
+        let Some(persistent) = &self.codecs.persistent else {
             return Err(std::io::Error::other(format!(
-                "Persistent codec for component {} is not implemented",
+                "Transient component {} has no persistent hash codec",
                 self.key
             )));
         };
@@ -352,7 +303,7 @@ impl ComponentEntry {
     /// Returns whether vanilla defines this as a persistent component.
     #[must_use]
     pub const fn is_persistent(&self) -> bool {
-        self.persistent
+        self.codecs.persistent.is_some()
     }
 
     /// Returns whether changes to this component are ignored for held-item swap animation.
@@ -436,31 +387,6 @@ impl DataComponentRegistry {
             write_typed_network::<T>,
             None,
         );
-    }
-
-    /// Reserves a vanilla component ID whose concrete value and codecs have not
-    /// been ported yet.
-    pub fn register_unimplemented<T>(
-        &mut self,
-        component: DataComponentType<T>,
-        persistent: bool,
-    ) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register data components after the registry has been frozen"
-        );
-
-        let ignore_swap_animation = component.ignore_swap_animation();
-        let key = component.key;
-        let id = self.entries.len();
-        let entry = Box::leak(Box::new(ComponentEntry::unimplemented(
-            key.clone(),
-            persistent,
-            ignore_swap_animation,
-        )));
-        self.by_key.insert(key, id);
-        self.entries.push(entry);
-        id
     }
 
     fn register_persistent<T>(&mut self, component: DataComponentType<T>)

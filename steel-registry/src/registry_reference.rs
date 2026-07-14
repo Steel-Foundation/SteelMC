@@ -18,6 +18,7 @@ use crate::chicken_variant::ChickenVariant;
 use crate::cow_sound_variant::CowSoundVariant;
 use crate::cow_variant::CowVariant;
 use crate::frog_variant::FrogVariant;
+use crate::map_decoration_type::MapDecorationType;
 use crate::pig_sound_variant::PigSoundVariant;
 use crate::pig_variant::PigVariant;
 use crate::potion::Potion;
@@ -165,6 +166,11 @@ impl_registry_reference_entry!(FrogVariant, frog_variants, "frog variant");
 impl_registry_reference_entry!(CatVariant, cat_variants, "cat variant");
 impl_registry_reference_entry!(CatSoundVariant, cat_sound_variants, "cat sound variant");
 impl_registry_reference_entry!(Potion, potions, "potion");
+impl_registry_reference_entry!(
+    MapDecorationType,
+    map_decoration_types,
+    "map decoration type"
+);
 
 #[cfg(test)]
 mod tests {
@@ -184,6 +190,7 @@ mod tests {
     use crate::cow_sound_variant::CowSoundVariant;
     use crate::cow_variant::CowVariant;
     use crate::frog_variant::FrogVariant;
+    use crate::map_decoration_type::MapDecorationType;
     use crate::pig_sound_variant::PigSoundVariant;
     use crate::pig_variant::PigVariant;
     use crate::test_support::init_test_registry;
@@ -234,6 +241,7 @@ mod tests {
         assert_codecs::<FrogVariant>();
         assert_codecs::<CatVariant>();
         assert_codecs::<CatSoundVariant>();
+        assert_codecs::<MapDecorationType>();
     }
 
     #[test]

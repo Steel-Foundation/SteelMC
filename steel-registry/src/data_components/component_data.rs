@@ -10,11 +10,11 @@ use super::components::{
     DamageResistant, DamageTypeComponent, DeathProtection, DebugStickState, DyedItemColor,
     Enchantable, EntityData, Equippable, FireworkExplosion, Fireworks, FoodProperties,
     InstrumentComponent, ItemAttributeModifiers, ItemContainerContents, ItemEnchantments, ItemLore,
-    JukeboxPlayable, KineticWeapon, LodestoneTracker, MapId, MapItemColor, MapPostProcessing,
-    OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
-    PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes, Repairable,
-    SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation, Tool,
-    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent,
+    JukeboxPlayable, KineticWeapon, LodestoneTracker, MapDecorations, MapId, MapItemColor,
+    MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon,
+    PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes,
+    Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation,
+    Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent,
     WrittenBookContent,
 };
 use crate::cat_sound_variant::CatSoundVariant;
@@ -24,6 +24,7 @@ use crate::chicken_variant::ChickenVariant;
 use crate::cow_sound_variant::CowSoundVariant;
 use crate::cow_variant::CowVariant;
 use crate::frog_variant::FrogVariant;
+use crate::item_predicate::{AdventureModePredicate, LockCode};
 use crate::pig_sound_variant::PigSoundVariant;
 use crate::pig_variant::PigVariant;
 use crate::resolvable_profile::ResolvableProfile;
@@ -128,6 +129,11 @@ macro_rules! impl_component_downcast_type {
 }
 
 impl_component_downcast_type!(DamageTypeComponent, "steel:item_component/damage_type");
+impl_component_downcast_type!(
+    AdventureModePredicate,
+    "steel:item_component/adventure_mode_predicate"
+);
+impl_component_downcast_type!(LockCode, "steel:item_component/lock");
 impl_component_downcast_type!(CustomData, "steel:item_component/custom_data");
 impl_component_downcast_type!(CustomModelData, "steel:item_component/custom_model_data");
 impl_component_downcast_type!(DyeColor, "steel:dye_color");
@@ -162,6 +168,7 @@ impl_component_downcast_type!(EntityData, "steel:item_component/entity_data");
 impl_component_downcast_type!(BlockEntityData, "steel:item_component/block_entity_data");
 impl_component_downcast_type!(KineticWeapon, "steel:item_component/kinetic_weapon");
 impl_component_downcast_type!(LodestoneTracker, "steel:item_component/lodestone_tracker");
+impl_component_downcast_type!(MapDecorations, "steel:item_component/map_decorations");
 impl_component_downcast_type!(FireworkExplosion, "steel:item_component/firework_explosion");
 impl_component_downcast_type!(Fireworks, "steel:item_component/fireworks");
 impl_component_downcast_type!(BlockItemStateProperties, "steel:item_component/block_state");

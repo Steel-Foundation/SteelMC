@@ -128,15 +128,6 @@ fn parse_component_value(
     let Some(entry) = REGISTRY.data_components.by_key(&key) else {
         return Err(unknown_component(reader, &key));
     };
-    if !entry.is_implemented() {
-        // TODO: Accept this value once its concrete component codec is ported.
-        return Err(malformed_component(
-            reader,
-            &key,
-            "component values are not implemented by Steel yet",
-        ));
-    }
-
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
         reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.component())))
@@ -291,15 +282,13 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     if component_key.len() != component_prefix.len() && component_key.is_empty() {
         return;
     }
-    if let Some(entry) = component_by_input(component_key) {
+    if component_by_input(component_key).is_some() {
         if removed {
             suggest_operation_delimiters(input, builder);
             return;
         }
-        if entry.is_implemented() {
-            builder.suggest(format!("{input}="));
-            return;
-        }
+        builder.suggest(format!("{input}="));
+        return;
     }
     let visited = visited_component_keys(&components[..current_start]);
     for entry in
@@ -307,7 +296,6 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     {
         if !entry.is_persistent()
             || visited.contains(&entry.key)
-            || (!removed && !entry.is_implemented())
             || !resource_matches(component_prefix, &entry.key)
         {
             continue;

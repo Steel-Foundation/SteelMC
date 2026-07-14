@@ -32,6 +32,7 @@ pub type PotionRef = &'static Potion;
 pub struct PotionRegistry {
     potions_by_id: Vec<PotionRef>,
     potions_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -41,6 +42,7 @@ impl PotionRegistry {
         Self {
             potions_by_id: Vec::new(),
             potions_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -61,13 +63,14 @@ crate::impl_registry!(
     potions_by_key,
     potions
 );
+crate::impl_tagged_registry!(PotionRegistry, potions_by_key, "potion");
 
 #[cfg(test)]
 mod tests {
     use steel_utils::Identifier;
 
     use crate::test_support::init_test_registry;
-    use crate::{REGISTRY, RegistryExt};
+    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt};
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
@@ -90,5 +93,12 @@ mod tests {
             turtle_master.effects[1].effect.key.path.as_ref(),
             "resistance"
         );
+    }
+
+    #[test]
+    fn vanilla_potion_tags_are_generated_from_builtin_data() {
+        init_test_registry();
+        let tradeable = Identifier::vanilla_static("tradeable");
+        assert!(REGISTRY.potions.get_tag(&tradeable).is_some());
     }
 }

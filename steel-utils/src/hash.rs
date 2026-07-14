@@ -316,11 +316,17 @@ impl HashEntry {
     pub fn new(key_hasher: ComponentHasher, value_hasher: ComponentHasher) -> Self {
         let key_bytes = crc32c::crc32c(&key_hasher.data);
         let value_bytes = crc32c::crc32c(&value_hasher.data);
+        Self::from_hashes(key_bytes, value_bytes)
+    }
+
+    /// Creates a map entry from child hashes already computed by dispatched codecs.
+    #[must_use]
+    pub const fn from_hashes(key_hash: u32, value_hash: u32) -> Self {
         Self {
-            key_hash: i64::from(key_bytes),
-            value_hash: i64::from(value_bytes),
-            key_bytes: key_bytes.to_le_bytes(),
-            value_bytes: value_bytes.to_le_bytes(),
+            key_hash: key_hash as i64,
+            value_hash: value_hash as i64,
+            key_bytes: key_hash.to_le_bytes(),
+            value_bytes: value_hash.to_le_bytes(),
         }
     }
 }

@@ -34,6 +34,7 @@ pub type JukeboxSongRef = &'static JukeboxSong;
 pub struct JukeboxSongRegistry {
     jukebox_songs_by_id: Vec<JukeboxSongRef>,
     jukebox_songs_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -43,6 +44,7 @@ impl JukeboxSongRegistry {
         Self {
             jukebox_songs_by_id: Vec::new(),
             jukebox_songs_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -63,3 +65,4 @@ crate::impl_registry!(
     jukebox_songs_by_key,
     jukebox_songs
 );
+crate::impl_tagged_registry!(JukeboxSongRegistry, jukebox_songs_by_key, "jukebox song");

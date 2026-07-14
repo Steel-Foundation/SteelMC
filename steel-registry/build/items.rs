@@ -1520,6 +1520,12 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     value.as_object().is_some_and(serde_json::Map::is_empty),
                     "vanilla filled map prototype must have empty map decorations"
                 );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::MAP_DECORATIONS,
+                        Some(vanilla_components::MapDecorations::EMPTY),
+                    )
+                });
             }
             "minecraft:enchantable" => {
                 let object = value

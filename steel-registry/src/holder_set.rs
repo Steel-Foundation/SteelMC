@@ -13,12 +13,19 @@ use steel_utils::{
     serial::{ReadFrom, WriteTo},
 };
 
+use crate::attribute::Attribute;
 use crate::banner_pattern::BannerPattern;
 use crate::blocks::Block;
 use crate::damage_type::DamageType;
+use crate::enchantment::Enchantment;
 use crate::entity_type::EntityType;
 use crate::items::Item;
+use crate::jukebox_song::JukeboxSong;
 use crate::mob_effect::MobEffect;
+use crate::potion::Potion;
+use crate::trim_material::TrimMaterial;
+use crate::trim_pattern::TrimPattern;
+use crate::villager_type::VillagerType;
 use crate::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 
 /// Registry operations required by a [`RegistryHolderSet`].
@@ -86,7 +93,11 @@ impl<T: RegistryHolderSetEntry> RegistryHolderSet<T> {
             return Some(Self::Direct(vec![T::holder_set_by_key(&key)?]));
         }
 
-        let values = tag.list()?.strings()?;
+        let list = tag.list()?;
+        if list.as_nbt_tags().is_empty() {
+            return Some(Self::Direct(Vec::new()));
+        }
+        let values = list.strings()?;
         let mut entries = Vec::with_capacity(values.len());
         for value in values {
             let key = Identifier::from_str(&value.to_string()).ok()?;
@@ -182,6 +193,7 @@ impl<T: RegistryHolderSetEntry> ToNbtTag for RegistryHolderSet<T> {
     fn to_nbt_tag(self) -> NbtTag {
         match self {
             Self::Tag(tag) => NbtTag::String(format!("#{tag}").into()),
+            Self::Direct(entries) if entries.is_empty() => NbtTag::List(NbtList::Empty),
             Self::Direct(entries) if entries.len() == 1 => {
                 NbtTag::String(entries[0].key().to_string().into())
             }
@@ -249,13 +261,20 @@ impl_registry_holder_set_entry!(EntityType, entity_types, "entity type");
 impl_registry_holder_set_entry!(Item, items, "item");
 impl_registry_holder_set_entry!(DamageType, damage_types, "damage type");
 impl_registry_holder_set_entry!(MobEffect, mob_effects, "mob effect");
+impl_registry_holder_set_entry!(Enchantment, enchantments, "enchantment");
+impl_registry_holder_set_entry!(Potion, potions, "potion");
+impl_registry_holder_set_entry!(Attribute, attributes, "attribute");
+impl_registry_holder_set_entry!(TrimMaterial, trim_materials, "trim material");
+impl_registry_holder_set_entry!(TrimPattern, trim_patterns, "trim pattern");
+impl_registry_holder_set_entry!(JukeboxSong, jukebox_songs, "jukebox song");
+impl_registry_holder_set_entry!(VillagerType, villager_types, "villager type");
 
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
-    use simdnbt::owned::NbtTag;
+    use simdnbt::owned::{NbtList, NbtTag};
     use simdnbt::{FromNbtTag, ToNbtTag};
     use steel_utils::Identifier;
     use steel_utils::codec::VarInt;
@@ -323,6 +342,16 @@ mod tests {
         assert_eq!(
             direct.compute_hash(),
             direct.clone().to_nbt_tag().compute_hash()
+        );
+
+        let empty = RegistryHolderSet::<Item>::Direct(Vec::new());
+        assert_eq!(empty.clone().to_nbt_tag(), NbtTag::List(NbtList::Empty));
+        assert_eq!(
+            with_borrowed_tag(
+                NbtTag::List(NbtList::Empty),
+                RegistryHolderSet::<Item>::from_nbt_tag
+            ),
+            Some(empty)
         );
     }
 

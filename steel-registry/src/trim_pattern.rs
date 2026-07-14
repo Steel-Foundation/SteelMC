@@ -147,6 +147,7 @@ pub type TrimPatternRef = &'static TrimPattern;
 pub struct TrimPatternRegistry {
     trim_patterns_by_id: Vec<TrimPatternRef>,
     trim_patterns_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -156,6 +157,7 @@ impl TrimPatternRegistry {
         Self {
             trim_patterns_by_id: Vec::new(),
             trim_patterns_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -176,6 +178,7 @@ crate::impl_registry!(
     trim_patterns_by_key,
     trim_patterns
 );
+crate::impl_tagged_registry!(TrimPatternRegistry, trim_patterns_by_key, "trim pattern");
 
 impl RegistryHolderEntry for TrimPattern {
     type Value = TrimPatternValue;

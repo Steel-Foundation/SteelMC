@@ -22,12 +22,12 @@ pub use super::components::{
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
     ItemContainerContents, ItemDamageFunction, ItemEnchantments, ItemLore, ItemLoreTooLong,
     ItemUseAnimation, JukeboxPlayable, KineticWeapon, KineticWeaponCondition, LodestoneTracker,
-    MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
-    PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
-    Rarity, Recipes, Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffect,
-    SuspiciousStewEffects, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
-    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent,
-    WrittenBookContent,
+    MapDecorationEntry, MapDecorations, MapId, MapItemColor, MapPostProcessing,
+    OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
+    PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes, Repairable,
+    SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffect, SuspiciousStewEffects,
+    SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay,
+    UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent, WrittenBookContent,
 };
 pub use crate::ItemStackTemplate;
 pub use crate::cat_sound_variant::CatSoundVariant;
@@ -37,6 +37,7 @@ pub use crate::chicken_variant::ChickenVariant;
 pub use crate::cow_sound_variant::CowSoundVariant;
 pub use crate::cow_variant::CowVariant;
 pub use crate::frog_variant::FrogVariant;
+pub use crate::item_predicate::{AdventureModePredicate, BlockPredicate, ItemPredicate, LockCode};
 pub use crate::pig_sound_variant::PigSoundVariant;
 pub use crate::pig_variant::PigVariant;
 pub use crate::resolvable_profile::{
@@ -101,16 +102,6 @@ pub const ENCHANTMENT_GLINT_OVERRIDE: DataComponentType<bool> =
 pub const POTION_DURATION_SCALE: DataComponentType<f32> =
     DataComponentType::new(Identifier::vanilla_static("potion_duration_scale"));
 
-/// Type marker for vanilla component IDs whose value and codecs are not ported.
-///
-/// The empty enum cannot be constructed and deliberately does not implement
-/// [`super::Component`], so an unimplemented component cannot be inserted into
-/// an item through the typed component APIs.
-pub enum UnimplementedComponent {}
-
-// These component IDs are reserved in vanilla order until their concrete value
-// types and codecs are ported.
-
 pub const CUSTOM_DATA: DataComponentType<CustomData> =
     DataComponentType::new(Identifier::vanilla_static("custom_data"));
 
@@ -135,10 +126,10 @@ pub const RARITY: DataComponentType<Rarity> =
 pub const ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("enchantments"));
 
-pub const CAN_PLACE_ON: DataComponentType<UnimplementedComponent> =
+pub const CAN_PLACE_ON: DataComponentType<AdventureModePredicate> =
     DataComponentType::new(Identifier::vanilla_static("can_place_on"));
 
-pub const CAN_BREAK: DataComponentType<UnimplementedComponent> =
+pub const CAN_BREAK: DataComponentType<AdventureModePredicate> =
     DataComponentType::new(Identifier::vanilla_static("can_break"));
 
 pub const ATTRIBUTE_MODIFIERS: DataComponentType<ItemAttributeModifiers> =
@@ -210,7 +201,7 @@ pub const MAP_COLOR: DataComponentType<MapItemColor> =
 pub const MAP_ID: DataComponentType<MapId> =
     DataComponentType::new(Identifier::vanilla_static("map_id"));
 
-pub const MAP_DECORATIONS: DataComponentType<UnimplementedComponent> =
+pub const MAP_DECORATIONS: DataComponentType<MapDecorations> =
     DataComponentType::new(Identifier::vanilla_static("map_decorations"));
 
 pub const MAP_POST_PROCESSING: DataComponentType<MapPostProcessing> =
@@ -300,7 +291,7 @@ pub const BEES: DataComponentType<Bees> =
 pub const SULFUR_CUBE_CONTENT: DataComponentType<SulfurCubeContent> =
     DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
 
-pub const LOCK: DataComponentType<UnimplementedComponent> =
+pub const LOCK: DataComponentType<LockCode> =
     DataComponentType::new(Identifier::vanilla_static("lock"));
 
 pub const CONTAINER_LOOT: DataComponentType<SeededContainerLoot> =
@@ -648,9 +639,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 13: enchantments
     registry.register(ENCHANTMENTS);
     // 14: can_place_on
-    registry.register_unimplemented(CAN_PLACE_ON, true);
+    registry.register(CAN_PLACE_ON);
     // 15: can_break
-    registry.register_unimplemented(CAN_BREAK, true);
+    registry.register(CAN_BREAK);
     // 16: attribute_modifiers
     registry.register(ATTRIBUTE_MODIFIERS);
     // 17: custom_model_data
@@ -720,7 +711,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 46: map_id
     registry.register(MAP_ID);
     // 47: map_decorations
-    registry.register_unimplemented(MAP_DECORATIONS, true);
+    registry.register(MAP_DECORATIONS);
     // 48: map_post_processing
     registry.register_transient(MAP_POST_PROCESSING);
     // 49: charged_projectiles
@@ -796,7 +787,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 78: sulfur_cube_content
     registry.register(SULFUR_CUBE_CONTENT);
     // 79: lock
-    registry.register_unimplemented(LOCK, true);
+    registry.register(LOCK);
     // 80: container_loot
     registry.register(CONTAINER_LOOT);
     // 81: break_sound
@@ -923,7 +914,6 @@ mod tests {
             let entry = registry
                 .by_key(key)
                 .unwrap_or_else(|| panic!("missing transient component {key}"));
-            assert!(entry.is_implemented(), "{key}");
             assert!(!entry.is_persistent(), "{key}");
             assert!(entry.write_nbt(&value).is_err(), "{key}");
             assert!(entry.compute_hash(&value).is_err(), "{key}");
@@ -982,7 +972,6 @@ mod tests {
             let entry = registry
                 .by_key(&component.key)
                 .unwrap_or_else(|| panic!("missing identifier component {}", component.key));
-            assert!(entry.is_implemented(), "{}", component.key);
             let data = ComponentData::new(expected.clone());
             assert_eq!(
                 entry.read_nbt_owned(&NbtTag::String("stone".into())),
@@ -1096,21 +1085,18 @@ mod tests {
         let custom_data = registry
             .by_key(&CUSTOM_DATA.key)
             .expect("custom_data should be registered");
-        assert!(custom_data.is_implemented());
         assert!(custom_data.validates(&ComponentData::new(CustomData::default())));
         assert!(!custom_data.validates(&ComponentData::new(())));
 
         let custom_model_data = registry
             .by_key(&CUSTOM_MODEL_DATA.key)
             .expect("custom_model_data should be registered");
-        assert!(custom_model_data.is_implemented());
         assert!(custom_model_data.validates(&ComponentData::new(CustomModelData::EMPTY)));
         assert!(!custom_model_data.validates(&ComponentData::new(CustomData::default())));
 
         let enchantable = registry
             .by_key(&ENCHANTABLE.key)
             .expect("enchantable should be registered");
-        assert!(enchantable.is_implemented());
         assert!(enchantable.validates(&ComponentData::new(
             Enchantable::new(15).expect("15 is positive")
         )));
@@ -1129,7 +1115,6 @@ mod tests {
             let entry = registry
                 .by_key(&component.key)
                 .unwrap_or_else(|| panic!("missing dye color component {}", component.key));
-            assert!(entry.is_implemented(), "{}", component.key);
             assert!(entry.validates(&ComponentData::new(DyeColor::Red)));
             assert!(!entry.validates(&ComponentData::new(14_i32)));
         }
@@ -1155,7 +1140,6 @@ mod tests {
             let entry = registry
                 .by_key(key)
                 .unwrap_or_else(|| panic!("missing component {key}"));
-            assert!(entry.is_implemented(), "{key}");
             assert!(entry.validates(&value), "{key}");
             assert!(!entry.validates(&ComponentData::new(())), "{key}");
         }
@@ -1186,7 +1170,6 @@ mod tests {
             let entry = registry
                 .by_key(key)
                 .unwrap_or_else(|| panic!("missing variant component {key}"));
-            assert!(entry.is_implemented(), "{key}");
             assert!(entry.validates(&value), "{key}");
             assert!(!entry.validates(&ComponentData::new(())), "{key}");
         }
@@ -1194,7 +1177,6 @@ mod tests {
         let consumable = registry
             .by_key(&CONSUMABLE.key)
             .expect("consumable should be registered");
-        assert!(consumable.is_implemented());
         assert!(
             consumable.validates(&ComponentData::new(
                 Consumable::new(

@@ -313,12 +313,6 @@ fn parse_component_value_test(
             format!("Unknown item component '{key}'"),
         ));
     };
-    if !entry.is_implemented() {
-        return Err(dynamic_error(
-            reader,
-            format!("Component value '{key}' is not implemented by Steel yet"),
-        ));
-    }
     let Some(value) = read_component_value(entry, &tag) else {
         return Err(malformed_component(reader, &key));
     };

@@ -94,6 +94,7 @@ pub type AttributeRef = &'static Attribute;
 pub struct AttributeRegistry {
     attributes_by_id: Vec<AttributeRef>,
     attributes_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -109,6 +110,7 @@ impl AttributeRegistry {
         Self {
             attributes_by_id: Vec::new(),
             attributes_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -149,3 +151,4 @@ crate::impl_registry!(
     attributes_by_key,
     attributes
 );
+crate::impl_tagged_registry!(AttributeRegistry, attributes_by_key, "attribute");

@@ -14,7 +14,7 @@ pub use path::{
 };
 pub use snbt::{
     SnbtError, SnbtErrorKind, SnbtNumberType, parse_snbt, parse_snbt_argument, parse_snbt_compound,
-    parse_snbt_compound_argument,
+    parse_snbt_compound_argument, to_canonical_snbt,
 };
 
 /// Mirrors vanilla `NbtUtils.compareNbt`.
