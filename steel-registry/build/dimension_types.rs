@@ -110,6 +110,21 @@ struct ErrorMessageJson {
     translate: String,
 }
 
+fn generate_world_clock_ref(clock: Option<&str>) -> TokenStream {
+    let Some(clock) = clock else {
+        return quote! { None };
+    };
+    let (namespace, path) = clock
+        .split_once(':')
+        .expect("world clock identifier missing ':'");
+    assert_eq!(
+        namespace, "minecraft",
+        "expected vanilla world clock identifier, found {clock}"
+    );
+    let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
+    quote! { Some(&crate::vanilla_world_clocks::#ident) }
+}
+
 #[derive(Deserialize, Debug)]
 struct AmbientSoundsJson {
     mood: MoodJson,
@@ -319,13 +334,7 @@ pub(crate) fn build() -> TokenStream {
                 quote! { #s }
             },
         );
-        let default_clock = generate_option(
-            &dimension_type.default_clock.as_deref().map(str::to_owned),
-            |s| {
-                let s = s.as_str();
-                quote! { #s }
-            },
-        );
+        let default_clock = generate_world_clock_ref(dimension_type.default_clock.as_deref());
         let timelines = generate_option(
             &dimension_type.timelines.as_deref().map(str::to_owned),
             |s| {

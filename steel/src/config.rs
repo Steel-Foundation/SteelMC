@@ -4,19 +4,39 @@
 //! The config is loaded once at startup, split into creation-time values
 //! (consumed by the server constructor) and a `RuntimeConfig` (stored on `Server`).
 
-use serde::Deserialize;
-use std::{collections::BTreeMap, fs, path::Path};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::BTreeMap,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::filter::Directive;
 
+use futures::future::BoxFuture;
 use reqwest::Url;
-use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
+use steel_core::config::{
+    CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig, validate_login_security,
+};
+use steel_core::permission::{
+    PermissionGroupConfig, PermissionGroupStore, PermissionGroupStoreError, PermissionGroups,
+    PermissionGroupsConfig, PermissionMetadataRuleConfig, PermissionMetadataValue,
+};
+use tokio::fs as async_fs;
+use toml::ser::Error as TomlSerializeError;
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png");
 
 const DEFAULT_CONFIG: &str = include_str!("../../package-content/config.toml");
 const DEFAULT_WORLDS: &str = include_str!("../../package-content/worlds.toml");
+const DEFAULT_GROUPS: &str = include_str!("../../package-content/groups.toml");
+const GROUPS_CONFIG_HEADER: &str = concat!(
+    "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+    "package-content/groups.schema.json\n",
+    "# Documentation: https://steelmc.dev/configuration/permissions/\n\n",
+);
 
 /// Top-level TOML deserialization target — used once at startup, not stored globally.
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +49,178 @@ pub struct SteelConfig {
     /// World and domain configuration from `worlds.toml`.
     #[serde(skip, default = "empty_worlds_config")]
     pub worlds: WorldsConfig,
+    /// Permission group configuration from `groups.toml`.
+    #[serde(skip, default)]
+    pub groups: PermissionGroupsConfig,
+    /// Path to the loaded `groups.toml`.
+    #[serde(skip, default)]
+    pub groups_path: Option<PathBuf>,
+}
+
+impl SteelConfig {
+    /// Builds the store used for persistence-first permission group updates.
+    #[must_use]
+    pub fn permission_group_store(&self) -> Option<Arc<dyn PermissionGroupStore>> {
+        self.groups_path.as_ref().map(|path| {
+            Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
+        })
+    }
+}
+
+/// TOML-backed permission group store.
+#[derive(Clone, Debug)]
+pub struct FilePermissionGroupStore {
+    path: PathBuf,
+}
+
+impl FilePermissionGroupStore {
+    /// Creates a file-backed group store.
+    #[must_use]
+    pub const fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl PermissionGroupStore for FilePermissionGroupStore {
+    fn save_groups(
+        &self,
+        config: PermissionGroupsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        let path = self.path.clone();
+        Box::pin(async move {
+            let serialized = serialize_groups_config(&config).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to serialize groups config: {error}"
+                ))
+            })?;
+            write_atomic_config(&path, serialized)
+                .await
+                .map_err(|error| {
+                    PermissionGroupStoreError::new(format!(
+                        "failed to write groups config {}: {error}",
+                        path.display()
+                    ))
+                })
+        })
+    }
+}
+
+fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {
+    let mut output = String::from(GROUPS_CONFIG_HEADER);
+    push_toml_field(&mut output, "default_groups", &config.default_groups)?;
+
+    for (name, group) in &config.groups {
+        output.push('\n');
+        output.push_str("[groups.");
+        output.push_str(name);
+        output.push_str("]\n");
+        push_group_config(&mut output, group)?;
+    }
+
+    Ok(output)
+}
+
+fn push_group_config(
+    output: &mut String,
+    group: &PermissionGroupConfig,
+) -> Result<(), TomlSerializeError> {
+    push_toml_field(output, "priority", &group.priority)?;
+    push_string_array_field(output, "inherits", &group.inherits)?;
+    push_string_array_field(output, "allow", &group.allow)?;
+    push_string_array_field(output, "deny", &group.deny)?;
+    push_metadata_rules(output, &group.metadata)
+}
+
+fn push_string_array_field(
+    output: &mut String,
+    key: &str,
+    values: &[String],
+) -> Result<(), TomlSerializeError> {
+    if values.is_empty() {
+        output.push_str(key);
+        output.push_str(" = []\n");
+        return Ok(());
+    }
+
+    output.push_str(key);
+    output.push_str(" = [\n");
+    for value in values {
+        output.push_str("    ");
+        output.push_str(&toml_value(value)?);
+        output.push_str(",\n");
+    }
+    output.push_str("]\n");
+    Ok(())
+}
+
+fn push_metadata_rules(
+    output: &mut String,
+    metadata: &[PermissionMetadataRuleConfig],
+) -> Result<(), TomlSerializeError> {
+    if metadata.is_empty() {
+        output.push_str("metadata = []\n");
+        return Ok(());
+    }
+
+    output.push_str("metadata = [\n");
+    for entry in metadata {
+        output.push_str("    { key = ");
+        output.push_str(&toml_value(&entry.key)?);
+        output.push_str(", value = ");
+        output.push_str(&permission_metadata_value_toml(&entry.value)?);
+        output.push_str(" },\n");
+    }
+    output.push_str("]\n");
+    Ok(())
+}
+
+fn push_toml_field<T: Serialize + ?Sized>(
+    output: &mut String,
+    key: &str,
+    value: &T,
+) -> Result<(), TomlSerializeError> {
+    output.push_str(key);
+    output.push_str(" = ");
+    output.push_str(&toml_value(value)?);
+    output.push('\n');
+    Ok(())
+}
+
+fn toml_value<T: Serialize + ?Sized>(value: &T) -> Result<String, TomlSerializeError> {
+    #[derive(Serialize)]
+    struct Field<'a, T: Serialize + ?Sized> {
+        value: &'a T,
+    }
+
+    let serialized = toml::to_string(&Field { value })?;
+    let serialized = serialized.trim_end();
+    Ok(serialized
+        .strip_prefix("value = ")
+        .unwrap_or(serialized)
+        .to_owned())
+}
+
+fn permission_metadata_value_toml(
+    value: &PermissionMetadataValue,
+) -> Result<String, TomlSerializeError> {
+    match value {
+        PermissionMetadataValue::Bool(value) => toml_value(value),
+        PermissionMetadataValue::Integer(value) => toml_value(value),
+        PermissionMetadataValue::String(value) => toml_value(value),
+    }
+}
+
+async fn write_atomic_config(path: &Path, contents: String) -> io::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "config path has no parent",
+        ));
+    };
+    async_fs::create_dir_all(parent).await?;
+    let temp_path = path.with_extension("toml.tmp");
+    async_fs::write(&temp_path, contents).await?;
+    async_fs::rename(temp_path, path).await
 }
 
 const fn empty_worlds_config() -> WorldsConfig {
@@ -81,7 +273,9 @@ pub struct ServerConfig {
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
     pub auth_server: Option<String>,
-    /// Whether the server should use encryption.
+    /// Optional endpoint for online-mode player name-to-profile lookups.
+    pub profile_server: Option<String>,
+    /// Whether the server should use encryption. Required in online mode.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     #[serde(default)]
@@ -119,6 +313,7 @@ impl ServerConfig {
             simulation_distance: self.simulation_distance,
             online_mode: self.online_mode,
             auth_server: self.auth_server,
+            profile_server: self.profile_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
             motd: self.motd,
@@ -271,6 +466,12 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
         .join("worlds.toml");
     config.worlds = load_or_create_worlds(&worlds_path)?;
+    let groups_path = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
+        .join("groups.toml");
+    config.groups = load_or_create_groups(&groups_path)?;
+    config.groups_path = Some(groups_path);
 
     // If icon file doesnt exist, write it
     #[cfg(feature = "stand-alone")]
@@ -300,11 +501,34 @@ fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {
     }
 }
 
+fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> {
+    let config: PermissionGroupsConfig = if path.exists() {
+        let contents = fs::read_to_string(path)
+            .map_err(|error| format!("failed to read groups config {}: {error}", path.display()))?;
+        toml::from_str(&contents)
+            .map_err(|error| format!("failed to parse groups config {}: {error}", path.display()))?
+    } else {
+        fs::write(path, DEFAULT_GROUPS).map_err(|error| {
+            format!("failed to write groups config {}: {error}", path.display())
+        })?;
+        toml::from_str(DEFAULT_GROUPS)
+            .map_err(|error| format!("failed to parse default groups config: {error}"))?
+    };
+    PermissionGroups::from_config(config.clone()).map_err(|error| {
+        format!(
+            "failed to validate groups config {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(config)
+}
+
 /// Validates the server configuration.
 ///
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 fn validate(config: &ServerConfig) -> Result<(), &'static str> {
+    validate_login_security(config.online_mode, config.encryption)?;
     if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
@@ -317,6 +541,14 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         };
         if !matches!(url.scheme(), "http" | "https") {
             return Err("auth_server must use http or https");
+        }
+    }
+    if let Some(profile_server) = &config.profile_server {
+        let Ok(url) = Url::parse(profile_server) else {
+            return Err("profile_server must be an absolute URL");
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("profile_server must use http or https");
         }
     }
     if config.simulation_distance > config.view_distance {
@@ -344,16 +576,99 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_config_root(name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("steelmc-config-{name}-{suffix}"))
+    }
 
     #[test]
     fn packaged_configs_parse() {
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        assert!(DEFAULT_CONFIG.starts_with(concat!(
+            "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+            "package-content/config.schema.json\n",
+            "# Documentation: https://steelmc.dev/configuration/server-configuration/\n\n",
+        )));
         assert!(!config.server.allow_flight);
         assert_eq!(config.server.chat_spam_threshold_seconds, 10);
         assert_eq!(config.server.command_spam_threshold_seconds, 10);
         validate(&config.server).expect("default config validates");
         let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
+        assert!(DEFAULT_WORLDS.starts_with(concat!(
+            "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+            "package-content/worlds.schema.json\n",
+            "# Documentation: https://steelmc.dev/configuration/world-configuration/\n\n",
+        )));
         assert!(!worlds.domains.is_empty());
+        let groups: PermissionGroupsConfig =
+            toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
+        PermissionGroups::from_config(groups).expect("default groups validate");
+        assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
+    }
+
+    #[tokio::test]
+    async fn file_permission_group_store_round_trips_typed_config() {
+        let root = temp_config_root("groups-store");
+        let path = root.join("groups.toml");
+        let store = FilePermissionGroupStore::new(path.clone());
+        let mut config = PermissionGroupsConfig::default();
+        config.groups.insert(
+            "builder".to_owned(),
+            PermissionGroupConfig {
+                allow: vec!["steel.build{domain=survival}".to_owned()],
+                metadata: vec![
+                    PermissionMetadataRuleConfig {
+                        key: "plugin:max_homes{domain=survival}".to_owned(),
+                        value: PermissionMetadataValue::Integer(5),
+                    },
+                    PermissionMetadataRuleConfig {
+                        key: "plugin:prefix".to_owned(),
+                        value: PermissionMetadataValue::String("[Builder]".to_owned()),
+                    },
+                    PermissionMetadataRuleConfig {
+                        key: "plugin:can_claim".to_owned(),
+                        value: PermissionMetadataValue::Bool(true),
+                    },
+                ],
+                ..PermissionGroupConfig::default()
+            },
+        );
+
+        PermissionGroupStore::save_groups(&store, config.clone())
+            .await
+            .expect("groups config should save");
+        let written = async_fs::read_to_string(&path)
+            .await
+            .expect("groups config should be written");
+        let parsed: PermissionGroupsConfig =
+            toml::from_str(&written).expect("written config should parse");
+
+        assert_eq!(
+            written.lines().next(),
+            Some(concat!(
+                "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+                "package-content/groups.schema.json"
+            ))
+        );
+        assert!(
+            written.contains("# Documentation: https://steelmc.dev/configuration/permissions/")
+        );
+        assert!(written.contains("{ key = \"plugin:max_homes{domain=survival}\", value = 5 }"));
+        assert!(written.contains("{ key = \"plugin:prefix\", value = \"[Builder]\" }"));
+        assert!(written.contains("{ key = \"plugin:can_claim\", value = true }"));
+        assert_eq!(parsed, config);
+        PermissionGroups::from_config(parsed).expect("written groups should validate");
+        async_fs::remove_dir_all(root)
+            .await
+            .expect("temporary config directory should be removable");
     }
 
     #[test]
@@ -396,6 +711,29 @@ mod tests {
     }
 
     #[test]
+    fn configured_profile_server_flows_to_runtime_config() {
+        let profile_server = "https://profiles.example.com/lookup/name";
+        let config_toml = DEFAULT_CONFIG.replace(
+            "online_mode = true",
+            &format!("online_mode = true\nprofile_server = \"{profile_server}\""),
+        );
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            config.server.profile_server.as_deref(),
+            Some(profile_server)
+        );
+        assert_eq!(
+            config
+                .server
+                .into_runtime_config()
+                .profile_server
+                .as_deref(),
+            Some(profile_server)
+        );
+    }
+
+    #[test]
     fn configured_thread_counts_parse_and_generation_flows_to_runtime_config() {
         let config_toml = DEFAULT_CONFIG
             .replace("main_runtime = 0", "main_runtime = 3")
@@ -421,6 +759,27 @@ mod tests {
             validate(&config.server),
             Err("View distance must in range 1..32")
         );
+    }
+
+    #[test]
+    fn validate_rejects_online_mode_without_encryption() {
+        let config_toml = DEFAULT_CONFIG.replace("encryption = true", "encryption = false");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("encryption must be true when online_mode is enabled")
+        );
+    }
+
+    #[test]
+    fn validate_allows_offline_mode_without_encryption() {
+        let config_toml = DEFAULT_CONFIG
+            .replace("online_mode = true", "online_mode = false")
+            .replace("encryption = true", "encryption = false");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("offline mode does not require encryption");
     }
 
     #[test]

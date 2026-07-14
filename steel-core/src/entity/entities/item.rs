@@ -13,6 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -108,6 +109,11 @@ pub struct ItemEntity {
 
     /// Item-specific mutable state.
     item_state: SyncMutex<ItemEntityState>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `ItemEntity`.
+unsafe impl DowncastType for ItemEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item");
 }
 
 impl ItemEntity {
@@ -224,6 +230,13 @@ impl ItemEntity {
     /// Sets the entity to never despawn.
     pub fn set_unlimited_lifetime(&self) {
         self.item_state.lock().age = INFINITE_LIFETIME;
+    }
+
+    /// Makes this a one-tick visual pickup item that cannot be collected.
+    pub fn make_fake_item(&self) {
+        let mut state = self.item_state.lock();
+        state.pickup_delay = INFINITE_PICKUP_DELAY;
+        state.age = LIFETIME - 1;
     }
 
     /// Gets the pickup delay in ticks.
@@ -666,7 +679,7 @@ impl Entity for ItemEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, _world: &World, _source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
         let new_health = {
             let mut state = self.item_state.lock();
@@ -792,6 +805,7 @@ mod tests {
     };
 
     use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
+    use crate::test_support::test_world;
     use crate::world::World;
 
     use super::ItemEntity;
@@ -850,6 +864,22 @@ mod tests {
     }
 
     #[test]
+    fn fake_item_is_never_pickable_and_expires_on_its_next_tick() {
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            ItemStack::new(&vanilla_items::ITEMS.stone),
+            Weak::<World>::new(),
+        );
+
+        item.make_fake_item();
+
+        assert_eq!(item.get_pickup_delay(), 32_767);
+        assert_eq!(item.get_age(), 5_999);
+    }
+
+    #[test]
     fn item_merge_capability_preserves_vanilla_stack_and_timing() {
         init_test_registry();
 
@@ -892,6 +922,7 @@ mod tests {
         );
 
         assert!(item.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             0.75
         ));

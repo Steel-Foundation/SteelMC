@@ -1340,6 +1340,8 @@ impl Debug for Identifier {
 impl Identifier {
     /// The vanilla namespace.
     pub const VANILLA_NAMESPACE: &'static str = "minecraft";
+    /// The Steel namespace.
+    pub const STEEL_NAMESPACE: &'static str = "steel";
 
     /// Creates a new `Identifier` with the given namespace and path.
     #[must_use]
@@ -1358,6 +1360,12 @@ impl Identifier {
             namespace: Cow::Borrowed(namespace),
             path: Cow::Borrowed(path),
         }
+    }
+
+    /// Creates a new `Identifier` with the Steel namespace.
+    #[must_use]
+    pub fn from_steel(path: impl Into<Cow<'static, str>>) -> Self {
+        Self::new(Self::STEEL_NAMESPACE, path)
     }
 
     /// Creates a new `Identifier` with the vanilla namespace.

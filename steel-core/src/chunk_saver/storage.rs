@@ -3743,7 +3743,7 @@ mod tests {
     fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
         init_test_registry();
 
-        let structure_id = Identifier::new_static("steel", "test_jigsaw_structure");
+        let structure_id = Identifier::from_steel("test_jigsaw_structure");
         let piece_type = Identifier::new_static("minecraft", "jigsaw");
         let template_id = Identifier::new_static("minecraft", "village/plains/houses/test_house");
         let processor_id = Identifier::new_static("minecraft", "street_plains");
@@ -3864,7 +3864,7 @@ mod tests {
     fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
         init_test_registry();
 
-        let structure_id = Identifier::new_static("steel", "test_payload_variants");
+        let structure_id = Identifier::from_steel("test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
         let igloo_template_id = Identifier::new_static("minecraft", "igloo/top");
         let ocean_ruin_template_id = Identifier::new_static("minecraft", "underwater_ruin/warm_1");

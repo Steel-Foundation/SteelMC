@@ -13,6 +13,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
 use steel_utils::BlockStateId;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
@@ -31,6 +32,11 @@ pub struct BlockDisplayEntity {
     entity_type: EntityTypeRef,
     /// Synced entity data for network serialization.
     entity_data: SyncMutex<BlockDisplayEntityData>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `BlockDisplayEntity`.
+unsafe impl DowncastType for BlockDisplayEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/block_display");
 }
 
 impl BlockDisplayEntity {

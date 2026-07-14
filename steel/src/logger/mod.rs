@@ -138,16 +138,22 @@ impl CommandLogger {
         let time_str = self.format_time();
         let module_path_str = self.format_module_path(&data, true);
         let extra_str = self.format_extra(&data, true);
+        let rendered = normalize_terminal_newlines(&format!(
+            "{time_str}{lvl} {module_path_str}{}{extra_str}",
+            data.message
+        ));
+        let consumed_rows = rendered_terminal_rows(&rendered, terminal_width());
 
         if let Err(err) = writeln!(
             input.out,
-            "{}{time_str}{lvl} {module_path_str}{}{extra_str}\r",
+            "{}{rendered}\r",
             Clear(ClearType::FromCursorDown),
-            data.message,
         ) {
             log::error!("{err}");
             return (lvl, data);
         }
+
+        input.completion.consume_reserved_rows(consumed_rows);
 
         let pos = input.out.pos;
         if let Err(err) = input.out.cursor_to_relative(pos) {
@@ -232,6 +238,25 @@ impl CommandLogger {
     }
 }
 
+fn rendered_terminal_rows(rendered: &str, terminal_width: usize) -> usize {
+    let terminal_width = terminal_width.max(1);
+    let rendered = rendered.replace('\t', "        ");
+    strip_ansi_escapes::strip_str(&rendered)
+        .split('\n')
+        .map(|line| {
+            let columns = line
+                .bytes()
+                .map(|byte| usize::from(byte != b'\r'))
+                .sum::<usize>();
+            columns.div_ceil(terminal_width).max(1)
+        })
+        .sum()
+}
+
+fn normalize_terminal_newlines(rendered: &str) -> String {
+    rendered.replace("\r\n", "\n").replace('\n', "\r\n")
+}
+
 impl SteelLogger for CommandLogger {
     fn log(&self, lvl: Level, data: LogData) {
         self.sender.send((lvl, data)).ok();
@@ -256,5 +281,37 @@ impl<S: Subscriber> Layer<S> for LoggerLayer {
         let mut data = LogData::new();
         event.record(&mut data);
         self.0.log(Level::Tracing(*event.metadata().level()), data);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_terminal_newlines, rendered_terminal_rows};
+
+    #[test]
+    fn rendered_rows_include_wrapping_and_trailing_newlines() {
+        assert_eq!(rendered_terminal_rows("short", 10), 1);
+        assert_eq!(rendered_terminal_rows("12345678901", 10), 2);
+        assert_eq!(rendered_terminal_rows("line\n", 10), 2);
+        assert_eq!(rendered_terminal_rows("first\nsecond", 10), 2);
+    }
+
+    #[test]
+    fn rendered_rows_ignore_ansi_and_count_tabs_conservatively() {
+        assert_eq!(rendered_terminal_rows("\u{1b}[31mshort\u{1b}[0m", 10), 1);
+        assert_eq!(rendered_terminal_rows("\t", 4), 2);
+    }
+
+    #[test]
+    fn terminal_newlines_reset_the_output_column() {
+        assert_eq!(
+            normalize_terminal_newlines("first\nsecond"),
+            "first\r\nsecond"
+        );
+        assert_eq!(
+            normalize_terminal_newlines("first\r\nsecond"),
+            "first\r\nsecond"
+        );
+        assert_eq!(rendered_terminal_rows("12345\r\n123456", 10), 2);
     }
 }

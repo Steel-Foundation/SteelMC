@@ -14,6 +14,7 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
@@ -132,7 +133,13 @@ impl ItemAttributeModifierDisplay {
 
 impl WriteTo for ItemAttributeModifiers {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        VarInt(self.modifiers.len() as i32).write(writer)?;
+        let count = i32::try_from(self.modifiers.len()).map_err(|_| {
+            std::io::Error::other(format!(
+                "Attribute modifier list too large: {} entries",
+                self.modifiers.len()
+            ))
+        })?;
+        VarInt(count).write(writer)?;
         for entry in &self.modifiers {
             entry.write(writer)?;
         }
@@ -143,13 +150,10 @@ impl WriteTo for ItemAttributeModifiers {
 impl ReadFrom for ItemAttributeModifiers {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let count = VarInt::read(data)?.0;
-        if !(0..=1024).contains(&count) {
-            return Err(std::io::Error::other(format!(
-                "Attribute modifier count out of range: {count}"
-            )));
-        }
-
-        let mut modifiers = Vec::with_capacity(count as usize);
+        let count = usize::try_from(count).map_err(|_| {
+            std::io::Error::other(format!("Negative attribute modifier count: {count}"))
+        })?;
+        let mut modifiers = Vec::with_capacity(count.min(65_536));
         for _ in 0..count {
             modifiers.push(ItemAttributeModifierEntry::read(data)?);
         }
@@ -162,7 +166,12 @@ impl WriteTo for ItemAttributeModifierEntry {
         let attribute_id = self.attribute.try_id().ok_or_else(|| {
             std::io::Error::other(format!("Unknown attribute: {}", self.attribute.key))
         })?;
-        VarInt(attribute_id as i32).write(writer)?;
+        let attribute_id = i32::try_from(attribute_id).map_err(|_| {
+            std::io::Error::other(format!(
+                "Attribute id out of protocol range: {attribute_id}"
+            ))
+        })?;
+        VarInt(attribute_id).write(writer)?;
         self.id.write(writer)?;
         self.amount.write(writer)?;
         self.operation.write(writer)?;
@@ -261,21 +270,19 @@ impl FromNbtTag for ItemAttributeModifiers {
                 .get("id")
                 .and_then(|tag| tag.string())
                 .and_then(|value| value.to_str().parse::<Identifier>().ok())?;
-            let amount = compound.get("amount").and_then(|tag| tag.double())?;
+            let amount = compound.get("amount")?.codec_f64()?;
             let operation = compound
                 .get("operation")
                 .and_then(|tag| tag.string())
                 .and_then(|value| AttributeModifierOperation::by_name(value.to_str().as_ref()))?;
-            let slot = compound
-                .get("slot")
-                .and_then(|tag| tag.string())
-                .and_then(|value| EquipmentSlotGroup::by_name(value.to_str().as_ref()))
-                .unwrap_or(EquipmentSlotGroup::Any);
-            let display = compound
-                .get("display")
-                .and_then(|tag| tag.compound())
-                .and_then(ItemAttributeModifierDisplay::from_nbt_compound)
-                .unwrap_or(ItemAttributeModifierDisplay::Default);
+            let slot = match compound.get("slot") {
+                Some(tag) => EquipmentSlotGroup::by_name(tag.string()?.to_str().as_ref())?,
+                None => EquipmentSlotGroup::Any,
+            };
+            let display = match compound.get("display") {
+                Some(tag) => ItemAttributeModifierDisplay::from_nbt_compound(tag.compound()?)?,
+                None => ItemAttributeModifierDisplay::Default,
+            };
 
             modifiers.push(ItemAttributeModifierEntry {
                 attribute,
@@ -295,7 +302,7 @@ impl HashComponent for ItemAttributeModifiers {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
         hasher.start_list();
         for entry in &self.modifiers {
-            entry.hash_component(hasher);
+            hasher.put_component_hash(entry);
         }
         hasher.end_list();
     }
@@ -355,6 +362,9 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
 mod tests {
     use std::io::Cursor;
 
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
     use steel_utils::Identifier;
     use steel_utils::codec::VarInt;
     use steel_utils::serial::{ReadFrom, WriteTo};
@@ -366,7 +376,24 @@ mod tests {
         RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items::ITEMS,
     };
 
-    use super::{ItemAttributeModifierDisplay, ItemAttributeModifierEntry};
+    use super::{ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers};
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    fn modifier_nbt() -> NbtCompound {
+        let mut modifier = NbtCompound::new();
+        modifier.insert("type", "minecraft:armor");
+        modifier.insert("id", "minecraft:test");
+        modifier.insert("amount", 1_i32);
+        modifier.insert("operation", "add_value");
+        modifier
+    }
 
     #[test]
     fn generated_diamond_sword_has_main_hand_attack_modifiers() {
@@ -456,5 +483,26 @@ mod tests {
             .expect("unknown display id should fall back to default");
 
         assert_eq!(display, ItemAttributeModifierDisplay::Default);
+    }
+
+    #[test]
+    fn attribute_modifier_nbt_coerces_amount_and_rejects_invalid_optional_fields() {
+        init_test_registry();
+        let parsed = with_borrowed_tag(
+            NbtTag::List(NbtList::Compound(vec![modifier_nbt()])),
+            ItemAttributeModifiers::from_nbt_tag,
+        )
+        .expect("integer amount should decode through Codec.DOUBLE");
+        assert_eq!(parsed.modifiers[0].amount, 1.0);
+
+        let mut malformed = modifier_nbt();
+        malformed.insert("slot", 1);
+        assert!(
+            with_borrowed_tag(
+                NbtTag::List(NbtList::Compound(vec![malformed])),
+                ItemAttributeModifiers::from_nbt_tag,
+            )
+            .is_none()
+        );
     }
 }

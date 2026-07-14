@@ -6,7 +6,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_utils::{UuidExt, locks::SyncMutex};
+use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, locks::SyncMutex};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseLoad};
@@ -20,6 +20,12 @@ pub struct RawEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     data: SyncMutex<NbtCompound>,
+}
+
+// SAFETY: This key identifies the Steel fallback implementation, independently
+// of the Minecraft entity registry entry stored inside it.
+unsafe impl DowncastType for RawEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/raw");
 }
 
 impl RawEntity {

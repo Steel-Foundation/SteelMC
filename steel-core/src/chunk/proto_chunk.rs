@@ -94,8 +94,8 @@ pub struct ProtoChunk {
     // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
     // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
     // and carvers share one instance; we currently rebuild per stage. Blocked
-    // by the type-erasure question — `NoiseChunk<N: DimensionNoises>` is
-    // generic, `ProtoChunk` is not, and `Any` is forbidden by CLAUDE.md.
+    // by the storage boundary: `NoiseChunk<N: DimensionNoises>` is generic,
+    // while `ProtoChunk` is not.
     // Options to evaluate: (1) object-safe trait returning carver-needed
     // values, (2) generic `ProtoChunk<N>` (big ripple), (3) stay as-is if
     // rebuild cost stays negligible.

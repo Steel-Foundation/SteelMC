@@ -152,7 +152,7 @@ impl ComponentData {
 
         match self {
             // Primitives
-            Self::Empty => hasher.put_empty(),
+            Self::Empty => ().hash_component(&mut hasher),
             Self::Bool(v) => v.hash_component(&mut hasher),
             Self::I32(v) => v.hash_component(&mut hasher),
             Self::Float(v) => v.hash_component(&mut hasher),

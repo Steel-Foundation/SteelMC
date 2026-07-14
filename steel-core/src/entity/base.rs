@@ -1522,7 +1522,7 @@ impl EntityBase {
     }
 
     /// Updates the world reference used by this entity.
-    pub fn set_world(&self, world: Weak<World>) {
+    pub(crate) fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
     }
 
@@ -2393,6 +2393,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
     impl Entity for FallDamageTestEntity {
         fn base(&self) -> &EntityBase {

@@ -25,6 +25,7 @@ use steel_registry::vanilla_game_rules::ENDER_PEARLS_VANISH_ON_DEATH;
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
@@ -53,6 +54,11 @@ pub struct EnderPearlEntity {
     projectile_base: ProjectileBase,
     /// Countdown until the chunk-loading ticket is refreshed (vanilla `ticketTimer`).
     ticket_timer: SyncMutex<i32>,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `EnderPearlEntity`.
+unsafe impl DowncastType for EnderPearlEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/ender_pearl");
 }
 
 impl EnderPearlEntity {
@@ -191,7 +197,7 @@ impl EnderPearlEntity {
         new_player.reset_current_impulse_context();
 
         let damage = DamageSource::environment(&vanilla_damage_types::ENDER_PEARL);
-        new_player.hurt(&damage, TELEPORT_DAMAGE);
+        new_player.hurt(world, &damage, TELEPORT_DAMAGE);
 
         world.play_sound_at(
             &sound_events::ENTITY_PLAYER_TELEPORT,
@@ -267,7 +273,7 @@ impl Entity for EnderPearlEntity {
         Some(&self.entity_data)
     }
 
-    fn hurt(&self, _source: &DamageSource, _amount: f32) -> bool {
+    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
         // Vanilla `Projectile.hurtServer` marks hurt but never takes damage.
         false
     }
@@ -296,7 +302,9 @@ impl Projectile for EnderPearlEntity {
         if let Some(owner) = self.get_owner() {
             damage = damage.with_causing_entity(owner.id());
         }
-        entity.hurt(&damage, 0.0);
+        if let Some(world) = entity.level() {
+            entity.hurt(&world, &damage, 0.0);
+        }
     }
 
     fn on_hit(&self, hit: &ProjectileHit) {

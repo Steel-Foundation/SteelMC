@@ -373,6 +373,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(TestAgeableMob);
+
     impl Entity for TestAgeableMob {
         fn base(&self) -> &EntityBase {
             &self.base
