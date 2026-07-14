@@ -25,10 +25,10 @@ use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 use glam::{DVec3, Vec3};
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CLevelParticles,
-    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
-    CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
-    CUpdateAttributes, GameEventType, SoundSource,
+    CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
+    CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
+    CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
