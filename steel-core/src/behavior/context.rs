@@ -131,9 +131,9 @@ impl BlockPlaceContext<'_> {
             Direction::Down
         }
     }
-    /// Equivalent to vanilla .getClickedPos()
+    /// Vanilla equivalent: `BlockPlaceContext.getClickedPos()`
     #[must_use]
-    pub fn get_clicked_pos(&self) -> BlockPos {
+    pub const fn get_clicked_pos(&self) -> BlockPos {
         self.place_pos
     }
 

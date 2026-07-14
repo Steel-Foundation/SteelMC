@@ -1,18 +1,20 @@
+use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
-use steel_registry::vanilla_blocks;
+use steel_registry::game_rules::GameRuleValue;
+use steel_registry::{vanilla_blocks, vanilla_game_rules};
 use steel_utils::axis::Axis;
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, ScheduledTickAccess};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, can_attach_to_multiface};
 
 /// Vanilla `VineBlock` survival and neighbor shape updates.
-// TODO: Implement random tick spread.
 #[block_behavior]
 pub struct VineBlock {
     block: BlockRef,
@@ -53,7 +55,57 @@ impl VineBlock {
         let above = world.get_block_state(pos.above());
         above.get_block() == self.block && above.get_value(property)
     }
+    fn is_acceptable_neighbour(
+        level: &dyn LevelReader,
+        neighbour_pos: BlockPos,
+        direction_to_neighbour: Direction,
+    ) -> bool {
+        can_attach_to_multiface(level, neighbour_pos, direction_to_neighbour)
+    }
+    fn can_spread(&self, world: &Arc<World>, pos: BlockPos) -> bool {
+        let mut max = 5;
 
+        for x in (pos.x() - 4)..=(pos.x() + 4) {
+            for y in (pos.y() - 1)..=(pos.y() + 1) {
+                for z in (pos.z() - 4)..=(pos.z() + 4) {
+                    let block_pos = BlockPos::new(x, y, z);
+
+                    if world.get_block_state(block_pos).get_block() == self.block {
+                        max -= 1;
+
+                        if max <= 0 {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn copy_random_faces(from: BlockStateId, to: BlockStateId) -> BlockStateId {
+        let mut result = to;
+        for direction in Direction::HORIZONTAL {
+            if rand::random_bool(0.5) {
+                let property_for_face = get_property_for_face(direction);
+                if from.get_value(property_for_face) {
+                    result = result.set_value(property_for_face, true);
+                }
+            }
+        }
+
+        result
+    }
+    fn has_horizontal_connection(state: BlockStateId) -> bool {
+        for dir in Direction::HORIZONTAL {
+            let property = get_property_for_face(dir);
+            if state.get_value(property) {
+                return true;
+            }
+        }
+        false
+    }
     fn updated_state(
         &self,
         mut state: BlockStateId,
@@ -64,7 +116,7 @@ impl VineBlock {
         if state.get_value(&BlockStateProperties::UP) {
             state = state.set_value(
                 &BlockStateProperties::UP,
-                can_attach_to_multiface(world, above_pos, Direction::Down),
+                Self::is_acceptable_neighbour(world, above_pos, Direction::Down),
             );
         }
 
@@ -135,7 +187,171 @@ impl BlockBehavior for VineBlock {
             state
         }
     }
+    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
+        true
+    }
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if world.get_game_rule(&vanilla_game_rules::SPREAD_VINES) != GameRuleValue::Bool(true) {
+            return;
+        }
 
+        if rand::random_range(0..4) != 0 {
+            return;
+        }
+
+        let test_direction = Direction::random();
+        let above_pos = pos.above();
+        if test_direction.axis().is_horizontal()
+            && !state.get_value(get_property_for_face(test_direction))
+        {
+            if self.can_spread(world, pos) {
+                let test_pos = pos.relative(test_direction);
+                let edge_state = world.get_block_state(test_pos);
+
+                if edge_state.is_air() {
+                    let cw_direction = test_direction.rotate_y_clockwise();
+                    let ccw_direction = test_direction.rotate_y_counter_clockwise();
+
+                    let cw_has_connecting_face =
+                        state.get_value(get_property_for_face(cw_direction));
+                    let ccw_has_connecting_face =
+                        state.get_value(get_property_for_face(ccw_direction));
+
+                    let cw_test_pos = test_pos.relative(cw_direction);
+                    let ccw_test_pos = test_pos.relative(ccw_direction);
+
+                    if cw_has_connecting_face
+                        && Self::is_acceptable_neighbour(world, cw_test_pos, cw_direction)
+                    {
+                        world.set_block(
+                            test_pos,
+                            self.block
+                                .default_state()
+                                .set_value(get_property_for_face(cw_direction), true),
+                            UpdateFlags::UPDATE_CLIENTS,
+                        );
+                    } else if ccw_has_connecting_face
+                        && Self::is_acceptable_neighbour(world, ccw_test_pos, ccw_direction)
+                    {
+                        world.set_block(
+                            test_pos,
+                            self.block
+                                .default_state()
+                                .set_value(get_property_for_face(ccw_direction), true),
+                            UpdateFlags::UPDATE_CLIENTS,
+                        );
+                    } else {
+                        let opposite = test_direction.opposite();
+
+                        if cw_has_connecting_face
+                            && world.get_block_state(cw_test_pos).is_air()
+                            && Self::is_acceptable_neighbour(
+                                world,
+                                pos.relative(cw_direction),
+                                opposite,
+                            )
+                        {
+                            world.set_block(
+                                cw_test_pos,
+                                self.block
+                                    .default_state()
+                                    .set_value(get_property_for_face(opposite), true),
+                                UpdateFlags::UPDATE_CLIENTS,
+                            );
+                        } else if ccw_has_connecting_face
+                            && world.get_block_state(ccw_test_pos).is_air()
+                            && Self::is_acceptable_neighbour(
+                                world,
+                                pos.relative(ccw_direction),
+                                opposite,
+                            )
+                        {
+                            world.set_block(
+                                ccw_test_pos,
+                                self.block
+                                    .default_state()
+                                    .set_value(get_property_for_face(opposite), true),
+                                UpdateFlags::UPDATE_CLIENTS,
+                            );
+                        } else if rand::random_range(0.0..1.0) < 0.05
+                            && Self::is_acceptable_neighbour(world, test_pos.above(), Direction::Up)
+                        {
+                            world.set_block(
+                                test_pos,
+                                self.block
+                                    .default_state()
+                                    .set_value(get_property_for_face(Direction::Up), true),
+                                UpdateFlags::UPDATE_CLIENTS,
+                            );
+                        }
+                    }
+                } else if Self::is_acceptable_neighbour(world, test_pos, test_direction) {
+                    world.set_block(
+                        pos,
+                        state.set_value(get_property_for_face(test_direction), true),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                }
+            }
+        } else {
+            if test_direction == Direction::Up && pos.y() < world.max_build_height() {
+                if self.can_support_at_face(world, pos, test_direction) {
+                    world.set_block(
+                        pos,
+                        state.set_value(get_property_for_face(Direction::Up), true),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                    return;
+                }
+
+                if world.get_block_state(above_pos).is_air() {
+                    if !self.can_spread(world, pos) {
+                        return;
+                    }
+
+                    let mut above_state = state;
+
+                    for direction in Direction::HORIZONTAL {
+                        if rand::random_bool(0.5)
+                            || !Self::is_acceptable_neighbour(
+                                world,
+                                above_pos.relative(direction),
+                                direction,
+                            )
+                        {
+                            above_state =
+                                above_state.set_value(get_property_for_face(direction), false);
+                        }
+                    }
+
+                    if Self::has_horizontal_connection(above_state) {
+                        world.set_block(above_pos, above_state, UpdateFlags::UPDATE_CLIENTS);
+                    }
+
+                    return;
+                }
+            }
+
+            if pos.y() > world.min_y() {
+                let below_pos = pos.below();
+                let below_state = world.get_block_state(below_pos);
+
+                if below_state.is_air() || below_state.get_block() == self.block {
+                    let before = if below_state.is_air() {
+                        self.block.default_state()
+                    } else {
+                        below_state
+                    };
+
+                    let after = Self::copy_random_faces(state, before);
+
+                    if before != after && Self::has_horizontal_connection(after) {
+                        world.set_block(below_pos, after, UpdateFlags::UPDATE_CLIENTS);
+                    }
+                }
+            }
+        }
+    }
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let clicked_state = context.world.get_block_state(context.get_clicked_pos());
         let clicked_vine = clicked_state.get_block() == self.block;
