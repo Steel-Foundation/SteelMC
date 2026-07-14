@@ -330,22 +330,3 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
         || attached_state.get_block() == &vanilla_blocks::KELP_PLANT
         || attached_state.is_face_sturdy_at(attached_pos, Direction::Up)
 }
-
-/// Vanilla `KelpBlock.canGrowInto`.
-pub(super) fn kelp_can_grow_into(state: BlockStateId) -> bool {
-    state.get_block() == &vanilla_blocks::WATER
-}
-
-/// Vanilla `GrowingPlantBodyBlock.getHeadPos` for upward-growing kelp.
-pub(super) fn top_connected_kelp_head(world: &dyn LevelReader, pos: BlockPos) -> Option<BlockPos> {
-    let mut current_pos = pos;
-
-    loop {
-        current_pos = current_pos.above();
-        let block = world.get_block_state(current_pos).get_block();
-        if block == &vanilla_blocks::KELP_PLANT {
-            continue;
-        }
-        return (block == &vanilla_blocks::KELP).then_some(current_pos);
-    }
-}
