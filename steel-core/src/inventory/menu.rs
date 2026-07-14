@@ -167,8 +167,14 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
                 return false;
             };
 
-            // Compute the hash of the component value using proper HashOps format
-            let actual_hash = value.compute_hash();
+            let Some(component_type) = REGISTRY.data_components.by_id(id as usize) else {
+                log::info!("HashedStack mismatch: component {key} has no registry entry");
+                return false;
+            };
+            let Ok(actual_hash) = component_type.compute_hash(value) else {
+                log::info!("HashedStack mismatch: component {key} is not persistently hashable");
+                return false;
+            };
 
             if actual_hash != expected_hash {
                 log::info!(

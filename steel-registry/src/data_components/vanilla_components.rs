@@ -15,9 +15,9 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 pub use super::components::{
     AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, ItemLore, ItemLoreTooLong, PiercingWeapon, Rarity, SwingAnimation,
-    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
-    Weapon,
+    ItemEnchantments, ItemLore, ItemLoreTooLong, MapPostProcessing, PiercingWeapon, Rarity,
+    SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay,
+    UseCooldown, UseEffects, Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 
@@ -34,7 +34,7 @@ pub const ITEM_NAME: DataComponentType<TextComponent> =
     DataComponentType::new(Identifier::vanilla_static("item_name"));
 
 pub const DAMAGE: DataComponentType<i32> =
-    DataComponentType::new(Identifier::vanilla_static("damage"));
+    DataComponentType::new_ignoring_swap_animation(Identifier::vanilla_static("damage"));
 
 pub const REPAIR_COST: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("repair_cost"));
@@ -160,7 +160,7 @@ pub const KINETIC_WEAPON: DataComponentType<UnimplementedComponent> =
 pub const SWING_ANIMATION: DataComponentType<SwingAnimation> =
     DataComponentType::new(Identifier::vanilla_static("swing_animation"));
 
-pub const ADDITIONAL_TRADE_COST: DataComponentType<UnimplementedComponent> =
+pub const ADDITIONAL_TRADE_COST: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("additional_trade_cost"));
 
 pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
@@ -181,7 +181,7 @@ pub const MAP_ID: DataComponentType<UnimplementedComponent> =
 pub const MAP_DECORATIONS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("map_decorations"));
 
-pub const MAP_POST_PROCESSING: DataComponentType<UnimplementedComponent> =
+pub const MAP_POST_PROCESSING: DataComponentType<MapPostProcessing> =
     DataComponentType::new(Identifier::vanilla_static("map_post_processing"));
 
 pub const CHARGED_PROJECTILES: DataComponentType<UnimplementedComponent> =
@@ -602,7 +602,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 40: swing_animation
     registry.register(SWING_ANIMATION);
     // 41: additional_trade_cost
-    registry.register_unimplemented(ADDITIONAL_TRADE_COST, false);
+    registry.register_transient_with_codecs(ADDITIONAL_TRADE_COST, varint_reader, varint_writer);
     // 42: stored_enchantments
     registry.register(STORED_ENCHANTMENTS);
     // 43: dye
@@ -616,7 +616,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 47: map_decorations
     registry.register_unimplemented(MAP_DECORATIONS, true);
     // 48: map_post_processing
-    registry.register_unimplemented(MAP_POST_PROCESSING, false);
+    registry.register_transient(MAP_POST_PROCESSING);
     // 49: charged_projectiles
     registry.register_unimplemented(CHARGED_PROJECTILES, true);
     // 50: bundle_contents
@@ -753,19 +753,46 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
 mod tests {
     use super::*;
     use crate::RegistryExt;
+    use serde::Deserialize;
     use simdnbt::owned::{NbtCompound, NbtTag};
 
+    #[derive(Deserialize)]
+    struct ExtractedComponentCatalog {
+        components: Vec<ExtractedComponent>,
+    }
+
+    #[derive(Deserialize)]
+    struct ExtractedComponent {
+        id: usize,
+        key: String,
+        persistent: bool,
+        ignore_swap_animation: bool,
+    }
+
     #[test]
-    fn sulfur_cube_content_keeps_vanilla_26_2_component_order() {
+    fn registry_matches_extracted_vanilla_catalog() {
+        let catalog: ExtractedComponentCatalog =
+            serde_json::from_str(include_str!("../../build_assets/data_components.json"))
+                .expect("extracted component catalog should be valid");
         let mut registry = DataComponentRegistry::new();
         register_vanilla_data_components(&mut registry);
 
-        assert_eq!(registry.get_key_by_id(77), Some(&BEES.key));
-        assert_eq!(registry.get_key_by_id(78), Some(&SULFUR_CUBE_CONTENT.key));
-        assert_eq!(registry.get_key_by_id(79), Some(&LOCK.key));
-        assert_eq!(registry.get_key_by_id(80), Some(&CONTAINER_LOOT.key));
-        assert_eq!(registry.get_key_by_id(81), Some(&BREAK_SOUND.key));
-        assert_eq!(registry.get_key_by_id(82), Some(&VILLAGER_VARIANT.key));
+        assert_eq!(catalog.components.len(), 111);
+        assert_eq!(registry.len(), catalog.components.len());
+        for (expected_id, component) in catalog.components.into_iter().enumerate() {
+            assert_eq!(component.id, expected_id, "{}", component.key);
+            let entry = registry
+                .by_id(component.id)
+                .unwrap_or_else(|| panic!("missing component registry ID {}", component.id));
+            assert_eq!(entry.key.to_string(), component.key);
+            assert_eq!(entry.is_persistent(), component.persistent, "{}", entry.key);
+            assert_eq!(
+                entry.ignore_swap_animation(),
+                component.ignore_swap_animation,
+                "{}",
+                entry.key
+            );
+        }
     }
 
     #[test]
@@ -773,21 +800,60 @@ mod tests {
         let mut registry = DataComponentRegistry::new();
         register_vanilla_data_components(&mut registry);
 
-        for key in [
-            &CREATIVE_SLOT_LOCK.key,
-            &ADDITIONAL_TRADE_COST.key,
-            &MAP_POST_PROCESSING.key,
+        for (key, value) in [
+            (&CREATIVE_SLOT_LOCK.key, ComponentData::new(())),
+            (&ADDITIONAL_TRADE_COST.key, ComponentData::new(3_i32)),
+            (
+                &MAP_POST_PROCESSING.key,
+                ComponentData::new(MapPostProcessing::Lock),
+            ),
         ] {
-            assert!(
-                registry
-                    .by_key(key)
-                    .is_some_and(|entry| !entry.is_persistent())
-            );
+            let entry = registry
+                .by_key(key)
+                .unwrap_or_else(|| panic!("missing transient component {key}"));
+            assert!(entry.is_implemented(), "{key}");
+            assert!(!entry.is_persistent(), "{key}");
+            assert!(entry.write_nbt(&value).is_err(), "{key}");
+            assert!(entry.compute_hash(&value).is_err(), "{key}");
         }
         assert!(matches!(
             registry.by_key(&MAX_STACK_SIZE.key),
             Some(entry) if entry.is_persistent()
         ));
+    }
+
+    #[test]
+    fn transient_component_network_codecs_match_vanilla() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+
+        let additional_trade_cost = registry
+            .by_key(&ADDITIONAL_TRADE_COST.key)
+            .expect("additional_trade_cost should be registered");
+        let mut encoded = Vec::new();
+        additional_trade_cost
+            .write_network(&ComponentData::new(-7_i32), &mut encoded)
+            .expect("additional_trade_cost should encode");
+        assert_eq!(
+            additional_trade_cost
+                .read_network(&mut std::io::Cursor::new(encoded.as_slice()))
+                .expect("additional_trade_cost should decode"),
+            ComponentData::new(-7_i32)
+        );
+
+        let map_post_processing = registry
+            .by_key(&MAP_POST_PROCESSING.key)
+            .expect("map_post_processing should be registered");
+        let mut encoded = Vec::new();
+        map_post_processing
+            .write_network(&ComponentData::new(MapPostProcessing::Scale), &mut encoded)
+            .expect("map_post_processing should encode");
+        assert_eq!(
+            map_post_processing
+                .read_network(&mut std::io::Cursor::new(encoded.as_slice()))
+                .expect("map_post_processing should decode"),
+            ComponentData::new(MapPostProcessing::Scale)
+        );
     }
 
     #[test]

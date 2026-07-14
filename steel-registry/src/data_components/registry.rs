@@ -21,6 +21,7 @@ use std::{
 use steel_utils::{
     DowncastType, DowncastTypeKey, Identifier,
     codec::VarInt,
+    hash::HashComponent,
     serial::{ReadFrom, WriteTo},
 };
 
@@ -51,6 +52,7 @@ use crate::{sound_event::SoundEventHolder, sound_events};
 /// ```
 pub struct DataComponentType<T> {
     pub key: Identifier,
+    ignore_swap_animation: bool,
     _phantom: PhantomData<T>,
 }
 
@@ -58,6 +60,7 @@ impl<T> Clone for DataComponentType<T> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
+            ignore_swap_animation: self.ignore_swap_animation,
             _phantom: PhantomData,
         }
     }
@@ -68,8 +71,25 @@ impl<T> DataComponentType<T> {
     pub const fn new(key: Identifier) -> Self {
         Self {
             key,
+            ignore_swap_animation: false,
             _phantom: PhantomData,
         }
+    }
+
+    /// Creates a component type whose changes do not restart the held-item swap animation.
+    #[must_use]
+    pub const fn new_ignoring_swap_animation(key: Identifier) -> Self {
+        Self {
+            key,
+            ignore_swap_animation: true,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Returns whether this component is ignored when comparing held items for swap animation.
+    #[must_use]
+    pub const fn ignore_swap_animation(&self) -> bool {
+        self.ignore_swap_animation
     }
 }
 
@@ -85,6 +105,63 @@ pub type NbtReader = fn(BorrowedNbtTag) -> Option<ComponentData>;
 /// Writer function for serializing a component to NBT format.
 pub type NbtWriter = fn(&ComponentData) -> OwnedNbtTag;
 
+/// Function for hashing a component through its persistent codec shape.
+type ComponentHash = fn(&ComponentData) -> Result<i32>;
+
+fn hash_component<T: DowncastType + HashComponent>(data: &ComponentData) -> Result<i32> {
+    let Some(value) = data.downcast_ref::<T>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    Ok(value.compute_hash())
+}
+
+fn read_typed_network<T: Component + ReadFrom>(
+    cursor: &mut Cursor<&[u8]>,
+) -> Result<ComponentData> {
+    Ok(ComponentData::new(T::read(cursor)?))
+}
+
+fn write_typed_network<T: DowncastType + WriteTo>(
+    data: &ComponentData,
+    writer: &mut Vec<u8>,
+) -> Result<()> {
+    let Some(value) = data.downcast_ref::<T>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn read_typed_nbt<T: Component + FromNbtTag>(tag: BorrowedNbtTag) -> Option<ComponentData> {
+    T::from_nbt_tag(tag).map(ComponentData::new)
+}
+
+fn write_typed_nbt<T: DowncastType + ToNbtTag + Clone>(data: &ComponentData) -> OwnedNbtTag {
+    let Some(value) = data.downcast_ref::<T>() else {
+        panic!("validated component type key failed to downcast");
+    };
+    value.clone().to_nbt_tag()
+}
+
+struct NetworkCodecs {
+    reader: NetworkReader,
+    writer: NetworkWriter,
+}
+
+struct PersistentCodecs {
+    reader: NbtReader,
+    writer: NbtWriter,
+    hash: ComponentHash,
+}
+
+enum ComponentCodecs {
+    Unsupported,
+    Implemented {
+        expected_type_key: DowncastTypeKey,
+        network: NetworkCodecs,
+        persistent: Option<PersistentCodecs>,
+    },
+}
+
 /// Metadata for a registered component type.
 ///
 /// Contains the component's key and all serialization functions needed
@@ -92,50 +169,47 @@ pub type NbtWriter = fn(&ComponentData) -> OwnedNbtTag;
 pub struct ComponentEntry {
     /// The component's identifier (e.g., "minecraft:damage")
     pub key: Identifier,
-    /// Concrete Rust type accepted by this component entry.
-    expected_type_key: Option<DowncastTypeKey>,
-    /// Network protocol reader
-    network_reader: Option<NetworkReader>,
-    /// Network protocol writer
-    network_writer: Option<NetworkWriter>,
-    /// NBT storage reader
-    nbt_reader: Option<NbtReader>,
-    /// NBT storage writer
-    nbt_writer: Option<NbtWriter>,
+    codecs: ComponentCodecs,
     persistent: bool,
+    ignore_swap_animation: bool,
 }
 
 impl ComponentEntry {
     #[must_use]
-    fn new(
+    fn implemented(
         key: Identifier,
         expected_type_key: DowncastTypeKey,
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
-        nbt_reader: NbtReader,
-        nbt_writer: NbtWriter,
-        persistent: bool,
+        persistent_codecs: Option<(NbtReader, NbtWriter, ComponentHash)>,
+        ignore_swap_animation: bool,
     ) -> Self {
+        let persistent = persistent_codecs.is_some();
         Self {
             key,
-            expected_type_key: Some(expected_type_key),
-            network_reader: Some(network_reader),
-            network_writer: Some(network_writer),
-            nbt_reader: persistent.then_some(nbt_reader),
-            nbt_writer: persistent.then_some(nbt_writer),
+            codecs: ComponentCodecs::Implemented {
+                expected_type_key,
+                network: NetworkCodecs {
+                    reader: network_reader,
+                    writer: network_writer,
+                },
+                persistent: persistent_codecs.map(|(reader, writer, hash)| PersistentCodecs {
+                    reader,
+                    writer,
+                    hash,
+                }),
+            },
             persistent,
+            ignore_swap_animation,
         }
     }
 
-    fn unimplemented(key: Identifier, persistent: bool) -> Self {
+    const fn unimplemented(key: Identifier, persistent: bool, ignore_swap_animation: bool) -> Self {
         Self {
             key,
-            expected_type_key: None,
-            network_reader: None,
-            network_writer: None,
-            nbt_reader: None,
-            nbt_writer: None,
+            codecs: ComponentCodecs::Unsupported,
             persistent,
+            ignore_swap_animation,
         }
     }
 
@@ -145,26 +219,36 @@ impl ComponentEntry {
     /// This prevents plugins from setting wrong types on vanilla components.
     #[must_use]
     pub fn validates(&self, data: &ComponentData) -> bool {
-        self.expected_type_key
-            .is_some_and(|key| data.type_key() == key)
+        matches!(
+            &self.codecs,
+            ComponentCodecs::Implemented {
+                expected_type_key,
+                ..
+            } if data.type_key() == *expected_type_key
+        )
     }
 
     /// Returns whether Steel has a concrete value type and codecs for this entry.
     #[must_use]
     pub const fn is_implemented(&self) -> bool {
-        self.expected_type_key.is_some()
+        matches!(&self.codecs, ComponentCodecs::Implemented { .. })
     }
 
     /// Decodes this component's network value.
     pub fn read_network(&self, data: &mut Cursor<&[u8]>) -> Result<ComponentData> {
-        let Some(reader) = self.network_reader else {
+        let ComponentCodecs::Implemented {
+            network,
+            expected_type_key,
+            ..
+        } = &self.codecs
+        else {
             return Err(std::io::Error::other(format!(
                 "Network codec for component {} is not implemented",
                 self.key
             )));
         };
-        let value = reader(data)?;
-        if !self.validates(&value) {
+        let value = (network.reader)(data)?;
+        if value.type_key() != *expected_type_key {
             return Err(std::io::Error::other(format!(
                 "Network codec returned the wrong value type for {}",
                 self.key
@@ -181,20 +265,25 @@ impl ComponentEntry {
                 self.key
             )));
         }
-        let Some(codec) = self.network_writer else {
-            return Err(std::io::Error::other(format!(
-                "Network codec for component {} is not implemented",
-                self.key
-            )));
+        let ComponentCodecs::Implemented { network, .. } = &self.codecs else {
+            unreachable!("validated component entry must have network codecs");
         };
-        codec(data, writer)
+        (network.writer)(data, writer)
     }
 
     /// Decodes this component's persistent NBT value.
     #[must_use]
     pub fn read_nbt(&self, tag: BorrowedNbtTag) -> Option<ComponentData> {
-        let value = self.nbt_reader?(tag)?;
-        self.validates(&value).then_some(value)
+        let ComponentCodecs::Implemented {
+            expected_type_key,
+            persistent: Some(persistent),
+            ..
+        } = &self.codecs
+        else {
+            return None;
+        };
+        let value = (persistent.reader)(tag)?;
+        (value.type_key() == *expected_type_key).then_some(value)
     }
 
     /// Encodes this component's persistent NBT value after validating its concrete type.
@@ -205,19 +294,56 @@ impl ComponentEntry {
                 self.key
             )));
         }
-        let Some(writer) = self.nbt_writer else {
+        let ComponentCodecs::Implemented {
+            persistent: Some(persistent),
+            ..
+        } = &self.codecs
+        else {
             return Err(std::io::Error::other(format!(
                 "Persistent codec for component {} is not implemented",
                 self.key
             )));
         };
-        Ok(writer(data))
+        Ok((persistent.writer)(data))
     }
 
-    /// Returns whether this component has a persistent storage codec.
+    /// Computes the vanilla `HashOps` value through this component's persistent codec.
+    pub fn compute_hash(&self, data: &ComponentData) -> Result<i32> {
+        if !self.validates(data) {
+            return Err(std::io::Error::other(format!(
+                "Component value type does not match {}",
+                self.key
+            )));
+        }
+        if !self.is_persistent() {
+            return Err(std::io::Error::other(format!(
+                "Transient component {} has no persistent hash codec",
+                self.key
+            )));
+        }
+        let ComponentCodecs::Implemented {
+            persistent: Some(persistent),
+            ..
+        } = &self.codecs
+        else {
+            return Err(std::io::Error::other(format!(
+                "Persistent codec for component {} is not implemented",
+                self.key
+            )));
+        };
+        (persistent.hash)(data)
+    }
+
+    /// Returns whether vanilla defines this as a persistent component.
     #[must_use]
     pub const fn is_persistent(&self) -> bool {
         self.persistent
+    }
+
+    /// Returns whether changes to this component are ignored for held-item swap animation.
+    #[must_use]
+    pub const fn ignore_swap_animation(&self) -> bool {
+        self.ignore_swap_animation
     }
 
     /// Decodes an owned NBT value with this component's registered persistent codec.
@@ -270,9 +396,16 @@ impl DataComponentRegistry {
     /// This creates the appropriate reader/writer functions automatically.
     pub fn register<T>(&mut self, component: DataComponentType<T>)
     where
-        T: Component + DowncastType + Clone + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+        T: Component
+            + DowncastType
+            + Clone
+            + WriteTo
+            + ReadFrom
+            + ToNbtTag
+            + FromNbtTag
+            + HashComponent,
     {
-        self.register_with_persistence(component, true);
+        self.register_persistent(component);
     }
 
     /// Registers a transient vanilla component type.
@@ -280,9 +413,14 @@ impl DataComponentRegistry {
     /// Transient components have network data but no persistent component codec.
     pub fn register_transient<T>(&mut self, component: DataComponentType<T>)
     where
-        T: Component + DowncastType + Clone + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+        T: Component + DowncastType + WriteTo + ReadFrom,
     {
-        self.register_with_persistence(component, false);
+        self.register_implemented(
+            component,
+            read_typed_network::<T>,
+            write_typed_network::<T>,
+            None,
+        );
     }
 
     /// Reserves a vanilla component ID whose concrete value and codecs have not
@@ -297,85 +435,40 @@ impl DataComponentRegistry {
             "Cannot register data components after the registry has been frozen"
         );
 
+        let ignore_swap_animation = component.ignore_swap_animation();
         let key = component.key;
         let id = self.entries.len();
         let entry = Box::leak(Box::new(ComponentEntry::unimplemented(
             key.clone(),
             persistent,
+            ignore_swap_animation,
         )));
         self.by_key.insert(key, id);
         self.entries.push(entry);
         id
     }
 
-    fn register_with_persistence<T>(&mut self, component: DataComponentType<T>, persistent: bool)
+    fn register_persistent<T>(&mut self, component: DataComponentType<T>)
     where
-        T: Component + DowncastType + Clone + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+        T: Component
+            + DowncastType
+            + Clone
+            + WriteTo
+            + ReadFrom
+            + ToNbtTag
+            + FromNbtTag
+            + HashComponent,
     {
-        assert!(
-            self.allows_registering,
-            "Cannot register data components after the registry has been frozen"
+        self.register_implemented(
+            component,
+            read_typed_network::<T>,
+            write_typed_network::<T>,
+            Some((
+                read_typed_nbt::<T>,
+                write_typed_nbt::<T>,
+                hash_component::<T>,
+            )),
         );
-
-        // Create reader/writer functions that handle the ComponentData conversion
-        fn make_network_reader<T>() -> NetworkReader
-        where
-            T: Component + ReadFrom,
-        {
-            |cursor| {
-                let value = T::read(cursor)?;
-                Ok(ComponentData::new(value))
-            }
-        }
-
-        fn make_network_writer<T>() -> NetworkWriter
-        where
-            T: DowncastType + WriteTo,
-        {
-            |data, writer| {
-                if let Some(value) = data.downcast_ref::<T>() {
-                    value.write(writer)
-                } else {
-                    Err(std::io::Error::other("Component type mismatch"))
-                }
-            }
-        }
-
-        fn make_nbt_reader<T>() -> NbtReader
-        where
-            T: Component + FromNbtTag,
-        {
-            |tag| {
-                let value = T::from_nbt_tag(tag)?;
-                Some(ComponentData::new(value))
-            }
-        }
-
-        fn make_nbt_writer<T>() -> NbtWriter
-        where
-            T: DowncastType + ToNbtTag + Clone,
-        {
-            |data| {
-                let Some(value) = data.downcast_ref::<T>() else {
-                    panic!("validated component type key failed to downcast");
-                };
-                value.clone().to_nbt_tag()
-            }
-        }
-
-        let entry = Box::leak(Box::new(ComponentEntry::new(
-            component.key.clone(),
-            T::TYPE_KEY,
-            make_network_reader::<T>(),
-            make_network_writer::<T>(),
-            make_nbt_reader::<T>(),
-            make_nbt_writer::<T>(),
-            persistent,
-        )));
-
-        let id = self.entries.len();
-        self.by_key.insert(component.key.clone(), id);
-        self.entries.push(entry);
     }
 
     /// Registers a component with custom network reader/writer functions.
@@ -389,52 +482,22 @@ impl DataComponentRegistry {
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
     ) where
-        T: Component + DowncastType + Clone + ToNbtTag + FromNbtTag,
+        T: Component + DowncastType + Clone + ToNbtTag + FromNbtTag + HashComponent,
     {
-        assert!(
-            self.allows_registering,
-            "Cannot register data components after the registry has been frozen"
-        );
-
-        fn make_nbt_reader<T>() -> NbtReader
-        where
-            T: Component + FromNbtTag,
-        {
-            |tag| {
-                let value = T::from_nbt_tag(tag)?;
-                Some(ComponentData::new(value))
-            }
-        }
-
-        fn make_nbt_writer<T>() -> NbtWriter
-        where
-            T: DowncastType + ToNbtTag + Clone,
-        {
-            |data| {
-                let Some(value) = data.downcast_ref::<T>() else {
-                    panic!("validated component type key failed to downcast");
-                };
-                value.clone().to_nbt_tag()
-            }
-        }
-
-        let entry = Box::leak(Box::new(ComponentEntry::new(
-            component.key.clone(),
-            T::TYPE_KEY,
+        self.register_implemented(
+            component,
             network_reader,
             network_writer,
-            make_nbt_reader::<T>(),
-            make_nbt_writer::<T>(),
-            true,
-        )));
-
-        let id = self.entries.len();
-        self.by_key.insert(component.key.clone(), id);
-        self.entries.push(entry);
+            Some((
+                read_typed_nbt::<T>,
+                write_typed_nbt::<T>,
+                hash_component::<T>,
+            )),
+        );
     }
 
     /// Registers a component with explicit network and persistent codecs.
-    pub fn register_with_codecs<T: Component + DowncastType>(
+    pub fn register_with_codecs<T: Component + DowncastType + HashComponent>(
         &mut self,
         component: DataComponentType<T>,
         network_reader: NetworkReader,
@@ -442,14 +505,11 @@ impl DataComponentRegistry {
         nbt_reader: NbtReader,
         nbt_writer: NbtWriter,
     ) -> usize {
-        self.register_with_persistence_codecs(
-            component.key,
-            T::TYPE_KEY,
+        self.register_implemented(
+            component,
             network_reader,
             network_writer,
-            nbt_reader,
-            nbt_writer,
-            true,
+            Some((nbt_reader, nbt_writer, hash_component::<T>)),
         )
     }
 
@@ -459,47 +519,31 @@ impl DataComponentRegistry {
         component: DataComponentType<T>,
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
-        nbt_reader: NbtReader,
-        nbt_writer: NbtWriter,
     ) -> usize {
-        self.register_with_persistence_codecs(
-            component.key,
-            T::TYPE_KEY,
-            network_reader,
-            network_writer,
-            nbt_reader,
-            nbt_writer,
-            false,
-        )
+        self.register_implemented(component, network_reader, network_writer, None)
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "component registration keeps the four codec functions explicit"
-    )]
-    fn register_with_persistence_codecs(
+    fn register_implemented<T: Component + DowncastType>(
         &mut self,
-        key: Identifier,
-        expected_type_key: DowncastTypeKey,
+        component: DataComponentType<T>,
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
-        nbt_reader: NbtReader,
-        nbt_writer: NbtWriter,
-        persistent: bool,
+        persistent_codecs: Option<(NbtReader, NbtWriter, ComponentHash)>,
     ) -> usize {
         assert!(
             self.allows_registering,
             "Cannot register data components after the registry has been frozen"
         );
 
-        let entry = Box::leak(Box::new(ComponentEntry::new(
+        let ignore_swap_animation = component.ignore_swap_animation();
+        let key = component.key;
+        let entry = Box::leak(Box::new(ComponentEntry::implemented(
             key.clone(),
-            expected_type_key,
+            T::TYPE_KEY,
             network_reader,
             network_writer,
-            nbt_reader,
-            nbt_writer,
-            persistent,
+            persistent_codecs,
+            ignore_swap_animation,
         )));
 
         let id = self.entries.len();

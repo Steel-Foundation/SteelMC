@@ -397,7 +397,7 @@ mod tests {
     use std::io::Cursor;
 
     use super::{Equippable, EquippableAllowedEntities};
-    use crate::data_components::ComponentData;
+    use crate::data_components::{ComponentData, vanilla_components::EQUIPPABLE};
     use crate::item_stack::ItemStack;
     use crate::sound_event::SoundEventHolder;
     use crate::sound_events;
@@ -405,6 +405,7 @@ mod tests {
     use crate::vanilla_entities::{LLAMA, PIG, PLAYER, WOLF};
     use crate::vanilla_entity_type_tags::EntityTypeTag;
     use crate::vanilla_items::ITEMS;
+    use crate::{REGISTRY, RegistryExt};
     use simdnbt::FromNbtTag;
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use simdnbt::owned::{NbtCompound, NbtTag};
@@ -533,8 +534,16 @@ mod tests {
             panic!("diamond helmet should have equippable data");
         };
 
-        let saddle_hash = ComponentData::new(saddle_equippable.clone()).compute_hash();
-        let helmet_hash = ComponentData::new(helmet_equippable.clone()).compute_hash();
+        let component_type = REGISTRY
+            .data_components
+            .by_key(&EQUIPPABLE.key)
+            .expect("equippable component should be registered");
+        let saddle_hash = component_type
+            .compute_hash(&ComponentData::new(saddle_equippable.clone()))
+            .expect("equippable should have a persistent hash codec");
+        let helmet_hash = component_type
+            .compute_hash(&ComponentData::new(helmet_equippable.clone()))
+            .expect("equippable should have a persistent hash codec");
         assert_ne!(saddle_hash, helmet_hash);
     }
 

@@ -2,37 +2,32 @@
 
 use std::fmt::{self, Debug, Formatter};
 
-use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType,
-    hash::{ComponentHasher, HashComponent},
-};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::components::{
     AttackRange, DamageTypeComponent, Equippable, ItemAttributeModifiers, ItemEnchantments,
-    ItemLore, PiercingWeapon, Rarity, SwingAnimation, Tool, TooltipDisplay, UseCooldown,
-    UseEffects, Weapon,
+    ItemLore, MapPostProcessing, PiercingWeapon, Rarity, SwingAnimation, Tool, TooltipDisplay,
+    UseCooldown, UseEffects, Weapon,
 };
 
 /// Behavior required from a value stored in a [`ComponentData`].
 ///
 /// Concrete type recovery is provided by Steel's deterministic keyed
 /// downcasting foundation. A value is eligible for the blanket implementation
-/// when it also supports cloning, comparison, debugging, hashing, and shared
-/// server access.
+/// when it also supports cloning, comparison, debugging, and shared server
+/// access. Persistent-codec hashing is registered separately so transient
+/// values do not need a fake hash representation.
 pub trait Component: ErasedType + Debug + Send + Sync + 'static {
     #[doc(hidden)]
     fn clone_component(&self) -> Box<dyn Component>;
 
     #[doc(hidden)]
     fn component_eq(&self, other: &dyn Component) -> bool;
-
-    #[doc(hidden)]
-    fn hash_component_value(&self, hasher: &mut ComponentHasher);
 }
 
 impl<T> Component for T
 where
-    T: DowncastType + Clone + Debug + PartialEq + HashComponent + Send + Sync,
+    T: DowncastType + Clone + Debug + PartialEq + Send + Sync,
 {
     fn clone_component(&self) -> Box<dyn Component> {
         Box::new(self.clone())
@@ -40,10 +35,6 @@ where
 
     fn component_eq(&self, other: &dyn Component) -> bool {
         other.downcast_ref::<T>() == Some(self)
-    }
-
-    fn hash_component_value(&self, hasher: &mut ComponentHasher) {
-        self.hash_component(hasher);
     }
 }
 
@@ -74,16 +65,6 @@ impl ComponentData {
     #[must_use]
     pub fn type_key(&self) -> DowncastTypeKey {
         self.value.downcast_type_key()
-    }
-
-    /// Computes the vanilla validation hash for this component value.
-    #[must_use]
-    pub fn compute_hash(&self) -> i32 {
-        let mut hasher = ComponentHasher::new();
-
-        self.value.hash_component_value(&mut hasher);
-
-        hasher.finish()
     }
 }
 
@@ -130,6 +111,10 @@ impl_component_downcast_type!(ItemLore, "steel:item_component/lore");
 impl_component_downcast_type!(Rarity, "steel:item_component/rarity");
 impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_display");
 impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
+impl_component_downcast_type!(
+    MapPostProcessing,
+    "steel:item_component/map_post_processing"
+);
 impl_component_downcast_type!(PiercingWeapon, "steel:item_component/piercing_weapon");
 impl_component_downcast_type!(Equippable, "steel:item_component/equippable");
 impl_component_downcast_type!(
