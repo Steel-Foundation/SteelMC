@@ -91,6 +91,16 @@ jobs:
           files: release/*
           generate_release_notes: true
 
+      - name: Trigger release workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ needs.version.outputs.current }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            -f event_type=steel-released \
+            -f "client_payload[tag]=${RELEASE_TAG}" \
+            -f "client_payload[sha]=${GITHUB_SHA}"
+
   notify:
     needs: release
     runs-on: ubuntu-latest

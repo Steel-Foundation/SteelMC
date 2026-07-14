@@ -6,6 +6,9 @@ on:
       - master
     tags:
       - v**
+  repository_dispatch:
+    types:
+      - steel-released
   workflow_dispatch:
 
 permissions:
@@ -16,4 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha || github.sha }}
       - uses: sdruskat/swh-save-action@v1.0.1
