@@ -47,7 +47,7 @@ use steel_registry::blocks::shapes::{
 };
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
-use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, GameRuleValueType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
@@ -126,18 +126,6 @@ static BIOME_INFO_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(2345));
     PerlinSimplexNoise::new(&mut random, &[0])
 });
-
-fn global_sound_events_enabled(value: GameRuleValue) -> bool {
-    match value {
-        GameRuleValue::Bool(enabled) => enabled,
-        value @ GameRuleValue::Int(_) => {
-            panic!(
-                "gamerule {} should be a bool, got {value:?}",
-                GLOBAL_SOUND_EVENTS.key
-            )
-        }
-    }
-}
 
 /// Block shape channel used by vanilla-style world clipping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1668,7 +1656,7 @@ impl World {
     /// WARNING: this function acquires a read lock on the level data.
     /// if you already have a write lock on level data, this will DEADLOCK
     #[must_use]
-    pub fn get_game_rule(&self, rule: GameRuleRef) -> GameRuleValue {
+    pub fn get_game_rule<T: GameRuleValueType>(&self, rule: &GameRule<T>) -> T {
         let guard = self.level_data.read();
         self.get_game_rule_with_guard(rule, &guard)
     }
@@ -1676,26 +1664,37 @@ impl World {
     /// Gets the value of a game rule on the `LevelDataManager` guard being passed in.
     #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
-    pub fn get_game_rule_with_guard(
+    pub fn get_game_rule_with_guard<T: GameRuleValueType>(
         &self,
-        rule: GameRuleRef,
+        rule: &GameRule<T>,
         guard: &LevelDataManager,
-    ) -> GameRuleValue {
+    ) -> T {
         guard
             .data()
             .game_rules_values
             .get(rule, &REGISTRY.game_rules)
     }
 
+    /// Gets a type-erased value for a dynamically selected game rule.
+    #[must_use]
+    pub fn get_erased_game_rule(&self, rule: ErasedGameRuleRef) -> GameRuleValue {
+        self.level_data
+            .read()
+            .data()
+            .game_rules_values
+            .get_erased(rule, &REGISTRY.game_rules)
+            .clone()
+    }
+
     /// Sets the value of a game rule.
     /// WARNING: this function acquires a write lock on the level data.
     /// if you already have a read or write lock on level data, this will DEADLOCK
-    pub fn set_game_rule(&self, rule: GameRuleRef, value: GameRuleValue) -> bool {
+    pub fn set_game_rule<T: GameRuleValueType>(&self, rule: &GameRule<T>, value: T) -> bool {
         let updated = {
             let mut guard = self.level_data.write();
             self.set_game_rule_with_guard(rule, value, &mut guard)
         };
-        if updated && rule == &ADVANCE_TIME {
+        if updated && rule.key() == ADVANCE_TIME.key() {
             self.broadcast_time_sync();
         }
         updated
@@ -1703,10 +1702,10 @@ impl World {
 
     /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
     #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn set_game_rule_with_guard(
+    pub fn set_game_rule_with_guard<T: GameRuleValueType>(
         &self,
-        rule: GameRuleRef,
-        value: GameRuleValue,
+        rule: &GameRule<T>,
+        value: T,
         guard: &mut LevelDataManager,
     ) -> bool {
         guard
@@ -1715,11 +1714,22 @@ impl World {
             .set(rule, value, &REGISTRY.game_rules)
     }
 
+    /// Sets a type-erased value for a dynamically selected game rule.
+    pub fn set_erased_game_rule(&self, rule: ErasedGameRuleRef, value: GameRuleValue) -> bool {
+        let updated = self
+            .level_data
+            .write()
+            .data_mut()
+            .game_rules_values
+            .set_erased(rule, value, &REGISTRY.game_rules);
+        if updated && rule.key() == ADVANCE_TIME.key() {
+            self.broadcast_time_sync();
+        }
+        updated
+    }
+
     fn advance_time_with_guard(&self, guard: &LevelDataManager) -> bool {
-        matches!(
-            self.get_game_rule_with_guard(&ADVANCE_TIME, guard),
-            GameRuleValue::Bool(true)
-        )
+        self.get_game_rule_with_guard(&ADVANCE_TIME, guard)
     }
 
     /// Gets the world seed.
@@ -2228,7 +2238,7 @@ impl World {
             self.tick_time();
         }
 
-        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
+        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED) as u32;
 
         let mut chunk_map_timings =
             self.chunk_map
@@ -2356,11 +2366,7 @@ impl World {
         {
             let mut level_data = self.level_data.write();
 
-            if self
-                .get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data)
-                .as_bool()
-                .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
-            {
+            if self.get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data) {
                 let clear_weather_time = level_data.clear_weather_time();
                 if clear_weather_time > 0 {
                     level_data.set_clear_weather_time(clear_weather_time - 1);
@@ -3491,7 +3497,7 @@ impl World {
         }
 
         if block == &vanilla_blocks::NETHER_PORTAL
-            && self.get_game_rule(&PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) == GameRuleValue::Int(0)
+            && self.get_game_rule(&PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) == 0
         {
             return VoxelShape::FULL_BLOCK;
         }
@@ -3959,7 +3965,7 @@ impl World {
     /// * `pos` - The position where the event occurs
     /// * `data` - Event-specific data
     pub fn global_level_event(&self, event_type: i32, pos: BlockPos, data: i32) {
-        if !global_sound_events_enabled(self.get_game_rule(&GLOBAL_SOUND_EVENTS)) {
+        if !self.get_game_rule(&GLOBAL_SOUND_EVENTS) {
             self.level_event(event_type, pos, data, None);
             return;
         }
@@ -4544,7 +4550,7 @@ impl World {
         }
 
         // Respect doTileDrops gamerule
-        if !self.get_game_rule(&BLOCK_DROPS).as_bool().unwrap_or(true) {
+        if !self.get_game_rule(&BLOCK_DROPS) {
             return None;
         }
 
@@ -4985,12 +4991,6 @@ mod tests {
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
-
-    #[test]
-    fn global_sound_events_gamerule_controls_global_level_event_packet_mode() {
-        assert!(global_sound_events_enabled(GameRuleValue::Bool(true)));
-        assert!(!global_sound_events_enabled(GameRuleValue::Bool(false)));
-    }
 
     #[test]
     fn sound_range_uses_event_range_and_strict_vanilla_boundary() {

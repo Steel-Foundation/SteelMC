@@ -93,7 +93,7 @@ impl BlockBehavior for NetherWartBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.nether_wart))
+        Some(ItemStack::new(&vanilla_items::NETHER_WART))
     }
 }
 

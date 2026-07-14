@@ -207,8 +207,7 @@ pub(crate) fn json_value_to_tokens(
 /// Generates a constructor argument token stream from a `JsonArgField` and JSON data.
 ///
 /// Registry access modes:
-/// - `vanilla_items` → `vanilla_items::ITEMS.lowercase_field` (struct field access)
-/// - Other registries → `module::SCREAMING_SNAKE` (module constant access)
+/// - Registry modules → `module::SCREAMING_SNAKE`
 pub(crate) fn generate_arg(
     field: &JsonArgField,
     extra: &serde_json::Map<String, serde_json::Value>,
@@ -231,11 +230,9 @@ pub(crate) fn generate_arg(
         }
         JsonArgKind::Registry(module) => {
             let name = get_json_str(extra, entry_name, json_key);
-            // vanilla_items uses a LazyLock<Items> struct with field access (ITEMS.stone),
-            // while other registries use module-level constants (vanilla_blocks::STONE).
             if module == "vanilla_items" {
-                let field_ident = to_item_ident(name);
-                quote! { vanilla_items::ITEMS.#field_ident }
+                let item_ident = to_item_ident(name);
+                quote! { &*vanilla_items::#item_ident }
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
                 let const_ident = to_block_ident(name);

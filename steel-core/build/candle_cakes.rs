@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, fs};
 
-use proc_macro2::Span;
 use quote::quote;
-use syn::Ident;
 
 use crate::to_block_ident;
 
@@ -16,8 +14,8 @@ pub fn build() -> String {
 
     let by_candle: Vec<proc_macro2::TokenStream> = candle_cakes_raw
         .iter()
-        .map(|(key, value)| (Ident::new(key.to_lowercase().as_str(), Span::call_site()), to_block_ident(value)))
-        .map(|(key, value)| quote! { i if i == &vanilla_items::ITEMS.#key => Some(&vanilla_blocks::#value), })
+        .map(|(key, value)| (to_block_ident(key), to_block_ident(value)))
+        .map(|(key, value)| quote! { i if i == &*vanilla_items::#key => Some(&vanilla_blocks::#value), })
         .collect();
 
     let output = quote! {

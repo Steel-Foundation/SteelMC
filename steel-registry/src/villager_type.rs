@@ -11,6 +11,7 @@ pub type VillagerTypeRef = &'static VillagerType;
 pub struct VillagerTypeRegistry {
     villager_types_by_id: Vec<VillagerTypeRef>,
     villager_types_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -20,6 +21,7 @@ impl VillagerTypeRegistry {
         Self {
             villager_types_by_id: Vec::new(),
             villager_types_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -40,3 +42,4 @@ crate::impl_registry!(
     villager_types_by_key,
     villager_types
 );
+crate::impl_tagged_registry!(VillagerTypeRegistry, villager_types_by_key, "villager type");

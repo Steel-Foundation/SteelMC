@@ -1404,7 +1404,7 @@ impl Identifier {
 
     /// Returns whether the namespace is valid.
     pub fn validate_namespace(namespace: &str) -> bool {
-        namespace.chars().all(Self::valid_namespace_char)
+        namespace != ".." && namespace.chars().all(Self::valid_namespace_char)
     }
 
     /// Returns whether the path is valid.
@@ -1429,22 +1429,23 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid resource location");
-        }
+        let (namespace, path) = match s.split_once(':') {
+            Some(("", path)) => (Self::VANILLA_NAMESPACE, path),
+            Some((namespace, path)) => (namespace, path),
+            None => (Self::VANILLA_NAMESPACE, s),
+        };
 
-        if !Identifier::validate_namespace(parts[0]) {
+        if !Identifier::validate_namespace(namespace) {
             return Err("Invalid namespace");
         }
 
-        if !Identifier::validate_path(parts[1]) {
+        if !Identifier::validate_path(path) {
             return Err("Invalid path");
         }
 
         Ok(Identifier {
-            namespace: Cow::Owned(parts[0].to_string()),
-            path: Cow::Owned(parts[1].to_string()),
+            namespace: Cow::Owned(namespace.to_owned()),
+            path: Cow::Owned(path.to_owned()),
         })
     }
 }
@@ -1524,6 +1525,29 @@ impl ReadFrom for InteractionHand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifier_parsing_matches_vanilla_default_namespace_rules() {
+        for raw in ["stone", ":stone", "minecraft:stone"] {
+            assert_eq!(
+                raw.parse::<Identifier>().expect("identifier should parse"),
+                Identifier::vanilla_static("stone")
+            );
+        }
+        assert_eq!(
+            "steel:example"
+                .parse::<Identifier>()
+                .expect("namespaced identifier should parse"),
+            Identifier::new_static("steel", "example")
+        );
+    }
+
+    #[test]
+    fn identifier_parsing_rejects_vanilla_invalid_names() {
+        for raw in ["..:stone", "Minecraft:stone", "minecraft:bad:path"] {
+            assert!(raw.parse::<Identifier>().is_err(), "{raw}");
+        }
+    }
 
     #[test]
     fn test_block_pos_roundtrip() {

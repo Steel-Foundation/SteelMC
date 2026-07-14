@@ -16,6 +16,8 @@
 
 use simdnbt::owned::NbtTag;
 
+use crate::nbt::nbt_list_values;
+
 /// Type tags matching Minecraft's `HashOps` implementation.
 #[repr(u8)]
 #[derive(Clone, Copy)]
@@ -314,11 +316,17 @@ impl HashEntry {
     pub fn new(key_hasher: ComponentHasher, value_hasher: ComponentHasher) -> Self {
         let key_bytes = crc32c::crc32c(&key_hasher.data);
         let value_bytes = crc32c::crc32c(&value_hasher.data);
+        Self::from_hashes(key_bytes, value_bytes)
+    }
+
+    /// Creates a map entry from child hashes already computed by dispatched codecs.
+    #[must_use]
+    pub const fn from_hashes(key_hash: u32, value_hash: u32) -> Self {
         Self {
-            key_hash: i64::from(key_bytes),
-            value_hash: i64::from(value_bytes),
-            key_bytes: key_bytes.to_le_bytes(),
-            value_bytes: value_bytes.to_le_bytes(),
+            key_hash: key_hash as i64,
+            value_hash: value_hash as i64,
+            key_bytes: key_hash.to_le_bytes(),
+            value_bytes: value_hash.to_le_bytes(),
         }
     }
 }
@@ -427,7 +435,7 @@ impl HashComponent for NbtTag {
             NbtTag::String(value) => hasher.put_string(&value.to_string()),
             NbtTag::List(values) => {
                 hasher.start_list();
-                for value in values.as_nbt_tags() {
+                for value in nbt_list_values(values) {
                     hasher.put_component_hash(&value);
                 }
                 hasher.end_list();
@@ -564,6 +572,22 @@ mod tests {
         ]));
 
         assert_eq!(first.compute_hash(), reversed.compute_hash());
+    }
+
+    #[test]
+    fn nbt_list_hash_unwraps_vanillas_heterogeneous_list_marker() {
+        use simdnbt::owned::{NbtCompound, NbtList};
+
+        let mut wrapper = NbtCompound::new();
+        wrapper.insert("", 7);
+        let encoded = NbtTag::List(NbtList::Compound(vec![wrapper]));
+
+        let mut expected = ComponentHasher::new();
+        expected.start_list();
+        expected.put_component_hash(&NbtTag::Int(7));
+        expected.end_list();
+
+        assert_eq!(encoded.compute_hash(), expected.finish());
     }
 
     #[test]

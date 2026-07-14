@@ -83,7 +83,6 @@ use steel_protocol::packets::game::{
     CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
 };
 use steel_protocol::utils::ConnectionProtocol;
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
 };
@@ -242,7 +241,6 @@ mod tests {
     use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::game_rules::GameRuleValue;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
     use text_components::TextComponent;
     use tokio::{fs, runtime::Builder};
@@ -695,18 +693,9 @@ mod tests {
 
     #[test]
     fn nether_portal_entry_obeys_allow_entering_nether_gamerule() {
-        assert!(is_allowed_to_enter_portal_target(
-            false,
-            GameRuleValue::Bool(false)
-        ));
-        assert!(is_allowed_to_enter_portal_target(
-            true,
-            GameRuleValue::Bool(true)
-        ));
-        assert!(!is_allowed_to_enter_portal_target(
-            true,
-            GameRuleValue::Bool(false)
-        ));
+        assert!(is_allowed_to_enter_portal_target(false, false));
+        assert!(is_allowed_to_enter_portal_target(true, true));
+        assert!(!is_allowed_to_enter_portal_target(true, false));
     }
 
     #[test]
@@ -806,23 +795,15 @@ fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> boo
     )
 }
 
-fn is_allowed_to_enter_portal_target(
+const fn is_allowed_to_enter_portal_target(
     target_is_nether: bool,
-    allow_entering_nether_using_portals: GameRuleValue,
+    allow_entering_nether_using_portals: bool,
 ) -> bool {
     if !target_is_nether {
         return true;
     }
 
-    match allow_entering_nether_using_portals {
-        GameRuleValue::Bool(allowed) => allowed,
-        value @ GameRuleValue::Int(_) => {
-            panic!(
-                "gamerule {} should be a bool, got {value:?}",
-                ALLOW_ENTERING_NETHER_USING_PORTALS.key
-            )
-        }
-    }
+    allow_entering_nether_using_portals
 }
 
 fn can_teleport_between_worlds(
@@ -3017,12 +2998,9 @@ impl Server {
     }
 
     fn send_login_packet(&self, player: &Player, world: &World) {
-        let reduced_debug_info =
-            world.get_game_rule(&REDUCED_DEBUG_INFO) == GameRuleValue::Bool(true);
-        let immediate_respawn =
-            world.get_game_rule(&IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true);
-        let do_limited_crafting =
-            world.get_game_rule(&LIMITED_CRAFTING) == GameRuleValue::Bool(true);
+        let reduced_debug_info = world.get_game_rule(&REDUCED_DEBUG_INFO);
+        let immediate_respawn = world.get_game_rule(&IMMEDIATE_RESPAWN);
+        let do_limited_crafting = world.get_game_rule(&LIMITED_CRAFTING);
 
         // Get world data
         let hashed_seed = world.obfuscated_seed();

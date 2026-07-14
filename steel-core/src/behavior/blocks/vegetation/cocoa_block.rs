@@ -129,7 +129,7 @@ impl BlockBehavior for CocoaBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.cocoa_beans))
+        Some(ItemStack::new(&vanilla_items::COCOA_BEANS))
     }
 }
 

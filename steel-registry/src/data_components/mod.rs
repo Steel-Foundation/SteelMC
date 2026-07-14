@@ -1,13 +1,13 @@
 //! Data components system for items and entities.
 //!
-//! This module provides an ABI-stable component system where:
-//! - Vanilla components get dedicated enum variants for zero-cost typed access
-//! - Plugin components use opaque bytes (`ComponentData::Other`)
+//! Component values are type-erased through Steel's deterministic keyed
+//! downcasting system. Vanilla and plugin-defined values use the same storage
+//! path while retaining type-safe access through [`DataComponentType`].
 //!
 //! # Architecture
 //!
-//! - [`ComponentData`] - ABI-stable enum storing component values
-//! - [`Component`] - Trait for types that convert to/from `ComponentData`
+//! - [`ComponentData`] - Type-erased component value storage
+//! - [`Component`] - Object-safe behavior for stored values
 //! - [`DataComponentType<T>`] - Compile-time type handle for accessing components
 //! - [`DataComponentMap`] - Storage for component values on items
 //! - [`DataComponentPatch`] - Diff representation for network/storage
@@ -31,8 +31,17 @@ mod registry;
 pub mod vanilla_components;
 
 // Re-export core types
-pub use component_data::{Component, ComponentData, ComponentDataDiscriminant};
-pub use components::{Equippable, EquippableAllowedEntities, Tool, ToolRule, ToolRuleBlocks};
+pub use crate::item_predicate::{AdventureModePredicate, BlockPredicate, LockCode};
+pub use component_data::{Component, ComponentData};
+pub use components::{
+    ArmorTrim, BannerPatternLayer, BannerPatternLayers, BlocksAttacks, BundleContents,
+    ChargedProjectiles, Consumable, CustomData, CustomModelData, DeathProtection, DyedItemColor,
+    Enchantable, Equippable, EquippableAllowedEntities, InstrumentComponent,
+    InvalidEnchantableValue, ItemContainerContents, JukeboxPlayable, MapDecorationEntry,
+    MapDecorations, MapId, MapItemColor, OminousBottleAmplifier, PaintingVariantComponent,
+    PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Recipes,
+    SulfurCubeContent, Tool, ToolRule, ToolRuleBlocks, UseRemainder,
+};
 pub use registry::{
     ComponentEntry,
     ComponentEntryRef,

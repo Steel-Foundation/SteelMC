@@ -48,7 +48,7 @@ impl CropLike for CarrotBlock {
     }
 
     fn clone_item_stack(&self) -> ItemStack {
-        ItemStack::new(&vanilla_items::ITEMS.carrot)
+        ItemStack::new(&vanilla_items::CARROT)
     }
 }
 

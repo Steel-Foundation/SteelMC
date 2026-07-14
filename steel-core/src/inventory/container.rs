@@ -430,12 +430,12 @@ mod tests {
     fn clear_or_count_matching_items_counts_without_mutating() {
         init_test_registry();
         let mut container = TestContainer::new(3);
-        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
-        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.dirt, 4));
-        container.set_item(2, ItemStack::with_count(&vanilla_items::ITEMS.stone, 2));
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::DIRT, 4));
+        container.set_item(2, ItemStack::with_count(&vanilla_items::STONE, 2));
 
         let count = container.clear_or_count_matching_items(
-            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            &|stack| stack.is(&vanilla_items::STONE),
             0,
             true,
         );
@@ -449,11 +449,11 @@ mod tests {
     fn clear_or_count_matching_items_applies_cap_in_slot_order() {
         init_test_registry();
         let mut container = TestContainer::new(2);
-        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
-        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
 
         let count = container.clear_or_count_matching_items(
-            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            &|stack| stack.is(&vanilla_items::STONE),
             5,
             false,
         );
@@ -467,11 +467,11 @@ mod tests {
     fn clear_or_count_matching_items_removes_every_match_for_negative_limit() {
         init_test_registry();
         let mut container = TestContainer::new(2);
-        container.set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
-        container.set_item(1, ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
 
         let count = container.clear_or_count_matching_items(
-            &|stack| stack.is(&vanilla_items::ITEMS.stone),
+            &|stack| stack.is(&vanilla_items::STONE),
             -1,
             false,
         );
