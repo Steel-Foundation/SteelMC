@@ -3027,6 +3027,7 @@ dependencies = [
  "steel-registry",
  "steel-utils",
  "tracing",
+ "wincode",
 ]
 
 [[package]]

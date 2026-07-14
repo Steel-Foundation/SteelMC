@@ -1,25 +1,28 @@
 //! Per-world saved data storage.
 //!
 //! Vanilla stores world-level saved data under each dimension's `data/`
-//! directory. Steel keeps its on-disk format TOML like `level_data`, but uses
-//! the same per-world saved-data boundary.
+//! directory. Steel uses the same per-world saved-data boundary for both its
+//! human-readable TOML data and versioned binary data.
 
 use std::{
+    fmt::Display,
     fs as sync_fs, io,
     path::{Path, PathBuf},
 };
 
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::fs;
+use wincode::{SchemaRead, SchemaWrite, config::DefaultConfig};
 
 /// Built-in saved data entry names.
 pub mod names {
-    use super::SavedDataName;
+    use super::{SavedDataName, WincodeSavedDataName};
 
     /// Vanilla `TicketStorage.TYPE`, persisted as `data/chunk_tickets.toml`.
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
-    /// Stronhold generation data, persisted as `data/stronghold_rings.toml`
-    pub const STRONGHOLD_RINGS: SavedDataName = SavedDataName::trusted("stronghold_rings");
+    /// Cached concentric-ring positions, persisted as `data/structure_rings.bin`.
+    pub const STRUCTURE_RINGS: WincodeSavedDataName =
+        WincodeSavedDataName::trusted("structure_rings", *b"STLR", 1);
     /// Domain command scoreboard, persisted through the domain default world.
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
     /// Domain command storage, persisted through the domain default world.
@@ -51,6 +54,43 @@ impl SavedDataName {
     }
 }
 
+/// Name and format header of a wincode-encoded per-world saved data entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WincodeSavedDataName {
+    name: &'static str,
+    magic: [u8; 4],
+    version: u16,
+}
+
+impl WincodeSavedDataName {
+    /// Creates a binary saved-data name from trusted format metadata.
+    #[must_use]
+    pub(crate) const fn trusted(name: &'static str, magic: [u8; 4], version: u16) -> Self {
+        Self {
+            name,
+            magic,
+            version,
+        }
+    }
+
+    /// Creates a binary saved-data name after validating that it cannot escape `data/`.
+    pub fn try_new(name: &'static str, magic: [u8; 4], version: u16) -> Result<Self, String> {
+        if is_valid_saved_data_name(name) {
+            Ok(Self {
+                name,
+                magic,
+                version,
+            })
+        } else {
+            Err(format!("invalid saved data name {name}"))
+        }
+    }
+
+    fn file_name(self) -> String {
+        format!("{}.bin", self.name)
+    }
+}
+
 fn is_valid_saved_data_name(name: &str) -> bool {
     !name.is_empty()
         && !name.contains('/')
@@ -75,26 +115,47 @@ impl SavedDataManager {
         }
     }
 
-    /// Loads saved data, or returns `T::default()` when the data file is absent
-    /// or this world has no persistent storage.
-    pub fn sync_load_or_default<T>(&self, name: SavedDataName) -> io::Result<T>
+    /// Loads a versioned wincode value, or returns `None` when it is absent or
+    /// this world has no persistent storage.
+    pub fn sync_load_wincode<T>(&self, name: WincodeSavedDataName) -> io::Result<Option<T>>
     where
-        T: DeserializeOwned + Default,
+        for<'de> T: SchemaRead<'de, DefaultConfig, Dst = T>,
     {
-        let Some(path) = self.path_for(name) else {
-            return Ok(T::default());
+        let Some(path) = self.wincode_path_for(name) else {
+            return Ok(None);
         };
         if !path.exists() {
-            return Ok(T::default());
+            return Ok(None);
         }
 
-        let content = sync_fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid saved data {}: {error}", path.display()),
-            )
-        })
+        let bytes = sync_fs::read(&path)?;
+        let Some((magic, remainder)) = bytes.split_first_chunk::<4>() else {
+            return Err(invalid_binary_data(&path, "missing magic header"));
+        };
+        if magic != &name.magic {
+            return Err(invalid_binary_data(&path, "unexpected magic header"));
+        }
+        let Some((version, payload)) = remainder.split_first_chunk::<2>() else {
+            return Err(invalid_binary_data(&path, "missing format version"));
+        };
+        if u16::from_le_bytes(*version) != name.version {
+            return Err(invalid_binary_data(
+                &path,
+                format!(
+                    "unsupported format version {}",
+                    u16::from_le_bytes(*version)
+                ),
+            ));
+        }
+
+        wincode::deserialize_exact(payload)
+            .map(Some)
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid binary saved data {}: {error}", path.display()),
+                )
+            })
     }
 
     /// Loads saved data, or returns `T::default()` when the data file is absent
@@ -119,21 +180,25 @@ impl SavedDataManager {
         })
     }
 
-    /// Saves a typed saved-data value.
-    pub fn sync_save<T>(&self, name: SavedDataName, data: &T) -> io::Result<()>
+    /// Saves a versioned wincode value.
+    pub fn sync_save_wincode<T>(&self, name: WincodeSavedDataName, data: &T) -> io::Result<()>
     where
-        T: Serialize,
+        T: SchemaWrite<DefaultConfig, Src = T>,
     {
-        let Some(path) = self.path_for(name) else {
+        let Some(path) = self.wincode_path_for(name) else {
             return Ok(());
         };
         if let Some(parent) = path.parent() {
             sync_fs::create_dir_all(parent)?;
         }
 
-        let content = toml::to_string_pretty(data)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        sync_fs::write(path, content)
+        let payload = wincode::serialize(data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+        let mut bytes = Vec::with_capacity(6 + payload.len());
+        bytes.extend_from_slice(&name.magic);
+        bytes.extend_from_slice(&name.version.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        sync_fs::write(path, bytes)
     }
 
     /// Saves a typed saved-data value.
@@ -153,38 +218,52 @@ impl SavedDataManager {
         fs::write(path, content).await
     }
 
-    /// Returns `true` if the path points at an existing data.
-    #[must_use]
-    pub fn exists(&self, name: SavedDataName) -> bool {
-        let Some(path) = self.path_for(name) else {
-            return false;
-        };
-        path.exists()
+    fn path_for(&self, name: SavedDataName) -> Option<PathBuf> {
+        self.data_dir
+            .as_ref()
+            .map(|data_dir| data_dir.join(name.file_name()))
     }
 
-    fn path_for(&self, name: SavedDataName) -> Option<PathBuf> {
+    fn wincode_path_for(&self, name: WincodeSavedDataName) -> Option<PathBuf> {
         self.data_dir
             .as_ref()
             .map(|data_dir| data_dir.join(name.file_name()))
     }
 }
 
+fn invalid_binary_data(path: &Path, message: impl Display) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("Invalid binary saved data {}: {message}", path.display()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
         env::temp_dir,
+        io::ErrorKind,
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use serde::{Deserialize, Serialize};
 
-    use super::{SavedDataManager, SavedDataName};
+    use wincode::{SchemaRead, SchemaWrite};
+
+    use super::{SavedDataManager, SavedDataName, WincodeSavedDataName, sync_fs};
 
     const TEST_DATA: SavedDataName = SavedDataName::trusted("test_data");
+    const TEST_BINARY_DATA: WincodeSavedDataName =
+        WincodeSavedDataName::trusted("test_binary_data", *b"TEST", 3);
 
     #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
     struct TestData {
+        value: i32,
+    }
+
+    #[derive(Debug, PartialEq, Eq, SchemaWrite, SchemaRead)]
+    struct TestBinaryData {
         value: i32,
     }
 
@@ -195,6 +274,8 @@ mod tests {
         assert!(SavedDataName::try_new("nested/name").is_err());
         assert!(SavedDataName::try_new("nested\\name").is_err());
         assert!(SavedDataName::try_new("").is_err());
+        assert!(WincodeSavedDataName::try_new("valid_name", *b"TEST", 1).is_ok());
+        assert!(WincodeSavedDataName::try_new("../outside", *b"TEST", 1).is_err());
     }
 
     fn temp_world_dir(test_name: &str) -> PathBuf {
@@ -250,5 +331,53 @@ mod tests {
             .expect("ephemeral load should return default");
 
         assert_eq!(loaded, TestData::default());
+    }
+
+    #[test]
+    fn wincode_saved_data_round_trips_with_header() {
+        let dir = temp_world_dir("binary-round-trip");
+        let manager = SavedDataManager::new(Some(dir.as_path()));
+
+        manager
+            .sync_save_wincode(TEST_BINARY_DATA, &TestBinaryData { value: 42 })
+            .expect("binary saved data should write");
+        let loaded: TestBinaryData = manager
+            .sync_load_wincode(TEST_BINARY_DATA)
+            .expect("binary saved data should load")
+            .expect("binary saved data should exist");
+
+        assert_eq!(loaded, TestBinaryData { value: 42 });
+        let bytes = sync_fs::read(dir.join("data").join("test_binary_data.bin"))
+            .expect("binary saved data file should exist");
+        assert_eq!(&bytes[..6], b"TEST\x03\x00");
+
+        let newer_format = WincodeSavedDataName::trusted("test_binary_data", *b"TEST", 4);
+        let error = manager
+            .sync_load_wincode::<TestBinaryData>(newer_format)
+            .expect_err("mismatched binary format version should fail");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn missing_and_ephemeral_wincode_data_return_none() {
+        let dir = temp_world_dir("binary-missing");
+        let persistent = SavedDataManager::new(Some(dir.as_path()));
+        let ephemeral = SavedDataManager::new(None);
+
+        assert!(
+            persistent
+                .sync_load_wincode::<TestBinaryData>(TEST_BINARY_DATA)
+                .expect("missing binary data should load")
+                .is_none()
+        );
+        assert!(
+            ephemeral
+                .sync_load_wincode::<TestBinaryData>(TEST_BINARY_DATA)
+                .expect("ephemeral binary data should load")
+                .is_none()
+        );
+        ephemeral
+            .sync_save_wincode(TEST_BINARY_DATA, &TestBinaryData { value: 42 })
+            .expect("ephemeral binary save should be a no-op");
     }
 }

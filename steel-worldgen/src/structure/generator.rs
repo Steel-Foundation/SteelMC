@@ -1,7 +1,6 @@
 //! Shared structure placement/selection engine.
 
-use std::path::Path;
-use std::{iter, slice};
+use std::{iter, path::Path, slice};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
@@ -11,8 +10,9 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::saved_data::{SavedDataManager, names as saves_names};
-use steel_utils::{BlockPos, ChunkPos, Identifier};
+use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
+use steel_utils::{BlockPos, ChunkPos, Identifier, PackedChunkPos};
+use wincode::{SchemaRead, SchemaWrite};
 
 use crate::biomes::BiomeSourceKind;
 use crate::structure::desert_pyramid::DesertPyramidStructure;
@@ -33,16 +33,71 @@ use crate::structure::placement::{
 use crate::structure::ruined_portal::RuinedPortalStructure;
 use crate::structure::shipwreck::ShipwreckStructure;
 use crate::structure::single_piece::BuriedTreasureStructure;
-use crate::structure::stronghold::{StrongholdRingsData, StrongholdStructure};
+use crate::structure::stronghold::StrongholdStructure;
 use crate::structure::swamp_hut::SwampHutStructure;
 use crate::structure::{GenerationStub, Structure, StructureGenerationContext, StructureStart};
 
 const VANILLA_FLAT_RING_POSITION_SEED: i64 = 0;
+const RING_POSITION_GENERATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RingPositionCache {
+    generator_version: String,
+    entries: Vec<RingPositionCacheEntry>,
+}
+
+impl RingPositionCache {
+    fn current() -> Self {
+        Self {
+            generator_version: RING_POSITION_GENERATOR_VERSION.to_owned(),
+            entries: Vec::new(),
+        }
+    }
+
+    fn is_current(&self) -> bool {
+        self.generator_version == RING_POSITION_GENERATOR_VERSION
+    }
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RingPositionCacheEntry {
+    key: RingPositionCacheKey,
+    positions: Vec<PackedChunkPos>,
+}
+
+impl RingPositionCacheEntry {
+    fn runtime_positions(&self) -> Vec<ChunkPos> {
+        self.positions
+            .iter()
+            .copied()
+            .map(PackedChunkPos::to_chunk_pos)
+            .collect()
+    }
+}
+
+#[derive(PartialEq, Eq, SchemaWrite, SchemaRead)]
+struct RingPositionCacheKey {
+    structure_set: Identifier,
+    ring_seed: i64,
+    biome_provider: String,
+    distance: i32,
+    spread: i32,
+    count: i32,
+    preferred_biomes: Vec<Identifier>,
+}
 
 /// Biome operations needed while building `ChunkGeneratorStructureState`.
 pub trait StructureBiomeProvider {
     /// Every biome this provider can produce.
     fn possible_biomes(&self) -> FxHashSet<Identifier>;
+
+    /// Stable identity for every provider input that can affect ring snapping.
+    ///
+    /// Providers without a stable identity are not eligible for ring-position
+    /// persistence and should keep the default `None`.
+    fn ring_position_cache_key(&self) -> Option<String> {
+        None
+    }
 
     /// Vanilla's `BiomeSource.findBiomeHorizontal(findClosest=false, skipSteps=1)`.
     fn find_biome_horizontal(
@@ -58,6 +113,19 @@ pub trait StructureBiomeProvider {
 impl StructureBiomeProvider for BiomeSourceKind {
     fn possible_biomes(&self) -> FxHashSet<Identifier> {
         BiomeSourceKind::possible_biomes(self)
+    }
+
+    fn ring_position_cache_key(&self) -> Option<String> {
+        let key = match self {
+            Self::Overworld(source) => {
+                format!("multi_noise/minecraft:overworld/{}", source.seed())
+            }
+            Self::Nether(source) => {
+                format!("multi_noise/minecraft:the_nether/{}", source.seed())
+            }
+            Self::End(source) => format!("minecraft:the_end/{}", source.seed()),
+        };
+        Some(key)
     }
 
     fn find_biome_horizontal(
@@ -95,6 +163,10 @@ impl FixedStructureBiomeProvider {
 impl StructureBiomeProvider for FixedStructureBiomeProvider {
     fn possible_biomes(&self) -> FxHashSet<Identifier> {
         FxHashSet::from_iter([self.biome.key.clone()])
+    }
+
+    fn ring_position_cache_key(&self) -> Option<String> {
+        Some(format!("fixed/{}", self.biome.key))
     }
 
     fn find_biome_horizontal(
@@ -453,6 +525,97 @@ fn validate_structure_assets(
     }
 }
 
+fn load_ring_position_cache(data_manager: &SavedDataManager) -> RingPositionCache {
+    match data_manager.sync_load_wincode::<RingPositionCache>(saved_data_names::STRUCTURE_RINGS) {
+        Ok(Some(cache)) if cache.is_current() => cache,
+        Ok(Some(_) | None) => RingPositionCache::current(),
+        Err(error) => {
+            tracing::warn!("Couldn't load the structure ring cache: {error}");
+            RingPositionCache::current()
+        }
+    }
+}
+
+struct RingPlacementInput<'a> {
+    structure_set: &'a Identifier,
+    ring_seed: i64,
+    distance: i32,
+    spread: i32,
+    count: i32,
+    preferred_biomes: &'a [Identifier],
+}
+
+impl RingPlacementInput<'_> {
+    fn cache_key(&self, biome_provider: &str) -> RingPositionCacheKey {
+        RingPositionCacheKey {
+            structure_set: self.structure_set.clone(),
+            ring_seed: self.ring_seed,
+            biome_provider: biome_provider.to_owned(),
+            distance: self.distance,
+            spread: self.spread,
+            count: self.count,
+            preferred_biomes: self.preferred_biomes.to_vec(),
+        }
+    }
+}
+
+fn ring_positions_for_placement(
+    input: RingPlacementInput<'_>,
+    biome_provider: &(impl StructureBiomeProvider + Sync),
+    thread_pool: &rayon::ThreadPool,
+    persisted: Option<(&str, &mut RingPositionCache)>,
+) -> (Vec<ChunkPos>, bool) {
+    let preferred_biomes: FxHashSet<_> = input.preferred_biomes.iter().cloned().collect();
+    let snap = |block_x: i32, block_z: i32, rng: &mut LegacyRandom| -> Option<(i32, i32)> {
+        biome_provider.find_biome_horizontal(
+            block_x,
+            block_z,
+            112,
+            &|biome| preferred_biomes.contains(biome),
+            rng,
+        )
+    };
+
+    let Some((provider_key, cache)) = persisted else {
+        return (
+            generate_ring_positions(
+                input.ring_seed,
+                input.distance,
+                input.spread,
+                input.count,
+                Some(&snap),
+                thread_pool,
+            ),
+            false,
+        );
+    };
+    let cache_key = input.cache_key(provider_key);
+    if let Some(entry) = cache.entries.iter().find(|entry| entry.key == cache_key) {
+        return (entry.runtime_positions(), false);
+    }
+
+    let positions = generate_ring_positions(
+        input.ring_seed,
+        input.distance,
+        input.spread,
+        input.count,
+        Some(&snap),
+        thread_pool,
+    );
+    cache
+        .entries
+        .retain(|entry| &entry.key.structure_set != input.structure_set);
+    cache.entries.push(RingPositionCacheEntry {
+        key: cache_key,
+        positions: positions
+            .iter()
+            .copied()
+            .map(PackedChunkPos::from)
+            .collect(),
+    });
+    (positions, true)
+}
+
 impl StructureGenerator {
     /// Creates a structure generator over all vanilla structure sets.
     #[must_use]
@@ -579,6 +742,18 @@ impl StructureGenerator {
             .map(|(index, (key, _))| (key.clone(), index))
             .collect();
 
+        let data_manager = SavedDataManager::new(world_path);
+        let has_ring_placement = structure_sets
+            .iter()
+            .any(|(_, set)| matches!(&set.placement.kind, PlacementKind::ConcentricRings { .. }));
+        let mut persisted_ring_positions = if has_ring_placement {
+            biome_provider
+                .ring_position_cache_key()
+                .map(|provider_key| (provider_key, load_ring_position_cache(&data_manager)))
+        } else {
+            None
+        };
+        let mut ring_cache_dirty = false;
         let mut ring_positions = FxHashMap::default();
         for (key, set) in &structure_sets {
             if let PlacementKind::ConcentricRings {
@@ -588,42 +763,33 @@ impl StructureGenerator {
                 preferred_biomes,
             } = &set.placement.kind
             {
-                let preferred_biomes: FxHashSet<_> = preferred_biomes.iter().cloned().collect();
-                let snap =
-                    |block_x: i32, block_z: i32, rng: &mut LegacyRandom| -> Option<(i32, i32)> {
-                        biome_provider.find_biome_horizontal(
-                            block_x,
-                            block_z,
-                            112,
-                            &|biome| preferred_biomes.contains(biome),
-                            rng,
-                        )
-                    };
-                let data_manager = SavedDataManager::new(world_path);
-
-                let positions = if data_manager.exists(saves_names::STRONGHOLD_RINGS)
-                    && let Ok(rings) = data_manager
-                        .sync_load_or_default::<StrongholdRingsData>(saves_names::STRONGHOLD_RINGS)
-                {
-                    rings.positions
-                } else {
-                    let data = StrongholdRingsData {
-                        positions: generate_ring_positions(
-                            ring_position_seed,
-                            *distance,
-                            *spread,
-                            *count,
-                            Some(&snap),
-                            thread_pool,
-                        ),
-                    };
-                    if let Err(err) = data_manager.sync_save(saves_names::STRONGHOLD_RINGS, &data) {
-                        tracing::warn!("Couldn't create the stronghold ring data file: {err:?}");
-                    }
-                    data.positions
-                };
+                let persisted = persisted_ring_positions
+                    .as_mut()
+                    .map(|(provider_key, cache)| (provider_key.as_str(), cache));
+                let (positions, cache_changed) = ring_positions_for_placement(
+                    RingPlacementInput {
+                        structure_set: key,
+                        ring_seed: ring_position_seed,
+                        distance: *distance,
+                        spread: *spread,
+                        count: *count,
+                        preferred_biomes,
+                    },
+                    biome_provider,
+                    thread_pool,
+                    persisted,
+                );
+                ring_cache_dirty |= cache_changed;
                 ring_positions.insert(key.clone(), positions);
             }
+        }
+
+        if ring_cache_dirty
+            && let Some((_, cache)) = &persisted_ring_positions
+            && let Err(error) =
+                data_manager.sync_save_wincode(saved_data_names::STRUCTURE_RINGS, cache)
+        {
+            tracing::warn!("Couldn't save the structure ring cache: {error}");
         }
 
         Self {
@@ -884,6 +1050,12 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        env::temp_dir,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use glam::IVec3;
     use steel_registry::{test_support::init_test_registry, vanilla_biomes};
 
@@ -962,6 +1134,21 @@ mod tests {
         }
     }
 
+    fn temp_world_dir(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_nanos();
+        temp_dir().join(format!("steel-ring-cache-{test_name}-{unique}"))
+    }
+
+    fn vanilla_stronghold_set() -> (Identifier, StructureSet) {
+        load_vanilla_structure_sets()
+            .into_iter()
+            .find(|(key, _)| key == &Identifier::vanilla_static("strongholds"))
+            .expect("vanilla stronghold structure set should exist")
+    }
+
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
         init_test_registry();
@@ -975,6 +1162,96 @@ mod tests {
             &biome_provider,
             load_vanilla_structure_sets(),
             &thread_pool,
+        );
+    }
+
+    #[test]
+    fn ring_cache_keys_entries_by_placement_inputs() {
+        init_test_registry();
+        let world_dir = temp_world_dir("placement-inputs");
+        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .expect("ring cache test thread pool should build");
+        let (stronghold_key, stronghold_set) = vanilla_stronghold_set();
+        let far_key = Identifier::new("test", "far_strongholds");
+        let mut far_set = stronghold_set.clone();
+        let PlacementKind::ConcentricRings { distance, .. } = &mut far_set.placement.kind else {
+            panic!("vanilla stronghold set should use concentric rings");
+        };
+        *distance *= 2;
+        let sets = vec![
+            (stronghold_key.clone(), stronghold_set),
+            (far_key.clone(), far_set),
+        ];
+
+        let first = StructureGenerator::vanilla_with_structure_sets(
+            1,
+            Some(&world_dir),
+            &biome_provider,
+            sets.clone(),
+            &thread_pool,
+        );
+        assert_ne!(
+            first.ring_positions[&stronghold_key],
+            first.ring_positions[&far_key]
+        );
+
+        let second = StructureGenerator::vanilla_with_structure_sets(
+            2,
+            Some(&world_dir),
+            &biome_provider,
+            sets,
+            &thread_pool,
+        );
+        assert_ne!(
+            first.ring_positions[&stronghold_key],
+            second.ring_positions[&stronghold_key]
+        );
+
+        let cache: RingPositionCache = SavedDataManager::new(Some(&world_dir))
+            .sync_load_wincode(saved_data_names::STRUCTURE_RINGS)
+            .expect("ring cache should load")
+            .expect("ring cache should exist");
+        assert!(cache.is_current());
+        assert_eq!(cache.entries.len(), 2);
+        assert!(cache.entries.iter().all(|entry| entry.key.ring_seed == 2));
+        assert!(
+            cache
+                .entries
+                .iter()
+                .any(|entry| entry.key.structure_set == stronghold_key)
+        );
+        assert!(
+            cache
+                .entries
+                .iter()
+                .any(|entry| entry.key.structure_set == far_key)
+        );
+        assert!(world_dir.join("data").join("structure_rings.bin").exists());
+    }
+
+    #[test]
+    fn biome_source_cache_key_includes_seed() {
+        let overworld_one = BiomeSourceKind::overworld(1);
+        let overworld_two = BiomeSourceKind::overworld(2);
+        let nether_one = BiomeSourceKind::nether(1);
+        let nether_two = BiomeSourceKind::nether(2);
+        let end_one = BiomeSourceKind::end(1);
+        let end_two = BiomeSourceKind::end(2);
+
+        assert_ne!(
+            overworld_one.ring_position_cache_key(),
+            overworld_two.ring_position_cache_key()
+        );
+        assert_ne!(
+            nether_one.ring_position_cache_key(),
+            nether_two.ring_position_cache_key()
+        );
+        assert_ne!(
+            end_one.ring_position_cache_key(),
+            end_two.ring_position_cache_key()
         );
     }
 

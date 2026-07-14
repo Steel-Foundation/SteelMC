@@ -143,7 +143,9 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
 
         let biome_zoom_seed = obfuscate_biome_seed(seed as i64);
 
-        let possible_biome_refs = biome_source.possible_biome_refs();
+        // Force the lazy parameter-list R-tree inside the configured generation
+        // pool so its parallel construction does not initialize Rayon's global pool.
+        let possible_biome_refs = thread_pool.install(|| biome_source.possible_biome_refs());
         let possible_biomes = biome_source.possible_biomes();
         let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
         let structure_generator =
