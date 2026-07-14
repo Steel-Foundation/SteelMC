@@ -109,8 +109,29 @@ fn split_identifier(s: &str) -> (&str, &str) {
 }
 
 fn identifier_token(s: &str) -> TokenStream {
-    let (namespace, path) = split_identifier(s);
+    let id =
+        Identifier::from_str(s).unwrap_or_else(|error| panic!("invalid identifier {s:?}: {error}"));
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
     quote! { Identifier::new_static(#namespace, #path) }
+}
+
+fn item_name_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("item_name component must be an object"));
+    assert_eq!(
+        object.len(),
+        1,
+        "vanilla item_name component contains unsupported fields: {value}"
+    );
+    let translation = object
+        .get("translate")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("item_name component must contain a translate string"));
+    quote! {
+        TextComponent::translated(TranslatedMessage::new(#translation, None))
+    }
 }
 
 fn entity_type_ref_token(s: &str) -> Option<TokenStream> {
@@ -651,6 +672,30 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
         };
 
         match key.as_str() {
+            "minecraft:item_name" => {
+                item_name_component_token(value);
+            }
+            "minecraft:item_model" => {
+                let model = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("item_model component must be an identifier"));
+                let model = Identifier::from_str(model)
+                    .unwrap_or_else(|error| panic!("invalid item_model {model:?}: {error}"));
+                assert_eq!(
+                    model,
+                    Identifier::vanilla(item.name.clone()),
+                    "vanilla 26.2 item model must default to its item key"
+                );
+            }
+            "minecraft:tooltip_style" | "minecraft:note_block_sound" => {
+                let identifier = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{key} component must be an identifier string"));
+                let identifier = identifier_token(identifier);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::#component_ident, Some(#identifier))
+                });
+            }
             "minecraft:max_stack_size" => {
                 let val = value.as_i64().unwrap() as i32;
                 if val != 64 {
@@ -900,6 +945,10 @@ pub(crate) fn build() -> TokenStream {
     for item in &item_assets.items {
         let item_ident = Ident::new(&item.name, Span::call_site());
         let item_name_str = item.name.clone();
+        let item_name = item.components.get("minecraft:item_name").map_or_else(
+            || panic!("item {} is missing its item_name component", item.name),
+            item_name_component_token,
+        );
 
         item_definitions.extend(quote! {
            pub #item_ident: Item,
@@ -912,23 +961,37 @@ pub(crate) fn build() -> TokenStream {
             if builder_calls.is_empty() {
                 if block_name == &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
+                        #item_ident: Item::from_block(
+                            &vanilla_blocks::#block_ident,
+                            #item_name,
+                        ),
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
+                        #item_ident: Item::from_block_custom_name(
+                            &vanilla_blocks::#block_ident,
+                            #item_name_str,
+                            #item_name,
+                        ),
                     });
                 }
             } else {
                 // Block item with custom components
                 if block_name == &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
+                        #item_ident: Item::from_block(
+                            &vanilla_blocks::#block_ident,
+                            #item_name,
+                        )
                             #(#builder_calls)*,
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
+                        #item_ident: Item::from_block_custom_name(
+                            &vanilla_blocks::#block_ident,
+                            #item_name_str,
+                            #item_name,
+                        )
                             #(#builder_calls)*,
                     });
                 }
@@ -943,13 +1006,12 @@ pub(crate) fn build() -> TokenStream {
             };
 
             item_construction.extend(quote! {
-                #item_ident: Item {
-                    key: Identifier::vanilla_static(#item_name_str),
-                    components: DataComponentMap::common_item_components()
-                        #(#builder_calls)*,
-                    craft_remainder: #craft_remainder_value,
-                    id: OnceLock::new(),
-                },
+                #item_ident: Item::new(
+                    Identifier::vanilla_static(#item_name_str),
+                    #item_name,
+                    #craft_remainder_value,
+                )
+                    #(#builder_calls)*,
             });
         }
 
@@ -960,12 +1022,13 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::{
-            data_components::{vanilla_components, DataComponentMap},
+            data_components::vanilla_components,
             vanilla_attributes, vanilla_blocks, vanilla_entities,
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;
-        use std::sync::{LazyLock, OnceLock};
+        use std::sync::LazyLock;
+        use text_components::{TextComponent, translation::TranslatedMessage};
 
         pub static ITEMS: LazyLock<Items> = LazyLock::new(Items::init);
 

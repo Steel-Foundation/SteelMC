@@ -1157,9 +1157,9 @@ mod tests {
     use super::*;
     use crate::{
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, BREAK_SOUND, CREATIVE_SLOT_LOCK, LORE, MAP_POST_PROCESSING,
-            MAX_STACK_SIZE, RARITY, SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY,
-            USE_EFFECTS,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, CREATIVE_SLOT_LOCK, ITEM_MODEL, ITEM_NAME, LORE,
+            MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY, SWING_ANIMATION, SwingAnimationType,
+            TOOLTIP_DISPLAY, USE_EFFECTS,
         },
         item_stack::ItemStack,
         sound_events,
@@ -1167,6 +1167,8 @@ mod tests {
         vanilla_items,
     };
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use steel_utils::Identifier;
+    use text_components::content::Content;
 
     fn with_borrowed_tag<R>(
         tag: OwnedNbtTag,
@@ -1263,6 +1265,29 @@ mod tests {
 
         let heavy_core = ItemStack::new(&vanilla_items::ITEMS.heavy_core);
         assert_eq!(heavy_core.get(RARITY), Some(&Rarity::Epic));
+
+        let stone = ItemStack::new(&vanilla_items::ITEMS.stone);
+        assert_eq!(
+            stone.get(ITEM_MODEL),
+            Some(&Identifier::vanilla_static("stone"))
+        );
+        let Some(Content::Translate(stone_name)) = stone.get(ITEM_NAME).map(|name| &name.content)
+        else {
+            panic!("stone should have a translated item name");
+        };
+        assert_eq!(stone_name.key, "block.minecraft.stone");
+
+        let redstone = ItemStack::new(&vanilla_items::ITEMS.redstone);
+        assert_eq!(
+            redstone.get(ITEM_MODEL),
+            Some(&Identifier::vanilla_static("redstone"))
+        );
+        let Some(Content::Translate(redstone_name)) =
+            redstone.get(ITEM_NAME).map(|name| &name.content)
+        else {
+            panic!("redstone should have a translated item name");
+        };
+        assert_eq!(redstone_name.key, "item.minecraft.redstone");
 
         let shield = ItemStack::new(&vanilla_items::ITEMS.shield);
         assert_eq!(

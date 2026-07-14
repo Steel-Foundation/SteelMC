@@ -91,7 +91,7 @@ pub const MINIMUM_ATTACK_CHARGE: DataComponentType<f32> =
 pub const DAMAGE_TYPE: DataComponentType<DamageTypeComponent> =
     DataComponentType::new(Identifier::vanilla_static("damage_type"));
 
-pub const ITEM_MODEL: DataComponentType<UnimplementedComponent> =
+pub const ITEM_MODEL: DataComponentType<Identifier> =
     DataComponentType::new(Identifier::vanilla_static("item_model"));
 
 pub const LORE: DataComponentType<ItemLore> =
@@ -118,10 +118,10 @@ pub const CUSTOM_MODEL_DATA: DataComponentType<UnimplementedComponent> =
 pub const TOOLTIP_DISPLAY: DataComponentType<TooltipDisplay> =
     DataComponentType::new(Identifier::vanilla_static("tooltip_display"));
 
-pub const TOOLTIP_STYLE: DataComponentType<UnimplementedComponent> =
+pub const TOOLTIP_STYLE: DataComponentType<Identifier> =
     DataComponentType::new(Identifier::vanilla_static("tooltip_style"));
 
-pub const NOTE_BLOCK_SOUND: DataComponentType<UnimplementedComponent> =
+pub const NOTE_BLOCK_SOUND: DataComponentType<Identifier> =
     DataComponentType::new(Identifier::vanilla_static("note_block_sound"));
 
 pub const FOOD: DataComponentType<UnimplementedComponent> =
@@ -534,7 +534,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 9: item_name
     registry.register(ITEM_NAME);
     // 10: item_model
-    registry.register_unimplemented(ITEM_MODEL, true);
+    registry.register(ITEM_MODEL);
     // 11: lore
     registry.register(LORE);
     // 12: rarity
@@ -590,7 +590,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 34: glider
     register_unit!(registry, GLIDER);
     // 35: tooltip_style
-    registry.register_unimplemented(TOOLTIP_STYLE, true);
+    registry.register(TOOLTIP_STYLE);
     // 36: death_protection
     registry.register_unimplemented(DEATH_PROTECTION, true);
     // 37: blocks_attacks
@@ -668,7 +668,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 70: profile
     registry.register_unimplemented(PROFILE, true);
     // 71: note_block_sound
-    registry.register_unimplemented(NOTE_BLOCK_SOUND, true);
+    registry.register(NOTE_BLOCK_SOUND);
     // 72: banner_patterns
     registry.register_unimplemented(BANNER_PATTERNS, true);
     // 73: base_color
@@ -854,6 +854,70 @@ mod tests {
                 .expect("map_post_processing should decode"),
             ComponentData::new(MapPostProcessing::Scale)
         );
+    }
+
+    #[test]
+    fn identifier_component_codecs_use_vanilla_namespace_rules() {
+        use steel_utils::codec::VarInt;
+        use steel_utils::hash::HashComponent as _;
+        use steel_utils::serial::PrefixedWrite as _;
+
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+        let expected = Identifier::vanilla_static("stone");
+
+        for component in [ITEM_MODEL, TOOLTIP_STYLE, NOTE_BLOCK_SOUND] {
+            let entry = registry
+                .by_key(&component.key)
+                .unwrap_or_else(|| panic!("missing identifier component {}", component.key));
+            assert!(entry.is_implemented(), "{}", component.key);
+            let data = ComponentData::new(expected.clone());
+            assert_eq!(
+                entry.read_nbt_owned(&NbtTag::String("stone".into())),
+                Some(ComponentData::new(expected.clone())),
+                "{}",
+                component.key
+            );
+            assert_eq!(
+                entry
+                    .write_nbt(&data)
+                    .expect("persistent identifier should encode"),
+                NbtTag::String("minecraft:stone".into()),
+                "{}",
+                component.key
+            );
+
+            let mut abbreviated = Vec::new();
+            "stone"
+                .write_prefixed::<VarInt>(&mut abbreviated)
+                .expect("abbreviated identifier should encode");
+            assert_eq!(
+                entry
+                    .read_network(&mut std::io::Cursor::new(abbreviated.as_slice()))
+                    .expect("abbreviated identifier should decode"),
+                ComponentData::new(expected.clone()),
+                "{}",
+                component.key
+            );
+            let mut encoded = Vec::new();
+            entry
+                .write_network(&data, &mut encoded)
+                .expect("network identifier should encode");
+            let mut canonical = Vec::new();
+            "minecraft:stone"
+                .write_prefixed::<VarInt>(&mut canonical)
+                .expect("canonical identifier should encode");
+            assert_eq!(encoded, canonical, "{}", component.key);
+
+            assert_eq!(
+                entry
+                    .compute_hash(&data)
+                    .expect("persistent identifier should hash"),
+                expected.compute_hash(),
+                "{}",
+                component.key
+            );
+        }
     }
 
     #[test]

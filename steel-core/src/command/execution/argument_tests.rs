@@ -1264,6 +1264,35 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
 }
 
 #[test]
+fn item_stack_argument_parses_identifier_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[item_model='stone',tooltip_style='steel:tooltip',note_block_sound='minecraft:block.note_block.harp']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("identifier item components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(
+        stack.get(vanilla_components::ITEM_MODEL),
+        Some(&Identifier::vanilla_static("stone"))
+    );
+    assert_eq!(
+        stack.get(vanilla_components::TOOLTIP_STYLE),
+        Some(&Identifier::new_static("steel", "tooltip"))
+    );
+    assert_eq!(
+        stack.get(vanilla_components::NOTE_BLOCK_SOUND),
+        Some(&Identifier::vanilla_static("block.note_block.harp"))
+    );
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
