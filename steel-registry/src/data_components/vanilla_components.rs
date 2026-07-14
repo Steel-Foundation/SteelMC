@@ -13,7 +13,7 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
 pub use super::components::{
-    AttackRange, DamageTypeComponent, Equippable, EquippableAllowedEntities,
+    AttackRange, CustomData, DamageTypeComponent, Equippable, EquippableAllowedEntities,
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
     ItemEnchantments, ItemLore, ItemLoreTooLong, MapPostProcessing, PiercingWeapon, Rarity,
     SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay,
@@ -79,7 +79,7 @@ pub enum UnimplementedComponent {}
 // These component IDs are reserved in vanilla order until their concrete value
 // types and codecs are ported.
 
-pub const CUSTOM_DATA: DataComponentType<UnimplementedComponent> =
+pub const CUSTOM_DATA: DataComponentType<CustomData> =
     DataComponentType::new(Identifier::vanilla_static("custom_data"));
 
 pub const USE_EFFECTS: DataComponentType<UseEffects> =
@@ -211,7 +211,7 @@ pub const DEBUG_STICK_STATE: DataComponentType<UnimplementedComponent> =
 pub const ENTITY_DATA: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("entity_data"));
 
-pub const BUCKET_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
+pub const BUCKET_ENTITY_DATA: DataComponentType<CustomData> =
     DataComponentType::new(Identifier::vanilla_static("bucket_entity_data"));
 
 pub const BLOCK_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
@@ -408,6 +408,18 @@ fn bool_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()
     value.write(writer)
 }
 
+fn custom_data_codec_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    CustomData::read_codec_network(cursor).map(ComponentData::new)
+}
+
+fn custom_data_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo as _;
+    let Some(value) = data.downcast_ref::<CustomData>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
 #[expect(
     clippy::unnecessary_wraps,
     reason = "network reader function pointers return io::Result"
@@ -508,7 +520,7 @@ macro_rules! register_unit {
 pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // Order must match vanilla's DataComponents.java exactly!
     // 0: custom_data
-    registry.register_unimplemented(CUSTOM_DATA, true);
+    registry.register_custom_network(CUSTOM_DATA, custom_data_codec_reader, custom_data_writer);
     // 1: max_stack_size
     register_ranged_i32!(registry, MAX_STACK_SIZE, 1, 99);
     // 2: max_damage
@@ -644,7 +656,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 58: entity_data
     registry.register_unimplemented(ENTITY_DATA, true);
     // 59: bucket_entity_data
-    registry.register_unimplemented(BUCKET_ENTITY_DATA, true);
+    registry.register(BUCKET_ENTITY_DATA);
     // 60: block_entity_data
     registry.register_unimplemented(BLOCK_ENTITY_DATA, true);
     // 61: instrument
@@ -983,13 +995,15 @@ mod tests {
 
         let custom_data = registry
             .by_key(&CUSTOM_DATA.key)
-            .expect("custom_data should reserve its vanilla registry ID");
-        assert!(!custom_data.is_implemented());
+            .expect("custom_data should be registered");
+        assert!(custom_data.is_implemented());
+        assert!(custom_data.validates(&ComponentData::new(CustomData::default())));
         assert!(!custom_data.validates(&ComponentData::new(())));
-        assert!(
-            custom_data
-                .read_network(&mut std::io::Cursor::new(&[]))
-                .is_err()
-        );
+
+        let food = registry
+            .by_key(&FOOD.key)
+            .expect("food should reserve its vanilla registry ID");
+        assert!(!food.is_implemented());
+        assert!(food.read_network(&mut std::io::Cursor::new(&[])).is_err());
     }
 }

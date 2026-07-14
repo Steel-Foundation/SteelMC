@@ -76,6 +76,7 @@ enum ItemPredicateTerm {
 
 #[derive(Clone, Debug, PartialEq)]
 enum DataComponentPredicate {
+    CustomData(vanilla_components::CustomData),
     Damage(DamagePredicate),
     Enchantments {
         stored: bool,
@@ -131,6 +132,11 @@ impl ItemPredicateTerm {
 impl DataComponentPredicate {
     fn matches(&self, stack: &ItemStack) -> bool {
         match self {
+            Self::CustomData(expected) => stack
+                .get(vanilla_components::CUSTOM_DATA)
+                .cloned()
+                .unwrap_or_default()
+                .matched_by(expected.as_compound()),
             Self::Damage(predicate) => predicate.matches(stack),
             Self::Enchantments { stored, predicates } => {
                 let enchantments = if *stored {
@@ -425,7 +431,11 @@ fn is_supported_predicate_key(key: &Identifier) -> bool {
     key.namespace == Identifier::VANILLA_NAMESPACE
         && matches!(
             key.path.as_ref(),
-            "damage" | "enchantments" | "stored_enchantments" | "attribute_modifiers"
+            "custom_data"
+                | "damage"
+                | "enchantments"
+                | "stored_enchantments"
+                | "attribute_modifiers"
         )
 }
 
@@ -434,6 +444,8 @@ fn parse_supported_data_predicate(
     tag: &NbtTag,
 ) -> Option<DataComponentPredicate> {
     match key.path.as_ref() {
+        "custom_data" => vanilla_components::CustomData::from_nbt_value(tag)
+            .map(DataComponentPredicate::CustomData),
         "damage" => parse_damage_predicate(tag).map(DataComponentPredicate::Damage),
         "enchantments" => parse_enchantment_predicates(tag).map(|predicates| {
             DataComponentPredicate::Enchantments {

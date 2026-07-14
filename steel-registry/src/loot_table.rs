@@ -1039,7 +1039,9 @@ pub enum LootFunction {
     /// Set components on the item.
     SetComponents { components: &'static str },
     /// Set custom NBT data on the item (merges with existing `custom_data`).
-    SetCustomData { tag: &'static str },
+    SetCustomData {
+        tag: fn() -> crate::data_components::CustomData,
+    },
     /// Smelt the item (convert raw to cooked, ore to ingot, etc.).
     FurnaceSmelt { use_input_count: bool },
     /// Create an exploration map pointing to a structure.
@@ -1826,7 +1828,7 @@ impl LootFunction {
                 item.set_components_from_json(components);
             }
             LootFunction::SetCustomData { tag } => {
-                item.set_custom_data(tag);
+                item.set_custom_data(&tag());
             }
             LootFunction::FurnaceSmelt { use_input_count } => {
                 item.apply_furnace_smelt(*use_input_count);

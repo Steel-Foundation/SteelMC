@@ -687,6 +687,18 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     "vanilla 26.2 item model must default to its item key"
                 );
             }
+            "minecraft:bucket_entity_data" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla bucket_entity_data item prototype must be empty, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::BUCKET_ENTITY_DATA,
+                        Some(vanilla_components::CustomData::default()),
+                    )
+                });
+            }
             "minecraft:tooltip_style" | "minecraft:note_block_sound" => {
                 let identifier = value
                     .as_str()

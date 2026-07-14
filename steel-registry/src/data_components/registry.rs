@@ -1156,10 +1156,11 @@ pub fn component_try_into<T: Component + DowncastType>(
 mod tests {
     use super::*;
     use crate::{
+        data_components::CustomData,
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, BREAK_SOUND, CREATIVE_SLOT_LOCK, ITEM_MODEL, ITEM_NAME, LORE,
-            MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY, SWING_ANIMATION, SwingAnimationType,
-            TOOLTIP_DISPLAY, USE_EFFECTS,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK, ITEM_MODEL,
+            ITEM_NAME, LORE, MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY, SWING_ANIMATION,
+            SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
         },
         item_stack::ItemStack,
         sound_events,
@@ -1295,6 +1296,13 @@ mod tests {
                 .get(BREAK_SOUND)
                 .and_then(SoundEventHolder::registry_ref),
             Some(&sound_events::ITEM_SHIELD_BREAK)
+        );
+
+        let pufferfish_bucket = ItemStack::new(&vanilla_items::ITEMS.pufferfish_bucket);
+        assert!(
+            pufferfish_bucket
+                .get(BUCKET_ENTITY_DATA)
+                .is_some_and(CustomData::is_empty)
         );
     }
 }

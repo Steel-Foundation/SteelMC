@@ -2,6 +2,7 @@
 
 mod attribute_modifiers;
 mod combat;
+mod custom_data;
 mod enchantments;
 mod equippable;
 mod item_lore;
@@ -17,6 +18,7 @@ pub use attribute_modifiers::{
     ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
 };
 pub use combat::{AttackRange, DamageTypeComponent, PiercingWeapon, Weapon};
+pub use custom_data::CustomData;
 pub use enchantments::ItemEnchantments;
 pub use equippable::{Equippable, EquippableAllowedEntities};
 pub use item_lore::{ItemLore, ItemLoreTooLong};

@@ -13,6 +13,7 @@ use crate::command::{
     },
 };
 use glam::DVec3;
+use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
@@ -1293,6 +1294,41 @@ fn item_stack_argument_parses_identifier_components() {
 }
 
 #[test]
+fn item_stack_argument_parses_custom_data_codecs() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[custom_data={value:7,nested:{name:'steel'}},bucket_entity_data='{Health:4.0f}']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom data components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    let custom_data = stack
+        .get(vanilla_components::CUSTOM_DATA)
+        .expect("custom data should be retained");
+    assert_eq!(custom_data.as_compound().int("value"), Some(7));
+    assert_eq!(
+        custom_data
+            .as_compound()
+            .compound("nested")
+            .and_then(|nested| nested.string("name"))
+            .map(|name| name.to_str()),
+        Some("steel".into())
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::BUCKET_ENTITY_DATA)
+            .and_then(|data| data.as_compound().float("Health")),
+        Some(4.0)
+    );
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
@@ -1355,7 +1391,6 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
 
     for input in [
-        "resource stone[custom_data={}]",
         "resource stone[creative_slot_lock={}]",
         "resource stone[additional_trade_cost={}]",
         "resource stone[map_post_processing={}]",
@@ -1543,6 +1578,38 @@ fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
     assert!(predicate.matches(&sword));
     sword.set_damage_value(6);
     assert!(!predicate.matches(&sword));
+}
+
+#[test]
+fn item_predicate_argument_supports_partial_custom_data_matching() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource stone[custom_data~{nested:{value:2}}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom data predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    let mut nested = NbtCompound::new();
+    nested.insert("value", 2);
+    nested.insert("extra", 3);
+    let mut compound = NbtCompound::new();
+    compound.insert("nested", nested);
+    let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+    stack.set(
+        vanilla_components::CUSTOM_DATA,
+        vanilla_components::CustomData::try_from_compound(compound)
+            .expect("test custom data should be valid"),
+    );
+
+    assert!(predicate.matches(&stack));
+    stack.remove(vanilla_components::CUSTOM_DATA);
+    assert!(!predicate.matches(&stack));
 }
 
 #[test]

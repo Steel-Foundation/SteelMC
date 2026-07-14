@@ -14,13 +14,13 @@ use crate::{
     REGISTRY, RegistryEntry, RegistryExt,
     damage_type::DamageTypeRef,
     data_components::{
-        Component, ComponentData, ComponentPatchEntry, DataComponentMap, DataComponentPatch,
-        DataComponentType,
+        Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
+        DataComponentPatch, DataComponentType,
         vanilla_components::{
-            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, DAMAGE, DAMAGE_TYPE, ENCHANTMENTS,
-            EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments, MAX_DAMAGE,
-            MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON, PiercingWeapon, TOOL, Tool,
-            UNBREAKABLE, WEAPON, Weapon,
+            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_TYPE,
+            ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments,
+            MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON, PiercingWeapon,
+            TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
@@ -581,12 +581,18 @@ impl ItemStack {
         // Parse the JSON and set each component in the patch
     }
 
-    /// Sets custom NBT data on this item (merges with existing `custom_data`).
-    pub const fn set_custom_data(&mut self, _tag: &str) {
-        // TODO: Implement when NBT/SNBT parsing is available
-        // 1. Parse the tag string as SNBT (Stringified NBT)
-        // 2. Merge it with existing CUSTOM_DATA component
-        // 3. Set the merged result as the new CUSTOM_DATA
+    /// Merges custom NBT data into this item's `custom_data` component.
+    pub fn set_custom_data(&mut self, value: &CustomData) {
+        let merged = self
+            .get(CUSTOM_DATA)
+            .cloned()
+            .unwrap_or_default()
+            .merged_with(value);
+        if merged.is_empty() {
+            self.remove(CUSTOM_DATA);
+        } else {
+            self.set(CUSTOM_DATA, merged);
+        }
     }
 
     /// Applies furnace smelting to convert this item (e.g., raw iron -> iron ingot).
@@ -1085,7 +1091,8 @@ mod persistence_tests {
     use simdnbt::owned::{NbtCompound, NbtTag};
 
     use super::ItemStack;
-    use crate::data_components::vanilla_components::{LORE, TOOLTIP_DISPLAY};
+    use crate::data_components::CustomData;
+    use crate::data_components::vanilla_components::{CUSTOM_DATA, LORE, TOOLTIP_DISPLAY};
     use crate::test_support::init_test_registry;
     use crate::vanilla_items::ITEMS;
 
@@ -1163,5 +1170,38 @@ mod persistence_tests {
                 .expect("tooltip display should remain set")
                 .shows(LORE)
         );
+    }
+
+    #[test]
+    fn set_custom_data_recursively_merges_and_removes_empty_values() {
+        init_test_registry();
+        let mut stack = ItemStack::new(&ITEMS.stone);
+        let empty = CustomData::default();
+        stack.set_custom_data(&empty);
+        assert!(stack.get(CUSTOM_DATA).is_none());
+
+        let mut nested = NbtCompound::new();
+        nested.insert("kept", 1);
+        nested.insert("changed", 1);
+        let mut first = NbtCompound::new();
+        first.insert("nested", nested);
+        stack.set_custom_data(
+            &CustomData::try_from_compound(first).expect("first value should be valid"),
+        );
+
+        let mut nested = NbtCompound::new();
+        nested.insert("changed", 2);
+        let mut second = NbtCompound::new();
+        second.insert("nested", nested);
+        stack.set_custom_data(
+            &CustomData::try_from_compound(second).expect("second value should be valid"),
+        );
+
+        let nested = stack
+            .get(CUSTOM_DATA)
+            .and_then(|data| data.as_compound().compound("nested"))
+            .expect("nested custom data should remain");
+        assert_eq!(nested.int("kept"), Some(1));
+        assert_eq!(nested.int("changed"), Some(2));
     }
 }
