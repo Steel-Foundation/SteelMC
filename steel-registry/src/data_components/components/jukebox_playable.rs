@@ -5,32 +5,37 @@ use std::str::FromStr;
 
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-use crate::jukebox_song::JukeboxSongRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::jukebox_song::{JukeboxSong, JukeboxSongRef, JukeboxSongValue};
+use crate::{REGISTRY, RegistryExt, RegistryHolder};
 
 /// A jukebox song attached to an item stack.
 ///
-/// Vanilla's persistent codec only accepts registry references, although its
-/// stream codec can represent a direct holder. Steel intentionally rejects
-/// that direct stream branch so every representable item stack can persist.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JukeboxPlayable {
-    song: JukeboxSongRef,
+    song: RegistryHolder<JukeboxSong>,
 }
 
 impl JukeboxPlayable {
     #[must_use]
     pub const fn new(song: JukeboxSongRef) -> Self {
-        Self { song }
+        Self {
+            song: RegistryHolder::reference(song),
+        }
     }
 
     #[must_use]
-    pub const fn song(&self) -> JukeboxSongRef {
-        self.song
+    pub const fn direct(song: JukeboxSongValue) -> Self {
+        Self {
+            song: RegistryHolder::direct(song),
+        }
+    }
+
+    #[must_use]
+    pub const fn song(&self) -> &RegistryHolder<JukeboxSong> {
+        &self.song
     }
 
     /// Decodes `JukeboxSong.CODEC`, which is a registry-fixed holder codec.
@@ -41,51 +46,29 @@ impl JukeboxPlayable {
     }
 
     /// Encodes `JukeboxSong.CODEC`, which is a registry-fixed holder codec.
-    #[must_use]
-    pub fn to_persistent_nbt(&self) -> NbtTag {
-        NbtTag::String(self.song.key.to_string().into())
+    pub fn to_persistent_nbt(&self) -> Result<NbtTag> {
+        let Some(song) = self.song.as_reference() else {
+            return Err(Error::other("Direct jukebox song holder is not persistent"));
+        };
+        Ok(NbtTag::String(song.key.to_string().into()))
     }
 }
 
 impl HashComponent for JukeboxPlayable {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
-        self.song.key.to_string().hash_component(hasher);
+        self.song.hash_component(hasher);
     }
 }
 
 impl ReadFrom for JukeboxPlayable {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        let encoded_id = VarInt::read(data)?.0;
-        if encoded_id == 0 {
-            return Err(Error::other(
-                "Direct jukebox song holders cannot be stored in item stacks",
-            ));
-        }
-
-        let id = encoded_id
-            .checked_sub(1)
-            .and_then(|id| usize::try_from(id).ok())
-            .ok_or_else(|| Error::other(format!("Invalid jukebox song holder id: {encoded_id}")))?;
-        REGISTRY
-            .jukebox_songs
-            .by_id(id)
-            .map(Self::new)
-            .ok_or_else(|| Error::other(format!("Unknown jukebox song holder id: {encoded_id}")))
+        RegistryHolder::read(data).map(|song| Self { song })
     }
 }
 
 impl WriteTo for JukeboxPlayable {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        let id = self
-            .song
-            .try_id()
-            .ok_or_else(|| Error::other(format!("Unknown jukebox song: {}", self.song.key)))?;
-        let id = i32::try_from(id)
-            .map_err(|_| Error::other(format!("Jukebox song id out of protocol range: {id}")))?;
-        let encoded_id = id
-            .checked_add(1)
-            .ok_or_else(|| Error::other("Jukebox song id exceeds protocol range"))?;
-        VarInt(encoded_id).write(writer)
+        self.song.write(writer)
     }
 }
 
@@ -94,7 +77,6 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::owned::NbtTag;
-    use steel_utils::codec::VarInt;
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use super::JukeboxPlayable;
@@ -116,18 +98,38 @@ mod tests {
             component
         );
 
-        let nbt = component.to_persistent_nbt();
+        let nbt = component
+            .to_persistent_nbt()
+            .expect("reference is persistent");
         assert_eq!(nbt, NbtTag::String("minecraft:cat".into()));
     }
 
     #[test]
-    fn direct_holder_is_rejected_from_item_stack_representation() {
-        init_test_registry();
-        let mut network = Vec::new();
-        VarInt(0)
-            .write(&mut network)
-            .expect("direct holder discriminator should encode");
+    fn direct_holder_round_trips_stream_and_is_not_persistent() {
+        use crate::jukebox_song::JukeboxSongValue;
+        use crate::sound_event::SoundEventHolder;
+        use steel_utils::Identifier;
+        use text_components::TextComponent;
 
-        assert!(JukeboxPlayable::read(&mut Cursor::new(network.as_slice())).is_err());
+        init_test_registry();
+        let component = JukeboxPlayable::direct(JukeboxSongValue {
+            sound_event: SoundEventHolder::Direct {
+                sound_id: Identifier::vanilla_static("custom_song"),
+                fixed_range: Some(12.0),
+            },
+            description: TextComponent::plain("Custom song"),
+            length_in_seconds: -1.0,
+            comparator_output: 99,
+        });
+        let mut network = Vec::new();
+        component
+            .write(&mut network)
+            .expect("direct holder should encode");
+        assert_eq!(
+            JukeboxPlayable::read(&mut Cursor::new(network.as_slice()))
+                .expect("direct holder should decode"),
+            component
+        );
+        assert!(component.to_persistent_nbt().is_err());
     }
 }

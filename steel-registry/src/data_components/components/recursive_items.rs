@@ -11,6 +11,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 
 use super::Bees;
 use crate::ItemStackTemplate;
+use crate::data_components::registry::ValidatePersistentComponent;
 use crate::data_components::vanilla_components::{BEES, BUNDLE_CONTENTS};
 
 macro_rules! impl_template_wrapper_codecs {
@@ -66,6 +67,12 @@ impl UseRemainder {
 }
 
 impl_template_wrapper_codecs!(UseRemainder, convert_into);
+
+impl ValidatePersistentComponent for UseRemainder {
+    fn validate_persistent(&self) -> Result<()> {
+        self.convert_into.validate_persistent_encoding()
+    }
+}
 
 /// The non-empty projectile templates loaded into a crossbow.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -125,6 +132,12 @@ impl FromNbtTag for ChargedProjectiles {
 impl HashComponent for ChargedProjectiles {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
         hash_template_list(&self.items, hasher);
+    }
+}
+
+impl ValidatePersistentComponent for ChargedProjectiles {
+    fn validate_persistent(&self) -> Result<()> {
+        validate_templates(self.items.iter())
     }
 }
 
@@ -317,6 +330,12 @@ impl HashComponent for BundleContents {
     }
 }
 
+impl ValidatePersistentComponent for BundleContents {
+    fn validate_persistent(&self) -> Result<()> {
+        validate_templates(self.items.iter())
+    }
+}
+
 /// Up to 256 dense optional container slots.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ItemContainerContents {
@@ -439,6 +458,12 @@ impl HashComponent for ItemContainerContents {
     }
 }
 
+impl ValidatePersistentComponent for ItemContainerContents {
+    fn validate_persistent(&self) -> Result<()> {
+        validate_templates(self.items.iter().filter_map(Option::as_ref))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ContainerSlot {
     index: usize,
@@ -501,6 +526,13 @@ impl SulfurCubeContent {
 
 impl_template_wrapper_codecs!(SulfurCubeContent, absorbed_block_item_stack);
 
+impl ValidatePersistentComponent for SulfurCubeContent {
+    fn validate_persistent(&self) -> Result<()> {
+        self.absorbed_block_item_stack
+            .validate_persistent_encoding()
+    }
+}
+
 fn write_template_list(
     items: &[ItemStackTemplate],
     max: Option<usize>,
@@ -509,6 +541,13 @@ fn write_template_list(
     write_count(items.len(), max, writer)?;
     for item in items {
         item.write(writer)?;
+    }
+    Ok(())
+}
+
+fn validate_templates<'a>(items: impl IntoIterator<Item = &'a ItemStackTemplate>) -> Result<()> {
+    for item in items {
+        item.validate_persistent_encoding()?;
     }
     Ok(())
 }

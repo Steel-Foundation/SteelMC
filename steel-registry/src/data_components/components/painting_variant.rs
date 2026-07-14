@@ -3,79 +3,52 @@
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 
+use simdnbt::FromNbtTag;
 use simdnbt::owned::NbtTag;
-use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
-use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-use crate::painting_variant::PaintingVariantRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::painting_variant::{PaintingVariant, PaintingVariantRef, PaintingVariantValue};
+use crate::{REGISTRY, RegistryExt, RegistryHolder};
 
 /// Registry-owned painting variant stored on a painting item.
 ///
-/// Vanilla's persistent codec is registry-fixed even though its stream codec
-/// can carry a direct definition. Steel rejects that stream-only branch so a
-/// decoded item stack always remains persistable.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaintingVariantComponent {
-    variant: PaintingVariantRef,
+    variant: RegistryHolder<PaintingVariant>,
 }
 
 impl PaintingVariantComponent {
     #[must_use]
     pub const fn new(variant: PaintingVariantRef) -> Self {
-        Self { variant }
+        Self {
+            variant: RegistryHolder::reference(variant),
+        }
     }
 
     #[must_use]
-    pub const fn variant(&self) -> PaintingVariantRef {
-        self.variant
+    pub const fn direct(variant: PaintingVariantValue) -> Self {
+        Self {
+            variant: RegistryHolder::direct(variant),
+        }
+    }
+
+    #[must_use]
+    pub const fn variant(&self) -> &RegistryHolder<PaintingVariant> {
+        &self.variant
     }
 }
 
 impl WriteTo for PaintingVariantComponent {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        let id = self.variant.try_id().ok_or_else(|| {
-            Error::other(format!("Unknown painting variant: {}", self.variant.key))
-        })?;
-        let id = i32::try_from(id)
-            .map_err(|_| Error::other(format!("Painting variant id out of range: {id}")))?;
-        let encoded_id = id
-            .checked_add(1)
-            .ok_or_else(|| Error::other("Painting variant id exceeds protocol range"))?;
-        VarInt(encoded_id).write(writer)
+        self.variant.write(writer)
     }
 }
 
 impl ReadFrom for PaintingVariantComponent {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        let encoded_id = VarInt::read(data)?.0;
-        if encoded_id == 0 {
-            return Err(Error::other(
-                "Direct painting variant holders cannot be stored in item stacks",
-            ));
-        }
-        let id = encoded_id
-            .checked_sub(1)
-            .and_then(|id| usize::try_from(id).ok())
-            .ok_or_else(|| {
-                Error::other(format!("Invalid painting variant holder id: {encoded_id}"))
-            })?;
-        REGISTRY
-            .painting_variants
-            .by_id(id)
-            .map(Self::new)
-            .ok_or_else(|| {
-                Error::other(format!("Unknown painting variant holder id: {encoded_id}"))
-            })
-    }
-}
-
-impl ToNbtTag for PaintingVariantComponent {
-    fn to_nbt_tag(self) -> NbtTag {
-        NbtTag::String(self.variant.key.to_string().into())
+        RegistryHolder::read(data).map(|variant| Self { variant })
     }
 }
 
@@ -88,7 +61,18 @@ impl FromNbtTag for PaintingVariantComponent {
 
 impl HashComponent for PaintingVariantComponent {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
-        self.variant.key.to_string().hash_component(hasher);
+        self.variant.hash_component(hasher);
+    }
+}
+
+impl PaintingVariantComponent {
+    pub(crate) fn try_to_persistent_nbt(&self) -> Result<NbtTag> {
+        let Some(variant) = self.variant.as_reference() else {
+            return Err(Error::other(
+                "Direct painting variant holder is not persistent",
+            ));
+        };
+        Ok(NbtTag::String(variant.key.to_string().into()))
     }
 }
 
@@ -96,9 +80,8 @@ impl HashComponent for PaintingVariantComponent {
 mod tests {
     use std::io::Cursor;
 
+    use simdnbt::FromNbtTag as _;
     use simdnbt::borrow::read_tag;
-    use simdnbt::{FromNbtTag as _, ToNbtTag as _};
-    use steel_utils::codec::VarInt;
     use steel_utils::hash::HashComponent as _;
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
@@ -121,7 +104,9 @@ mod tests {
             component
         );
 
-        let nbt = component.clone().to_nbt_tag();
+        let nbt = component
+            .try_to_persistent_nbt()
+            .expect("reference is persistent");
         assert_eq!(component.compute_hash(), nbt.compute_hash());
         let mut bytes = Vec::new();
         nbt.write(&mut bytes);
@@ -134,11 +119,26 @@ mod tests {
     }
 
     #[test]
-    fn direct_stream_holder_is_rejected() {
+    fn direct_stream_holder_round_trips_but_is_not_persistent() {
+        use crate::painting_variant::PaintingVariantValue;
+        use steel_utils::Identifier;
+
+        let component = PaintingVariantComponent::direct(PaintingVariantValue {
+            width: -1,
+            height: 32,
+            asset_id: Identifier::vanilla_static("custom"),
+            title: None,
+            author: None,
+        });
         let mut network = Vec::new();
-        VarInt(0)
+        component
             .write(&mut network)
-            .expect("direct holder discriminator should encode");
-        assert!(PaintingVariantComponent::read(&mut Cursor::new(network.as_slice())).is_err());
+            .expect("direct variant should encode");
+        assert_eq!(
+            PaintingVariantComponent::read(&mut Cursor::new(network.as_slice()))
+                .expect("direct variant should decode"),
+            component
+        );
+        assert!(component.try_to_persistent_nbt().is_err());
     }
 }

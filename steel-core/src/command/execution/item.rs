@@ -172,23 +172,23 @@ pub(super) fn numeric_i32(tag: &NbtTag) -> Option<i32> {
 }
 
 pub(super) fn component_value_is_valid(key: &Identifier, value: &ComponentData) -> bool {
-    if *key == vanilla_components::MAX_STACK_SIZE.key {
+    if key == vanilla_components::MAX_STACK_SIZE.key() {
         return value
             .downcast_ref::<i32>()
             .is_some_and(|value| (1..=99).contains(value));
     }
-    if *key == vanilla_components::MAX_DAMAGE.key {
+    if key == vanilla_components::MAX_DAMAGE.key() {
         return value.downcast_ref::<i32>().is_some_and(|value| *value > 0);
     }
-    if *key == vanilla_components::DAMAGE.key || *key == vanilla_components::REPAIR_COST.key {
+    if key == vanilla_components::DAMAGE.key() || key == vanilla_components::REPAIR_COST.key() {
         return value.downcast_ref::<i32>().is_some_and(|value| *value >= 0);
     }
-    if *key == vanilla_components::MINIMUM_ATTACK_CHARGE.key {
+    if key == vanilla_components::MINIMUM_ATTACK_CHARGE.key() {
         return value
             .downcast_ref::<f32>()
             .is_some_and(|value| value.is_finite() && !value.is_sign_negative() && *value <= 1.0);
     }
-    if *key == vanilla_components::POTION_DURATION_SCALE.key {
+    if key == vanilla_components::POTION_DURATION_SCALE.key() {
         return value
             .downcast_ref::<f32>()
             .is_some_and(|value| value.is_finite() && !value.is_sign_negative());

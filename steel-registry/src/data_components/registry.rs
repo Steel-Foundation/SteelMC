@@ -51,8 +51,18 @@ use crate::{sound_event::SoundEventHolder, sound_events};
 /// let damage: Option<Damage> = components.get(DAMAGE);
 /// components.set(DAMAGE, Damage(10));
 /// ```
+///
+/// Steel declares component handles alongside their registered codecs; external
+/// callers cannot construct a handle for an existing key with a different type.
+///
+/// ```compile_fail
+/// use steel_registry::data_components::DataComponentType;
+/// use steel_utils::Identifier;
+///
+/// let _forged = DataComponentType::<bool>::new(Identifier::vanilla_static("max_damage"));
+/// ```
 pub struct DataComponentType<T> {
-    pub key: Identifier,
+    pub(crate) key: Identifier,
     ignore_swap_animation: bool,
     _phantom: PhantomData<T>,
 }
@@ -69,7 +79,7 @@ impl<T> Clone for DataComponentType<T> {
 
 impl<T> DataComponentType<T> {
     #[must_use]
-    pub const fn new(key: Identifier) -> Self {
+    pub(crate) const fn new(key: Identifier) -> Self {
         Self {
             key,
             ignore_swap_animation: false,
@@ -79,7 +89,7 @@ impl<T> DataComponentType<T> {
 
     /// Creates a component type whose changes do not restart the held-item swap animation.
     #[must_use]
-    pub const fn new_ignoring_swap_animation(key: Identifier) -> Self {
+    pub(crate) const fn new_ignoring_swap_animation(key: Identifier) -> Self {
         Self {
             key,
             ignore_swap_animation: true,
@@ -91,6 +101,12 @@ impl<T> DataComponentType<T> {
     #[must_use]
     pub const fn ignore_swap_animation(&self) -> bool {
         self.ignore_swap_animation
+    }
+
+    /// Returns this component type's registry key.
+    #[must_use]
+    pub const fn key(&self) -> &Identifier {
+        &self.key
     }
 }
 
@@ -108,12 +124,33 @@ pub type NbtWriter = fn(&ComponentData) -> Result<OwnedNbtTag>;
 
 /// Function for hashing a component through its persistent codec shape.
 type ComponentHash = fn(&ComponentData) -> Result<i32>;
+type ComponentValidator = fn(&ComponentData) -> Result<()>;
+type PersistentCodecFns = (
+    NbtReader,
+    NbtWriter,
+    ComponentHash,
+    Option<ComponentValidator>,
+);
+
+/// Additional source-value validation required before persistent encoding.
+pub(crate) trait ValidatePersistentComponent {
+    fn validate_persistent(&self) -> Result<()>;
+}
 
 fn hash_component<T: DowncastType + HashComponent>(data: &ComponentData) -> Result<i32> {
     let Some(value) = data.downcast_ref::<T>() else {
         return Err(std::io::Error::other("Component type mismatch"));
     };
     Ok(value.compute_hash())
+}
+
+fn validate_component<T: DowncastType + ValidatePersistentComponent>(
+    data: &ComponentData,
+) -> Result<()> {
+    let Some(value) = data.downcast_ref::<T>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.validate_persistent()
 }
 
 fn read_typed_network<T: Component + ReadFrom>(
@@ -154,6 +191,7 @@ struct PersistentCodecs {
     reader: NbtReader,
     writer: NbtWriter,
     hash: ComponentHash,
+    validator: Option<fn(&ComponentData) -> Result<()>>,
 }
 
 struct ComponentCodecs {
@@ -180,7 +218,7 @@ impl ComponentEntry {
         expected_type_key: DowncastTypeKey,
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
-        persistent_codecs: Option<(NbtReader, NbtWriter, ComponentHash)>,
+        persistent_codecs: Option<PersistentCodecFns>,
         ignore_swap_animation: bool,
     ) -> Self {
         Self {
@@ -191,10 +229,13 @@ impl ComponentEntry {
                     reader: network_reader,
                     writer: network_writer,
                 },
-                persistent: persistent_codecs.map(|(reader, writer, hash)| PersistentCodecs {
-                    reader,
-                    writer,
-                    hash,
+                persistent: persistent_codecs.map(|(reader, writer, hash, validator)| {
+                    PersistentCodecs {
+                        reader,
+                        writer,
+                        hash,
+                        validator,
+                    }
                 }),
             },
             ignore_swap_animation,
@@ -268,6 +309,14 @@ impl ComponentEntry {
     /// Checks that a value accepted by the stream codec is also accepted by
     /// the persistent codec.
     pub fn validate_persistent_encoding(&self, data: &ComponentData) -> Result<OwnedNbtTag> {
+        if let Some(validator) = self
+            .codecs
+            .persistent
+            .as_ref()
+            .and_then(|persistent| persistent.validator)
+        {
+            validator(data)?;
+        }
         let tag = self.write_nbt(data)?;
         if self.read_nbt_owned(&tag).is_none() {
             return Err(std::io::Error::other(format!(
@@ -298,6 +347,7 @@ impl ComponentEntry {
                 self.key
             )));
         };
+        self.validate_persistent_encoding(data)?;
         (persistent.hash)(data)
     }
 
@@ -341,15 +391,9 @@ pub struct DataComponentRegistry {
     allows_registering: bool,
 }
 
-impl Default for DataComponentRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DataComponentRegistry {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             entries: Vec::new(),
             by_key: FxHashMap::default(),
@@ -361,7 +405,7 @@ impl DataComponentRegistry {
     ///
     /// The component type `T` must implement the necessary serialization traits.
     /// This creates the appropriate reader/writer functions automatically.
-    pub fn register<T>(&mut self, component: DataComponentType<T>)
+    pub(crate) fn register<T>(&mut self, component: DataComponentType<T>)
     where
         T: Component
             + DowncastType
@@ -378,7 +422,7 @@ impl DataComponentRegistry {
     /// Registers a transient vanilla component type.
     ///
     /// Transient components have network data but no persistent component codec.
-    pub fn register_transient<T>(&mut self, component: DataComponentType<T>)
+    pub(crate) fn register_transient<T>(&mut self, component: DataComponentType<T>)
     where
         T: Component + DowncastType + WriteTo + ReadFrom,
     {
@@ -409,6 +453,32 @@ impl DataComponentRegistry {
                 read_typed_nbt::<T>,
                 write_typed_nbt::<T>,
                 hash_component::<T>,
+                None,
+            )),
+        );
+    }
+
+    pub(crate) fn register_validated<T>(&mut self, component: DataComponentType<T>)
+    where
+        T: Component
+            + DowncastType
+            + Clone
+            + WriteTo
+            + ReadFrom
+            + ToNbtTag
+            + FromNbtTag
+            + HashComponent
+            + ValidatePersistentComponent,
+    {
+        self.register_implemented(
+            component,
+            read_typed_network::<T>,
+            write_typed_network::<T>,
+            Some((
+                read_typed_nbt::<T>,
+                write_typed_nbt::<T>,
+                hash_component::<T>,
+                Some(validate_component::<T>),
             )),
         );
     }
@@ -418,7 +488,7 @@ impl DataComponentRegistry {
     /// Use this when the default `WriteTo`/`ReadFrom` implementations don't match
     /// the network encoding (e.g., VarInt-encoded i32 components).
     /// NBT serialization still uses the type's `ToNbtTag`/`FromNbtTag` impls.
-    pub fn register_custom_network<T>(
+    pub(crate) fn register_custom_network<T>(
         &mut self,
         component: DataComponentType<T>,
         network_reader: NetworkReader,
@@ -434,12 +504,13 @@ impl DataComponentRegistry {
                 read_typed_nbt::<T>,
                 write_typed_nbt::<T>,
                 hash_component::<T>,
+                None,
             )),
         );
     }
 
     /// Registers a component with explicit network and persistent codecs.
-    pub fn register_with_codecs<T: Component + DowncastType + HashComponent>(
+    pub(crate) fn register_with_codecs<T: Component + DowncastType + HashComponent>(
         &mut self,
         component: DataComponentType<T>,
         network_reader: NetworkReader,
@@ -451,12 +522,12 @@ impl DataComponentRegistry {
             component,
             network_reader,
             network_writer,
-            Some((nbt_reader, nbt_writer, hash_component::<T>)),
+            Some((nbt_reader, nbt_writer, hash_component::<T>, None)),
         )
     }
 
     /// Registers a transient component with explicit network codecs.
-    pub fn register_transient_with_codecs<T: Component + DowncastType>(
+    pub(crate) fn register_transient_with_codecs<T: Component + DowncastType>(
         &mut self,
         component: DataComponentType<T>,
         network_reader: NetworkReader,
@@ -470,7 +541,7 @@ impl DataComponentRegistry {
         component: DataComponentType<T>,
         network_reader: NetworkReader,
         network_writer: NetworkWriter,
-        persistent_codecs: Option<(NbtReader, NbtWriter, ComponentHash)>,
+        persistent_codecs: Option<PersistentCodecFns>,
     ) -> usize {
         assert!(
             self.allows_registering,
@@ -479,6 +550,10 @@ impl DataComponentRegistry {
 
         let ignore_swap_animation = component.ignore_swap_animation();
         let key = component.key;
+        assert!(
+            !self.by_key.contains_key(&key),
+            "Cannot register duplicate data component key {key}"
+        );
         let entry = Box::leak(Box::new(ComponentEntry::implemented(
             key.clone(),
             T::TYPE_KEY,
@@ -1229,6 +1304,71 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_component_registration_is_rejected_without_mutation() {
+        let mut registry = DataComponentRegistry::new();
+        let key = Identifier::new("test".to_owned(), "duplicate".to_owned());
+        let original = DataComponentType::<i32>::new(key.clone());
+        registry.register(original.clone());
+
+        let duplicate = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registry.register(DataComponentType::<bool>::new(key.clone()));
+        }));
+
+        assert!(duplicate.is_err());
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.get_id(original), Some(0));
+        assert_eq!(registry.get_key_by_id(0), Some(&key));
+        assert_eq!(registry.by_key(&key).map(|entry| &entry.key), Some(&key));
+
+        let second = DataComponentType::<i32>::new(Identifier::new(
+            "test".to_owned(),
+            "same_type_different_key".to_owned(),
+        ));
+        registry.register(second.clone());
+        assert_eq!(registry.get_id(second), Some(1));
+    }
+
+    #[test]
+    fn persistent_hash_rejects_values_rejected_by_the_persistent_codec() {
+        let mut registry = DataComponentRegistry::new();
+        super::super::vanilla_components::register_vanilla_data_components(&mut registry);
+
+        let invalid_values = [
+            (MAX_STACK_SIZE.key().clone(), ComponentData::new(0_i32)),
+            (
+                super::super::vanilla_components::MAX_DAMAGE.key().clone(),
+                ComponentData::new(0_i32),
+            ),
+            (
+                super::super::vanilla_components::MINIMUM_ATTACK_CHARGE
+                    .key()
+                    .clone(),
+                ComponentData::new(1.5_f32),
+            ),
+            (
+                POTION_DURATION_SCALE.key().clone(),
+                ComponentData::new(-0.5_f32),
+            ),
+        ];
+        for (key, value) in invalid_values {
+            let entry = registry
+                .by_key(&key)
+                .expect("component should be registered");
+            assert!(entry.compute_hash(&value).is_err(), "{key}");
+        }
+
+        let max_stack_size = registry
+            .by_key(MAX_STACK_SIZE.key())
+            .expect("max_stack_size should be registered");
+        assert_eq!(
+            max_stack_size
+                .compute_hash(&ComponentData::new(99_i32))
+                .expect("boundary value should hash"),
+            99_i32.compute_hash()
+        );
+    }
+
+    #[test]
     fn persistent_patch_nbt_omits_transient_components() {
         init_test_registry();
         let mut patch = DataComponentPatch::new();
@@ -1435,7 +1575,7 @@ mod tests {
         assert_eq!(
             music_disc_cat
                 .get(crate::data_components::vanilla_components::JUKEBOX_PLAYABLE)
-                .map(crate::data_components::JukeboxPlayable::song),
+                .and_then(|playable| playable.song().as_reference()),
             Some(&crate::vanilla_jukebox_songs::CAT)
         );
 

@@ -230,11 +230,8 @@ pub struct Fireworks {
 impl Fireworks {
     pub const MAX_EXPLOSIONS: usize = 256;
 
-    /// Creates a persistable firework component.
+    /// Creates a firework component accepted by Vanilla's stream codec.
     pub fn new(flight_duration: i32, explosions: Vec<FireworkExplosion>) -> Result<Self> {
-        if !(0..=u8::MAX.into()).contains(&flight_duration) {
-            return Err(Error::other("Firework flight duration must be in 0..=255"));
-        }
         if explosions.len() > Self::MAX_EXPLOSIONS {
             return Err(Error::other(format!(
                 "Got {} explosions, but maximum is {}",
@@ -291,6 +288,13 @@ impl Fireworks {
             );
         }
         NbtTag::Compound(compound)
+    }
+
+    pub(crate) fn try_to_persistent_nbt(&self) -> Result<NbtTag> {
+        if self.flight_duration > i32::from(u8::MAX) {
+            return Err(Error::other("Firework flight duration exceeds 255"));
+        }
+        Ok(self.to_nbt_tag_ref())
     }
 
     fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -561,8 +565,21 @@ mod tests {
             Fireworks::read(&mut Cursor::new(network.as_slice())).expect("firework should decode"),
             firework
         );
-        assert!(Fireworks::new(-1, Vec::new()).is_err());
-        assert!(Fireworks::new(256, Vec::new()).is_err());
+        let negative = Fireworks::new(-1, Vec::new()).expect("stream permits negative flight");
+        let oversized = Fireworks::new(256, Vec::new()).expect("stream permits any VarInt flight");
+        for value in [&negative, &oversized] {
+            let mut encoded = Vec::new();
+            value
+                .write(&mut encoded)
+                .expect("stream value should encode");
+            assert_eq!(
+                Fireworks::read(&mut Cursor::new(encoded.as_slice()))
+                    .expect("stream value should decode"),
+                *value
+            );
+        }
+        assert!(negative.try_to_persistent_nbt().is_ok());
+        assert!(oversized.try_to_persistent_nbt().is_err());
         assert!(Fireworks::new(0, vec![FireworkExplosion::default(); 257]).is_err());
     }
 

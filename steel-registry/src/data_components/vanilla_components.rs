@@ -2,6 +2,7 @@
 //!
 //! This module defines all vanilla Minecraft data components and provides
 //! the registration function to add them to the registry.
+use simdnbt::FromNbtTag as _;
 use steel_utils::{Identifier, nbt::NbtNumeric as _};
 use text_components::TextComponent;
 
@@ -601,7 +602,60 @@ fn jukebox_playable_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt:
     let Some(value) = data.downcast_ref::<JukeboxPlayable>() else {
         return Err(std::io::Error::other("Component type mismatch"));
     };
-    Ok(value.to_persistent_nbt())
+    value.to_persistent_nbt()
+}
+
+fn fireworks_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    Fireworks::from_nbt_tag(tag).map(ComponentData::new)
+}
+
+fn fireworks_network_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom as _;
+    Fireworks::read(cursor).map(ComponentData::new)
+}
+
+fn fireworks_network_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo as _;
+    let Some(value) = data.downcast_ref::<Fireworks>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn fireworks_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
+    let Some(value) = data.downcast_ref::<Fireworks>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.try_to_persistent_nbt()
+}
+
+fn painting_variant_network_reader(
+    cursor: &mut std::io::Cursor<&[u8]>,
+) -> std::io::Result<ComponentData> {
+    use steel_utils::serial::ReadFrom as _;
+    PaintingVariantComponent::read(cursor).map(ComponentData::new)
+}
+
+fn painting_variant_network_writer(
+    data: &ComponentData,
+    writer: &mut Vec<u8>,
+) -> std::io::Result<()> {
+    use steel_utils::serial::WriteTo as _;
+    let Some(value) = data.downcast_ref::<PaintingVariantComponent>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.write(writer)
+}
+
+fn painting_variant_nbt_reader(tag: simdnbt::borrow::NbtTag) -> Option<ComponentData> {
+    PaintingVariantComponent::from_nbt_tag(tag).map(ComponentData::new)
+}
+
+fn painting_variant_nbt_writer(data: &ComponentData) -> std::io::Result<simdnbt::owned::NbtTag> {
+    let Some(value) = data.downcast_ref::<PaintingVariantComponent>() else {
+        return Err(std::io::Error::other("Component type mismatch"));
+    };
+    value.try_to_persistent_nbt()
 }
 
 macro_rules! register_ranged_i32 {
@@ -709,7 +763,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 24: consumable
     registry.register(CONSUMABLE);
     // 25: use_remainder
-    registry.register(USE_REMAINDER);
+    registry.register_validated(USE_REMAINDER);
     // 26: use_cooldown
     registry.register(USE_COOLDOWN);
     // 27: damage_resistant
@@ -757,9 +811,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 48: map_post_processing
     registry.register_transient(MAP_POST_PROCESSING);
     // 49: charged_projectiles
-    registry.register(CHARGED_PROJECTILES);
+    registry.register_validated(CHARGED_PROJECTILES);
     // 50: bundle_contents
-    registry.register(BUNDLE_CONTENTS);
+    registry.register_validated(BUNDLE_CONTENTS);
     // 51: potion_contents
     registry.register(POTION_CONTENTS);
     // 52: potion_duration_scale
@@ -809,7 +863,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 68: firework_explosion
     registry.register(FIREWORK_EXPLOSION);
     // 69: fireworks
-    registry.register(FIREWORKS);
+    registry.register_with_codecs(
+        FIREWORKS,
+        fireworks_network_reader,
+        fireworks_network_writer,
+        fireworks_nbt_reader,
+        fireworks_nbt_writer,
+    );
     // 70: profile
     registry.register(PROFILE);
     // 71: note_block_sound
@@ -821,13 +881,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 74: pot_decorations
     registry.register(POT_DECORATIONS);
     // 75: container
-    registry.register(CONTAINER);
+    registry.register_validated(CONTAINER);
     // 76: block_state
     registry.register(BLOCK_STATE);
     // 77: bees
     registry.register(BEES);
     // 78: sulfur_cube_content
-    registry.register(SULFUR_CUBE_CONTENT);
+    registry.register_validated(SULFUR_CUBE_CONTENT);
     // 79: lock
     registry.register(LOCK);
     // 80: container_loot
@@ -877,7 +937,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 102: horse/variant
     registry.register(HORSE_VARIANT);
     // 103: painting/variant
-    registry.register(PAINTING_VARIANT);
+    registry.register_with_codecs(
+        PAINTING_VARIANT,
+        painting_variant_network_reader,
+        painting_variant_network_writer,
+        painting_variant_nbt_reader,
+        painting_variant_nbt_writer,
+    );
     // 104: llama/variant
     registry.register(LLAMA_VARIANT);
     // 105: axolotl/variant

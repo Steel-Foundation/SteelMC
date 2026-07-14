@@ -15,7 +15,7 @@ use text_components::{EncodedNbt, interactivity::HoverEvent};
 
 use crate::data_components::vanilla_components::MAX_STACK_SIZE;
 use crate::data_components::{
-    Component, ComponentPatchEntry, DataComponentPatch, DataComponentType,
+    Component, ComponentData, ComponentPatchEntry, DataComponentPatch, DataComponentType,
 };
 use crate::item_stack::ItemStack;
 use crate::items::ItemRef;
@@ -58,7 +58,7 @@ pub struct ItemStackTemplate {
     item: ItemRef,
     count: i32,
     components: DataComponentPatch,
-    components_hash: i32,
+    components_hash: Option<i32>,
 }
 
 impl ItemStackTemplate {
@@ -76,7 +76,7 @@ impl ItemStackTemplate {
             item,
             count: 1,
             components: DataComponentPatch::new(),
-            components_hash: empty_map_hash(),
+            components_hash: Some(empty_map_hash()),
         }
     }
 
@@ -102,7 +102,7 @@ impl ItemStackTemplate {
             item,
             count,
             components,
-            components_hash,
+            components_hash: Some(components_hash),
         })
     }
 
@@ -112,6 +112,15 @@ impl ItemStackTemplate {
             return Err(Error::other("Stack must be non-empty"));
         }
         Self::try_with_count_and_patch(stack.item, stack.count, stack.components_patch().clone())
+    }
+
+    pub(crate) fn validate_persistent_encoding(&self) -> Result<()> {
+        if self.item == &*vanilla_items::AIR
+            || !(Self::MIN_COUNT..=Self::MAX_COUNT).contains(&self.count)
+        {
+            return Err(Error::other("Item stack template is not persistable"));
+        }
+        self.components.try_to_nbt_tag_ref().map(|_| ())
     }
 
     #[must_use]
@@ -190,15 +199,34 @@ impl ItemStackTemplate {
         Self::try_with_count_and_patch(item, count, components).ok()
     }
 
-    pub(crate) fn get<T: Component + DowncastType>(
-        &self,
-        component: DataComponentType<T>,
-    ) -> Option<&T> {
-        match self.components.get_entry(&component.key) {
-            Some(ComponentPatchEntry::Set(value)) => value.downcast_ref::<T>(),
-            Some(ComponentPatchEntry::Removed) => None,
-            None => self.item.components.get_ref(component),
+    fn from_stream(item: ItemRef, count: i32, components: DataComponentPatch) -> Result<Self> {
+        if item == &*vanilla_items::AIR || count == 0 {
+            return Err(Error::other("Item stack template must be non-empty"));
         }
+        let components_hash = components.compute_persistent_hash().ok();
+        Ok(Self {
+            item,
+            count,
+            components,
+            components_hash,
+        })
+    }
+
+    /// Gets the effective raw component value from the patch or item prototype.
+    #[must_use]
+    pub fn get_effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        match self.components.get_entry(key) {
+            Some(ComponentPatchEntry::Set(value)) => Some(value),
+            Some(ComponentPatchEntry::Removed) => None,
+            None => self.item.components.get_raw(key),
+        }
+    }
+
+    /// Gets an effective typed component value from the patch or item prototype.
+    #[must_use]
+    pub fn get<T: Component + DowncastType>(&self, component: DataComponentType<T>) -> Option<&T> {
+        self.get_effective_value_raw(&component.key)
+            .and_then(ComponentData::downcast_ref::<T>)
     }
 
     pub(crate) fn max_stack_size(&self) -> i32 {
@@ -229,7 +257,7 @@ impl ReadFrom for ItemStackTemplate {
             .ok_or_else(|| Error::other(format!("Unknown item id: {item_id}")))?;
         let count = VarInt::read(data)?.0;
         let components = DataComponentPatch::read(data)?;
-        Self::try_with_count_and_patch(item, count, components)
+        Self::from_stream(item, count, components)
     }
 }
 
@@ -256,7 +284,10 @@ impl HashComponent for ItemStackTemplate {
             push_hash_entry(&mut entries, "count", self.count.compute_hash());
         }
         if !self.components.is_empty() {
-            push_hash_entry(&mut entries, "components", self.components_hash);
+            let Some(components_hash) = self.components_hash else {
+                panic!("stream-only item stack template must validate before persistent hashing");
+            };
+            push_hash_entry(&mut entries, "components", components_hash);
         }
         sort_map_entries(&mut entries);
         hasher.start_map();
@@ -297,7 +328,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::ItemStackTemplate;
-    use crate::data_components::DataComponentPatch;
+    use crate::RegistryEntry as _;
     use crate::data_components::components::{
         BundleContents, ChargedProjectiles, ItemContainerContents,
     };
@@ -305,8 +336,10 @@ mod tests {
         BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, CUSTOM_NAME, ENCHANTMENT_GLINT_OVERRIDE,
         MAX_DAMAGE, MAX_STACK_SIZE,
     };
+    use crate::data_components::{ComponentData, DataComponentPatch};
     use crate::test_support::init_test_registry;
     use crate::vanilla_items;
+    use crate::{REGISTRY, RegistryExt as _};
     use text_components::{Modifier as _, TextComponent};
 
     fn parse(tag: NbtTag) -> Option<ItemStackTemplate> {
@@ -342,11 +375,10 @@ mod tests {
         template
             .write(&mut network)
             .expect("template should encode");
-        assert_eq!(
-            ItemStackTemplate::read(&mut Cursor::new(network.as_slice()))
-                .expect("template should decode"),
-            template
-        );
+        let decoded = ItemStackTemplate::read(&mut Cursor::new(network.as_slice()))
+            .expect("template should decode");
+        assert_eq!(decoded, template);
+        assert_eq!(decoded.compute_hash(), template.compute_hash());
     }
 
     #[test]
@@ -398,6 +430,41 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn stream_codec_accepts_nonzero_counts_outside_persistent_range() {
+        init_test_registry();
+        for count in [-1, 100] {
+            let mut encoded = Vec::new();
+            steel_utils::codec::VarInt(vanilla_items::STICK.id() as i32)
+                .write(&mut encoded)
+                .expect("item id should encode");
+            steel_utils::codec::VarInt(count)
+                .write(&mut encoded)
+                .expect("count should encode");
+            DataComponentPatch::new()
+                .write(&mut encoded)
+                .expect("patch should encode");
+            let decoded = ItemStackTemplate::read(&mut Cursor::new(encoded.as_slice()))
+                .expect("nonzero stream count should decode");
+            assert_eq!(decoded.count(), count);
+        }
+    }
+
+    #[test]
+    fn containing_component_hash_rejects_stream_only_nested_patch() {
+        init_test_registry();
+        let mut patch = DataComponentPatch::new();
+        patch.set(MAX_STACK_SIZE, 0);
+        let template = ItemStackTemplate::from_stream(&vanilla_items::STONE, 1, patch)
+            .expect("stream codec should admit the nested patch");
+        let bundle = BundleContents::new(vec![template]);
+        let entry = REGISTRY
+            .data_components
+            .by_key(BUNDLE_CONTENTS.key())
+            .expect("bundle_contents should be registered");
+        assert!(entry.compute_hash(&ComponentData::new(bundle)).is_err());
     }
 
     #[test]

@@ -14,12 +14,14 @@ use crate::command::{
 };
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use std::io::Cursor;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::{
-    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
-    ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishPattern,
+    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, ItemStackTemplate, LlamaVariant,
+    MooshroomVariant, ParrotVariant, RabbitVariant, RegistryEntry as _, SalmonVariant,
+    TropicalFishPattern,
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
@@ -27,6 +29,8 @@ use steel_registry::{
     vanilla_entities, vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
+use steel_utils::codec::VarInt;
+use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 use text_components::{TextComponent, content::Content};
 
@@ -1261,7 +1265,7 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
         Some(&true)
     );
     assert!(matches!(
-        stack.patch().get_entry(&vanilla_components::LORE.key),
+        stack.patch().get_entry(vanilla_components::LORE.key()),
         Some(ComponentPatchEntry::Removed)
     ));
 }
@@ -1806,6 +1810,102 @@ fn item_predicate_argument_supports_partial_custom_data_matching() {
 }
 
 #[test]
+fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    for expression in [
+        "potion_contents~'minecraft:water'",
+        "container~{}",
+        "bundle_contents~{}",
+        "firework_explosion~{}",
+        "fireworks~{}",
+        "writable_book_content~{}",
+        "written_book_content~{}",
+        "trim~{}",
+        "jukebox_playable~{}",
+        "villager/variant~'minecraft:plains'",
+    ] {
+        let input = format!("resource stone[{expression}]");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered data component predicate should parse: {expression}");
+        };
+        assert!(chain.top_context().item_predicate("value").is_some());
+    }
+}
+
+#[test]
+fn item_predicate_argument_matches_registered_firework_explosion_predicate() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource firework_star[firework_explosion~{shape:'star',has_twinkle:true}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("firework explosion predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+    let mut stack = ItemStack::new(&vanilla_items::FIREWORK_STAR);
+    stack.set(
+        vanilla_components::FIREWORK_EXPLOSION,
+        vanilla_components::FireworkExplosion::new(
+            vanilla_components::FireworkExplosionShape::Star,
+            Vec::new(),
+            Vec::new(),
+            false,
+            true,
+        ),
+    );
+
+    assert!(predicate.matches(&stack));
+    stack.remove(vanilla_components::FIREWORK_EXPLOSION);
+    assert!(!predicate.matches(&stack));
+}
+
+#[test]
+fn item_predicate_argument_matches_stream_only_nested_template_without_materializing_a_stack() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource chest[container~{items:{contains:[{items:'minecraft:stick',count:100}]}}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("nested container predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    let mut encoded = Vec::new();
+    VarInt(i32::try_from(vanilla_items::STICK.id()).expect("test item id should fit"))
+        .write(&mut encoded)
+        .expect("item id should encode");
+    VarInt(100)
+        .write(&mut encoded)
+        .expect("count should encode");
+    VarInt(0)
+        .write(&mut encoded)
+        .expect("set component count should encode");
+    VarInt(0)
+        .write(&mut encoded)
+        .expect("removed component count should encode");
+    let template = ItemStackTemplate::read(&mut Cursor::new(encoded.as_slice()))
+        .expect("count 100 is valid in the stream codec");
+
+    let mut stack = ItemStack::new(&vanilla_items::CHEST);
+    stack.set(
+        vanilla_components::CONTAINER,
+        vanilla_components::ItemContainerContents::new(vec![Some(template)])
+            .expect("one container slot should be valid"),
+    );
+    assert!(predicate.matches(&stack));
+}
+
+#[test]
 fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
@@ -1885,7 +1985,7 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
 }
 
 #[test]
-fn item_predicate_argument_rejects_unsupported_predicates_during_parsing() {
+fn item_predicate_argument_rejects_malformed_potion_predicate() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
