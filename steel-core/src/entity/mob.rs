@@ -1135,7 +1135,7 @@ pub trait Mob: LivingEntity {
                 }
 
                 if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::ITEMS.lead), 0.0);
+                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
                     self.remove_leash_state();
                 }
             }
@@ -1146,7 +1146,7 @@ pub trait Mob: LivingEntity {
                 }
 
                 if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::ITEMS.lead), 0.0);
+                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
                     self.remove_leash_state();
                 }
             }
@@ -1159,7 +1159,7 @@ pub trait Mob: LivingEntity {
         }
 
         let holder = self.remove_leash_state();
-        let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::ITEMS.lead), 0.0);
+        let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
         if let Some(holder) = holder {
             holder.notify_leashee_removed(self.as_entity_event_source());
         }
@@ -2270,7 +2270,7 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::vanilla_entities;
-    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::vanilla_items;
     use steel_registry::{
         REGISTRY, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
         vanilla_damage_types,
@@ -2642,7 +2642,7 @@ mod tests {
     #[test]
     fn mob_attack_damage_source_uses_item_damage_type_component() {
         let mob = DespawnTestMob::new(None, false);
-        let spear = ItemStack::new(&ITEMS.wooden_spear);
+        let spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
 
         let source = mob.mob_attack_damage_source(&spear, &mob);
 

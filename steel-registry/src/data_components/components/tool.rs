@@ -1,38 +1,22 @@
 //! Tool component for mining speed and drop behavior.
 
 use std::io::{Cursor, Error, Result, Write};
-use std::str::FromStr;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::{
-    BlockStateId, Identifier,
+    BlockStateId,
     codec::VarInt,
     hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
     nbt::NbtNumeric as _,
     serial::{ReadFrom, WriteTo},
 };
 
-use crate::blocks::BlockRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
+use crate::blocks::Block;
+use crate::{REGISTRY, RegistryHolderSet};
 
 /// The block holder set used by a tool rule.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ToolRuleBlocks {
-    /// A block tag, such as `minecraft:mineable/pickaxe`.
-    Tag(Identifier),
-    /// Direct block registry references.
-    Blocks(Vec<BlockRef>),
-}
-
-impl ToolRuleBlocks {
-    fn contains(&self, block: BlockRef) -> bool {
-        match self {
-            Self::Tag(tag) => REGISTRY.blocks.is_in_tag(block, tag),
-            Self::Blocks(blocks) => blocks.contains(&block),
-        }
-    }
-}
+pub type ToolRuleBlocks = RegistryHolderSet<Block>;
 
 /// A single rule within a tool component.
 #[derive(Debug, Clone, PartialEq)]
@@ -138,72 +122,6 @@ impl Tool {
     }
 }
 
-impl WriteTo for ToolRuleBlocks {
-    fn write(&self, writer: &mut impl Write) -> Result<()> {
-        match self {
-            Self::Tag(tag) => {
-                REGISTRY
-                    .blocks
-                    .get_tag(tag)
-                    .ok_or_else(|| Error::other(format!("Unknown block tag: {tag}")))?;
-                VarInt(0).write(writer)?;
-                tag.write(writer)
-            }
-            Self::Blocks(blocks) => {
-                let count = i32::try_from(blocks.len()).map_err(|_| {
-                    Error::other(format!("Block holder set too large: {}", blocks.len()))
-                })?;
-                let encoded_count = count
-                    .checked_add(1)
-                    .ok_or_else(|| Error::other("Block holder set count exceeds protocol range"))?;
-                VarInt(encoded_count).write(writer)?;
-                for block in blocks {
-                    let id = block
-                        .try_id()
-                        .ok_or_else(|| Error::other(format!("Unknown block: {}", block.key)))?;
-                    let id = i32::try_from(id).map_err(|_| {
-                        Error::other(format!("Block id out of protocol range: {id}"))
-                    })?;
-                    VarInt(id).write(writer)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-impl ReadFrom for ToolRuleBlocks {
-    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        let encoded_count = VarInt::read(data)?.0;
-        if encoded_count == 0 {
-            let tag = Identifier::read(data)?;
-            REGISTRY
-                .blocks
-                .get_tag(&tag)
-                .ok_or_else(|| Error::other(format!("Unknown block tag: {tag}")))?;
-            return Ok(Self::Tag(tag));
-        }
-        let count = encoded_count
-            .checked_sub(1)
-            .and_then(|count| usize::try_from(count).ok())
-            .ok_or_else(|| {
-                Error::other(format!("Invalid block holder set count: {encoded_count}"))
-            })?;
-        let mut blocks = Vec::with_capacity(count.min(65_536));
-        for _ in 0..count {
-            let id = VarInt::read(data)?.0;
-            let id = usize::try_from(id)
-                .map_err(|_| Error::other(format!("Negative block id: {id}")))?;
-            let block = REGISTRY
-                .blocks
-                .by_id(id)
-                .ok_or_else(|| Error::other(format!("Unknown block id: {id}")))?;
-            blocks.push(block);
-        }
-        Ok(Self::Blocks(blocks))
-    }
-}
-
 impl WriteTo for ToolRule {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.blocks.write(writer)?;
@@ -251,46 +169,6 @@ impl ReadFrom for Tool {
             damage_per_block: VarInt::read(data)?.0,
             can_destroy_blocks_in_creative: bool::read(data)?,
         })
-    }
-}
-
-impl ToNbtTag for ToolRuleBlocks {
-    fn to_nbt_tag(self) -> NbtTag {
-        match self {
-            Self::Tag(tag) => NbtTag::String(format!("#{tag}").into()),
-            Self::Blocks(blocks) if blocks.len() == 1 => {
-                NbtTag::String(blocks[0].key.to_string().into())
-            }
-            Self::Blocks(blocks) => NbtTag::List(NbtList::String(
-                blocks
-                    .into_iter()
-                    .map(|block| block.key.to_string().into())
-                    .collect(),
-            )),
-        }
-    }
-}
-
-impl FromNbtTag for ToolRuleBlocks {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(value) = tag.string() {
-            let value = value.to_str();
-            if let Some(tag) = value.strip_prefix('#') {
-                let tag = Identifier::from_str(tag).ok()?;
-                REGISTRY.blocks.get_tag(&tag)?;
-                return Some(Self::Tag(tag));
-            }
-            let id = Identifier::from_str(&value).ok()?;
-            return Some(Self::Blocks(vec![REGISTRY.blocks.by_key(&id)?]));
-        }
-
-        let values = tag.list()?.strings()?;
-        let mut blocks = Vec::with_capacity(values.len());
-        for value in values {
-            let id = Identifier::from_str(&value.to_str()).ok()?;
-            blocks.push(REGISTRY.blocks.by_key(&id)?);
-        }
-        Some(Self::Blocks(blocks))
     }
 }
 
@@ -403,24 +281,6 @@ impl FromNbtTag for Tool {
     }
 }
 
-impl HashComponent for ToolRuleBlocks {
-    fn hash_component(&self, hasher: &mut ComponentHasher) {
-        match self {
-            Self::Tag(tag) => hasher.put_string(&format!("#{tag}")),
-            Self::Blocks(blocks) if blocks.len() == 1 => {
-                hasher.put_string(&blocks[0].key.to_string());
-            }
-            Self::Blocks(blocks) => {
-                hasher.start_list();
-                for block in blocks {
-                    hasher.put_component_hash(&block.key.to_string());
-                }
-                hasher.end_list();
-            }
-        }
-    }
-}
-
 impl HashComponent for ToolRule {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
         let mut entries = Vec::new();
@@ -526,7 +386,7 @@ mod tests {
                     correct_for_drops: Some(true),
                 },
                 ToolRule {
-                    blocks: ToolRuleBlocks::Blocks(vec![&COBWEB, &STONE]),
+                    blocks: ToolRuleBlocks::Direct(vec![&COBWEB, &STONE]),
                     speed: Some(15.0),
                     correct_for_drops: None,
                 },
@@ -565,7 +425,7 @@ mod tests {
 
         assert_eq!(
             parsed.rules[0].blocks,
-            ToolRuleBlocks::Blocks(vec![&COBWEB])
+            ToolRuleBlocks::Direct(vec![&COBWEB])
         );
         assert_eq!(parsed.rules[0].speed, Some(5.5));
         assert_eq!(parsed.rules[0].correct_for_drops, Some(true));
@@ -612,7 +472,7 @@ mod tests {
         init_test_registry();
         let tool = Tool {
             rules: vec![ToolRule {
-                blocks: ToolRuleBlocks::Blocks(vec![&COBWEB]),
+                blocks: ToolRuleBlocks::Direct(vec![&COBWEB]),
                 speed: Some(4.0),
                 correct_for_drops: None,
             }],

@@ -8,7 +8,6 @@ use std::{
 use glam::DVec3;
 use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
-use simdnbt::ToNbtTag as _;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::{
@@ -19,7 +18,9 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
-use steel_registry::data_components::vanilla_components::GLIDER;
+use steel_registry::data_components::vanilla_components::{
+    GLIDER, SWING_ANIMATION, SwingAnimation,
+};
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose};
 use steel_registry::entity_type::{EntityAttachment, EntityDimensions, EntityTypeRef};
@@ -1633,7 +1634,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         );
 
         if let Some(custom_name) = self.custom_name() {
-            nbt.insert("CustomName", custom_name.to_nbt_tag());
+            nbt.insert("CustomName", custom_name.to_codec_nbt());
         }
         if self.is_custom_name_visible() {
             nbt.insert("CustomNameVisible", nbt_bool(true));
@@ -2807,9 +2808,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
 
         let holding_shears = {
             let inventory = player.inventory.lock();
-            inventory
-                .get_item_in_hand(hand)
-                .is(&vanilla_items::ITEMS.shears)
+            inventory.get_item_in_hand(hand).is(&vanilla_items::SHEARS)
         };
         if holding_shears && self.shear_off_all_leash_connections(Some(player)) {
             let has_infinite_materials = player.has_infinite_materials();
@@ -2849,9 +2848,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
 
         let holding_lead = {
             let inventory = player.inventory.lock();
-            inventory
-                .get_item_in_hand(hand)
-                .is(&vanilla_items::ITEMS.lead)
+            inventory.get_item_in_hand(hand).is(&vanilla_items::LEAD)
         };
         if !holding_lead || !mob.can_have_a_leash_attached_to(player) {
             return InteractionResult::Pass;
@@ -4979,8 +4976,22 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.getCurrentSwingDuration`.
     fn current_swing_duration(&self) -> i32 {
-        // TODO: Use the held item's SWING_ANIMATION component once it has typed component data.
-        let swing_duration = DEFAULT_SWING_DURATION;
+        let hand = self
+            .living_swing_state()
+            .swinging_arm()
+            .unwrap_or(InteractionHand::MainHand);
+        let slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+        let mut swing_duration = SwingAnimation::DEFAULT.duration;
+        self.with_equipment_slot(slot, &mut |item_stack| {
+            swing_duration = item_stack
+                .get(SWING_ANIMATION)
+                .copied()
+                .unwrap_or(SwingAnimation::DEFAULT)
+                .duration;
+        });
         if let Some(haste) = self.mob_effect(vanilla_mob_effects::HASTE) {
             swing_duration - (1 + haste.amplifier())
         } else if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
@@ -5255,15 +5266,15 @@ pub trait LivingEntity: Entity {
         self.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
             let target_type = targeting_entity.entity_type();
             matches_target = target_type == &vanilla_entities::SKELETON
-                && item_stack.is(&vanilla_items::ITEMS.skeleton_skull)
+                && item_stack.is(&vanilla_items::SKELETON_SKULL)
                 || target_type == &vanilla_entities::ZOMBIE
-                    && item_stack.is(&vanilla_items::ITEMS.zombie_head)
+                    && item_stack.is(&vanilla_items::ZOMBIE_HEAD)
                 || target_type == &vanilla_entities::PIGLIN
-                    && item_stack.is(&vanilla_items::ITEMS.piglin_head)
+                    && item_stack.is(&vanilla_items::PIGLIN_HEAD)
                 || target_type == &vanilla_entities::PIGLIN_BRUTE
-                    && item_stack.is(&vanilla_items::ITEMS.piglin_head)
+                    && item_stack.is(&vanilla_items::PIGLIN_HEAD)
                 || target_type == &vanilla_entities::CREEPER
-                    && item_stack.is(&vanilla_items::ITEMS.creeper_head);
+                    && item_stack.is(&vanilla_items::CREEPER_HEAD);
         });
         matches_target
     }
@@ -6426,7 +6437,7 @@ pub trait LivingEntity: Entity {
 
         let mut has_leather_boots = false;
         self.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
-            has_leather_boots = item_stack.is(&vanilla_items::ITEMS.leather_boots);
+            has_leather_boots = item_stack.is(&vanilla_items::LEATHER_BOOTS);
         });
         has_leather_boots
     }
@@ -7767,7 +7778,7 @@ mod tests {
         );
         entity.equip(
             EquipmentSlot::Head,
-            ItemStack::new(&vanilla_items::ITEMS.diamond_helmet),
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         );
 
         let nbt = entity.nbt_for_data_compare();
@@ -8599,7 +8610,7 @@ mod tests {
         assert!(mob.set_leashed_to(&holder));
         pig.living_base().equipment().lock().set(
             EquipmentSlot::Saddle,
-            ItemStack::new(&vanilla_items::ITEMS.saddle),
+            ItemStack::new(&vanilla_items::SADDLE),
         );
 
         remove_after_changing_dimensions(&pig);
@@ -8711,6 +8722,19 @@ mod tests {
 
         entity.set_mob_effect(vanilla_mob_effects::HASTE, 1);
         assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION - 2);
+    }
+
+    #[test]
+    fn current_swing_duration_uses_held_item_component() {
+        init_test_registry();
+
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::WOODEN_SPEAR),
+        );
+
+        assert_eq!(entity.current_swing_duration(), 13);
     }
 
     #[test]
@@ -9026,7 +9050,7 @@ mod tests {
     fn can_glide_using_matches_vanilla_component_gate() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-        let mut elytra = ItemStack::new(&vanilla_items::ITEMS.elytra);
+        let mut elytra = ItemStack::new(&vanilla_items::ELYTRA);
 
         assert!(entity.can_glide_using(&elytra, EquipmentSlot::Chest));
         assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Head));
@@ -9035,10 +9059,9 @@ mod tests {
 
         assert!(elytra.next_damage_will_break());
         assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Chest));
-        assert!(!entity.can_glide_using(
-            &ItemStack::new(&vanilla_items::ITEMS.stone),
-            EquipmentSlot::Chest
-        ));
+        assert!(
+            !entity.can_glide_using(&ItemStack::new(&vanilla_items::STONE), EquipmentSlot::Chest)
+        );
     }
 
     #[test]
@@ -9048,14 +9071,8 @@ mod tests {
 
         assert_f32_close(entity.get_armor_cover_percentage(), 0.0);
 
-        entity.equip(
-            EquipmentSlot::Head,
-            ItemStack::new(&vanilla_items::ITEMS.stone),
-        );
-        entity.equip(
-            EquipmentSlot::Feet,
-            ItemStack::new(&vanilla_items::ITEMS.stone),
-        );
+        entity.equip(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
+        entity.equip(EquipmentSlot::Feet, ItemStack::new(&vanilla_items::STONE));
 
         assert_f32_close(entity.get_armor_cover_percentage(), 0.5);
     }
@@ -9089,7 +9106,7 @@ mod tests {
 
         entity.equip(
             EquipmentSlot::Head,
-            ItemStack::new(&vanilla_items::ITEMS.skeleton_skull),
+            ItemStack::new(&vanilla_items::SKELETON_SKULL),
         );
 
         assert_f64_close(entity.get_visibility_percent(Some(&skeleton)), 0.5);
@@ -9104,7 +9121,7 @@ mod tests {
 
         entity.equip(
             EquipmentSlot::Feet,
-            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+            ItemStack::new(&vanilla_items::LEATHER_BOOTS),
         );
 
         assert!(!entity.default_living_can_freeze());
@@ -9117,7 +9134,7 @@ mod tests {
 
         entity.equip(
             EquipmentSlot::Body,
-            ItemStack::new(&vanilla_items::ITEMS.leather_horse_armor),
+            ItemStack::new(&vanilla_items::LEATHER_HORSE_ARMOR),
         );
 
         assert!(!entity.default_living_can_freeze());
@@ -9129,7 +9146,7 @@ mod tests {
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
         entity.equip(
             EquipmentSlot::MainHand,
-            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+            ItemStack::new(&vanilla_items::LEATHER_BOOTS),
         );
 
         assert!(entity.default_living_can_freeze());
@@ -9272,7 +9289,7 @@ mod tests {
 
         entity.equip(
             EquipmentSlot::Feet,
-            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+            ItemStack::new(&vanilla_items::LEATHER_BOOTS),
         );
 
         assert!(entity.default_living_can_walk_on_powder_snow());
@@ -9284,7 +9301,7 @@ mod tests {
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
         entity.equip(
             EquipmentSlot::MainHand,
-            ItemStack::new(&vanilla_items::ITEMS.leather_boots),
+            ItemStack::new(&vanilla_items::LEATHER_BOOTS),
         );
 
         assert!(!entity.default_living_can_walk_on_powder_snow());
@@ -9298,10 +9315,7 @@ mod tests {
 
         assert!(!entity.can_glide());
 
-        entity.equip(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
 
         assert!(entity.can_glide());
     }
@@ -9310,10 +9324,7 @@ mod tests {
     fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-        entity.equip(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
         entity.set_on_ground(false);
 
         assert!(entity.try_to_start_fall_flying());
@@ -9324,10 +9335,7 @@ mod tests {
     fn try_to_start_fall_flying_rejects_levitation() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-        entity.equip(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
         entity.set_on_ground(false);
         entity.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
 
@@ -9339,10 +9347,7 @@ mod tests {
     fn update_fall_flying_damages_glider_every_second_event_interval() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-        entity.equip(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
         entity.set_on_ground(false);
         for _ in 0..19 {
             entity.living_base.tick_fall_flying_state(true);
@@ -9778,7 +9783,7 @@ mod tests {
 
         entity.equip(
             EquipmentSlot::Head,
-            ItemStack::new(&vanilla_items::ITEMS.diamond_helmet),
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         );
         LivingEntity::refresh_equipment_attribute_modifiers(&entity, EquipmentSlot::Head);
 

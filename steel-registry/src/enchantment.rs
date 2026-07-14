@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn existing_identical_or_exclusive_enchantments_are_incompatible() {
         init_test_registry();
-        let mut sword = ItemStack::new(&vanilla_items::ITEMS.diamond_sword);
+        let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
         sword.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 1);
 
         assert!(!Enchantment::is_compatible_with_existing(

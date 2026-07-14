@@ -13,17 +13,24 @@ use crate::command::{
     },
 };
 use glam::DVec3;
+use simdnbt::owned::NbtCompound;
+use std::io::Cursor;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::{
+    AxolotlVariant, DyeColor, FoxVariant, HorseVariant, ItemStackTemplate, LlamaVariant,
+    MooshroomVariant, ParrotVariant, RabbitVariant, RegistryEntry as _, SalmonVariant,
+    TropicalFishPattern,
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
-    vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_enchantments, vanilla_entities,
-    vanilla_items, vanilla_world_clocks,
+    vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_damage_types, vanilla_enchantments,
+    vanilla_entities, vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
+use steel_utils::codec::VarInt;
+use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 use text_components::{TextComponent, content::Content};
 
@@ -1251,16 +1258,233 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
         panic!("item stack should be retained");
     };
 
-    assert!(stack.is(&vanilla_items::ITEMS.stone));
+    assert!(stack.is(&vanilla_items::STONE));
     assert_eq!(stack.max_stack_size(), 16);
     assert_eq!(
         stack.get(vanilla_components::ENCHANTMENT_GLINT_OVERRIDE),
         Some(&true)
     );
     assert!(matches!(
-        stack.patch().get_entry(&vanilla_components::LORE.key),
+        stack.patch().get_entry(vanilla_components::LORE.key()),
         Some(ComponentPatchEntry::Removed)
     ));
+}
+
+#[test]
+fn item_stack_argument_parses_identifier_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[item_model='stone',tooltip_style='steel:tooltip',note_block_sound='minecraft:block.note_block.harp']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("identifier item components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(
+        stack.get(vanilla_components::ITEM_MODEL),
+        Some(&Identifier::vanilla_static("stone"))
+    );
+    assert_eq!(
+        stack.get(vanilla_components::TOOLTIP_STYLE),
+        Some(&Identifier::new_static("steel", "tooltip"))
+    );
+    assert_eq!(
+        stack.get(vanilla_components::NOTE_BLOCK_SOUND),
+        Some(&Identifier::vanilla_static("block.note_block.harp"))
+    );
+}
+
+#[test]
+fn item_stack_argument_parses_custom_data_codecs() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[custom_data={value:7,nested:{name:'steel'}},bucket_entity_data='{Health:4.0f}']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom data components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    let custom_data = stack
+        .get(vanilla_components::CUSTOM_DATA)
+        .expect("custom data should be retained");
+    assert_eq!(custom_data.as_compound().int("value"), Some(7));
+    assert_eq!(
+        custom_data
+            .as_compound()
+            .compound("nested")
+            .and_then(|nested| nested.string("name"))
+            .map(|name| name.to_str()),
+        Some("steel".into())
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::BUCKET_ENTITY_DATA)
+            .and_then(|data| data.as_compound().float("Health")),
+        Some(4.0)
+    );
+}
+
+#[test]
+fn item_stack_argument_parses_custom_model_data_and_enchantability() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource golden_sword[custom_model_data={floats:[1.5f],flags:[1b,0b],strings:['steel'],colors:[[1f,0.5f,0f]]},enchantable={value:5}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom model data and enchantability should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    let model_data = stack
+        .get(vanilla_components::CUSTOM_MODEL_DATA)
+        .expect("custom model data should be retained");
+    assert_eq!(model_data.floats(), &[1.5]);
+    assert_eq!(model_data.flags(), &[true, false]);
+    assert_eq!(model_data.get_string(0), Some("steel"));
+    assert_eq!(model_data.colors(), &[0xffff_7f00_u32 as i32]);
+    assert_eq!(
+        stack
+            .get(vanilla_components::ENCHANTABLE)
+            .map(|value| value.value()),
+        Some(5)
+    );
+    assert!(stack.is_enchantable());
+}
+
+#[test]
+fn item_stack_argument_parses_color_map_and_amplifier_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[dye='red',dyed_color=[1f,0.5f,0f],map_color=4603950,map_id=7,ominous_bottle_amplifier=4,base_color='blue',wolf/collar='green']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("color, map, and amplifier components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(stack.get(vanilla_components::DYE), Some(&DyeColor::Red));
+    assert_eq!(
+        stack
+            .get(vanilla_components::DYED_COLOR)
+            .map(|color| color.rgb()),
+        Some(0xffff_7f00_u32 as i32)
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::MAP_COLOR)
+            .map(|color| color.rgb()),
+        Some(4_603_950)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::MAP_ID).map(|map| map.id()),
+        Some(7)
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::OMINOUS_BOTTLE_AMPLIFIER)
+            .map(|amplifier| amplifier.value()),
+        Some(4)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::BASE_COLOR),
+        Some(&DyeColor::Blue)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::WOLF_COLLAR),
+        Some(&DyeColor::Green)
+    );
+}
+
+#[test]
+fn item_stack_argument_parses_direct_entity_variant_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[fox/variant='snow',salmon/size='large',parrot/variant='gray',tropical_fish/pattern='clayfish',mooshroom/variant='brown',rabbit/variant='evil',horse/variant='dark_brown',llama/variant='gray',axolotl/variant='blue']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("direct entity variant components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(
+        stack.get(vanilla_components::FOX_VARIANT),
+        Some(&FoxVariant::Snow)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::SALMON_SIZE),
+        Some(&SalmonVariant::Large)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::PARROT_VARIANT),
+        Some(&ParrotVariant::Gray)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::TROPICAL_FISH_PATTERN),
+        Some(&TropicalFishPattern::Clayfish)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::MOOSHROOM_VARIANT),
+        Some(&MooshroomVariant::Brown)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::RABBIT_VARIANT),
+        Some(&RabbitVariant::Evil)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::HORSE_VARIANT),
+        Some(&HorseVariant::DarkBrown)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::LLAMA_VARIANT),
+        Some(&LlamaVariant::Gray)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::AXOLOTL_VARIANT),
+        Some(&AxolotlVariant::Blue)
+    );
+}
+
+#[test]
+fn item_stack_argument_parses_registry_holder_set_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[damage_resistant={types:'#minecraft:is_fire'},repairable={items:'minecraft:phantom_membrane'}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registry holder-set components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(!stack.can_be_hurt_by(&vanilla_damage_types::IN_FIRE));
+    assert!(stack.can_be_hurt_by(&vanilla_damage_types::GENERIC));
+    assert!(stack.is_valid_repair_item(&ItemStack::new(&vanilla_items::PHANTOM_MEMBRANE)));
+    assert!(!stack.is_valid_repair_item(&ItemStack::new(&vanilla_items::BREEZE_ROD)));
 }
 
 #[test]
@@ -1294,7 +1518,7 @@ fn item_stack_argument_parses_compound_component_values() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
-        "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},max_stack_size=16]",
+        "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},lore=[],max_stack_size=16]",
         TestSource::new(),
     );
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -1312,16 +1536,20 @@ fn item_stack_argument_parses_compound_component_values() {
         cooldown.cooldown_group,
         Some(Identifier::vanilla_static("test"))
     );
+    assert!(
+        stack
+            .get(vanilla_components::LORE)
+            .is_some_and(|lore| lore.lines().is_empty())
+    );
     assert_eq!(stack.max_stack_size(), 16);
 }
 
 #[test]
-fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
+fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
 
     for input in [
-        "resource stone[lore=[]]",
         "resource stone[creative_slot_lock={}]",
         "resource stone[additional_trade_cost={}]",
         "resource stone[map_post_processing={}]",
@@ -1330,6 +1558,14 @@ fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
         "resource stone[max_stack_size=0]",
         "resource stone[max_damage=10]",
         "resource stone[potion_duration_scale=-0.0f]",
+        "resource stone[enchantable={value:0}]",
+        "resource stone[custom_model_data={strings:[1]}]",
+        "resource stone[dye='not_a_color']",
+        "resource stone[dyed_color=[1f,0f]]",
+        "resource stone[ominous_bottle_amplifier=5]",
+        "resource stone[fox/variant='not_a_variant']",
+        "resource stone[damage_resistant={types:'#minecraft:missing'}]",
+        "resource stone[repairable={items:'minecraft:missing'}]",
     ] {
         let parse = dispatcher.parse(input, TestSource::new());
         assert!(
@@ -1337,6 +1573,36 @@ fn item_stack_argument_rejects_placeholder_transient_and_invalid_components() {
             "{input} should be rejected"
         );
     }
+}
+
+#[test]
+fn item_stack_argument_rejects_invalid_recursive_contents() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        r"resource stone[bundle_contents=[{id:'minecraft:stone',count:2,components:{'minecraft:max_stack_size':1}}]]",
+        TestSource::new(),
+    );
+
+    assert!(dispatcher.context_chain(parse).is_err());
+}
+
+#[test]
+fn item_stack_argument_sanitizes_redundant_component_changes() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[max_stack_size=64,!custom_data]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("redundant component changes should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(stack.components_patch().is_empty());
 }
 
 #[test]
@@ -1470,9 +1736,9 @@ fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
         panic!("item predicate should be retained");
     };
 
-    assert!(predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 3)));
-    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 4)));
-    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.stone, 3)));
+    assert!(predicate.matches(&ItemStack::with_count(&vanilla_items::OAK_LOG, 3)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::OAK_LOG, 4)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::STONE, 3)));
 }
 
 #[test]
@@ -1487,7 +1753,7 @@ fn item_predicate_argument_decodes_exact_components_before_matching() {
         panic!("item predicate should be retained");
     };
 
-    assert!(predicate.matches(&ItemStack::new(&vanilla_items::ITEMS.stone)));
+    assert!(predicate.matches(&ItemStack::new(&vanilla_items::STONE)));
 }
 
 #[test]
@@ -1502,13 +1768,141 @@ fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
     let Some(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
-    let mut sword = ItemStack::new(&vanilla_items::ITEMS.diamond_sword);
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
     sword.set_damage_value(7);
     sword.set_enchantments(&[(Identifier::vanilla_static("sharpness"), 3)], false);
 
     assert!(predicate.matches(&sword));
     sword.set_damage_value(6);
     assert!(!predicate.matches(&sword));
+}
+
+#[test]
+fn item_predicate_argument_supports_partial_custom_data_matching() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource stone[custom_data~{nested:{value:2}}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom data predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    let mut nested = NbtCompound::new();
+    nested.insert("value", 2);
+    nested.insert("extra", 3);
+    let mut compound = NbtCompound::new();
+    compound.insert("nested", nested);
+    let mut stack = ItemStack::new(&vanilla_items::STONE);
+    stack.set(
+        vanilla_components::CUSTOM_DATA,
+        vanilla_components::CustomData::try_from_compound(compound)
+            .expect("test custom data should be valid"),
+    );
+
+    assert!(predicate.matches(&stack));
+    stack.remove(vanilla_components::CUSTOM_DATA);
+    assert!(!predicate.matches(&stack));
+}
+
+#[test]
+fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    for expression in [
+        "potion_contents~'minecraft:water'",
+        "container~{}",
+        "bundle_contents~{}",
+        "firework_explosion~{}",
+        "fireworks~{}",
+        "writable_book_content~{}",
+        "written_book_content~{}",
+        "trim~{}",
+        "jukebox_playable~{}",
+        "villager/variant~'minecraft:plains'",
+    ] {
+        let input = format!("resource stone[{expression}]");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("registered data component predicate should parse: {expression}");
+        };
+        assert!(chain.top_context().item_predicate("value").is_some());
+    }
+}
+
+#[test]
+fn item_predicate_argument_matches_registered_firework_explosion_predicate() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource firework_star[firework_explosion~{shape:'star',has_twinkle:true}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("firework explosion predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+    let mut stack = ItemStack::new(&vanilla_items::FIREWORK_STAR);
+    stack.set(
+        vanilla_components::FIREWORK_EXPLOSION,
+        vanilla_components::FireworkExplosion::new(
+            vanilla_components::FireworkExplosionShape::Star,
+            Vec::new(),
+            Vec::new(),
+            false,
+            true,
+        ),
+    );
+
+    assert!(predicate.matches(&stack));
+    stack.remove(vanilla_components::FIREWORK_EXPLOSION);
+    assert!(!predicate.matches(&stack));
+}
+
+#[test]
+fn item_predicate_argument_matches_stream_only_nested_template_without_materializing_a_stack() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
+    let parse = dispatcher.parse(
+        "resource chest[container~{items:{contains:[{items:'minecraft:stick',count:100}]}}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("nested container predicate should parse");
+    };
+    let Some(predicate) = chain.top_context().item_predicate("value") else {
+        panic!("item predicate should be retained");
+    };
+
+    let mut encoded = Vec::new();
+    VarInt(i32::try_from(vanilla_items::STICK.id()).expect("test item id should fit"))
+        .write(&mut encoded)
+        .expect("item id should encode");
+    VarInt(100)
+        .write(&mut encoded)
+        .expect("count should encode");
+    VarInt(0)
+        .write(&mut encoded)
+        .expect("set component count should encode");
+    VarInt(0)
+        .write(&mut encoded)
+        .expect("removed component count should encode");
+    let template = ItemStackTemplate::read(&mut Cursor::new(encoded.as_slice()))
+        .expect("count 100 is valid in the stream codec");
+
+    let mut stack = ItemStack::new(&vanilla_items::CHEST);
+    stack.set(
+        vanilla_components::CONTAINER,
+        vanilla_components::ItemContainerContents::new(vec![Some(template)])
+            .expect("one container slot should be valid"),
+    );
+    assert!(predicate.matches(&stack));
 }
 
 #[test]
@@ -1523,7 +1917,7 @@ fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
     let Some(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
-    let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+    let mut stack = ItemStack::new(&vanilla_items::STONE);
     stack.set(
         vanilla_components::ATTRIBUTE_MODIFIERS,
         vanilla_components::ItemAttributeModifiers {
@@ -1568,16 +1962,10 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
-    for (path, component) in [
-        ("creative_slot_lock", vanilla_components::CREATIVE_SLOT_LOCK),
-        (
-            "additional_trade_cost",
-            vanilla_components::ADDITIONAL_TRADE_COST,
-        ),
-        (
-            "map_post_processing",
-            vanilla_components::MAP_POST_PROCESSING,
-        ),
+    for path in [
+        "creative_slot_lock",
+        "additional_trade_cost",
+        "map_post_processing",
     ] {
         let input = format!("resource stone[{path}~{{ignored:1}}]");
         let parse = dispatcher.parse(&input, TestSource::new());
@@ -1587,15 +1975,17 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
         let Some(predicate) = chain.top_context().item_predicate("value") else {
             panic!("item predicate should be retained");
         };
-        let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
-        stack.set(component, ());
+        let mut stack = ItemStack::new(&vanilla_items::STONE);
+        if path == "creative_slot_lock" {
+            stack.set(vanilla_components::CREATIVE_SLOT_LOCK, ());
+        }
 
-        assert!(predicate.matches(&stack));
+        assert_eq!(predicate.matches(&stack), path == "creative_slot_lock");
     }
 }
 
 #[test]
-fn item_predicate_argument_rejects_unsupported_predicates_during_parsing() {
+fn item_predicate_argument_rejects_malformed_potion_predicate() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(

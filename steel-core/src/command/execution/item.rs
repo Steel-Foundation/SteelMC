@@ -4,10 +4,7 @@ use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtTag;
 use steel_registry::{
     REGISTRY, RegistryExt as _,
-    data_components::{
-        ComponentData, ComponentDataDiscriminant, ComponentEntry, DataComponentPatch,
-        vanilla_components,
-    },
+    data_components::{ComponentData, ComponentEntry, DataComponentPatch, vanilla_components},
     item_stack::ItemStack,
     items::ItemRef,
 };
@@ -131,15 +128,6 @@ fn parse_component_value(
     let Some(entry) = REGISTRY.data_components.by_key(&key) else {
         return Err(unknown_component(reader, &key));
     };
-    if entry.expected_discriminant == ComponentDataDiscriminant::Todo {
-        // TODO: Accept this value once its real component codec replaces the placeholder.
-        return Err(malformed_component(
-            reader,
-            &key,
-            "component values are not implemented by Steel yet",
-        ));
-    }
-
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
         reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.component())))
@@ -184,44 +172,38 @@ pub(super) fn numeric_i32(tag: &NbtTag) -> Option<i32> {
 }
 
 pub(super) fn component_value_is_valid(key: &Identifier, value: &ComponentData) -> bool {
-    match value {
-        ComponentData::I32(value) if *key == vanilla_components::MAX_STACK_SIZE.key => {
-            (1..=99).contains(value)
-        }
-        ComponentData::I32(value) if *key == vanilla_components::MAX_DAMAGE.key => *value > 0,
-        ComponentData::I32(value)
-            if *key == vanilla_components::DAMAGE.key
-                || *key == vanilla_components::REPAIR_COST.key =>
-        {
-            *value >= 0
-        }
-        ComponentData::Float(value) if *key == vanilla_components::MINIMUM_ATTACK_CHARGE.key => {
-            value.is_finite() && !value.is_sign_negative() && *value <= 1.0
-        }
-        ComponentData::Float(value) if *key == vanilla_components::POTION_DURATION_SCALE.key => {
-            value.is_finite() && !value.is_sign_negative()
-        }
-        _ => true,
+    if key == vanilla_components::MAX_STACK_SIZE.key() {
+        return value
+            .downcast_ref::<i32>()
+            .is_some_and(|value| (1..=99).contains(value));
     }
+    if key == vanilla_components::MAX_DAMAGE.key() {
+        return value.downcast_ref::<i32>().is_some_and(|value| *value > 0);
+    }
+    if key == vanilla_components::DAMAGE.key() || key == vanilla_components::REPAIR_COST.key() {
+        return value.downcast_ref::<i32>().is_some_and(|value| *value >= 0);
+    }
+    if key == vanilla_components::MINIMUM_ATTACK_CHARGE.key() {
+        return value
+            .downcast_ref::<f32>()
+            .is_some_and(|value| value.is_finite() && !value.is_sign_negative() && *value <= 1.0);
+    }
+    if key == vanilla_components::POTION_DURATION_SCALE.key() {
+        return value
+            .downcast_ref::<f32>()
+            .is_some_and(|value| value.is_finite() && !value.is_sign_negative());
+    }
+
+    true
 }
 
 fn validate_item_stack(
     reader: &StringReader<'_>,
     stack: &ItemStack,
 ) -> Result<(), CommandSyntaxError> {
-    if stack.has(vanilla_components::MAX_DAMAGE) && stack.max_stack_size() > 1 {
-        return Err(malformed_item(
-            reader,
-            "item cannot be both damageable and stackable",
-        ));
-    }
-    if stack.count() > stack.max_stack_size() {
-        return Err(malformed_item(
-            reader,
-            "item count exceeds its maximum stack size",
-        ));
-    }
-    Ok(())
+    stack
+        .validate_strict()
+        .map_err(|error| malformed_item(reader, &error.to_string()))
 }
 
 fn expected_component(reader: &StringReader<'_>) -> CommandSyntaxError {
@@ -290,15 +272,13 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     if component_key.len() != component_prefix.len() && component_key.is_empty() {
         return;
     }
-    if let Some(entry) = component_by_input(component_key) {
+    if component_by_input(component_key).is_some() {
         if removed {
             suggest_operation_delimiters(input, builder);
             return;
         }
-        if entry.expected_discriminant != ComponentDataDiscriminant::Todo {
-            builder.suggest(format!("{input}="));
-            return;
-        }
+        builder.suggest(format!("{input}="));
+        return;
     }
     let visited = visited_component_keys(&components[..current_start]);
     for entry in
@@ -306,7 +286,6 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     {
         if !entry.is_persistent()
             || visited.contains(&entry.key)
-            || (!removed && entry.expected_discriminant == ComponentDataDiscriminant::Todo)
             || !resource_matches(component_prefix, &entry.key)
         {
             continue;

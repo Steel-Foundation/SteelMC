@@ -877,7 +877,7 @@ impl BlockRegistry {
             .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
             .copied()
             .collect();
-        self.state_id_from_block_properties(target, &matching)
+        self.state_id_from_block_defaulted_properties(target, matching)
             .unwrap_or_else(|| self.get_default_state_id(target))
     }
 }

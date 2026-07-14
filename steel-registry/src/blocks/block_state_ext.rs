@@ -21,6 +21,7 @@ pub trait BlockStateExt {
     #[must_use]
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId;
     fn get_property_str(&self, name: &str) -> Option<String>;
+    fn with_properties_of(&self, source: BlockStateId) -> BlockStateId;
     fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_collision_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
     fn get_static_support_shape(&self) -> blocks::shapes::VoxelShape;
@@ -77,7 +78,11 @@ impl BlockStateExt for BlockStateId {
             .by_state_id(*self)
             .expect("Expected a valid state id")
     }
-
+    fn with_properties_of(&self, source: BlockStateId) -> BlockStateId {
+        REGISTRY
+            .blocks
+            .copy_matching_properties(source, self.get_block())
+    }
     fn is_air(&self) -> bool {
         self.get_block().config.is_air
     }
@@ -358,5 +363,15 @@ mod tests {
                 .uses_offset(ShapeChannel::Collision)
         );
         assert!(!tall_grass.shape_offsets.uses_offset(ShapeChannel::Outline));
+    }
+
+    #[test]
+    fn with_properties_of_keeps_target_defaults_for_non_matching_properties() {
+        init_test_registry();
+
+        let source = vanilla_blocks::STONE.default_state();
+        let target = vanilla_blocks::CANDLE.default_state();
+
+        assert_eq!(target.with_properties_of(source), target);
     }
 }

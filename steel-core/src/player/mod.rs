@@ -3039,21 +3039,21 @@ mod tests {
         player
             .inventory
             .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+            .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
         {
             let inventory_menu = player.inventory_menu.lock();
             inventory_menu
                 .crafting_container()
                 .lock()
-                .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 2));
+                .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 2));
         }
         player
             .inventory_menu
             .lock()
             .behavior_mut()
-            .set_carried(ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+            .set_carried(ItemStack::with_count(&vanilla_items::STONE, 4));
 
-        let stone = |stack: &ItemStack| stack.is(&vanilla_items::ITEMS.stone);
+        let stone = |stack: &ItemStack| stack.is(&vanilla_items::STONE);
         assert_eq!(player.clear_or_count_matching_items(&stone, 5), 5);
         assert!(player.inventory.lock().get_item(0).is_empty());
         assert!(

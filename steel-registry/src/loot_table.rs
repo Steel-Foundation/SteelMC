@@ -1,7 +1,7 @@
-pub use crate::equipment::EquipmentSlotGroup;
+pub use crate::{DyeColor, equipment::EquipmentSlotGroup};
 use crate::{
     REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
-    item_stack::ItemStack,
+    instrument::InstrumentRef, item_stack::ItemStack,
 };
 use rand::RngExt;
 use rustc_hash::FxHashMap;
@@ -20,27 +20,6 @@ pub enum LootContextEntity {
     KillerPlayer,
     /// The entity interacting with a block/entity.
     Interacting,
-}
-
-/// Dye/banner color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DyeColor {
-    White,
-    Orange,
-    Magenta,
-    LightBlue,
-    Yellow,
-    Lime,
-    Pink,
-    Gray,
-    LightGray,
-    Cyan,
-    Purple,
-    Blue,
-    Brown,
-    Green,
-    Red,
-    Black,
 }
 
 /// The type of loot table, determining when/how it's used.
@@ -990,6 +969,31 @@ pub enum EnchantmentOptions {
     List(&'static [Identifier]),
 }
 
+/// Options for selecting an instrument from a registry tag or explicit list.
+#[derive(Debug, Clone)]
+pub enum InstrumentOptions {
+    Tag(Identifier),
+    Direct(&'static [InstrumentRef]),
+}
+
+impl InstrumentOptions {
+    fn get_random<R: rand::Rng>(&self, rng: &mut R) -> Option<InstrumentRef> {
+        match self {
+            Self::Tag(tag) => {
+                let instruments = REGISTRY.instruments.get_tag(tag)?;
+                (!instruments.is_empty()).then(|| {
+                    let index = rng.random_range(0..instruments.len());
+                    instruments[index]
+                })
+            }
+            Self::Direct(instruments) => (!instruments.is_empty()).then(|| {
+                let index = rng.random_range(0..instruments.len());
+                instruments[index]
+            }),
+        }
+    }
+}
+
 /// A function with optional conditions.
 #[derive(Debug, Clone)]
 pub struct ConditionalLootFunction {
@@ -1039,7 +1043,9 @@ pub enum LootFunction {
     /// Set components on the item.
     SetComponents { components: &'static str },
     /// Set custom NBT data on the item (merges with existing `custom_data`).
-    SetCustomData { tag: &'static str },
+    SetCustomData {
+        tag: fn() -> crate::data_components::CustomData,
+    },
     /// Smelt the item (convert raw to cooked, ore to ingot, etc.).
     FurnaceSmelt { use_input_count: bool },
     /// Create an exploration map pointing to a structure.
@@ -1061,7 +1067,7 @@ pub enum LootFunction {
     /// Set the suspicious stew effects.
     SetStewEffect { effects: &'static [StewEffect] },
     /// Set the instrument for goat horns.
-    SetInstrument { options: Identifier },
+    SetInstrument { options: InstrumentOptions },
     /// Set enchantments on the item.
     SetEnchantments {
         enchantments: &'static [(Identifier, NumberProvider)],
@@ -1135,8 +1141,6 @@ pub enum LootFunction {
     ToggleTooltips {
         toggles: &'static [(Identifier, bool)],
     },
-    /// Set custom model data.
-    SetCustomModelData { value: NumberProvider },
     /// Discard/delete the item entirely.
     Discard,
     /// Reference to a named function in the registry.
@@ -1826,7 +1830,7 @@ impl LootFunction {
                 item.set_components_from_json(components);
             }
             LootFunction::SetCustomData { tag } => {
-                item.set_custom_data(tag);
+                item.set_custom_data(&tag());
             }
             LootFunction::FurnaceSmelt { use_input_count } => {
                 item.apply_furnace_smelt(*use_input_count);
@@ -1845,7 +1849,10 @@ impl LootFunction {
                 item.set_name(name, *target);
             }
             LootFunction::SetOminousBottleAmplifier { amplifier } => {
-                let amp = amplifier.get_int(ctx.rng);
+                let amp = amplifier.get_int(ctx.rng).clamp(
+                    crate::data_components::OminousBottleAmplifier::MIN_AMPLIFIER,
+                    crate::data_components::OminousBottleAmplifier::MAX_AMPLIFIER,
+                );
                 item.set_ominous_bottle_amplifier(amp);
             }
             LootFunction::SetPotion { id } => {
@@ -1855,7 +1862,14 @@ impl LootFunction {
                 item.set_stew_effects(effects, ctx.rng);
             }
             LootFunction::SetInstrument { options } => {
-                item.set_instrument(options, ctx.rng);
+                if let Some(instrument) = options.get_random(ctx.rng) {
+                    item.set(
+                        crate::data_components::vanilla_components::INSTRUMENT,
+                        crate::data_components::InstrumentComponent::new(
+                            crate::RegistryHolder::reference(instrument),
+                        ),
+                    );
+                }
             }
             LootFunction::SetEnchantments { enchantments, add } => {
                 let resolved: Vec<_> = enchantments
@@ -1924,9 +1938,6 @@ impl LootFunction {
             }
             LootFunction::ToggleTooltips { toggles } => {
                 item.toggle_tooltips(toggles);
-            }
-            LootFunction::SetCustomModelData { value } => {
-                item.set_custom_model_data(value.get_int(ctx.rng));
             }
             LootFunction::Discard => {
                 item.count = 0;
@@ -2045,6 +2056,9 @@ crate::impl_registry!(
 
 #[cfg(test)]
 mod tests {
+    use crate::data_components::vanilla_components::INSTRUMENT;
+    use crate::vanilla_instrument_tags::InstrumentTag;
+    use crate::vanilla_items;
     use crate::{test_support::init_test_registry, vanilla_loot_tables};
 
     use super::*;
@@ -2069,6 +2083,29 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].count, 1);
         assert_eq!(items[0].item.key, Identifier::vanilla_static("oak_log"));
+    }
+
+    #[test]
+    fn set_instrument_selects_from_the_configured_holder_set() {
+        init_test_registries();
+        let mut rng = test_rng();
+        let mut ctx = LootContext::new(&mut rng);
+        let mut goat_horn = ItemStack::new(&vanilla_items::GOAT_HORN);
+        let function = LootFunction::SetInstrument {
+            options: InstrumentOptions::Tag(InstrumentTag::REGULAR_GOAT_HORNS),
+        };
+
+        function.apply(&mut goat_horn, &mut ctx);
+
+        let selected = goat_horn
+            .get(INSTRUMENT)
+            .and_then(|component| component.instrument().as_reference())
+            .expect("set_instrument should select a registered instrument");
+        assert!(
+            REGISTRY
+                .instruments
+                .is_in_tag(selected, &InstrumentTag::REGULAR_GOAT_HORNS)
+        );
     }
 
     #[test]
@@ -2179,7 +2216,7 @@ mod tests {
         for seed in 0u64..100 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let mut ctx = LootContext::new(&mut rng).with_explosion(4.0);
-            let mut item = ItemStack::with_count(&crate::vanilla_items::ITEMS.stone, initial_count);
+            let mut item = ItemStack::with_count(&crate::vanilla_items::STONE, initial_count);
             cond_func.function.apply(&mut item, &mut ctx);
             total_survived += item.count;
         }
@@ -2191,6 +2228,28 @@ mod tests {
             total_survived > 150 && total_survived < 350,
             "Expected ~250 items with explosion decay (25% of 1000), got {total_survived}"
         );
+    }
+
+    #[test]
+    fn ominous_bottle_amplifier_function_clamps_to_persistent_range() {
+        use crate::data_components::vanilla_components::OMINOUS_BOTTLE_AMPLIFIER;
+
+        init_test_registries();
+        for (provided, expected) in [(-3.0, 0), (2.0, 2), (9.0, 4)] {
+            let mut rng = test_rng();
+            let mut context = LootContext::new(&mut rng);
+            let mut item = ItemStack::new(&crate::vanilla_items::OMINOUS_BOTTLE);
+            LootFunction::SetOminousBottleAmplifier {
+                amplifier: NumberProvider::Constant(provided),
+            }
+            .apply(&mut item, &mut context);
+
+            assert_eq!(
+                item.get(OMINOUS_BOTTLE_AMPLIFIER)
+                    .map(|amplifier| amplifier.value()),
+                Some(expected)
+            );
+        }
     }
 
     #[test]
