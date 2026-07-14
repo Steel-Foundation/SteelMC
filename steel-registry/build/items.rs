@@ -39,10 +39,10 @@ pub struct Items {
     pub items: Vec<Item>,
 }
 
-fn get_component_ident(name: &str) -> Option<Ident> {
+fn get_component_ident(name: &str) -> Ident {
     let name = name.strip_prefix("minecraft:").unwrap_or(name);
     let shouty_name = name.to_shouty_snake_case();
-    Some(Ident::new(&shouty_name, Span::call_site()))
+    Ident::new(&shouty_name, Span::call_site())
 }
 
 /// Generates the `TokenStream` for a Tool component from JSON data.
@@ -204,6 +204,489 @@ fn component_i32(value: &Value, component: &str) -> i32 {
         .as_i64()
         .unwrap_or_else(|| panic!("{component} component must be an integer"));
     i32::try_from(value).unwrap_or_else(|_| panic!("{component} component must fit an i32"))
+}
+
+fn food_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("food component must be an object"));
+    let nutrition = object
+        .get("nutrition")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| panic!("food.nutrition must be an integer"));
+    let nutrition =
+        i32::try_from(nutrition).unwrap_or_else(|_| panic!("food.nutrition must fit an i32"));
+    assert!(nutrition >= 0, "food.nutrition must be non-negative");
+    let saturation = object
+        .get("saturation")
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| panic!("food.saturation must be a number")) as f32;
+    let can_always_eat = object.get("can_always_eat").is_some_and(|value| {
+        value
+            .as_bool()
+            .unwrap_or_else(|| panic!("food.can_always_eat must be a boolean"))
+    });
+    quote! {
+        vanilla_components::FoodProperties::from_extracted(
+            #nutrition,
+            #saturation,
+            #can_always_eat,
+        )
+    }
+}
+
+fn block_state_component_token(value: &Value) -> TokenStream {
+    let properties = value
+        .as_object()
+        .unwrap_or_else(|| panic!("block_state component must be an object"))
+        .iter()
+        .map(|(name, value)| {
+            let value = value
+                .as_str()
+                .unwrap_or_else(|| panic!("block_state.{name} must be a string"));
+            quote! { (#name.to_owned(), #value.to_owned()) }
+        });
+    quote! {
+        vanilla_components::BlockItemStateProperties::new(
+            BTreeMap::from([#(#properties),*]),
+        )
+    }
+}
+
+fn fireworks_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("fireworks component must be an object"));
+    let flight_duration = object.get("flight_duration").map_or(0, |value| {
+        let value = value
+            .as_i64()
+            .unwrap_or_else(|| panic!("fireworks.flight_duration must be an integer"));
+        i32::try_from(value).unwrap_or_else(|_| panic!("fireworks.flight_duration must fit an i32"))
+    });
+    assert!(
+        (0..=u8::MAX.into()).contains(&flight_duration),
+        "fireworks.flight_duration must be in 0..=255"
+    );
+    assert!(
+        object
+            .get("explosions")
+            .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty)),
+        "vanilla item prototypes currently require empty firework explosions"
+    );
+    quote! { vanilla_components::Fireworks::from_extracted(#flight_duration) }
+}
+
+fn blocks_attacks_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("blocks_attacks component must be an object"));
+    assert!(
+        object.keys().all(|key| matches!(
+            key.as_str(),
+            "block_delay_seconds"
+                | "item_damage"
+                | "bypassed_by"
+                | "block_sound"
+                | "disabled_sound"
+        )),
+        "shield blocks_attacks contains unsupported fields: {value}"
+    );
+    let block_delay_seconds = object
+        .get("block_delay_seconds")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0) as f32;
+    assert!(
+        block_delay_seconds >= 0.0 && !block_delay_seconds.is_nan(),
+        "shield block delay must be non-negative"
+    );
+    let item_damage = object
+        .get("item_damage")
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| panic!("shield blocks_attacks must define item_damage"));
+    let item_damage_value = |field: &str| {
+        item_damage
+            .get(field)
+            .and_then(Value::as_f64)
+            .unwrap_or_else(|| panic!("blocks_attacks.item_damage.{field} must be a number"))
+            as f32
+    };
+    let threshold = item_damage_value("threshold");
+    let base = item_damage_value("base");
+    let factor = item_damage_value("factor");
+    assert!(
+        threshold >= 0.0,
+        "item damage threshold must be non-negative"
+    );
+    let bypassed_by = object
+        .get("bypassed_by")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("shield blocks_attacks must define bypassed_by"));
+    let bypassed_by = bypassed_by
+        .strip_prefix('#')
+        .unwrap_or_else(|| panic!("shield bypassed_by must be a damage-type tag"));
+    let bypassed_by = identifier_token(bypassed_by);
+    let block_sound = sound_event_value_token(
+        object
+            .get("block_sound")
+            .unwrap_or_else(|| panic!("shield blocks_attacks must define block_sound")),
+        "blocks_attacks.block_sound",
+    );
+    let disabled_sound = sound_event_value_token(
+        object
+            .get("disabled_sound")
+            .unwrap_or_else(|| panic!("shield blocks_attacks must define disabled_sound")),
+        "blocks_attacks.disabled_sound",
+    );
+    quote! {
+        vanilla_components::BlocksAttacks::from_extracted_shield(
+            #block_delay_seconds,
+            vanilla_components::ItemDamageFunction::from_extracted(#threshold, #base, #factor),
+            crate::RegistryHolderSet::Tag(#bypassed_by),
+            #block_sound,
+            #disabled_sound,
+        )
+    }
+}
+
+fn mob_effect_ref_token(value: &str) -> TokenStream {
+    let id = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid mob effect id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item prototypes must reference vanilla mob effects: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_mob_effects::#ident }
+}
+
+fn mob_effect_instance_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("mob effect instance must be an object"));
+    assert!(
+        object.keys().all(|key| matches!(
+            key.as_str(),
+            "id" | "duration" | "amplifier" | "ambient" | "show_particles" | "show_icon"
+        )),
+        "extracted mob effect instance contains unsupported fields: {value}"
+    );
+    let effect = object.get("id").and_then(Value::as_str).map_or_else(
+        || panic!("mob effect instance must define id"),
+        mob_effect_ref_token,
+    );
+    let integer = |field: &str, default: i32| {
+        object.get(field).map_or(default, |value| {
+            let value = value
+                .as_i64()
+                .unwrap_or_else(|| panic!("mob effect {field} must be an integer"));
+            i32::try_from(value).unwrap_or_else(|_| panic!("mob effect {field} must fit an i32"))
+        })
+    };
+    let boolean = |field: &str, default: bool| {
+        object.get(field).map_or(default, |value| {
+            value
+                .as_bool()
+                .unwrap_or_else(|| panic!("mob effect {field} must be a boolean"))
+        })
+    };
+    let duration = integer("duration", 0);
+    let amplifier = integer("amplifier", 0);
+    let ambient = boolean("ambient", false);
+    let show_particles = boolean("show_particles", true);
+    let show_icon = boolean("show_icon", show_particles);
+    quote! {
+        crate::MobEffectInstance::new(
+            #effect,
+            #duration,
+            #amplifier,
+            #ambient,
+            #show_particles,
+            #show_icon,
+            None,
+        )
+    }
+}
+
+fn consume_effect_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("consume effect must be an object"));
+    let effect_type = object
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("consume effect must define type"));
+    match effect_type {
+        "minecraft:apply_effects" => {
+            let effects = object
+                .get("effects")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| panic!("apply_effects must define an effects array"))
+                .iter()
+                .map(mob_effect_instance_token);
+            let probability = object.get("probability").map_or(1.0, |value| {
+                value
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("apply_effects probability must be a number"))
+                    as f32
+            });
+            assert!(
+                !probability.is_nan() && (0.0..=1.0).contains(&probability),
+                "apply_effects probability must be in 0..=1"
+            );
+            quote! {
+                crate::ConsumeEffectData::new(
+                    &crate::consume_effect::vanilla_consume_effect_types::APPLY_EFFECTS,
+                    crate::consume_effect::ApplyStatusEffectsConsumeEffect::from_extracted(
+                        vec![#(#effects),*],
+                        #probability,
+                    ),
+                )
+            }
+        }
+        "minecraft:remove_effects" => {
+            let effects = object
+                .get("effects")
+                .unwrap_or_else(|| panic!("remove_effects must define effects"));
+            let effects = holder_set_token(effects, "remove_effects", mob_effect_ref_token);
+            quote! {
+                crate::ConsumeEffectData::new(
+                    &crate::consume_effect::vanilla_consume_effect_types::REMOVE_EFFECTS,
+                    crate::consume_effect::RemoveStatusEffectsConsumeEffect::new(#effects),
+                )
+            }
+        }
+        "minecraft:clear_all_effects" => quote! {
+            crate::ConsumeEffectData::new(
+                &crate::consume_effect::vanilla_consume_effect_types::CLEAR_ALL_EFFECTS,
+                crate::consume_effect::ClearAllStatusEffectsConsumeEffect,
+            )
+        },
+        "minecraft:teleport_randomly" => {
+            let diameter = object.get("diameter").map_or(16.0, |value| {
+                value
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("teleport_randomly diameter must be a number"))
+                    as f32
+            });
+            assert!(
+                diameter > 0.0,
+                "teleport_randomly diameter must be positive"
+            );
+            quote! {
+                crate::ConsumeEffectData::new(
+                    &crate::consume_effect::vanilla_consume_effect_types::TELEPORT_RANDOMLY,
+                    crate::consume_effect::TeleportRandomlyConsumeEffect::from_extracted(#diameter),
+                )
+            }
+        }
+        "minecraft:play_sound" => {
+            let sound = object
+                .get("sound")
+                .unwrap_or_else(|| panic!("play_sound must define sound"));
+            let sound = sound_event_value_token(sound, "consume_effect.play_sound");
+            quote! {
+                crate::ConsumeEffectData::new(
+                    &crate::consume_effect::vanilla_consume_effect_types::PLAY_SOUND,
+                    crate::consume_effect::PlaySoundConsumeEffect::new(#sound),
+                )
+            }
+        }
+        _ => panic!("unknown extracted consume effect type {effect_type:?}"),
+    }
+}
+
+fn consume_effects_token(value: Option<&Value>, field: &str) -> Vec<TokenStream> {
+    value.map_or_else(Vec::new, |value| {
+        value
+            .as_array()
+            .unwrap_or_else(|| panic!("{field} must be an array"))
+            .iter()
+            .map(consume_effect_token)
+            .collect()
+    })
+}
+
+fn item_use_animation_token(value: Option<&Value>) -> TokenStream {
+    let name = value.map_or("eat", |value| {
+        value
+            .as_str()
+            .unwrap_or_else(|| panic!("consumable animation must be a string"))
+    });
+    let variant = match name {
+        "none" => quote! { None },
+        "eat" => quote! { Eat },
+        "drink" => quote! { Drink },
+        "block" => quote! { Block },
+        "bow" => quote! { Bow },
+        "trident" => quote! { Trident },
+        "crossbow" => quote! { Crossbow },
+        "spyglass" => quote! { Spyglass },
+        "toot_horn" => quote! { TootHorn },
+        "brush" => quote! { Brush },
+        "bundle" => quote! { Bundle },
+        "spear" => quote! { Spear },
+        _ => panic!("unknown consumable animation {name:?}"),
+    };
+    quote! { vanilla_components::ItemUseAnimation::#variant }
+}
+
+fn consumable_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("consumable component must be an object"));
+    assert!(
+        object.keys().all(|key| matches!(
+            key.as_str(),
+            "consume_seconds"
+                | "animation"
+                | "sound"
+                | "has_consume_particles"
+                | "on_consume_effects"
+        )),
+        "consumable component contains unsupported fields: {value}"
+    );
+    let consume_seconds = object.get("consume_seconds").map_or(1.6, |value| {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("consume_seconds must be a number")) as f32
+    });
+    assert!(
+        consume_seconds >= 0.0 && !consume_seconds.is_nan(),
+        "consume_seconds must be non-negative"
+    );
+    let animation = item_use_animation_token(object.get("animation"));
+    let sound = object.get("sound").map_or_else(
+        || registry_sound_event_holder_token("minecraft:entity.generic.eat", "consumable.sound"),
+        |value| sound_event_value_token(value, "consumable.sound"),
+    );
+    let has_consume_particles = object.get("has_consume_particles").is_none_or(|value| {
+        value
+            .as_bool()
+            .unwrap_or_else(|| panic!("has_consume_particles must be a boolean"))
+    });
+    let effects = consume_effects_token(object.get("on_consume_effects"), "on_consume_effects");
+    quote! {
+        vanilla_components::Consumable::from_extracted(
+            #consume_seconds,
+            #animation,
+            #sound,
+            #has_consume_particles,
+            vec![#(#effects),*],
+        )
+    }
+}
+
+fn death_protection_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("death_protection component must be an object"));
+    assert!(
+        object.keys().all(|key| key == "death_effects"),
+        "death_protection component contains unsupported fields: {value}"
+    );
+    let effects = consume_effects_token(object.get("death_effects"), "death_effects");
+    quote! { vanilla_components::DeathProtection::new(vec![#(#effects),*]) }
+}
+
+fn kinetic_condition_token(value: Option<&Value>, field: &str) -> TokenStream {
+    let Some(value) = value else {
+        return quote! { None };
+    };
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("kinetic_weapon.{field} must be an object"));
+    let max_duration_ticks = object
+        .get("max_duration_ticks")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| panic!("kinetic_weapon.{field}.max_duration_ticks must be an integer"));
+    let max_duration_ticks = i32::try_from(max_duration_ticks)
+        .unwrap_or_else(|_| panic!("kinetic_weapon.{field}.max_duration_ticks must fit an i32"));
+    assert!(
+        max_duration_ticks >= 0,
+        "kinetic_weapon.{field}.max_duration_ticks must be non-negative"
+    );
+    let min_speed = object.get("min_speed").map_or(0.0, |value| {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("kinetic_weapon.{field}.min_speed must be a number"))
+            as f32
+    });
+    let min_relative_speed = object.get("min_relative_speed").map_or(0.0, |value| {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("kinetic_weapon.{field}.min_relative_speed must be a number"))
+            as f32
+    });
+    quote! {
+        Some(vanilla_components::KineticWeaponCondition::from_extracted(
+            #max_duration_ticks,
+            #min_speed,
+            #min_relative_speed,
+        ))
+    }
+}
+
+fn kinetic_weapon_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("kinetic_weapon component must be an object"));
+    let non_negative_i32 = |field: &str, default: i32| {
+        let value = object.get(field).map_or(i64::from(default), |value| {
+            value
+                .as_i64()
+                .unwrap_or_else(|| panic!("kinetic_weapon.{field} must be an integer"))
+        });
+        let value = i32::try_from(value)
+            .unwrap_or_else(|_| panic!("kinetic_weapon.{field} must fit an i32"));
+        assert!(value >= 0, "kinetic_weapon.{field} must be non-negative");
+        value
+    };
+    let float = |field: &str, default: f32| {
+        object.get(field).map_or(default, |value| {
+            value
+                .as_f64()
+                .unwrap_or_else(|| panic!("kinetic_weapon.{field} must be a number"))
+                as f32
+        })
+    };
+    let contact_cooldown_ticks = non_negative_i32("contact_cooldown_ticks", 10);
+    let delay_ticks = non_negative_i32("delay_ticks", 0);
+    let dismount_conditions =
+        kinetic_condition_token(object.get("dismount_conditions"), "dismount_conditions");
+    let knockback_conditions =
+        kinetic_condition_token(object.get("knockback_conditions"), "knockback_conditions");
+    let damage_conditions =
+        kinetic_condition_token(object.get("damage_conditions"), "damage_conditions");
+    let forward_movement = float("forward_movement", 0.0);
+    let damage_multiplier = float("damage_multiplier", 1.0);
+    let sound = object.get("sound").map_or_else(
+        || quote! { None },
+        |sound| {
+            let sound = sound_event_value_token(sound, "kinetic_weapon.sound");
+            quote! { Some(#sound) }
+        },
+    );
+    let hit_sound = object.get("hit_sound").map_or_else(
+        || quote! { None },
+        |sound| {
+            let sound = sound_event_value_token(sound, "kinetic_weapon.hit_sound");
+            quote! { Some(#sound) }
+        },
+    );
+    quote! {
+        vanilla_components::KineticWeapon::from_extracted(
+            #contact_cooldown_ticks,
+            #delay_ticks,
+            #dismount_conditions,
+            #knockback_conditions,
+            #damage_conditions,
+            #forward_movement,
+            #damage_multiplier,
+            #sound,
+            #hit_sound,
+        )
+    }
 }
 
 fn item_name_component_token(value: &Value) -> TokenStream {
@@ -831,11 +1314,7 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
     let mut builder_calls = Vec::new();
 
     for (key, value) in &item.components {
-        let component_ident = if let Some(ident) = get_component_ident(key) {
-            ident
-        } else {
-            continue;
-        };
+        let component_ident = get_component_ident(key);
 
         match key.as_str() {
             "minecraft:item_name" => {
@@ -864,6 +1343,183 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         Some(vanilla_components::CustomData::default()),
                     )
                 });
+            }
+            "minecraft:entity_data" => {
+                let object = value
+                    .as_object()
+                    .unwrap_or_else(|| panic!("entity_data component must be an object"));
+                assert_eq!(
+                    object.len(),
+                    1,
+                    "extracted entity_data prototypes currently require an id-only value"
+                );
+                let entity_type = object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("entity_data.id must be an entity type identifier"));
+                let entity_type = entity_type_ref_token(entity_type).unwrap_or_else(|| {
+                    panic!("vanilla entity_data references non-vanilla type {entity_type}")
+                });
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::ENTITY_DATA,
+                        Some(vanilla_components::EntityData::new(
+                            #entity_type,
+                            vanilla_components::CustomData::default(),
+                        )),
+                    )
+                });
+            }
+            "minecraft:debug_stick_state" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla debug stick prototype must have an empty state"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::DEBUG_STICK_STATE,
+                        Some(vanilla_components::DebugStickState::empty()),
+                    )
+                });
+            }
+            "minecraft:writable_book_content" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla writable book prototype must have empty content"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::WRITABLE_BOOK_CONTENT,
+                        Some(vanilla_components::WritableBookContent::empty()),
+                    )
+                });
+            }
+            "minecraft:suspicious_stew_effects" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla suspicious stew prototype must have empty effects"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::SUSPICIOUS_STEW_EFFECTS,
+                        Some(vanilla_components::SuspiciousStewEffects::empty()),
+                    )
+                });
+            }
+            "minecraft:potion_contents" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla potion item prototypes must have empty potion contents"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::POTION_CONTENTS,
+                        Some(vanilla_components::PotionContents::empty()),
+                    )
+                });
+            }
+            "minecraft:potion_duration_scale" => {
+                let scale = value
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("potion_duration_scale component must be a number"))
+                    as f32;
+                assert!(
+                    scale.is_finite() && !scale.is_sign_negative(),
+                    "potion_duration_scale must be non-negative and finite"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::POTION_DURATION_SCALE,
+                        Some(#scale),
+                    )
+                });
+            }
+            "minecraft:food" => {
+                let food = food_component_token(value);
+                builder_calls.push(quote! { .builder_set(vanilla_components::FOOD, Some(#food)) });
+            }
+            "minecraft:fireworks" => {
+                let fireworks = fireworks_component_token(value);
+                builder_calls
+                    .push(quote! { .builder_set(vanilla_components::FIREWORKS, Some(#fireworks)) });
+            }
+            "minecraft:block_state" => {
+                let block_state = block_state_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::BLOCK_STATE, Some(#block_state)) },
+                );
+            }
+            "minecraft:blocks_attacks" => {
+                let blocks_attacks = blocks_attacks_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::BLOCKS_ATTACKS,
+                        Some(#blocks_attacks),
+                    )
+                });
+            }
+            "minecraft:consumable" => {
+                let consumable = consumable_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::CONSUMABLE, Some(#consumable)) },
+                );
+            }
+            "minecraft:death_protection" => {
+                let death_protection = death_protection_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::DEATH_PROTECTION,
+                        Some(#death_protection),
+                    )
+                });
+            }
+            "minecraft:bees" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla beehive item prototypes currently require empty bee occupants"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::BEES,
+                        Some(vanilla_components::Bees::empty()),
+                    )
+                });
+            }
+            "minecraft:chicken/variant" => {
+                let variant = value.as_str().unwrap_or_else(|| {
+                    panic!("chicken/variant component must be an identifier string")
+                });
+                let variant = Identifier::from_str(variant)
+                    .unwrap_or_else(|error| panic!("invalid chicken variant {variant:?}: {error}"));
+                assert_eq!(
+                    variant.namespace.as_ref(),
+                    "minecraft",
+                    "vanilla item prototype references non-vanilla chicken variant {variant}"
+                );
+                let variant = Ident::new(&variant.path.to_shouty_snake_case(), Span::call_site());
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::CHICKEN_VARIANT,
+                        Some(vanilla_components::RegistryReference::new(
+                            &crate::vanilla_chicken_variants::#variant,
+                        )),
+                    )
+                });
+            }
+            "minecraft:kinetic_weapon" => {
+                let kinetic_weapon = kinetic_weapon_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::KINETIC_WEAPON,
+                        Some(#kinetic_weapon),
+                    )
+                });
+            }
+            "minecraft:map_decorations" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla filled map prototype must have empty map decorations"
+                );
             }
             "minecraft:enchantable" => {
                 let object = value
@@ -981,6 +1637,107 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:recipes" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty recipes, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::RECIPES,
+                        Some(vanilla_components::Recipes::empty()),
+                    )
+                });
+            }
+            "minecraft:banner_patterns" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty banner patterns, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::BANNER_PATTERNS,
+                        Some(vanilla_components::BannerPatternLayers::empty()),
+                    )
+                });
+            }
+            "minecraft:pot_decorations" => {
+                let decorations = value
+                    .as_array()
+                    .unwrap_or_else(|| panic!("pot_decorations must be an item list, got {value}"));
+                assert!(
+                    decorations.len() == 4
+                        && decorations
+                            .iter()
+                            .all(|decoration| decoration.as_str() == Some("minecraft:brick")),
+                    "extracted decorated pot must use four brick placeholders"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::POT_DECORATIONS,
+                        Some(vanilla_components::PotDecorations::EMPTY),
+                    )
+                });
+            }
+            "minecraft:use_remainder" => {
+                let remainder = value.as_object().unwrap_or_else(|| {
+                    panic!("use_remainder must be an item template, got {value}")
+                });
+                assert_eq!(
+                    remainder.len(),
+                    1,
+                    "extracted use remainders currently require an item-only template"
+                );
+                let item = remainder
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("use_remainder.id must be an item identifier"));
+                let item = item_ref_token(item, "use_remainder");
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::USE_REMAINDER,
+                        Some(vanilla_components::UseRemainder::new(
+                            vanilla_components::ItemStackTemplate::new(#item),
+                        )),
+                    )
+                });
+            }
+            "minecraft:charged_projectiles" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty charged projectiles, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::CHARGED_PROJECTILES,
+                        Some(vanilla_components::ChargedProjectiles::empty()),
+                    )
+                });
+            }
+            "minecraft:bundle_contents" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty bundle contents, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::BUNDLE_CONTENTS,
+                        Some(vanilla_components::BundleContents::empty()),
+                    )
+                });
+            }
+            "minecraft:container" => {
+                assert!(
+                    value.as_array().is_some_and(Vec::is_empty),
+                    "vanilla item prototypes currently require empty container contents, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::CONTAINER,
+                        Some(vanilla_components::ItemContainerContents::empty()),
+                    )
+                });
+            }
             "minecraft:tooltip_style" | "minecraft:note_block_sound" => {
                 let identifier = value
                     .as_str()
@@ -1030,6 +1787,24 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     value.as_array().is_some_and(Vec::is_empty),
                     "vanilla item prototypes currently require empty lore, got {value}"
                 );
+            }
+            "minecraft:enchantments" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla item prototypes currently require default empty enchantments, got {value}"
+                );
+            }
+            "minecraft:stored_enchantments" => {
+                assert!(
+                    value.as_object().is_some_and(serde_json::Map::is_empty),
+                    "vanilla item prototypes currently require empty stored enchantments, got {value}"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::STORED_ENCHANTMENTS,
+                        Some(vanilla_components::ItemEnchantments::empty()),
+                    )
+                });
             }
             "minecraft:rarity" => {
                 if let Some(rarity) = rarity_component_token(value) {
@@ -1087,7 +1862,7 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         "mainhand" => quote! { vanilla_components::EquipmentSlot::MainHand },
                         "offhand" => quote! { vanilla_components::EquipmentSlot::OffHand },
                         "saddle" => quote! { vanilla_components::EquipmentSlot::Saddle },
-                        _ => continue,
+                        _ => panic!("unknown equippable slot {slot_str:?}"),
                     };
                     let allowed_entities = generate_allowed_entities(value);
                     let equip_sound = sound_event_holder_token(
@@ -1218,9 +1993,10 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     quote! { .builder_set(vanilla_components::PIERCING_WEAPON, Some(#piercing_weapon)) },
                 );
             }
-            _ => {
-                // TODO: Implement more
-            }
+            _ => panic!(
+                "unsupported extracted component {key} on item {}",
+                item.name
+            ),
         }
     }
 
@@ -1303,7 +2079,7 @@ pub(crate) fn build() -> TokenStream {
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;
-        use std::sync::LazyLock;
+        use std::{collections::BTreeMap, sync::LazyLock};
         use text_components::{TextComponent, translation::TranslatedMessage};
 
         #item_statics

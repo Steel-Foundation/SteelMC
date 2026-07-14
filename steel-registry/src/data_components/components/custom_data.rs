@@ -49,6 +49,11 @@ impl CustomData {
         &self.tag
     }
 
+    pub(crate) fn without_field(mut self, name: &str) -> Self {
+        self.tag.remove(name);
+        self
+    }
+
     /// Mirrors `CustomData.matchedBy` and `NbtUtils.compareNbt`.
     #[must_use]
     pub fn matched_by(&self, expected: &NbtCompound) -> bool {

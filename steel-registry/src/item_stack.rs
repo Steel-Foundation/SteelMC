@@ -108,6 +108,11 @@ impl ItemStack {
         if self.is_empty() { 0 } else { self.count }
     }
 
+    #[must_use]
+    pub const fn components_patch(&self) -> &DataComponentPatch {
+        &self.patch
+    }
+
     pub const fn set_count(&mut self, count: i32) {
         self.count = count;
     }
@@ -1041,10 +1046,7 @@ impl ItemStack {
 
         // components: The component patch (only if non-empty)
         if !self.patch.is_empty() {
-            let components = self.patch.to_nbt_tag_ref();
-            if !matches!(&components, simdnbt::owned::NbtTag::Compound(value) if value.is_empty()) {
-                compound.insert("components", components);
-            }
+            compound.insert("components", self.patch.to_nbt_tag_ref());
         }
 
         simdnbt::owned::NbtTag::Compound(compound)
@@ -1285,7 +1287,7 @@ mod persistence_tests {
     }
 
     #[test]
-    fn save_contains_invalid_component_encoding() {
+    fn save_omits_invalid_component_value_but_keeps_present_patch_field() {
         init_test_registry();
         let mut stack = ItemStack::new(&vanilla_items::STONE);
         stack.set(MAX_STACK_SIZE, 0);
@@ -1298,7 +1300,11 @@ mod persistence_tests {
             compound.string("id").map(|value| value.to_str()),
             Some("minecraft:stone".into())
         );
-        assert!(compound.get("components").is_none());
+        assert!(
+            compound
+                .compound("components")
+                .is_some_and(simdnbt::owned::NbtCompound::is_empty)
+        );
     }
 
     #[test]

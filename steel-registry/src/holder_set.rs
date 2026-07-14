@@ -18,6 +18,7 @@ use crate::blocks::Block;
 use crate::damage_type::DamageType;
 use crate::entity_type::EntityType;
 use crate::items::Item;
+use crate::mob_effect::MobEffect;
 use crate::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 
 /// Registry operations required by a [`RegistryHolderSet`].
@@ -68,6 +69,30 @@ impl<T: RegistryHolderSetEntry> RegistryHolderSet<T> {
             Self::Tag(tag) => T::holder_set_tag_contains(entry, tag),
             Self::Direct(entries) => entries.contains(&entry),
         }
+    }
+
+    pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
+        if let Some(value) = tag.string() {
+            let value = value.to_string();
+            if let Some(tag) = value.strip_prefix('#') {
+                let tag = Identifier::from_str(tag).ok()?;
+                if !T::holder_set_tag_exists(&tag) {
+                    return None;
+                }
+                return Some(Self::Tag(tag));
+            }
+
+            let key = Identifier::from_str(&value).ok()?;
+            return Some(Self::Direct(vec![T::holder_set_by_key(&key)?]));
+        }
+
+        let values = tag.list()?.strings()?;
+        let mut entries = Vec::with_capacity(values.len());
+        for value in values {
+            let key = Identifier::from_str(&value.to_string()).ok()?;
+            entries.push(T::holder_set_by_key(&key)?);
+        }
+        Some(Self::Direct(entries))
     }
 }
 
@@ -172,27 +197,7 @@ impl<T: RegistryHolderSetEntry> ToNbtTag for RegistryHolderSet<T> {
 
 impl<T: RegistryHolderSetEntry> FromNbtTag for RegistryHolderSet<T> {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(value) = tag.string() {
-            let value = value.to_str();
-            if let Some(tag) = value.strip_prefix('#') {
-                let tag = Identifier::from_str(tag).ok()?;
-                if !T::holder_set_tag_exists(&tag) {
-                    return None;
-                }
-                return Some(Self::Tag(tag));
-            }
-
-            let key = Identifier::from_str(&value).ok()?;
-            return Some(Self::Direct(vec![T::holder_set_by_key(&key)?]));
-        }
-
-        let values = tag.list()?.strings()?;
-        let mut entries = Vec::with_capacity(values.len());
-        for value in values {
-            let key = Identifier::from_str(&value.to_str()).ok()?;
-            entries.push(T::holder_set_by_key(&key)?);
-        }
-        Some(Self::Direct(entries))
+        Self::from_owned_nbt(&tag.to_owned())
     }
 }
 
@@ -243,6 +248,7 @@ impl_registry_holder_set_entry!(BannerPattern, banner_patterns, "banner pattern"
 impl_registry_holder_set_entry!(EntityType, entity_types, "entity type");
 impl_registry_holder_set_entry!(Item, items, "item");
 impl_registry_holder_set_entry!(DamageType, damage_types, "damage type");
+impl_registry_holder_set_entry!(MobEffect, mob_effects, "mob effect");
 
 #[cfg(test)]
 mod tests {

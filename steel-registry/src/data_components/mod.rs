@@ -33,10 +33,13 @@ pub mod vanilla_components;
 // Re-export core types
 pub use component_data::{Component, ComponentData};
 pub use components::{
-    CustomData, CustomModelData, DyedItemColor, Enchantable, Equippable, EquippableAllowedEntities,
-    InstrumentComponent, InvalidEnchantableValue, JukeboxPlayable, MapId, MapItemColor,
-    OminousBottleAmplifier, ProvidesBannerPatterns, ProvidesTrimMaterial, Tool, ToolRule,
-    ToolRuleBlocks,
+    ArmorTrim, BannerPatternLayer, BannerPatternLayers, BlocksAttacks, BundleContents,
+    ChargedProjectiles, Consumable, CustomData, CustomModelData, DeathProtection, DyedItemColor,
+    Enchantable, Equippable, EquippableAllowedEntities, InstrumentComponent,
+    InvalidEnchantableValue, ItemContainerContents, JukeboxPlayable, MapId, MapItemColor,
+    OminousBottleAmplifier, PaintingVariantComponent, PotDecorations, PotionContents,
+    ProvidesBannerPatterns, ProvidesTrimMaterial, Recipes, SulfurCubeContent, Tool, ToolRule,
+    ToolRuleBlocks, UseRemainder,
 };
 pub use registry::{
     ComponentEntry,

@@ -5,7 +5,6 @@ use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
-use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
@@ -101,6 +100,24 @@ impl SoundEventHolder {
             Self::Direct { .. } => None,
         }
     }
+
+    pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
+        if let Some(value) = tag.string() {
+            let id = Identifier::from_str(&value.to_string()).ok()?;
+            return REGISTRY.sound_events.by_key(&id).map(Self::Registry);
+        }
+
+        let compound = tag.compound()?;
+        let sound_id =
+            Identifier::from_str(&compound.get("sound_id")?.string()?.to_string()).ok()?;
+        let fixed_range = compound
+            .get("range")
+            .and_then(steel_utils::nbt::NbtNumeric::codec_f32);
+        Some(Self::Direct {
+            sound_id,
+            fixed_range,
+        })
+    }
 }
 
 impl WriteTo for SoundEventHolder {
@@ -171,22 +188,7 @@ impl ToNbtTag for SoundEventHolder {
 
 impl FromNbtTag for SoundEventHolder {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(value) = tag.string() {
-            let id = Identifier::from_str(&value.to_str()).ok()?;
-            return REGISTRY.sound_events.by_key(&id).map(Self::Registry);
-        }
-
-        let compound = tag.compound()?;
-        let sound_id = compound
-            .get("sound_id")?
-            .string()
-            .and_then(|value| Identifier::from_str(&value.to_str()).ok())?;
-        // Vanilla uses lenientOptionalFieldOf here: malformed values are absent.
-        let fixed_range = compound.get("range").and_then(|tag| tag.codec_f32());
-        Some(Self::Direct {
-            sound_id,
-            fixed_range,
-        })
+        Self::from_owned_nbt(&tag.to_owned())
     }
 }
 

@@ -19,7 +19,6 @@
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
     clippy::unnecessary_debug_formatting,
-    clippy::unnecessary_wraps,
     clippy::unreadable_literal,
     clippy::unwrap_used,
     reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
@@ -69,6 +68,7 @@ mod particle_types;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
+mod potions;
 mod recipes;
 mod sound_events;
 mod sound_types;
@@ -143,6 +143,7 @@ const DIALOGS: &str = "dialogs";
 const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const MOB_EFFECTS: &str = "mob_effects";
+const POTIONS: &str = "potions";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
@@ -223,6 +224,7 @@ pub fn main() {
         (dialog_tags::build(), DIALOG_TAGS),
         (menu_types::build(), MENU_TYPES),
         (mob_effects::build(), MOB_EFFECTS),
+        (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
         (timeline_tags::build(), TIMELINE_TAGS),
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),

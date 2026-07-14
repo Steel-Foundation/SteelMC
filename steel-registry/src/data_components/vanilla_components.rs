@@ -13,19 +13,44 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
 pub use super::components::{
-    AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
-    Enchantable, Equippable, EquippableAllowedEntities, InstrumentComponent,
-    InvalidEnchantableValue, ItemAttributeModifierDisplay, ItemAttributeModifierEntry,
-    ItemAttributeModifiers, ItemEnchantments, ItemLore, ItemLoreTooLong, JukeboxPlayable, MapId,
-    MapItemColor, MapPostProcessing, OminousBottleAmplifier, PiercingWeapon,
-    ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Repairable, SwingAnimation,
-    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
-    Weapon,
+    ArmorTrim, AttackRange, BannerPatternLayer, BannerPatternLayers, BeehiveOccupant, Bees,
+    BlockEntityData, BlockItemStateProperties, BlocksAttacks, BundleContents, ChargedProjectiles,
+    Consumable, CustomData, CustomModelData, DamageReduction, DamageResistant, DamageTypeComponent,
+    DeathProtection, DebugStickProperty, DebugStickState, DyedItemColor, Enchantable, EntityData,
+    Equippable, EquippableAllowedEntities, Filterable, FireworkExplosion, FireworkExplosionShape,
+    Fireworks, FoodProperties, GlobalPos, InstrumentComponent, InvalidEnchantableValue,
+    ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
+    ItemContainerContents, ItemDamageFunction, ItemEnchantments, ItemLore, ItemLoreTooLong,
+    ItemUseAnimation, JukeboxPlayable, KineticWeapon, KineticWeaponCondition, LodestoneTracker,
+    MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
+    PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
+    Rarity, Recipes, Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffect,
+    SuspiciousStewEffects, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
+    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon, WritableBookContent,
+    WrittenBookContent,
+};
+pub use crate::ItemStackTemplate;
+pub use crate::cat_sound_variant::CatSoundVariant;
+pub use crate::cat_variant::CatVariant;
+pub use crate::chicken_sound_variant::ChickenSoundVariant;
+pub use crate::chicken_variant::ChickenVariant;
+pub use crate::cow_sound_variant::CowSoundVariant;
+pub use crate::cow_variant::CowVariant;
+pub use crate::frog_variant::FrogVariant;
+pub use crate::pig_sound_variant::PigSoundVariant;
+pub use crate::pig_variant::PigVariant;
+pub use crate::resolvable_profile::{
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
+    ResolvableProfileContents, StoredGameProfile,
 };
 pub use crate::sound_event::SoundEventHolder;
+pub use crate::villager_type::VillagerType;
+pub use crate::wolf_sound_variant::WolfSoundVariant;
+pub use crate::wolf_variant::WolfVariant;
+pub use crate::zombie_nautilus_variant::ZombieNautilusVariant;
 pub use crate::{
     AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
-    ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishPattern,
+    ParrotVariant, RabbitVariant, RegistryReference, SalmonVariant, TropicalFishPattern,
 };
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
@@ -131,13 +156,13 @@ pub const TOOLTIP_STYLE: DataComponentType<Identifier> =
 pub const NOTE_BLOCK_SOUND: DataComponentType<Identifier> =
     DataComponentType::new(Identifier::vanilla_static("note_block_sound"));
 
-pub const FOOD: DataComponentType<UnimplementedComponent> =
+pub const FOOD: DataComponentType<FoodProperties> =
     DataComponentType::new(Identifier::vanilla_static("food"));
 
-pub const CONSUMABLE: DataComponentType<UnimplementedComponent> =
+pub const CONSUMABLE: DataComponentType<Consumable> =
     DataComponentType::new(Identifier::vanilla_static("consumable"));
 
-pub const USE_REMAINDER: DataComponentType<UnimplementedComponent> =
+pub const USE_REMAINDER: DataComponentType<UseRemainder> =
     DataComponentType::new(Identifier::vanilla_static("use_remainder"));
 
 pub const USE_COOLDOWN: DataComponentType<UseCooldown> =
@@ -152,16 +177,16 @@ pub const ENCHANTABLE: DataComponentType<Enchantable> =
 pub const REPAIRABLE: DataComponentType<Repairable> =
     DataComponentType::new(Identifier::vanilla_static("repairable"));
 
-pub const DEATH_PROTECTION: DataComponentType<UnimplementedComponent> =
+pub const DEATH_PROTECTION: DataComponentType<DeathProtection> =
     DataComponentType::new(Identifier::vanilla_static("death_protection"));
 
-pub const BLOCKS_ATTACKS: DataComponentType<UnimplementedComponent> =
+pub const BLOCKS_ATTACKS: DataComponentType<BlocksAttacks> =
     DataComponentType::new(Identifier::vanilla_static("blocks_attacks"));
 
 pub const PIERCING_WEAPON: DataComponentType<PiercingWeapon> =
     DataComponentType::new(Identifier::vanilla_static("piercing_weapon"));
 
-pub const KINETIC_WEAPON: DataComponentType<UnimplementedComponent> =
+pub const KINETIC_WEAPON: DataComponentType<KineticWeapon> =
     DataComponentType::new(Identifier::vanilla_static("kinetic_weapon"));
 
 pub const SWING_ANIMATION: DataComponentType<SwingAnimation> =
@@ -191,37 +216,37 @@ pub const MAP_DECORATIONS: DataComponentType<UnimplementedComponent> =
 pub const MAP_POST_PROCESSING: DataComponentType<MapPostProcessing> =
     DataComponentType::new(Identifier::vanilla_static("map_post_processing"));
 
-pub const CHARGED_PROJECTILES: DataComponentType<UnimplementedComponent> =
+pub const CHARGED_PROJECTILES: DataComponentType<ChargedProjectiles> =
     DataComponentType::new(Identifier::vanilla_static("charged_projectiles"));
 
-pub const BUNDLE_CONTENTS: DataComponentType<UnimplementedComponent> =
+pub const BUNDLE_CONTENTS: DataComponentType<BundleContents> =
     DataComponentType::new(Identifier::vanilla_static("bundle_contents"));
 
-pub const POTION_CONTENTS: DataComponentType<UnimplementedComponent> =
+pub const POTION_CONTENTS: DataComponentType<PotionContents> =
     DataComponentType::new(Identifier::vanilla_static("potion_contents"));
 
-pub const SUSPICIOUS_STEW_EFFECTS: DataComponentType<UnimplementedComponent> =
+pub const SUSPICIOUS_STEW_EFFECTS: DataComponentType<SuspiciousStewEffects> =
     DataComponentType::new(Identifier::vanilla_static("suspicious_stew_effects"));
 
-pub const WRITABLE_BOOK_CONTENT: DataComponentType<UnimplementedComponent> =
+pub const WRITABLE_BOOK_CONTENT: DataComponentType<WritableBookContent> =
     DataComponentType::new(Identifier::vanilla_static("writable_book_content"));
 
-pub const WRITTEN_BOOK_CONTENT: DataComponentType<UnimplementedComponent> =
+pub const WRITTEN_BOOK_CONTENT: DataComponentType<WrittenBookContent> =
     DataComponentType::new(Identifier::vanilla_static("written_book_content"));
 
-pub const TRIM: DataComponentType<UnimplementedComponent> =
+pub const TRIM: DataComponentType<ArmorTrim> =
     DataComponentType::new(Identifier::vanilla_static("trim"));
 
-pub const DEBUG_STICK_STATE: DataComponentType<UnimplementedComponent> =
+pub const DEBUG_STICK_STATE: DataComponentType<DebugStickState> =
     DataComponentType::new(Identifier::vanilla_static("debug_stick_state"));
 
-pub const ENTITY_DATA: DataComponentType<UnimplementedComponent> =
+pub const ENTITY_DATA: DataComponentType<EntityData> =
     DataComponentType::new(Identifier::vanilla_static("entity_data"));
 
 pub const BUCKET_ENTITY_DATA: DataComponentType<CustomData> =
     DataComponentType::new(Identifier::vanilla_static("bucket_entity_data"));
 
-pub const BLOCK_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
+pub const BLOCK_ENTITY_DATA: DataComponentType<BlockEntityData> =
     DataComponentType::new(Identifier::vanilla_static("block_entity_data"));
 
 pub const INSTRUMENT: DataComponentType<InstrumentComponent> =
@@ -239,59 +264,59 @@ pub const JUKEBOX_PLAYABLE: DataComponentType<JukeboxPlayable> =
 pub const PROVIDES_BANNER_PATTERNS: DataComponentType<ProvidesBannerPatterns> =
     DataComponentType::new(Identifier::vanilla_static("provides_banner_patterns"));
 
-pub const RECIPES: DataComponentType<UnimplementedComponent> =
+pub const RECIPES: DataComponentType<Recipes> =
     DataComponentType::new(Identifier::vanilla_static("recipes"));
 
-pub const LODESTONE_TRACKER: DataComponentType<UnimplementedComponent> =
+pub const LODESTONE_TRACKER: DataComponentType<LodestoneTracker> =
     DataComponentType::new(Identifier::vanilla_static("lodestone_tracker"));
 
-pub const FIREWORK_EXPLOSION: DataComponentType<UnimplementedComponent> =
+pub const FIREWORK_EXPLOSION: DataComponentType<FireworkExplosion> =
     DataComponentType::new(Identifier::vanilla_static("firework_explosion"));
 
-pub const FIREWORKS: DataComponentType<UnimplementedComponent> =
+pub const FIREWORKS: DataComponentType<Fireworks> =
     DataComponentType::new(Identifier::vanilla_static("fireworks"));
 
-pub const PROFILE: DataComponentType<UnimplementedComponent> =
+pub const PROFILE: DataComponentType<ResolvableProfile> =
     DataComponentType::new(Identifier::vanilla_static("profile"));
 
-pub const BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
+pub const BANNER_PATTERNS: DataComponentType<BannerPatternLayers> =
     DataComponentType::new(Identifier::vanilla_static("banner_patterns"));
 
 pub const BASE_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("base_color"));
 
-pub const POT_DECORATIONS: DataComponentType<UnimplementedComponent> =
+pub const POT_DECORATIONS: DataComponentType<PotDecorations> =
     DataComponentType::new(Identifier::vanilla_static("pot_decorations"));
 
-pub const CONTAINER: DataComponentType<UnimplementedComponent> =
+pub const CONTAINER: DataComponentType<ItemContainerContents> =
     DataComponentType::new(Identifier::vanilla_static("container"));
 
-pub const BLOCK_STATE: DataComponentType<UnimplementedComponent> =
+pub const BLOCK_STATE: DataComponentType<BlockItemStateProperties> =
     DataComponentType::new(Identifier::vanilla_static("block_state"));
 
-pub const BEES: DataComponentType<UnimplementedComponent> =
+pub const BEES: DataComponentType<Bees> =
     DataComponentType::new(Identifier::vanilla_static("bees"));
 
-pub const SULFUR_CUBE_CONTENT: DataComponentType<UnimplementedComponent> =
+pub const SULFUR_CUBE_CONTENT: DataComponentType<SulfurCubeContent> =
     DataComponentType::new(Identifier::vanilla_static("sulfur_cube_content"));
 
 pub const LOCK: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("lock"));
 
-pub const CONTAINER_LOOT: DataComponentType<UnimplementedComponent> =
+pub const CONTAINER_LOOT: DataComponentType<SeededContainerLoot> =
     DataComponentType::new(Identifier::vanilla_static("container_loot"));
 
 pub const BREAK_SOUND: DataComponentType<SoundEventHolder> =
     DataComponentType::new(Identifier::vanilla_static("break_sound"));
 
 // Entity variant components
-pub const VILLAGER_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const VILLAGER_VARIANT: DataComponentType<RegistryReference<VillagerType>> =
     DataComponentType::new(Identifier::vanilla_static("villager/variant"));
 
-pub const WOLF_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const WOLF_VARIANT: DataComponentType<RegistryReference<WolfVariant>> =
     DataComponentType::new(Identifier::vanilla_static("wolf/variant"));
 
-pub const WOLF_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const WOLF_SOUND_VARIANT: DataComponentType<RegistryReference<WolfSoundVariant>> =
     DataComponentType::new(Identifier::vanilla_static("wolf/sound_variant"));
 
 pub const WOLF_COLLAR: DataComponentType<DyeColor> =
@@ -321,34 +346,34 @@ pub const MOOSHROOM_VARIANT: DataComponentType<MooshroomVariant> =
 pub const RABBIT_VARIANT: DataComponentType<RabbitVariant> =
     DataComponentType::new(Identifier::vanilla_static("rabbit/variant"));
 
-pub const PIG_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const PIG_VARIANT: DataComponentType<RegistryReference<PigVariant>> =
     DataComponentType::new(Identifier::vanilla_static("pig/variant"));
 
-pub const PIG_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const PIG_SOUND_VARIANT: DataComponentType<RegistryReference<PigSoundVariant>> =
     DataComponentType::new(Identifier::vanilla_static("pig/sound_variant"));
 
-pub const COW_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const COW_VARIANT: DataComponentType<RegistryReference<CowVariant>> =
     DataComponentType::new(Identifier::vanilla_static("cow/variant"));
 
-pub const COW_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const COW_SOUND_VARIANT: DataComponentType<RegistryReference<CowSoundVariant>> =
     DataComponentType::new(Identifier::vanilla_static("cow/sound_variant"));
 
-pub const CHICKEN_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const CHICKEN_VARIANT: DataComponentType<RegistryReference<ChickenVariant>> =
     DataComponentType::new(Identifier::vanilla_static("chicken/variant"));
 
-pub const CHICKEN_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const CHICKEN_SOUND_VARIANT: DataComponentType<RegistryReference<ChickenSoundVariant>> =
     DataComponentType::new(Identifier::vanilla_static("chicken/sound_variant"));
 
-pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<RegistryReference<ZombieNautilusVariant>> =
     DataComponentType::new(Identifier::vanilla_static("zombie_nautilus/variant"));
 
-pub const FROG_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const FROG_VARIANT: DataComponentType<RegistryReference<FrogVariant>> =
     DataComponentType::new(Identifier::vanilla_static("frog/variant"));
 
 pub const HORSE_VARIANT: DataComponentType<HorseVariant> =
     DataComponentType::new(Identifier::vanilla_static("horse/variant"));
 
-pub const PAINTING_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const PAINTING_VARIANT: DataComponentType<PaintingVariantComponent> =
     DataComponentType::new(Identifier::vanilla_static("painting/variant"));
 
 pub const LLAMA_VARIANT: DataComponentType<LlamaVariant> =
@@ -357,10 +382,10 @@ pub const LLAMA_VARIANT: DataComponentType<LlamaVariant> =
 pub const AXOLOTL_VARIANT: DataComponentType<AxolotlVariant> =
     DataComponentType::new(Identifier::vanilla_static("axolotl/variant"));
 
-pub const CAT_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const CAT_VARIANT: DataComponentType<RegistryReference<CatVariant>> =
     DataComponentType::new(Identifier::vanilla_static("cat/variant"));
 
-pub const CAT_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
+pub const CAT_SOUND_VARIANT: DataComponentType<RegistryReference<CatSoundVariant>> =
     DataComponentType::new(Identifier::vanilla_static("cat/sound_variant"));
 
 pub const CAT_COLLAR: DataComponentType<DyeColor> =
@@ -647,11 +672,11 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 22: intangible_projectile
     register_unit!(registry, INTANGIBLE_PROJECTILE);
     // 23: food
-    registry.register_unimplemented(FOOD, true);
+    registry.register(FOOD);
     // 24: consumable
-    registry.register_unimplemented(CONSUMABLE, true);
+    registry.register(CONSUMABLE);
     // 25: use_remainder
-    registry.register_unimplemented(USE_REMAINDER, true);
+    registry.register(USE_REMAINDER);
     // 26: use_cooldown
     registry.register(USE_COOLDOWN);
     // 27: damage_resistant
@@ -673,13 +698,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 35: tooltip_style
     registry.register(TOOLTIP_STYLE);
     // 36: death_protection
-    registry.register_unimplemented(DEATH_PROTECTION, true);
+    registry.register(DEATH_PROTECTION);
     // 37: blocks_attacks
-    registry.register_unimplemented(BLOCKS_ATTACKS, true);
+    registry.register(BLOCKS_ATTACKS);
     // 38: piercing_weapon
     registry.register(PIERCING_WEAPON);
     // 39: kinetic_weapon
-    registry.register_unimplemented(KINETIC_WEAPON, true);
+    registry.register(KINETIC_WEAPON);
     // 40: swing_animation
     registry.register(SWING_ANIMATION);
     // 41: additional_trade_cost
@@ -699,11 +724,11 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 48: map_post_processing
     registry.register_transient(MAP_POST_PROCESSING);
     // 49: charged_projectiles
-    registry.register_unimplemented(CHARGED_PROJECTILES, true);
+    registry.register(CHARGED_PROJECTILES);
     // 50: bundle_contents
-    registry.register_unimplemented(BUNDLE_CONTENTS, true);
+    registry.register(BUNDLE_CONTENTS);
     // 51: potion_contents
-    registry.register_unimplemented(POTION_CONTENTS, true);
+    registry.register(POTION_CONTENTS);
     // 52: potion_duration_scale
     registry.register_with_codecs(
         POTION_DURATION_SCALE,
@@ -713,21 +738,21 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         potion_duration_scale_nbt_writer,
     );
     // 53: suspicious_stew_effects
-    registry.register_unimplemented(SUSPICIOUS_STEW_EFFECTS, true);
+    registry.register(SUSPICIOUS_STEW_EFFECTS);
     // 54: writable_book_content
-    registry.register_unimplemented(WRITABLE_BOOK_CONTENT, true);
+    registry.register(WRITABLE_BOOK_CONTENT);
     // 55: written_book_content
-    registry.register_unimplemented(WRITTEN_BOOK_CONTENT, true);
+    registry.register(WRITTEN_BOOK_CONTENT);
     // 56: trim
-    registry.register_unimplemented(TRIM, true);
+    registry.register(TRIM);
     // 57: debug_stick_state
-    registry.register_unimplemented(DEBUG_STICK_STATE, true);
+    registry.register(DEBUG_STICK_STATE);
     // 58: entity_data
-    registry.register_unimplemented(ENTITY_DATA, true);
+    registry.register(ENTITY_DATA);
     // 59: bucket_entity_data
     registry.register(BUCKET_ENTITY_DATA);
     // 60: block_entity_data
-    registry.register_unimplemented(BLOCK_ENTITY_DATA, true);
+    registry.register(BLOCK_ENTITY_DATA);
     // 61: instrument
     registry.register(INSTRUMENT);
     // 62: provides_trim_material
@@ -745,43 +770,43 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 65: provides_banner_patterns
     registry.register(PROVIDES_BANNER_PATTERNS);
     // 66: recipes
-    registry.register_unimplemented(RECIPES, true);
+    registry.register(RECIPES);
     // 67: lodestone_tracker
-    registry.register_unimplemented(LODESTONE_TRACKER, true);
+    registry.register(LODESTONE_TRACKER);
     // 68: firework_explosion
-    registry.register_unimplemented(FIREWORK_EXPLOSION, true);
+    registry.register(FIREWORK_EXPLOSION);
     // 69: fireworks
-    registry.register_unimplemented(FIREWORKS, true);
+    registry.register(FIREWORKS);
     // 70: profile
-    registry.register_unimplemented(PROFILE, true);
+    registry.register(PROFILE);
     // 71: note_block_sound
     registry.register(NOTE_BLOCK_SOUND);
     // 72: banner_patterns
-    registry.register_unimplemented(BANNER_PATTERNS, true);
+    registry.register(BANNER_PATTERNS);
     // 73: base_color
     registry.register(BASE_COLOR);
     // 74: pot_decorations
-    registry.register_unimplemented(POT_DECORATIONS, true);
+    registry.register(POT_DECORATIONS);
     // 75: container
-    registry.register_unimplemented(CONTAINER, true);
+    registry.register(CONTAINER);
     // 76: block_state
-    registry.register_unimplemented(BLOCK_STATE, true);
+    registry.register(BLOCK_STATE);
     // 77: bees
-    registry.register_unimplemented(BEES, true);
+    registry.register(BEES);
     // 78: sulfur_cube_content
-    registry.register_unimplemented(SULFUR_CUBE_CONTENT, true);
+    registry.register(SULFUR_CUBE_CONTENT);
     // 79: lock
     registry.register_unimplemented(LOCK, true);
     // 80: container_loot
-    registry.register_unimplemented(CONTAINER_LOOT, true);
+    registry.register(CONTAINER_LOOT);
     // 81: break_sound
     registry.register(BREAK_SOUND);
     // 82: villager/variant
-    registry.register_unimplemented(VILLAGER_VARIANT, true);
+    registry.register(VILLAGER_VARIANT);
     // 83: wolf/variant
-    registry.register_unimplemented(WOLF_VARIANT, true);
+    registry.register(WOLF_VARIANT);
     // 84: wolf/sound_variant
-    registry.register_unimplemented(WOLF_SOUND_VARIANT, true);
+    registry.register(WOLF_SOUND_VARIANT);
     // 85: wolf/collar
     registry.register(WOLF_COLLAR);
     // 86: fox/variant
@@ -801,33 +826,33 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 93: rabbit/variant
     registry.register(RABBIT_VARIANT);
     // 94: pig/variant
-    registry.register_unimplemented(PIG_VARIANT, true);
+    registry.register(PIG_VARIANT);
     // 95: pig/sound_variant
-    registry.register_unimplemented(PIG_SOUND_VARIANT, true);
+    registry.register(PIG_SOUND_VARIANT);
     // 96: cow/variant
-    registry.register_unimplemented(COW_VARIANT, true);
+    registry.register(COW_VARIANT);
     // 97: cow/sound_variant
-    registry.register_unimplemented(COW_SOUND_VARIANT, true);
+    registry.register(COW_SOUND_VARIANT);
     // 98: chicken/variant
-    registry.register_unimplemented(CHICKEN_VARIANT, true);
+    registry.register(CHICKEN_VARIANT);
     // 99: chicken/sound_variant
-    registry.register_unimplemented(CHICKEN_SOUND_VARIANT, true);
+    registry.register(CHICKEN_SOUND_VARIANT);
     // 100: zombie_nautilus/variant
-    registry.register_unimplemented(ZOMBIE_NAUTILUS_VARIANT, true);
+    registry.register(ZOMBIE_NAUTILUS_VARIANT);
     // 101: frog/variant
-    registry.register_unimplemented(FROG_VARIANT, true);
+    registry.register(FROG_VARIANT);
     // 102: horse/variant
     registry.register(HORSE_VARIANT);
     // 103: painting/variant
-    registry.register_unimplemented(PAINTING_VARIANT, true);
+    registry.register(PAINTING_VARIANT);
     // 104: llama/variant
     registry.register(LLAMA_VARIANT);
     // 105: axolotl/variant
     registry.register(AXOLOTL_VARIANT);
     // 106: cat/variant
-    registry.register_unimplemented(CAT_VARIANT, true);
+    registry.register(CAT_VARIANT);
     // 107: cat/sound_variant
-    registry.register_unimplemented(CAT_SOUND_VARIANT, true);
+    registry.register(CAT_SOUND_VARIANT);
     // 108: cat/collar
     registry.register(CAT_COLLAR);
     // 109: sheep/color
@@ -1117,6 +1142,12 @@ mod tests {
             (&MAP_COLOR.key, ComponentData::new(MapItemColor::DEFAULT)),
             (&MAP_ID.key, ComponentData::new(MapId::new(7))),
             (
+                &FOOD.key,
+                ComponentData::new(
+                    FoodProperties::new(4, 2.4, false).expect("food should be valid"),
+                ),
+            ),
+            (
                 &OMINOUS_BOTTLE_AMPLIFIER.key,
                 ComponentData::new(OminousBottleAmplifier::new(2)),
             ),
@@ -1160,10 +1191,22 @@ mod tests {
             assert!(!entry.validates(&ComponentData::new(())), "{key}");
         }
 
-        let food = registry
-            .by_key(&FOOD.key)
-            .expect("food should reserve its vanilla registry ID");
-        assert!(!food.is_implemented());
-        assert!(food.read_network(&mut std::io::Cursor::new(&[])).is_err());
+        let consumable = registry
+            .by_key(&CONSUMABLE.key)
+            .expect("consumable should be registered");
+        assert!(consumable.is_implemented());
+        assert!(
+            consumable.validates(&ComponentData::new(
+                Consumable::new(
+                    Consumable::DEFAULT_CONSUME_SECONDS,
+                    ItemUseAnimation::Eat,
+                    SoundEventHolder::registry(&crate::sound_events::ENTITY_GENERIC_EAT),
+                    true,
+                    Vec::new(),
+                )
+                .expect("default consumable should be valid"),
+            ))
+        );
+        assert!(!consumable.validates(&ComponentData::new(())));
     }
 }

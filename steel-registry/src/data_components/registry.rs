@@ -21,7 +21,7 @@ use std::{
 use steel_utils::{
     DowncastType, DowncastTypeKey, Identifier,
     codec::VarInt,
-    hash::HashComponent,
+    hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
     serial::{ReadFrom, WriteTo},
 };
 
@@ -877,6 +877,37 @@ impl DataComponentPatch {
         self.entries.iter()
     }
 
+    /// Computes Vanilla's `HashOps` value for the persistent patch codec.
+    pub fn compute_persistent_hash(&self) -> Result<i32> {
+        use crate::{REGISTRY, RegistryExt};
+
+        let mut entries = Vec::new();
+        for (key, patch_entry) in &self.entries {
+            let Some(component) = REGISTRY.data_components.by_key(key) else {
+                continue;
+            };
+            if !component.is_persistent() {
+                continue;
+            }
+
+            let (encoded_key, value_hash) = match patch_entry {
+                ComponentPatchEntry::Set(data) => (key.to_string(), component.compute_hash(data)?),
+                ComponentPatchEntry::Removed => (format!("!{key}"), ().compute_hash()),
+            };
+            entries.push(hash_entry(encoded_key.compute_hash(), value_hash));
+        }
+        sort_map_entries(&mut entries);
+
+        let mut hasher = ComponentHasher::new();
+        hasher.start_map();
+        for entry in &entries {
+            hasher.put_raw_bytes(&entry.key_bytes);
+            hasher.put_raw_bytes(&entry.value_bytes);
+        }
+        hasher.end_map();
+        Ok(hasher.finish())
+    }
+
     /// Iterates over removed component keys.
     pub fn iter_removed(&self) -> impl Iterator<Item = &Identifier> {
         self.entries.iter().filter_map(|(k, v)| {
@@ -950,6 +981,17 @@ impl DataComponentPatch {
             log::warn!("Item component serialization error: {error}");
         }
         tag
+    }
+}
+
+fn hash_entry(key_hash: i32, value_hash: i32) -> HashEntry {
+    let key_hash = key_hash as u32;
+    let value_hash = value_hash as u32;
+    HashEntry {
+        key_hash: i64::from(key_hash),
+        value_hash: i64::from(value_hash),
+        key_bytes: key_hash.to_le_bytes(),
+        value_bytes: value_hash.to_le_bytes(),
     }
 }
 
@@ -1206,15 +1248,16 @@ mod tests {
     use crate::{
         data_components::CustomData,
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK, DYE,
-            ENCHANTABLE, ITEM_MODEL, ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING,
-            MAX_STACK_SIZE, OMINOUS_BOTTLE_AMPLIFIER, RARITY, SWING_ANIMATION, SwingAnimationType,
-            TOOLTIP_DISPLAY, USE_EFFECTS,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CHICKEN_VARIANT,
+            CREATIVE_SLOT_LOCK, DYE, ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE, ITEM_MODEL,
+            ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+            OMINOUS_BOTTLE_AMPLIFIER, POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS,
+            SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
         },
         item_stack::ItemStack,
         sound_events,
         test_support::init_test_registry,
-        vanilla_items,
+        vanilla_chicken_variants, vanilla_items,
     };
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use steel_utils::Identifier;
@@ -1251,6 +1294,37 @@ mod tests {
         assert!(compound.get("minecraft:creative_slot_lock").is_none());
         assert!(compound.get("!minecraft:additional_trade_cost").is_none());
         assert!(compound.get("minecraft:map_post_processing").is_none());
+    }
+
+    #[test]
+    fn persistent_patch_hash_uses_each_component_codec_hash() {
+        init_test_registry();
+        let mut patch = DataComponentPatch::new();
+        patch.set(ENCHANTMENT_GLINT_OVERRIDE, true);
+
+        let entry = hash_entry(
+            ENCHANTMENT_GLINT_OVERRIDE.key.to_string().compute_hash(),
+            true.compute_hash(),
+        );
+        let mut expected = ComponentHasher::new();
+        expected.start_map();
+        expected.put_raw_bytes(&entry.key_bytes);
+        expected.put_raw_bytes(&entry.value_bytes);
+        expected.end_map();
+        assert_eq!(
+            patch
+                .compute_persistent_hash()
+                .expect("valid patch should hash"),
+            expected.finish()
+        );
+
+        // NbtOps stores Codec.BOOL as a byte while HashOps preserves a boolean.
+        assert_ne!(
+            patch
+                .compute_persistent_hash()
+                .expect("valid patch should hash"),
+            patch.to_nbt_tag_ref().compute_hash()
+        );
     }
 
     #[test]
@@ -1361,6 +1435,34 @@ mod tests {
         );
         assert!(golden_sword.is_enchantable());
         assert!(!ItemStack::new(&vanilla_items::STONE).is_enchantable());
+
+        for (item, variant) in [
+            (&vanilla_items::EGG, &vanilla_chicken_variants::TEMPERATE),
+            (&vanilla_items::BLUE_EGG, &vanilla_chicken_variants::COLD),
+            (&vanilla_items::BROWN_EGG, &vanilla_chicken_variants::WARM),
+        ] {
+            assert!(
+                ItemStack::new(item)
+                    .get(CHICKEN_VARIANT)
+                    .is_some_and(|reference| reference.value().key == variant.key),
+                "{}",
+                item.key
+            );
+        }
+
+        assert_eq!(
+            ItemStack::new(&vanilla_items::TIPPED_ARROW).get(POTION_DURATION_SCALE),
+            Some(&0.125)
+        );
+        assert_eq!(
+            ItemStack::new(&vanilla_items::LINGERING_POTION).get(POTION_DURATION_SCALE),
+            Some(&0.25)
+        );
+        assert!(
+            ItemStack::new(&vanilla_items::ENCHANTED_BOOK)
+                .get(STORED_ENCHANTMENTS)
+                .is_some_and(ItemEnchantments::is_empty)
+        );
 
         let music_disc_cat = ItemStack::new(&vanilla_items::MUSIC_DISC_CAT);
         assert_eq!(
