@@ -490,6 +490,21 @@ fn unit_writer(data: &ComponentData, _writer: &mut Vec<u8>) -> std::io::Result<(
     }
 }
 
+fn codec_unit_network_reader(
+    cursor: &mut std::io::Cursor<&[u8]>,
+) -> std::io::Result<ComponentData> {
+    let tag = simdnbt::owned::read_tag(cursor)
+        .map_err(|error| std::io::Error::other(format!("Invalid NBT: {error:?}")))?;
+    tag.compound()
+        .map(|_| ComponentData::new(()))
+        .ok_or_else(|| std::io::Error::other("Unit codec network value is not a compound"))
+}
+
+fn codec_unit_network_writer(data: &ComponentData, writer: &mut Vec<u8>) -> std::io::Result<()> {
+    unit_nbt_writer(data)?.write(writer);
+    Ok(())
+}
+
 fn ranged_i32_nbt_reader<const MIN: i32, const MAX: i32>(
     tag: simdnbt::borrow::NbtTag,
 ) -> Option<ComponentData> {
@@ -670,7 +685,7 @@ macro_rules! register_ranged_i32 {
     };
 }
 
-macro_rules! register_unit {
+macro_rules! register_stream_unit {
     ($registry:expr, $component:expr) => {
         $registry.register_with_codecs(
             $component,
@@ -697,7 +712,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 3: damage
     register_ranged_i32!(registry, DAMAGE, 0, i32::MAX);
     // 4: unbreakable
-    register_unit!(registry, UNBREAKABLE);
+    register_stream_unit!(registry, UNBREAKABLE);
     // 5: use_effects
     registry.register(USE_EFFECTS);
     // 6: custom_name
@@ -757,7 +772,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         bool_nbt_writer,
     );
     // 22: intangible_projectile
-    register_unit!(registry, INTANGIBLE_PROJECTILE);
+    registry.register_with_codecs(
+        INTANGIBLE_PROJECTILE,
+        codec_unit_network_reader,
+        codec_unit_network_writer,
+        unit_nbt_reader,
+        unit_nbt_writer,
+    );
     // 23: food
     registry.register(FOOD);
     // 24: consumable
@@ -781,7 +802,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 33: repairable
     registry.register(REPAIRABLE);
     // 34: glider
-    register_unit!(registry, GLIDER);
+    register_stream_unit!(registry, GLIDER);
     // 35: tooltip_style
     registry.register(TOOLTIP_STYLE);
     // 36: death_protection
@@ -966,6 +987,7 @@ mod tests {
     use crate::RegistryExt;
     use serde::Deserialize;
     use simdnbt::owned::{NbtCompound, NbtTag};
+    use std::io::Cursor;
 
     #[derive(Deserialize)]
     struct ExtractedComponentCatalog {
@@ -1177,6 +1199,54 @@ mod tests {
             Some(ComponentData::new(()))
         );
         assert_eq!(unbreakable.read_nbt_owned(&NbtTag::Byte(1)), None);
+    }
+
+    #[test]
+    fn unit_component_network_codecs_match_vanilla() {
+        let mut registry = DataComponentRegistry::new();
+        register_vanilla_data_components(&mut registry);
+        let value = ComponentData::new(());
+
+        for component in [UNBREAKABLE, CREATIVE_SLOT_LOCK, GLIDER] {
+            let entry = registry
+                .by_key(component.key())
+                .unwrap_or_else(|| panic!("{} should be registered", component.key()));
+            let mut encoded = Vec::new();
+            entry
+                .write_network(&value, &mut encoded)
+                .unwrap_or_else(|error| panic!("{} should encode: {error}", component.key()));
+            assert!(encoded.is_empty(), "{}", component.key());
+        }
+
+        let intangible = registry
+            .by_key(INTANGIBLE_PROJECTILE.key())
+            .expect("intangible_projectile should be registered");
+        let mut encoded = Vec::new();
+        intangible
+            .write_network(&value, &mut encoded)
+            .expect("intangible_projectile should encode");
+
+        let mut expected = Vec::new();
+        NbtTag::Compound(NbtCompound::new()).write(&mut expected);
+        assert!(!expected.is_empty());
+        assert_eq!(encoded, expected);
+
+        let mut cursor = Cursor::new(encoded.as_slice());
+        assert_eq!(
+            intangible
+                .read_network(&mut cursor)
+                .expect("intangible_projectile should decode"),
+            value
+        );
+        assert_eq!(cursor.position(), encoded.len() as u64);
+
+        let mut invalid = Vec::new();
+        NbtTag::Byte(1).write(&mut invalid);
+        assert!(
+            intangible
+                .read_network(&mut Cursor::new(invalid.as_slice()))
+                .is_err()
+        );
     }
 
     #[test]
