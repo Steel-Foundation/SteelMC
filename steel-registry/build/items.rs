@@ -329,6 +329,69 @@ fn damage_type_ref_token(value: &str) -> TokenStream {
     quote! { &crate::vanilla_damage_types::#ident }
 }
 
+fn item_ref_token(value: &str, component: &str) -> TokenStream {
+    let id = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid {component} item id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla {component} references must use the minecraft namespace: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &*#ident }
+}
+
+fn holder_set_token(
+    value: &Value,
+    component: &str,
+    direct_ref: impl Fn(&str) -> TokenStream,
+) -> TokenStream {
+    match value {
+        Value::String(value) if value.starts_with('#') => {
+            let tag = value.trim_start_matches('#');
+            Identifier::from_str(tag)
+                .unwrap_or_else(|error| panic!("invalid {component} tag {value:?}: {error}"));
+            let tag = identifier_token(tag);
+            quote! { crate::RegistryHolderSet::Tag(#tag) }
+        }
+        Value::String(value) => {
+            let entry = direct_ref(value);
+            quote! { crate::RegistryHolderSet::Direct(vec![#entry]) }
+        }
+        Value::Array(values) => {
+            let entries = values
+                .iter()
+                .map(|value| {
+                    let value = value.as_str().unwrap_or_else(|| {
+                        panic!("{component} direct holder list entries must be strings")
+                    });
+                    assert!(
+                        !value.starts_with('#'),
+                        "{component} direct holder lists cannot contain tags: {value}"
+                    );
+                    direct_ref(value)
+                })
+                .collect::<Vec<_>>();
+            quote! { crate::RegistryHolderSet::Direct(vec![#(#entries),*]) }
+        }
+        _ => panic!("{component} holder set must be a string or string array"),
+    }
+}
+
+fn holder_set_component_field<'a>(value: &'a Value, component: &str, field: &str) -> &'a Value {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("{component} component must be an object"));
+    assert_eq!(
+        object.len(),
+        1,
+        "{component} component must contain only {field}"
+    );
+    object
+        .get(field)
+        .unwrap_or_else(|| panic!("{component} component must contain {field}"))
+}
+
 fn optional_identifier_token(value: &Value, field: &str) -> TokenStream {
     value
         .get(field)
@@ -393,7 +456,7 @@ fn generate_allowed_entities(value: &Value) -> TokenStream {
         Some(Value::String(s)) => {
             if let Some(entity_type) = entity_type_ref_token(s) {
                 quote! {
-                    Some(vanilla_components::EquippableAllowedEntities::EntityTypes(vec![#entity_type]))
+                    Some(vanilla_components::EquippableAllowedEntities::Direct(vec![#entity_type]))
                 }
             } else {
                 quote! { None }
@@ -406,7 +469,7 @@ fn generate_allowed_entities(value: &Value) -> TokenStream {
                 .filter_map(entity_type_ref_token)
                 .collect::<Vec<_>>();
             quote! {
-                Some(vanilla_components::EquippableAllowedEntities::EntityTypes(vec![#(#entity_types),*]))
+                Some(vanilla_components::EquippableAllowedEntities::Direct(vec![#(#entity_types),*]))
             }
         }
         _ => quote! { None },
@@ -618,7 +681,7 @@ fn generate_tool_rule(rule: &Value) -> TokenStream {
         }
         Some(Value::String(value)) => {
             let block = block_ref_token(value);
-            quote! { vanilla_components::ToolRuleBlocks::Blocks(vec![#block]) }
+            quote! { vanilla_components::ToolRuleBlocks::Direct(vec![#block]) }
         }
         Some(Value::Array(values)) => {
             let blocks = values
@@ -634,7 +697,7 @@ fn generate_tool_rule(rule: &Value) -> TokenStream {
                     block_ref_token(value)
                 })
                 .collect::<Vec<_>>();
-            quote! { vanilla_components::ToolRuleBlocks::Blocks(vec![#(#blocks),*]) }
+            quote! { vanilla_components::ToolRuleBlocks::Direct(vec![#(#blocks),*]) }
         }
         _ => panic!("tool rule must contain blocks as a string or string array"),
     };
@@ -752,6 +815,28 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     .builder_set(
                         vanilla_components::ENCHANTABLE,
                         Some(vanilla_components::Enchantable::from_extracted_value(#value)),
+                    )
+                });
+            }
+            "minecraft:damage_resistant" => {
+                let types = holder_set_component_field(value, "damage_resistant", "types");
+                let types = holder_set_token(types, "damage_resistant", damage_type_ref_token);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::DAMAGE_RESISTANT,
+                        Some(vanilla_components::DamageResistant::new(#types)),
+                    )
+                });
+            }
+            "minecraft:repairable" => {
+                let items = holder_set_component_field(value, "repairable", "items");
+                let items = holder_set_token(items, "repairable", |item| {
+                    item_ref_token(item, "repairable")
+                });
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::REPAIRABLE,
+                        Some(vanilla_components::Repairable::new(#items)),
                     )
                 });
             }
@@ -1034,63 +1119,42 @@ pub(crate) fn build() -> TokenStream {
     let item_assets: Items =
         serde_json::from_str(&fs::read_to_string("build_assets/items.json").unwrap()).unwrap();
 
-    let mut item_definitions = TokenStream::new();
-    let mut item_construction = TokenStream::new();
+    let mut item_statics = TokenStream::new();
 
     let mut register_stream = TokenStream::new();
     for item in &item_assets.items {
-        let item_ident = Ident::new(&item.name, Span::call_site());
+        let item_ident = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
         let item_name_str = item.name.clone();
         let item_name = item.components.get("minecraft:item_name").map_or_else(
             || panic!("item {} is missing its item_name component", item.name),
             item_name_component_token,
         );
 
-        item_definitions.extend(quote! {
-           pub #item_ident: Item,
-        });
-
         if let Some(block_name) = &item.block_item {
             let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
             let builder_calls = generate_builder_calls(item);
 
-            if builder_calls.is_empty() {
-                if block_name == &item.name {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block(
+            if block_name == &item.name {
+                item_statics.extend(quote! {
+                    pub static #item_ident: LazyLock<Item> = LazyLock::new(|| {
+                        Item::from_block(
                             &vanilla_blocks::#block_ident,
                             #item_name,
-                        ),
+                        )
+                            #(#builder_calls)*
                     });
-                } else {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(
-                            &vanilla_blocks::#block_ident,
-                            #item_name_str,
-                            #item_name,
-                        ),
-                    });
-                }
+                });
             } else {
-                // Block item with custom components
-                if block_name == &item.name {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block(
-                            &vanilla_blocks::#block_ident,
-                            #item_name,
-                        )
-                            #(#builder_calls)*,
-                    });
-                } else {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(
+                item_statics.extend(quote! {
+                    pub static #item_ident: LazyLock<Item> = LazyLock::new(|| {
+                        Item::from_block_custom_name(
                             &vanilla_blocks::#block_ident,
                             #item_name_str,
                             #item_name,
                         )
-                            #(#builder_calls)*,
+                            #(#builder_calls)*
                     });
-                }
+                });
             }
         } else {
             let builder_calls = generate_builder_calls(item);
@@ -1101,18 +1165,20 @@ pub(crate) fn build() -> TokenStream {
                 quote! { None }
             };
 
-            item_construction.extend(quote! {
-                #item_ident: Item::new(
-                    Identifier::vanilla_static(#item_name_str),
-                    #item_name,
-                    #craft_remainder_value,
-                )
-                    #(#builder_calls)*,
+            item_statics.extend(quote! {
+                pub static #item_ident: LazyLock<Item> = LazyLock::new(|| {
+                    Item::new(
+                        Identifier::vanilla_static(#item_name_str),
+                        #item_name,
+                        #craft_remainder_value,
+                    )
+                        #(#builder_calls)*
+                });
             });
         }
 
         register_stream.extend(quote! {
-            registry.register(&ITEMS.#item_ident);
+            registry.register(&#item_ident);
         });
     }
 
@@ -1126,19 +1192,7 @@ pub(crate) fn build() -> TokenStream {
         use std::sync::LazyLock;
         use text_components::{TextComponent, translation::TranslatedMessage};
 
-        pub static ITEMS: LazyLock<Items> = LazyLock::new(Items::init);
-
-        pub struct Items {
-            #item_definitions
-        }
-
-        impl Items {
-            fn init() -> Self {
-                Self {
-                    #item_construction
-                }
-            }
-        }
+        #item_statics
 
         pub fn register_items(registry: &mut ItemRegistry) {
             #register_stream

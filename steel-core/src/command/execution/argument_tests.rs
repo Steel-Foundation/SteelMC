@@ -23,8 +23,8 @@ use steel_registry::{
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
-    vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_enchantments, vanilla_entities,
-    vanilla_items, vanilla_world_clocks,
+    vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_damage_types, vanilla_enchantments,
+    vanilla_entities, vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
@@ -1254,7 +1254,7 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
         panic!("item stack should be retained");
     };
 
-    assert!(stack.is(&vanilla_items::ITEMS.stone));
+    assert!(stack.is(&vanilla_items::STONE));
     assert_eq!(stack.max_stack_size(), 16);
     assert_eq!(
         stack.get(vanilla_components::ENCHANTMENT_GLINT_OVERRIDE),
@@ -1463,6 +1463,27 @@ fn item_stack_argument_parses_direct_entity_variant_components() {
 }
 
 #[test]
+fn item_stack_argument_parses_registry_holder_set_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[damage_resistant={types:'#minecraft:is_fire'},repairable={items:'minecraft:phantom_membrane'}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registry holder-set components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(!stack.can_be_hurt_by(&vanilla_damage_types::IN_FIRE));
+    assert!(stack.can_be_hurt_by(&vanilla_damage_types::GENERIC));
+    assert!(stack.is_valid_repair_item(&ItemStack::new(&vanilla_items::PHANTOM_MEMBRANE)));
+    assert!(!stack.is_valid_repair_item(&ItemStack::new(&vanilla_items::BREEZE_ROD)));
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
@@ -1539,6 +1560,8 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
         "resource stone[dyed_color=[1f,0f]]",
         "resource stone[ominous_bottle_amplifier=5]",
         "resource stone[fox/variant='not_a_variant']",
+        "resource stone[damage_resistant={types:'#minecraft:missing'}]",
+        "resource stone[repairable={items:'minecraft:missing'}]",
     ] {
         let parse = dispatcher.parse(input, TestSource::new());
         assert!(
@@ -1679,9 +1702,9 @@ fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
         panic!("item predicate should be retained");
     };
 
-    assert!(predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 3)));
-    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.oak_log, 4)));
-    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::ITEMS.stone, 3)));
+    assert!(predicate.matches(&ItemStack::with_count(&vanilla_items::OAK_LOG, 3)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::OAK_LOG, 4)));
+    assert!(!predicate.matches(&ItemStack::with_count(&vanilla_items::STONE, 3)));
 }
 
 #[test]
@@ -1696,7 +1719,7 @@ fn item_predicate_argument_decodes_exact_components_before_matching() {
         panic!("item predicate should be retained");
     };
 
-    assert!(predicate.matches(&ItemStack::new(&vanilla_items::ITEMS.stone)));
+    assert!(predicate.matches(&ItemStack::new(&vanilla_items::STONE)));
 }
 
 #[test]
@@ -1711,7 +1734,7 @@ fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
     let Some(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
-    let mut sword = ItemStack::new(&vanilla_items::ITEMS.diamond_sword);
+    let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
     sword.set_damage_value(7);
     sword.set_enchantments(&[(Identifier::vanilla_static("sharpness"), 3)], false);
 
@@ -1740,7 +1763,7 @@ fn item_predicate_argument_supports_partial_custom_data_matching() {
     nested.insert("extra", 3);
     let mut compound = NbtCompound::new();
     compound.insert("nested", nested);
-    let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+    let mut stack = ItemStack::new(&vanilla_items::STONE);
     stack.set(
         vanilla_components::CUSTOM_DATA,
         vanilla_components::CustomData::try_from_compound(compound)
@@ -1764,7 +1787,7 @@ fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
     let Some(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
-    let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+    let mut stack = ItemStack::new(&vanilla_items::STONE);
     stack.set(
         vanilla_components::ATTRIBUTE_MODIFIERS,
         vanilla_components::ItemAttributeModifiers {
@@ -1822,7 +1845,7 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
         let Some(predicate) = chain.top_context().item_predicate("value") else {
             panic!("item predicate should be retained");
         };
-        let mut stack = ItemStack::new(&vanilla_items::ITEMS.stone);
+        let mut stack = ItemStack::new(&vanilla_items::STONE);
         if path == "creative_slot_lock" {
             stack.set(vanilla_components::CREATIVE_SLOT_LOCK, ());
         }

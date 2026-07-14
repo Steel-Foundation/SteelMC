@@ -13,12 +13,12 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
 pub use super::components::{
-    AttackRange, CustomData, CustomModelData, DamageTypeComponent, DyedItemColor, Enchantable,
-    Equippable, EquippableAllowedEntities, InvalidEnchantableValue, ItemAttributeModifierDisplay,
-    ItemAttributeModifierEntry, ItemAttributeModifiers, ItemEnchantments, ItemLore,
-    ItemLoreTooLong, MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier,
-    PiercingWeapon, Rarity, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
-    TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
+    Enchantable, Equippable, EquippableAllowedEntities, InvalidEnchantableValue,
+    ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
+    ItemEnchantments, ItemLore, ItemLoreTooLong, MapId, MapItemColor, MapPostProcessing,
+    OminousBottleAmplifier, PiercingWeapon, Rarity, Repairable, SwingAnimation, SwingAnimationType,
+    Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 pub use crate::{
@@ -141,13 +141,13 @@ pub const USE_REMAINDER: DataComponentType<UnimplementedComponent> =
 pub const USE_COOLDOWN: DataComponentType<UseCooldown> =
     DataComponentType::new(Identifier::vanilla_static("use_cooldown"));
 
-pub const DAMAGE_RESISTANT: DataComponentType<UnimplementedComponent> =
+pub const DAMAGE_RESISTANT: DataComponentType<DamageResistant> =
     DataComponentType::new(Identifier::vanilla_static("damage_resistant"));
 
 pub const ENCHANTABLE: DataComponentType<Enchantable> =
     DataComponentType::new(Identifier::vanilla_static("enchantable"));
 
-pub const REPAIRABLE: DataComponentType<UnimplementedComponent> =
+pub const REPAIRABLE: DataComponentType<Repairable> =
     DataComponentType::new(Identifier::vanilla_static("repairable"));
 
 pub const DEATH_PROTECTION: DataComponentType<UnimplementedComponent> =
@@ -591,7 +591,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 26: use_cooldown
     registry.register(USE_COOLDOWN);
     // 27: damage_resistant
-    registry.register_unimplemented(DAMAGE_RESISTANT, true);
+    registry.register(DAMAGE_RESISTANT);
     // 28: tool
     registry.register(TOOL);
     // 29: weapon
@@ -603,7 +603,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 32: equippable
     registry.register(EQUIPPABLE);
     // 33: repairable
-    registry.register_unimplemented(REPAIRABLE, true);
+    registry.register(REPAIRABLE);
     // 34: glider
     register_unit!(registry, GLIDER);
     // 35: tooltip_style

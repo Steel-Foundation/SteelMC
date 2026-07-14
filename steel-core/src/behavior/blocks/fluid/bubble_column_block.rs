@@ -209,7 +209,7 @@ impl BlockBehavior for BubbleColumnBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         Some(PickupResult {
-            filled_bucket: ItemStack::new(&vanilla_items::ITEMS.water_bucket),
+            filled_bucket: ItemStack::new(&vanilla_items::WATER_BUCKET),
             sound: Some(&sound_events::ITEM_BUCKET_FILL),
         })
     }

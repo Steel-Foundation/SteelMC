@@ -2158,7 +2158,7 @@ mod tests {
         for seed in 0u64..100 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let mut ctx = LootContext::new(&mut rng).with_explosion(4.0);
-            let mut item = ItemStack::with_count(&crate::vanilla_items::ITEMS.stone, initial_count);
+            let mut item = ItemStack::with_count(&crate::vanilla_items::STONE, initial_count);
             cond_func.function.apply(&mut item, &mut ctx);
             total_survived += item.count;
         }
@@ -2180,7 +2180,7 @@ mod tests {
         for (provided, expected) in [(-3.0, 0), (2.0, 2), (9.0, 4)] {
             let mut rng = test_rng();
             let mut context = LootContext::new(&mut rng);
-            let mut item = ItemStack::new(&crate::vanilla_items::ITEMS.ominous_bottle);
+            let mut item = ItemStack::new(&crate::vanilla_items::OMINOUS_BOTTLE);
             LootFunction::SetOminousBottleAmplifier {
                 amplifier: NumberProvider::Constant(provided),
             }

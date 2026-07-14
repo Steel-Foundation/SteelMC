@@ -1255,7 +1255,7 @@ mod tests {
             Some(&SwingAnimation::DEFAULT)
         );
 
-        let wooden_spear = ItemStack::new(&vanilla_items::ITEMS.wooden_spear);
+        let wooden_spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
         assert_eq!(
             wooden_spear.get(USE_EFFECTS),
             Some(&UseEffects::new(true, false, 1.0))
@@ -1265,10 +1265,10 @@ mod tests {
             Some(&SwingAnimation::new(SwingAnimationType::Stab, 13))
         );
 
-        let heavy_core = ItemStack::new(&vanilla_items::ITEMS.heavy_core);
+        let heavy_core = ItemStack::new(&vanilla_items::HEAVY_CORE);
         assert_eq!(heavy_core.get(RARITY), Some(&Rarity::Epic));
 
-        let stone = ItemStack::new(&vanilla_items::ITEMS.stone);
+        let stone = ItemStack::new(&vanilla_items::STONE);
         assert_eq!(
             stone.get(ITEM_MODEL),
             Some(&Identifier::vanilla_static("stone"))
@@ -1279,7 +1279,7 @@ mod tests {
         };
         assert_eq!(stone_name.key, "block.minecraft.stone");
 
-        let redstone = ItemStack::new(&vanilla_items::ITEMS.redstone);
+        let redstone = ItemStack::new(&vanilla_items::REDSTONE);
         assert_eq!(
             redstone.get(ITEM_MODEL),
             Some(&Identifier::vanilla_static("redstone"))
@@ -1291,7 +1291,7 @@ mod tests {
         };
         assert_eq!(redstone_name.key, "item.minecraft.redstone");
 
-        let shield = ItemStack::new(&vanilla_items::ITEMS.shield);
+        let shield = ItemStack::new(&vanilla_items::SHIELD);
         assert_eq!(
             shield
                 .get(BREAK_SOUND)
@@ -1299,56 +1299,50 @@ mod tests {
             Some(&sound_events::ITEM_SHIELD_BREAK)
         );
 
-        let pufferfish_bucket = ItemStack::new(&vanilla_items::ITEMS.pufferfish_bucket);
+        let pufferfish_bucket = ItemStack::new(&vanilla_items::PUFFERFISH_BUCKET);
         assert!(
             pufferfish_bucket
                 .get(BUCKET_ENTITY_DATA)
                 .is_some_and(CustomData::is_empty)
         );
 
-        let golden_sword = ItemStack::new(&vanilla_items::ITEMS.golden_sword);
+        let golden_sword = ItemStack::new(&vanilla_items::GOLDEN_SWORD);
         assert_eq!(
             golden_sword.get(ENCHANTABLE).map(|value| value.value()),
             Some(22)
         );
         assert!(golden_sword.is_enchantable());
-        assert!(!ItemStack::new(&vanilla_items::ITEMS.stone).is_enchantable());
+        assert!(!ItemStack::new(&vanilla_items::STONE).is_enchantable());
 
         for (item, color) in [
-            (&vanilla_items::ITEMS.white_dye, crate::DyeColor::White),
-            (&vanilla_items::ITEMS.orange_dye, crate::DyeColor::Orange),
-            (&vanilla_items::ITEMS.magenta_dye, crate::DyeColor::Magenta),
-            (
-                &vanilla_items::ITEMS.light_blue_dye,
-                crate::DyeColor::LightBlue,
-            ),
-            (&vanilla_items::ITEMS.yellow_dye, crate::DyeColor::Yellow),
-            (&vanilla_items::ITEMS.lime_dye, crate::DyeColor::Lime),
-            (&vanilla_items::ITEMS.pink_dye, crate::DyeColor::Pink),
-            (&vanilla_items::ITEMS.gray_dye, crate::DyeColor::Gray),
-            (
-                &vanilla_items::ITEMS.light_gray_dye,
-                crate::DyeColor::LightGray,
-            ),
-            (&vanilla_items::ITEMS.cyan_dye, crate::DyeColor::Cyan),
-            (&vanilla_items::ITEMS.purple_dye, crate::DyeColor::Purple),
-            (&vanilla_items::ITEMS.blue_dye, crate::DyeColor::Blue),
-            (&vanilla_items::ITEMS.brown_dye, crate::DyeColor::Brown),
-            (&vanilla_items::ITEMS.green_dye, crate::DyeColor::Green),
-            (&vanilla_items::ITEMS.red_dye, crate::DyeColor::Red),
-            (&vanilla_items::ITEMS.black_dye, crate::DyeColor::Black),
+            (&vanilla_items::WHITE_DYE, crate::DyeColor::White),
+            (&vanilla_items::ORANGE_DYE, crate::DyeColor::Orange),
+            (&vanilla_items::MAGENTA_DYE, crate::DyeColor::Magenta),
+            (&vanilla_items::LIGHT_BLUE_DYE, crate::DyeColor::LightBlue),
+            (&vanilla_items::YELLOW_DYE, crate::DyeColor::Yellow),
+            (&vanilla_items::LIME_DYE, crate::DyeColor::Lime),
+            (&vanilla_items::PINK_DYE, crate::DyeColor::Pink),
+            (&vanilla_items::GRAY_DYE, crate::DyeColor::Gray),
+            (&vanilla_items::LIGHT_GRAY_DYE, crate::DyeColor::LightGray),
+            (&vanilla_items::CYAN_DYE, crate::DyeColor::Cyan),
+            (&vanilla_items::PURPLE_DYE, crate::DyeColor::Purple),
+            (&vanilla_items::BLUE_DYE, crate::DyeColor::Blue),
+            (&vanilla_items::BROWN_DYE, crate::DyeColor::Brown),
+            (&vanilla_items::GREEN_DYE, crate::DyeColor::Green),
+            (&vanilla_items::RED_DYE, crate::DyeColor::Red),
+            (&vanilla_items::BLACK_DYE, crate::DyeColor::Black),
         ] {
             assert_eq!(ItemStack::new(item).get(DYE), Some(&color), "{}", item.key);
         }
 
         assert_eq!(
-            ItemStack::new(&vanilla_items::ITEMS.filled_map)
+            ItemStack::new(&vanilla_items::FILLED_MAP)
                 .get(MAP_COLOR)
                 .map(|color| color.rgb()),
             Some(4_603_950)
         );
         assert_eq!(
-            ItemStack::new(&vanilla_items::ITEMS.ominous_bottle)
+            ItemStack::new(&vanilla_items::OMINOUS_BOTTLE)
                 .get(OMINOUS_BOTTLE_AMPLIFIER)
                 .map(|amplifier| amplifier.value()),
             Some(0)

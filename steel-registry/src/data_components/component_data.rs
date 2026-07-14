@@ -5,10 +5,10 @@ use std::fmt::{self, Debug, Formatter};
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::components::{
-    AttackRange, CustomData, CustomModelData, DamageTypeComponent, DyedItemColor, Enchantable,
-    Equippable, ItemAttributeModifiers, ItemEnchantments, ItemLore, MapId, MapItemColor,
-    MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, SwingAnimation, Tool,
-    TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
+    Enchantable, Equippable, ItemAttributeModifiers, ItemEnchantments, ItemLore, MapId,
+    MapItemColor, MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, Repairable,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 use crate::{
     AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
@@ -127,6 +127,8 @@ impl_component_downcast_type!(
     "steel:item_component/ominous_bottle_amplifier"
 );
 impl_component_downcast_type!(Enchantable, "steel:item_component/enchantable");
+impl_component_downcast_type!(DamageResistant, "steel:item_component/damage_resistant");
+impl_component_downcast_type!(Repairable, "steel:item_component/repairable");
 impl_component_downcast_type!(Tool, "steel:item_component/tool");
 impl_component_downcast_type!(Weapon, "steel:item_component/weapon");
 impl_component_downcast_type!(AttackRange, "steel:item_component/attack_range");

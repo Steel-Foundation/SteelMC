@@ -112,6 +112,7 @@ pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
 pub mod game_rules;
+pub mod holder_set;
 pub mod instrument;
 pub mod item_stack;
 pub mod items;
@@ -146,6 +147,7 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
 
 #[expect(warnings)]
 #[rustfmt::skip]

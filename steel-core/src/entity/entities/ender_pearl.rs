@@ -335,7 +335,7 @@ impl ThrowableProjectile for EnderPearlEntity {}
 
 impl ThrowableItemProjectile for EnderPearlEntity {
     fn get_default_item(&self) -> ItemRef {
-        &vanilla_items::ITEMS.ender_pearl
+        &vanilla_items::ENDER_PEARL
     }
 
     fn set_item(&self, item: ItemStack) {
@@ -414,10 +414,7 @@ mod tests {
             DVec3::ZERO,
             Weak::<World>::new(),
         );
-        assert_eq!(
-            pearl.get_default_item().key,
-            vanilla_items::ITEMS.ender_pearl.key
-        );
+        assert_eq!(pearl.get_default_item().key, vanilla_items::ENDER_PEARL.key);
     }
 
     #[test]

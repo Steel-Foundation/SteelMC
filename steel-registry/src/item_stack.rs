@@ -17,17 +17,17 @@ use crate::{
         Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
         DataComponentPatch, DataComponentType,
         vanilla_components::{
-            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_TYPE,
-            ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers,
+            ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_RESISTANT,
+            DAMAGE_TYPE, ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers,
             ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
             OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
-            TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
+            REPAIRABLE, TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
     items::ItemRef,
-    vanilla_items::ITEMS,
+    vanilla_items,
 };
 
 /// A stack of items with a count and component modifications.
@@ -52,7 +52,7 @@ impl ItemStack {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            item: &ITEMS.air,
+            item: &vanilla_items::AIR,
             count: 0,
             patch: DataComponentPatch::new(),
         }
@@ -91,13 +91,13 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.item == &ITEMS.air || self.count <= 0
+        self.item == &*vanilla_items::AIR || self.count <= 0
     }
 
     #[must_use]
     pub fn item(&self) -> ItemRef {
         if self.is_empty() {
-            &ITEMS.air
+            &vanilla_items::AIR
         } else {
             self.item
         }
@@ -398,6 +398,20 @@ impl ItemStack {
     #[must_use]
     pub fn get_damage_type(&self) -> Option<DamageTypeRef> {
         self.get(DAMAGE_TYPE).map(|component| component.damage_type)
+    }
+
+    /// Returns vanilla `ItemStack.canBeHurtBy` for a damage type.
+    #[must_use]
+    pub fn can_be_hurt_by(&self, damage_type: DamageTypeRef) -> bool {
+        self.get(DAMAGE_RESISTANT)
+            .is_none_or(|resistance| !resistance.is_resistant_to(damage_type))
+    }
+
+    /// Returns vanilla `ItemStack.isValidRepairItem`.
+    #[must_use]
+    pub fn is_valid_repair_item(&self, repair_item: &Self) -> bool {
+        self.get(REPAIRABLE)
+            .is_some_and(|repairable| repairable.is_valid_repair_item(repair_item))
     }
 
     /// Returns whether this item has the vanilla piercing weapon component.
@@ -1100,7 +1114,7 @@ mod persistence_tests {
     use crate::data_components::CustomData;
     use crate::data_components::vanilla_components::{CUSTOM_DATA, LORE, TOOLTIP_DISPLAY};
     use crate::test_support::init_test_registry;
-    use crate::vanilla_items::ITEMS;
+    use crate::vanilla_items;
 
     fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
         let mut bytes = Vec::new();
@@ -1150,7 +1164,7 @@ mod persistence_tests {
     #[test]
     fn default_count_is_always_present_in_persistent_encoding() {
         init_test_registry();
-        let stack = ItemStack::new(&ITEMS.stone);
+        let stack = ItemStack::new(&vanilla_items::STONE);
         let NbtTag::Compound(compound) = stack.to_nbt_tag_ref() else {
             panic!("item stack should encode as a compound");
         };
@@ -1161,7 +1175,7 @@ mod persistence_tests {
     #[test]
     fn toggle_tooltips_updates_the_typed_display_component() {
         init_test_registry();
-        let mut stack = ItemStack::new(&ITEMS.stone);
+        let mut stack = ItemStack::new(&vanilla_items::STONE);
 
         stack.toggle_tooltips(&[(LORE.key.clone(), false)]);
         let display = stack
@@ -1181,7 +1195,7 @@ mod persistence_tests {
     #[test]
     fn set_custom_data_recursively_merges_and_removes_empty_values() {
         init_test_registry();
-        let mut stack = ItemStack::new(&ITEMS.stone);
+        let mut stack = ItemStack::new(&vanilla_items::STONE);
         let empty = CustomData::default();
         stack.set_custom_data(&empty);
         assert!(stack.get(CUSTOM_DATA).is_none());

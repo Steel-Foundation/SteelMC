@@ -260,9 +260,9 @@ impl BlockBehavior for LiquidBlock {
         world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
         let bucket = if is_water_fluid(self.fluid) {
-            &vanilla_items::ITEMS.water_bucket
+            &vanilla_items::WATER_BUCKET
         } else {
-            &vanilla_items::ITEMS.lava_bucket
+            &vanilla_items::LAVA_BUCKET
         };
 
         let sound = if is_water_fluid(self.fluid) {

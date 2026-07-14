@@ -121,7 +121,7 @@ impl BlockBehavior for BambooSaplingBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.bamboo))
+        Some(ItemStack::new(&vanilla_items::BAMBOO))
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
