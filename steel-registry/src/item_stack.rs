@@ -18,9 +18,9 @@ use crate::{
         DataComponentPatch, DataComponentType,
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_TYPE,
-            ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments,
-            MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON, PiercingWeapon,
-            TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
+            ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers,
+            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON,
+            PiercingWeapon, TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
@@ -452,6 +452,15 @@ impl ItemStack {
         self.get(ENCHANTMENTS)
     }
 
+    /// Mirrors Vanilla's component-based `ItemStack.isEnchantable` check.
+    #[must_use]
+    pub fn is_enchantable(&self) -> bool {
+        self.has(ENCHANTABLE)
+            && self
+                .get(ENCHANTMENTS)
+                .is_some_and(ItemEnchantments::is_empty)
+    }
+
     #[must_use]
     pub fn has_enchantment_effect(&self, component: EnchantmentEffectComponent) -> bool {
         let Some(enchantments) = self.get_enchantments() else {
@@ -838,12 +847,6 @@ impl ItemStack {
             display = display.with_hidden_key(component.clone(), !shown);
         }
         self.set(TOOLTIP_DISPLAY, display);
-    }
-
-    /// Sets custom model data.
-    pub const fn set_custom_model_data(&mut self, _value: i32) {
-        // TODO: Implement custom model data setting
-        // Set CUSTOM_MODEL_DATA component
     }
 
     #[must_use]

@@ -699,6 +699,29 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     )
                 });
             }
+            "minecraft:enchantable" => {
+                let object = value
+                    .as_object()
+                    .unwrap_or_else(|| panic!("enchantable component must be an object"));
+                assert_eq!(
+                    object.len(),
+                    1,
+                    "enchantable component must contain only its value"
+                );
+                let value = object
+                    .get("value")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_else(|| panic!("enchantable.value must be an integer"));
+                let value = i32::try_from(value)
+                    .unwrap_or_else(|_| panic!("enchantable.value must fit an i32"));
+                assert!(value > 0, "enchantable.value must be positive");
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::ENCHANTABLE,
+                        Some(vanilla_components::Enchantable::from_extracted_value(#value)),
+                    )
+                });
+            }
             "minecraft:tooltip_style" | "minecraft:note_block_sound" => {
                 let identifier = value
                     .as_str()

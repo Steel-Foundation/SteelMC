@@ -1137,8 +1137,6 @@ pub enum LootFunction {
     ToggleTooltips {
         toggles: &'static [(Identifier, bool)],
     },
-    /// Set custom model data.
-    SetCustomModelData { value: NumberProvider },
     /// Discard/delete the item entirely.
     Discard,
     /// Reference to a named function in the registry.
@@ -1926,9 +1924,6 @@ impl LootFunction {
             }
             LootFunction::ToggleTooltips { toggles } => {
                 item.toggle_tooltips(toggles);
-            }
-            LootFunction::SetCustomModelData { value } => {
-                item.set_custom_model_data(value.get_int(ctx.rng));
             }
             LootFunction::Discard => {
                 item.count = 0;

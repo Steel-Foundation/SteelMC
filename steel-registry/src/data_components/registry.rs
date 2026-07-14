@@ -1158,9 +1158,9 @@ mod tests {
     use crate::{
         data_components::CustomData,
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK, ITEM_MODEL,
-            ITEM_NAME, LORE, MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY, SWING_ANIMATION,
-            SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK,
+            ENCHANTABLE, ITEM_MODEL, ITEM_NAME, LORE, MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY,
+            SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
         },
         item_stack::ItemStack,
         sound_events,
@@ -1304,5 +1304,13 @@ mod tests {
                 .get(BUCKET_ENTITY_DATA)
                 .is_some_and(CustomData::is_empty)
         );
+
+        let golden_sword = ItemStack::new(&vanilla_items::ITEMS.golden_sword);
+        assert_eq!(
+            golden_sword.get(ENCHANTABLE).map(|value| value.value()),
+            Some(22)
+        );
+        assert!(golden_sword.is_enchantable());
+        assert!(!ItemStack::new(&vanilla_items::ITEMS.stone).is_enchantable());
     }
 }

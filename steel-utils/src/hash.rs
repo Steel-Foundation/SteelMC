@@ -16,7 +16,7 @@
 
 use simdnbt::owned::NbtTag;
 
-use crate::nbt::list_as_tags;
+use crate::nbt::nbt_list_values;
 
 /// Type tags matching Minecraft's `HashOps` implementation.
 #[repr(u8)]
@@ -429,7 +429,7 @@ impl HashComponent for NbtTag {
             NbtTag::String(value) => hasher.put_string(&value.to_string()),
             NbtTag::List(values) => {
                 hasher.start_list();
-                for value in list_as_tags(values) {
+                for value in nbt_list_values(values) {
                     hasher.put_component_hash(&value);
                 }
                 hasher.end_list();

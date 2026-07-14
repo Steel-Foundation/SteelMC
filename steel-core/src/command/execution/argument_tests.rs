@@ -1329,6 +1329,37 @@ fn item_stack_argument_parses_custom_data_codecs() {
 }
 
 #[test]
+fn item_stack_argument_parses_custom_model_data_and_enchantability() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource golden_sword[custom_model_data={floats:[1.5f],flags:[1b,0b],strings:['steel'],colors:[[1f,0.5f,0f]]},enchantable={value:5}]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("custom model data and enchantability should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    let model_data = stack
+        .get(vanilla_components::CUSTOM_MODEL_DATA)
+        .expect("custom model data should be retained");
+    assert_eq!(model_data.floats(), &[1.5]);
+    assert_eq!(model_data.flags(), &[true, false]);
+    assert_eq!(model_data.get_string(0), Some("steel"));
+    assert_eq!(model_data.colors(), &[0xffff_7f00_u32 as i32]);
+    assert_eq!(
+        stack
+            .get(vanilla_components::ENCHANTABLE)
+            .map(|value| value.value()),
+        Some(5)
+    );
+    assert!(stack.is_enchantable());
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
@@ -1399,6 +1430,8 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
         "resource stone[max_stack_size=0]",
         "resource stone[max_damage=10]",
         "resource stone[potion_duration_scale=-0.0f]",
+        "resource stone[enchantable={value:0}]",
+        "resource stone[custom_model_data={strings:[1]}]",
     ] {
         let parse = dispatcher.parse(input, TestSource::new());
         assert!(

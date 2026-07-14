@@ -5,9 +5,9 @@ use std::fmt::{self, Debug, Formatter};
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::components::{
-    AttackRange, CustomData, DamageTypeComponent, Equippable, ItemAttributeModifiers,
-    ItemEnchantments, ItemLore, MapPostProcessing, PiercingWeapon, Rarity, SwingAnimation, Tool,
-    TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    AttackRange, CustomData, CustomModelData, DamageTypeComponent, Enchantable, Equippable,
+    ItemAttributeModifiers, ItemEnchantments, ItemLore, MapPostProcessing, PiercingWeapon, Rarity,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 
 /// Behavior required from a value stored in a [`ComponentData`].
@@ -103,6 +103,8 @@ macro_rules! impl_component_downcast_type {
 
 impl_component_downcast_type!(DamageTypeComponent, "steel:item_component/damage_type");
 impl_component_downcast_type!(CustomData, "steel:item_component/custom_data");
+impl_component_downcast_type!(CustomModelData, "steel:item_component/custom_model_data");
+impl_component_downcast_type!(Enchantable, "steel:item_component/enchantable");
 impl_component_downcast_type!(Tool, "steel:item_component/tool");
 impl_component_downcast_type!(Weapon, "steel:item_component/weapon");
 impl_component_downcast_type!(AttackRange, "steel:item_component/attack_range");

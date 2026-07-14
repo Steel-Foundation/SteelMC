@@ -58,8 +58,8 @@ pub fn nbt_tags_equal(left: &NbtTag, right: &NbtTag) -> bool {
         (NbtTag::ByteArray(left), NbtTag::ByteArray(right)) => left == right,
         (NbtTag::String(left), NbtTag::String(right)) => left == right,
         (NbtTag::List(left), NbtTag::List(right)) => {
-            let left = list_as_tags(left);
-            let right = list_as_tags(right);
+            let left = nbt_list_values(left);
+            let right = nbt_list_values(right);
             left.len() == right.len()
                 && left
                     .iter()
@@ -233,8 +233,8 @@ pub fn compare_nbt_compounds(
 }
 
 fn compare_lists_partially(expected: &NbtList, actual: &NbtList) -> bool {
-    let expected = list_as_tags(expected);
-    let actual = list_as_tags(actual);
+    let expected = nbt_list_values(expected);
+    let actual = nbt_list_values(actual);
     if expected.is_empty() {
         return actual.is_empty();
     }
@@ -249,11 +249,36 @@ fn compare_lists_partially(expected: &NbtList, actual: &NbtList) -> bool {
     })
 }
 
-pub(crate) fn list_as_tags(list: &NbtList) -> Vec<NbtTag> {
+/// Returns the semantic values of a Vanilla list.
+///
+/// Vanilla 26.2 permits heterogeneous lists and wraps non-compound elements
+/// when serializing them through the homogeneous binary NBT format.
+#[must_use]
+pub fn nbt_list_values(list: &NbtList) -> Vec<NbtTag> {
     list.as_nbt_tags()
         .into_iter()
         .map(unwrap_list_wrapper)
         .collect()
+}
+
+/// Returns values exposed by Vanilla's `NbtOps` collection interface.
+///
+/// Numeric arrays are collections as well as ordinary list tags, so codecs
+/// built with `Codec.listOf()` accept all four representations.
+#[must_use]
+pub fn nbt_collection_values(tag: &NbtTag) -> Option<Vec<NbtTag>> {
+    match tag {
+        NbtTag::ByteArray(values) => Some(
+            values
+                .iter()
+                .map(|value| NbtTag::Byte(i8::from_ne_bytes([*value])))
+                .collect(),
+        ),
+        NbtTag::List(values) => Some(nbt_list_values(values)),
+        NbtTag::IntArray(values) => Some(values.iter().copied().map(NbtTag::Int).collect()),
+        NbtTag::LongArray(values) => Some(values.iter().copied().map(NbtTag::Long).collect()),
+        _ => None,
+    }
 }
 
 fn unwrap_list_wrapper(tag: NbtTag) -> NbtTag {

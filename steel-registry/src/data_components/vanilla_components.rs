@@ -13,11 +13,11 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
 pub use super::components::{
-    AttackRange, CustomData, DamageTypeComponent, Equippable, EquippableAllowedEntities,
-    ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers,
-    ItemEnchantments, ItemLore, ItemLoreTooLong, MapPostProcessing, PiercingWeapon, Rarity,
-    SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay,
-    UseCooldown, UseEffects, Weapon,
+    AttackRange, CustomData, CustomModelData, DamageTypeComponent, Enchantable, Equippable,
+    EquippableAllowedEntities, InvalidEnchantableValue, ItemAttributeModifierDisplay,
+    ItemAttributeModifierEntry, ItemAttributeModifiers, ItemEnchantments, ItemLore,
+    ItemLoreTooLong, MapPostProcessing, PiercingWeapon, Rarity, SwingAnimation, SwingAnimationType,
+    Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 
@@ -112,7 +112,7 @@ pub const CAN_BREAK: DataComponentType<UnimplementedComponent> =
 pub const ATTRIBUTE_MODIFIERS: DataComponentType<ItemAttributeModifiers> =
     DataComponentType::new(Identifier::vanilla_static("attribute_modifiers"));
 
-pub const CUSTOM_MODEL_DATA: DataComponentType<UnimplementedComponent> =
+pub const CUSTOM_MODEL_DATA: DataComponentType<CustomModelData> =
     DataComponentType::new(Identifier::vanilla_static("custom_model_data"));
 
 pub const TOOLTIP_DISPLAY: DataComponentType<TooltipDisplay> =
@@ -139,7 +139,7 @@ pub const USE_COOLDOWN: DataComponentType<UseCooldown> =
 pub const DAMAGE_RESISTANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("damage_resistant"));
 
-pub const ENCHANTABLE: DataComponentType<UnimplementedComponent> =
+pub const ENCHANTABLE: DataComponentType<Enchantable> =
     DataComponentType::new(Identifier::vanilla_static("enchantable"));
 
 pub const REPAIRABLE: DataComponentType<UnimplementedComponent> =
@@ -560,7 +560,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 16: attribute_modifiers
     registry.register(ATTRIBUTE_MODIFIERS);
     // 17: custom_model_data
-    registry.register_unimplemented(CUSTOM_MODEL_DATA, true);
+    registry.register(CUSTOM_MODEL_DATA);
     // 18: tooltip_display
     registry.register(TOOLTIP_DISPLAY);
     // 19: repair_cost
@@ -594,7 +594,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 30: attack_range
     registry.register(ATTACK_RANGE);
     // 31: enchantable
-    registry.register_unimplemented(ENCHANTABLE, true);
+    registry.register(ENCHANTABLE);
     // 32: equippable
     registry.register(EQUIPPABLE);
     // 33: repairable
@@ -999,6 +999,22 @@ mod tests {
         assert!(custom_data.is_implemented());
         assert!(custom_data.validates(&ComponentData::new(CustomData::default())));
         assert!(!custom_data.validates(&ComponentData::new(())));
+
+        let custom_model_data = registry
+            .by_key(&CUSTOM_MODEL_DATA.key)
+            .expect("custom_model_data should be registered");
+        assert!(custom_model_data.is_implemented());
+        assert!(custom_model_data.validates(&ComponentData::new(CustomModelData::EMPTY)));
+        assert!(!custom_model_data.validates(&ComponentData::new(CustomData::default())));
+
+        let enchantable = registry
+            .by_key(&ENCHANTABLE.key)
+            .expect("enchantable should be registered");
+        assert!(enchantable.is_implemented());
+        assert!(enchantable.validates(&ComponentData::new(
+            Enchantable::new(15).expect("15 is positive")
+        )));
+        assert!(!enchantable.validates(&ComponentData::new(15_i32)));
 
         let food = registry
             .by_key(&FOOD.key)

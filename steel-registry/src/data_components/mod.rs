@@ -33,7 +33,8 @@ pub mod vanilla_components;
 // Re-export core types
 pub use component_data::{Component, ComponentData};
 pub use components::{
-    CustomData, Equippable, EquippableAllowedEntities, Tool, ToolRule, ToolRuleBlocks,
+    CustomData, CustomModelData, Enchantable, Equippable, EquippableAllowedEntities,
+    InvalidEnchantableValue, Tool, ToolRule, ToolRuleBlocks,
 };
 pub use registry::{
     ComponentEntry,
