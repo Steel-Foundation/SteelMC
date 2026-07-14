@@ -364,4 +364,14 @@ mod tests {
         );
         assert!(!tall_grass.shape_offsets.uses_offset(ShapeChannel::Outline));
     }
+
+    #[test]
+    fn with_properties_of_keeps_target_defaults_for_non_matching_properties() {
+        init_test_registry();
+
+        let source = vanilla_blocks::STONE.default_state();
+        let target = vanilla_blocks::CANDLE.default_state();
+
+        assert_eq!(target.with_properties_of(source), target);
+    }
 }
