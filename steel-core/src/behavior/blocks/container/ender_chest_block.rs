@@ -1,4 +1,4 @@
-/// Ender chest block behavior implementation.
+//! Ender chest block behavior implementation.
 
 use std::sync::{Arc, Weak};
 
@@ -19,13 +19,14 @@ use crate::inventory::chest_menu::ChestMenuProvider;
 use crate::player::Player;
 use crate::world::World;
 
-
+/// The ender chest block behavior.
 #[block_behavior]
 pub struct EnderChestBlock {
     block: BlockRef,
 }
 
 impl EnderChestBlock {
+    /// Creates a new ender chest block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }

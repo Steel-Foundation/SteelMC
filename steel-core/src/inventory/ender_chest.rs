@@ -1,4 +1,4 @@
-/// Ender chest container implementation.
+//! Ender chest container implementation.
 
 use std::sync::Weak;
 
@@ -21,12 +21,13 @@ type WeakBlockEntity = Weak<SyncMutex<dyn BlockEntity>>;
 /// Thread-safe reference to a player's ender chest container.
 pub type SyncPlayerEnderChest = Arc<SyncMutex<PlayerEnderChestContainer>>;
 
-
+/// The player's ender chest inventory.
 pub struct PlayerEnderChestContainer {
     items: Vec<ItemStack>,
     active_chest: Option<WeakBlockEntity>,
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies `PlayerEnderChestContainer`.
 unsafe impl DowncastType for PlayerEnderChestContainer {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:inventory/player_ender_chest");
 }

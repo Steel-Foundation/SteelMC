@@ -25,6 +25,7 @@ pub struct EnderChestBlockEntity {
     removed: bool,
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies `EnderChestBlockEntity`.
 unsafe impl DowncastType for EnderChestBlockEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/ender_chest");
 }
