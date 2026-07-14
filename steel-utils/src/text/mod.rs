@@ -8,7 +8,10 @@ use crate::{
     serial::ReadFrom,
     translations_registry::TRANSLATIONS,
 };
-use simdnbt::owned::read_tag;
+use simdnbt::{
+    ToNbtTag as _,
+    owned::{NbtTag, read_tag},
+};
 use std::io::{self, Cursor};
 use text_components::{
     TextComponent,
@@ -18,6 +21,30 @@ use text_components::{
     interactivity::{ClickEvent, Dialog, HoverEvent},
     resolving::TextResolutor,
 };
+
+/// Encodes a component through Vanilla's persistent component codec shape.
+///
+/// The component crate's NBT representation always emits a compound, while
+/// Vanilla's codec collapses unstyled plain text to a string.
+#[must_use]
+pub fn text_component_codec_nbt(component: &TextComponent) -> NbtTag {
+    if let Content::Text { text } = &component.content
+        && component.format.is_none()
+        && component.interactions.is_none()
+        && component.children.is_empty()
+    {
+        return NbtTag::String(text.as_ref().into());
+    }
+    let mut tag = component.to_nbt_tag();
+    if let Some(color) = &component.format.color
+        && let NbtTag::Compound(compound) = &mut tag
+        && let Some(encoded_color) = compound.get_mut("color")
+    {
+        // TextColor formats RGB values with uppercase hexadecimal digits.
+        *encoded_color = NbtTag::String(color.to_string().into());
+    }
+    tag
+}
 
 /// A [`TextResolutor`] for the console
 pub struct DisplayResolutor;

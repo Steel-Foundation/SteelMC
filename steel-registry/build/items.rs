@@ -158,6 +158,21 @@ fn instrument_ref_token(value: &Value) -> TokenStream {
     quote! { &vanilla_instruments::#ident }
 }
 
+fn trim_material_ref_token(value: &Value) -> TokenStream {
+    let material = value
+        .as_str()
+        .unwrap_or_else(|| panic!("provides_trim_material component must be an identifier string"));
+    let id = Identifier::from_str(material)
+        .unwrap_or_else(|error| panic!("invalid trim material id {material:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item prototype references a non-vanilla trim material: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &*crate::vanilla_trim_materials::#ident }
+}
+
 fn dye_color_token(value: &Value) -> TokenStream {
     let color = value
         .as_str()
@@ -930,6 +945,17 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         vanilla_components::INSTRUMENT,
                         Some(vanilla_components::InstrumentComponent::new(
                             crate::RegistryHolder::reference(#instrument),
+                        )),
+                    )
+                });
+            }
+            "minecraft:provides_trim_material" => {
+                let material = trim_material_ref_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::PROVIDES_TRIM_MATERIAL,
+                        Some(vanilla_components::ProvidesTrimMaterial::new(
+                            crate::RegistryHolder::reference(#material),
                         )),
                     )
                 });

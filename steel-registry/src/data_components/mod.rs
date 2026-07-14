@@ -35,7 +35,8 @@ pub use component_data::{Component, ComponentData};
 pub use components::{
     CustomData, CustomModelData, DyedItemColor, Enchantable, Equippable, EquippableAllowedEntities,
     InstrumentComponent, InvalidEnchantableValue, JukeboxPlayable, MapId, MapItemColor,
-    OminousBottleAmplifier, ProvidesBannerPatterns, Tool, ToolRule, ToolRuleBlocks,
+    OminousBottleAmplifier, ProvidesBannerPatterns, ProvidesTrimMaterial, Tool, ToolRule,
+    ToolRuleBlocks,
 };
 pub use registry::{
     ComponentEntry,

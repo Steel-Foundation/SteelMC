@@ -8,8 +8,8 @@ use super::components::{
     AttackRange, CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DyedItemColor,
     Enchantable, Equippable, InstrumentComponent, ItemAttributeModifiers, ItemEnchantments,
     ItemLore, JukeboxPlayable, MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier,
-    PiercingWeapon, ProvidesBannerPatterns, Rarity, Repairable, SwingAnimation, Tool,
-    TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    PiercingWeapon, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Repairable,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
 use crate::{
     AxolotlVariant, DyeColor, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant,
@@ -129,6 +129,10 @@ impl_component_downcast_type!(
 );
 impl_component_downcast_type!(Enchantable, "steel:item_component/enchantable");
 impl_component_downcast_type!(InstrumentComponent, "steel:item_component/instrument");
+impl_component_downcast_type!(
+    ProvidesTrimMaterial,
+    "steel:item_component/provides_trim_material"
+);
 impl_component_downcast_type!(JukeboxPlayable, "steel:item_component/jukebox_playable");
 impl_component_downcast_type!(
     ProvidesBannerPatterns,

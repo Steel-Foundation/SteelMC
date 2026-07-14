@@ -8,7 +8,8 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use text_components::{TextComponent, content::Content};
+use steel_utils::text::text_component_codec_nbt;
+use text_components::TextComponent;
 
 use crate::sound_event::SoundEventHolder;
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
@@ -174,17 +175,6 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
     let mut value_hasher = ComponentHasher::new();
     value.hash_component(&mut value_hasher);
     entries.push(HashEntry::new(key_hasher, value_hasher));
-}
-
-fn text_component_codec_nbt(component: &TextComponent) -> NbtTag {
-    if let Content::Text { text } = &component.content
-        && component.format.is_none()
-        && component.interactions.is_none()
-        && component.children.is_empty()
-    {
-        return NbtTag::String(text.as_ref().into());
-    }
-    component.to_nbt_tag()
 }
 
 /// Invalid value rejected by `ExtraCodecs.POSITIVE_FLOAT`.

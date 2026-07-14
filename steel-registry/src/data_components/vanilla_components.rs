@@ -18,8 +18,9 @@ pub use super::components::{
     InvalidEnchantableValue, ItemAttributeModifierDisplay, ItemAttributeModifierEntry,
     ItemAttributeModifiers, ItemEnchantments, ItemLore, ItemLoreTooLong, JukeboxPlayable, MapId,
     MapItemColor, MapPostProcessing, OminousBottleAmplifier, PiercingWeapon,
-    ProvidesBannerPatterns, Rarity, Repairable, SwingAnimation, SwingAnimationType, Tool, ToolRule,
-    ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Repairable, SwingAnimation,
+    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
+    Weapon,
 };
 pub use crate::sound_event::SoundEventHolder;
 pub use crate::{
@@ -226,7 +227,7 @@ pub const BLOCK_ENTITY_DATA: DataComponentType<UnimplementedComponent> =
 pub const INSTRUMENT: DataComponentType<InstrumentComponent> =
     DataComponentType::new(Identifier::vanilla_static("instrument"));
 
-pub const PROVIDES_TRIM_MATERIAL: DataComponentType<UnimplementedComponent> =
+pub const PROVIDES_TRIM_MATERIAL: DataComponentType<ProvidesTrimMaterial> =
     DataComponentType::new(Identifier::vanilla_static("provides_trim_material"));
 
 pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<OminousBottleAmplifier> =
@@ -730,7 +731,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 61: instrument
     registry.register(INSTRUMENT);
     // 62: provides_trim_material
-    registry.register_unimplemented(PROVIDES_TRIM_MATERIAL, true);
+    registry.register(PROVIDES_TRIM_MATERIAL);
     // 63: ominous_bottle_amplifier
     registry.register(OMINOUS_BOTTLE_AMPLIFIER);
     // 64: jukebox_playable
