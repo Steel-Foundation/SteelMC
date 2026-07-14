@@ -1,6 +1,5 @@
 //! `PotentSulfurBlockEntity` for geyser eruption
 
-use std::any::Any;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
@@ -16,7 +15,7 @@ use steel_registry::{
 use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
 use crate::block_entity::{BlockEntity, BlockEntityTickAction};
@@ -41,6 +40,11 @@ pub struct PotentSulfurBlockEntity {
     pub waiting_countdown: i32,
     /// Game tick at which the current eruption started
     pub eruption_tick: i64,
+}
+
+// SAFETY: This key is owned by Steel and uniquely identifies `PotentSulfurBlockEntity`.
+unsafe impl DowncastType for PotentSulfurBlockEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/potent_sulfur");
 }
 
 impl PotentSulfurBlockEntity {
@@ -233,14 +237,6 @@ impl PotentSulfurBlockEntity {
 }
 
 impl BlockEntity for PotentSulfurBlockEntity {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn get_type(&self) -> BlockEntityTypeRef {
         &vanilla_block_entity_types::POTENT_SULFUR
     }

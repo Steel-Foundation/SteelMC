@@ -288,7 +288,7 @@ impl ArmorSlot {
     /// Returns a reference to the container.
     #[must_use]
     pub fn container_ref(&self) -> ContainerRef {
-        ContainerRef::PlayerInventory(Arc::clone(&self.container))
+        ContainerRef::from(Arc::clone(&self.container))
     }
 }
 
@@ -403,13 +403,13 @@ impl CraftingGridSlot {
     /// Returns a reference to the crafting container.
     #[must_use]
     pub fn container_ref(&self) -> ContainerRef {
-        ContainerRef::CraftingContainer(Arc::clone(&self.container))
+        ContainerRef::from(Arc::clone(&self.container))
     }
 
     /// Returns a reference to the result container.
     #[must_use]
     pub fn result_container_ref(&self) -> ContainerRef {
-        ContainerRef::ResultContainer(Arc::clone(&self.result_container))
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     /// Updates the crafting result based on current grid contents.
@@ -421,7 +421,7 @@ impl CraftingGridSlot {
         let result_id = ContainerId::from_arc(&self.result_container);
 
         let crafting = guard
-            .get_crafting_container(crafting_id)
+            .get_typed::<CraftingContainer>(crafting_id)
             .expect("crafting container not locked");
 
         let is_2x2 = self.grid_size == 2;
@@ -429,7 +429,7 @@ impl CraftingGridSlot {
             .map_or_else(ItemStack::empty, |r| r.assemble());
 
         guard
-            .get_result_container_mut(result_id)
+            .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
             .set_item(0, result_stack);
     }
@@ -545,13 +545,13 @@ impl CraftingResultSlot {
     /// Returns a reference to the result container.
     #[must_use]
     pub fn result_container_ref(&self) -> ContainerRef {
-        ContainerRef::ResultContainer(Arc::clone(&self.result_container))
+        ContainerRef::from(Arc::clone(&self.result_container))
     }
 
     /// Returns a reference to the crafting container.
     #[must_use]
     pub fn crafting_container_ref(&self) -> ContainerRef {
-        ContainerRef::CraftingContainer(Arc::clone(&self.crafting_container))
+        ContainerRef::from(Arc::clone(&self.crafting_container))
     }
 
     fn has_valid_recipe_result(&self, guard: &ContainerLockGuard) -> bool {
@@ -561,7 +561,7 @@ impl CraftingResultSlot {
         }
 
         let crafting_id = ContainerId::from_arc(&self.crafting_container);
-        let Some(crafting) = guard.get_crafting_container(crafting_id) else {
+        let Some(crafting) = guard.get_typed::<CraftingContainer>(crafting_id) else {
             return false;
         };
 
@@ -660,13 +660,13 @@ impl Slot for CraftingResultSlot {
         // Get remainders and positioned input from recipe_manager
         let remainders_and_positioned = {
             let crafting = guard
-                .get_crafting_container(crafting_id)
+                .get_typed::<CraftingContainer>(crafting_id)
                 .expect("crafting container not locked");
             recipe_manager::get_remaining_items(crafting, is_2x2)
         };
 
         let Some((remainders, positioned)) = remainders_and_positioned else {
-            if let Some(result) = guard.get_result_container_mut(result_id) {
+            if let Some(result) = guard.get_typed_mut::<ResultContainer>(result_id) {
                 result.set_item(0, ItemStack::empty());
             }
             return None;
@@ -675,7 +675,7 @@ impl Slot for CraftingResultSlot {
         let result_stack = {
             // Apply changes with mutable borrow
             let crafting = guard
-                .get_crafting_container_mut(crafting_id)
+                .get_typed_mut::<CraftingContainer>(crafting_id)
                 .expect("crafting container not locked");
 
             let input = &positioned.input;
@@ -731,7 +731,7 @@ impl Slot for CraftingResultSlot {
         };
 
         guard
-            .get_result_container_mut(result_id)
+            .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
             .set_item(0, result_stack);
 
@@ -845,14 +845,14 @@ pub fn add_standard_inventory_slots(slots: &mut Vec<SlotType>, inventory: &SyncP
 mod tests {
     use super::*;
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::vanilla_items;
 
     fn lock_crafting_pair(
         crafting: &SyncCraftingContainer,
         result: &SyncResultContainer,
     ) -> ContainerLockGuard {
-        let crafting_ref = ContainerRef::CraftingContainer(Arc::clone(crafting));
-        let result_ref = ContainerRef::ResultContainer(Arc::clone(result));
+        let crafting_ref = ContainerRef::from(Arc::clone(crafting));
+        let result_ref = ContainerRef::from(Arc::clone(result));
         ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref])
     }
 
@@ -866,17 +866,17 @@ mod tests {
         let result_id = ContainerId::from_arc(&result);
 
         let mut guard = lock_crafting_pair(&crafting, &result);
-        slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        slot.set_item(&mut guard, ItemStack::new(&vanilla_items::OAK_LOG));
 
         let result_item = guard
             .get(result_id)
             .expect("result container not locked")
             .get_item(0);
-        assert!(result_item.is(&ITEMS.oak_planks));
+        assert!(result_item.is(&vanilla_items::OAK_PLANKS));
         assert_eq!(result_item.count(), 4);
 
         let removed = slot.remove(&mut guard, 1);
-        assert!(removed.is(&ITEMS.oak_log));
+        assert!(removed.is(&vanilla_items::OAK_LOG));
         assert_eq!(removed.count(), 1);
 
         let result_item = guard
@@ -898,18 +898,18 @@ mod tests {
 
         let mut guard = lock_crafting_pair(&crafting, &result);
         guard
-            .get_result_container_mut(result_id)
+            .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::with_count(&ITEMS.oak_planks, 4));
+            .set_item(0, ItemStack::with_count(&vanilla_items::OAK_PLANKS, 4));
         assert!(!result_slot.has_valid_recipe_result(&guard));
 
-        input_slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        input_slot.set_item(&mut guard, ItemStack::new(&vanilla_items::OAK_LOG));
         assert!(result_slot.has_valid_recipe_result(&guard));
 
         guard
-            .get_result_container_mut(result_id)
+            .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::new(&ITEMS.stick));
+            .set_item(0, ItemStack::new(&vanilla_items::STICK));
         assert!(!result_slot.has_valid_recipe_result(&guard));
     }
 }

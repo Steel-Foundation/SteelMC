@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::{EmbeddedNbtCodec, TextComponent};
 
 /// Represents a dialog defined in data packs.
 #[derive(Debug)]
@@ -43,18 +43,26 @@ impl ToNbtTag for &Dialog {
                 DialogVariant::ServerLinks => "minecraft:server_links",
             },
         );
-        compound.insert("title", (&self.title).to_nbt_tag());
-        compound.insert("external_title", (&self.external_title).to_nbt_tag());
+        compound.insert("title", self.title.to_codec_nbt());
+        compound.insert("external_title", self.external_title.to_codec_nbt());
         compound.insert("button_width", self.button_width);
         compound.insert("columns", self.columns);
         let mut exit_action = NbtCompound::new();
-        exit_action.insert("label", (&self.exit_action.label).to_nbt_tag());
+        exit_action.insert("label", self.exit_action.label.to_codec_nbt());
         exit_action.insert("width", self.exit_action.width);
         compound.insert("exit_action", NbtTag::Compound(exit_action));
         if let DialogVariant::DialogList { dialogs } = &self.variant {
             compound.insert("dialogs", *dialogs);
         }
         NbtTag::Compound(compound)
+    }
+}
+
+impl EmbeddedNbtCodec for &Dialog {
+    type Error = std::convert::Infallible;
+
+    fn encode_embedded_nbt(self) -> Result<NbtTag, Self::Error> {
+        Ok(self.to_nbt_tag())
     }
 }
 

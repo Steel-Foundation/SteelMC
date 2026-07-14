@@ -2,12 +2,18 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, Identifier};
+use text_components::TextComponent;
 
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, blocks::BlockRef, data_components::DataComponentMap,
+    REGISTRY, RegistryExt, TaggedRegistryExt,
+    blocks::BlockRef,
+    data_components::{
+        DataComponentMap,
+        vanilla_components::{ITEM_MODEL, ITEM_NAME},
+    },
     item_stack::ItemStack,
 };
 
@@ -29,29 +35,41 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
+    /// Creates an item with Vanilla's mandatory name and default model components.
     #[must_use]
-    pub fn from_block(block: BlockRef) -> Self {
+    pub fn new(
+        key: Identifier,
+        item_name: TextComponent,
+        craft_remainder: Option<Identifier>,
+    ) -> Self {
+        let mut components = DataComponentMap::common_item_components();
+        components.set(ITEM_NAME, Some(item_name));
+        components.set(ITEM_MODEL, Some(key.clone()));
         Self {
-            key: block.key.clone(),
-            components: DataComponentMap::common_item_components(),
-            craft_remainder: None,
+            key,
+            components,
+            craft_remainder,
             id: OnceLock::new(),
         }
     }
 
     #[must_use]
-    pub fn from_block_custom_name(_block: BlockRef, name: &'static str) -> Self {
-        Self {
-            key: Identifier::vanilla_static(name),
-            components: DataComponentMap::common_item_components(),
-            craft_remainder: None,
-            id: OnceLock::new(),
-        }
+    pub fn from_block(block: BlockRef, item_name: TextComponent) -> Self {
+        Self::new(block.key.clone(), item_name, None)
+    }
+
+    #[must_use]
+    pub fn from_block_custom_name(
+        _block: BlockRef,
+        name: &'static str,
+        item_name: TextComponent,
+    ) -> Self {
+        Self::new(Identifier::vanilla_static(name), item_name, None)
     }
 
     /// Builder method to set a component on this item. Used during static initialization.
     #[must_use]
-    pub fn builder_set<T: crate::data_components::Component>(
+    pub fn builder_set<T: crate::data_components::Component + DowncastType>(
         mut self,
         component: crate::data_components::DataComponentType<T>,
         value: Option<T>,
@@ -128,6 +146,25 @@ impl ItemRegistry {
             .iter()
             .enumerate()
             .map(|(id, &item)| (id, item))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::Identifier;
+    use text_components::TextComponent;
+
+    use super::Item;
+    use crate::data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME};
+
+    #[test]
+    fn new_item_uses_its_key_as_the_default_model() {
+        let key = Identifier::new_static("steel", "test_item");
+        let name = TextComponent::plain("Test Item");
+        let item = Item::new(key.clone(), name.clone(), None);
+
+        assert_eq!(item.components.get_ref(ITEM_MODEL), Some(&key));
+        assert_eq!(item.components.get_ref(ITEM_NAME), Some(&name));
     }
 }
 

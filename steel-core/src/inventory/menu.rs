@@ -167,8 +167,14 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
                 return false;
             };
 
-            // Compute the hash of the component value using proper HashOps format
-            let actual_hash = value.compute_hash();
+            let Some(component_type) = REGISTRY.data_components.by_id(id as usize) else {
+                log::info!("HashedStack mismatch: component {key} has no registry entry");
+                return false;
+            };
+            let Ok(actual_hash) = component_type.compute_hash(value) else {
+                log::info!("HashedStack mismatch: component {key} is not persistently hashable");
+                return false;
+            };
 
             if actual_hash != expected_hash {
                 log::info!(
@@ -941,10 +947,10 @@ impl MenuBehavior {
                 if button == 0 {
                     // Left click outside - drop all carried items
                     let to_drop = mem::take(&mut self.carried);
-                    player.drop_item(to_drop, false, true);
+                    let _ = player.drop_item(to_drop, false, true);
                 } else {
                     // Right click outside - drop one carried item
-                    player.drop_item(self.carried.split(1), false, true);
+                    let _ = player.drop_item(self.carried.split(1), false, true);
                 }
             }
             return;
@@ -1137,7 +1143,7 @@ impl MenuBehavior {
 
         let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
-            player.drop_item(dropped.clone(), false, true);
+            let _ = player.drop_item(dropped.clone(), false, true);
         }
 
         // Ctrl+Q: Keep dropping while the slot has the same item type
@@ -1159,7 +1165,7 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                player.drop_item(more_dropped, false, true);
+                let _ = player.drop_item(more_dropped, false, true);
             }
         }
     }

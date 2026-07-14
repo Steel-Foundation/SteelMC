@@ -4,6 +4,7 @@ pub(super) struct PlayerTickState {
     tick_count: i32,
     attack_strength_ticker: i32,
     take_xp_delay: i32,
+    last_level_up_time: i32,
     ack_block_changes_up_to: i32,
 }
 
@@ -14,6 +15,7 @@ impl PlayerTickState {
             tick_count: 0,
             attack_strength_ticker: 0,
             take_xp_delay: 0,
+            last_level_up_time: 0,
             ack_block_changes_up_to: -1,
         }
     }
@@ -35,6 +37,14 @@ impl PlayerTickState {
 
     pub(super) const fn set_take_xp_delay(&mut self, delay: i32) {
         self.take_xp_delay = delay;
+    }
+
+    pub(super) fn mark_level_up_sound_if_due(&mut self) -> bool {
+        if self.last_level_up_time as f32 >= self.tick_count as f32 - 100.0 {
+            return false;
+        }
+        self.last_level_up_time = self.tick_count;
+        true
     }
 
     pub(super) const fn advance_tick(&mut self) {
@@ -104,6 +114,25 @@ mod tests {
 
         state.advance_tick();
         assert_eq!(state.take_xp_delay(), 0);
+    }
+
+    #[test]
+    fn level_up_sound_uses_vanillas_strict_hundred_tick_cooldown() {
+        let mut state = PlayerTickState::new();
+        for _ in 0..100 {
+            state.advance_tick();
+        }
+        assert!(!state.mark_level_up_sound_if_due());
+
+        state.advance_tick();
+        assert!(state.mark_level_up_sound_if_due());
+
+        for _ in 0..100 {
+            state.advance_tick();
+        }
+        assert!(!state.mark_level_up_sound_if_due());
+        state.advance_tick();
+        assert!(state.mark_level_up_sound_if_due());
     }
 
     #[test]

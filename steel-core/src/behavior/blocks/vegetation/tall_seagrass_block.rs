@@ -110,7 +110,7 @@ impl BlockBehavior for TallSeagrassBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.seagrass))
+        Some(ItemStack::new(&vanilla_items::SEAGRASS))
     }
 
     fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {

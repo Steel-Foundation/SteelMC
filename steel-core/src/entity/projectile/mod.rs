@@ -535,6 +535,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(OwnerCollisionProjectile);
+
     impl Entity for OwnerCollisionProjectile {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -564,6 +566,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(OwnerCollisionTestEntity);
 
     impl Entity for OwnerCollisionTestEntity {
         fn base(&self) -> &EntityBase {

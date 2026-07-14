@@ -1,12 +1,13 @@
 //! Build script for generating vanilla loot table definitions.
 
-use std::{fs, path::Path};
+use std::{fs, path::Path, str::FromStr};
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+use steel_utils::Identifier;
 
 /// A number provider can be a constant number or an object with type.
 #[derive(Deserialize, Debug, Clone)]
@@ -614,6 +615,42 @@ fn generate_enchantment_options(options: &Option<EnchantmentOptionsJson>) -> Tok
         None => {
             quote! { EnchantmentOptions::Tag(Identifier::vanilla_static("on_random_loot")) }
         }
+    }
+}
+
+fn generate_instrument_ref(value: &str) -> TokenStream {
+    let id = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid instrument id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla loot table references a non-vanilla instrument: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_instruments::#ident }
+}
+
+fn generate_instrument_options(options: &Option<EnchantmentOptionsJson>) -> TokenStream {
+    match options {
+        Some(EnchantmentOptionsJson::Tag(value)) if value.starts_with('#') => {
+            let tag = value.trim_start_matches('#');
+            let id = Identifier::from_str(tag)
+                .unwrap_or_else(|error| panic!("invalid instrument tag {value:?}: {error}"));
+            let namespace = id.namespace.as_ref();
+            let path = id.path.as_ref();
+            quote! {
+                InstrumentOptions::Tag(Identifier::new_static(#namespace, #path))
+            }
+        }
+        Some(EnchantmentOptionsJson::Tag(value)) => {
+            let instrument = generate_instrument_ref(value);
+            quote! { InstrumentOptions::Direct(&[#instrument]) }
+        }
+        Some(EnchantmentOptionsJson::List(values)) => {
+            let instruments = values.iter().map(|value| generate_instrument_ref(value));
+            quote! { InstrumentOptions::Direct(&[#(#instruments),*]) }
+        }
+        None => panic!("set_instrument function is missing its options holder set"),
     }
 }
 
@@ -1350,14 +1387,7 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
             quote! { LootFunction::SetStewEffect { effects: &[#(#effects),*] } }
         }
         "minecraft:set_instrument" => {
-            let options = if let Some(EnchantmentOptionsJson::Tag(s)) = &function.options {
-                let s = s
-                    .strip_prefix("#minecraft:")
-                    .unwrap_or(s.strip_prefix("minecraft:").unwrap_or(s));
-                quote! { Identifier::vanilla_static(#s) }
-            } else {
-                quote! { Identifier::vanilla_static("regular_goat_horns") }
-            };
+            let options = generate_instrument_options(&function.options);
             quote! { LootFunction::SetInstrument { options: #options } }
         }
         "minecraft:set_enchantments" => {
@@ -1660,10 +1690,10 @@ pub(crate) fn build() -> TokenStream {
         use crate::loot_table::{
             BlockPredicate, BonusFormula, ConditionalLootFunction, CopySource, DamageSourcePredicate,
             DamageTagPredicate, DyeColor, EnchantedChance, EnchantmentOptions, EntityEquipment,
-            EntityFlags, EntityPredicate, EquipmentSlotGroup, LocationPredicate, LootCondition,
-            LootContextEntity, LootEntry, LootFunction, LootPool, LootTable, LootTableRef,
-            LootTableRegistry, LootType, NameTarget, NumberProvider, PropertyCheck, StewEffect,
-            ToolPredicate,
+            EntityFlags, EntityPredicate, EquipmentSlotGroup, InstrumentOptions, LocationPredicate,
+            LootCondition, LootContextEntity, LootEntry, LootFunction, LootPool, LootTable,
+            LootTableRef, LootTableRegistry, LootType, NameTarget, NumberProvider, PropertyCheck,
+            StewEffect, ToolPredicate,
         };
         use steel_utils::Identifier;
     });

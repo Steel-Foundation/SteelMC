@@ -186,6 +186,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         N::Settings::HEIGHT
     }
 
+    fn noise_biome(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
+        self.biome_source
+            .chunk_sampler()
+            .sample(quart_x, quart_y, quart_z)
+    }
+
     fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
         self.biome_source.initial_spawn_search_origin()
     }

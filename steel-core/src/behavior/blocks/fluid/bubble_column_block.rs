@@ -209,7 +209,7 @@ impl BlockBehavior for BubbleColumnBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         Some(PickupResult {
-            filled_bucket: ItemStack::new(&vanilla_items::ITEMS.water_bucket),
+            filled_bucket: ItemStack::new(&vanilla_items::WATER_BUCKET),
             sound: Some(&sound_events::ITEM_BUCKET_FILL),
         })
     }
@@ -258,6 +258,8 @@ mod tests {
             self.calls.lock().clone()
         }
     }
+
+    crate::entity::impl_test_downcast_type!(RecordingEntity);
 
     impl Entity for RecordingEntity {
         fn base(&self) -> &EntityBase {

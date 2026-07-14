@@ -17,6 +17,8 @@ use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
+use crate::world::clock::WorldClockManager;
+
 /// Persistent world border data stored with Steel level data.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -64,8 +66,9 @@ pub struct LevelData {
     pub seed: i64,
     /// Total game time in ticks.
     pub game_time: i64,
-    /// Time of day in ticks (0-24000).
-    pub day_time: i64,
+    /// Independently advancing world-clock instances for this loaded world.
+    #[serde(default)]
+    pub(crate) world_clocks: WorldClockManager,
     /// World spawn point.
     pub spawn: SpawnPoint,
     /// Vanilla global respawn data for this domain, stored on the domain default world.
@@ -304,7 +307,7 @@ impl LevelData {
         Self {
             seed,
             game_time: 0,
-            day_time: 0,
+            world_clocks: WorldClockManager::new(),
             spawn: SpawnPoint::default(),
             respawn: None,
             weather: WeatherState::default(),
@@ -423,8 +426,12 @@ impl LevelDataManager {
                 })?;
                 // Initialize runtime game rules from serialized values
                 loaded.load_game_rules();
+                let initialized_clocks = loaded
+                    .world_clocks
+                    .initialize_registered_clocks()
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
                 let adopted_generation = loaded.validate_generation_settings(generation)?;
-                (loaded, adopted_generation)
+                (loaded, adopted_generation || initialized_clocks)
             } else {
                 // Create new level data with the provided defaults.
                 let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
@@ -532,22 +539,16 @@ impl LevelDataManager {
         self.dirty = true;
     }
 
-    /// Calculates the day based on the game time
+    /// Returns this world's clock manager.
     #[must_use]
-    pub const fn day(&self) -> i64 {
-        self.data.game_time / 24000
+    pub(crate) const fn world_clocks(&self) -> &WorldClockManager {
+        &self.data.world_clocks
     }
 
-    /// Gets the day time.
-    #[must_use]
-    pub const fn day_time(&self) -> i64 {
-        self.data.day_time
-    }
-
-    /// Sets the day time.
-    pub const fn set_day_time(&mut self, time: i64) {
-        self.data.day_time = time;
+    /// Returns this world's mutable clock manager and marks level data dirty.
+    pub(crate) const fn world_clocks_mut(&mut self) -> &mut WorldClockManager {
         self.dirty = true;
+        &mut self.data.world_clocks
     }
 
     /// Gets the clear weather time
@@ -620,7 +621,7 @@ mod tests {
         process,
         time::{SystemTime, UNIX_EPOCH},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
     use toml::map::Map;
 
     fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
@@ -758,5 +759,46 @@ mod tests {
         assert_eq!(respawn_data.pos(), BlockPos::new(10, 65, -3));
         assert_eq!(respawn_data.yaw.to_bits(), (-90.0_f32).to_bits());
         assert_eq!(respawn_data.pitch.to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "the exactly representable configured clock rate must round-trip unchanged"
+    )]
+    fn level_data_round_trips_world_clock_state() {
+        init_test_registry();
+        let mut data = LevelData::new_with_seed(1);
+        assert_eq!(
+            data.world_clocks
+                .set_total_ticks(&vanilla_world_clocks::OVERWORLD, 98_765),
+            Some(())
+        );
+        assert_eq!(
+            data.world_clocks
+                .set_rate(&vanilla_world_clocks::OVERWORLD, 3.5),
+            Some(())
+        );
+
+        let serialized = toml::to_string(&data).expect("level data should serialize");
+        let mut restored: LevelData =
+            toml::from_str(&serialized).expect("level data should deserialize");
+        assert_eq!(
+            restored.world_clocks.initialize_registered_clocks(),
+            Ok(false)
+        );
+        assert_eq!(
+            restored
+                .world_clocks
+                .total_ticks(&vanilla_world_clocks::OVERWORLD),
+            Some(98_765)
+        );
+        let Some(update) = restored
+            .world_clocks
+            .network_update(&vanilla_world_clocks::OVERWORLD, true)
+        else {
+            panic!("overworld clock update should exist");
+        };
+        assert_eq!(update.3, 3.5);
     }
 }

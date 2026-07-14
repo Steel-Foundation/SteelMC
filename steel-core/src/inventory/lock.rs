@@ -9,40 +9,22 @@ use parking_lot::RawMutex;
 use rustc_hash::FxHashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use steel_utils::locks::SyncMutex;
+use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
 
 use crate::{
     block_entity::{BlockEntity, SharedBlockEntity},
-    inventory::{
-        container::Container,
-        crafting::{CraftingContainer, ResultContainer},
-    },
+    inventory::container::Container,
     player::player_inventory::PlayerInventory,
 };
 
 /// Thread-safe reference to a player inventory.
 pub type SyncPlayerInv = Arc<SyncMutex<PlayerInventory>>;
 
-/// Thread-safe reference to a generic container implementing the Container trait.
-pub type GenericContainer = Arc<SyncMutex<dyn Container + Send + Sync>>;
+/// Thread-safe reference to an erased container.
+pub type SharedContainer = Arc<SyncMutex<dyn Container>>;
 
-/// A locked container guard that provides access to the underlying container.
-///
-/// This enum wraps different container types with their mutex guards, allowing
-/// uniform access through the `Container` trait via `Deref`/`DerefMut`.
-pub enum LockedContainer {
-    /// A locked player inventory.
-    PlayerInventory(ArcMutexGuard<RawMutex, PlayerInventory>),
-    /// A locked crafting grid container.
-    CraftingContainer(ArcMutexGuard<RawMutex, CraftingContainer>),
-    /// A locked crafting result container.
-    ResultContainer(ArcMutexGuard<RawMutex, ResultContainer>),
-    /// A locked generic container.
-    Other(ArcMutexGuard<RawMutex, dyn Container + Send + Sync>),
-    /// A locked block entity that implements Container.
-    ///
-    /// The block entity is guaranteed to return `Some` from `as_container()`
-    /// because this variant is only constructed after validation.
+enum LockedContainer {
+    Container(ArcMutexGuard<RawMutex, dyn Container>),
     BlockEntity(ArcMutexGuard<RawMutex, dyn BlockEntity>),
 }
 
@@ -51,13 +33,13 @@ impl Deref for LockedContainer {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            LockedContainer::PlayerInventory(guard) => &**guard,
-            LockedContainer::CraftingContainer(guard) => &**guard,
-            LockedContainer::ResultContainer(guard) => &**guard,
-            LockedContainer::Other(guard) => &**guard,
-            LockedContainer::BlockEntity(guard) => (**guard)
-                .as_container()
-                .expect("BlockEntity variant should only be used for container block entities"),
+            Self::Container(guard) => &**guard,
+            Self::BlockEntity(guard) => {
+                let Some(container) = (**guard).as_container() else {
+                    unreachable!("block-entity container reference was validated before locking");
+                };
+                container
+            }
         }
     }
 }
@@ -65,42 +47,54 @@ impl Deref for LockedContainer {
 impl DerefMut for LockedContainer {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            LockedContainer::PlayerInventory(guard) => &mut **guard,
-            LockedContainer::CraftingContainer(guard) => &mut **guard,
-            LockedContainer::ResultContainer(guard) => &mut **guard,
-            LockedContainer::Other(guard) => &mut **guard,
-            LockedContainer::BlockEntity(guard) => (**guard)
-                .as_container_mut()
-                .expect("BlockEntity variant should only be used for container block entities"),
+            Self::Container(guard) => &mut **guard,
+            Self::BlockEntity(guard) => {
+                let Some(container) = (**guard).as_container_mut() else {
+                    unreachable!("block-entity container reference was validated before locking");
+                };
+                container
+            }
         }
     }
 }
 
 /// A reference to a container that can be locked.
 ///
-/// This enum provides a uniform way to reference different container types
-/// before locking them. Use [`ContainerLockGuard::lock_all`] to lock multiple
+/// This type erases ordinary containers while retaining the separate world-owned
+/// block-entity lock source. Use [`ContainerLockGuard::lock_all`] to lock multiple
 /// containers in a deadlock-free manner.
 #[derive(Clone)]
-pub enum ContainerRef {
-    /// Reference to a player inventory.
-    PlayerInventory(SyncPlayerInv),
-    /// Reference to a crafting grid container.
-    CraftingContainer(Arc<SyncMutex<CraftingContainer>>),
-    /// Reference to a crafting result container.
-    ResultContainer(Arc<SyncMutex<ResultContainer>>),
-    /// Reference to a generic container.
-    Other(GenericContainer),
-    /// Reference to a block entity that implements Container.
-    ///
-    /// Use [`ContainerRef::from_block_entity`] to create this variant,
-    /// which validates that the block entity actually implements Container.
+pub struct ContainerRef {
+    id: ContainerId,
+    source: ContainerRefSource,
+}
+
+#[derive(Clone)]
+enum ContainerRefSource {
+    Container(SharedContainer),
     BlockEntity(SharedBlockEntity),
 }
 
-impl From<SyncPlayerInv> for ContainerRef {
-    fn from(value: SyncPlayerInv) -> Self {
-        Self::PlayerInventory(value)
+impl<T> From<Arc<SyncMutex<T>>> for ContainerRef
+where
+    T: Container + 'static,
+{
+    fn from(container: Arc<SyncMutex<T>>) -> Self {
+        let id = ContainerId::from_arc(&container);
+        let container: SharedContainer = container;
+        Self {
+            id,
+            source: ContainerRefSource::Container(container),
+        }
+    }
+}
+
+impl From<SharedContainer> for ContainerRef {
+    fn from(container: SharedContainer) -> Self {
+        Self {
+            id: ContainerId::from_arc(&container),
+            source: ContainerRefSource::Container(container),
+        }
     }
 }
 
@@ -112,39 +106,29 @@ impl ContainerRef {
     #[must_use]
     pub fn from_block_entity(block_entity: SharedBlockEntity) -> Option<Self> {
         let is_container = block_entity.lock().as_container().is_some();
-        if is_container {
-            Some(Self::BlockEntity(block_entity))
-        } else {
-            None
+        if !is_container {
+            return None;
         }
+
+        Some(Self {
+            id: ContainerId::from_arc(&block_entity),
+            source: ContainerRefSource::BlockEntity(block_entity),
+        })
     }
 
     /// Returns a unique identifier for this container based on its Arc pointer address.
     #[must_use]
-    pub fn container_id(&self) -> ContainerId {
-        match self {
-            ContainerRef::PlayerInventory(arc) => ContainerId::from_arc(arc),
-            ContainerRef::CraftingContainer(arc) => ContainerId::from_arc(arc),
-            ContainerRef::ResultContainer(arc) => ContainerId::from_arc(arc),
-            ContainerRef::Other(arc) => ContainerId::from_arc(arc),
-            ContainerRef::BlockEntity(arc) => ContainerId::from_arc(arc),
-        }
+    pub const fn container_id(&self) -> ContainerId {
+        self.id
     }
 
     /// Locks this container and returns a guard.
     fn lock(&self) -> LockedContainer {
-        match self {
-            ContainerRef::PlayerInventory(arc) => {
-                LockedContainer::PlayerInventory(SyncMutex::lock_arc(arc))
+        match &self.source {
+            ContainerRefSource::Container(arc) => {
+                LockedContainer::Container(SyncMutex::lock_arc(arc))
             }
-            ContainerRef::CraftingContainer(arc) => {
-                LockedContainer::CraftingContainer(SyncMutex::lock_arc(arc))
-            }
-            ContainerRef::ResultContainer(arc) => {
-                LockedContainer::ResultContainer(SyncMutex::lock_arc(arc))
-            }
-            ContainerRef::Other(arc) => LockedContainer::Other(SyncMutex::lock_arc(arc)),
-            ContainerRef::BlockEntity(arc) => {
+            ContainerRefSource::BlockEntity(arc) => {
                 LockedContainer::BlockEntity(SyncMutex::lock_arc(arc))
             }
         }
@@ -159,8 +143,8 @@ impl ContainerRef {
 /// # Example
 ///
 /// ```ignore
-/// let player_inv = ContainerRef::PlayerInventory(player_inv_arc);
-/// let chest = ContainerRef::Other(chest_arc);
+/// let player_inv = ContainerRef::from(player_inv_arc);
+/// let chest = ContainerRef::from(chest_arc);
 ///
 /// let mut guard = ContainerLockGuard::lock_all(&[&player_inv, &chest]);
 ///
@@ -244,61 +228,21 @@ impl ContainerLockGuard {
             .map(|(_, guard)| &mut **guard as &mut dyn Container)
     }
 
-    /// Get mutable access to a locked player inventory.
-    pub fn get_player_inventory_mut(
-        &mut self,
-        id: impl Into<ContainerId>,
-    ) -> Option<&mut PlayerInventory> {
-        self.id_to_index
-            .get(&id.into())
-            .copied()
-            .and_then(|idx| self.guards.get_mut(idx))
-            .and_then(|(_, guard)| match guard {
-                LockedContainer::PlayerInventory(g) => Some(&mut **g),
-                _ => None,
-            })
-    }
-
-    /// Get immutable access to a locked crafting container.
+    /// Gets immutable access when the locked container has concrete type `T`.
     #[must_use]
-    pub fn get_crafting_container(&self, id: impl Into<ContainerId>) -> Option<&CraftingContainer> {
-        self.id_to_index
-            .get(&id.into())
-            .and_then(|&idx| self.guards.get(idx))
-            .and_then(|(_, guard)| match guard {
-                LockedContainer::CraftingContainer(g) => Some(&**g),
-                _ => None,
-            })
+    pub fn get_typed<T>(&self, id: impl Into<ContainerId>) -> Option<&T>
+    where
+        T: Container + DowncastType,
+    {
+        self.get(id)?.downcast_ref::<T>()
     }
 
-    /// Get mutable access to a locked crafting container.
-    pub fn get_crafting_container_mut(
-        &mut self,
-        id: impl Into<ContainerId>,
-    ) -> Option<&mut CraftingContainer> {
-        self.id_to_index
-            .get(&id.into())
-            .copied()
-            .and_then(|idx| self.guards.get_mut(idx))
-            .and_then(|(_, guard)| match guard {
-                LockedContainer::CraftingContainer(g) => Some(&mut **g),
-                _ => None,
-            })
-    }
-
-    /// Get mutable access to a locked result container.
-    pub fn get_result_container_mut(
-        &mut self,
-        id: impl Into<ContainerId>,
-    ) -> Option<&mut ResultContainer> {
-        self.id_to_index
-            .get(&id.into())
-            .copied()
-            .and_then(|idx| self.guards.get_mut(idx))
-            .and_then(|(_, guard)| match guard {
-                LockedContainer::ResultContainer(g) => Some(&mut **g),
-                _ => None,
-            })
+    /// Gets mutable access when the locked container has concrete type `T`.
+    pub fn get_typed_mut<T>(&mut self, id: impl Into<ContainerId>) -> Option<&mut T>
+    where
+        T: Container + DowncastType,
+    {
+        self.get_mut(id)?.downcast_mut::<T>()
     }
 
     /// Check if a container is locked.
@@ -325,5 +269,68 @@ impl ContainerId {
 impl From<&SyncPlayerInv> for ContainerId {
     fn from(value: &SyncPlayerInv) -> Self {
         Self::from_arc(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak};
+
+    use steel_registry::vanilla_block_entity_types;
+    use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
+
+    use super::{ContainerId, ContainerLockGuard, ContainerRef};
+    use crate::block_entity::{
+        SharedBlockEntity,
+        entities::{BarrelBlockEntity, RawBlockEntity},
+    };
+    use crate::inventory::crafting::{CraftingContainer, ResultContainer};
+
+    #[test]
+    fn erased_container_ref_preserves_id_and_typed_access() {
+        let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
+        let id = ContainerId::from_arc(&crafting);
+        let container_ref = ContainerRef::from(Arc::clone(&crafting));
+
+        assert_eq!(container_ref.container_id(), id);
+
+        let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        let Some(typed) = guard.get_typed::<CraftingContainer>(id) else {
+            panic!("erased crafting container should retain its concrete type");
+        };
+        assert_eq!((typed.width(), typed.height()), (2, 2));
+        assert!(guard.get_typed::<ResultContainer>(id).is_none());
+        assert!(guard.get_typed_mut::<CraftingContainer>(id).is_some());
+    }
+
+    #[test]
+    fn validated_block_entity_ref_supports_typed_container_access() {
+        let barrel = Arc::new(SyncMutex::new(BarrelBlockEntity::new(
+            Weak::new(),
+            BlockPos::new(1, 2, 3),
+            BlockStateId::default(),
+        )));
+        let id = ContainerId::from_arc(&barrel);
+        let block_entity: SharedBlockEntity = barrel.clone();
+        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+            panic!("barrel block entity should expose Container");
+        };
+
+        assert_eq!(container_ref.container_id(), id);
+
+        let guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        assert!(guard.get_typed::<BarrelBlockEntity>(id).is_some());
+    }
+
+    #[test]
+    fn non_container_block_entity_ref_is_rejected() {
+        let block_entity: SharedBlockEntity = Arc::new(SyncMutex::new(RawBlockEntity::new(
+            &vanilla_block_entity_types::END_PORTAL,
+            Weak::new(),
+            BlockPos::new(1, 2, 3),
+            BlockStateId::default(),
+        )));
+
+        assert!(ContainerRef::from_block_entity(block_entity).is_none());
     }
 }

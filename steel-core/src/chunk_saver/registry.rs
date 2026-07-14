@@ -33,14 +33,14 @@ impl WorldStorageRegistry {
             factories: FxHashMap::default(),
         };
         registry.register(
-            Identifier::new("steel", "disk"),
+            Identifier::from_steel("disk"),
             WorldStorageFactory {
                 validate: validate_disk_config,
                 create: create_disk_storage,
             },
         )?;
         registry.register(
-            Identifier::new("steel", "ram"),
+            Identifier::from_steel("ram"),
             WorldStorageFactory {
                 validate: validate_empty_config,
                 create: create_ram_storage,

@@ -26,7 +26,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
@@ -67,6 +67,11 @@ pub struct PigEntity {
     entity_data: SyncMutex<PigEntityData>,
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies `PigEntity`.
+unsafe impl DowncastType for PigEntity {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/pig");
+}
+
 impl PigEntity {
     /// Creates a new pig entity.
     #[must_use]
@@ -104,7 +109,7 @@ impl PigEntity {
                 4,
                 TemptGoal::new(
                     1.2,
-                    |item_stack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick),
+                    |item_stack| item_stack.is(&vanilla_items::CARROT_ON_A_STICK),
                     false,
                 ),
             );
@@ -426,7 +431,7 @@ impl Entity for PigEntity {
             && let Some(passenger) = self.first_passenger()
             && passenger.as_player().is_some_and(|player| {
                 let mut is_holding_carrot_on_a_stick =
-                    |item_stack: &ItemStack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick);
+                    |item_stack: &ItemStack| item_stack.is(&vanilla_items::CARROT_ON_A_STICK);
                 player.is_holding(&mut is_holding_carrot_on_a_stick)
             })
         {
@@ -495,8 +500,8 @@ impl Entity for PigEntity {
         self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, source, amount)
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        LivingEntity::hurt_server(self, world, source, amount)
     }
 
     fn interact(
@@ -790,9 +795,7 @@ mod tests {
     use simdnbt::owned::NbtTag;
     use steel_registry::entity_type::EntityAttachment;
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::{
-        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items::ITEMS,
-    };
+    use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items};
     use steel_utils::UuidExt;
     use uuid::Uuid;
 
@@ -804,6 +807,7 @@ mod tests {
     use crate::entity::mob::LeashAttachment;
     use crate::entity::{Animal, DEATH_DURATION, ItemSteerable, RemovalReason, SharedEntity};
     use crate::inventory::equipment::EquipmentSlot;
+    use crate::test_support::test_world;
     use crate::world::LevelReader;
 
     use super::*;
@@ -1034,7 +1038,7 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert!(LivingEntity::is_equippable_in_slot(
             &pig,
@@ -1063,14 +1067,14 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert!(LivingEntity::can_equip_with_dispenser(&pig, &saddle));
 
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
         assert!(!LivingEntity::can_equip_with_dispenser(&pig, &saddle));
 
         let baby = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
@@ -1083,7 +1087,7 @@ mod tests {
 
         let unequippable_target =
             PigEntity::new(&vanilla_entities::PIG, 4, DVec3::ZERO, Weak::new());
-        let stone = ItemStack::new(&ITEMS.stone);
+        let stone = ItemStack::new(&vanilla_items::STONE);
         assert!(!LivingEntity::can_equip_with_dispenser(
             &unequippable_target,
             &stone
@@ -1111,10 +1115,10 @@ mod tests {
 
         assert!(!pig.is_saddled());
 
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
 
         assert!(pig.is_saddled());
     }
@@ -1124,7 +1128,7 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert_eq!(
             LivingEntity::equip_sound(&pig, EquipmentSlot::Saddle, &saddle)
@@ -1244,10 +1248,10 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
         pig.set_guaranteed_drop(EquipmentSlot::Saddle);
 
         pig.drop_custom_death_loot_mob(
@@ -1309,7 +1313,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
         pig.set_no_action_time(42);
-        assert!(pig.hurt_server(&source, 1.0));
+        assert!(pig.hurt_server(test_world(), &source, 1.0));
 
         assert_eq!(pig.no_action_time(), 0);
     }
@@ -1775,8 +1779,8 @@ mod tests {
     fn pig_uses_vanilla_pig_food_tag() {
         init_test_registry();
 
-        assert!(PigEntity::is_food(&ItemStack::new(&ITEMS.carrot)));
-        assert!(!PigEntity::is_food(&ItemStack::new(&ITEMS.stone)));
+        assert!(PigEntity::is_food(&ItemStack::new(&vanilla_items::CARROT)));
+        assert!(!PigEntity::is_food(&ItemStack::new(&vanilla_items::STONE)));
     }
 
     #[test]
@@ -1845,7 +1849,7 @@ mod tests {
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
         pig.set_in_love_time(20);
 
-        assert!(pig.hurt_server(&source, 1.0));
+        assert!(pig.hurt_server(test_world(), &source, 1.0));
 
         assert_eq!(pig.in_love_time(), 0);
     }

@@ -205,7 +205,7 @@ impl InventoryAccess {
     /// Prefer [`Self::with_item`] or [`Self::with_inventory`] unless an operation
     /// must interoperate with APIs that require `ContainerLockGuard`.
     pub fn with_guard<R>(&self, f: impl FnOnce(&mut ContainerLockGuard) -> R) -> R {
-        let inv_ref = ContainerRef::PlayerInventory(self.inventory.clone());
+        let inv_ref = ContainerRef::from(self.inventory.clone());
         let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
         f(&mut guard)
     }
