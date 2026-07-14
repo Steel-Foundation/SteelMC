@@ -130,6 +130,24 @@ where
         forked: LegacyRandom,
     }
 
+    fn map_candidate<F>(candidate: RingCandidate, snap: &F) -> ChunkPos
+    where
+        F: Fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)> + Sync,
+    {
+        let RingCandidate {
+            initial_x,
+            initial_z,
+            mut forked,
+        } = candidate;
+
+        // sectionToBlockCoord(x, 8) = x * 16 + 8; snap result is blocks → >> 4.
+        if let Some((sx, sz)) = snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked) {
+            ChunkPos::new(sx >> 4, sz >> 4)
+        } else {
+            ChunkPos::new(initial_x, initial_z)
+        }
+    }
+
     if count == 0 {
         return vec![];
     }
@@ -173,40 +191,13 @@ where
             thread_pool.install(|| {
                 candidates
                     .into_par_iter()
-                    .map(|candidate| {
-                        let RingCandidate {
-                            initial_x,
-                            initial_z,
-                            mut forked,
-                        } = candidate;
-
-                        // sectionToBlockCoord(x, 8) = x * 16 + 8; snap result is blocks → >> 4.
-                        if let Some((sx, sz)) =
-                            snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked)
-                        {
-                            ChunkPos::new(sx >> 4, sz >> 4)
-                        } else {
-                            ChunkPos::new(initial_x, initial_z)
-                        }
-                    })
+                    .map(|candidate| map_candidate(candidate, snap))
                     .collect()
             })
         }
         Some(snap) => candidates
             .into_iter()
-            .map(|candidate| {
-                let RingCandidate {
-                    initial_x,
-                    initial_z,
-                    mut forked,
-                } = candidate;
-
-                if let Some((sx, sz)) = snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked) {
-                    ChunkPos::new(sx >> 4, sz >> 4)
-                } else {
-                    ChunkPos::new(initial_x, initial_z)
-                }
-            })
+            .map(|candidate| map_candidate(candidate, snap))
             .collect(),
         None => candidates
             .into_iter()
