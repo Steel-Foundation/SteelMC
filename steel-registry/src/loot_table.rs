@@ -1,4 +1,4 @@
-pub use crate::equipment::EquipmentSlotGroup;
+pub use crate::{DyeColor, equipment::EquipmentSlotGroup};
 use crate::{
     REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
     item_stack::ItemStack,
@@ -20,27 +20,6 @@ pub enum LootContextEntity {
     KillerPlayer,
     /// The entity interacting with a block/entity.
     Interacting,
-}
-
-/// Dye/banner color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DyeColor {
-    White,
-    Orange,
-    Magenta,
-    LightBlue,
-    Yellow,
-    Lime,
-    Pink,
-    Gray,
-    LightGray,
-    Cyan,
-    Purple,
-    Blue,
-    Brown,
-    Green,
-    Red,
-    Black,
 }
 
 /// The type of loot table, determining when/how it's used.
@@ -1845,7 +1824,10 @@ impl LootFunction {
                 item.set_name(name, *target);
             }
             LootFunction::SetOminousBottleAmplifier { amplifier } => {
-                let amp = amplifier.get_int(ctx.rng);
+                let amp = amplifier.get_int(ctx.rng).clamp(
+                    crate::data_components::OminousBottleAmplifier::MIN_AMPLIFIER,
+                    crate::data_components::OminousBottleAmplifier::MAX_AMPLIFIER,
+                );
                 item.set_ominous_bottle_amplifier(amp);
             }
             LootFunction::SetPotion { id } => {
@@ -2188,6 +2170,28 @@ mod tests {
             total_survived > 150 && total_survived < 350,
             "Expected ~250 items with explosion decay (25% of 1000), got {total_survived}"
         );
+    }
+
+    #[test]
+    fn ominous_bottle_amplifier_function_clamps_to_persistent_range() {
+        use crate::data_components::vanilla_components::OMINOUS_BOTTLE_AMPLIFIER;
+
+        init_test_registries();
+        for (provided, expected) in [(-3.0, 0), (2.0, 2), (9.0, 4)] {
+            let mut rng = test_rng();
+            let mut context = LootContext::new(&mut rng);
+            let mut item = ItemStack::new(&crate::vanilla_items::ITEMS.ominous_bottle);
+            LootFunction::SetOminousBottleAmplifier {
+                amplifier: NumberProvider::Constant(provided),
+            }
+            .apply(&mut item, &mut context);
+
+            assert_eq!(
+                item.get(OMINOUS_BOTTLE_AMPLIFIER)
+                    .map(|amplifier| amplifier.value()),
+                Some(expected)
+            );
+        }
     }
 
     #[test]

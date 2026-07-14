@@ -1158,9 +1158,10 @@ mod tests {
     use crate::{
         data_components::CustomData,
         data_components::vanilla_components::{
-            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK,
-            ENCHANTABLE, ITEM_MODEL, ITEM_NAME, LORE, MAP_POST_PROCESSING, MAX_STACK_SIZE, RARITY,
-            SWING_ANIMATION, SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
+            ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CREATIVE_SLOT_LOCK, DYE,
+            ENCHANTABLE, ITEM_MODEL, ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING,
+            MAX_STACK_SIZE, OMINOUS_BOTTLE_AMPLIFIER, RARITY, SWING_ANIMATION, SwingAnimationType,
+            TOOLTIP_DISPLAY, USE_EFFECTS,
         },
         item_stack::ItemStack,
         sound_events,
@@ -1312,5 +1313,45 @@ mod tests {
         );
         assert!(golden_sword.is_enchantable());
         assert!(!ItemStack::new(&vanilla_items::ITEMS.stone).is_enchantable());
+
+        for (item, color) in [
+            (&vanilla_items::ITEMS.white_dye, crate::DyeColor::White),
+            (&vanilla_items::ITEMS.orange_dye, crate::DyeColor::Orange),
+            (&vanilla_items::ITEMS.magenta_dye, crate::DyeColor::Magenta),
+            (
+                &vanilla_items::ITEMS.light_blue_dye,
+                crate::DyeColor::LightBlue,
+            ),
+            (&vanilla_items::ITEMS.yellow_dye, crate::DyeColor::Yellow),
+            (&vanilla_items::ITEMS.lime_dye, crate::DyeColor::Lime),
+            (&vanilla_items::ITEMS.pink_dye, crate::DyeColor::Pink),
+            (&vanilla_items::ITEMS.gray_dye, crate::DyeColor::Gray),
+            (
+                &vanilla_items::ITEMS.light_gray_dye,
+                crate::DyeColor::LightGray,
+            ),
+            (&vanilla_items::ITEMS.cyan_dye, crate::DyeColor::Cyan),
+            (&vanilla_items::ITEMS.purple_dye, crate::DyeColor::Purple),
+            (&vanilla_items::ITEMS.blue_dye, crate::DyeColor::Blue),
+            (&vanilla_items::ITEMS.brown_dye, crate::DyeColor::Brown),
+            (&vanilla_items::ITEMS.green_dye, crate::DyeColor::Green),
+            (&vanilla_items::ITEMS.red_dye, crate::DyeColor::Red),
+            (&vanilla_items::ITEMS.black_dye, crate::DyeColor::Black),
+        ] {
+            assert_eq!(ItemStack::new(item).get(DYE), Some(&color), "{}", item.key);
+        }
+
+        assert_eq!(
+            ItemStack::new(&vanilla_items::ITEMS.filled_map)
+                .get(MAP_COLOR)
+                .map(|color| color.rgb()),
+            Some(4_603_950)
+        );
+        assert_eq!(
+            ItemStack::new(&vanilla_items::ITEMS.ominous_bottle)
+                .get(OMINOUS_BOTTLE_AMPLIFIER)
+                .map(|amplifier| amplifier.value()),
+            Some(0)
+        );
     }
 }

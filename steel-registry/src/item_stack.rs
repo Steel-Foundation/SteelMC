@@ -19,8 +19,9 @@ use crate::{
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, CUSTOM_DATA, DAMAGE, DAMAGE_TYPE,
             ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers,
-            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, PIERCING_WEAPON,
-            PiercingWeapon, TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
+            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
+            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
+            TOOL, Tool, UNBREAKABLE, WEAPON, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
@@ -632,10 +633,12 @@ impl ItemStack {
         // Parse the name as a text component and set CUSTOM_NAME or ITEM_NAME
     }
 
-    /// Sets the ominous bottle amplifier.
-    pub const fn set_ominous_bottle_amplifier(&mut self, _amplifier: i32) {
-        // TODO: Implement ominous bottle amplifier component
-        // Set the OMINOUS_BOTTLE_AMPLIFIER component
+    /// Sets the ominous bottle amplifier component.
+    pub fn set_ominous_bottle_amplifier(&mut self, amplifier: i32) {
+        self.set(
+            OMINOUS_BOTTLE_AMPLIFIER,
+            OminousBottleAmplifier::new(amplifier),
+        );
     }
 
     /// Sets the potion type for this item.

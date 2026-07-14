@@ -18,6 +18,7 @@ use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::{
+    DyeColor,
     data_components::{ComponentPatchEntry, vanilla_components},
     item_stack::ItemStack,
     test_support::init_test_registry,
@@ -1360,6 +1361,54 @@ fn item_stack_argument_parses_custom_model_data_and_enchantability() {
 }
 
 #[test]
+fn item_stack_argument_parses_color_map_and_amplifier_components() {
+    init_test_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource stone[dye='red',dyed_color=[1f,0.5f,0f],map_color=4603950,map_id=7,ominous_bottle_amplifier=4,base_color='blue',wolf/collar='green']",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("color, map, and amplifier components should parse");
+    };
+    let Some(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert_eq!(stack.get(vanilla_components::DYE), Some(&DyeColor::Red));
+    assert_eq!(
+        stack
+            .get(vanilla_components::DYED_COLOR)
+            .map(|color| color.rgb()),
+        Some(0xffff_7f00_u32 as i32)
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::MAP_COLOR)
+            .map(|color| color.rgb()),
+        Some(4_603_950)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::MAP_ID).map(|map| map.id()),
+        Some(7)
+    );
+    assert_eq!(
+        stack
+            .get(vanilla_components::OMINOUS_BOTTLE_AMPLIFIER)
+            .map(|amplifier| amplifier.value()),
+        Some(4)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::BASE_COLOR),
+        Some(&DyeColor::Blue)
+    );
+    assert_eq!(
+        stack.get(vanilla_components::WOLF_COLLAR),
+        Some(&DyeColor::Green)
+    );
+}
+
+#[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     init_test_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
@@ -1432,6 +1481,9 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
         "resource stone[potion_duration_scale=-0.0f]",
         "resource stone[enchantable={value:0}]",
         "resource stone[custom_model_data={strings:[1]}]",
+        "resource stone[dye='not_a_color']",
+        "resource stone[dyed_color=[1f,0f]]",
+        "resource stone[ominous_bottle_amplifier=5]",
     ] {
         let parse = dispatcher.parse(input, TestSource::new());
         assert!(

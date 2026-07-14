@@ -100,6 +100,7 @@ pub mod damage_type;
 pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
+pub mod dye_color;
 pub mod enchantment;
 pub mod enchantment_effect;
 pub mod entity_data;
@@ -138,6 +139,8 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
 pub mod zombie_nautilus_variant;
+
+pub use dye_color::DyeColor;
 
 #[expect(warnings)]
 #[rustfmt::skip]

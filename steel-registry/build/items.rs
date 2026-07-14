@@ -116,6 +116,39 @@ fn identifier_token(s: &str) -> TokenStream {
     quote! { Identifier::new_static(#namespace, #path) }
 }
 
+fn dye_color_token(value: &Value) -> TokenStream {
+    let color = value
+        .as_str()
+        .unwrap_or_else(|| panic!("dye color component must be a string, got {value}"));
+    let variant = match color {
+        "white" => quote! { White },
+        "orange" => quote! { Orange },
+        "magenta" => quote! { Magenta },
+        "light_blue" => quote! { LightBlue },
+        "yellow" => quote! { Yellow },
+        "lime" => quote! { Lime },
+        "pink" => quote! { Pink },
+        "gray" => quote! { Gray },
+        "light_gray" => quote! { LightGray },
+        "cyan" => quote! { Cyan },
+        "purple" => quote! { Purple },
+        "blue" => quote! { Blue },
+        "brown" => quote! { Brown },
+        "green" => quote! { Green },
+        "red" => quote! { Red },
+        "black" => quote! { Black },
+        _ => panic!("unknown extracted dye color {color:?}"),
+    };
+    quote! { vanilla_components::DyeColor::#variant }
+}
+
+fn component_i32(value: &Value, component: &str) -> i32 {
+    let value = value
+        .as_i64()
+        .unwrap_or_else(|| panic!("{component} component must be an integer"));
+    i32::try_from(value).unwrap_or_else(|_| panic!("{component} component must fit an i32"))
+}
+
 fn item_name_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()
@@ -719,6 +752,34 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     .builder_set(
                         vanilla_components::ENCHANTABLE,
                         Some(vanilla_components::Enchantable::from_extracted_value(#value)),
+                    )
+                });
+            }
+            "minecraft:dye" => {
+                let color = dye_color_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::DYE, Some(#color))
+                });
+            }
+            "minecraft:map_color" => {
+                let rgb = component_i32(value, "map_color");
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::MAP_COLOR,
+                        Some(vanilla_components::MapItemColor::new(#rgb)),
+                    )
+                });
+            }
+            "minecraft:ominous_bottle_amplifier" => {
+                let amplifier = component_i32(value, "ominous_bottle_amplifier");
+                assert!(
+                    (0..=4).contains(&amplifier),
+                    "ominous_bottle_amplifier must be in 0..=4"
+                );
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::OMINOUS_BOTTLE_AMPLIFIER,
+                        Some(vanilla_components::OminousBottleAmplifier::new(#amplifier)),
                     )
                 });
             }

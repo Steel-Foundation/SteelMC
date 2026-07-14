@@ -5,10 +5,12 @@ use std::fmt::{self, Debug, Formatter};
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::components::{
-    AttackRange, CustomData, CustomModelData, DamageTypeComponent, Enchantable, Equippable,
-    ItemAttributeModifiers, ItemEnchantments, ItemLore, MapPostProcessing, PiercingWeapon, Rarity,
-    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    AttackRange, CustomData, CustomModelData, DamageTypeComponent, DyedItemColor, Enchantable,
+    Equippable, ItemAttributeModifiers, ItemEnchantments, ItemLore, MapId, MapItemColor,
+    MapPostProcessing, OminousBottleAmplifier, PiercingWeapon, Rarity, SwingAnimation, Tool,
+    TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
+use crate::DyeColor;
 
 /// Behavior required from a value stored in a [`ComponentData`].
 ///
@@ -104,6 +106,14 @@ macro_rules! impl_component_downcast_type {
 impl_component_downcast_type!(DamageTypeComponent, "steel:item_component/damage_type");
 impl_component_downcast_type!(CustomData, "steel:item_component/custom_data");
 impl_component_downcast_type!(CustomModelData, "steel:item_component/custom_model_data");
+impl_component_downcast_type!(DyeColor, "steel:dye_color");
+impl_component_downcast_type!(DyedItemColor, "steel:item_component/dyed_item_color");
+impl_component_downcast_type!(MapItemColor, "steel:item_component/map_item_color");
+impl_component_downcast_type!(MapId, "steel:item_component/map_id");
+impl_component_downcast_type!(
+    OminousBottleAmplifier,
+    "steel:item_component/ominous_bottle_amplifier"
+);
 impl_component_downcast_type!(Enchantable, "steel:item_component/enchantable");
 impl_component_downcast_type!(Tool, "steel:item_component/tool");
 impl_component_downcast_type!(Weapon, "steel:item_component/weapon");

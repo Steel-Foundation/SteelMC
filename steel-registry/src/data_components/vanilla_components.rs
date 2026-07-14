@@ -13,12 +13,14 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 
 // Re-export component types for convenience
 pub use super::components::{
-    AttackRange, CustomData, CustomModelData, DamageTypeComponent, Enchantable, Equippable,
-    EquippableAllowedEntities, InvalidEnchantableValue, ItemAttributeModifierDisplay,
+    AttackRange, CustomData, CustomModelData, DamageTypeComponent, DyedItemColor, Enchantable,
+    Equippable, EquippableAllowedEntities, InvalidEnchantableValue, ItemAttributeModifierDisplay,
     ItemAttributeModifierEntry, ItemAttributeModifiers, ItemEnchantments, ItemLore,
-    ItemLoreTooLong, MapPostProcessing, PiercingWeapon, Rarity, SwingAnimation, SwingAnimationType,
-    Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects, Weapon,
+    ItemLoreTooLong, MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier,
+    PiercingWeapon, Rarity, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
+    TooltipDisplay, UseCooldown, UseEffects, Weapon,
 };
+pub use crate::DyeColor;
 pub use crate::sound_event::SoundEventHolder;
 
 pub const MAX_STACK_SIZE: DataComponentType<i32> =
@@ -166,16 +168,16 @@ pub const ADDITIONAL_TRADE_COST: DataComponentType<i32> =
 pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
 
-pub const DYE: DataComponentType<UnimplementedComponent> =
+pub const DYE: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("dye"));
 
-pub const DYED_COLOR: DataComponentType<UnimplementedComponent> =
+pub const DYED_COLOR: DataComponentType<DyedItemColor> =
     DataComponentType::new(Identifier::vanilla_static("dyed_color"));
 
-pub const MAP_COLOR: DataComponentType<UnimplementedComponent> =
+pub const MAP_COLOR: DataComponentType<MapItemColor> =
     DataComponentType::new(Identifier::vanilla_static("map_color"));
 
-pub const MAP_ID: DataComponentType<UnimplementedComponent> =
+pub const MAP_ID: DataComponentType<MapId> =
     DataComponentType::new(Identifier::vanilla_static("map_id"));
 
 pub const MAP_DECORATIONS: DataComponentType<UnimplementedComponent> =
@@ -223,7 +225,7 @@ pub const INSTRUMENT: DataComponentType<UnimplementedComponent> =
 pub const PROVIDES_TRIM_MATERIAL: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("provides_trim_material"));
 
-pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<UnimplementedComponent> =
+pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<OminousBottleAmplifier> =
     DataComponentType::new(Identifier::vanilla_static("ominous_bottle_amplifier"));
 
 pub const JUKEBOX_PLAYABLE: DataComponentType<UnimplementedComponent> =
@@ -250,7 +252,7 @@ pub const PROFILE: DataComponentType<UnimplementedComponent> =
 pub const BANNER_PATTERNS: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("banner_patterns"));
 
-pub const BASE_COLOR: DataComponentType<UnimplementedComponent> =
+pub const BASE_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("base_color"));
 
 pub const POT_DECORATIONS: DataComponentType<UnimplementedComponent> =
@@ -287,7 +289,7 @@ pub const WOLF_VARIANT: DataComponentType<UnimplementedComponent> =
 pub const WOLF_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("wolf/sound_variant"));
 
-pub const WOLF_COLLAR: DataComponentType<UnimplementedComponent> =
+pub const WOLF_COLLAR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("wolf/collar"));
 
 pub const FOX_VARIANT: DataComponentType<UnimplementedComponent> =
@@ -302,10 +304,10 @@ pub const PARROT_VARIANT: DataComponentType<UnimplementedComponent> =
 pub const TROPICAL_FISH_PATTERN: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern"));
 
-pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<UnimplementedComponent> =
+pub const TROPICAL_FISH_BASE_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/base_color"));
 
-pub const TROPICAL_FISH_PATTERN_COLOR: DataComponentType<UnimplementedComponent> =
+pub const TROPICAL_FISH_PATTERN_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("tropical_fish/pattern_color"));
 
 pub const MOOSHROOM_VARIANT: DataComponentType<UnimplementedComponent> =
@@ -356,13 +358,13 @@ pub const CAT_VARIANT: DataComponentType<UnimplementedComponent> =
 pub const CAT_SOUND_VARIANT: DataComponentType<UnimplementedComponent> =
     DataComponentType::new(Identifier::vanilla_static("cat/sound_variant"));
 
-pub const CAT_COLLAR: DataComponentType<UnimplementedComponent> =
+pub const CAT_COLLAR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("cat/collar"));
 
-pub const SHEEP_COLOR: DataComponentType<UnimplementedComponent> =
+pub const SHEEP_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("sheep/color"));
 
-pub const SHULKER_COLOR: DataComponentType<UnimplementedComponent> =
+pub const SHULKER_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("shulker/color"));
 
 /// Network reader for VarInt-encoded i32 components.
@@ -618,13 +620,13 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 42: stored_enchantments
     registry.register(STORED_ENCHANTMENTS);
     // 43: dye
-    registry.register_unimplemented(DYE, true);
+    registry.register(DYE);
     // 44: dyed_color
-    registry.register_unimplemented(DYED_COLOR, true);
+    registry.register(DYED_COLOR);
     // 45: map_color
-    registry.register_unimplemented(MAP_COLOR, true);
+    registry.register(MAP_COLOR);
     // 46: map_id
-    registry.register_unimplemented(MAP_ID, true);
+    registry.register(MAP_ID);
     // 47: map_decorations
     registry.register_unimplemented(MAP_DECORATIONS, true);
     // 48: map_post_processing
@@ -664,7 +666,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 62: provides_trim_material
     registry.register_unimplemented(PROVIDES_TRIM_MATERIAL, true);
     // 63: ominous_bottle_amplifier
-    registry.register_unimplemented(OMINOUS_BOTTLE_AMPLIFIER, true);
+    registry.register(OMINOUS_BOTTLE_AMPLIFIER);
     // 64: jukebox_playable
     registry.register_unimplemented(JUKEBOX_PLAYABLE, true);
     // 65: provides_banner_patterns
@@ -684,7 +686,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 72: banner_patterns
     registry.register_unimplemented(BANNER_PATTERNS, true);
     // 73: base_color
-    registry.register_unimplemented(BASE_COLOR, true);
+    registry.register(BASE_COLOR);
     // 74: pot_decorations
     registry.register_unimplemented(POT_DECORATIONS, true);
     // 75: container
@@ -708,7 +710,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 84: wolf/sound_variant
     registry.register_unimplemented(WOLF_SOUND_VARIANT, true);
     // 85: wolf/collar
-    registry.register_unimplemented(WOLF_COLLAR, true);
+    registry.register(WOLF_COLLAR);
     // 86: fox/variant
     registry.register_unimplemented(FOX_VARIANT, true);
     // 87: salmon/size
@@ -718,9 +720,9 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 89: tropical_fish/pattern
     registry.register_unimplemented(TROPICAL_FISH_PATTERN, true);
     // 90: tropical_fish/base_color
-    registry.register_unimplemented(TROPICAL_FISH_BASE_COLOR, true);
+    registry.register(TROPICAL_FISH_BASE_COLOR);
     // 91: tropical_fish/pattern_color
-    registry.register_unimplemented(TROPICAL_FISH_PATTERN_COLOR, true);
+    registry.register(TROPICAL_FISH_PATTERN_COLOR);
     // 92: mooshroom/variant
     registry.register_unimplemented(MOOSHROOM_VARIANT, true);
     // 93: rabbit/variant
@@ -754,11 +756,11 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 107: cat/sound_variant
     registry.register_unimplemented(CAT_SOUND_VARIANT, true);
     // 108: cat/collar
-    registry.register_unimplemented(CAT_COLLAR, true);
+    registry.register(CAT_COLLAR);
     // 109: sheep/color
-    registry.register_unimplemented(SHEEP_COLOR, true);
+    registry.register(SHEEP_COLOR);
     // 110: shulker/color
-    registry.register_unimplemented(SHULKER_COLOR, true);
+    registry.register(SHULKER_COLOR);
 }
 
 #[cfg(test)]
@@ -1015,6 +1017,44 @@ mod tests {
             Enchantable::new(15).expect("15 is positive")
         )));
         assert!(!enchantable.validates(&ComponentData::new(15_i32)));
+
+        for component in [
+            DYE,
+            BASE_COLOR,
+            WOLF_COLLAR,
+            TROPICAL_FISH_BASE_COLOR,
+            TROPICAL_FISH_PATTERN_COLOR,
+            CAT_COLLAR,
+            SHEEP_COLOR,
+            SHULKER_COLOR,
+        ] {
+            let entry = registry
+                .by_key(&component.key)
+                .unwrap_or_else(|| panic!("missing dye color component {}", component.key));
+            assert!(entry.is_implemented(), "{}", component.key);
+            assert!(entry.validates(&ComponentData::new(DyeColor::Red)));
+            assert!(!entry.validates(&ComponentData::new(14_i32)));
+        }
+
+        for (key, value) in [
+            (
+                &DYED_COLOR.key,
+                ComponentData::new(DyedItemColor::new(0x123456)),
+            ),
+            (&MAP_COLOR.key, ComponentData::new(MapItemColor::DEFAULT)),
+            (&MAP_ID.key, ComponentData::new(MapId::new(7))),
+            (
+                &OMINOUS_BOTTLE_AMPLIFIER.key,
+                ComponentData::new(OminousBottleAmplifier::new(2)),
+            ),
+        ] {
+            let entry = registry
+                .by_key(key)
+                .unwrap_or_else(|| panic!("missing component {key}"));
+            assert!(entry.is_implemented(), "{key}");
+            assert!(entry.validates(&value), "{key}");
+            assert!(!entry.validates(&ComponentData::new(())), "{key}");
+        }
 
         let food = registry
             .by_key(&FOOD.key)

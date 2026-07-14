@@ -12,8 +12,7 @@ use simdnbt::borrow::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::loot_table::DyeColor;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{DyeColor, vanilla_block_entity_types};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
@@ -98,7 +97,8 @@ impl SignText {
 
         // Load color
         if let Some(color_str) = nbt.string("color") {
-            self.color = dye_color_from_str(&color_str.to_str());
+            self.color =
+                DyeColor::from_serialized_name(&color_str.to_str()).unwrap_or(DyeColor::Black);
         }
 
         // Load glow
@@ -118,7 +118,7 @@ impl SignText {
         nbt.insert("messages", NbtList::Compound(compounds));
 
         // Save color
-        nbt.insert("color", dye_color_to_str(self.color));
+        nbt.insert("color", self.color.serialized_name());
 
         // Save glow
         nbt.insert("has_glowing_text", i8::from(self.has_glowing_text));
@@ -338,49 +338,5 @@ impl BlockEntity for SignBlockEntity {
             }
         }
         None
-    }
-}
-
-/// Converts a dye color to its string representation.
-const fn dye_color_to_str(color: DyeColor) -> &'static str {
-    match color {
-        DyeColor::White => "white",
-        DyeColor::Orange => "orange",
-        DyeColor::Magenta => "magenta",
-        DyeColor::LightBlue => "light_blue",
-        DyeColor::Yellow => "yellow",
-        DyeColor::Lime => "lime",
-        DyeColor::Pink => "pink",
-        DyeColor::Gray => "gray",
-        DyeColor::LightGray => "light_gray",
-        DyeColor::Cyan => "cyan",
-        DyeColor::Purple => "purple",
-        DyeColor::Blue => "blue",
-        DyeColor::Brown => "brown",
-        DyeColor::Green => "green",
-        DyeColor::Red => "red",
-        DyeColor::Black => "black",
-    }
-}
-
-/// Parses a dye color from its string representation.
-fn dye_color_from_str(s: &str) -> DyeColor {
-    match s {
-        "white" => DyeColor::White,
-        "orange" => DyeColor::Orange,
-        "magenta" => DyeColor::Magenta,
-        "light_blue" => DyeColor::LightBlue,
-        "yellow" => DyeColor::Yellow,
-        "lime" => DyeColor::Lime,
-        "pink" => DyeColor::Pink,
-        "gray" => DyeColor::Gray,
-        "light_gray" => DyeColor::LightGray,
-        "cyan" => DyeColor::Cyan,
-        "purple" => DyeColor::Purple,
-        "blue" => DyeColor::Blue,
-        "brown" => DyeColor::Brown,
-        "green" => DyeColor::Green,
-        "red" => DyeColor::Red,
-        _ => DyeColor::Black,
     }
 }
