@@ -1,15 +1,9 @@
 name: live_forever
 
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - v**
   repository_dispatch:
     types:
       - steel-released
-  workflow_dispatch:
 
 permissions:
   contents: read

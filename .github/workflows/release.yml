@@ -18,16 +18,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check version change
         id: version
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          previous=$(git show HEAD^:Cargo.toml | grep -m1 '^version' | sed 's/.*"\(.*\)".*/\1/')
           current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 
           echo "current=${current}" >> "$GITHUB_OUTPUT"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous=$(git show "${BEFORE_SHA}:Cargo.toml" | grep -m1 '^version' | sed 's/.*"\(.*\)".*/\1/')
           if [[ "${previous}" == "${current}" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
