@@ -159,6 +159,7 @@ impl Goal for FollowMobGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -178,7 +179,12 @@ mod tests {
     fn follow_mob_goal_requires_world() {
         init_test_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!goal.can_use(&mob));
     }
@@ -187,7 +193,12 @@ mod tests {
     fn follow_mob_goal_temporarily_removes_water_malus() {
         init_test_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         mob.set_pathfinding_malus(PathType::Water, 4.0);
 
         goal.start(&mob);
@@ -209,10 +220,15 @@ mod tests {
     fn follow_mob_goal_stops_when_no_navigation_is_running() {
         init_test_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         goal.following_mob = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         )));
@@ -224,10 +240,15 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_test_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         let following_mob: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
         ));

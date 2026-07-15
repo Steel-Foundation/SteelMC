@@ -36,6 +36,7 @@ impl Goal for FloatGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -60,7 +61,7 @@ mod tests {
         fn new(water_height: f64, lava_height: f64) -> Self {
             init_test_registry();
             let base = EntityBase::new(
-                1,
+                EntityId::new(1),
                 DVec3::ZERO,
                 vanilla_entities::PIG.dimensions,
                 Weak::new(),

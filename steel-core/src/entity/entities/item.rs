@@ -19,8 +19,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, EntitySyncedData,
-    ItemMergeEntity, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, EntityId,
+    EntitySyncedData, ItemMergeEntity, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -121,7 +121,12 @@ impl ItemEntity {
     ///
     /// Use `set_item()` to set the actual item after creation, or use `with_item()`.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self::with_item_and_velocity(
             entity_type,
             id,
@@ -136,7 +141,7 @@ impl ItemEntity {
     #[must_use]
     pub fn with_item(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         position: DVec3,
         item: ItemStack,
         world: Weak<World>,
@@ -157,7 +162,7 @@ impl ItemEntity {
     #[must_use]
     pub fn with_item_and_velocity(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         position: DVec3,
         item: ItemStack,
         velocity: DVec3,
@@ -341,7 +346,8 @@ impl ItemEntity {
             let pos = self.position();
             let chunk_pos = steel_utils::ChunkPos::from_entity_pos(pos);
 
-            let take_packet = CTakeItemEntity::new(self.id(), player.id(), picked_up_count);
+            let take_packet =
+                CTakeItemEntity::new(self.id().get(), player.id().get(), picked_up_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
 
@@ -553,7 +559,7 @@ impl Entity for ItemEntity {
         let horizontal_movement_sq = vel.x * vel.x + vel.z * vel.z;
         let should_move = !self.on_ground()
             || horizontal_movement_sq > 1.0e-5
-            || (self.tick_count() + self.id()) % 4 == 0;
+            || (self.tick_count() + self.id().get()) % 4 == 0;
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
@@ -797,7 +803,7 @@ mod tests {
         vanilla_entities, vanilla_items,
     };
 
-    use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
+    use crate::entity::{Entity, EntityId, ItemMergeEntity, damage::DamageSource};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -806,7 +812,7 @@ mod tests {
     fn item_entities_do_not_obstruct_block_placement() {
         let item = ItemEntity::new(
             &vanilla_entities::ITEM,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );
@@ -818,7 +824,7 @@ mod tests {
     fn item_lava_hurt_sound_uses_vanilla_interval() {
         let item = ItemEntity::new(
             &vanilla_entities::ITEM,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );
@@ -841,7 +847,7 @@ mod tests {
     fn item_with_stack_uses_vanilla_default_velocity() {
         let item = ItemEntity::with_item(
             &vanilla_entities::ITEM,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             ItemStack::new(&vanilla_items::ITEMS.stone),
             Weak::<World>::new(),
@@ -861,7 +867,7 @@ mod tests {
 
         let source = ItemEntity::with_item(
             &vanilla_entities::ITEM,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             ItemStack::with_count(&vanilla_items::ITEMS.stone, 10),
             Weak::<World>::new(),
@@ -871,7 +877,7 @@ mod tests {
 
         let target = ItemEntity::with_item(
             &vanilla_entities::ITEM,
-            2,
+            EntityId::new(2),
             DVec3::ZERO,
             ItemStack::with_count(&vanilla_items::ITEMS.stone, 20),
             Weak::<World>::new(),
@@ -892,7 +898,7 @@ mod tests {
     fn item_damage_truncates_after_fractional_subtraction() {
         let item = ItemEntity::new(
             &vanilla_entities::ITEM,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );

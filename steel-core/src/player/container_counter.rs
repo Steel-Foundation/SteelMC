@@ -1,3 +1,5 @@
+use crate::inventory::MenuId;
+
 /// Generates vanilla container IDs in the inclusive range 1..=100.
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct ContainerCounter {
@@ -10,21 +12,22 @@ impl ContainerCounter {
         Self { current: 0 }
     }
 
-    pub(super) const fn next(&mut self) -> u8 {
+    pub(super) const fn next(&mut self) -> MenuId {
         self.current = (self.current % 100) + 1;
-        self.current
+        MenuId::new(self.current)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::ContainerCounter;
+    use crate::inventory::MenuId;
 
     #[test]
     fn starts_at_one() {
         let mut counter = ContainerCounter::new();
 
-        assert_eq!(counter.next(), 1);
+        assert_eq!(counter.next(), MenuId::new(1));
     }
 
     #[test]
@@ -32,8 +35,8 @@ mod tests {
         let mut counter = ContainerCounter::new();
 
         for expected in 1..=100 {
-            assert_eq!(counter.next(), expected);
+            assert_eq!(counter.next(), MenuId::new(expected));
         }
-        assert_eq!(counter.next(), 1);
+        assert_eq!(counter.next(), MenuId::new(1));
     }
 }

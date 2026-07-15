@@ -72,6 +72,7 @@ impl Goal for RandomLookAroundGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use steel_registry::entity_type::EntityTypeRef;
@@ -94,7 +95,7 @@ mod tests {
             init_test_registry();
             Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     vanilla_entities::PIG.dimensions,
                     Weak::new(),

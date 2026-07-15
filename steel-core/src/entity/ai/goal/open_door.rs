@@ -55,6 +55,7 @@ impl Goal for OpenDoorGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -64,7 +65,12 @@ mod tests {
     use crate::entity::entities::PigEntity;
 
     fn pig() -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new())
+        PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        )
     }
 
     #[test]

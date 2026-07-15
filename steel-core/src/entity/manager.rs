@@ -15,8 +15,8 @@ use steel_utils::{ChunkPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
 use super::{
-    Entity, NullEntityCallback, RemovalReason, SharedEntity, snapshot_old_pos_and_rot_for_tick,
-    tick_vehicle_passengers_with_ticked_if,
+    Entity, EntityId, NullEntityCallback, RemovalReason, SharedEntity,
+    snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
 };
 
 /// Error returned when adding an entity to the runtime world fails.
@@ -25,21 +25,21 @@ pub enum AddEntityError {
     /// The entity is in a chunk that is not active in the world entity manager.
     ChunkNotLoaded {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
         /// Chunk containing the entity.
         chunk: ChunkPos,
     },
     /// Another live entity with the same persistent UUID is already registered.
     DuplicateUuid {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
         /// Duplicate persistent UUID.
         uuid: Uuid,
     },
     /// The entity is already removed and cannot be added to the live world.
     RemovedEntity {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
     },
 }
 
@@ -67,17 +67,17 @@ pub enum EntityMoveError {
     /// The entity is no longer managed as live world state.
     NotLive {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
     },
     /// The entity is deliberately frozen outside live world membership.
     Inactive {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
     },
     /// The entity tried to move into a chunk outside active world ownership.
     UnloadedDestination {
         /// Entity network ID.
-        entity_id: i32,
+        entity_id: EntityId,
         /// Destination chunk.
         chunk: ChunkPos,
     },
@@ -179,7 +179,7 @@ impl EntityLifecycleChanges {
 #[derive(Debug, Clone)]
 pub struct EntityMoveUpdate {
     /// Entity network ID.
-    pub entity_id: i32,
+    pub entity_id: EntityId,
     /// Previous section membership.
     pub old_section: SectionPos,
     /// New section membership.
@@ -246,7 +246,7 @@ impl EntityMoveUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsavedEntityReport {
     /// Entity network ID.
-    pub entity_id: i32,
+    pub entity_id: EntityId,
     /// Entity persistent UUID.
     pub uuid: Uuid,
     /// Chunk containing the entity.
@@ -316,10 +316,10 @@ impl EntityEntry {
 #[derive(Default)]
 struct ManagerState {
     chunk_visibility: FxHashMap<ChunkPos, EntityVisibility>,
-    live_by_id: FxHashMap<i32, EntityEntry>,
-    live_by_uuid: FxHashMap<Uuid, i32>,
-    by_section: FxHashMap<SectionPos, FxHashSet<i32>>,
-    by_chunk: FxHashMap<ChunkPos, FxHashSet<i32>>,
+    live_by_id: FxHashMap<EntityId, EntityEntry>,
+    live_by_uuid: FxHashMap<Uuid, EntityId>,
+    by_section: FxHashMap<SectionPos, FxHashSet<EntityId>>,
+    by_chunk: FxHashMap<ChunkPos, FxHashSet<EntityId>>,
     unloading_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     save_pending_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     tick_list: EntityTickList,
@@ -327,8 +327,8 @@ struct ManagerState {
 
 #[derive(Default)]
 struct EntityTickList {
-    active: FxHashMap<i32, SharedEntity>,
-    order: Vec<i32>,
+    active: FxHashMap<EntityId, SharedEntity>,
+    order: Vec<EntityId>,
 }
 
 impl EntityTickList {
@@ -341,13 +341,13 @@ impl EntityTickList {
         true
     }
 
-    fn remove(&mut self, entity_id: i32) -> Option<SharedEntity> {
+    fn remove(&mut self, entity_id: EntityId) -> Option<SharedEntity> {
         let removed = self.active.remove(&entity_id)?;
         self.order.retain(|id| *id != entity_id);
         Some(removed)
     }
 
-    fn contains(&self, entity_id: i32) -> bool {
+    fn contains(&self, entity_id: EntityId) -> bool {
         self.active.contains_key(&entity_id)
     }
 
@@ -442,7 +442,7 @@ impl WorldEntityManager {
 
     fn push_unique_entity(
         entity: &SharedEntity,
-        seen: &mut FxHashSet<i32>,
+        seen: &mut FxHashSet<EntityId>,
         entities: &mut Vec<SharedEntity>,
     ) {
         if seen.insert(entity.id()) {
@@ -526,11 +526,11 @@ impl WorldEntityManager {
 
     fn retain_unloading_entity_tree(
         state: &mut ManagerState,
-        entity_id: i32,
-        visited: &mut FxHashSet<i32>,
+        entity_id: EntityId,
+        visited: &mut FxHashSet<EntityId>,
         retained: &mut Vec<EntityEntry>,
         retained_entities: &mut Vec<SharedEntity>,
-        tracking_stopped_ids: &mut FxHashSet<i32>,
+        tracking_stopped_ids: &mut FxHashSet<EntityId>,
         tracking_stopped: &mut Vec<SharedEntity>,
     ) {
         if !visited.insert(entity_id) {
@@ -712,7 +712,7 @@ impl WorldEntityManager {
     /// Removes a live entity for an explicit entity removal reason.
     pub fn remove_live_entity(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         reason: RemovalReason,
     ) -> Option<SharedEntity> {
         let mut state = self.state.write();
@@ -731,7 +731,7 @@ impl WorldEntityManager {
     }
 
     /// Acknowledges that selected save-pending entities for `chunk` were persisted.
-    pub fn on_chunk_saved(&self, chunk: ChunkPos, saved_entity_ids: &[i32]) {
+    pub fn on_chunk_saved(&self, chunk: ChunkPos, saved_entity_ids: &[EntityId]) {
         if saved_entity_ids.is_empty() {
             return;
         }
@@ -759,7 +759,11 @@ impl WorldEntityManager {
     }
 
     /// Validates that a live entity can move to `new_pos`.
-    pub fn validate_move(&self, entity_id: i32, new_pos: DVec3) -> Result<(), EntityMoveError> {
+    pub fn validate_move(
+        &self,
+        entity_id: EntityId,
+        new_pos: DVec3,
+    ) -> Result<(), EntityMoveError> {
         let state = self.state.read();
         let Some(entry) = state.live_by_id.get(&entity_id) else {
             return Err(EntityMoveError::NotLive { entity_id });
@@ -782,7 +786,7 @@ impl WorldEntityManager {
     /// Commits manager indexes after a live entity position change.
     pub fn commit_move(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         new_pos: DVec3,
     ) -> Result<EntityMoveUpdate, EntityMoveError> {
         let mut state = self.state.write();
@@ -913,7 +917,7 @@ impl WorldEntityManager {
 
     #[must_use]
     /// Gets a live entity by session network ID.
-    pub fn get_by_id(&self, entity_id: i32) -> Option<SharedEntity> {
+    pub fn get_by_id(&self, entity_id: EntityId) -> Option<SharedEntity> {
         self.state
             .read()
             .live_by_id
@@ -937,7 +941,7 @@ impl WorldEntityManager {
 
     #[must_use]
     /// Gets a live entity by session network ID if it is visible to vanilla gameplay lookups.
-    pub fn get_accessible_by_id(&self, entity_id: i32) -> Option<SharedEntity> {
+    pub fn get_accessible_by_id(&self, entity_id: EntityId) -> Option<SharedEntity> {
         let state = self.state.read();
         let entry = state.live_by_id.get(&entity_id)?;
         Self::is_accessible(&state, entry).then(|| entry.entity.clone())
@@ -1239,7 +1243,7 @@ impl WorldEntityManager {
         self.state.read().tick_list.snapshot()
     }
 
-    fn live_manager_owned_entity_chunk(&self, entity_id: i32) -> Option<ChunkPos> {
+    fn live_manager_owned_entity_chunk(&self, entity_id: EntityId) -> Option<ChunkPos> {
         self.state
             .read()
             .live_by_id
@@ -1278,7 +1282,7 @@ impl WorldEntityManager {
 
     fn apply_entity_lifecycle_after_insert(
         state: &mut ManagerState,
-        entity_id: i32,
+        entity_id: EntityId,
     ) -> EntityLifecycleChanges {
         let Some(entry) = state.live_by_id.get(&entity_id) else {
             return EntityLifecycleChanges::default();
@@ -1419,7 +1423,7 @@ impl WorldEntityManager {
     fn tick_non_passenger(
         &self,
         entity: &SharedEntity,
-        ticked_entities: &mut FxHashSet<i32>,
+        ticked_entities: &mut FxHashSet<EntityId>,
         dirty_chunks: &mut FxHashSet<ChunkPos>,
     ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
@@ -1432,7 +1436,7 @@ impl WorldEntityManager {
     fn tick_vehicle_passengers_with_ticked(
         &self,
         vehicle: &dyn Entity,
-        ticked_entities: &mut FxHashSet<i32>,
+        ticked_entities: &mut FxHashSet<EntityId>,
         dirty_chunks: &mut FxHashSet<ChunkPos>,
     ) {
         let mut post_tick = |entity: &SharedEntity| {
@@ -1452,7 +1456,7 @@ impl WorldEntityManager {
         }
     }
 
-    fn can_tick_entity_now(&self, entity_id: i32) -> bool {
+    fn can_tick_entity_now(&self, entity_id: EntityId) -> bool {
         let state = self.state.read();
         let Some(entry) = state.live_by_id.get(&entity_id) else {
             return false;
@@ -1508,7 +1512,7 @@ impl WorldEntityManager {
                 .any(|entry| entry.uuid == uuid)
     }
 
-    fn contains_id(state: &ManagerState, entity_id: i32) -> bool {
+    fn contains_id(state: &ManagerState, entity_id: EntityId) -> bool {
         state.live_by_id.contains_key(&entity_id)
             || state
                 .unloading_by_chunk
@@ -1524,7 +1528,7 @@ impl WorldEntityManager {
 
     fn push_saveable_entity(
         result: &mut Vec<SharedEntity>,
-        seen_ids: &mut FxHashSet<i32>,
+        seen_ids: &mut FxHashSet<EntityId>,
         seen_uuids: &mut FxHashSet<Uuid>,
         entry: &EntityEntry,
     ) {
@@ -1541,7 +1545,7 @@ impl WorldEntityManager {
 
     fn push_unsaved_entity_report(
         saved_chunks: &FxHashSet<ChunkPos>,
-        seen: &mut FxHashSet<i32>,
+        seen: &mut FxHashSet<EntityId>,
         reports: &mut Vec<UnsavedEntityReport>,
         entry: &EntityEntry,
     ) {
@@ -1559,7 +1563,7 @@ impl WorldEntityManager {
         });
     }
 
-    fn remove_live_entry(state: &mut ManagerState, entity_id: i32) -> Option<EntityEntry> {
+    fn remove_live_entry(state: &mut ManagerState, entity_id: EntityId) -> Option<EntityEntry> {
         let entry = state.live_by_id.remove(&entity_id)?;
         state.tick_list.remove(entity_id);
         state.live_by_uuid.remove(&entry.uuid);
@@ -1568,7 +1572,7 @@ impl WorldEntityManager {
         Some(entry)
     }
 
-    fn remove_from_section(state: &mut ManagerState, section: SectionPos, entity_id: i32) {
+    fn remove_from_section(state: &mut ManagerState, section: SectionPos, entity_id: EntityId) {
         let remove_section = if let Some(entity_ids) = state.by_section.get_mut(&section) {
             entity_ids.remove(&entity_id);
             entity_ids.is_empty()
@@ -1580,7 +1584,7 @@ impl WorldEntityManager {
         }
     }
 
-    fn remove_from_chunk(state: &mut ManagerState, chunk: ChunkPos, entity_id: i32) {
+    fn remove_from_chunk(state: &mut ManagerState, chunk: ChunkPos, entity_id: EntityId) {
         let remove_chunk = if let Some(entity_ids) = state.by_chunk.get_mut(&chunk) {
             entity_ids.remove(&entity_id);
             entity_ids.is_empty()
@@ -1619,19 +1623,19 @@ mod tests {
     }
 
     impl ManagerTestEntity {
-        fn shared(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>, uuid: Uuid, position: DVec3) -> SharedEntity {
             Self::shared_with_type(id, uuid, position, &vanilla_entities::ITEM)
         }
 
         fn shared_with_type(
-            id: i32,
+            id: impl Into<EntityId>,
             uuid: Uuid,
             position: DVec3,
             entity_type: EntityTypeRef,
         ) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    id.into(),
                     uuid,
                     position,
                     entity_type.dimensions,
@@ -1642,10 +1646,14 @@ mod tests {
             })
         }
 
-        fn shared_always_ticking(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+        fn shared_always_ticking(
+            id: impl Into<EntityId>,
+            uuid: Uuid,
+            position: DVec3,
+        ) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    id.into(),
                     uuid,
                     position,
                     vanilla_entities::ITEM.dimensions,
@@ -1665,7 +1673,7 @@ mod tests {
 
     impl MovingTickTestEntity {
         fn shared(
-            id: i32,
+            id: impl Into<EntityId>,
             uuid: Uuid,
             position: DVec3,
             tick_position: DVec3,
@@ -1673,7 +1681,7 @@ mod tests {
         ) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    id.into(),
                     uuid,
                     position,
                     vanilla_entities::ITEM.dimensions,
@@ -1713,7 +1721,7 @@ mod tests {
 
     impl AddDuringTickTestEntity {
         fn shared(
-            id: i32,
+            id: impl Into<EntityId>,
             uuid: Uuid,
             position: DVec3,
             manager: Arc<WorldEntityManager>,
@@ -1721,7 +1729,7 @@ mod tests {
         ) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    id.into(),
                     uuid,
                     position,
                     vanilla_entities::ITEM.dimensions,
@@ -1763,10 +1771,10 @@ mod tests {
     }
 
     impl DespawnOnCheckTestEntity {
-        fn shared(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>, uuid: Uuid, position: DVec3) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    id.into(),
                     uuid,
                     position,
                     vanilla_entities::ITEM.dimensions,
@@ -1808,7 +1816,7 @@ mod tests {
         }
     }
 
-    fn entity(id: i32, uuid_seed: u128, position: DVec3) -> SharedEntity {
+    fn entity(id: impl Into<EntityId>, uuid_seed: u128, position: DVec3) -> SharedEntity {
         ManagerTestEntity::shared(id, Uuid::from_u128(uuid_seed), position)
     }
 
@@ -1861,7 +1869,7 @@ mod tests {
         ));
 
         let aabb = WorldAabb::new(0.0, 63.0, 0.0, 5.0, 66.0, 3.0);
-        let result = manager.get_entities_in_aabb_matching(&aabb, |entity| entity.id() == 2);
+        let result = manager.get_entities_in_aabb_matching(&aabb, |entity| entity.id().get() == 2);
 
         assert_eq!(result.len(), 1);
         assert!(Arc::ptr_eq(&result[0], &second));
@@ -1940,12 +1948,16 @@ mod tests {
         }
 
         let loaded_aabb = WorldAabb::new(0.0, 63.0, 0.0, 5.0, 66.0, 3.0);
-        assert!(manager.has_entity_in_aabb_matching(&loaded_aabb, |entity| entity.id() == 2));
-        assert!(!manager.has_entity_in_aabb_matching(&loaded_aabb, |entity| entity.id() == 3));
+        assert!(manager.has_entity_in_aabb_matching(&loaded_aabb, |entity| entity.id().get() == 2));
+        assert!(
+            !manager.has_entity_in_aabb_matching(&loaded_aabb, |entity| entity.id().get() == 3)
+        );
 
         manager.begin_chunk_unload(hidden_chunk);
         let hidden_aabb = WorldAabb::new(16.0, 63.0, 0.0, 18.0, 66.0, 3.0);
-        assert!(!manager.has_entity_in_aabb_matching(&hidden_aabb, |entity| entity.id() == 3));
+        assert!(
+            !manager.has_entity_in_aabb_matching(&hidden_aabb, |entity| entity.id().get() == 3)
+        );
     }
 
     #[test]
@@ -1968,8 +1980,8 @@ mod tests {
         let aabb = WorldAabb::new(2.0, 63.0, 0.0, 4.0, 66.0, 3.0);
         let mut saw_outside_entity = false;
         let result = manager.get_entity_bounding_boxes_in_aabb_matching(&aabb, |entity| {
-            saw_outside_entity |= entity.id() == 3;
-            entity.id() > 1
+            saw_outside_entity |= entity.id().get() == 3;
+            entity.id().get() > 1
         });
 
         assert_eq!(result, vec![expected_box]);
@@ -1993,8 +2005,8 @@ mod tests {
         }
 
         let aabb = WorldAabb::new(0.0, 63.0, 0.0, 10.0, 66.0, 3.0);
-        let result =
-            manager.nearest_entity_in_aabb_matching(&aabb, DVec3::ZERO, |entity| entity.id() > 1);
+        let result = manager
+            .nearest_entity_in_aabb_matching(&aabb, DVec3::ZERO, |entity| entity.id().get() > 1);
 
         let Some(result) = result else {
             panic!("nearest matching entity should be found");
@@ -2010,9 +2022,9 @@ mod tests {
         assert!(matches!(
             manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned),
             Err(AddEntityError::ChunkNotLoaded {
-                entity_id: 1,
+                entity_id,
                 chunk,
-            }) if chunk == ChunkPos::new(0, 0)
+            }) if entity_id == EntityId::new(1) && chunk == ChunkPos::new(0, 0)
         ));
         assert_eq!(manager.count(), 0);
         assert!(manager.get_by_id(entity.id()).is_none());
@@ -2053,16 +2065,16 @@ mod tests {
         assert!(matches!(
             manager.add_live_entity(second, EntityOwnership::ManagerOwned),
             Err(AddEntityError::DuplicateUuid {
-                entity_id: 2,
+                entity_id,
                 uuid: duplicate,
-            }) if duplicate == uuid
+            }) if entity_id == EntityId::new(2) && duplicate == uuid
         ));
 
-        let Some(live_first) = manager.get_by_id(1) else {
+        let Some(live_first) = manager.get_by_id(EntityId::new(1)) else {
             panic!("first entity should stay registered");
         };
         assert!(Arc::ptr_eq(&first, &live_first));
-        assert!(manager.get_by_id(2).is_none());
+        assert!(manager.get_by_id(EntityId::new(2)).is_none());
         assert_eq!(manager.count(), 1);
     }
 
@@ -2089,12 +2101,12 @@ mod tests {
                 EntityOwnership::ManagerOwned,
             ),
             Err(AddEntityError::DuplicateUuid {
-                entity_id: 3,
+                entity_id,
                 uuid,
-            }) if uuid == existing_uuid
+            }) if entity_id == EntityId::new(3) && uuid == existing_uuid
         ));
-        assert!(manager.get_by_id(2).is_none());
-        assert!(manager.get_by_id(3).is_none());
+        assert!(manager.get_by_id(EntityId::new(2)).is_none());
+        assert!(manager.get_by_id(EntityId::new(3)).is_none());
         assert_eq!(manager.count(), 1);
     }
 
@@ -2167,9 +2179,9 @@ mod tests {
         assert!(matches!(
             manager.validate_move(entity.id(), new_position),
             Err(EntityMoveError::UnloadedDestination {
-                entity_id: 1,
+                entity_id,
                 chunk,
-            }) if chunk == ChunkPos::new(1, 0)
+            }) if entity_id == EntityId::new(1) && chunk == ChunkPos::new(1, 0)
         ));
         assert_eq!(manager.live_entities_in_chunk(ChunkPos::new(0, 0)).len(), 1);
         assert!(
@@ -2202,9 +2214,9 @@ mod tests {
         assert!(matches!(
             manager.commit_move(entity.id(), new_position),
             Err(EntityMoveError::UnloadedDestination {
-                entity_id: 1,
+                entity_id,
                 chunk,
-            }) if chunk == ChunkPos::new(1, 0)
+            }) if entity_id == EntityId::new(1) && chunk == ChunkPos::new(1, 0)
         ));
         assert_eq!(manager.live_entities_in_chunk(ChunkPos::new(0, 0)).len(), 1);
         assert!(
@@ -2317,14 +2329,17 @@ mod tests {
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
         retained_ids.sort_unstable();
-        assert_eq!(retained_ids, vec![1, 2]);
+        assert_eq!(retained_ids, vec![EntityId::new(1), EntityId::new(2)]);
         let mut tracking_stopped_ids = unload
             .tracking_stopped
             .iter()
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
         tracking_stopped_ids.sort_unstable();
-        assert_eq!(tracking_stopped_ids, vec![1, 2]);
+        assert_eq!(
+            tracking_stopped_ids,
+            vec![EntityId::new(1), EntityId::new(2)]
+        );
         assert!(manager.get_by_id(vehicle.id()).is_none());
         assert!(manager.get_by_id(passenger.id()).is_none());
         assert!(manager.live_entities_in_chunk(passenger_chunk).is_empty());
@@ -2335,7 +2350,7 @@ mod tests {
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
         saveable_ids.sort_unstable();
-        assert_eq!(saveable_ids, vec![1]);
+        assert_eq!(saveable_ids, vec![EntityId::new(1)]);
 
         manager.finalize_chunk_unload(vehicle_chunk);
         assert!(vehicle.is_removed());
@@ -2796,7 +2811,7 @@ mod tests {
         );
         assert!(
             manager
-                .remove_live_entity(1, RemovalReason::UnloadedToChunk)
+                .remove_live_entity(EntityId::new(1), RemovalReason::UnloadedToChunk)
                 .is_some()
         );
 
@@ -2805,9 +2820,9 @@ mod tests {
         assert!(matches!(
             manager.add_live_entity(duplicate, EntityOwnership::ManagerOwned),
             Err(AddEntityError::DuplicateUuid {
-                entity_id: 2,
+                entity_id,
                 uuid: duplicate_uuid,
-            }) if duplicate_uuid == uuid
+            }) if entity_id == EntityId::new(2) && duplicate_uuid == uuid
         ));
     }
 
@@ -2826,7 +2841,7 @@ mod tests {
         );
         assert!(
             manager
-                .remove_live_entity(1, RemovalReason::UnloadedToChunk)
+                .remove_live_entity(EntityId::new(1), RemovalReason::UnloadedToChunk)
                 .is_some()
         );
 
@@ -2854,9 +2869,9 @@ mod tests {
         assert!(matches!(
             manager.add_live_entity(duplicate, EntityOwnership::ManagerOwned),
             Err(AddEntityError::DuplicateUuid {
-                entity_id: 2,
+                entity_id,
                 uuid: duplicate_uuid,
-            }) if duplicate_uuid == uuid
+            }) if entity_id == EntityId::new(2) && duplicate_uuid == uuid
         ));
     }
 

@@ -6,15 +6,17 @@ use steel_registry::{
     vanilla_damage_type_tags,
 };
 
+use crate::entity::EntityId;
+
 /// Describes how an entity was damaged.
 #[derive(Debug, Clone)]
 pub struct DamageSource {
     /// The damage type registry entry.
     pub damage_type: &'static DamageType,
     /// The entity ultimately responsible (e.g. the shooter for projectiles).
-    pub causing_entity_id: Option<i32>,
+    pub causing_entity_id: Option<EntityId>,
     /// The entity that directly dealt the damage (e.g. the projectile itself).
-    pub direct_entity_id: Option<i32>,
+    pub direct_entity_id: Option<EntityId>,
     /// Source position (for explosions, etc.).
     pub source_position: Option<DVec3>,
 }
@@ -33,14 +35,14 @@ impl DamageSource {
 
     /// Adds the entity ultimately responsible for the damage.
     #[must_use]
-    pub const fn with_causing_entity(mut self, entity_id: i32) -> Self {
+    pub const fn with_causing_entity(mut self, entity_id: EntityId) -> Self {
         self.causing_entity_id = Some(entity_id);
         self
     }
 
     /// Adds the direct entity that delivered the damage.
     #[must_use]
-    pub const fn with_direct_entity(mut self, entity_id: i32) -> Self {
+    pub const fn with_direct_entity(mut self, entity_id: EntityId) -> Self {
         self.direct_entity_id = Some(entity_id);
         self
     }

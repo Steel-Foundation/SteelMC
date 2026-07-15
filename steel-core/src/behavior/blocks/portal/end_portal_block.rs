@@ -178,6 +178,7 @@ mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::behavior::{BlockStateBehaviorExt, init_behaviors};
     use crate::block_entity::entities::{EndGatewayBlockEntity, EndPortalBlockEntity};
+    use crate::entity::EntityId;
     use crate::entity::{Entity, EntityBase};
     use crate::portal::PortalKind;
     use crate::test_support::TestLevel;
@@ -225,7 +226,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::new(),

@@ -98,9 +98,9 @@ use crate::{
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
-        AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
-        EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
-        InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
+        AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityId,
+        EntityLifecycleChanges, EntityMovementSyncPacket, EntityOwnership, EntityTracker,
+        EntityVisibility, InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
         WorldEntityManager, entities::ItemEntity,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
@@ -348,7 +348,7 @@ pub struct WorldConfig {
 }
 
 struct NavigatingMobTracker {
-    ids: SyncMutex<FxHashSet<i32>>,
+    ids: SyncMutex<FxHashSet<EntityId>>,
 }
 
 impl NavigatingMobTracker {
@@ -364,11 +364,11 @@ impl NavigatingMobTracker {
         }
     }
 
-    fn untrack(&self, entity_id: i32) {
+    fn untrack(&self, entity_id: EntityId) {
         self.ids.lock().remove(&entity_id);
     }
 
-    fn ids(&self) -> Vec<i32> {
+    fn ids(&self) -> Vec<EntityId> {
         self.ids.lock().iter().copied().collect()
     }
 }
@@ -1897,7 +1897,7 @@ impl World {
         }
     }
 
-    fn navigating_mob_ids(&self) -> Vec<i32> {
+    fn navigating_mob_ids(&self) -> Vec<EntityId> {
         self.navigating_mobs.ids()
     }
 
@@ -2166,8 +2166,8 @@ impl World {
                         };
                         player.connection.send_encoded(encoded);
                     },
-                    entity_data: |entity_id, dirty_entity_data| {
-                        let packet = CSetEntityData::new(entity_id, dirty_entity_data);
+                    entity_data: |entity_id: EntityId, dirty_entity_data| {
+                        let packet = CSetEntityData::new(entity_id.get(), dirty_entity_data);
                         let Ok(encoded) = EncodedPacket::from_bare(
                             packet,
                             self.compression,
@@ -2180,8 +2180,8 @@ impl World {
                             player.connection.send_encoded(encoded);
                         }
                     },
-                    attributes: |entity_id, dirty_attributes| {
-                        let packet = CUpdateAttributes::new(entity_id, dirty_attributes);
+                    attributes: |entity_id: EntityId, dirty_attributes| {
+                        let packet = CUpdateAttributes::new(entity_id.get(), dirty_attributes);
                         let Ok(encoded) = EncodedPacket::from_bare(
                             packet,
                             self.compression,
@@ -2771,7 +2771,7 @@ impl World {
     }
 
     /// Broadcasts a packet to all players in the world except one (identified by entity ID).
-    pub fn broadcast_to_all_except<P: ClientPacket>(&self, packet: P, exclude: i32) {
+    pub fn broadcast_to_all_except<P: ClientPacket>(&self, packet: P, exclude: EntityId) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -2806,7 +2806,7 @@ impl World {
     }
 
     /// Broadcasts an already-encoded packet to all players except one.
-    pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: i32) {
+    pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: EntityId) {
         self.players.iter_players(|_, player| {
             if player.id() != exclude {
                 player.connection.send_encoded(packet.clone());
@@ -2834,7 +2834,7 @@ impl World {
         &self,
         chunk: ChunkPos,
         packet: P,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -2851,7 +2851,7 @@ impl World {
         &self,
         chunk: ChunkPos,
         packet: EncodedPacket,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         let tracking_players = self.get_packet_tracking_players(chunk);
         for entity_id in tracking_players {
@@ -2865,7 +2865,7 @@ impl World {
     }
 
     /// Returns players whose view includes the chunk and whose client has the base chunk packet.
-    pub fn get_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
+    pub fn get_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<EntityId> {
         self.player_area_map
             .get_tracking_players(chunk)
             .into_iter()
@@ -2878,7 +2878,7 @@ impl World {
     }
 
     /// Returns players on the tracked border of a chunk whose client has its base chunk packet.
-    pub fn get_light_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
+    pub fn get_light_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<EntityId> {
         self.player_area_map
             .get_tracking_players(chunk)
             .into_iter()
@@ -2932,9 +2932,9 @@ impl World {
     /// Broadcasts a packet to players currently tracking an entity.
     pub fn broadcast_to_entity_trackers<P: ClientPacket>(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         packet: P,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -2947,9 +2947,9 @@ impl World {
     /// Broadcasts a packet to players tracking an entity, excluding several players.
     pub fn broadcast_to_entity_trackers_except_many<P: ClientPacket>(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         packet: P,
-        excluded_player_ids: &[i32],
+        excluded_player_ids: &[EntityId],
     ) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -2970,9 +2970,9 @@ impl World {
     /// Broadcasts an entity movement sync packet to players currently tracking an entity.
     pub fn broadcast_movement_sync_to_entity_trackers(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         packet: EntityMovementSyncPacket,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         let Some(encoded) = self.encode_movement_sync_packet(packet) else {
             return;
@@ -2983,9 +2983,9 @@ impl World {
     /// Broadcasts an already-encoded packet to players currently tracking an entity.
     pub fn broadcast_to_entity_trackers_encoded(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         packet: EncodedPacket,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
             if Some(player_id) == exclude {
@@ -3045,13 +3045,13 @@ impl World {
         clippy::cast_sign_loss,
         reason = "value is clamped to -1..=9 before cast; -1 wraps intentionally to 255 as sentinel"
     )]
-    pub fn broadcast_block_destruction(&self, entity_id: i32, pos: BlockPos, progress: i32) {
+    pub fn broadcast_block_destruction(&self, entity_id: EntityId, pos: BlockPos, progress: i32) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x()),
             SectionPos::block_to_section_coord(pos.z()),
         );
         let packet = CBlockDestruction {
-            id: entity_id,
+            id: entity_id.get(),
             pos,
             progress: progress.clamp(-1, 9) as u8,
         };
@@ -3775,7 +3775,13 @@ impl World {
     /// * `pos` - The position where the event occurs
     /// * `data` - Event-specific data (e.g., block state ID for block destruction)
     /// * `exclude` - Optional entity ID to exclude from receiving the event
-    pub fn level_event(&self, event_type: i32, pos: BlockPos, data: i32, exclude: Option<i32>) {
+    pub fn level_event(
+        &self,
+        event_type: i32,
+        pos: BlockPos,
+        data: i32,
+        exclude: Option<EntityId>,
+    ) {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
         let chunk = ChunkPos::new(
@@ -3846,7 +3852,12 @@ impl World {
     /// * `pos` - The position of the destroyed block
     /// * `block_state_id` - The block state ID of the destroyed block
     /// * `exclude` - Optional entity ID to exclude from receiving the event
-    pub fn destroy_block_effect(&self, pos: BlockPos, block_state_id: u32, exclude: Option<i32>) {
+    pub fn destroy_block_effect(
+        &self,
+        pos: BlockPos,
+        block_state_id: u32,
+        exclude: Option<EntityId>,
+    ) {
         self.level_event(
             level_events::PARTICLES_DESTROY_BLOCK,
             pos,
@@ -4023,7 +4034,7 @@ impl World {
         pos: BlockPos,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         self.play_sound_at(
             sound,
@@ -4047,7 +4058,7 @@ impl World {
         pos: DVec3,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
@@ -4166,7 +4177,7 @@ impl World {
         pos: BlockPos,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         self.play_sound(sound, SoundSource::Blocks, pos, volume, pitch, exclude);
     }
@@ -4197,7 +4208,7 @@ impl World {
         self.track_navigating_mob(entity);
     }
 
-    pub(crate) fn remove_entity_from_tracker(&self, entity_id: i32) {
+    pub(crate) fn remove_entity_from_tracker(&self, entity_id: EntityId) {
         self.entity_tracker.remove(entity_id, |player_id| {
             self.players.get_by_entity_id(player_id)
         });
@@ -4220,7 +4231,7 @@ impl World {
         self.navigating_mobs.track(entity);
     }
 
-    fn untrack_navigating_mob(&self, entity_id: i32) {
+    fn untrack_navigating_mob(&self, entity_id: EntityId) {
         self.navigating_mobs.untrack(entity_id);
     }
 
@@ -4278,7 +4289,7 @@ impl World {
                 tracing::warn!(
                     source_chunk = ?source_chunk,
                     ?persisted_status,
-                    root_id,
+                    root_id = root_id.get(),
                     uuid = ?root_uuid,
                     entity_type = ?root_type.key,
                     position = ?root_pos,
@@ -4330,7 +4341,7 @@ impl World {
 
     fn collect_loaded_entity_tree(
         entity: &SharedEntity,
-        seen: &mut FxHashSet<i32>,
+        seen: &mut FxHashSet<EntityId>,
         tree: &mut Vec<SharedEntity>,
     ) {
         if !seen.insert(entity.id()) {
@@ -4568,7 +4579,7 @@ impl World {
     ///
     /// Returns `None` if the entity is not live in the world.
     #[must_use]
-    pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
+    pub fn get_entity_by_id(&self, id: EntityId) -> Option<SharedEntity> {
         self.entity_manager.get_by_id(id)
     }
 
@@ -4591,7 +4602,7 @@ impl World {
     ///
     /// Returns `None` if the entity is not live or is hidden in an inaccessible chunk.
     #[must_use]
-    pub fn get_accessible_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
+    pub fn get_accessible_entity_by_id(&self, id: EntityId) -> Option<SharedEntity> {
         self.entity_manager.get_accessible_by_id(id)
     }
 
@@ -4883,7 +4894,7 @@ impl LevelAccessor for Arc<World> {
         pos: BlockPos,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         self.as_ref()
             .play_block_sound(sound, pos, volume, pitch, exclude);
@@ -4971,7 +4982,7 @@ mod tests {
         fn shared(id: i32) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::with_uuid(
-                    id,
+                    EntityId::new(id),
                     Uuid::from_u128(id as u128),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
@@ -5068,7 +5079,7 @@ mod tests {
         let non_pathfinder = TrackerTestEntity::shared(1);
         let pig: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::ZERO,
             Weak::new(),
         ));
@@ -5078,9 +5089,9 @@ mod tests {
 
         tracker.track(&pig);
         tracker.track(&pig);
-        assert_eq!(tracker.ids(), [2]);
+        assert_eq!(tracker.ids(), [EntityId::new(2)]);
 
-        tracker.untrack(2);
+        tracker.untrack(EntityId::new(2));
         assert!(tracker.ids().is_empty());
     }
 

@@ -435,11 +435,11 @@ fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
 /// This is the primary way to get entity IDs for spawning entities.
 /// Thread-safe through the shared counter lock.
 #[must_use]
-pub fn next_entity_id() -> i32 {
+pub fn next_entity_id() -> EntityId {
     let mut counter = ENTITY_COUNTER.lock();
     let id = *counter;
     *counter = counter.wrapping_add(1);
-    id
+    EntityId::new(id)
 }
 
 fn apply_block_effect_segment(
@@ -697,6 +697,7 @@ mod callback;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
+mod id;
 pub mod villager;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -736,6 +737,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub use fluid_contact::EntityFluidContact;
+pub use id::EntityId;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
@@ -864,7 +866,7 @@ fn change_non_player_entity_world(
 
     let Some(source_world) = entity.level() else {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             "Ignoring world change for entity without a live world"
         );
@@ -899,7 +901,7 @@ fn teleport_entity_same_world(
         TeleportPositionCommit::Managed,
     ) {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             position = ?teleport_transition.position,
             "Failed to commit same-world portal teleport for entity: {error}"
@@ -927,7 +929,7 @@ fn send_teleport_transition_to_riding_players(
         };
         let packet = if Some(passenger.id()) == controller_id {
             CTeleportEntity::new(
-                entity.id(),
+                entity.id().get(),
                 teleport_transition.position,
                 teleport_transition.velocity,
                 teleport_transition.rotation.0,
@@ -938,7 +940,7 @@ fn send_teleport_transition_to_riding_players(
         } else {
             let rotation = entity.rotation();
             CTeleportEntity::new(
-                entity.id(),
+                entity.id().get(),
                 entity.position(),
                 entity.velocity(),
                 rotation.0,
@@ -954,7 +956,7 @@ fn send_teleport_transition_to_riding_players(
 fn indirect_passengers(entity: &dyn Entity) -> Vec<SharedEntity> {
     fn collect(
         passengers: Vec<SharedEntity>,
-        visited: &mut FxHashSet<i32>,
+        visited: &mut FxHashSet<EntityId>,
         output: &mut Vec<SharedEntity>,
     ) {
         for passenger in passengers {
@@ -984,7 +986,7 @@ fn teleport_entity_cross_world(
         .has_full_chunk(target_chunk)
     {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             chunk = ?target_chunk,
             "Ignoring dimension transition for entity because target chunk is not loaded"
@@ -1006,7 +1008,7 @@ fn teleport_entity_cross_world(
     let projectile_owner = entity.projectile_owner();
     let Some(persistent) = ChunkStorage::entity_to_dimension_transition_persistent(&entity) else {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             "Failed to serialize entity for dimension transition"
         );
@@ -1021,7 +1023,7 @@ fn teleport_entity_cross_world(
     );
     let Some(new_entity) = new_entities.drain(..).next() else {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             "Failed to recreate entity for dimension transition"
         );
@@ -1037,7 +1039,7 @@ fn teleport_entity_cross_world(
         TeleportPositionCommit::Local,
     ) {
         tracing::warn!(
-            entity_id = entity.id(),
+            entity_id = entity.id().get(),
             entity_type = ?entity.entity_type().key,
             position = ?teleport_transition.position,
             "Failed to stage dimension transition position for entity: {error}"
@@ -1050,8 +1052,8 @@ fn teleport_entity_cross_world(
         .try_add_entity(Arc::clone(&new_entity))
     {
         tracing::warn!(
-            entity_id = entity.id(),
-            new_entity_id = new_entity.id(),
+            entity_id = entity.id().get(),
+            new_entity_id = new_entity.id().get(),
             entity_type = ?new_entity.entity_type().key,
             position = ?new_entity.position(),
             "Failed to register dimension-transition entity: {error}"
@@ -1461,7 +1463,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     }
 
     /// Gets the entity's unique network ID (session-local).
-    fn id(&self) -> i32 {
+    fn id(&self) -> EntityId {
         self.base().id()
     }
 
@@ -1739,7 +1741,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     fn count_player_passengers(&self) -> usize {
         fn count_passenger_tree(
             passengers: Vec<SharedEntity>,
-            visited: &mut FxHashSet<i32>,
+            visited: &mut FxHashSet<EntityId>,
         ) -> usize {
             let mut total = 0;
             for passenger in passengers {
@@ -1895,7 +1897,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
     ///
     /// Mirrors vanilla `Entity.getRootVehicle` using session IDs for object identity.
-    fn root_vehicle_id(&self) -> i32 {
+    fn root_vehicle_id(&self) -> EntityId {
         self.root_vehicle().map_or(self.id(), |entity| entity.id())
     }
 
@@ -3876,7 +3878,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         world.broadcast_to_nearby(
             ChunkPos::from_entity_pos(self.position()),
             CEntityEvent {
-                entity_id: self.id(),
+                entity_id: self.id().get(),
                 event,
             },
             None,
@@ -4572,7 +4574,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let Some(world) = self.level() else {
             tracing::warn!(
-                entity_id = self.id(),
+                entity_id = self.id().get(),
                 entity_type = ?self.entity_type().key,
                 "Ignoring world change for entity without a live world"
             );
@@ -4580,7 +4582,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         };
         let Some(entity) = world.get_entity_by_id(self.id()) else {
             tracing::warn!(
-                entity_id = self.id(),
+                entity_id = self.id().get(),
                 entity_type = ?self.entity_type().key,
                 "Ignoring world change for entity that is not live in its world"
             );
@@ -4680,7 +4682,7 @@ pub trait LivingEntity: Entity {
             InteractionHand::MainHand => AnimateAction::SwingMainHand,
             InteractionHand::OffHand => AnimateAction::SwingOffHand,
         };
-        let packet = CAnimate::new(self.id(), action);
+        let packet = CAnimate::new(self.id().get(), action);
         let exclude = if update_self { None } else { Some(self.id()) };
         world.broadcast_to_entity_trackers(self.id(), packet.clone(), exclude);
         if update_self && let Some(player) = self.as_player() {
@@ -5203,10 +5205,10 @@ pub trait LivingEntity: Entity {
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
             CDamageEvent {
-                entity_id: self.id(),
+                entity_id: self.id().get(),
                 source_type_id: source.damage_type.id() as i32,
-                source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
-                source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
+                source_cause_id: source.causing_entity_id.map_or(0, |id| id.get() + 1),
+                source_direct_id: source.direct_entity_id.map_or(0, |id| id.get() + 1),
                 source_position: source.source_position,
             },
             None,
@@ -5223,7 +5225,7 @@ pub trait LivingEntity: Entity {
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
             CHurtAnimation {
-                entity_id: self.id(),
+                entity_id: self.id().get(),
                 yaw,
             },
             None,
@@ -5280,7 +5282,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla `LivingEntity.getExperienceReward`.
-    fn experience_reward(&self, _world: &World, _killer_entity_id: Option<i32>) -> i32 {
+    fn experience_reward(&self, _world: &World, _killer_entity_id: Option<EntityId>) -> i32 {
         // TODO: Apply EnchantmentHelper.processMobExperience once enchantment
         // value-effect hooks can receive the killer/living-entity context.
         self.base_experience_reward()
@@ -5304,7 +5306,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs vanilla `LivingEntity.dropExperience`.
-    fn drop_experience(&self, world: &Arc<World>, killer_entity_id: Option<i32>) {
+    fn drop_experience(&self, world: &Arc<World>, killer_entity_id: Option<EntityId>) {
         if self.was_experience_consumed() {
             return;
         }
@@ -7144,6 +7146,7 @@ fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -7200,9 +7203,14 @@ mod tests {
     }
 
     impl PushableTestEntity {
-        fn shared(id: i32, position: DVec3) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>, position: DVec3) -> SharedEntity {
             Arc::new(Self {
-                base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    id.into(),
+                    position,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
             })
         }
     }
@@ -7230,18 +7238,18 @@ mod tests {
     }
 
     impl TypedTestEntity {
-        fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+        fn new(id: impl Into<EntityId>, entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(id.into(), DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
                 projectile_owner_uuid: None,
             }
         }
 
-        fn projectile_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
+        fn projectile_with_owner_uuid(id: impl Into<EntityId>, owner_uuid: Uuid) -> Self {
             Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     DVec3::ZERO,
                     vanilla_entities::ENDER_PEARL.dimensions,
                     Weak::new(),
@@ -7285,13 +7293,18 @@ mod tests {
     }
 
     impl LeashNotificationTestEntity {
-        fn new(id: i32) -> Arc<Self> {
+        fn new(id: impl Into<EntityId>) -> Arc<Self> {
             Self::with_position(id, DVec3::ZERO)
         }
 
-        fn with_position(id: i32, position: DVec3) -> Arc<Self> {
+        fn with_position(id: impl Into<EntityId>, position: DVec3) -> Arc<Self> {
             Arc::new(Self {
-                base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    id.into(),
+                    position,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::new(),
+                ),
                 holder_notifications: SyncMutex::new(Vec::new()),
                 removed_notifications: SyncMutex::new(Vec::new()),
             })
@@ -7318,11 +7331,11 @@ mod tests {
         }
 
         fn notify_leash_holder(&self, leashable: &dyn Entity) {
-            self.holder_notifications.lock().push(leashable.id());
+            self.holder_notifications.lock().push(leashable.id().get());
         }
 
         fn notify_leashee_removed(&self, leashable: &dyn Entity) {
-            self.removed_notifications.lock().push(leashable.id());
+            self.removed_notifications.lock().push(leashable.id().get());
         }
     }
 
@@ -7331,10 +7344,10 @@ mod tests {
     }
 
     impl MultiPassengerTestEntity {
-        fn shared(id: i32) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::new(),
@@ -7374,7 +7387,7 @@ mod tests {
             _new_pos: DVec3,
         ) -> Result<(), EntityMoveError> {
             Err(EntityMoveError::NotLive {
-                entity_id: self.entity_id,
+                entity_id: EntityId::new(self.entity_id),
             })
         }
 
@@ -7397,7 +7410,7 @@ mod tests {
             known_speed: DVec3,
         ) -> SharedEntity {
             Arc::new(Self {
-                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(id.into(), DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
                 known_movement,
                 known_speed,
@@ -7448,7 +7461,7 @@ mod tests {
     impl LivingFluidTestEntity {
         fn new(water_height: f64, lava_height: f64, affected_by_fluids: bool) -> Self {
             let base = EntityBase::new(
-                1,
+                EntityId::new(1),
                 DVec3::ZERO,
                 vanilla_entities::PLAYER.dimensions,
                 Weak::new(),
@@ -7631,10 +7644,10 @@ mod tests {
     }
 
     impl ControlledVehicleTestEntity {
-        fn shared(id: i32, controller: Option<SharedEntity>) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>, controller: Option<SharedEntity>) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     DVec3::ZERO,
                     vanilla_entities::ACACIA_BOAT.dimensions,
                     Weak::new(),
@@ -7789,7 +7802,10 @@ mod tests {
             .map(|passenger| passenger.id())
             .collect::<Vec<_>>();
 
-        assert_eq!(passenger_ids, vec![2, 4, 3]);
+        assert_eq!(
+            passenger_ids,
+            vec![EntityId::new(2), EntityId::new(4), EntityId::new(3)]
+        );
     }
 
     #[test]
@@ -7873,10 +7889,15 @@ mod tests {
     fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
         init_test_registry();
 
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         let holder: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::new(1.0, 0.0, 0.0),
             Weak::new(),
         ));
@@ -8047,7 +8068,12 @@ mod tests {
     fn living_death_loot_table_uses_default_and_custom_mob_tables() {
         init_test_registry();
 
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         let Some(default_table) = pig.death_loot_table() else {
             panic!("pig should resolve its default entity loot table");
         };
@@ -8114,7 +8140,7 @@ mod tests {
         let entity = PushableTestEntity::shared(1, DVec3::ZERO);
         entity.set_no_physics(true);
         entity.set_level_callback(Arc::new(CommitRejectingCallback {
-            entity_id: entity.id(),
+            entity_id: entity.id().get(),
         }));
 
         let result = entity.move_without_physics(DVec3::new(1.0, 0.0, 0.0));
@@ -9379,9 +9405,15 @@ mod tests {
         assert!(start_riding_entities(&passenger, &vehicle));
 
         assert!(passenger.is_passenger());
-        assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(2));
+        assert_eq!(
+            passenger.vehicle().map(|entity| entity.id()),
+            Some(EntityId::new(2))
+        );
         assert!(vehicle.has_passenger(passenger.as_ref()));
-        assert_eq!(vehicle.first_passenger().map(|entity| entity.id()), Some(1));
+        assert_eq!(
+            vehicle.first_passenger().map(|entity| entity.id()),
+            Some(EntityId::new(1))
+        );
         assert_eq!(passenger.pose(), EntityPose::Standing);
     }
 
@@ -9391,19 +9423,19 @@ mod tests {
 
         let old_holder: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::new(),
         ));
         let new_holder: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::ZERO,
             Weak::new(),
         ));
         let leashable: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            3,
+            EntityId::new(3),
             DVec3::new(1.0, 0.0, 0.0),
             Weak::new(),
         ));
@@ -9429,19 +9461,19 @@ mod tests {
 
         let old_holder: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::new(),
         ));
         let new_holder: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::ZERO,
             Weak::new(),
         ));
         let leashable: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            3,
+            EntityId::new(3),
             DVec3::new(20.0, 0.0, 0.0),
             Weak::new(),
         ));
@@ -9471,7 +9503,7 @@ mod tests {
         let new_holder: SharedEntity = new_holder_typed.clone();
         let leashable: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            3,
+            EntityId::new(3),
             DVec3::ZERO,
             Weak::new(),
         ));
@@ -9494,7 +9526,7 @@ mod tests {
         let holder: SharedEntity = holder_typed.clone();
         let leashable: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            3,
+            EntityId::new(3),
             DVec3::ZERO,
             Weak::new(),
         ));
@@ -9519,7 +9551,7 @@ mod tests {
         let holder: SharedEntity = holder_typed.clone();
         let leashable: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            3,
+            EntityId::new(3),
             DVec3::ZERO,
             Weak::new(),
         ));
@@ -9557,8 +9589,14 @@ mod tests {
         EntityBase::restore_passenger_relationship(&root, &child);
 
         assert!(!start_riding_entities(&root, &child));
-        assert_eq!(child.vehicle().map(|entity| entity.id()), Some(1));
-        assert_eq!(root.first_passenger().map(|entity| entity.id()), Some(2));
+        assert_eq!(
+            child.vehicle().map(|entity| entity.id()),
+            Some(EntityId::new(1))
+        );
+        assert_eq!(
+            root.first_passenger().map(|entity| entity.id()),
+            Some(EntityId::new(2))
+        );
     }
 
     #[test]
@@ -9578,7 +9616,7 @@ mod tests {
             .into_iter()
             .map(|entity| entity.id())
             .collect::<Vec<_>>();
-        assert_eq!(passenger_ids, vec![3, 2]);
+        assert_eq!(passenger_ids, vec![EntityId::new(3), EntityId::new(2)]);
     }
 
     #[test]

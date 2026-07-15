@@ -13,8 +13,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, LeashFenceKnot,
-    RemovalReason, SharedEntity, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, EntityId,
+    LeashFenceKnot, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::world::World;
 
@@ -35,7 +35,12 @@ unsafe impl DowncastType for LeashFenceKnotEntity {
 impl LeashFenceKnotEntity {
     /// Creates a fresh leash knot from the generic entity factory path.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self::new_attached(
             entity_type,
             id,
@@ -52,7 +57,7 @@ impl LeashFenceKnotEntity {
     #[must_use]
     pub fn new_attached(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         block_pos: BlockPos,
         world: Weak<World>,
     ) -> Self {
@@ -246,7 +251,7 @@ mod tests {
     fn leash_knot_uses_vanilla_position_and_bounding_box() {
         let knot = LeashFenceKnotEntity::new_attached(
             &vanilla_entities::LEASH_KNOT,
-            1,
+            EntityId::new(1),
             BlockPos::new(4, 65, -9),
             Weak::new(),
         );
@@ -265,7 +270,7 @@ mod tests {
     fn leash_knot_spawn_packet_uses_attached_block_pos() {
         let knot = LeashFenceKnotEntity::new_attached(
             &vanilla_entities::LEASH_KNOT,
-            1,
+            EntityId::new(1),
             BlockPos::new(4, 65, -9),
             Weak::new(),
         );
@@ -277,7 +282,7 @@ mod tests {
     fn leash_knot_saves_no_type_specific_block_pos() {
         let knot = LeashFenceKnotEntity::new_attached(
             &vanilla_entities::LEASH_KNOT,
-            1,
+            EntityId::new(1),
             BlockPos::new(4, 65, -9),
             Weak::new(),
         );
@@ -292,7 +297,7 @@ mod tests {
     fn leash_knot_survival_check_matches_vanilla_interval() {
         let knot = LeashFenceKnotEntity::new_attached(
             &vanilla_entities::LEASH_KNOT,
-            1,
+            EntityId::new(1),
             BlockPos::new(4, 65, -9),
             Weak::new(),
         );

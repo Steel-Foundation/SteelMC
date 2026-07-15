@@ -18,7 +18,7 @@ use steel_utils::{BlockPos, translations};
 use text_components::TextComponent;
 
 use crate::inventory::{
-    SyncPlayerInv,
+    MenuId, SyncPlayerInv,
     container::Container,
     crafting::{CraftingContainer, ResultContainer},
     lock::{ContainerLockGuard, ContainerRef},
@@ -72,7 +72,7 @@ impl CraftingMenu {
     /// * `container_id` - The container ID for this menu (1-100)
     /// * `block_pos` - The position of the crafting table block
     #[must_use]
-    pub fn new(inventory: SyncPlayerInv, container_id: u8, block_pos: BlockPos) -> Self {
+    pub fn new(inventory: SyncPlayerInv, container_id: MenuId, block_pos: BlockPos) -> Self {
         let mut menu_slots = Vec::with_capacity(slots::TOTAL_SLOTS);
 
         // Create the crafting containers
@@ -341,7 +341,7 @@ impl MenuInstance for CraftingMenu {
         &vanilla_menu_types::CRAFTING
     }
 
-    fn container_id(&self) -> u8 {
+    fn container_id(&self) -> MenuId {
         self.behavior.container_id
     }
 }
@@ -365,7 +365,7 @@ impl MenuProvider for CraftingMenuProvider {
         TextComponent::translated(translations::CONTAINER_CRAFTING.msg())
     }
 
-    fn create(&self, container_id: u8) -> Box<dyn MenuInstance> {
+    fn create(&self, container_id: MenuId) -> Box<dyn MenuInstance> {
         Box::new(CraftingMenu::new(
             self.inventory.clone(),
             container_id,

@@ -11,7 +11,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityId, EntitySyncedData};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -34,7 +34,12 @@ unsafe impl DowncastType for EndCrystalEntity {
 impl EndCrystalEntity {
     /// Creates a new End Crystal entity.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -155,7 +160,7 @@ mod tests {
     fn end_crystal_does_not_duplicate_shared_invulnerable_state() {
         let crystal = EndCrystalEntity::new(
             &vanilla_entities::END_CRYSTAL,
-            1,
+            EntityId::new(1),
             DVec3::new(1.5, 2.5, 3.5),
             Weak::new(),
         );
@@ -171,7 +176,7 @@ mod tests {
     fn end_crystal_is_pickable_like_vanilla() {
         let crystal = EndCrystalEntity::new(
             &vanilla_entities::END_CRYSTAL,
-            1,
+            EntityId::new(1),
             DVec3::new(1.5, 2.5, 3.5),
             Weak::new(),
         );
@@ -181,8 +186,12 @@ mod tests {
 
     #[test]
     fn end_crystal_blocks_building_like_vanilla() {
-        let crystal =
-            EndCrystalEntity::new(&vanilla_entities::END_CRYSTAL, 1, DVec3::ZERO, Weak::new());
+        let crystal = EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(crystal.blocks_building());
     }

@@ -36,17 +36,13 @@ impl SetEntityLookTarget {
     }
 
     fn find_closest(&self, entities: &[SharedEntity], mob_position: DVec3) -> Option<SharedEntity> {
-        let mut best: Option<(&SharedEntity, f64)> = None;
-        for entity in entities {
-            let distance_sqr = mob_position.distance_squared(entity.position());
-            if distance_sqr > self.max_dist_sqr || !(self.can_look_at)(&**entity) {
-                continue;
-            }
-            if best.is_none_or(|(_, best_distance)| distance_sqr < best_distance) {
-                best = Some((entity, distance_sqr));
-            }
-        }
-        best.map(|(entity, _)| entity.clone())
+        entities
+            .iter()
+            .take_while(|entity| {
+                mob_position.distance_squared(entity.position()) <= self.max_dist_sqr
+            })
+            .find(|entity| (self.can_look_at)(&***entity))
+            .cloned()
     }
 }
 

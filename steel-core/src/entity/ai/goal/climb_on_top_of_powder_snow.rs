@@ -64,6 +64,7 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -74,7 +75,12 @@ mod tests {
     use crate::entity::{Entity as _, InsideBlockEffectType, Mob as _};
 
     fn pig() -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new())
+        PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        )
     }
 
     #[test]
@@ -108,7 +114,12 @@ mod tests {
     fn climb_on_top_of_powder_snow_goal_requires_world_after_tag_and_contact() {
         init_test_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::RABBIT, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::RABBIT,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
 
         assert!(!goal.can_use(&mob));

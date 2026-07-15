@@ -1953,7 +1953,7 @@ pub trait PathfinderMob: Mob {
     where
         Self: Sized,
     {
-        let id_based_tick_count = self.tick_count().wrapping_add(self.id());
+        let id_based_tick_count = self.tick_count().wrapping_add(self.id().get());
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
             self.mob_base()
                 .target_selector()
@@ -2268,6 +2268,7 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -2392,7 +2393,7 @@ mod tests {
             init_test_registry();
 
             Self {
-                base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(id.into(), position, entity_type.dimensions, Weak::new()),
                 entity_type,
                 living_base: LivingEntityBase::new(entity_type),
                 mob_base: MobBase::new(),
@@ -2458,10 +2459,10 @@ mod tests {
     }
 
     impl HiddenTarget {
-        fn shared(id: i32) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>) -> SharedEntity {
             Arc::new(Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     DVec3::ZERO,
                     vanilla_entities::PIG.dimensions,
                     Weak::new(),
@@ -2536,9 +2537,9 @@ mod tests {
     }
 
     impl MobControlVehicleEntity {
-        fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+        fn new(id: impl Into<EntityId>, entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(id.into(), DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 entity_type,
             }
         }

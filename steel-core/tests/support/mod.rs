@@ -8,6 +8,7 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::entity::EntityId;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
 
@@ -38,7 +39,7 @@ pub(crate) struct PlayedBlockSound {
     pub(crate) pos: BlockPos,
     pub(crate) volume: f32,
     pub(crate) pitch: f32,
-    pub(crate) exclude: Option<i32>,
+    pub(crate) exclude: Option<EntityId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,7 +196,7 @@ impl LevelAccessor for TestLevel {
         pos: BlockPos,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
         self.block_sounds.borrow_mut().push(PlayedBlockSound {
             sound,

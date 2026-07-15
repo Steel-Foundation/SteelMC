@@ -30,9 +30,9 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    change_entity_world,
+    Entity, EntityBase, EntityBaseLoad, EntityId, EntitySyncedData, LivingEntity, Projectile,
+    ProjectileBase, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
+    ThrowableProjectile, change_entity_world,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -64,7 +64,12 @@ unsafe impl DowncastType for EnderPearlEntity {
 impl EnderPearlEntity {
     /// Creates a new ender pearl with no owner and the default rendered item.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -250,7 +255,7 @@ impl Entity for EnderPearlEntity {
     }
 
     fn spawn_data(&self) -> i32 {
-        self.get_owner().map_or(0, |owner| owner.id())
+        self.get_owner().map_or(0, |owner| owner.id().get())
     }
 
     fn restore_owner_reference(&self, owner: &SharedEntity) {
@@ -361,7 +366,7 @@ mod tests {
     use glam::DVec3;
     use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_items};
 
-    use crate::entity::{Entity, Projectile, ThrowableItemProjectile};
+    use crate::entity::{Entity, EntityId, Projectile, ThrowableItemProjectile};
     use crate::world::World;
 
     use super::EnderPearlEntity;
@@ -372,7 +377,7 @@ mod tests {
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );
@@ -390,7 +395,7 @@ mod tests {
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );
@@ -408,7 +413,7 @@ mod tests {
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::<World>::new(),
         );

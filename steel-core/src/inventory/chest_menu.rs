@@ -13,7 +13,7 @@ use steel_registry::vanilla_menu_types;
 use text_components::TextComponent;
 
 use crate::inventory::{
-    SyncPlayerInv,
+    MenuId, SyncPlayerInv,
     lock::{ContainerLockGuard, ContainerRef},
     menu::{Menu, MenuBehavior},
     menu_provider::{MenuInstance, MenuProvider},
@@ -93,7 +93,7 @@ impl ChestMenu {
     #[must_use]
     pub fn new(
         inventory: SyncPlayerInv,
-        container_id: u8,
+        container_id: MenuId,
         container: ContainerRef,
         rows: usize,
     ) -> Self {
@@ -127,37 +127,61 @@ impl ChestMenu {
 
     /// Creates a 1-row chest menu.
     #[must_use]
-    pub fn one_row(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn one_row(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 1)
     }
 
     /// Creates a 2-row chest menu.
     #[must_use]
-    pub fn two_rows(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn two_rows(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 2)
     }
 
     /// Creates a 3-row chest menu (standard chest, barrel, ender chest, shulker box).
     #[must_use]
-    pub fn three_rows(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn three_rows(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 3)
     }
 
     /// Creates a 4-row chest menu.
     #[must_use]
-    pub fn four_rows(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn four_rows(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 4)
     }
 
     /// Creates a 5-row chest menu.
     #[must_use]
-    pub fn five_rows(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn five_rows(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 5)
     }
 
     /// Creates a 6-row chest menu (double chest).
     #[must_use]
-    pub fn six_rows(inventory: SyncPlayerInv, container_id: u8, container: ContainerRef) -> Self {
+    pub fn six_rows(
+        inventory: SyncPlayerInv,
+        container_id: MenuId,
+        container: ContainerRef,
+    ) -> Self {
         Self::new(inventory, container_id, container, 6)
     }
 
@@ -289,7 +313,7 @@ impl MenuInstance for ChestMenu {
         Self::menu_type_for_rows(self.rows)
     }
 
-    fn container_id(&self) -> u8 {
+    fn container_id(&self) -> MenuId {
         self.behavior.container_id
     }
 }
@@ -351,7 +375,7 @@ impl MenuProvider for ChestMenuProvider {
         self.title.clone()
     }
 
-    fn create(&self, container_id: u8) -> Box<dyn MenuInstance> {
+    fn create(&self, container_id: MenuId) -> Box<dyn MenuInstance> {
         Box::new(ChestMenu::new(
             self.inventory.clone(),
             container_id,

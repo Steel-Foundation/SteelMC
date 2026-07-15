@@ -5,7 +5,7 @@ use std::sync::Weak;
 use glam::DVec3;
 use steel_utils::ChunkPos;
 
-use super::EntityMoveError;
+use super::{EntityId, EntityMoveError};
 use crate::world::World;
 
 /// Reasons an entity can be removed from the world.
@@ -81,13 +81,13 @@ impl EntityLevelCallback for NullEntityCallback {
 
 /// Callback for entities retained outside live world membership.
 pub struct InactiveEntityCallback {
-    entity_id: i32,
+    entity_id: EntityId,
 }
 
 impl InactiveEntityCallback {
     /// Creates an inactive callback for a retained non-live entity.
     #[must_use]
-    pub const fn new(entity_id: i32) -> Self {
+    pub const fn new(entity_id: EntityId) -> Self {
         Self { entity_id }
     }
 }
@@ -113,14 +113,14 @@ impl EntityLevelCallback for InactiveEntityCallback {
 /// Players are owned by `World.players`, but the world entity manager still
 /// indexes their live position for lookup and tracking updates.
 pub struct PlayerEntityCallback {
-    entity_id: i32,
+    entity_id: EntityId,
     world: Weak<World>,
 }
 
 impl PlayerEntityCallback {
     /// Creates a new callback for a player.
     #[must_use]
-    pub const fn new(entity_id: i32, world: Weak<World>) -> Self {
+    pub const fn new(entity_id: EntityId, world: Weak<World>) -> Self {
         Self { entity_id, world }
     }
 }
@@ -188,14 +188,14 @@ impl EntityLevelCallback for PlayerEntityCallback {
 ///
 /// Mirrors vanilla's `PersistentEntitySectionManager.Callback`.
 pub struct EntityChunkCallback {
-    entity_id: i32,
+    entity_id: EntityId,
     world: Weak<World>,
 }
 
 impl EntityChunkCallback {
     /// Creates a new callback for an entity.
     #[must_use]
-    pub const fn new(entity_id: i32, world: Weak<World>) -> Self {
+    pub const fn new(entity_id: EntityId, world: Weak<World>) -> Self {
         Self { entity_id, world }
     }
 }

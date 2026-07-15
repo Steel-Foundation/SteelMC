@@ -855,6 +855,7 @@ fn damage_source_predicate_matches(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -880,9 +881,9 @@ mod tests {
     }
 
     impl TestLivingEntity {
-        fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+        fn new(id: impl Into<EntityId>, entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(id.into(), DVec3::ZERO, entity_type.dimensions, Weak::new()),
                 living_base: LivingEntityBase::new(entity_type),
                 health: SyncMutex::new(20.0),
                 broken_slots: SyncMutex::new(Vec::new()),

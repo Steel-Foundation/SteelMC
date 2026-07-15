@@ -9,7 +9,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, locks::SyncMutex};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityId};
 use crate::world::World;
 
 /// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
@@ -31,7 +31,12 @@ unsafe impl DowncastType for RawEntity {
 impl RawEntity {
     /// Creates a fresh raw entity for an entity type Steel cannot behaviorally model yet.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, world: Weak<World>, entity_type: EntityTypeRef) -> Self {
+    pub fn new(
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+        entity_type: EntityTypeRef,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -116,6 +121,7 @@ impl RawEntity {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -131,7 +137,12 @@ mod tests {
     #[test]
     fn raw_projectile_reads_vanilla_owner_uuid() {
         let owner = Uuid::from_u128(42);
-        let entity = RawEntity::new(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ENDER_PEARL);
+        let entity = RawEntity::new(
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+            &vanilla_entities::ENDER_PEARL,
+        );
         entity
             .data
             .lock()

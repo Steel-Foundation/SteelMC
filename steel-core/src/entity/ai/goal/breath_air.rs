@@ -126,6 +126,7 @@ fn gives_air(level: &dyn LevelReader, pos: BlockPos) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -147,7 +148,12 @@ mod tests {
     fn breath_air_goal_uses_vanilla_air_threshold() {
         init_test_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         mob.set_air_supply(BREATH_AIR_THRESHOLD);
         assert!(!goal.can_use(&mob));
@@ -161,7 +167,12 @@ mod tests {
     fn breath_air_goal_tick_applies_travel_input_to_velocity() {
         init_test_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
         goal.tick(&mob);

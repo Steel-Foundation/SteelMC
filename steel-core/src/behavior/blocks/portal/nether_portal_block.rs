@@ -79,6 +79,7 @@ impl BlockBehavior for NetherPortalBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -96,7 +97,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::new(),

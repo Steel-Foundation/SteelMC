@@ -8,7 +8,7 @@ use std::fmt;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncRwLock;
 
-use super::{RemovalReason, SharedEntity};
+use super::{EntityId, RemovalReason, SharedEntity};
 
 /// Storage for entities staged in a proto chunk.
 ///
@@ -16,7 +16,7 @@ use super::{RemovalReason, SharedEntity};
 /// promoted or loaded full-chunk entities are owned and ticked by `WorldEntityManager`.
 pub(crate) struct EntityStorage {
     /// Proto-staged entities keyed by entity ID.
-    entities: SyncRwLock<FxHashMap<i32, SharedEntity>>,
+    entities: SyncRwLock<FxHashMap<EntityId, SharedEntity>>,
 }
 
 fn should_keep_for_save(entity: &SharedEntity) -> bool {
@@ -96,9 +96,9 @@ mod tests {
     use super::*;
     use crate::entity::entities::RawEntity;
 
-    fn raw_item(id: i32) -> SharedEntity {
+    fn raw_item(id: impl Into<EntityId>) -> SharedEntity {
         Arc::new(RawEntity::new(
-            id,
+            id.into(),
             DVec3::ZERO,
             Weak::new(),
             &vanilla_entities::ITEM,
@@ -119,7 +119,7 @@ mod tests {
         let saveable = storage.get_saveable_entities();
 
         assert_eq!(saveable.len(), 1);
-        assert_eq!(saveable[0].id(), 1);
+        assert_eq!(saveable[0].id(), EntityId::new(1));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 use glam::DVec3;
 
+use crate::entity::EntityId;
 use crate::physics::ClientAuthoredMovementState;
 use crate::player::PlayerInput;
 
@@ -14,7 +15,7 @@ pub struct MovementState {
     /// Whether vanilla accepted player-authored movement during the current client tick.
     received_movement_this_tick: bool,
     /// Entity id of the controlled root vehicle tracked this tick.
-    client_vehicle_id: Option<i32>,
+    client_vehicle_id: Option<EntityId>,
     /// Latest vanilla client input snapshot sent by the player.
     last_client_input: PlayerInput,
 }
@@ -48,7 +49,7 @@ impl MovementState {
     }
 
     /// Resets per-tick vanilla controlled-vehicle movement validation bases.
-    pub(super) const fn reset_vehicle_for_tick(&mut self, vehicle_id: i32, position: DVec3) {
+    pub(super) const fn reset_vehicle_for_tick(&mut self, vehicle_id: EntityId, position: DVec3) {
         self.client_vehicle_id = Some(vehicle_id);
         self.client_vehicle_movement.reset_for_tick(position);
     }
@@ -61,8 +62,12 @@ impl MovementState {
 
     /// Returns the current vanilla controlled-vehicle validation positions.
     #[must_use]
-    pub(super) const fn vehicle_good_positions(&self, vehicle_id: i32) -> Option<(DVec3, DVec3)> {
-        if !matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+    pub(super) const fn vehicle_good_positions(
+        &self,
+        vehicle_id: EntityId,
+    ) -> Option<(DVec3, DVec3)> {
+        if !matches!(self.client_vehicle_id, Some(active_id) if active_id.get() == vehicle_id.get())
+        {
             return None;
         }
 
@@ -94,10 +99,11 @@ impl MovementState {
     /// Marks a controlled-vehicle target as the latest accepted vanilla last-good position.
     pub(super) const fn mark_vehicle_last_good_position(
         &mut self,
-        vehicle_id: i32,
+        vehicle_id: EntityId,
         position: DVec3,
     ) {
-        if matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+        if matches!(self.client_vehicle_id, Some(active_id) if active_id.get() == vehicle_id.get())
+        {
             self.client_vehicle_movement
                 .mark_last_good_position(position);
         }
@@ -139,10 +145,11 @@ impl MovementState {
     /// Records whether the controlled vehicle appeared to float after accepted movement.
     pub(super) const fn record_vehicle_client_floating(
         &mut self,
-        vehicle_id: i32,
+        vehicle_id: EntityId,
         client_is_floating: bool,
     ) {
-        if matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+        if matches!(self.client_vehicle_id, Some(active_id) if active_id.get() == vehicle_id.get())
+        {
             self.client_vehicle_movement
                 .record_client_floating(client_is_floating);
         }
@@ -171,10 +178,11 @@ impl MovementState {
     /// Returns true once the client has exceeded the configured maximum flying ticks.
     pub(super) const fn tick_vehicle_client_floating(
         &mut self,
-        vehicle_id: i32,
+        vehicle_id: EntityId,
         maximum_flying_ticks: i32,
     ) -> bool {
-        if !matches!(self.client_vehicle_id, Some(active_id) if active_id == vehicle_id) {
+        if !matches!(self.client_vehicle_id, Some(active_id) if active_id.get() == vehicle_id.get())
+        {
             self.client_vehicle_movement.clear_client_floating();
             return false;
         }
@@ -188,6 +196,7 @@ impl MovementState {
 mod tests {
     use glam::DVec3;
 
+    use crate::entity::EntityId;
     use crate::player::PlayerInput;
 
     use super::MovementState;
@@ -297,32 +306,32 @@ mod tests {
     fn vehicle_tick_reset_tracks_active_vehicle_id() {
         let mut state = MovementState::new();
 
-        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.reset_vehicle_for_tick(EntityId::new(42), DVec3::new(1.0, 2.0, 3.0));
 
         assert_eq!(
-            state.vehicle_good_positions(42),
+            state.vehicle_good_positions(EntityId::new(42)),
             Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(1.0, 2.0, 3.0)))
         );
-        assert_eq!(state.vehicle_good_positions(41), None);
-        assert!(!state.tick_vehicle_client_floating(41, 0));
-        assert!(!state.tick_vehicle_client_floating(42, 0));
+        assert_eq!(state.vehicle_good_positions(EntityId::new(41)), None);
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(41), 0));
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(42), 0));
     }
 
     #[test]
     fn vehicle_last_good_update_is_guarded_by_active_vehicle_id() {
         let mut state = MovementState::new();
-        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.reset_vehicle_for_tick(EntityId::new(42), DVec3::new(1.0, 2.0, 3.0));
 
-        state.mark_vehicle_last_good_position(41, DVec3::new(9.0, 9.0, 9.0));
+        state.mark_vehicle_last_good_position(EntityId::new(41), DVec3::new(9.0, 9.0, 9.0));
         assert_eq!(
-            state.vehicle_good_positions(42),
+            state.vehicle_good_positions(EntityId::new(42)),
             Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(1.0, 2.0, 3.0)))
         );
 
-        state.mark_vehicle_last_good_position(42, DVec3::new(4.0, 5.0, 6.0));
+        state.mark_vehicle_last_good_position(EntityId::new(42), DVec3::new(4.0, 5.0, 6.0));
 
         assert_eq!(
-            state.vehicle_good_positions(42),
+            state.vehicle_good_positions(EntityId::new(42)),
             Some((DVec3::new(1.0, 2.0, 3.0), DVec3::new(4.0, 5.0, 6.0)))
         );
     }
@@ -330,34 +339,34 @@ mod tests {
     #[test]
     fn vehicle_floating_update_is_guarded_by_active_vehicle_id() {
         let mut state = MovementState::new();
-        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.reset_vehicle_for_tick(EntityId::new(42), DVec3::new(1.0, 2.0, 3.0));
 
-        state.record_vehicle_client_floating(41, true);
-        assert!(!state.tick_vehicle_client_floating(42, 0));
+        state.record_vehicle_client_floating(EntityId::new(41), true);
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(42), 0));
 
-        state.record_vehicle_client_floating(42, true);
-        assert!(state.tick_vehicle_client_floating(42, 0));
+        state.record_vehicle_client_floating(EntityId::new(42), true);
+        assert!(state.tick_vehicle_client_floating(EntityId::new(42), 0));
     }
 
     #[test]
     fn vehicle_state_clears_when_no_controlled_vehicle_is_active() {
         let mut state = MovementState::new();
-        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.reset_vehicle_for_tick(EntityId::new(42), DVec3::new(1.0, 2.0, 3.0));
 
         state.clear_vehicle_for_tick();
 
-        assert!(!state.tick_vehicle_client_floating(42, 0));
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(42), 0));
     }
 
     #[test]
     fn reset_flying_ticks_applies_to_vehicle_counter() {
         let mut state = MovementState::new();
-        state.reset_vehicle_for_tick(42, DVec3::new(1.0, 2.0, 3.0));
+        state.reset_vehicle_for_tick(EntityId::new(42), DVec3::new(1.0, 2.0, 3.0));
         state.client_vehicle_movement.record_client_floating(true);
 
-        assert!(!state.tick_vehicle_client_floating(42, 1));
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(42), 1));
         state.reset_flying_ticks();
-        assert!(!state.tick_vehicle_client_floating(42, 1));
-        assert!(state.tick_vehicle_client_floating(42, 1));
+        assert!(!state.tick_vehicle_client_floating(EntityId::new(42), 1));
+        assert!(state.tick_vehicle_client_floating(EntityId::new(42), 1));
     }
 }

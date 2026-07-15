@@ -37,9 +37,9 @@ use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MA
 use crate::entity::ai::goal::OpenDoorGoal;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
-    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectSyncChange,
-    PathfinderMob, SharedEntity, SpawnGroupData, Villager,
+    AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityId, EntityPose,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
+    MobEffectSyncChange, PathfinderMob, SharedEntity, SpawnGroupData, Villager,
 };
 use crate::inventory::MerchantMenuProvider;
 use crate::physics::MoveResult;
@@ -70,7 +70,7 @@ pub struct VillagerEntity {
     brain: SyncMutex<Brain>,
     offers: SharedMerchantOffers,
     villager_xp: SyncMutex<i32>,
-    trading_player: SyncMutex<Option<i32>>,
+    trading_player: SyncMutex<Option<EntityId>>,
     trade_state: SyncMutex<TradeState>,
 }
 
@@ -92,7 +92,12 @@ struct TradeState {
 impl VillagerEntity {
     /// Creates a freshly spawned villager.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -893,7 +898,7 @@ impl Villager for VillagerEntity {
         self.trading_player.lock().is_some()
     }
 
-    fn set_trading_player(&self, id: Option<i32>) {
+    fn set_trading_player(&self, id: Option<EntityId>) {
         *self.trading_player.lock() = id;
     }
     fn try_restock(&self) {

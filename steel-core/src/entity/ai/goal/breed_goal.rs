@@ -127,6 +127,7 @@ impl Goal for BreedGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -145,7 +146,12 @@ mod tests {
     #[test]
     fn breed_goal_requires_love_mode() {
         init_test_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         let mut goal = BreedGoal::new(1.0);
 
         assert!(!goal.can_use(&pig));

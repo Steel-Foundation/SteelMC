@@ -14,7 +14,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::SyncMutex;
 
 use crate::inventory::{
-    SyncPlayerInv,
+    MenuId, SyncPlayerInv,
     container::Container,
     crafting::{CraftingContainer, ResultContainer},
     equipment::{EquipmentSlot, EquipmentSlotType},
@@ -66,7 +66,7 @@ pub struct InventoryMenu {
 
 impl InventoryMenu {
     /// Container ID for the player inventory (always 0).
-    pub const CONTAINER_ID: u8 = 0;
+    pub const CONTAINER_ID: MenuId = MenuId::INVENTORY;
 
     /// Creates a new inventory menu for a player.
     ///

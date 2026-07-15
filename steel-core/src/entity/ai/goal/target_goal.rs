@@ -147,6 +147,7 @@ fn follow_distance(mob: &dyn PathfinderMob) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -156,10 +157,10 @@ mod tests {
     use crate::entity::ai::targeting::TargetingConditions;
     use crate::entity::{Mob, entities::PigEntity};
 
-    fn pig(id: i32, position: DVec3) -> Arc<PigEntity> {
+    fn pig(id: impl Into<EntityId>, position: DVec3) -> Arc<PigEntity> {
         Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            id,
+            id.into(),
             position,
             Weak::new(),
         ))

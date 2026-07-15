@@ -140,6 +140,7 @@ impl Default for InsideBlockEffectCollector {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -164,7 +165,7 @@ mod tests {
 
             Arc::new(Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::new(),

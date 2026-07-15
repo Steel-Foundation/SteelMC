@@ -17,7 +17,7 @@ use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityCapabilities, EntitySyncedData,
+    Entity, EntityBase, EntityBaseLoad, EntityCapabilities, EntityId, EntitySyncedData,
     ExperienceOrbMergeEntity, LivingEntity, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
@@ -44,7 +44,7 @@ struct ExperienceOrbState {
     age: i32,
     health: i32,
     count: i32,
-    following_player_id: Option<i32>,
+    following_player_id: Option<EntityId>,
 }
 
 impl ExperienceOrbState {
@@ -75,7 +75,12 @@ unsafe impl DowncastType for ExperienceOrbEntity {
 impl ExperienceOrbEntity {
     /// Creates a new experience orb with value 0.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -88,7 +93,7 @@ impl ExperienceOrbEntity {
     #[must_use]
     pub fn with_value(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         position: DVec3,
         value: i32,
         world: Weak<World>,
@@ -235,7 +240,7 @@ impl ExperienceOrbEntity {
             let Some(orb) = entity.as_experience_orb_merge_entity() else {
                 continue;
             };
-            self.try_absorb_experience_orb(orb, self.id(), self.value());
+            self.try_absorb_experience_orb(orb, self.id().get(), self.value());
             if self.is_removed() {
                 return;
             }
@@ -243,7 +248,9 @@ impl ExperienceOrbEntity {
     }
 
     fn can_merge_id(&self, id: i32, value: i32) -> bool {
-        !self.is_removed() && (self.id() - id) % ORB_GROUPS_PER_AREA == 0 && self.value() == value
+        !self.is_removed()
+            && (self.id().get() - id) % ORB_GROUPS_PER_AREA == 0
+            && self.value() == value
     }
 
     fn set_underwater_movement(&self) {
@@ -351,7 +358,7 @@ impl ExperienceOrbEntity {
 
         player.set_take_xp_delay(2);
         if let Some(world) = self.level() {
-            let take_packet = CTakeItemEntity::new(self.id(), player.id(), 1);
+            let take_packet = CTakeItemEntity::new(self.id().get(), player.id().get(), 1);
             world.broadcast_to_nearby(
                 ChunkPos::from_entity_pos(self.position()),
                 take_packet,
@@ -588,7 +595,7 @@ mod tests {
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            41,
+            EntityId::new(41),
             DVec3::ZERO,
             Weak::new(),
         );
@@ -605,7 +612,7 @@ mod tests {
 
         let target = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            41,
+            EntityId::new(41),
             DVec3::ZERO,
             Weak::new(),
         );
@@ -614,7 +621,7 @@ mod tests {
 
         let other = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            81,
+            EntityId::new(81),
             DVec3::ZERO,
             Weak::new(),
         );
@@ -625,7 +632,7 @@ mod tests {
         let Some(other_merge) = other.as_experience_orb_merge_entity() else {
             panic!("experience orb should expose merge capability");
         };
-        assert!(target.try_absorb_experience_orb(other_merge, target.id(), target.value()));
+        assert!(target.try_absorb_experience_orb(other_merge, target.id().get(), target.value()));
 
         assert_eq!(target.count(), 4);
         assert_eq!(target.age(), 12);
@@ -638,7 +645,7 @@ mod tests {
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::new(),
         );
@@ -657,7 +664,7 @@ mod tests {
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             Weak::new(),
         );
@@ -679,7 +686,7 @@ mod tests {
 
         let loaded = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
-            2,
+            EntityId::new(2),
             DVec3::ZERO,
             Weak::new(),
         );

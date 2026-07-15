@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
-use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
+use crate::entity::{EntityId, LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 
 /// Duration in ticks of the death animation before entity removal.
@@ -302,7 +302,8 @@ pub enum MobEffectSyncChange {
 impl MobEffectSyncChange {
     /// Builds the clientbound packet for a concrete recipient.
     #[must_use]
-    pub fn packet(&self, entity_id: i32, is_self_recipient: bool) -> MobEffectSyncPacket {
+    pub fn packet(&self, entity_id: EntityId, is_self_recipient: bool) -> MobEffectSyncPacket {
+        let entity_id = entity_id.get();
         match self {
             Self::Update {
                 effect,

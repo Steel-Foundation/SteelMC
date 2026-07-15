@@ -130,7 +130,7 @@ impl MaceItem {
             nearby_living.push_impulse(DVec3::new(horizontal.x, 0.7, horizontal.z));
             if let Some(player) = nearby_living.as_player() {
                 player.send_packet(CSetEntityMotion::new(
-                    nearby_living.id(),
+                    nearby_living.id().get(),
                     nearby_living.velocity(),
                 ));
             }
@@ -198,7 +198,10 @@ impl ItemBehavior for MaceItem {
             Self::calculate_impact_position(attacker),
         );
         if let Some(player) = attacker.as_player() {
-            player.send_packet(CSetEntityMotion::new(attacker.id(), attacker.velocity()));
+            player.send_packet(CSetEntityMotion::new(
+                attacker.id().get(),
+                attacker.velocity(),
+            ));
         }
 
         if let Some(world) = attacker.level() {

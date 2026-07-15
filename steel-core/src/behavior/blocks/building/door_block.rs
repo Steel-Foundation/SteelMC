@@ -29,8 +29,8 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
         InventoryAccess,
     },
-    entity::Entity,
     entity::ai::path::PathComputationType,
+    entity::{Entity, EntityId},
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
@@ -175,7 +175,7 @@ impl DoorBlock {
         world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id()));
     }
 
-    fn play_sound(&self, world: &Arc<World>, pos: BlockPos, open: bool, exclude: Option<i32>) {
+    fn play_sound(&self, world: &Arc<World>, pos: BlockPos, open: bool, exclude: Option<EntityId>) {
         let sound = if open {
             self.sound_open
         } else {

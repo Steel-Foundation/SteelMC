@@ -115,6 +115,7 @@ fn block_pos_corner(pos: BlockPos) -> DVec3 {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use steel_registry::{
@@ -137,7 +138,12 @@ mod tests {
     #[test]
     fn panic_goal_uses_vanilla_panic_damage_tag() {
         init_test_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!PanicGoal::should_panic(&pig));
 

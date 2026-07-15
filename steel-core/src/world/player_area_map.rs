@@ -8,7 +8,11 @@ use std::sync::Arc;
 use rustc_hash::FxHashSet;
 use steel_utils::ChunkPos;
 
-use crate::{chunk::player_chunk_view::PlayerChunkView, entity::Entity, player::Player};
+use crate::{
+    chunk::player_chunk_view::PlayerChunkView,
+    entity::{Entity, EntityId},
+    player::Player,
+};
 
 /// Spatial index for player proximity queries.
 ///
@@ -27,10 +31,10 @@ use crate::{chunk::player_chunk_view::PlayerChunkView, entity::Entity, player::P
 /// - `PlayerAreaMap` only tracks players during a session, not persisted
 pub struct PlayerAreaMap {
     /// Maps packed chunk coords (`ChunkPos`) to set of player entity IDs
-    chunks: scc::HashMap<ChunkPos, FxHashSet<i32>>,
+    chunks: scc::HashMap<ChunkPos, FxHashSet<EntityId>>,
 
     /// Maps player entity ID to its current set of tracked chunks (for efficient removal)
-    player_chunks: scc::HashMap<i32, FxHashSet<ChunkPos>>,
+    player_chunks: scc::HashMap<EntityId, FxHashSet<ChunkPos>>,
 }
 
 impl Default for PlayerAreaMap {
@@ -71,7 +75,7 @@ impl PlayerAreaMap {
     ///
     /// This is useful when you don't have an `Arc<Player>` reference,
     /// such as during respawn cleanup.
-    pub fn remove_by_entity_id(&self, entity_id: i32) {
+    pub fn remove_by_entity_id(&self, entity_id: EntityId) {
         if let Some((_, chunks)) = self.player_chunks.remove_sync(&entity_id) {
             for chunk in chunks {
                 self.remove_from_chunk(chunk, entity_id);
@@ -84,7 +88,7 @@ impl PlayerAreaMap {
     /// Call this after computing the difference via `PlayerChunkView::difference()`.
     pub fn on_player_view_change(
         &self,
-        entity_id: i32,
+        entity_id: EntityId,
         added_chunks: &[ChunkPos],
         removed_chunks: &[ChunkPos],
     ) {
@@ -113,7 +117,7 @@ impl PlayerAreaMap {
 
     /// Gets all players tracking the given chunk.
     #[must_use]
-    pub fn get_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
+    pub fn get_tracking_players(&self, chunk: ChunkPos) -> Vec<EntityId> {
         self.chunks
             .read_sync(&chunk, |_, set| set.iter().copied().collect())
             .unwrap_or_default()
@@ -131,7 +135,7 @@ impl PlayerAreaMap {
         self.player_chunks.is_empty()
     }
 
-    fn add_to_chunk(&self, chunk: ChunkPos, entity_id: i32) {
+    fn add_to_chunk(&self, chunk: ChunkPos, entity_id: EntityId) {
         if self
             .chunks
             .update_sync(&chunk, |_, set| {
@@ -145,7 +149,7 @@ impl PlayerAreaMap {
         }
     }
 
-    fn remove_from_chunk(&self, chunk: ChunkPos, entity_id: i32) {
+    fn remove_from_chunk(&self, chunk: ChunkPos, entity_id: EntityId) {
         let should_remove = self
             .chunks
             .update_sync(&chunk, |_, set| {
@@ -167,7 +171,7 @@ mod tests {
     #[test]
     fn test_add_and_get() {
         let map = PlayerAreaMap::new();
-        let entity_id = 42;
+        let entity_id = EntityId::new(42);
         let center = ChunkPos::new(0, 0);
         let view = PlayerChunkView::new(center, 2);
 
@@ -199,7 +203,7 @@ mod tests {
     #[test]
     fn test_remove() {
         let map = PlayerAreaMap::new();
-        let entity_id = 42;
+        let entity_id = EntityId::new(42);
         let center = ChunkPos::new(0, 0);
         let view = PlayerChunkView::new(center, 2);
 
@@ -225,7 +229,7 @@ mod tests {
     #[test]
     fn test_view_change() {
         let map = PlayerAreaMap::new();
-        let entity_id = 42;
+        let entity_id = EntityId::new(42);
         let old_center = ChunkPos::new(0, 0);
         let new_center = ChunkPos::new(5, 5);
         let old_view = PlayerChunkView::new(old_center, 1);
@@ -260,8 +264,8 @@ mod tests {
     #[test]
     fn test_multiple_players() {
         let map = PlayerAreaMap::new();
-        let entity_id1 = 42;
-        let entity_id2 = 43;
+        let entity_id1 = EntityId::new(42);
+        let entity_id2 = EntityId::new(43);
 
         let view1 = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
         let view2 = PlayerChunkView::new(ChunkPos::new(1, 1), 2);

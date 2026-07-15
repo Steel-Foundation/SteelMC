@@ -21,8 +21,8 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback, RemovalReason,
-    SharedEntity, WeakEntity,
+    EntityId, EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback,
+    RemovalReason, SharedEntity, WeakEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
@@ -841,7 +841,7 @@ impl Default for EntityBaseSaveData {
 #[derive(Debug, Clone)]
 pub struct EntityBaseLoad {
     /// Fresh runtime ID from `next_entity_id()`.
-    pub id: i32,
+    pub id: EntityId,
     /// Restored entity position.
     pub position: DVec3,
     /// Persisted entity UUID.
@@ -933,7 +933,7 @@ impl EntityRelationshipState {
         self.passengers.first().and_then(Weak::upgrade)
     }
 
-    fn has_passenger_id(&mut self, passenger_id: i32) -> bool {
+    fn has_passenger_id(&mut self, passenger_id: EntityId) -> bool {
         self.passengers
             .retain(|passenger| passenger.strong_count() > 0);
         self.passengers.iter().any(|passenger| {
@@ -943,7 +943,7 @@ impl EntityRelationshipState {
         })
     }
 
-    fn remove_passenger_id(&mut self, passenger_id: i32) -> bool {
+    fn remove_passenger_id(&mut self, passenger_id: EntityId) -> bool {
         let mut removed = false;
         self.passengers.retain(|passenger| {
             let Some(entity) = passenger.upgrade() else {
@@ -987,7 +987,7 @@ impl EntityRelationshipState {
 /// ```
 pub struct EntityBase {
     /// Unique network ID for this entity (session-local).
-    id: i32,
+    id: EntityId,
     /// Persistent UUID for this entity.
     uuid: Uuid,
     /// The world this entity is in.
@@ -1011,7 +1011,12 @@ pub struct EntityBase {
 impl EntityBase {
     /// Creates a new `EntityBase` with a randomly generated UUID.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, dimensions: EntityDimensions, world: Weak<World>) -> Self {
+    pub fn new(
+        id: EntityId,
+        position: DVec3,
+        dimensions: EntityDimensions,
+        world: Weak<World>,
+    ) -> Self {
         Self::new_with_state(id, EntityBaseState::new(position, dimensions), world)
     }
 
@@ -1021,7 +1026,7 @@ impl EntityBase {
         clippy::large_types_passed_by_value,
         reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
     )]
-    pub fn new_with_state(id: i32, state: EntityBaseState, world: Weak<World>) -> Self {
+    pub fn new_with_state(id: EntityId, state: EntityBaseState, world: Weak<World>) -> Self {
         Self::with_uuid_and_state(id, Uuid::new_v4(), state, world)
     }
 
@@ -1030,7 +1035,7 @@ impl EntityBase {
     /// Use this when loading entities from disk or when the UUID is known.
     #[must_use]
     pub fn with_uuid(
-        id: i32,
+        id: EntityId,
         uuid: Uuid,
         position: DVec3,
         dimensions: EntityDimensions,
@@ -1049,7 +1054,7 @@ impl EntityBase {
         reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
     )]
     pub fn with_uuid_and_state(
-        id: i32,
+        id: EntityId,
         uuid: Uuid,
         state: EntityBaseState,
         world: Weak<World>,
@@ -1088,7 +1093,7 @@ impl EntityBase {
 
     /// Gets the entity's unique network ID.
     #[inline]
-    pub const fn id(&self) -> i32 {
+    pub const fn id(&self) -> EntityId {
         self.id
     }
 
@@ -1390,7 +1395,7 @@ impl EntityBase {
     }
 
     /// Returns true when the entity ID is a direct passenger.
-    pub fn has_passenger_id(&self, passenger_id: i32) -> bool {
+    pub fn has_passenger_id(&self, passenger_id: EntityId) -> bool {
         self.relationships.lock().has_passenger_id(passenger_id)
     }
 
@@ -1400,7 +1405,7 @@ impl EntityBase {
     }
 
     /// Removes a direct passenger by entity ID.
-    pub(crate) fn remove_passenger_id(&self, passenger_id: i32) -> bool {
+    pub(crate) fn remove_passenger_id(&self, passenger_id: EntityId) -> bool {
         self.relationships.lock().remove_passenger_id(passenger_id)
     }
 
@@ -1629,7 +1634,7 @@ impl EntityBase {
         }
     }
 
-    fn clear_vehicle_if(&self, vehicle_id: i32) -> bool {
+    fn clear_vehicle_if(&self, vehicle_id: EntityId) -> bool {
         {
             let mut relationships = self.relationships.lock();
             let Some(vehicle) = relationships.vehicle() else {
@@ -2328,7 +2333,7 @@ mod tests {
 
     use crate::entity::damage::DamageSource;
     use crate::entity::{
-        Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
+        Entity, EntityId, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
         entities::RawEntity,
     };
     use crate::portal::PortalKind;
@@ -2356,9 +2361,9 @@ mod tests {
         );
     }
 
-    fn raw_entity(id: i32) -> SharedEntity {
+    fn raw_entity(id: impl Into<EntityId>) -> SharedEntity {
         Arc::new(RawEntity::new(
-            id,
+            id.into(),
             DVec3::ZERO,
             Weak::<World>::new(),
             &vanilla_entities::ITEM,
@@ -2381,10 +2386,10 @@ mod tests {
     }
 
     impl FallDamageTestEntity {
-        fn new(id: i32) -> Arc<Self> {
+        fn new(id: impl Into<EntityId>) -> Arc<Self> {
             Arc::new(Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::<World>::new(),
@@ -2453,7 +2458,9 @@ mod tests {
             _old_pos: DVec3,
             _new_pos: DVec3,
         ) -> Result<(), EntityMoveError> {
-            Err(EntityMoveError::NotLive { entity_id: 1 })
+            Err(EntityMoveError::NotLive {
+                entity_id: EntityId::new(1),
+            })
         }
 
         fn on_remove(&self, _reason: RemovalReason) {}
@@ -2552,7 +2559,7 @@ mod tests {
     #[test]
     fn base_tick_count_advances_like_vanilla_entity_tick_count() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2586,7 +2593,7 @@ mod tests {
     #[test]
     fn lifecycle_state_tracks_removal() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2615,7 +2622,7 @@ mod tests {
     #[test]
     fn lifecycle_state_tracks_pending_world_change_tokens() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2643,7 +2650,7 @@ mod tests {
     #[test]
     fn try_set_position_rolls_back_when_commit_fails() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(1.0, 2.0, 3.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2654,7 +2661,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(EntityMoveError::NotLive { entity_id: 1 })
+            Err(EntityMoveError::NotLive { entity_id }) if entity_id == EntityId::new(1)
         ));
         assert_vec3_close(base.position(), DVec3::new(1.0, 2.0, 3.0));
     }
@@ -2663,7 +2670,7 @@ mod tests {
     #[should_panic(expected = "entity 1 local position update bypassed world entity manager")]
     fn set_position_local_panics_when_callback_requires_manager_commit() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(1.0, 2.0, 3.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2676,7 +2683,7 @@ mod tests {
     #[test]
     fn base_state_caches_fluid_contact() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2704,7 +2711,7 @@ mod tests {
     #[test]
     fn fire_freeze_state_applies_inside_block_effects() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2756,7 +2763,7 @@ mod tests {
     #[test]
     fn fire_ignite_respects_remaining_fire_tick_cap() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2798,7 +2805,7 @@ mod tests {
     #[test]
     fn fire_ignite_respects_vanilla_cooldown_shape() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2851,7 +2858,7 @@ mod tests {
     #[test]
     fn base_tick_advances_powder_snow_and_fire_state() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -2883,7 +2890,12 @@ mod tests {
     #[test]
     fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
         let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-        let base = EntityBase::new(1, DVec3::new(1.0, 64.0, 1.0), dimensions, Weak::new());
+        let base = EntityBase::new(
+            EntityId::new(1),
+            DVec3::new(1.0, 64.0, 1.0),
+            dimensions,
+            Weak::new(),
+        );
 
         base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
         base.set_no_physics(true);
@@ -2953,7 +2965,7 @@ mod tests {
     #[test]
     fn fire_freeze_state_round_trips_through_base_load() {
         let load = super::EntityBaseLoad {
-            id: 1,
+            id: EntityId::new(1),
             position: DVec3::ZERO,
             uuid: Uuid::nil(),
             velocity: DVec3::ZERO,
@@ -2983,7 +2995,7 @@ mod tests {
     #[test]
     fn no_physics_is_stored_on_base_state() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3002,19 +3014,25 @@ mod tests {
         link_vehicle_and_passenger(&vehicle, &passenger);
 
         assert!(passenger.is_passenger());
-        assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(1));
+        assert_eq!(
+            passenger.vehicle().map(|entity| entity.id()),
+            Some(EntityId::new(1))
+        );
         assert!(vehicle.is_vehicle());
-        assert_eq!(vehicle.first_passenger().map(|entity| entity.id()), Some(2));
+        assert_eq!(
+            vehicle.first_passenger().map(|entity| entity.id()),
+            Some(EntityId::new(2))
+        );
         assert_eq!(
             vehicle
                 .passengers()
                 .iter()
                 .map(|entity| entity.id())
                 .collect::<Vec<_>>(),
-            vec![2]
+            vec![EntityId::new(2)]
         );
         assert!(vehicle.has_passenger(passenger.as_ref()));
-        assert_eq!(passenger.root_vehicle_id(), 1);
+        assert_eq!(passenger.root_vehicle_id(), EntityId::new(1));
         assert!(passenger.is_passenger_of_same_vehicle(vehicle.as_ref()));
     }
 
@@ -3027,8 +3045,8 @@ mod tests {
         link_vehicle_and_passenger(&root, &middle);
         link_vehicle_and_passenger(&middle, &passenger);
 
-        assert_eq!(passenger.root_vehicle_id(), 1);
-        assert_eq!(middle.root_vehicle_id(), 1);
+        assert_eq!(passenger.root_vehicle_id(), EntityId::new(1));
+        assert_eq!(middle.root_vehicle_id(), EntityId::new(1));
         assert!(root.has_indirect_passenger(passenger.as_ref()));
         assert!(middle.has_indirect_passenger(passenger.as_ref()));
         assert!(!passenger.has_indirect_passenger(root.as_ref()));
@@ -3072,7 +3090,7 @@ mod tests {
         let position = DVec3::new(10.0, 64.0, -5.0);
         let custom_box = WorldAabb::new(9.75, 64.0, -5.75, 10.75, 66.0, -4.75);
         let base = EntityBase::new_with_state(
-            1,
+            EntityId::new(1),
             EntityBaseState::new_with_bounding_box(
                 position,
                 EntityDimensions::new(0.25, 0.25, 0.125),
@@ -3105,7 +3123,7 @@ mod tests {
     #[test]
     fn old_position_is_explicit_movement_trace_state() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(1.0, 2.0, 3.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3125,7 +3143,7 @@ mod tests {
     #[test]
     fn set_velocity_ignores_non_finite_updates_like_vanilla() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3144,7 +3162,7 @@ mod tests {
     #[test]
     fn set_rotation_wraps_yaw_and_clamps_pitch_like_vanilla_snap() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3174,7 +3192,7 @@ mod tests {
     #[test]
     fn old_rotation_is_base_tick_snapshot_state() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3200,7 +3218,7 @@ mod tests {
     #[should_panic(expected = "entity position must be finite")]
     fn set_position_rejects_non_finite_values() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3213,7 +3231,7 @@ mod tests {
     #[should_panic(expected = "entity old position must be finite")]
     fn set_old_position_rejects_non_finite_values() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3226,7 +3244,7 @@ mod tests {
     #[should_panic(expected = "entity rotation must be finite")]
     fn set_rotation_rejects_non_finite_values() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3238,7 +3256,7 @@ mod tests {
     #[test]
     fn known_speed_is_base_tick_position_delta() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(1.0, 2.0, 3.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3256,7 +3274,7 @@ mod tests {
     #[test]
     fn base_tick_state_decrements_boarding_cooldown() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3274,7 +3292,7 @@ mod tests {
     #[test]
     fn portal_cooldown_tick_decrements_portal_cooldown() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3292,7 +3310,7 @@ mod tests {
     #[test]
     fn base_tick_state_does_not_decrement_portal_cooldown() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3307,7 +3325,7 @@ mod tests {
     #[test]
     fn active_portal_process_reuses_same_portal_after_tick_is_consumed() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3337,7 +3355,7 @@ mod tests {
     #[test]
     fn active_portal_process_restarts_for_different_portal_kind() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3356,7 +3374,7 @@ mod tests {
     #[test]
     fn entity_tags_respect_vanilla_limit() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3376,7 +3394,7 @@ mod tests {
     #[test]
     fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(1.0, 2.0, 3.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3397,7 +3415,7 @@ mod tests {
     #[test]
     fn movement_trace_replays_last_finalized_movements() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3419,7 +3437,7 @@ mod tests {
     #[test]
     fn movement_trace_appends_direct_position_change_after_recorded_moves() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::new(0.0, 64.0, 0.0),
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3449,7 +3467,7 @@ mod tests {
     #[test]
     fn movement_trace_removes_latest_movement_recording() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3474,7 +3492,7 @@ mod tests {
     #[test]
     fn movement_trace_compacts_oldest_moves_at_vanilla_limit() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3503,7 +3521,7 @@ mod tests {
     #[test]
     fn fall_distance_is_stored_on_base_state() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3518,7 +3536,7 @@ mod tests {
     #[test]
     fn fall_distance_accumulation_uses_vanilla_float_cast() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3538,7 +3556,7 @@ mod tests {
     #[test]
     fn base_tick_lava_contact_dampens_fall_distance() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3554,7 +3572,7 @@ mod tests {
     #[test]
     fn base_tick_water_contact_resets_fall_distance() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3570,7 +3588,7 @@ mod tests {
     #[test]
     fn water_reset_runs_before_lava_fall_distance_damping() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3587,7 +3605,7 @@ mod tests {
     #[test]
     fn stuck_speed_multiplier_resets_fall_distance_and_applies_once() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
@@ -3611,7 +3629,7 @@ mod tests {
     #[test]
     fn stuck_speed_multiplier_can_be_consumed_without_applying_for_pistons() {
         let base = EntityBase::new(
-            1,
+            EntityId::new(1),
             DVec3::ZERO,
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),

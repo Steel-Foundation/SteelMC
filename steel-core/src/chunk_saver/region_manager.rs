@@ -11,6 +11,8 @@ use std::{
 };
 
 use rustc_hash::FxHashMap;
+
+use crate::entity::EntityId;
 use steel_utils::{ChunkPos, locks::AsyncRwLock};
 use tokio::{
     fs::{self, File, OpenOptions},
@@ -47,7 +49,7 @@ pub struct PreparedChunkSave {
     /// The serialized chunk data.
     pub persistent: PersistentChunk,
     /// Runtime manager entity IDs that were either serialized or explicitly skipped.
-    pub handled_runtime_entity_ids: Vec<i32>,
+    pub handled_runtime_entity_ids: Vec<EntityId>,
 }
 
 /// An open region file with its header.

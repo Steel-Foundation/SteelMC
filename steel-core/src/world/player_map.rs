@@ -5,7 +5,8 @@ use std::sync::Arc;
 use scc::HashMap;
 use uuid::Uuid;
 
-use crate::{entity::Entity, player::Player};
+use crate::entity::{Entity, EntityId};
+use crate::player::Player;
 
 /// Thread-safe player storage with dual indexing.
 ///
@@ -15,7 +16,7 @@ pub struct PlayerMap {
     /// Primary index by UUID (persistent identifier)
     by_uuid: HashMap<Uuid, Arc<Player>>,
     /// Secondary index by entity ID (session-local identifier)
-    by_entity_id: HashMap<i32, Arc<Player>>,
+    by_entity_id: HashMap<EntityId, Arc<Player>>,
 }
 
 impl Default for PlayerMap {
@@ -121,7 +122,7 @@ impl PlayerMap {
 
     /// Gets a player by entity ID.
     #[must_use]
-    pub fn get_by_entity_id(&self, entity_id: i32) -> Option<Arc<Player>> {
+    pub fn get_by_entity_id(&self, entity_id: EntityId) -> Option<Arc<Player>> {
         self.by_entity_id.read_sync(&entity_id, |_, p| p.clone())
     }
 

@@ -510,6 +510,7 @@ fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::EntityId;
     use steel_registry::{
         entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_entities,
     };
@@ -522,10 +523,10 @@ mod tests {
     }
 
     impl OwnerCollisionProjectile {
-        fn new(id: i32, position: DVec3) -> Self {
+        fn new(id: impl Into<EntityId>, position: DVec3) -> Self {
             Self {
                 base: EntityBase::new(
-                    id,
+                    id.into(),
                     position,
                     vanilla_entities::ENDER_PEARL.dimensions,
                     Weak::new(),
@@ -559,9 +560,14 @@ mod tests {
     }
 
     impl OwnerCollisionTestEntity {
-        fn shared(id: i32, position: DVec3, pickable: bool) -> SharedEntity {
+        fn shared(id: impl Into<EntityId>, position: DVec3, pickable: bool) -> SharedEntity {
             Arc::new(Self {
-                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    id.into(),
+                    position,
+                    vanilla_entities::PIG.dimensions,
+                    Weak::new(),
+                ),
                 pickable,
             })
         }

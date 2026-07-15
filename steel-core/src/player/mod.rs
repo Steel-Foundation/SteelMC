@@ -95,7 +95,7 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityMovementEmission,
+    DEATH_DURATION, Entity, EntityBase, EntityEventSource, EntityId, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
     RemovalReason, SharedEntity, equipment_items_to_packet_items, start_riding_entities,
 };
@@ -488,7 +488,7 @@ impl Player {
         world: Arc<World>,
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
-        entity_id: i32,
+        entity_id: EntityId,
         player: &Weak<Player>,
         client_information: ClientInformation,
     ) -> Self {
@@ -695,7 +695,7 @@ impl Player {
             world.broadcast_to_nearby(
                 chunk_pos,
                 CEntityEvent {
-                    entity_id: self.id(),
+                    entity_id: self.id().get(),
                     event: EntityStatus::Poof,
                 },
                 None,
@@ -712,7 +712,7 @@ impl Player {
     /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
-            let packet = CSetEntityData::new(self.id(), dirty_values);
+            let packet = CSetEntityData::new(self.id().get(), dirty_values);
             self.get_world()
                 .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
             self.send_packet(packet);
@@ -859,7 +859,7 @@ impl Player {
         world.broadcast_to_nearby(
             chunk_pos,
             CEntityEvent {
-                entity_id: self.id(),
+                entity_id: self.id().get(),
                 event: EntityStatus::Death,
             },
             None,
@@ -880,7 +880,7 @@ impl Player {
         .component();
 
         self.send_packet(CPlayerCombatKill {
-            player_id: self.id(),
+            player_id: self.id().get(),
             message: if show_death_messages {
                 death_message.clone()
             } else {
@@ -1740,7 +1740,7 @@ impl Player {
         entity
             .passengers()
             .iter()
-            .map(|passenger| passenger.id())
+            .map(|passenger| passenger.id().get())
             .collect()
     }
 
@@ -1781,7 +1781,7 @@ impl Player {
     pub(crate) fn send_restored_vehicle_mount_sync(&self, vehicle: &dyn Entity) {
         self.send_active_effects_for_vehicle(vehicle);
         self.send_packet(CSetPassengers::new(
-            vehicle.id(),
+            vehicle.id().get(),
             Self::passenger_ids_for_packet(vehicle),
         ));
     }
@@ -1883,7 +1883,7 @@ impl Entity for Player {
 
         self.remove_active_effects_for_vehicle(old_vehicle.as_ref());
         self.send_packet(CSetPassengers::new(
-            old_vehicle.id(),
+            old_vehicle.id().get(),
             Self::passenger_ids_for_packet(old_vehicle.as_ref()),
         ));
     }
@@ -1910,7 +1910,7 @@ impl Entity for Player {
         }
         self.send_active_effects_for_vehicle(entity_to_ride.as_ref());
         self.send_packet(CSetPassengers::new(
-            entity_to_ride.id(),
+            entity_to_ride.id().get(),
             Self::passenger_ids_for_packet(entity_to_ride.as_ref()),
         ));
         true

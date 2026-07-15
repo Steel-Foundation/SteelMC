@@ -21,7 +21,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::{
     entity::Entity,
     inventory::{
-        MenuProvider,
+        MenuId, MenuProvider,
         container::Container,
         equipment::{EntityEquipment, EquipmentSlot},
         inventory_menu::InventoryMenu,
@@ -952,7 +952,7 @@ impl Player {
     /// Generates the next container ID (1-100, wrapping around).
     ///
     /// Based on Java's `ServerPlayer::nextContainerCounter`.
-    fn next_container_counter(&self) -> u8 {
+    fn next_container_counter(&self) -> MenuId {
         self.container_counter.lock().next()
     }
 
@@ -962,7 +962,7 @@ impl Player {
     ///
     /// # Arguments
     /// * `provider` - The menu provider containing the title and factory
-    pub fn open_menu(&self, provider: &impl MenuProvider) -> u8 {
+    pub fn open_menu(&self, provider: &impl MenuProvider) -> MenuId {
         self.do_close_container();
 
         let container_id = self.next_container_counter();

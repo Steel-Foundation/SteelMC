@@ -2,6 +2,8 @@
 
 use rustc_hash::FxHashSet;
 
+use crate::entity::EntityId;
+
 use super::{Entity, SharedEntity};
 
 /// Snapshots vanilla old position and rotation before an entity tick.
@@ -16,7 +18,7 @@ pub(crate) fn snapshot_old_pos_and_rot_for_tick(entity: &dyn Entity) {
 /// passengers only recurse when the server-level entity tick list says they may tick.
 pub(crate) fn tick_vehicle_passengers_with_ticked_if(
     vehicle: &dyn Entity,
-    ticked_entities: &mut FxHashSet<i32>,
+    ticked_entities: &mut FxHashSet<EntityId>,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
 ) {
@@ -38,10 +40,10 @@ pub(crate) fn tick_vehicle_passengers_with_ticked_if(
 fn tick_passenger(
     vehicle: &dyn Entity,
     entity: &SharedEntity,
-    ticked_entities: &mut FxHashSet<i32>,
+    ticked_entities: &mut FxHashSet<EntityId>,
     post_tick: &mut impl FnMut(&SharedEntity),
     can_tick: &mut impl FnMut(&SharedEntity) -> bool,
-    visited: &mut FxHashSet<i32>,
+    visited: &mut FxHashSet<EntityId>,
 ) {
     assert!(
         visited.insert(entity.id()),

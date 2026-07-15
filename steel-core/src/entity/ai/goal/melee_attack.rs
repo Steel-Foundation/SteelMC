@@ -229,6 +229,7 @@ fn is_no_creative_or_spectator(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -238,11 +239,11 @@ mod tests {
     use crate::entity::ai::goal::selector::Goal;
     use crate::entity::{Mob, entities::PigEntity};
 
-    fn pig(id: i32, position: DVec3) -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
+    fn pig(id: impl Into<EntityId>, position: DVec3) -> PigEntity {
+        PigEntity::new(&vanilla_entities::PIG, id.into(), position, Weak::new())
     }
 
-    fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
+    fn shared_pig(id: impl Into<EntityId>, position: DVec3) -> SharedEntity {
         Arc::new(pig(id, position))
     }
 

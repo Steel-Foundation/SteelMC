@@ -2,11 +2,13 @@
 
 use rustc_hash::FxHashSet;
 
+use crate::entity::EntityId;
+
 /// Vanilla `Sensing` line-of-sight cache.
 #[derive(Debug, Default)]
 pub(crate) struct Sensing {
-    seen: FxHashSet<i32>,
-    unseen: FxHashSet<i32>,
+    seen: FxHashSet<EntityId>,
+    unseen: FxHashSet<EntityId>,
 }
 
 impl Sensing {
@@ -25,7 +27,7 @@ impl Sensing {
     /// Returns cached line-of-sight for `target_id`, computing it on first use.
     pub(crate) fn has_line_of_sight(
         &mut self,
-        target_id: i32,
+        target_id: EntityId,
         test: impl FnOnce() -> bool,
     ) -> bool {
         if self.seen.contains(&target_id) {
@@ -56,18 +58,18 @@ mod tests {
         let calls = AtomicUsize::new(0);
         let mut sensing = Sensing::new();
 
-        assert!(sensing.has_line_of_sight(1, || {
+        assert!(sensing.has_line_of_sight(EntityId::new(1), || {
             calls.fetch_add(1, Ordering::Relaxed);
             true
         }));
-        assert!(sensing.has_line_of_sight(1, || {
+        assert!(sensing.has_line_of_sight(EntityId::new(1), || {
             calls.fetch_add(1, Ordering::Relaxed);
             false
         }));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
 
         sensing.tick();
-        assert!(!sensing.has_line_of_sight(1, || {
+        assert!(!sensing.has_line_of_sight(EntityId::new(1), || {
             calls.fetch_add(1, Ordering::Relaxed);
             false
         }));
@@ -79,11 +81,11 @@ mod tests {
         let calls = AtomicUsize::new(0);
         let mut sensing = Sensing::new();
 
-        assert!(!sensing.has_line_of_sight(1, || {
+        assert!(!sensing.has_line_of_sight(EntityId::new(1), || {
             calls.fetch_add(1, Ordering::Relaxed);
             false
         }));
-        assert!(!sensing.has_line_of_sight(1, || {
+        assert!(!sensing.has_line_of_sight(EntityId::new(1), || {
             calls.fetch_add(1, Ordering::Relaxed);
             true
         }));

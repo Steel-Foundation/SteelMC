@@ -10,8 +10,8 @@ use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
 use crate::entity::{
-    ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
-    MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
+    ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityId,
+    EntityLoadRequest, MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
@@ -707,7 +707,7 @@ impl ChunkStorage {
     fn assert_unique_save_uuid(
         seen_uuids: &mut FxHashSet<uuid::Uuid>,
         uuid: uuid::Uuid,
-        entity_id: i32,
+        entity_id: EntityId,
         chunk_pos: ChunkPos,
     ) {
         assert!(
@@ -1075,7 +1075,7 @@ impl ChunkStorage {
 
     fn entity_to_persistent(
         entity: &SharedEntity,
-        visited: &mut FxHashSet<i32>,
+        visited: &mut FxHashSet<EntityId>,
         mode: EntityPersistenceMode,
     ) -> Option<PersistentEntity> {
         if !Self::entity_should_persist(entity.as_ref(), mode) {

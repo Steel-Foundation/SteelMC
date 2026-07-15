@@ -332,6 +332,7 @@ pub trait AgeableMob: Mob {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -357,7 +358,7 @@ mod tests {
             init_test_registry();
             Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     vanilla_entities::PIG.dimensions,
                     Weak::new(),

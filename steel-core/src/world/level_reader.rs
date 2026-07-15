@@ -11,6 +11,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
+use crate::entity::EntityId;
 use crate::world::game_event_context::GameEventContext;
 
 const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
@@ -125,7 +126,7 @@ pub trait LevelAccessor: ScheduledTickAccess {
         pos: BlockPos,
         volume: f32,
         pitch: f32,
-        exclude: Option<i32>,
+        exclude: Option<EntityId>,
     ) {
     }
 

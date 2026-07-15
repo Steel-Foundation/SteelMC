@@ -10,7 +10,7 @@ use text_components::TextComponent;
 
 use crate::entity::{Mob, SharedEntity};
 use crate::inventory::{
-    SyncPlayerInv,
+    MenuId, SyncPlayerInv,
     container::Container,
     lock::{ContainerLockGuard, ContainerRef},
     menu::{Menu, MenuBehavior},
@@ -56,7 +56,7 @@ impl MerchantMenu {
     #[must_use]
     pub fn new(
         inventory: SyncPlayerInv,
-        container_id: u8,
+        container_id: MenuId,
         offers: SharedMerchantOffers,
         merchant: SharedEntity,
     ) -> Self {
@@ -326,7 +326,7 @@ impl MenuInstance for MerchantMenu {
         &vanilla_menu_types::MERCHANT
     }
 
-    fn container_id(&self) -> u8 {
+    fn container_id(&self) -> MenuId {
         self.behavior.container_id
     }
 }
@@ -362,7 +362,7 @@ impl MenuProvider for MerchantMenuProvider {
         self.title.clone()
     }
 
-    fn create(&self, container_id: u8) -> Box<dyn MenuInstance> {
+    fn create(&self, container_id: MenuId) -> Box<dyn MenuInstance> {
         Box::new(MerchantMenu::new(
             self.inventory.clone(),
             container_id,

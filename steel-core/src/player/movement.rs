@@ -882,7 +882,7 @@ impl Player {
             return;
         }
 
-        if packet.entity_id != self.id() {
+        if packet.entity_id != self.id().get() {
             log::warn!(
                 "Player {} (eid {}) sent SPlayerCommand with mismatched entity_id {}",
                 self.gameprofile.name,

@@ -250,6 +250,7 @@ const fn next_mirrored_offset(value: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -270,7 +271,12 @@ mod tests {
     fn move_to_block_goal_requires_world_after_start_delay() {
         init_test_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!goal.can_use(&mob));
     }
@@ -280,7 +286,12 @@ mod tests {
         init_test_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!goal.can_use(&mob));
 
@@ -318,7 +329,7 @@ mod tests {
         goal.block_pos = BlockPos::new(0, -1, 0);
         let mob = PigEntity::new(
             &vanilla_entities::PIG,
-            1,
+            EntityId::new(1),
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
         );

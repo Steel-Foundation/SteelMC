@@ -190,6 +190,7 @@ fn distance_to_door_sqr(mob: &dyn PathfinderMob, door_pos: BlockPos) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -201,7 +202,12 @@ mod tests {
     use crate::entity::{Entity, EntityGroundContact, EntityMovementFlags};
 
     fn pig(position: DVec3) -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, 1, position, Weak::new())
+        PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            position,
+            Weak::new(),
+        )
     }
 
     fn set_horizontal_collision(mob: &PigEntity) {

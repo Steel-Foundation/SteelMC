@@ -174,6 +174,7 @@ impl Goal for TemptGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use steel_registry::item_stack::ItemStack;
@@ -199,7 +200,12 @@ mod tests {
             |item_stack| item_stack.is(&vanilla_items::ITEMS.carrot),
             false,
         );
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!goal.should_follow(&pig));
 

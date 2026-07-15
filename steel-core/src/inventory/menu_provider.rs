@@ -3,6 +3,7 @@
 use steel_registry::menu_type::MenuTypeRef;
 use text_components::TextComponent;
 
+use crate::inventory::MenuId;
 use crate::inventory::menu::Menu;
 
 /// Trait for menu instances that can be opened by players.
@@ -14,7 +15,7 @@ pub trait MenuInstance: Menu + Send + Sync {
     fn menu_type(&self) -> MenuTypeRef;
 
     /// Returns the container ID for this menu.
-    fn container_id(&self) -> u8;
+    fn container_id(&self) -> MenuId;
 }
 
 /// Trait for types that can create menus.
@@ -25,5 +26,5 @@ pub trait MenuProvider {
     fn title(&self) -> TextComponent;
 
     /// Creates a menu with the given container ID.
-    fn create(&self, container_id: u8) -> Box<dyn MenuInstance>;
+    fn create(&self, container_id: MenuId) -> Box<dyn MenuInstance>;
 }

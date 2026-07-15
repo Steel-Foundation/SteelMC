@@ -31,6 +31,7 @@ use steel_registry::{
 
 use crate::{
     inventory::{
+        MenuId,
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         slot::{Slot, SlotType},
     },
@@ -297,7 +298,7 @@ pub struct MenuBehavior {
     /// The client's perception of the carried item.
     pub remote_carried: RemoteSlot,
     /// The container ID (0 for player inventory).
-    pub container_id: u8,
+    pub container_id: MenuId,
     /// Incremented every time the server and client mismatch.
     pub state_id: u32,
     /// None for player inventory. Some for all other menus.
@@ -319,7 +320,7 @@ pub struct MenuBehavior {
 impl MenuBehavior {
     /// Creates a new menu behavior with the given slots.
     #[must_use]
-    pub fn new(slots: Vec<SlotType>, container_id: u8, menu_type: Option<MenuTypeRef>) -> Self {
+    pub fn new(slots: Vec<SlotType>, container_id: MenuId, menu_type: Option<MenuTypeRef>) -> Self {
         let slot_count = slots.len();
         Self {
             slots,

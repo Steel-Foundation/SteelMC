@@ -128,6 +128,7 @@ fn no_creative_or_spectator(target: &dyn LivingEntity) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -146,7 +147,12 @@ mod tests {
     #[test]
     fn avoid_entity_default_selector_allows_non_player_living_entities() {
         init_test_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(no_creative_or_spectator(&pig));
     }
@@ -155,7 +161,12 @@ mod tests {
     fn avoid_entity_goal_requires_world() {
         init_test_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
 
         assert!(!goal.can_use(&mob));
     }
@@ -164,10 +175,15 @@ mod tests {
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
         init_test_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::new(2.0, 0.0, 0.0),
             Weak::new(),
         )));
@@ -188,10 +204,15 @@ mod tests {
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
         init_test_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         goal.to_avoid = Some(Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
-            2,
+            EntityId::new(2),
             DVec3::new(8.0, 0.0, 0.0),
             Weak::new(),
         )));

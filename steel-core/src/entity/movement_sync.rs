@@ -1,6 +1,8 @@
 //! Shared movement synchronization state for tracked entities.
 
 use glam::DVec3;
+
+use crate::entity::EntityId;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
     CSetEntityMotion, PackedEntityDelta, calc_delta, to_angle_byte,
@@ -220,7 +222,7 @@ impl EntityMovementSyncPackets {
 /// Runtime values needed to build a vanilla position sync packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityPositionSyncSnapshot {
-    entity_id: i32,
+    entity_id: EntityId,
     position: DVec3,
     velocity: DVec3,
     rotation: (f32, f32),
@@ -231,7 +233,7 @@ impl EntityPositionSyncSnapshot {
     /// Creates a packet snapshot for the current entity state.
     #[must_use]
     pub const fn new(
-        entity_id: i32,
+        entity_id: EntityId,
         position: DVec3,
         velocity: DVec3,
         rotation: (f32, f32),
@@ -248,7 +250,7 @@ impl EntityPositionSyncSnapshot {
 
     const fn full_sync_packet(self) -> CEntityPositionSync {
         CEntityPositionSync {
-            entity_id: self.entity_id,
+            entity_id: self.entity_id.get(),
             pos: self.position,
             vel: self.velocity,
             yaw: self.rotation.0,
@@ -267,7 +269,7 @@ impl EntityPositionSyncDecision {
     ) -> EntityPositionSyncPacket {
         match self {
             Self::Delta { dx, dy, dz } => EntityPositionSyncPacket::Delta(CMoveEntityPos {
-                entity_id: snapshot.entity_id,
+                entity_id: snapshot.entity_id.get(),
                 dx,
                 dy,
                 dz,
@@ -285,7 +287,7 @@ impl EntityPositionSyncDecision {
     ) -> EntityPositionRotSyncPacket {
         match self {
             Self::Delta { dx, dy, dz } => EntityPositionRotSyncPacket::Delta(CMoveEntityPosRot {
-                entity_id: snapshot.entity_id,
+                entity_id: snapshot.entity_id.get(),
                 dx,
                 dy,
                 dz,
@@ -428,7 +430,7 @@ impl EntityVelocitySyncState {
     /// Selects and records a velocity packet if vanilla requires one.
     pub fn record_velocity_sync(
         &mut self,
-        entity_id: i32,
+        entity_id: EntityId,
         current_velocity: DVec3,
     ) -> Option<CSetEntityMotion> {
         let diff = current_velocity - self.last_sent_velocity;
@@ -439,7 +441,7 @@ impl EntityVelocitySyncState {
         }
 
         self.last_sent_velocity = current_velocity;
-        Some(CSetEntityMotion::new(entity_id, current_velocity))
+        Some(CSetEntityMotion::new(entity_id.get(), current_velocity))
     }
 }
 
@@ -454,7 +456,7 @@ pub struct EntityMovementSyncState {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityMovementSyncUpdate {
     /// Entity network id.
-    pub entity_id: i32,
+    pub entity_id: EntityId,
     /// Whether this update includes position.
     pub has_position: bool,
     /// Whether this update includes body/head rotation.
@@ -489,7 +491,7 @@ pub struct ServerEntityMovementSyncState {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ServerEntityMovementSyncUpdate {
     /// Entity network id.
-    pub entity_id: i32,
+    pub entity_id: EntityId,
     /// Whether the entity is currently riding another entity.
     pub is_passenger: bool,
     /// Current entity tracking position.
@@ -578,7 +580,7 @@ impl ServerEntityMovementSyncState {
                 result
                     .packets
                     .push(EntityMovementSyncPacket::from(CRotateHead {
-                        entity_id: update.entity_id,
+                        entity_id: update.entity_id.get(),
                         head_y_rot,
                     }));
             }
@@ -606,7 +608,7 @@ impl ServerEntityMovementSyncState {
             result
                 .packets
                 .push(EntityMovementSyncPacket::from(CMoveEntityRot {
-                    entity_id: update.entity_id,
+                    entity_id: update.entity_id.get(),
                     y_rot: body_rotation.yaw(),
                     x_rot: body_rotation.pitch(),
                     on_ground: update.on_ground,
@@ -692,7 +694,7 @@ impl ServerEntityMovementSyncState {
             result
                 .packets
                 .push(EntityMovementSyncPacket::from(CMoveEntityRot {
-                    entity_id: update.entity_id,
+                    entity_id: update.entity_id.get(),
                     y_rot: body_rotation.yaw(),
                     x_rot: body_rotation.pitch(),
                     on_ground: update.on_ground,
@@ -750,7 +752,7 @@ impl EntityMovementSyncState {
         let head_rotation = if update.has_rotation {
             self.record_head_yaw(update.head_yaw)
                 .map(|head_y_rot| CRotateHead {
-                    entity_id: update.entity_id,
+                    entity_id: update.entity_id.get(),
                     head_y_rot,
                 })
         } else {
@@ -793,7 +795,7 @@ impl EntityMovementSyncState {
             self.record_body_rotation(update.body_rotation)
                 .map(|body_rotation| {
                     EntityMovementSyncPacket::from(CMoveEntityRot {
-                        entity_id: update.entity_id,
+                        entity_id: update.entity_id.get(),
                         y_rot: body_rotation.yaw(),
                         x_rot: body_rotation.pitch(),
                         on_ground: update.on_ground,
@@ -826,6 +828,8 @@ impl EntityMovementSyncState {
 mod tests {
     use glam::DVec3;
     use steel_protocol::packets::game::{calc_delta, to_angle_byte};
+
+    use crate::entity::EntityId;
 
     use super::{
         EntityMovementSyncPacket, EntityMovementSyncState, EntityMovementSyncUpdate,
@@ -915,7 +919,7 @@ mod tests {
         let mut state = EntityVelocitySyncState::new(DVec3::ZERO);
 
         let packet = state
-            .record_velocity_sync(12, DVec3::new(0.001, 0.0, 0.0))
+            .record_velocity_sync(EntityId::new(12), DVec3::new(0.001, 0.0, 0.0))
             .expect("velocity should sync");
 
         assert_eq!(packet.entity_id, 12);
@@ -931,7 +935,7 @@ mod tests {
 
         assert!(
             state
-                .record_velocity_sync(12, DVec3::new(0.000_1, 0.0, 0.0))
+                .record_velocity_sync(EntityId::new(12), DVec3::new(0.000_1, 0.0, 0.0))
                 .is_none()
         );
         assert_eq!(state.last_sent_velocity(), DVec3::ZERO);
@@ -942,7 +946,7 @@ mod tests {
         let mut state = EntityVelocitySyncState::new(DVec3::new(0.000_1, 0.0, 0.0));
 
         let packet = state
-            .record_velocity_sync(12, DVec3::ZERO)
+            .record_velocity_sync(EntityId::new(12), DVec3::ZERO)
             .expect("stationary transition should sync");
 
         assert_eq!(packet.entity_id, 12);
@@ -979,7 +983,7 @@ mod tests {
         let mut state = EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0);
         let position = DVec3::new(0.25, 0.0, 0.0);
         let update = EntityMovementSyncUpdate {
-            entity_id: 12,
+            entity_id: EntityId::new(12),
             has_position: true,
             has_rotation: true,
             position,
@@ -1016,7 +1020,7 @@ mod tests {
     fn movement_sync_update_full_position_marks_body_and_head_rotation_sent() {
         let mut state = EntityMovementSyncState::new(DVec3::ZERO, false, (0.0, 0.0), 0.0);
         let full_update = EntityMovementSyncUpdate {
-            entity_id: 12,
+            entity_id: EntityId::new(12),
             has_position: true,
             has_rotation: true,
             position: DVec3::new(0.25, 0.0, 0.0),
@@ -1062,7 +1066,7 @@ mod tests {
 
     fn server_update(position: DVec3, velocity: DVec3) -> ServerEntityMovementSyncUpdate {
         ServerEntityMovementSyncUpdate {
-            entity_id: 12,
+            entity_id: EntityId::new(12),
             is_passenger: false,
             position,
             velocity,
@@ -1219,7 +1223,7 @@ mod tests {
         };
 
         let packet = decision.into_position_packet(EntityPositionSyncSnapshot::new(
-            12,
+            EntityId::new(12),
             position,
             DVec3::new(1.0, 2.0, 3.0),
             (90.0, 45.0),
@@ -1255,7 +1259,7 @@ mod tests {
         };
 
         let packet = decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
-            12,
+            EntityId::new(12),
             position,
             DVec3::new(1.0, 2.0, 3.0),
             (90.0, 45.0),
@@ -1286,7 +1290,7 @@ mod tests {
     #[test]
     fn sync_decision_builds_full_position_sync_packet() {
         let snapshot = EntityPositionSyncSnapshot::new(
-            12,
+            EntityId::new(12),
             DVec3::new(10.0, 20.0, 30.0),
             DVec3::new(1.0, 2.0, 3.0),
             (90.0, 45.0),

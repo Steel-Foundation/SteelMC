@@ -13,7 +13,9 @@ use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityId, EntitySyncedData,
+};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -37,7 +39,12 @@ unsafe impl DowncastType for ItemFrameEntity {
 impl ItemFrameEntity {
     /// Creates a fresh item frame from the generic entity factory path.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self::new_attached(
             entity_type,
             id,
@@ -55,7 +62,7 @@ impl ItemFrameEntity {
     #[must_use]
     pub fn new_attached(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         block_pos: BlockPos,
         direction: Direction,
         world: Weak<World>,
@@ -318,7 +325,7 @@ mod tests {
     fn item_frame_persists_structure_marker_state() {
         let frame = ItemFrameEntity::new_attached(
             &vanilla_entities::ITEM_FRAME,
-            1,
+            EntityId::new(1),
             BlockPos::new(12, 80, 14),
             Direction::West,
             Weak::new(),
@@ -347,7 +354,7 @@ mod tests {
     fn item_frame_is_pickable_like_vanilla() {
         let frame = ItemFrameEntity::new_attached(
             &vanilla_entities::ITEM_FRAME,
-            1,
+            EntityId::new(1),
             BlockPos::new(12, 80, 14),
             Direction::West,
             Weak::new(),

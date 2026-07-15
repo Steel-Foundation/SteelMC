@@ -16,7 +16,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityId, EntitySyncedData};
 use crate::world::World;
 
 /// A block display entity that renders a block state at its position.
@@ -44,7 +44,12 @@ impl BlockDisplayEntity {
     ///
     /// The `id` should be obtained from `next_entity_id()`.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -58,7 +63,7 @@ impl BlockDisplayEntity {
     #[must_use]
     pub fn with_uuid(
         entity_type: EntityTypeRef,
-        id: i32,
+        id: EntityId,
         position: DVec3,
         uuid: Uuid,
         world: Weak<World>,

@@ -195,6 +195,7 @@ impl Goal for LookAtPlayerGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use super::*;
@@ -233,7 +234,12 @@ mod tests {
     #[test]
     fn look_at_player_goal_uses_vanilla_adjusted_look_time() {
         init_test_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         let mut goal = LookAtPlayerGoal::new(6.0);
 
         goal.start(&pig);

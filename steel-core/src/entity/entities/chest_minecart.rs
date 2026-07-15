@@ -15,7 +15,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, reset_forward_direction_of_relative_portal_position,
+    Entity, EntityBase, EntityBaseLoad, EntityId,
+    reset_forward_direction_of_relative_portal_position,
 };
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
@@ -57,7 +58,12 @@ impl ChestMinecartState {
 impl ChestMinecartEntity {
     /// Creates a new chest minecart entity.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: EntityId,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Self {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
@@ -152,7 +158,7 @@ mod tests {
     fn chest_minecart_saves_structure_loot_table_state() {
         let minecart = ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
-            1,
+            EntityId::new(1),
             DVec3::new(1.5, 2.5, 3.5),
             Weak::new(),
         );
@@ -177,7 +183,7 @@ mod tests {
     fn chest_minecart_is_pickable_and_pushable_like_vanilla() {
         let minecart = ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
-            1,
+            EntityId::new(1),
             DVec3::new(1.5, 2.5, 3.5),
             Weak::new(),
         );
@@ -191,7 +197,7 @@ mod tests {
     fn chest_minecart_relative_portal_position_resets_forward_offset() {
         let minecart = ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
-            1,
+            EntityId::new(1),
             DVec3::new(12.0, 66.0, 20.75),
             Weak::new(),
         );

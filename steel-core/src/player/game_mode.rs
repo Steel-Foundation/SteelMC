@@ -38,7 +38,7 @@ use crate::command::commands::gamemode::get_gamemode_translation;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{Entity, EntityId, LivingEntity, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::menu::Menu;
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
@@ -462,7 +462,7 @@ impl Player {
             && let Some(player) = self.get_world().players.get_by_entity_id(entity.id())
         {
             let velocity = entity.velocity();
-            player.send_packet(CSetEntityMotion::new(entity.id(), velocity));
+            player.send_packet(CSetEntityMotion::new(entity.id().get(), velocity));
             entity.clear_hurt_mark();
             entity.set_velocity(old_movement);
         }
@@ -868,7 +868,8 @@ impl Player {
         }
 
         let world = self.get_world();
-        let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
+        let Some(target) = world.get_accessible_entity_by_id(EntityId::new(packet.entity_id))
+        else {
             return;
         };
 
@@ -929,8 +930,8 @@ impl Player {
     }
 
     fn is_invalid_attack_target(
-        player_id: i32,
-        target_id: i32,
+        player_id: EntityId,
+        target_id: EntityId,
         target_type: EntityTypeRef,
     ) -> bool {
         target_id == player_id
@@ -945,7 +946,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let target = world.get_accessible_entity_by_id(packet.entity_id);
+        let target = world.get_accessible_entity_by_id(EntityId::new(packet.entity_id));
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {
             return;
@@ -1227,7 +1228,7 @@ impl Player {
         };
 
         let world = self.get_world();
-        let Some(target) = world.get_accessible_entity_by_id(entity_id) else {
+        let Some(target) = world.get_accessible_entity_by_id(EntityId::new(entity_id)) else {
             return;
         };
 
@@ -1237,7 +1238,7 @@ impl Player {
             && target.is_pickable()
         {
             self.send_packet(CSetCamera {
-                camera_id: target.id(),
+                camera_id: target.id().get(),
             });
         }
     }
@@ -1617,27 +1618,28 @@ mod tests {
     use steel_registry::vanilla_entities;
 
     use super::Player;
+    use crate::entity::EntityId;
 
     #[test]
     fn invalid_attack_targets_include_xp_orbs() {
         assert!(Player::is_invalid_attack_target(
-            1,
-            1,
+            EntityId::new(1),
+            EntityId::new(1),
             &vanilla_entities::PLAYER
         ));
         assert!(Player::is_invalid_attack_target(
-            1,
-            2,
+            EntityId::new(1),
+            EntityId::new(2),
             &vanilla_entities::ITEM
         ));
         assert!(Player::is_invalid_attack_target(
-            1,
-            2,
+            EntityId::new(1),
+            EntityId::new(2),
             &vanilla_entities::EXPERIENCE_ORB
         ));
         assert!(!Player::is_invalid_attack_target(
-            1,
-            2,
+            EntityId::new(1),
+            EntityId::new(2),
             &vanilla_entities::PIG
         ));
     }

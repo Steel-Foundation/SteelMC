@@ -107,6 +107,7 @@ fn cap_positive_thread_count(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -131,7 +132,12 @@ mod tests {
     impl TestEntity {
         fn new(entity_type: EntityTypeRef, projectile_owner_uuid: Option<Uuid>) -> Self {
             Self {
-                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    EntityId::new(1),
+                    DVec3::ZERO,
+                    entity_type.dimensions,
+                    Weak::new(),
+                ),
                 entity_type,
                 projectile_owner_uuid,
             }
@@ -1953,7 +1959,7 @@ impl Server {
         let hashed_seed = world.obfuscated_seed();
 
         player.send_packet(CLogin {
-            player_id: player.id(),
+            player_id: player.id().get(),
             hardcore: false,
             levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
@@ -3061,7 +3067,7 @@ impl Server {
 
         // TODO: Set permissions level to match player's level.
         player.send_packet(CEntityEvent {
-            entity_id: player.id(),
+            entity_id: player.id().get(),
             event: EntityStatus::PermissionLevelOwners,
         });
 

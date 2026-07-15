@@ -1,5 +1,6 @@
 //! Entity registry for creating entity instances.
 
+use crate::entity::EntityId;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -24,7 +25,7 @@ use crate::world::World;
 /// Takes the entity type, entity ID, spawn position, and world reference.
 /// Returns a new entity instance. The entity ID should be obtained from
 /// `next_entity_id()`.
-pub type EntityFactory = fn(EntityTypeRef, i32, DVec3, Weak<World>) -> SharedEntity;
+pub type EntityFactory = fn(EntityTypeRef, EntityId, DVec3, Weak<World>) -> SharedEntity;
 
 /// Factory function type for loading entities from disk.
 ///
@@ -145,7 +146,7 @@ impl EntityRegistry {
     pub fn create(
         &self,
         entity_type: EntityTypeRef,
-        entity_id: i32,
+        entity_id: EntityId,
         pos: DVec3,
         world: Weak<World>,
     ) -> Option<SharedEntity> {
@@ -351,9 +352,12 @@ mod tests {
             |entity_type, id, pos, world| Arc::new(RawEntity::new(id, pos, world, entity_type)),
         );
 
-        let Some(entity) =
-            registry.create(&vanilla_entities::OAK_BOAT, 5, DVec3::ZERO, Weak::new())
-        else {
+        let Some(entity) = registry.create(
+            &vanilla_entities::OAK_BOAT,
+            EntityId::new(5),
+            DVec3::ZERO,
+            Weak::new(),
+        ) else {
             panic!("registered entity factory should create an entity");
         };
 

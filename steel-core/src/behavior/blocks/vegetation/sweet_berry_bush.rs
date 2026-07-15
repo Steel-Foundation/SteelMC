@@ -243,6 +243,7 @@ impl Vegetation for SweetBerryBushBlock {}
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use steel_registry::{
@@ -268,7 +269,7 @@ mod tests {
         fn living(entity_type: EntityTypeRef) -> Self {
             Self {
                 base: EntityBase::new(
-                    1,
+                    EntityId::new(1),
                     DVec3::ZERO,
                     EntityDimensions::new(0.6, 1.8, 1.62),
                     Weak::<World>::new(),

@@ -54,6 +54,7 @@ impl Goal for MoveTowardsRestrictionGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityId;
     use std::sync::Weak;
 
     use steel_registry::{test_support::init_test_registry, vanilla_entities};
@@ -73,7 +74,12 @@ mod tests {
     fn move_towards_restriction_goal_requires_outside_home() {
         init_test_registry();
         let mut goal = MoveTowardsRestrictionGoal::new(1.0);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = PigEntity::new(
+            &vanilla_entities::PIG,
+            EntityId::new(1),
+            DVec3::ZERO,
+            Weak::new(),
+        );
         mob.set_home_to(BlockPos::ZERO, 4);
 
         assert!(!goal.can_use(&mob));
