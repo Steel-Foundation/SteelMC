@@ -963,6 +963,7 @@ fn validate_player_permission_group_update<E>(
 struct PendingPlayerJoin {
     player: Arc<Player>,
     state: Result<DomainPlayerState, String>,
+    previous_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2131,7 +2132,10 @@ impl Server {
     ///
     /// Persistent data is loaded asynchronously, then world insertion is finalized at the
     /// game tick safe point so the socket reader can enter play immediately.
-    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
+    ///
+    /// `previous_name` is the profile-cache name for this UUID before this connection
+    /// recorded the current name.
+    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>, previous_name: Option<String>) {
         if player.connection.closed() {
             return;
         }
@@ -2143,9 +2147,11 @@ impl Server {
         let server = Arc::clone(self);
         tokio::spawn(async move {
             let state = server.prepare_player_join(&player).await;
-            server
-                .pending_player_joins
-                .send(PendingPlayerJoin { player, state });
+            server.pending_player_joins.send(PendingPlayerJoin {
+                player,
+                state,
+                previous_name,
+            });
         });
     }
 
@@ -2162,7 +2168,11 @@ impl Server {
     }
 
     fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
-        let PendingPlayerJoin { player, state } = join;
+        let PendingPlayerJoin {
+            player,
+            state,
+            previous_name,
+        } = join;
         let uuid = player.gameprofile.id;
         if player.connection.closed() {
             self.release_player_admission(uuid, PlayerAdmissionState::Joining);
@@ -2201,6 +2211,7 @@ impl Server {
             return;
         }
         self.sync_tab_list(&player);
+        self.broadcast_player_join_message(&player, previous_name.as_deref());
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }
@@ -2279,6 +2290,8 @@ impl Server {
             return;
         }
 
+        // Vanilla broadcasts leave while the player is still online idk.
+        self.broadcast_player_leave_message(&player);
         self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
         let player = self.online_players.remove_player_sync(&player);
 
@@ -2563,8 +2576,19 @@ impl Server {
     }
 
     /// Records a connected player identity in the persistent profile cache.
-    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) {
-        self.record_known_profile(profile.id, profile.name.clone());
+    /// Returns the previous cached name for this UUID, if any.
+    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) -> Option<String> {
+        let mut known = self.known_players.lock();
+        let previous = known
+            .players
+            .by_uuid(profile.id)
+            .map(|entry| entry.last_known_name().to_owned());
+        let start_worker = known.record(profile.id, profile.name.clone());
+        drop(known);
+        if start_worker {
+            self.start_known_player_save_worker();
+        }
+        previous
     }
 
     /// Records a UUID and last-known name in the persistent profile cache.
@@ -4212,7 +4236,41 @@ impl Server {
             ])
             .into();
 
-        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
+        self.broadcast_system_chat(&message);
+    }
+
+    /// Broadcasts a system chat message to every online player.
+    fn broadcast_system_chat(&self, message: &TextComponent) {
+        self.broadcast_to_online_with(|player| CSystemChat::new(message, false, player));
+    }
+
+    fn broadcast_player_join_message(&self, player: &Player, previous_name: Option<&str>) {
+        use steel_utils::translations;
+
+        let display_name = player.display_name();
+        // Fallback to the current name when the cache has no prior entry.
+        let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
+        let message: TextComponent = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
+            translations::MULTIPLAYER_PLAYER_JOINED
+                .message([display_name])
+                .into()
+        } else {
+            translations::MULTIPLAYER_PLAYER_JOINED_RENAMED
+                .message([display_name, TextComponent::plain(old_name.to_owned())])
+                .into()
+        };
+        let message = message.color(Color::Yellow);
+        self.broadcast_system_chat(&message);
+    }
+
+    fn broadcast_player_leave_message(&self, player: &Player) {
+        use steel_utils::translations;
+
+        let message: TextComponent = translations::MULTIPLAYER_PLAYER_LEFT
+            .message([player.display_name()])
+            .into();
+        let message = message.color(Color::Yellow);
+        self.broadcast_system_chat(&message);
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.
