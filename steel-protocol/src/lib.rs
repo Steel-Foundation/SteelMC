@@ -5,7 +5,6 @@
     clippy::absolute_paths,
     clippy::allow_attributes_without_reason,
     clippy::match_same_arms,
-    clippy::missing_panics_doc,
     clippy::ref_option,
     clippy::unreadable_literal,
     reason = "packet definitions keep explicit protocol-oriented code and existing test/build invariants"

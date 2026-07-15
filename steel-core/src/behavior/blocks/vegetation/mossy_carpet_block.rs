@@ -156,10 +156,10 @@ impl BlockBehavior for MossyCarpetBlock {
         let state = Self::updated_state(
             context.world,
             self.block.default_state(),
-            context.place_pos,
+            context.place_pos(),
             true,
         );
-        (self.can_survive(state, context.world, context.place_pos) && Self::has_faces(state))
+        (self.can_survive(state, context.world, context.place_pos()) && Self::has_faces(state))
             .then_some(state)
     }
 }

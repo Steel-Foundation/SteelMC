@@ -50,9 +50,13 @@ glam.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
 small-map.workspace = true
+chrono.workspace = true
 
 # UUID
 uuid.workspace = true
+
+# Networking
+reqwest.workspace = true
 
 # Logging
 log.workspace = true
@@ -61,6 +65,7 @@ log.workspace = true
 rsa.workspace = true
 rand.workspace = true
 sha2.workspace = true
+md5.workspace = true
 
 # Compression
 zstd.workspace = true
@@ -82,7 +87,6 @@ syn = { workspace = true, features = ["full"] }
 glob = "0.3"
 
 [dev-dependencies]
-md5.workspace = true
 criterion.workspace = true
 steel-registry = { workspace = true, features = ["test-utils"] }
 

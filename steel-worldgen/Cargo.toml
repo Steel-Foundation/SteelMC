@@ -17,6 +17,9 @@ rustc-hash.workspace = true
 sha2.workspace = true
 tracing.workspace = true
 glam.workspace = true
+wincode.workspace = true
+
+rayon.workspace = true
 
 [build-dependencies]
 steel-utils.workspace = true

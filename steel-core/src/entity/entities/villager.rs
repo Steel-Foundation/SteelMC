@@ -454,8 +454,8 @@ impl Entity for VillagerEntity {
         SoundSource::Neutral
     }
 
-    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, source, amount)
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        LivingEntity::hurt_server(self, world, source, amount)
     }
 
     fn interact(

@@ -71,7 +71,7 @@ impl BlockBehavior for KelpPlantBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        (context.is_full_water() && self.can_survive(state, context.world, context.place_pos))
+        (context.is_full_water() && self.can_survive(state, context.world, context.place_pos()))
             .then_some(state)
     }
 

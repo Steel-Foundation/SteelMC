@@ -5,13 +5,13 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::{error::Error, fmt, slice, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, slice, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{ChunkPos, SectionPos, WorldAabb};
+use steel_utils::{ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
 use super::{
@@ -318,11 +318,43 @@ struct ManagerState {
     chunk_visibility: FxHashMap<ChunkPos, EntityVisibility>,
     live_by_id: FxHashMap<EntityId, EntityEntry>,
     live_by_uuid: FxHashMap<Uuid, EntityId>,
-    by_section: FxHashMap<SectionPos, FxHashSet<EntityId>>,
+    accessible_order: OrderedEntityIds,
+    by_section: BTreeMap<PackedSectionPos, OrderedEntityIds>,
     by_chunk: FxHashMap<ChunkPos, FxHashSet<EntityId>>,
     unloading_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     save_pending_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     tick_list: EntityTickList,
+}
+
+#[derive(Default)]
+struct OrderedEntityIds {
+    ids: Vec<EntityId>,
+}
+
+impl OrderedEntityIds {
+    fn insert(&mut self, entity_id: EntityId) -> bool {
+        if self.ids.contains(&entity_id) {
+            return false;
+        }
+        self.ids.push(entity_id);
+        true
+    }
+
+    fn remove(&mut self, entity_id: EntityId) -> bool {
+        let Some(index) = self.ids.iter().position(|id| *id == entity_id) else {
+            return false;
+        };
+        self.ids.remove(index);
+        true
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &EntityId> {
+        self.ids.iter()
+    }
 }
 
 #[derive(Default)]
@@ -459,11 +491,7 @@ impl WorldEntityManager {
             .remove(&pos)
             .unwrap_or(EntityVisibility::Hidden);
 
-        let ids = state
-            .by_chunk
-            .get(&pos)
-            .map(|set| set.iter().copied().collect::<Vec<_>>())
-            .unwrap_or_default();
+        let ids = Self::entity_ids_in_chunk_order(&state, pos);
 
         let mut result = ChunkEntityUnloadStart::default();
         let lifecycle = Self::apply_chunk_visibility_change(
@@ -840,7 +868,7 @@ impl WorldEntityManager {
 
         state
             .by_section
-            .entry(new_section)
+            .entry(PackedSectionPos::from(new_section))
             .or_default()
             .insert(entity_id);
         state
@@ -848,6 +876,12 @@ impl WorldEntityManager {
             .entry(new_chunk)
             .or_default()
             .insert(entity_id);
+
+        if old_accessible && !new_accessible {
+            state.accessible_order.remove(entity_id);
+        } else if !old_accessible && new_accessible {
+            state.accessible_order.insert(entity_id);
+        }
 
         if old_ticking && !new_ticking {
             state.tick_list.remove(entity_id);
@@ -978,30 +1012,19 @@ impl WorldEntityManager {
         aabb: &WorldAabb,
         mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> bool {
-        let (min_section, max_section) = Self::entity_query_section_bounds(aabb);
-
         let state = self.state.read();
-        for sy in min_section.y()..=max_section.y() {
-            for sz in min_section.z()..=max_section.z() {
-                for sx in min_section.x()..=max_section.x() {
-                    let section_pos = SectionPos::new(sx, sy, sz);
-                    let Some(entity_ids) = state.by_section.get(&section_pos) else {
-                        continue;
-                    };
+        for entity_ids in Self::entity_query_sections(&state, aabb) {
+            for entity_id in entity_ids.iter() {
+                let Some(entry) = state.live_by_id.get(entity_id) else {
+                    continue;
+                };
+                if !Self::is_accessible(&state, entry) {
+                    continue;
+                }
 
-                    for entity_id in entity_ids {
-                        let Some(entry) = state.live_by_id.get(entity_id) else {
-                            continue;
-                        };
-                        if !Self::is_accessible(&state, entry) {
-                            continue;
-                        }
-
-                        let bounding_box = entry.entity.bounding_box();
-                        if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
-                            return true;
-                        }
-                    }
+                let bounding_box = entry.entity.bounding_box();
+                if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
+                    return true;
                 }
             }
         }
@@ -1016,31 +1039,20 @@ impl WorldEntityManager {
         aabb: &WorldAabb,
         mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> Vec<WorldAabb> {
-        let (min_section, max_section) = Self::entity_query_section_bounds(aabb);
-
         let state = self.state.read();
         let mut result = Vec::new();
-        for sy in min_section.y()..=max_section.y() {
-            for sz in min_section.z()..=max_section.z() {
-                for sx in min_section.x()..=max_section.x() {
-                    let section_pos = SectionPos::new(sx, sy, sz);
-                    let Some(entity_ids) = state.by_section.get(&section_pos) else {
-                        continue;
-                    };
+        for entity_ids in Self::entity_query_sections(&state, aabb) {
+            for entity_id in entity_ids.iter() {
+                let Some(entry) = state.live_by_id.get(entity_id) else {
+                    continue;
+                };
+                if !Self::is_accessible(&state, entry) {
+                    continue;
+                }
 
-                    for entity_id in entity_ids {
-                        let Some(entry) = state.live_by_id.get(entity_id) else {
-                            continue;
-                        };
-                        if !Self::is_accessible(&state, entry) {
-                            continue;
-                        }
-
-                        let bounding_box = entry.entity.bounding_box();
-                        if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
-                            result.push(bounding_box);
-                        }
-                    }
+                let bounding_box = entry.entity.bounding_box();
+                if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
+                    result.push(bounding_box);
                 }
             }
         }
@@ -1070,28 +1082,17 @@ impl WorldEntityManager {
     #[must_use]
     /// Gets live entities whose bounding boxes intersect `aabb`.
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
-        let (min_section, max_section) = Self::entity_query_section_bounds(aabb);
-
         let state = self.state.read();
         let mut result = Vec::new();
-        for sy in min_section.y()..=max_section.y() {
-            for sz in min_section.z()..=max_section.z() {
-                for sx in min_section.x()..=max_section.x() {
-                    let section_pos = SectionPos::new(sx, sy, sz);
-                    let Some(entity_ids) = state.by_section.get(&section_pos) else {
-                        continue;
-                    };
-
-                    for entity_id in entity_ids {
-                        let Some(entry) = state.live_by_id.get(entity_id) else {
-                            continue;
-                        };
-                        if Self::is_accessible(&state, entry)
-                            && entry.entity.bounding_box().intersects(*aabb)
-                        {
-                            result.push(entry.entity.clone());
-                        }
-                    }
+        for entity_ids in Self::entity_query_sections(&state, aabb) {
+            for entity_id in entity_ids.iter() {
+                let Some(entry) = state.live_by_id.get(entity_id) else {
+                    continue;
+                };
+                if Self::is_accessible(&state, entry)
+                    && entry.entity.bounding_box().intersects(*aabb)
+                {
+                    result.push(entry.entity.clone());
                 }
             }
         }
@@ -1099,15 +1100,61 @@ impl WorldEntityManager {
         result
     }
 
+    /// Gets all live entities visible to vanilla gameplay lookups.
+    #[must_use]
+    pub fn get_accessible_entities(&self) -> Vec<SharedEntity> {
+        let state = self.state.read();
+        state
+            .accessible_order
+            .iter()
+            .filter_map(|entity_id| state.live_by_id.get(entity_id))
+            .filter(|entry| Self::is_accessible(&state, entry))
+            .map(|entry| Arc::clone(&entry.entity))
+            .collect()
+    }
+
+    fn entity_query_sections<'a>(
+        state: &'a ManagerState,
+        aabb: &WorldAabb,
+    ) -> Vec<&'a OrderedEntityIds> {
+        let (minimum, maximum) = Self::entity_query_section_bounds(aabb);
+        let mut sections = Vec::new();
+        for x in minimum.x()..=maximum.x() {
+            let first = PackedSectionPos::from(SectionPos::new(x, 0, 0));
+            let last = PackedSectionPos::from(SectionPos::new(x, -1, -1));
+            for (packed, entity_ids) in state.by_section.range(first..=last) {
+                let section = packed.to_section_pos();
+                if section.y() >= minimum.y()
+                    && section.y() <= maximum.y()
+                    && section.z() >= minimum.z()
+                    && section.z() <= maximum.z()
+                {
+                    sections.push(entity_ids);
+                }
+            }
+        }
+        sections
+    }
+
+    fn entity_ids_in_chunk_order(state: &ManagerState, chunk: ChunkPos) -> Vec<EntityId> {
+        let first = PackedSectionPos::from(SectionPos::new(chunk.0.x, 0, chunk.0.y));
+        let last = PackedSectionPos::from(SectionPos::new(chunk.0.x, -1, chunk.0.y));
+        state
+            .by_section
+            .range(first..=last)
+            .flat_map(|(_, entity_ids)| entity_ids.iter().copied())
+            .collect()
+    }
+
     fn entity_query_section_bounds(aabb: &WorldAabb) -> (SectionPos, SectionPos) {
         let min_section = SectionPos::from_entity_pos(DVec3::new(
             aabb.min_x() - 2.0,
-            aabb.min_y() - 2.0,
+            aabb.min_y() - 4.0,
             aabb.min_z() - 2.0,
         ));
         let max_section = SectionPos::from_entity_pos(DVec3::new(
             aabb.max_x() + 2.0,
-            aabb.max_y() + 2.0,
+            aabb.max_y(),
             aabb.max_z() + 2.0,
         ));
         (min_section, max_section)
@@ -1152,13 +1199,11 @@ impl WorldEntityManager {
         let mut seen_ids = FxHashSet::default();
         let mut seen_uuids = FxHashSet::default();
 
-        if let Some(entity_ids) = state.by_chunk.get(&chunk) {
-            for entity_id in entity_ids {
-                let Some(entry) = state.live_by_id.get(entity_id) else {
-                    continue;
-                };
-                Self::push_saveable_entity(&mut result, &mut seen_ids, &mut seen_uuids, entry);
-            }
+        for entity_id in Self::entity_ids_in_chunk_order(&state, chunk) {
+            let Some(entry) = state.live_by_id.get(&entity_id) else {
+                continue;
+            };
+            Self::push_saveable_entity(&mut result, &mut seen_ids, &mut seen_uuids, entry);
         }
 
         if let Some(entries) = state.unloading_by_chunk.get(&chunk) {
@@ -1180,17 +1225,11 @@ impl WorldEntityManager {
     /// Gets live entities currently indexed in `chunk`.
     pub fn live_entities_in_chunk(&self, chunk: ChunkPos) -> Vec<SharedEntity> {
         let state = self.state.read();
-        state
-            .by_chunk
-            .get(&chunk)
-            .map(|entity_ids| {
-                entity_ids
-                    .iter()
-                    .filter_map(|id| state.live_by_id.get(id))
-                    .map(|entry| entry.entity.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        Self::entity_ids_in_chunk_order(&state, chunk)
+            .into_iter()
+            .filter_map(|entity_id| state.live_by_id.get(&entity_id))
+            .map(|entry| entry.entity.clone())
+            .collect()
     }
 
     #[must_use]
@@ -1308,11 +1347,7 @@ impl WorldEntityManager {
         previous: EntityVisibility,
         new: EntityVisibility,
     ) -> EntityLifecycleChanges {
-        let entity_ids = state
-            .by_chunk
-            .get(&chunk)
-            .map(|ids| ids.iter().copied().collect::<Vec<_>>())
-            .unwrap_or_default();
+        let entity_ids = Self::entity_ids_in_chunk_order(state, chunk);
         let mut lifecycle = EntityLifecycleChanges::default();
 
         for entity_id in entity_ids {
@@ -1338,8 +1373,10 @@ impl WorldEntityManager {
             }
 
             if old_visibility.is_accessible() && !new_visibility.is_accessible() {
+                state.accessible_order.remove(entity_id);
                 lifecycle.tracking_stopped.push(entity.clone());
             } else if !old_visibility.is_accessible() && new_visibility.is_accessible() {
+                state.accessible_order.insert(entity_id);
                 lifecycle.tracking_started.push(entity.clone());
             }
 
@@ -1476,6 +1513,7 @@ impl WorldEntityManager {
 
     fn insert_live_entry(state: &mut ManagerState, entry: EntityEntry) {
         let entity_id = entry.entity.id();
+        let is_accessible = Self::is_accessible_at(state, entry.ownership, entry.chunk);
         assert!(
             !state.live_by_id.contains_key(&entity_id),
             "entity id {entity_id} is already registered in the world entity manager"
@@ -1487,7 +1525,7 @@ impl WorldEntityManager {
         );
         state
             .by_section
-            .entry(entry.section)
+            .entry(PackedSectionPos::from(entry.section))
             .or_default()
             .insert(entity_id);
         state
@@ -1496,6 +1534,9 @@ impl WorldEntityManager {
             .or_default()
             .insert(entity_id);
         state.live_by_id.insert(entity_id, entry);
+        if is_accessible {
+            state.accessible_order.insert(entity_id);
+        }
     }
 
     fn contains_uuid(state: &ManagerState, uuid: Uuid) -> bool {
@@ -1567,20 +1608,22 @@ impl WorldEntityManager {
         let entry = state.live_by_id.remove(&entity_id)?;
         state.tick_list.remove(entity_id);
         state.live_by_uuid.remove(&entry.uuid);
+        state.accessible_order.remove(entity_id);
         Self::remove_from_section(state, entry.section, entity_id);
         Self::remove_from_chunk(state, entry.chunk, entity_id);
         Some(entry)
     }
 
     fn remove_from_section(state: &mut ManagerState, section: SectionPos, entity_id: EntityId) {
-        let remove_section = if let Some(entity_ids) = state.by_section.get_mut(&section) {
-            entity_ids.remove(&entity_id);
+        let packed = PackedSectionPos::from(section);
+        let remove_section = if let Some(entity_ids) = state.by_section.get_mut(&packed) {
+            entity_ids.remove(entity_id);
             entity_ids.is_empty()
         } else {
             false
         };
         if remove_section {
-            state.by_section.remove(&section);
+            state.by_section.remove(&packed);
         }
     }
 
@@ -2012,6 +2055,94 @@ mod tests {
             panic!("nearest matching entity should be found");
         };
         assert!(Arc::ptr_eq(&result, &near_match));
+    }
+
+    #[test]
+    fn accessible_entities_keep_tracking_start_order() {
+        let manager = WorldEntityManager::new();
+        let first_chunk = ChunkPos::new(0, 0);
+        let second_chunk = ChunkPos::new(1, 0);
+        load_chunk(&manager, first_chunk);
+        load_chunk(&manager, second_chunk);
+
+        let first = entity(30, 30, DVec3::new(1.0, 80.0, 1.0));
+        let second = entity(10, 10, DVec3::new(17.0, 64.0, 1.0));
+        let third = entity(20, 20, DVec3::new(2.0, 64.0, 1.0));
+        for entity in [Arc::clone(&first), Arc::clone(&second), Arc::clone(&third)] {
+            assert!(
+                manager
+                    .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                    .is_ok()
+            );
+        }
+
+        let entity_ids = manager
+            .get_accessible_entities()
+            .into_iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entity_ids,
+            vec![EntityId::new(30), EntityId::new(10), EntityId::new(20)]
+        );
+
+        let changes = manager.update_chunk_visibility(first_chunk, EntityVisibility::Hidden);
+        assert_eq!(changes.tracking_stopped.len(), 2);
+        let changes = manager.update_chunk_visibility(first_chunk, EntityVisibility::Tracked);
+        assert_eq!(changes.tracking_started.len(), 2);
+
+        let entity_ids = manager
+            .get_accessible_entities()
+            .into_iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entity_ids,
+            vec![EntityId::new(10), EntityId::new(20), EntityId::new(30)]
+        );
+    }
+
+    #[test]
+    fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
+        let manager = WorldEntityManager::new();
+        load_chunk(&manager, ChunkPos::new(0, 0));
+        load_chunk(&manager, ChunkPos::new(0, 1));
+
+        let later_section = entity(1, 1, DVec3::new(1.0, 64.0, 17.0));
+        let first_same_section = entity(2, 2, DVec3::new(1.0, 64.0, 1.0));
+        let second_same_section = entity(3, 3, DVec3::new(2.0, 64.0, 1.0));
+        for entity in [
+            later_section,
+            Arc::clone(&first_same_section),
+            Arc::clone(&second_same_section),
+        ] {
+            assert!(
+                manager
+                    .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                    .is_ok()
+            );
+        }
+
+        let aabb = WorldAabb::new(0.0, 63.0, 0.0, 18.0, 66.0, 18.0);
+        let entity_ids = manager
+            .get_entities_in_aabb(&aabb)
+            .into_iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entity_ids,
+            vec![EntityId::new(2), EntityId::new(3), EntityId::new(1)]
+        );
+    }
+
+    #[test]
+    fn entity_query_section_bounds_match_vanilla_search_grace() {
+        let aabb = WorldAabb::new(0.0, 66.0, 0.0, 15.0, 79.0, 15.0);
+
+        let (minimum, maximum) = WorldEntityManager::entity_query_section_bounds(&aabb);
+
+        assert_eq!(minimum, SectionPos::new(-1, 3, -1));
+        assert_eq!(maximum, SectionPos::new(1, 4, 1));
     }
 
     #[test]

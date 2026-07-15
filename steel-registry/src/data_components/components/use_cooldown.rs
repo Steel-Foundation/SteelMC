@@ -5,9 +5,9 @@ use std::str::FromStr;
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{ReadFrom, WriteTo};
+use steel_utils::{Identifier, nbt::NbtNumeric as _};
 
 /// Vanilla `UseCooldown`: seconds plus an optional shared cooldown group.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,7 +62,7 @@ impl ToNbtTag for UseCooldown {
 impl FromNbtTag for UseCooldown {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        let seconds = compound.get("seconds")?.float()?;
+        let seconds = compound.get("seconds")?.codec_f32()?;
         if !seconds.is_finite() || seconds <= 0.0 {
             return None;
         }
@@ -107,7 +107,7 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::FromNbtTag;
-    use simdnbt::borrow::NbtTag as BorrowedNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use simdnbt::owned::{NbtCompound, NbtTag};
     use steel_utils::Identifier;
 
@@ -116,8 +116,8 @@ mod tests {
     fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
         let mut bytes = Vec::new();
         tag.write(&mut bytes);
-        let borrowed = simdnbt::borrow::read_tag(&mut Cursor::new(bytes.as_slice()))
-            .expect("owned test tag should parse");
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
         visitor(borrowed.as_tag())
     }
 
@@ -128,13 +128,13 @@ mod tests {
     #[test]
     fn nbt_accepts_positive_seconds_and_optional_group() {
         let mut compound = NbtCompound::new();
-        compound.insert("seconds", 1.0_f32);
+        compound.insert("seconds", 5.5_f64);
         compound.insert("cooldown_group", "minecraft:test_group");
 
         let parsed = parse_use_cooldown(NbtTag::Compound(compound))
             .expect("valid use_cooldown should parse");
 
-        assert_eq!(parsed.seconds, 1.0);
+        assert_eq!(parsed.seconds, 5.5);
         assert_eq!(
             parsed.cooldown_group,
             Some(Identifier::vanilla_static("test_group"))

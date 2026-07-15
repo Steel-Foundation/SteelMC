@@ -126,6 +126,7 @@ mod tests {
     use crate::entity::LivingEntity;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::PigEntity;
+    use crate::test_support::test_world;
 
     #[test]
     fn panic_goal_uses_move_control() {
@@ -148,12 +149,14 @@ mod tests {
         assert!(!PanicGoal::should_panic(&pig));
 
         assert!(pig.hurt_server(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
         assert!(!PanicGoal::should_panic(&pig));
 
         assert!(pig.hurt_server(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0
         ));

@@ -99,9 +99,7 @@ impl CommandLogger {
                             KeyCode::Tab => {
                                 if state.completion.enabled {
                                     state.completion.enabled = false;
-                                    state.completion.selected = 0;
-                                    state.push(state.completion.completed.clone())?;
-                                    state.completion.completed = String::new();
+                                    state.apply_completion()?;
                                 } else {
                                     state.completion.enabled = true;
                                     let pos = state.out.pos;
@@ -374,11 +372,12 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     lock.reset().ok();
     drop(lock);
     steel_utils::console!("{}", message);
-    if let Some(server) = SERVER.get() {
-        server
-            .command_dispatcher
-            .read()
-            .handle_command(CommandSender::Console, message, server);
+    if let Some(server) = SERVER.get()
+        && server
+            .submit_command(CommandSender::Console, message)
+            .is_err()
+    {
+        log::warn!("Command queue is full");
     }
 }
 

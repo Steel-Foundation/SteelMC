@@ -107,7 +107,7 @@ impl BlockBehavior for CactusBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = self.block.default_state();
-        if self.can_survive(default_state, context.world, context.place_pos) {
+        if self.can_survive(default_state, context.world, context.place_pos()) {
             Some(default_state)
         } else {
             None
@@ -198,13 +198,14 @@ impl BlockBehavior for CactusBlock {
     fn entity_inside(
         &self,
         _state: BlockStateId,
-        _world: &Arc<World>,
+        world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
         entity.hurt(
+            world,
             &DamageSource::environment(&vanilla_damage_types::CACTUS),
             1.0,
         );
