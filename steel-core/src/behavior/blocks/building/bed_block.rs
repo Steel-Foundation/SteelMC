@@ -13,8 +13,9 @@ use text_components::translation::TranslatedMessage;
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockHitResult, BlockPlaceContext, EntityFallDamage, EntityFallOnContext,
-        EntityLandingContext, InteractionResult, InventoryAccess,
+        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
+        EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
+        InventoryAccess, PlacementSource,
     },
     entity::{Entity, dismount_helper},
     player::Player,
@@ -251,10 +252,10 @@ impl BedBlock {
 
 impl BlockBehavior for BedBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let facing = context.horizontal_direction;
-        let head_pos = facing.relative(context.place_pos);
+        let facing = context.horizontal_direction();
+        let head_pos = facing.relative(context.place_pos());
         let head_state = context.world.get_block_state(head_pos);
-        if !head_state.is_replaceable() || !context.world.is_in_valid_bounds(head_pos) {
+        if !head_state.can_be_replaced(context) || !context.world.is_in_valid_bounds(head_pos) {
             return None;
         }
 
@@ -352,8 +353,7 @@ impl BlockBehavior for BedBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let head_pos = facing.relative(pos);

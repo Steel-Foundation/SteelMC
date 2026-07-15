@@ -26,6 +26,7 @@ CLAUDE.md
 /minecraft-src-26.3-snapshot-2
 .agents
 skills-lock.json
+docs
 
 # Package
 profile.json.gz

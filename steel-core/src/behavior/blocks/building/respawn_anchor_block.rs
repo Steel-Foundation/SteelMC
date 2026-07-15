@@ -130,7 +130,7 @@ impl RespawnAnchorBlock {
     }
 
     fn is_respawn_fuel(item_stack: &ItemStack) -> bool {
-        item_stack.is(&vanilla_items::ITEMS.glowstone)
+        item_stack.is(&vanilla_items::GLOWSTONE)
     }
 
     fn player_offhand_has_respawn_fuel(player: &Player) -> bool {
@@ -138,7 +138,7 @@ impl RespawnAnchorBlock {
             .inventory
             .lock()
             .get_item_in_hand(InteractionHand::OffHand)
-            .is(&vanilla_items::ITEMS.glowstone)
+            .is(&vanilla_items::GLOWSTONE)
     }
 
     fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {

@@ -39,7 +39,7 @@ impl RotatedPillarBlock {
     ) -> BlockStateId {
         block
             .default_state()
-            .set_value(&Self::AXIS, context.clicked_face.get_axis())
+            .set_value(&Self::AXIS, context.clicked_face().get_axis())
     }
 }
 

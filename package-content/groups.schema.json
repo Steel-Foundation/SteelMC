@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SteelPermissionGroupsConfig",
+  "description": "Permission group configuration schema for Steel",
+  "type": "object",
+  "properties": {
+    "default_groups": {
+      "type": "array",
+      "description": "Groups applied to every player",
+      "items": {
+        "$ref": "#/definitions/group_name"
+      },
+      "uniqueItems": true,
+      "default": ["default"]
+    },
+    "groups": {
+      "type": "object",
+      "description": "Permission groups keyed by group name",
+      "minProperties": 1,
+      "required": ["op"],
+      "additionalProperties": {
+        "$ref": "#/definitions/group"
+      }
+    }
+  },
+  "required": ["default_groups", "groups"],
+  "additionalProperties": false,
+  "definitions": {
+    "group_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "permission_rule_expression": {
+      "type": "string",
+      "description": "Permission key with an optional context selector, such as steel.fly{domain=lobby}.",
+      "pattern": "^(\\*|[a-z0-9_-]+(\\.[a-z0-9_-]+)*(\\.\\*)?)(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
+    },
+    "permission_metadata_expression": {
+      "type": "string",
+      "description": "Namespaced metadata key with an optional context selector, such as plugin:max_homes{domain=survival}.",
+      "pattern": "^[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
+    },
+    "permission_metadata_value": {
+      "description": "Typed permission metadata value",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "priority": {
+          "type": "integer",
+          "description": "Conflict priority for equally specific group rules. Higher wins.",
+          "default": 0
+        },
+        "inherits": {
+          "type": "array",
+          "description": "Parent groups inherited by this group",
+          "items": {
+            "$ref": "#/definitions/group_name"
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "allow": {
+          "type": "array",
+          "description": "Permission expressions explicitly allowed by this group",
+          "items": {
+            "$ref": "#/definitions/permission_rule_expression"
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "deny": {
+          "type": "array",
+          "description": "Permission expressions explicitly denied by this group",
+          "items": {
+            "$ref": "#/definitions/permission_rule_expression"
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "metadata": {
+          "type": "array",
+          "description": "Ordered typed metadata rules",
+          "items": {
+            "$ref": "#/definitions/metadata_rule"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata_rule": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/permission_metadata_expression"
+        },
+        "value": {
+          "$ref": "#/definitions/permission_metadata_value"
+        }
+      },
+      "required": ["key", "value"],
+      "additionalProperties": false
+    }
+  }
+}

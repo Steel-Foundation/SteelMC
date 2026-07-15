@@ -36,8 +36,8 @@ impl BlockBehavior for AmethystClusterBlock {
             .block
             .default_state()
             .set_value(WATERLOGGED, context.is_water_source())
-            .set_value(FACING, context.clicked_face);
-        self.can_survive(state, context.world, context.place_pos)
+            .set_value(FACING, context.clicked_face());
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 

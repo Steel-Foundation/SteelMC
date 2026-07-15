@@ -8,7 +8,6 @@ use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::vanilla_mob_effects;
 use steel_utils::translations;
@@ -169,13 +168,13 @@ impl Player {
     /// Returns `true` if movement should be validated, `false` to skip validation.
     fn should_validate_movement(world: &World, is_fall_flying: bool) -> bool {
         let player_check = world.get_game_rule(&PLAYER_MOVEMENT_CHECK);
-        if player_check != GameRuleValue::Bool(true) {
+        if !player_check {
             return false;
         }
 
         if is_fall_flying {
             let elytra_check = world.get_game_rule(&ELYTRA_MOVEMENT_CHECK);
-            return elytra_check == GameRuleValue::Bool(true);
+            return elytra_check;
         }
 
         true

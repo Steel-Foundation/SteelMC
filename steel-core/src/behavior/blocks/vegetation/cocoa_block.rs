@@ -65,7 +65,7 @@ impl BlockBehavior for CocoaBlock {
                 .block
                 .default_state()
                 .set_value(&FACING_PROPERTY, direction);
-            if self.can_survive(state, context.world, context.place_pos) {
+            if self.can_survive(state, context.world, context.place_pos()) {
                 return Some(state);
             }
         }
@@ -129,7 +129,7 @@ impl BlockBehavior for CocoaBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.cocoa_beans))
+        Some(ItemStack::new(&vanilla_items::COCOA_BEANS))
     }
 }
 

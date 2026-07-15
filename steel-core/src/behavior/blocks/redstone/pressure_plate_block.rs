@@ -105,7 +105,7 @@ impl BlockBehavior for PressurePlateBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = Self::set_signal_for_state(self.base.block.default_state(), 0);
-        if !self.can_survive(default_state, context.world, context.place_pos) {
+        if !self.can_survive(default_state, context.world, context.place_pos()) {
             return None;
         }
         Some(default_state)
@@ -200,7 +200,7 @@ impl BlockBehavior for WeightedPressurePlateBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = Self::set_signal_for_state(self.base.block.default_state(), 0);
-        if !self.can_survive(default_state, context.world, context.place_pos) {
+        if !self.can_survive(default_state, context.world, context.place_pos()) {
             return None;
         }
         Some(default_state)

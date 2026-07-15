@@ -1,4 +1,5 @@
-#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/config.schema.json
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/config.schema.json
+# Documentation: https://steelmc.dev/configuration/server-configuration/
 
 [server]
 # Server port
@@ -15,7 +16,9 @@ simulation_distance = 10
 online_mode = true
 # Optional authentication endpoint for online mode. Omit to use Mojang's session server.
 # auth_server = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
-# Whether to enable encryption for client-server communication
+# Optional name-to-profile lookup endpoint used by commands such as /op.
+# profile_server = "https://api.minecraftservices.com/minecraft/profile/lookup/name"
+# Whether to enable encryption for client-server communication. Required in online mode.
 encryption = true
 # Whether the server allows unauthorized client flight
 allow_flight = false
@@ -54,11 +57,11 @@ enable = true
 
 [[server.server_links.links]]
 label = "bug_report"
-url = "https://github.com/4lve/SteelMC/issues"
+url = "https://github.com/Steel-Foundation/SteelMC/issues"
 
 [[server.server_links.links]]
 label = "website"
-url = "https://github.com/4lve/SteelMC"
+url = "https://github.com/Steel-Foundation/SteelMC"
 
 # The news channel on discord
 [[server.server_links.links]]

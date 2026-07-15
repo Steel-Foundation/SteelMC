@@ -4,6 +4,7 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::{REGISTRY, RegistryExt};
@@ -36,7 +37,7 @@ impl ItemEnchantments {
         if level == 0 {
             self.levels.remove(&enchantment);
         } else {
-            self.levels.insert(enchantment, level);
+            self.levels.insert(enchantment, level.min(255));
         }
     }
 
@@ -73,13 +74,27 @@ impl Default for ItemEnchantments {
 /// Network format: `VarInt` count, then (`VarInt` `enchantment_id`, `VarInt` level) pairs.
 impl WriteTo for ItemEnchantments {
     fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        VarInt(self.levels.len() as i32).write(writer)?;
+        let count = i32::try_from(self.levels.len()).map_err(|_| {
+            std::io::Error::other(format!(
+                "Enchantment map too large: {} entries",
+                self.levels.len()
+            ))
+        })?;
+        VarInt(count).write(writer)?;
         for (key, &level) in &self.levels {
             let id = REGISTRY
                 .enchantments
                 .id_from_key(key)
                 .ok_or_else(|| std::io::Error::other(format!("Unknown enchantment: {key}")))?;
-            VarInt(id as i32).write(writer)?;
+            let id = i32::try_from(id).map_err(|_| {
+                std::io::Error::other(format!("Enchantment id out of protocol range: {id}"))
+            })?;
+            if level > 255 {
+                return Err(std::io::Error::other(format!(
+                    "Enchantment {key} has invalid level {level}"
+                )));
+            }
+            VarInt(id).write(writer)?;
             VarInt(level as i32).write(writer)?;
         }
         Ok(())
@@ -89,21 +104,25 @@ impl WriteTo for ItemEnchantments {
 impl ReadFrom for ItemEnchantments {
     fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
         let count = VarInt::read(data)?.0;
-        if !(0..=256).contains(&count) {
-            return Err(std::io::Error::other(format!(
-                "Enchantment count out of range: {count}"
-            )));
-        }
-        let count = count as usize;
+        let count = usize::try_from(count)
+            .map_err(|_| std::io::Error::other(format!("Negative enchantment count: {count}")))?;
         let mut levels = FxHashMap::default();
+        levels.reserve(count.min(65_536));
         for _ in 0..count {
-            let id = VarInt::read(data)?.0 as usize;
-            let level = VarInt::read(data)?.0 as u32;
+            let id = VarInt::read(data)?.0;
+            let id = usize::try_from(id)
+                .map_err(|_| std::io::Error::other(format!("Negative enchantment id: {id}")))?;
+            let level = VarInt::read(data)?.0;
+            if !(0..=255).contains(&level) {
+                return Err(std::io::Error::other(format!(
+                    "Enchantment level out of range: {level}"
+                )));
+            }
             let enchantment = REGISTRY
                 .enchantments
                 .by_id(id)
                 .ok_or_else(|| std::io::Error::other(format!("Unknown enchantment id: {id}")))?;
-            levels.insert(enchantment.key.clone(), level);
+            levels.insert(enchantment.key.clone(), level as u32);
         }
         Ok(Self { levels })
     }
@@ -125,12 +144,14 @@ impl FromNbtTag for ItemEnchantments {
         let compound = tag.compound()?;
         let mut levels = FxHashMap::default();
         for (key, value) in compound.iter() {
-            let key_str = key.to_str();
-            if let Ok(ident) = key_str.parse::<Identifier>()
-                && let Some(level) = value.int()
-                && level > 0
-            {
-                levels.insert(ident, level as u32);
+            let ident = key.to_str().parse::<Identifier>().ok()?;
+            REGISTRY.enchantments.by_key(&ident)?;
+            let level = value.codec_i32()?;
+            if !(1..=255).contains(&level) {
+                return None;
+            }
+            if levels.insert(ident, level as u32).is_some() {
+                return None;
             }
         }
         Some(Self { levels })
@@ -157,5 +178,45 @@ impl HashComponent for ItemEnchantments {
             hasher.put_raw_bytes(&entry.value_bytes);
         }
         hasher.end_map();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    use super::ItemEnchantments;
+    use crate::test_support::init_test_registry;
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    fn parse_enchantments(compound: NbtCompound) -> Option<ItemEnchantments> {
+        with_borrowed_tag(NbtTag::Compound(compound), ItemEnchantments::from_nbt_tag)
+    }
+
+    #[test]
+    fn enchantment_nbt_requires_known_keys_and_vanilla_levels() {
+        init_test_registry();
+        let mut valid = NbtCompound::new();
+        valid.insert("minecraft:efficiency", 5_i8);
+        assert!(parse_enchantments(valid).is_some());
+
+        let mut unknown = NbtCompound::new();
+        unknown.insert("minecraft:not_an_enchantment", 1);
+        assert!(parse_enchantments(unknown).is_none());
+
+        let mut out_of_range = NbtCompound::new();
+        out_of_range.insert("minecraft:efficiency", 256);
+        assert!(parse_enchantments(out_of_range).is_none());
     }
 }

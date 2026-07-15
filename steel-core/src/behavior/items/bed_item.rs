@@ -31,14 +31,15 @@ impl BedItem {
     fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         context
             .world
-            .set_block(context.place_pos, state, Self::PLACE_BLOCK_FLAGS)
+            .set_block(context.place_pos(), state, Self::PLACE_BLOCK_FLAGS)
     }
 }
 
 impl ItemBehavior for BedItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        self.base.place_with(context, |place_context, state| {
-            Self::place_block(place_context, state)
-        })
+        self.base
+            .place_with(context.build_place_context(), |place_context, state| {
+                Self::place_block(place_context, state)
+            })
     }
 }

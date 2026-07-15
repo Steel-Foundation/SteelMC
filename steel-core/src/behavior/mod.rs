@@ -69,8 +69,8 @@ pub use block::{
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, UseItemContext,
-    UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
+    PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
@@ -131,6 +131,9 @@ pub trait BlockStateBehaviorExt {
     /// Returns whether this block state can be replaced by the given fluid block.
     fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
 
+    /// Returns whether this block state can be replaced in this placement context.
+    fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool;
+
     /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 
@@ -159,6 +162,12 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.can_be_replaced_by_fluid(*self, fluid_block)
+    }
+
+    fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.can_be_replaced(*self, context)
     }
 
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {

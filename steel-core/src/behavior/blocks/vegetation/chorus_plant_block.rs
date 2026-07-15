@@ -107,7 +107,7 @@ impl BlockBehavior for ChorusPlantBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(Self::state_with_connections(
             context.world.as_ref(),
-            context.place_pos,
+            context.place_pos(),
             self.block.default_state(),
         ))
     }
