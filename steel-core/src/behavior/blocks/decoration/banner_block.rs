@@ -50,7 +50,7 @@ impl BlockBehavior for BannerBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
             &BlockStateProperties::ROTATION_16,
-            convert_to_rotation_segment(context.rotation + 180.0),
+            convert_to_rotation_segment(context.rotation() + 180.0),
         ))
     }
 }
@@ -107,7 +107,7 @@ impl BlockBehavior for WallBannerBlock {
                 &BlockStateProperties::HORIZONTAL_FACING,
                 direction.opposite(),
             );
-            if self.can_survive(state, context.world.as_ref(), context.place_pos) {
+            if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
                 return Some(state);
             }
         }
