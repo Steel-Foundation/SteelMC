@@ -62,7 +62,7 @@ struct EnchantmentEffectsJson {
     #[serde(rename = "minecraft:projectile_piercing", default)]
     projectile_piercing: Vec<ConditionalValueEffectJson>,
     #[serde(rename = "minecraft:projectile_spawned", default)]
-    projectile_spawned: Vec<serde_json::Value>,
+    projectile_spawned: Vec<ConditionalEntityEffectJson>,
     #[serde(rename = "minecraft:projectile_spread", default)]
     projectile_spread: Vec<ConditionalValueEffectJson>,
     #[serde(rename = "minecraft:projectile_count", default)]
@@ -262,9 +262,18 @@ enum RequirementsJson {
     RandomChance {
         chance: LevelBasedValueJson,
     },
+    MatchTool {
+        items: Option<ItemHolderSetJson>,
+    },
     Unsupported {
         condition: Identifier,
     },
+}
+
+#[derive(Debug)]
+enum ItemHolderSetJson {
+    Tag(Identifier),
+    Direct(Vec<Identifier>),
 }
 
 impl<'de> Deserialize<'de> for RequirementsJson {
@@ -994,10 +1003,56 @@ fn parse_requirements_json(value: &serde_json::Value) -> Result<RequirementsJson
                 chance: parse_random_chance_value(object_field(object, "chance")?)?,
             })
         }
+        "minecraft:match_tool" => {
+            for key in object.keys() {
+                if key != "condition" && key != "predicate" {
+                    return Err(format!("unsupported match_tool requirement field `{key}`"));
+                }
+            }
+            let predicate = object_field(object, "predicate")?
+                .as_object()
+                .ok_or_else(|| "match_tool `predicate` must be an object".to_owned())?;
+            for key in predicate.keys() {
+                if key != "items" {
+                    return Err(format!("unsupported match_tool predicate field `{key}`"));
+                }
+            }
+            let items = predicate
+                .get("items")
+                .map(parse_item_holder_set_json)
+                .transpose()?;
+            Ok(RequirementsJson::MatchTool { items })
+        }
         _ => Ok(RequirementsJson::Unsupported {
             condition: parse_identifier(&condition)?,
         }),
     }
+}
+
+fn parse_item_holder_set_json(value: &serde_json::Value) -> Result<ItemHolderSetJson, String> {
+    if let Some(value) = value.as_str() {
+        if let Some(tag) = value.strip_prefix('#') {
+            return Ok(ItemHolderSetJson::Tag(parse_identifier(tag)?));
+        }
+        return Ok(ItemHolderSetJson::Direct(vec![parse_identifier(value)?]));
+    }
+
+    let values = value
+        .as_array()
+        .ok_or_else(|| "match_tool `items` must be an item, item tag, or item list".to_owned())?;
+    let items = values
+        .iter()
+        .map(|value| {
+            let value = value
+                .as_str()
+                .ok_or_else(|| "match_tool item list entries must be strings".to_owned())?;
+            if value.starts_with('#') {
+                return Err("match_tool direct item lists cannot contain tags".to_owned());
+            }
+            parse_identifier(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ItemHolderSetJson::Direct(items))
 }
 
 fn attribute_ref_token(attribute: &Identifier) -> TokenStream {
@@ -1458,6 +1513,24 @@ fn generate_requirements_value(
         RequirementsJson::RandomChance { chance } => {
             let chance = generate_level_based_value_ref(prefix, chance, statics, counter);
             quote! { EnchantmentEffectRequirements::RandomChance { chance: #chance } }
+        }
+        RequirementsJson::MatchTool { items } => {
+            let items = if let Some(items) = items {
+                let items = match items {
+                    ItemHolderSetJson::Tag(tag) => {
+                        let tag = identifier_token(tag);
+                        quote! { EnchantmentItemSet::Tag(#tag) }
+                    }
+                    ItemHolderSetJson::Direct(items) => {
+                        let items = items.iter().map(identifier_token);
+                        quote! { EnchantmentItemSet::Direct(&[#(#items),*]) }
+                    }
+                };
+                quote! { Some(#items) }
+            } else {
+                quote! { None }
+            };
+            quote! { EnchantmentEffectRequirements::MatchTool { items: #items } }
         }
         RequirementsJson::Unsupported { condition } => {
             let condition = identifier_token(condition);
@@ -2001,6 +2074,12 @@ fn generate_enchantment_effects(
         statics,
         counter,
     );
+    let projectile_spawned = generate_conditional_entity_effects(
+        &format!("{prefix}_PROJECTILE_SPAWNED"),
+        &effects.projectile_spawned,
+        statics,
+        counter,
+    );
     let projectile_spread = generate_conditional_value_effects(
         &format!("{prefix}_PROJECTILE_SPREAD"),
         &effects.projectile_spread,
@@ -2074,7 +2153,6 @@ fn generate_enchantment_effects(
     let hit_block = !effects.hit_block.is_empty();
     let location_changed = !effects.location_changed.is_empty();
     let tick = !effects.tick.is_empty();
-    let projectile_spawned = !effects.projectile_spawned.is_empty();
     let prevent_equipment_drop = effects.prevent_equipment_drop.is_some();
     let prevent_armor_change = effects.prevent_armor_change.is_some();
 
@@ -2159,7 +2237,7 @@ pub(crate) fn build() -> TokenStream {
             ConditionalDamageImmunityEffect, ConditionalEnchantmentEffect,
             CrossbowChargingSounds, DamageSourcePredicate, DamageSourceTagPredicate,
             EnchantmentAttributeEffect, EnchantmentEffectRequirements, EnchantmentEffects,
-            EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentTarget,
+            EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentItemSet, EnchantmentTarget,
             EnchantmentValueEffect, EntityFlagsPredicate, EntityPredicate,
             EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate,
             LevelBasedValue, MobEffectSelection, PlayerPredicate,

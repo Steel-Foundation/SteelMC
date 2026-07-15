@@ -4,7 +4,7 @@ use std::mem;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::{entity_behavior, entity_impl};
@@ -13,10 +13,11 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::entity_data::VillagerData;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::VillagerEntityData;
 use steel_registry::{
-    REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_attributes, vanilla_particle_types,
+    REGISTRY, RegistryExt, sound_events, vanilla_attributes, vanilla_particle_types,
 };
 use steel_utils::BlockPos;
 use steel_utils::Identifier;
@@ -225,19 +226,13 @@ impl VillagerEntity {
         let Some(world) = self.level() else {
             return;
         };
-        let Some(particle_id) = vanilla_particle_types::HAPPY_VILLAGER.try_id() else {
-            return;
-        };
-        let Ok(particle_id) = i32::try_from(particle_id) else {
-            return;
-        };
         let pos = self.position();
         world.send_particles(
-            particle_id,
+            ParticleData::simple(&vanilla_particle_types::HAPPY_VILLAGER),
             DVec3::new(pos.x, pos.y + 1.0, pos.z),
-            Vec3::new(0.3, 0.6, 0.3),
-            0.0,
             7,
+            DVec3::new(0.3, 0.6, 0.3),
+            0.0,
         );
     }
 
@@ -598,15 +593,7 @@ impl VillagerEntity {
             return;
         }
 
-        let Some(particle_type_id) = vanilla_particle_types::ENTITY_EFFECT.try_id() else {
-            log::error!("vanilla entity_effect particle type is not registered");
-            return;
-        };
-        let Ok(particle_type_id) = i32::try_from(particle_type_id) else {
-            log::error!("vanilla entity_effect particle type id does not fit protocol i32");
-            return;
-        };
-        let display = self.living_base.mob_effect_display_state(particle_type_id);
+        let display = self.living_base.mob_effect_display_state();
 
         {
             let mut entity_data = self.entity_data.lock();

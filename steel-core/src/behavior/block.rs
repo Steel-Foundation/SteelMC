@@ -25,11 +25,12 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
+use crate::world::{ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
 
 /// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
@@ -921,6 +922,19 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
+    }
+
+    /// Called when a projectile hits this block.
+    ///
+    /// Vanilla parity: `BlockState.onProjectileHit(Level, BlockState,
+    /// BlockHitResult, Projectile)`.
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
     }
 
     /// Default entity-inside hook.

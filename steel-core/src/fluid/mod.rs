@@ -4,8 +4,6 @@
 //! Based on vanilla Minecraft's `FlowingFluid` system.
 //!
 //! ### TODOs
-//! - TODO: Ambient tick dispatcher — `animate_tick` (sounds, particles) needs a client-side `Level.animateTick` equivalent firing at render rate for nearby blocks.
-//! - TODO: Particle Events (underwater bubbles, lava pops, drip particles — needs `CLevelParticles` packet).
 //! - TODO: Remaining entity fluid side effects: drowning, splash particles/sounds.
 //! - TODO: Block item drops when water destroys blocks (cactus infrastructure merged, needs implementation).
 //! - TODO: Lava random tick fire spread.

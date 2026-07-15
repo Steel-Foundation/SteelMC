@@ -10,8 +10,11 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
-    entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
-    world::{LevelAccessor, ScheduledTickAccess, World, game_event_context::GameEventContext},
+    entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
+    world::{
+        ClipHitResult, LevelAccessor, ScheduledTickAccess, World,
+        game_event_context::GameEventContext,
+    },
 };
 
 /// Behavior for campfires and soul campfires.
@@ -66,6 +69,18 @@ impl CampfireBlock {
             .set_value(&BlockStateProperties::LIT, !waterlogged)
             .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
     }
+
+    fn projectile_lit_state(
+        state: BlockStateId,
+        projectile_is_on_fire: bool,
+        may_interact: bool,
+    ) -> Option<BlockStateId> {
+        (projectile_is_on_fire
+            && may_interact
+            && !state.get_value(&BlockStateProperties::LIT)
+            && !state.get_value(&BlockStateProperties::WATERLOGGED))
+        .then(|| state.set_value(&BlockStateProperties::LIT, true))
+    }
 }
 
 impl BlockBehavior for CampfireBlock {
@@ -97,6 +112,23 @@ impl BlockBehavior for CampfireBlock {
         } else {
             state
         }
+    }
+
+    fn on_projectile_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        let Some(lit_state) = Self::projectile_lit_state(
+            state,
+            projectile.is_on_fire(),
+            projectile.projectile_may_interact(world, hit.block_pos),
+        ) else {
+            return;
+        };
+        world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
     }
 
     fn entity_inside(
@@ -201,6 +233,36 @@ mod tests {
             .set_value(&BlockStateProperties::LIT, true);
 
         assert_eq!(campfire.contact_damage_amount(state, false), None);
+    }
+
+    #[test]
+    fn burning_projectile_lights_only_dry_unlit_campfires() {
+        init_test_registry();
+
+        let unlit = vanilla_blocks::CAMPFIRE
+            .default_state()
+            .set_value(&BlockStateProperties::LIT, false)
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let lit = unlit.set_value(&BlockStateProperties::LIT, true);
+        let waterlogged = unlit.set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        assert_eq!(
+            CampfireBlock::projectile_lit_state(unlit, true, true),
+            Some(lit)
+        );
+        assert_eq!(
+            CampfireBlock::projectile_lit_state(unlit, false, true),
+            None
+        );
+        assert_eq!(
+            CampfireBlock::projectile_lit_state(unlit, true, false),
+            None
+        );
+        assert_eq!(CampfireBlock::projectile_lit_state(lit, true, true), None);
+        assert_eq!(
+            CampfireBlock::projectile_lit_state(waterlogged, true, true),
+            None
+        );
     }
 
     #[test]

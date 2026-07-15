@@ -739,6 +739,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.10000000149011612,
@@ -1266,6 +1267,7 @@
     },
     "attributes": {
       "max_health": 12.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.14,
@@ -1602,6 +1604,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
       "attack_knockback": 0.0,
@@ -2166,6 +2169,7 @@
     },
     "attributes": {
       "max_health": 14.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 1.0,
@@ -2932,6 +2936,7 @@
     },
     "attributes": {
       "max_health": 6.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -3276,6 +3281,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -4051,6 +4057,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 48.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -4685,6 +4692,7 @@
     },
     "attributes": {
       "max_health": 16.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -4978,6 +4986,7 @@
     },
     "attributes": {
       "max_health": 30.0,
+      "max_absorption": 0.0,
       "follow_range": 24.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.6299999952316284,
@@ -5522,6 +5531,7 @@
     },
     "attributes": {
       "max_health": 32.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.09000000357627869,
@@ -5897,6 +5907,7 @@
     },
     "attributes": {
       "max_health": 32.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.09000000357627869,
@@ -6298,6 +6309,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -6614,6 +6626,7 @@
     },
     "attributes": {
       "max_health": 12.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -7656,6 +7669,7 @@
     },
     "attributes": {
       "max_health": 4.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -7979,6 +7993,7 @@
     },
     "attributes": {
       "max_health": 3.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -8293,6 +8308,7 @@
     },
     "attributes": {
       "max_health": 12.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -8890,6 +8906,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -9223,6 +9240,7 @@
     },
     "attributes": {
       "max_health": 1.0,
+      "max_absorption": 0.0,
       "follow_range": 32.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.4000000059604645,
@@ -9546,6 +9564,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -10357,6 +10376,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 1.2000000476837158,
@@ -10724,6 +10744,7 @@
     },
     "attributes": {
       "max_health": 53.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.17499999701976776,
@@ -11224,6 +11245,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 35.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -11742,6 +11764,7 @@
     },
     "attributes": {
       "max_health": 80.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -12067,6 +12090,7 @@
     },
     "attributes": {
       "max_health": 40.0,
+      "max_absorption": 0.0,
       "follow_range": 64.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -12360,6 +12384,7 @@
     },
     "attributes": {
       "max_health": 8.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -12693,6 +12718,7 @@
     },
     "attributes": {
       "max_health": 200.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -13416,6 +13442,7 @@
     },
     "attributes": {
       "max_health": 24.0,
+      "max_absorption": 0.0,
       "follow_range": 12.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.5,
@@ -15026,6 +15053,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 32.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -15374,6 +15402,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 1.0,
@@ -15903,6 +15932,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 100.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -16263,6 +16293,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.05,
@@ -16557,6 +16588,7 @@
     },
     "attributes": {
       "max_health": 100.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.5,
@@ -17115,6 +17147,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -17467,6 +17500,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -17783,6 +17817,7 @@
     },
     "attributes": {
       "max_health": 30.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.5,
@@ -18120,6 +18155,7 @@
     },
     "attributes": {
       "max_health": 40.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.6000000238418579,
       "movement_speed": 0.30000001192092896,
@@ -18710,6 +18746,7 @@
     },
     "attributes": {
       "max_health": 53.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.22499999403953552,
@@ -19041,6 +19078,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 35.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -19395,6 +19433,7 @@
     },
     "attributes": {
       "max_health": 32.0,
+      "max_absorption": 0.0,
       "follow_range": 18.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.5,
@@ -19885,6 +19924,7 @@
     },
     "attributes": {
       "max_health": 100.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 1.0,
       "movement_speed": 0.25,
@@ -21753,6 +21793,7 @@
     },
     "attributes": {
       "max_health": 53.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.17499999701976776,
@@ -22251,6 +22292,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -23030,6 +23072,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
       "attack_knockback": 0.0,
@@ -23749,6 +23792,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -24116,6 +24160,7 @@
     },
     "attributes": {
       "max_health": 53.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.17499999701976776,
@@ -24493,6 +24538,7 @@
     },
     "attributes": {
       "max_health": 15.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.30000001192092896,
       "movement_speed": 1.0,
@@ -25297,6 +25343,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -26505,6 +26552,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.15000000596046448,
@@ -26807,6 +26855,7 @@
     },
     "attributes": {
       "max_health": 16.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -27184,6 +27233,7 @@
     },
     "attributes": {
       "max_health": 6.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -27477,6 +27527,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -27830,6 +27881,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -28175,6 +28227,7 @@
     },
     "attributes": {
       "max_health": 16.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.3499999940395355,
@@ -28490,6 +28543,7 @@
     },
     "attributes": {
       "max_health": 50.0,
+      "max_absorption": 0.0,
       "follow_range": 12.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.3499999940395355,
@@ -28835,6 +28889,7 @@
     },
     "attributes": {
       "max_health": 24.0,
+      "max_absorption": 0.0,
       "follow_range": 32.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.3499999940395355,
@@ -29172,6 +29227,7 @@
     },
     "attributes": {
       "max_health": 30.0,
+      "max_absorption": 0.0,
       "follow_range": 20.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -29906,6 +29962,7 @@
     },
     "attributes": {
       "max_health": 3.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -30242,6 +30299,7 @@
     },
     "attributes": {
       "max_health": 3.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -30566,6 +30624,7 @@
     },
     "attributes": {
       "max_health": 100.0,
+      "max_absorption": 0.0,
       "follow_range": 32.0,
       "knockback_resistance": 0.75,
       "movement_speed": 0.3,
@@ -30903,6 +30962,7 @@
     },
     "attributes": {
       "max_health": 3.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -31239,6 +31299,7 @@
     },
     "attributes": {
       "max_health": 8.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -31562,6 +31623,7 @@
     },
     "attributes": {
       "max_health": 30.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -32015,6 +32077,7 @@
     },
     "attributes": {
       "max_health": 8.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -32330,6 +32393,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -32675,6 +32739,7 @@
     },
     "attributes": {
       "max_health": 15.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -33012,6 +33077,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -33551,6 +33617,7 @@
     },
     "attributes": {
       "max_health": 14.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.10000000149011612,
@@ -34052,6 +34119,7 @@
     },
     "attributes": {
       "max_health": 4.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.20000000298023224,
@@ -34780,6 +34848,7 @@
     },
     "attributes": {
       "max_health": 16.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -35569,6 +35638,7 @@
     },
     "attributes": {
       "max_health": 10.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -35869,6 +35939,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -36214,6 +36285,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.17499999701976776,
@@ -36573,6 +36645,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -36902,6 +36975,7 @@
     },
     "attributes": {
       "max_health": 6.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 1.0,
@@ -38048,6 +38122,7 @@
     },
     "attributes": {
       "max_health": 53.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.17499999701976776,
@@ -38606,6 +38681,7 @@
     },
     "attributes": {
       "max_health": 3.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -38950,6 +39026,7 @@
     },
     "attributes": {
       "max_health": 30.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -39257,6 +39334,7 @@
     },
     "attributes": {
       "max_health": 14.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -39620,6 +39698,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.5,
@@ -39950,6 +40029,7 @@
     },
     "attributes": {
       "max_health": 24.0,
+      "max_absorption": 0.0,
       "follow_range": 12.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.3499999940395355,
@@ -40287,6 +40367,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.7,
@@ -40593,6 +40674,7 @@
     },
     "attributes": {
       "max_health": 500.0,
+      "max_absorption": 0.0,
       "follow_range": 24.0,
       "knockback_resistance": 1.0,
       "movement_speed": 0.30000001192092896,
@@ -41107,6 +41189,7 @@
     },
     "attributes": {
       "max_health": 26.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -41438,6 +41521,7 @@
     },
     "attributes": {
       "max_health": 300.0,
+      "max_absorption": 0.0,
       "follow_range": 40.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.6000000238418579,
@@ -41740,6 +41824,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.25,
@@ -42324,6 +42409,7 @@
     },
     "attributes": {
       "max_health": 8.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.30000001192092896,
@@ -42632,6 +42718,7 @@
     },
     "attributes": {
       "max_health": 40.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.6000000238418579,
       "movement_speed": 0.30000001192092896,
@@ -42955,6 +43042,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 35.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -43301,6 +43389,7 @@
     },
     "attributes": {
       "max_health": 25.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.22499999403953552,
@@ -43692,6 +43781,7 @@
     },
     "attributes": {
       "max_health": 15.0,
+      "max_absorption": 0.0,
       "follow_range": 16.0,
       "knockback_resistance": 0.30000001192092896,
       "movement_speed": 1.100000023841858,
@@ -44040,9 +44130,10 @@
               "serializer": "villager_data",
               "default_value": {
                 "type": "minecraft:plains",
-                "profession": "minecraft:nitwit",
+                "profession": "minecraft:none",
                 "level": 1
-              }
+              },
+              "runtime_initializer": "random_villager_profession"
             },
             {
               "index": 21,
@@ -44058,6 +44149,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 35.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -44390,6 +44482,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "follow_range": 35.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.23000000417232513,
@@ -44713,6 +44806,7 @@
     },
     "attributes": {
       "max_health": 20.0,
+      "max_absorption": 0.0,
       "knockback_resistance": 0.0,
       "movement_speed": 0.10000000149011612,
       "attack_damage": 1.0,
