@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
 
 /// The direction the ladder is facing.
-const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
+const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
 /// Behavior for ladders.
 #[block_behavior]
