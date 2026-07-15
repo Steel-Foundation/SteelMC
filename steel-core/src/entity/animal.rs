@@ -349,7 +349,7 @@ pub trait Animal: AgeableMob {
         partner.reset_love();
         self.broadcast_entity_event(EntityStatus::InLoveHearts);
 
-        if world.get_game_rule(&MOB_DROPS).as_bool() == Some(true) {
+        if world.get_game_rule(&MOB_DROPS) {
             let xp = rand::random_range(0..7) + 1;
             ExperienceOrbEntity::award(world, self.position(), xp);
         }

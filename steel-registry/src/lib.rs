@@ -1,4 +1,31 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
+#![expect(
+    missing_docs,
+    reason = "registry APIs mirror large generated vanilla data surfaces that are not individually documented yet"
+)]
+#![expect(
+    clippy::absolute_paths,
+    clippy::allow_attributes_without_reason,
+    clippy::fn_params_excessive_bools,
+    clippy::items_after_statements,
+    clippy::match_same_arms,
+    clippy::missing_fields_in_debug,
+    clippy::missing_panics_doc,
+    clippy::ref_option,
+    clippy::return_self_not_must_use,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unreadable_literal,
+    clippy::unused_self,
+    reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::float_cmp,
+        reason = "registry tests compare exact extracted floating-point constants"
+    )
+)]
 
 use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
@@ -14,9 +41,11 @@ use crate::{
     chat_type::ChatTypeRegistry,
     chicken_sound_variant::ChickenSoundVariantRegistry,
     chicken_variant::ChickenVariantRegistry,
+    consume_effect::ConsumeEffectTypeRegistry,
     cow_sound_variant::CowSoundVariantRegistry,
     cow_variant::CowVariantRegistry,
     damage_type::DamageTypeRegistry,
+    data_component_predicate::DataComponentPredicateTypeRegistry,
     data_components::{DataComponentRegistry, vanilla_components},
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
@@ -34,6 +63,7 @@ use crate::{
     items::ItemRegistry,
     jukebox_song::JukeboxSongRegistry,
     loot_table::LootTableRegistry,
+    map_decoration_type::MapDecorationTypeRegistry,
     menu_type::MenuTypeRegistry,
     mob_effect::MobEffectRegistry,
     painting_variant::PaintingVariantRegistry,
@@ -41,6 +71,7 @@ use crate::{
     pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
+    potion::PotionRegistry,
     recipe::RecipeRegistry,
     sound_event::SoundEventRegistry,
     structure::StructureRegistry,
@@ -67,36 +98,49 @@ pub mod cat_variant;
 pub mod chat_type;
 pub mod chicken_sound_variant;
 pub mod chicken_variant;
+pub mod consume_effect;
 pub mod cow_sound_variant;
 pub mod cow_variant;
 pub mod damage_type;
+pub mod data_component_predicate;
 pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
+pub mod dye_color;
 pub mod enchantment;
 pub mod enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
+pub mod entity_variant;
 pub mod equipment;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
 pub mod game_rules;
+pub mod holder;
+pub mod holder_set;
 pub mod instrument;
+pub mod item_predicate;
 pub mod item_stack;
+pub mod item_stack_template;
 pub mod items;
 pub mod jukebox_song;
 pub mod loot_table;
 mod macros;
+pub mod map_decoration_type;
 pub mod menu_type;
 pub mod mob_effect;
+pub mod mob_effect_instance;
 pub mod painting_variant;
 pub mod particle_type;
 pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
+pub mod potion;
 pub mod recipe;
+pub mod registry_reference;
+pub mod resolvable_profile;
 pub mod sound_event;
 pub mod structure;
 pub mod structure_processor;
@@ -111,6 +155,23 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
 pub mod zombie_nautilus_variant;
+
+pub use consume_effect::{ConsumeEffectData, ConsumeEffectType, ConsumeEffectTypeRef};
+pub use dye_color::DyeColor;
+pub use entity_variant::{
+    AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
+    RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
+};
+pub use holder::{RegistryHolder, RegistryHolderEntry};
+pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
+pub use item_stack_template::ItemStackTemplate;
+pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
+pub use potion::{Potion, PotionEffect, PotionRef};
+pub use registry_reference::{RegistryReference, RegistryReferenceEntry};
+pub use resolvable_profile::{
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
+    ResolvableProfileContents, StoredGameProfile,
+};
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -289,6 +350,16 @@ pub mod vanilla_mob_effects;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_map_decoration_types.rs"]
+pub mod vanilla_map_decoration_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_potions.rs"]
+pub mod vanilla_potions;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_zombie_nautilus_variants.rs"]
 pub mod vanilla_zombie_nautilus_variants;
 
@@ -341,6 +412,11 @@ pub mod vanilla_entity_type_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_enchantment_tags.rs"]
 pub mod vanilla_enchantment_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_potion_tags.rs"]
+pub mod vanilla_potion_tags;
 #[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_enchantments.rs"]
@@ -421,6 +497,11 @@ pub mod vanilla_structure_sets;
 #[path = "generated/vanilla_structure_processors.rs"]
 pub mod vanilla_structure_processors;
 
+#[expect(
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    reason = "generated vanilla template pool data is emitted by the registry build script"
+)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_template_pools.rs"]
 pub mod vanilla_template_pools;
@@ -558,6 +639,8 @@ pub const INSTRUMENT_REGISTRY: Identifier = Identifier::vanilla_static("instrume
 pub const DIALOG_REGISTRY: Identifier = Identifier::vanilla_static("dialog");
 pub const MENU_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("menu");
 pub const MOB_EFFECT_REGISTRY: Identifier = Identifier::vanilla_static("mob_effect");
+pub const MAP_DECORATION_TYPE_REGISTRY: Identifier =
+    Identifier::vanilla_static("map_decoration_type");
 pub const ZOMBIE_NAUTILUS_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("zombie_nautilus_variant");
 pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline");
@@ -583,6 +666,8 @@ pub struct Registry {
     pub blocks: BlockRegistry,
     pub items: ItemRegistry,
     pub data_components: DataComponentRegistry,
+    pub data_component_predicate_types: DataComponentPredicateTypeRegistry,
+    pub consume_effect_types: ConsumeEffectTypeRegistry,
     pub entity_data_serializers: EntityDataSerializerRegistry,
     pub biomes: BiomeRegistry,
     pub chat_types: ChatTypeRegistry,
@@ -611,6 +696,8 @@ pub struct Registry {
     pub dialogs: DialogRegistry,
     pub menu_types: MenuTypeRegistry,
     pub mob_effects: MobEffectRegistry,
+    pub map_decoration_types: MapDecorationTypeRegistry,
+    pub potions: PotionRegistry,
     pub zombie_nautilus_variants: ZombieNautilusVariantRegistry,
     pub timelines: TimelineRegistry,
     pub recipes: RecipeRegistry,
@@ -634,8 +721,8 @@ pub struct Registry {
 impl Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Registry {")
-            .and_then(|_| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
-            .and_then(|_| f.write_str("}"))
+            .and_then(|()| f.write_fmt(format_args!("Blocks Loaded: {}", self.blocks.len())))
+            .and_then(|()| f.write_str("}"))
     }
 }
 
@@ -650,6 +737,14 @@ impl Registry {
         vanilla_block_tags::BlockTag::register_block_tags(&mut registry.blocks);
 
         vanilla_components::register_vanilla_data_components(&mut registry.data_components);
+
+        data_component_predicate::vanilla_data_component_predicate_types::register_data_component_predicate_types(
+            &mut registry.data_component_predicate_types,
+        );
+
+        consume_effect::vanilla_consume_effect_types::register_consume_effect_types(
+            &mut registry.consume_effect_types,
+        );
 
         register_vanilla_entity_data_serializers(&mut registry.entity_data_serializers);
 
@@ -701,6 +796,11 @@ impl Registry {
         vanilla_dialog_tags::DialogTag::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
         vanilla_mob_effects::register_mob_effects(&mut registry.mob_effects);
+        vanilla_map_decoration_types::register_map_decoration_types(
+            &mut registry.map_decoration_types,
+        );
+        vanilla_potions::register_potions(&mut registry.potions);
+        vanilla_potion_tags::PotionTag::register_potion_tags(&mut registry.potions);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,
         );
@@ -751,6 +851,8 @@ impl Registry {
         self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
+        self.data_component_predicate_types.freeze();
+        self.consume_effect_types.freeze();
         self.entity_data_serializers.freeze();
         self.items.freeze();
         self.biomes.freeze();
@@ -780,6 +882,8 @@ impl Registry {
         self.dialogs.freeze();
         self.menu_types.freeze();
         self.mob_effects.freeze();
+        self.map_decoration_types.freeze();
+        self.potions.freeze();
         self.zombie_nautilus_variants.freeze();
         self.timelines.freeze();
         self.recipes.freeze();
@@ -801,6 +905,59 @@ impl Registry {
     }
 
     fn validate_references(&self) {
+        let mut time_markers = rustc_hash::FxHashSet::default();
+        for (_, timeline) in self.timelines.iter() {
+            assert!(
+                self.world_clocks.by_key(&timeline.clock.key).is_some(),
+                "timeline {} references unknown world clock {}",
+                timeline.key,
+                timeline.clock.key
+            );
+            if let Some(period_ticks) = timeline.period_ticks {
+                assert!(
+                    period_ticks > 0,
+                    "timeline {} has invalid period_ticks {}",
+                    timeline.key,
+                    period_ticks
+                );
+            }
+            for marker in timeline.time_markers {
+                assert!(
+                    marker.ticks >= 0,
+                    "time marker {} has invalid tick {}",
+                    marker.key,
+                    marker.ticks
+                );
+                if let Some(period_ticks) = timeline.period_ticks {
+                    assert!(
+                        marker.ticks < period_ticks,
+                        "time marker {} tick {} is outside timeline {} period {}",
+                        marker.key,
+                        marker.ticks,
+                        timeline.key,
+                        period_ticks
+                    );
+                }
+                assert!(
+                    time_markers.insert((timeline.clock.key.clone(), marker.key.clone())),
+                    "time marker {} is defined multiple times for world clock {}",
+                    marker.key,
+                    timeline.clock.key
+                );
+            }
+        }
+
+        for (_, dimension_type) in self.dimension_types.iter() {
+            if let Some(clock) = dimension_type.default_clock {
+                assert!(
+                    self.world_clocks.by_key(&clock.key).is_some(),
+                    "dimension type {} references unknown default world clock {}",
+                    dimension_type.key,
+                    clock.key
+                );
+            }
+        }
+
         for (_, biome) in self.biomes.iter() {
             for carver_key in &biome.carvers {
                 assert!(
@@ -949,6 +1106,8 @@ impl Registry {
             attributes: AttributeRegistry::new(),
             blocks: BlockRegistry::new(),
             data_components: DataComponentRegistry::new(),
+            data_component_predicate_types: DataComponentPredicateTypeRegistry::new(),
+            consume_effect_types: ConsumeEffectTypeRegistry::new(),
             entity_data_serializers: EntityDataSerializerRegistry::new(),
             items: ItemRegistry::new(),
             biomes: BiomeRegistry::new(),
@@ -978,6 +1137,8 @@ impl Registry {
             dialogs: DialogRegistry::new(),
             menu_types: MenuTypeRegistry::new(),
             mob_effects: MobEffectRegistry::new(),
+            map_decoration_types: MapDecorationTypeRegistry::new(),
+            potions: PotionRegistry::new(),
             zombie_nautilus_variants: ZombieNautilusVariantRegistry::new(),
             timelines: TimelineRegistry::new(),
             recipes: RecipeRegistry::new(),

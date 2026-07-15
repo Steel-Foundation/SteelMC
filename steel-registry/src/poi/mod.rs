@@ -3,6 +3,13 @@
 //! POI types track special blocks (beds, workstations, bells, nether portals, etc.)
 //! so game systems can efficiently query for nearby points of interest
 //! without scanning every block.
+#![cfg_attr(
+    test,
+    expect(
+        clippy::unwrap_used,
+        reason = "poi tests assert extracted vanilla state references exist"
+    )
+)]
 
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};

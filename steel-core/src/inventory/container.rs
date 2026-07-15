@@ -8,6 +8,7 @@ use std::ptr;
 
 use enum_dispatch::enum_dispatch;
 use steel_registry::item_stack::ItemStack;
+use steel_utils::ErasedType;
 
 use crate::player::Player;
 
@@ -18,8 +19,11 @@ pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 /// I also use container interchangeably with inventory as they mean approximately the same thing.
 /// But inventory could also refer to the player's inventory.
 /// Example: `PlayerInventory`, Chest, Temporary Crafting Table
+///
+/// Concrete implementations must implement [`steel_utils::DowncastType`] with
+/// a unique, stable key so erased container references can recover their type.
 #[enum_dispatch]
-pub trait Container {
+pub trait Container: ErasedType + Send + Sync {
     /// Returns the number of slots in this container.
     fn get_container_size(&self) -> usize;
 
@@ -35,6 +39,16 @@ pub trait Container {
 
     /// Returns a reference to the item in the specified slot.
     fn get_item(&self, slot: usize) -> &ItemStack;
+
+    /// Returns true if this container has a non-empty stack with the same item and components.
+    ///
+    /// Mirrors vanilla `Inventory.contains(ItemStack)`.
+    fn contains_stack(&self, search_stack: &ItemStack) -> bool {
+        (0..self.get_container_size()).any(|slot| {
+            let item = self.get_item(slot);
+            !item.is_empty() && ItemStack::is_same_item_same_components(item, search_stack)
+        })
+    }
 
     /// Returns a mutable reference to the item in the specified slot.
     fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack;
@@ -127,6 +141,37 @@ pub trait Container {
         count
     }
 
+    /// Removes or counts matching items using vanilla `/clear` semantics.
+    fn clear_or_count_matching_items(
+        &mut self,
+        predicate: &dyn Fn(&ItemStack) -> bool,
+        amount_to_remove: i32,
+        counting_only: bool,
+    ) -> i32 {
+        let mut count = 0;
+        for slot in 0..self.get_container_size() {
+            let stack_count = self.get_item(slot).count();
+            let amount_removed = matching_item_count(
+                self.get_item(slot),
+                predicate,
+                amount_to_remove - count,
+                counting_only,
+            );
+            if amount_removed > 0 && !counting_only {
+                if amount_removed == stack_count {
+                    self.set_item(slot, ItemStack::empty());
+                } else {
+                    self.get_item_mut(slot).shrink(amount_removed);
+                }
+            }
+            count += amount_removed;
+        }
+        if count > 0 && !counting_only {
+            self.set_changed();
+        }
+        count
+    }
+
     /// Returns mutable references to `N` disjoint slots.
     ///
     /// # Panics
@@ -200,6 +245,40 @@ pub trait Container {
             self.set_changed();
         }
         stack.is_empty()
+    }
+}
+
+/// Removes or counts matching items in one stack using vanilla `/clear` semantics.
+pub(crate) fn clear_or_count_matching_stack(
+    stack: &mut ItemStack,
+    predicate: &dyn Fn(&ItemStack) -> bool,
+    amount_to_remove: i32,
+    counting_only: bool,
+) -> i32 {
+    let amount_removed = matching_item_count(stack, predicate, amount_to_remove, counting_only);
+    if !counting_only {
+        stack.shrink(amount_removed);
+    }
+    amount_removed
+}
+
+fn matching_item_count(
+    stack: &ItemStack,
+    predicate: &dyn Fn(&ItemStack) -> bool,
+    amount_to_remove: i32,
+    counting_only: bool,
+) -> i32 {
+    if stack.is_empty() || !predicate(stack) {
+        return 0;
+    }
+    if counting_only {
+        return stack.count();
+    }
+
+    if amount_to_remove < 0 {
+        stack.count()
+    } else {
+        amount_to_remove.min(stack.count())
     }
 }
 
@@ -278,7 +357,10 @@ pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i3
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_items};
+
     use super::*;
+    use steel_utils::{DowncastType, DowncastTypeKey};
 
     struct TestContainer {
         items: Vec<ItemStack>,
@@ -290,6 +372,11 @@ mod tests {
                 items: (0..size).map(|_| ItemStack::empty()).collect(),
             }
         }
+    }
+
+    // SAFETY: This key uniquely identifies `TestContainer` within the unit-test process.
+    unsafe impl DowncastType for TestContainer {
+        const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/inventory/container");
     }
 
     impl Container for TestContainer {
@@ -340,6 +427,60 @@ mod tests {
     }
 
     #[test]
+    fn clear_or_count_matching_items_counts_without_mutating() {
+        init_test_registry();
+        let mut container = TestContainer::new(3);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::DIRT, 4));
+        container.set_item(2, ItemStack::with_count(&vanilla_items::STONE, 2));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::STONE),
+            0,
+            true,
+        );
+
+        assert_eq!(count, 5);
+        assert_eq!(container.get_item(0).count(), 3);
+        assert_eq!(container.get_item(2).count(), 2);
+    }
+
+    #[test]
+    fn clear_or_count_matching_items_applies_cap_in_slot_order() {
+        init_test_registry();
+        let mut container = TestContainer::new(2);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::STONE),
+            5,
+            false,
+        );
+
+        assert_eq!(count, 5);
+        assert!(container.get_item(0).is_empty());
+        assert_eq!(container.get_item(1).count(), 2);
+    }
+
+    #[test]
+    fn clear_or_count_matching_items_removes_every_match_for_negative_limit() {
+        init_test_registry();
+        let mut container = TestContainer::new(2);
+        container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
+
+        let count = container.clear_or_count_matching_items(
+            &|stack| stack.is(&vanilla_items::STONE),
+            -1,
+            false,
+        );
+
+        assert_eq!(count, 7);
+        assert!(container.is_empty());
+    }
+
+    #[test]
     #[should_panic(expected = "duplicate index")]
     fn test_with_indices_duplicate_panics() {
         let mut container = TestContainer::new(4);
@@ -359,7 +500,12 @@ mod tests {
     ///
     /// ```compile_fail
     /// use steel_core::inventory::container::{Container, with_indices};
+    /// use steel_utils::{DowncastType, DowncastTypeKey};
     /// # struct C { items: Vec<steel_registry::item_stack::ItemStack> }
+    /// # // SAFETY: This doctest owns both the key and concrete type.
+    /// # unsafe impl DowncastType for C {
+    /// #     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:doctest/container/c");
+    /// # }
     /// # impl Container for C {
     /// #     fn get_container_size(&self) -> usize { self.items.len() }
     /// #     fn get_item(&self, s: usize) -> &steel_registry::item_stack::ItemStack { &self.items[s] }

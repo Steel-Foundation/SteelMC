@@ -26,6 +26,7 @@ const OUT_DIR: &str = "src/generated";
 const IDS: &str = "vanilla_translations/ids";
 const REGISTRY: &str = "vanilla_translations/registry";
 const ENTITY_EVENTS: &str = "entity_events";
+const VERSION: &str = "version";
 const ASSET_LOCK_TIMEOUT: Duration = Duration::from_mins(5);
 
 #[derive(Deserialize)]
@@ -310,11 +311,17 @@ fn download_and_extract_assets(manifest_dir: &str) {
         extracted_en_us,
         "Failed to find assets/minecraft/lang/en_us.json in server jar"
     );
-
     fs::write(&version_file, &target_ver).expect("Failed to write version file");
     println!(
         "cargo:warning=Successfully extracted datapack and translation files for Minecraft {target_ver}."
     );
+}
+
+fn build_version_constant() -> String {
+    let target_version = get_target_mc_version();
+    format!(
+        "/// The targeted Minecraft version.\npub const MINECRAFT_VERSION: &str = {target_version:?};\n"
+    )
 }
 
 /// Main build script entry point that generates translation constants.
@@ -341,6 +348,9 @@ pub fn main() {
 
     let content = entity_events::build();
     write_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string());
+
+    let content = build_version_constant();
+    write_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
 
     if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
         for entry in entries.flatten() {

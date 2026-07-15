@@ -138,6 +138,14 @@
         "storage": {
           "$ref": "#/definitions/storage"
         },
+        "nether_portal_target": {
+          "$ref": "#/definitions/world_name",
+          "description": "Same-domain world name used by Nether portals from this world. If omitted, Steel uses vanilla conventional names."
+        },
+        "end_portal_target": {
+          "$ref": "#/definitions/world_name",
+          "description": "Same-domain world name used by End portals from this non-End world. Invalid on End-dimension worlds. If omitted, Steel uses vanilla conventional names."
+        },
         "config": {
           "type": "object",
           "description": "Generator-specific config validated by the selected generator",

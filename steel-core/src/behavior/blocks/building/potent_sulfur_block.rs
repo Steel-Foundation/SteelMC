@@ -10,7 +10,7 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt as _};
 use crate::block_entity::entities::PotentSulfurBlockEntity;
@@ -68,7 +68,6 @@ impl PotentSulfurBlock {
                 && let Some(block_entity) = world.get_block_entity(pos)
                 && let Some(potent_sulfur) = block_entity
                     .lock()
-                    .as_any_mut()
                     .downcast_mut::<PotentSulfurBlockEntity>()
             {
                 potent_sulfur.reset_countdown();

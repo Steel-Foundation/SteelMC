@@ -145,6 +145,17 @@ impl LogState {
         self.history.pos = 0;
         self.rewrite_input(0, 0)
     }
+
+    pub fn apply_completion(&mut self) -> Result<()> {
+        let Some(completion) = self.completion.take_selected() else {
+            let position = self.out.pos;
+            self.completion.update(&mut self.out, position);
+            return self.rewrite_current_input();
+        };
+        let (length, position) = completion.apply(&mut self.out.text);
+        self.completion.update(&mut self.out, position);
+        self.rewrite_input(length, position)
+    }
 }
 
 /// Rendering methods

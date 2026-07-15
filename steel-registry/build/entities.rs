@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted entity data"
+)]
+
 use std::fs;
 
 use heck::ToShoutySnakeCase;
@@ -50,7 +55,7 @@ struct AttachmentPointEntry {
     z: f64,
 }
 
-fn default_can_serialize() -> bool {
+const fn default_can_serialize() -> bool {
     true
 }
 
@@ -97,7 +102,7 @@ fn mob_category_variant(category: &str) -> TokenStream {
         "WATER_CREATURE" => quote! { MobCategory::WaterCreature },
         "WATER_AMBIENT" => quote! { MobCategory::WaterAmbient },
         "MISC" => quote! { MobCategory::Misc },
-        _ => panic!("Unknown mob category: {}", category),
+        _ => panic!("Unknown mob category: {category}"),
     }
 }
 
@@ -119,7 +124,7 @@ pub(crate) fn build() -> TokenStream {
     let entities_file = "build_assets/entities.json";
     let content = fs::read_to_string(entities_file).unwrap();
     let entity_types: Vec<EntityTypeEntry> = serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse entities.json: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to parse entities.json: {e}"));
 
     let mut stream = TokenStream::new();
 
@@ -165,6 +170,14 @@ pub(crate) fn build() -> TokenStream {
             .class_hierarchy
             .iter()
             .any(|class| class.simple_name == "AbstractMinecart");
+        let is_vehicle_entity = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "VehicleEntity");
+        let is_projectile = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "Projectile");
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -220,6 +233,8 @@ pub(crate) fn build() -> TokenStream {
                 can_serialize: #can_serialize,
                 is_abstract_boat: #is_abstract_boat,
                 is_abstract_minecart: #is_abstract_minecart,
+                is_vehicle_entity: #is_vehicle_entity,
+                is_projectile: #is_projectile,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,

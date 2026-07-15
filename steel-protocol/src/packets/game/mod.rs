@@ -15,6 +15,7 @@ mod c_container_close;
 mod c_container_set_content;
 mod c_container_set_data;
 mod c_container_set_slot;
+mod c_cooldown;
 mod c_damage_event;
 mod c_disguised_chat;
 mod c_entity_event;
@@ -35,6 +36,7 @@ mod c_player_abilities;
 mod c_player_chat;
 mod c_player_combat_kill;
 mod c_player_info_update;
+mod c_player_look_at;
 mod c_player_position;
 mod c_remove_entities;
 mod c_remove_mob_effect;
@@ -66,6 +68,7 @@ mod c_system_chat;
 mod c_system_chat_message;
 mod c_tab_list;
 mod c_take_item_entity;
+mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
 mod c_update_attributes;
@@ -118,11 +121,15 @@ pub use c_change_difficulty::CChangeDifficulty;
 pub use c_chunk_batch_finished::CChunkBatchFinished;
 pub use c_chunk_batch_start::CChunkBatchStart;
 pub use c_command_suggestions::{CCommandSuggestions, SuggestionEntry};
-pub use c_commands::{ArgumentType, CCommands, CommandNode, CommandNodeInfo, SuggestionType};
+pub use c_commands::{
+    ArgumentStringTypeBehavior, ArgumentType, CCommands, CommandNode, CommandNodeInfo,
+    SuggestionType,
+};
 pub use c_container_close::CContainerClose;
 pub use c_container_set_content::CContainerSetContent;
 pub use c_container_set_data::CContainerSetData;
 pub use c_container_set_slot::CContainerSetSlot;
+pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
 pub use c_disguised_chat::CDisguisedChat;
 pub use c_entity_event::CEntityEvent;
@@ -152,6 +159,7 @@ pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,
 };
+pub use c_player_look_at::{CPlayerLookAt, LookAtAnchor};
 pub use c_player_position::{CPlayerPosition, RelativeMovement};
 pub use c_remove_entities::CRemoveEntities;
 pub use c_remove_mob_effect::CRemoveMobEffect;
@@ -183,6 +191,7 @@ pub use c_system_chat::CSystemChat;
 pub use c_system_chat_message::CSystemChatMessage;
 pub use c_tab_list::CTabList;
 pub use c_take_item_entity::CTakeItemEntity;
+pub use c_teleport_entity::CTeleportEntity;
 pub use c_ticking_state::CTickingState;
 pub use c_ticking_step::CTickingStep;
 pub use c_update_attributes::{

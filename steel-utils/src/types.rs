@@ -204,6 +204,41 @@ pub enum TraversalNodeStatus {
     Stop,
 }
 
+/// Iterator returned by [`BlockPos::spiral_around`].
+#[derive(Clone, Debug)]
+pub struct SpiralAround {
+    directions: [Direction; 4],
+    cursor: BlockPos,
+    legs: i32,
+    leg: i32,
+    leg_size: i32,
+    leg_index: i32,
+    last: BlockPos,
+}
+
+impl Iterator for SpiralAround {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let direction_index = (self.leg + 4).rem_euclid(4) as usize;
+        self.cursor = self.last.relative(self.directions[direction_index]);
+        self.last = self.cursor;
+
+        if self.leg_index >= self.leg_size {
+            if self.leg >= self.legs {
+                return None;
+            }
+
+            self.leg += 1;
+            self.leg_index = 0;
+            self.leg_size = self.leg / 2 + 1;
+        }
+
+        self.leg_index += 1;
+        Some(self.cursor)
+    }
+}
+
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -380,6 +415,41 @@ impl BlockPos {
             *self
         } else {
             Self(self.0 + direction.offset_vec() * n)
+        }
+    }
+
+    /// Returns vanilla `BlockPos.spiralAround`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `radius` is negative or if both directions are on the same axis.
+    #[must_use]
+    pub fn spiral_around(
+        center: Self,
+        radius: i32,
+        first_direction: Direction,
+        second_direction: Direction,
+    ) -> SpiralAround {
+        assert!(radius >= 0, "spiral radius must be non-negative");
+        assert!(
+            first_direction.get_axis() != second_direction.get_axis(),
+            "spiral directions cannot be on the same axis"
+        );
+
+        let cursor = center.relative(second_direction);
+        SpiralAround {
+            directions: [
+                first_direction,
+                second_direction,
+                first_direction.opposite(),
+                second_direction.opposite(),
+            ],
+            cursor,
+            legs: 4 * radius,
+            leg: -1,
+            leg_size: 0,
+            leg_index: 0,
+            last: cursor,
         }
     }
 
@@ -1270,6 +1340,8 @@ impl Debug for Identifier {
 impl Identifier {
     /// The vanilla namespace.
     pub const VANILLA_NAMESPACE: &'static str = "minecraft";
+    /// The Steel namespace.
+    pub const STEEL_NAMESPACE: &'static str = "steel";
 
     /// Creates a new `Identifier` with the given namespace and path.
     #[must_use]
@@ -1288,6 +1360,12 @@ impl Identifier {
             namespace: Cow::Borrowed(namespace),
             path: Cow::Borrowed(path),
         }
+    }
+
+    /// Creates a new `Identifier` with the Steel namespace.
+    #[must_use]
+    pub fn from_steel(path: impl Into<Cow<'static, str>>) -> Self {
+        Self::new(Self::STEEL_NAMESPACE, path)
     }
 
     /// Creates a new `Identifier` with the vanilla namespace.
@@ -1326,7 +1404,7 @@ impl Identifier {
 
     /// Returns whether the namespace is valid.
     pub fn validate_namespace(namespace: &str) -> bool {
-        namespace.chars().all(Self::valid_namespace_char)
+        namespace != ".." && namespace.chars().all(Self::valid_namespace_char)
     }
 
     /// Returns whether the path is valid.
@@ -1351,22 +1429,23 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid resource location");
-        }
+        let (namespace, path) = match s.split_once(':') {
+            Some(("", path)) => (Self::VANILLA_NAMESPACE, path),
+            Some((namespace, path)) => (namespace, path),
+            None => (Self::VANILLA_NAMESPACE, s),
+        };
 
-        if !Identifier::validate_namespace(parts[0]) {
+        if !Identifier::validate_namespace(namespace) {
             return Err("Invalid namespace");
         }
 
-        if !Identifier::validate_path(parts[1]) {
+        if !Identifier::validate_path(path) {
             return Err("Invalid path");
         }
 
         Ok(Identifier {
-            namespace: Cow::Owned(parts[0].to_string()),
-            path: Cow::Owned(parts[1].to_string()),
+            namespace: Cow::Owned(namespace.to_owned()),
+            path: Cow::Owned(path.to_owned()),
         })
     }
 }
@@ -1448,6 +1527,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn identifier_parsing_matches_vanilla_default_namespace_rules() {
+        for raw in ["stone", ":stone", "minecraft:stone"] {
+            assert_eq!(
+                raw.parse::<Identifier>().expect("identifier should parse"),
+                Identifier::vanilla_static("stone")
+            );
+        }
+        assert_eq!(
+            "steel:example"
+                .parse::<Identifier>()
+                .expect("namespaced identifier should parse"),
+            Identifier::new_static("steel", "example")
+        );
+    }
+
+    #[test]
+    fn identifier_parsing_rejects_vanilla_invalid_names() {
+        for raw in ["..:stone", "Minecraft:stone", "minecraft:bad:path"] {
+            assert!(raw.parse::<Identifier>().is_err(), "{raw}");
+        }
+    }
+
+    #[test]
     fn test_block_pos_roundtrip() {
         let positions = vec![
             BlockPos(IVec3::new(0, -61, -2)),
@@ -1494,6 +1596,38 @@ mod tests {
                 BlockPos::new(10, 20, 29),
                 BlockPos::new(10, 21, 30),
                 BlockPos::new(11, 20, 30),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_pos_spiral_around_radius_zero_returns_center() {
+        let center = BlockPos::new(10, 20, 30);
+
+        assert_eq!(
+            BlockPos::spiral_around(center, 0, Direction::East, Direction::South)
+                .collect::<Vec<_>>(),
+            [center]
+        );
+    }
+
+    #[test]
+    fn block_pos_spiral_around_matches_vanilla_order() {
+        let center = BlockPos::new(10, 20, 30);
+
+        assert_eq!(
+            BlockPos::spiral_around(center, 1, Direction::East, Direction::South)
+                .collect::<Vec<_>>(),
+            [
+                center,
+                center.east(),
+                center.east().south(),
+                center.south(),
+                center.west().south(),
+                center.west(),
+                center.west().north(),
+                center.north(),
+                center.east().north(),
             ]
         );
     }

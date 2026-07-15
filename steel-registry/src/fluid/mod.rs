@@ -29,6 +29,7 @@ pub struct Fluid {
 
 impl Fluid {
     /// Returns `true` if this fluid is tagged with the given tag.
+    #[must_use]
     pub fn has_tag(&'static self, tag: &Identifier) -> bool {
         REGISTRY.fluids.is_in_tag(self, tag)
     }
@@ -38,6 +39,7 @@ impl Fluid {
     /// Vanilla's source and flowing fluids are distinct registry entries. Liquid
     /// blocks store a single block id plus a level property, so state decoding
     /// resolves the correct fluid variant from extracted fluid relationship data.
+    #[must_use]
     pub fn source_variant(&'static self) -> FluidRef {
         let Some(source_key) = &self.source_fluid else {
             return self;
@@ -53,6 +55,7 @@ impl Fluid {
     }
 
     /// Returns this fluid's flowing variant.
+    #[must_use]
     pub fn flowing_variant(&'static self) -> FluidRef {
         let Some(flowing_key) = &self.flowing_fluid else {
             return self;
@@ -152,7 +155,7 @@ impl FluidState {
         if self.is_empty() {
             0.0
         } else {
-            self.amount as f32 / 9.0
+            f32::from(self.amount) / 9.0
         }
     }
 

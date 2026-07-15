@@ -258,7 +258,7 @@ pub trait AgeableMob: Mob {
             item_stack.copy_with_count(item_stack.count())
         };
 
-        if !item_stack.is(&vanilla_items::ITEMS.golden_dandelion)
+        if !item_stack.is(&vanilla_items::GOLDEN_DANDELION)
             || !AgeableMob::is_baby(self)
             || self.age_lock_particle_timer() != 0
             || REGISTRY
@@ -372,6 +372,8 @@ mod tests {
             }
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TestAgeableMob);
 
     impl Entity for TestAgeableMob {
         fn base(&self) -> &EntityBase {

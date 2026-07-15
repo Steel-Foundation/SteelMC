@@ -26,7 +26,7 @@ pub struct CLevelEvent {
 impl CLevelEvent {
     /// Creates a new level event packet.
     #[must_use]
-    pub fn new(event_type: i32, pos: BlockPos, data: i32, global_event: bool) -> Self {
+    pub const fn new(event_type: i32, pos: BlockPos, data: i32, global_event: bool) -> Self {
         Self {
             event_type,
             pos,
@@ -41,7 +41,7 @@ impl CLevelEvent {
     /// * `pos` - The position of the destroyed block
     /// * `block_state_id` - The block state ID of the destroyed block
     #[must_use]
-    pub fn destroy_block(pos: BlockPos, block_state_id: u32) -> Self {
+    pub const fn destroy_block(pos: BlockPos, block_state_id: u32) -> Self {
         Self::new(
             steel_registry::level_events::PARTICLES_DESTROY_BLOCK,
             pos,

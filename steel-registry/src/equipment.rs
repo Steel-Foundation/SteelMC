@@ -133,7 +133,7 @@ impl EquipmentSlot {
 
     /// Returns the equipment slot with the given name, or None if not found.
     #[must_use]
-    pub fn by_name(name: &str) -> Option<Self> {
+    pub const fn by_name(name: &str) -> Option<Self> {
         match name {
             "mainhand" => Some(EquipmentSlot::MainHand),
             "offhand" => Some(EquipmentSlot::OffHand),
@@ -219,7 +219,7 @@ impl EquipmentSlotGroup {
     }
 
     #[must_use]
-    pub fn by_name(name: &str) -> Option<Self> {
+    pub const fn by_name(name: &str) -> Option<Self> {
         match name {
             "any" => Some(Self::Any),
             "mainhand" | "main_hand" => Some(Self::MainHand),

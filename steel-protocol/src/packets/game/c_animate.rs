@@ -34,31 +34,31 @@ pub struct CAnimate {
 impl CAnimate {
     /// Creates a new animate packet.
     #[must_use]
-    pub fn new(entity_id: i32, action: AnimateAction) -> Self {
+    pub const fn new(entity_id: i32, action: AnimateAction) -> Self {
         Self { entity_id, action }
     }
 
     /// Creates a swing main hand animation.
     #[must_use]
-    pub fn swing_main_hand(entity_id: i32) -> Self {
+    pub const fn swing_main_hand(entity_id: i32) -> Self {
         Self::new(entity_id, AnimateAction::SwingMainHand)
     }
 
     /// Creates a swing off hand animation.
     #[must_use]
-    pub fn swing_off_hand(entity_id: i32) -> Self {
+    pub const fn swing_off_hand(entity_id: i32) -> Self {
         Self::new(entity_id, AnimateAction::SwingOffHand)
     }
 
     /// Creates a critical hit animation.
     #[must_use]
-    pub fn critical_hit(entity_id: i32) -> Self {
+    pub const fn critical_hit(entity_id: i32) -> Self {
         Self::new(entity_id, AnimateAction::CriticalHit)
     }
 
     /// Creates a magic critical hit animation.
     #[must_use]
-    pub fn magic_critical_hit(entity_id: i32) -> Self {
+    pub const fn magic_critical_hit(entity_id: i32) -> Self {
         Self::new(entity_id, AnimateAction::MagicCriticalHit)
     }
 }

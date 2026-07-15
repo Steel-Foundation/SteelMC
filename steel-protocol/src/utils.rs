@@ -130,6 +130,10 @@ impl<W: AsyncWrite + Unpin> StreamEncryptor<W> {
 }
 
 impl<W: AsyncWrite + Unpin> AsyncWrite for StreamEncryptor<W> {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "CFB8 block size is one byte, so each chunk fits the cipher block type"
+    )]
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -200,7 +204,7 @@ pub struct StreamDecryptor<R: AsyncRead + Unpin> {
 
 impl<R: AsyncRead + Unpin> StreamDecryptor<R> {
     /// Creates a new `StreamDecryptor`.
-    pub fn new(cipher: Aes128Cfb8Dec, stream: R) -> Self {
+    pub const fn new(cipher: Aes128Cfb8Dec, stream: R) -> Self {
         Self {
             cipher,
             read: stream,
@@ -209,6 +213,10 @@ impl<R: AsyncRead + Unpin> StreamDecryptor<R> {
 }
 
 impl<R: AsyncRead + Unpin> AsyncRead for StreamDecryptor<R> {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "CFB8 block size is one byte, so each chunk fits the cipher block type"
+    )]
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

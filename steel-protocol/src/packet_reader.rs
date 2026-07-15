@@ -74,7 +74,7 @@ pub struct TCPNetworkDecoder<R: AsyncRead + Unpin> {
 
 impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
     /// Creates a new `TCPNetworkDecoder`.
-    pub fn new(reader: R) -> Self {
+    pub const fn new(reader: R) -> Self {
         Self {
             reader: DecryptionReader::None(reader),
             compression: None,
@@ -82,7 +82,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
     }
 
     /// Sets the compression threshold for the decoder.
-    pub fn set_compression(&mut self, threshold: NonZeroU32) {
+    pub const fn set_compression(&mut self, threshold: NonZeroU32) {
         self.compression = Some(threshold);
     }
 

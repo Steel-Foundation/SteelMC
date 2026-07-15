@@ -72,10 +72,10 @@ pub fn main() {
     println!("cargo:rerun-if-changed={manifest_dir}/src/entity/entities");
 }
 
-/// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
+/// Items use `SCREAMING_SNAKE_CASE` statics (`vanilla_items::STONE`)
 #[must_use]
 fn to_item_ident(name: &str) -> Ident {
-    Ident::new(name, Span::call_site())
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
 /// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)

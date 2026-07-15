@@ -45,7 +45,7 @@ pub enum PlacementData {
         frequency: f32,
         /// Frequency reduction method name. Default: `"default"`.
         frequency_reduction_method: FrequencyMethodData,
-        /// Exclusion zone: (other_set key, chunk_count).
+        /// Exclusion zone: (`other_set` key, `chunk_count`).
         exclusion_zone: Option<ExclusionZoneData>,
         /// Block offset from the placement chunk used by `/locate`.
         locate_offset: IVec3,

@@ -22,9 +22,8 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::translations;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
-use steel_utils::{BlockPos, Identifier, WorldAabb};
+use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
@@ -34,7 +33,7 @@ use crate::behavior::{
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
-use crate::command::commands::gamemode::get_gamemode_translation;
+use crate::command::player_can_change_difficulty;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
@@ -45,6 +44,7 @@ use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
+use crate::player::movement::wrap_degrees;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;
@@ -137,12 +137,13 @@ pub fn use_item_on(
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
-        // TODO: Check item cooldowns
-        // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
 
         let mut context = UseOnContext::new(
             player,
@@ -178,14 +179,15 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         return InteractionResult::Pass;
     }
 
-    // TODO: Check item cooldowns
-    // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
-
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
+    let (is_empty, original_count, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
 
     if !is_empty {
+        if player.is_item_on_cooldown(&stack_before_use) {
+            return InteractionResult::Pass;
+        }
+
         let mut context =
             crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
@@ -202,6 +204,10 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
                     item.count = original_count;
                 }
             });
+        }
+
+        if result.should_apply_item_use_side_effects() {
+            player.apply_item_use_cooldown(&stack_before_use);
         }
 
         return result;
@@ -595,7 +601,7 @@ impl Player {
         }
 
         self.reset_attack_strength_ticker();
-        enchantment_helper::do_post_piercing_attack_effects(self);
+        enchantment_helper::do_post_piercing_attack_effects(&world, self);
         if hit_something {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
@@ -636,7 +642,10 @@ impl Player {
         let damage = base_damage + magic_boost;
         let old_movement = entity.velocity();
         let mut affected = deals_knockback;
-        let damage_dealt = deals_damage && entity.hurt(&damage_source, damage);
+        let damage_dealt = deals_damage
+            && entity
+                .level()
+                .is_some_and(|world| entity.hurt(&world, &damage_source, damage));
         affected |= damage_dealt;
         if deals_knockback {
             self.cause_extra_knockback(
@@ -723,7 +732,10 @@ impl Player {
 
         // TODO: Apply crits, sweep attacks, damage stats, and sounds.
         let old_movement = entity.velocity();
-        let was_hurt = entity.hurt(&damage_source, total_damage);
+        let Some(target_world) = entity.level() else {
+            return false;
+        };
+        let was_hurt = entity.hurt(&target_world, &damage_source, total_damage);
         if was_hurt {
             self.set_last_hurt_mob(Some(target));
             let sprint_knockback = if knockback_attack { 0.5 } else { 0.0 };
@@ -737,7 +749,8 @@ impl Player {
             self.cause_food_exhaustion(0.1);
         }
 
-        enchantment_helper::do_post_piercing_attack_effects(self);
+        let world = self.get_world();
+        enchantment_helper::do_post_piercing_attack_effects(&world, self);
         was_hurt
     }
 
@@ -765,7 +778,9 @@ impl Player {
         };
 
         if apply_to_target {
+            let world = self.get_world();
             enchantment_helper::do_post_attack_effects_with_item_source(
+                &world,
                 entity,
                 &source_item,
                 &post_attack_context,
@@ -971,6 +986,7 @@ impl Player {
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
     pub fn set_game_mode(&self, gamemode: GameType) -> bool {
+        let was_spectator = self.game_mode() == GameType::Spectator;
         if !self.change_game_mode_state(gamemode) {
             return false;
         }
@@ -988,27 +1004,46 @@ impl Player {
             self.set_flying(false);
         }
         self.send_abilities();
+        self.update_game_mode_invisibility();
+
+        let update_packet =
+            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
+        self.server().broadcast_to_online(update_packet);
+
+        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+
+        if gamemode == GameType::Creative {
+            self.reset_current_impulse_context();
+        }
 
         self.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
             data: gamemode.into(),
         });
 
-        let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.get_world().broadcast_to_all(update_packet);
-
-        if gamemode == GameType::Creative {
-            self.reset_current_impulse_context();
+        if gamemode == GameType::Spectator {
+            self.stop_riding();
+            // TODO: Remove shoulder entities once player shoulder storage is implemented.
+            // TODO: Stop item use once living item-use state is implemented.
+            // TODO: Stop location-based enchantment effects once those effects are implemented.
+        } else if was_spectator {
+            self.send_packet(CSetCamera {
+                camera_id: self.id(),
+            });
+            // TODO: Restart location-based enchantment effects once those effects are implemented.
         }
 
-        self.send_message(
-            &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
-                .message([get_gamemode_translation(gamemode)])
-                .into(),
-        );
+        self.send_abilities();
+        self.update_game_mode_invisibility();
+        self.living_base.mark_effects_dirty();
 
         true
+    }
+
+    fn update_game_mode_invisibility(&self) {
+        self.living_base.mark_effects_dirty();
+        self.update_dirty_mob_effect_entity_data();
+        self.sync_entity_data();
     }
 
     fn is_in_range_of_ground_for_flight_disable(&self) -> bool {
@@ -1054,8 +1089,14 @@ impl Player {
 
     /// Handles a client request to change the world difficulty.
     pub fn handle_change_difficulty(&self, difficulty: Difficulty) {
-        // TODO: implement op-level permission check
         let world = self.get_world();
+        if !player_can_change_difficulty(self, &world) {
+            log::warn!(
+                "Player {} tried to change difficulty to {difficulty:?} without permission",
+                self.gameprofile.name
+            );
+            return;
+        }
         {
             let level_data = world.level_data.read();
             if level_data.data().difficulty_locked {
@@ -1070,13 +1111,8 @@ impl Player {
         }
 
         let domain = self.get_world().domain().to_owned();
-        for w in self.server().worlds.worlds_in_domain(&domain) {
-            let mut level_data = w.level_data.write();
-            level_data.data_mut().difficulty = difficulty;
-            let locked = level_data.data().difficulty_locked;
-            drop(level_data);
-
-            w.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+        for world in self.server().worlds.worlds_in_domain(&domain) {
+            world.set_difficulty(difficulty);
         }
     }
 
@@ -1417,7 +1453,7 @@ impl Player {
             return;
         }
 
-        log::info!(
+        log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
             self.gameprofile.name,
             packet.hand,
@@ -1427,6 +1463,20 @@ impl Player {
         );
 
         self.ack_block_changes_up_to(packet.sequence);
+
+        let item_stack_is_empty = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(packet.hand).is_empty()
+        };
+        if item_stack_is_empty {
+            return;
+        }
+
+        let target_yaw = wrap_degrees(packet.y_rot);
+        let target_pitch = wrap_degrees(packet.x_rot);
+        if self.rotation() != (target_yaw, target_pitch) {
+            self.set_rotation((target_yaw, target_pitch));
+        }
 
         let world = self.get_world();
         let result = use_item(self, &world, packet.hand);
@@ -1510,7 +1560,7 @@ impl Player {
         };
 
         let mut guard = block_entity.lock();
-        let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
             return;
         };
 
@@ -1558,7 +1608,7 @@ impl Player {
 
         if let Some(block_entity) = world.get_block_entity(pos) {
             let mut guard = block_entity.lock();
-            if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
+            if let Some(sign) = guard.downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
             }
         }

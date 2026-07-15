@@ -21,7 +21,9 @@ use std::time::Duration;
 pub static SLOW_CHUNK_GEN: AtomicBool = AtomicBool::new(false);
 
 use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
-use crate::chunk::chunk_ticket_manager::{ChunkTicketLevel, generation_status, is_full, is_ticked};
+use crate::chunk::chunk_ticket_manager::{
+    ChunkTicketLevel, generation_status, is_entity_ticking, is_full,
+};
 use crate::chunk::light::{
     LightLayer, LightSectionRange, LightWorkWindowGate, LightWorkWindowReservation,
 };
@@ -127,6 +129,8 @@ pub struct ChunkHolder {
     simulation_level: AtomicU8,
     /// The highest status that has started work.
     started_work: AtomicUsize,
+    /// Number of save dependencies that have not completed yet.
+    active_save_dependencies: AtomicUsize,
     /// The highest status that generation is allowed to reach.
     highest_allowed_status: AtomicU8,
     /// The minimum Y coordinate of the world.
@@ -160,6 +164,18 @@ impl StatusWorkClaim {
 impl Drop for StatusWorkClaim {
     fn drop(&mut self) {
         self.holder.release_status_work_claim(self.status);
+    }
+}
+
+pub(crate) struct ChunkSaveDependency {
+    holder: Arc<ChunkHolder>,
+}
+
+impl Drop for ChunkSaveDependency {
+    fn drop(&mut self) {
+        self.holder
+            .active_save_dependencies
+            .fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -207,6 +223,7 @@ impl ChunkHolder {
             load_level: AtomicU8::new(load_level.raw()),
             simulation_level: AtomicU8::new(optional_ticket_level_raw(simulation_level)),
             started_work: AtomicUsize::new(usize::MAX),
+            active_save_dependencies: AtomicUsize::new(0),
             highest_allowed_status: AtomicU8::new(highest_allowed_status),
             min_y,
             height,
@@ -253,7 +270,7 @@ impl ChunkHolder {
             return EntityVisibility::Hidden;
         }
 
-        if is_ticked(self.simulation_level()) {
+        if is_entity_ticking(self.simulation_level()) {
             EntityVisibility::Ticking
         } else {
             EntityVisibility::Tracked
@@ -578,6 +595,19 @@ impl ChunkHolder {
         }
     }
 
+    /// Returns whether vanilla timed tickets may age for this chunk.
+    #[must_use]
+    pub fn is_ready_for_saving(&self) -> bool {
+        self.active_save_dependencies.load(Ordering::Acquire) == 0
+    }
+
+    pub(crate) fn add_save_dependency(self: &Arc<Self>) -> ChunkSaveDependency {
+        self.active_save_dependencies.fetch_add(1, Ordering::AcqRel);
+        ChunkSaveDependency {
+            holder: Arc::clone(self),
+        }
+    }
+
     /// Applies a step to the chunk.
     ///
     /// Cancellation is handled structurally by the owning generation task: its
@@ -692,10 +722,12 @@ impl ChunkHolder {
         let context = chunk_map.world_gen_context.clone();
         let self_clone = self.clone();
         let storage = chunk_map.storage.clone();
+        let save_dependency = self.add_save_dependency();
 
         let future = chunk_map.task_tracker.spawn(async move {
             // Keep the claim alive for the producer task so Drop can roll back abandoned work.
             let _status_claim = status_claim;
+            let _save_dependency = save_dependency;
             let result = if target_status == ChunkStatus::Empty {
                 Self::apply_empty_step(self_clone, step, context, cache, storage, thread_pool).await
             } else {
@@ -1297,5 +1329,21 @@ mod tests {
         drop(claim);
 
         assert!(waiter.await.is_none());
+    }
+
+    #[test]
+    fn save_dependency_controls_ready_for_saving() {
+        let holder = test_holder();
+        assert!(holder.is_ready_for_saving());
+
+        let first = holder.add_save_dependency();
+        let second = holder.add_save_dependency();
+        assert!(!holder.is_ready_for_saving());
+
+        drop(first);
+        assert!(!holder.is_ready_for_saving());
+
+        drop(second);
+        assert!(holder.is_ready_for_saving());
     }
 }

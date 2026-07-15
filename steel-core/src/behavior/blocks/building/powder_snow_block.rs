@@ -3,7 +3,6 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{vanilla_entities, vanilla_game_rules};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
@@ -155,8 +154,7 @@ impl BlockBehavior for PowderSnowBlock {
                     return;
                 }
 
-                let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-                    == GameRuleValue::Bool(true);
+                let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING);
                 if (mob_griefing || entity.entity_type() == &vanilla_entities::PLAYER)
                     && entity.may_interact(world.as_ref(), pos)
                 {

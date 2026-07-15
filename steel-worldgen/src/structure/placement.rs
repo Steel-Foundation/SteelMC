@@ -2,11 +2,14 @@
 //! generation — vanilla's `StructurePlacement` hierarchy.
 
 use glam::IVec3;
+use rayon::prelude::*;
 use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+
+const PARALLEL_RING_SNAP_THRESHOLD: usize = 8;
 
 /// How structures are spread within their grid cell. Vanilla's `RandomSpreadType`.
 #[derive(Debug, Clone, Copy)]
@@ -113,20 +116,45 @@ pub fn generate_ring_positions<F>(
     distance: i32,
     spread: i32,
     count: i32,
-    mut snap_biome: Option<&mut F>,
+    snap_biome: Option<&F>,
+    thread_pool: &rayon::ThreadPool,
 ) -> Vec<ChunkPos>
 where
-    F: FnMut(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
+    F: Fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)> + Sync,
 {
     use std::f64::consts::TAU;
+
+    struct RingCandidate {
+        initial_x: i32,
+        initial_z: i32,
+        forked: LegacyRandom,
+    }
+
+    fn map_candidate<F>(candidate: RingCandidate, snap: &F) -> ChunkPos
+    where
+        F: Fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)> + Sync,
+    {
+        let RingCandidate {
+            initial_x,
+            initial_z,
+            mut forked,
+        } = candidate;
+
+        // sectionToBlockCoord(x, 8) = x * 16 + 8; snap result is blocks → >> 4.
+        if let Some((sx, sz)) = snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked) {
+            ChunkPos::new(sx >> 4, sz >> 4)
+        } else {
+            ChunkPos::new(initial_x, initial_z)
+        }
+    }
 
     if count == 0 {
         return vec![];
     }
 
     let mut rng = LegacyRandom::from_seed(seed as u64);
+    let mut candidates = Vec::with_capacity(count as usize);
     let mut angle = rng.next_f64() * TAU;
-    let mut positions = Vec::with_capacity(count as usize);
     let mut spread = spread;
     let mut position_in_circle = 0;
     let mut circle = 0;
@@ -139,19 +167,13 @@ where
         let initial_x = java_round(angle.cos() * dist);
         let initial_z = java_round(angle.sin() * dist);
 
-        // Vanilla forks the RNG for async biome search; we use the fork for the snap.
-        let mut forked = rng.fork();
-        let chunk_pos = if let Some(snap) = snap_biome.as_deref_mut() {
-            // sectionToBlockCoord(x, 8) = x * 16 + 8; snap result is blocks → >> 4.
-            if let Some((sx, sz)) = snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked) {
-                ChunkPos::new(sx >> 4, sz >> 4)
-            } else {
-                ChunkPos::new(initial_x, initial_z)
-            }
-        } else {
-            ChunkPos::new(initial_x, initial_z)
-        };
-        positions.push(chunk_pos);
+        // Vanilla forks the RNG for async biome search; preserve the exact fork order,
+        // then parallelize only the snap work over those precomputed forked states.
+        candidates.push(RingCandidate {
+            initial_x,
+            initial_z,
+            forked: rng.fork(),
+        });
 
         angle += TAU / f64::from(spread);
         position_in_circle += 1;
@@ -164,7 +186,24 @@ where
         }
     }
 
-    positions
+    match snap_biome {
+        Some(snap) if candidates.len() >= PARALLEL_RING_SNAP_THRESHOLD => {
+            thread_pool.install(|| {
+                candidates
+                    .into_par_iter()
+                    .map(|candidate| map_candidate(candidate, snap))
+                    .collect()
+            })
+        }
+        Some(snap) => candidates
+            .into_iter()
+            .map(|candidate| map_candidate(candidate, snap))
+            .collect(),
+        None => candidates
+            .into_iter()
+            .map(|candidate| ChunkPos::new(candidate.initial_x, candidate.initial_z))
+            .collect(),
+    }
 }
 
 /// Kind-specific placement parameters.
@@ -623,9 +662,12 @@ mod tests {
     #[test]
     fn test_generate_ring_positions_strongholds() {
         // Strongholds: distance=32, spread=3, count=128
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 128, None);
+        >(0, 32, 3, 128, None, &thread_pool);
         assert_eq!(positions.len(), 128);
 
         // First ring should be roughly 4*32 = 128 chunks from origin
@@ -650,15 +692,18 @@ mod tests {
         // Deterministic: same seed produces same positions
         let positions2 = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 128, None);
+        >(0, 32, 3, 128, None, &thread_pool);
         assert_eq!(positions, positions2);
     }
 
     #[test]
     fn test_generate_ring_positions_zero_count() {
+        let thread_pool = rayon::ThreadPoolBuilder::default()
+            .build()
+            .expect("Couldn't create a new thread pool.");
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
-        >(0, 32, 3, 0, None);
+        >(0, 32, 3, 0, None, &thread_pool);
         assert!(positions.is_empty());
     }
 

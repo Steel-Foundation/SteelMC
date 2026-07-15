@@ -3,10 +3,10 @@
 //! bars connect to adjacent bars, bar solid blocks.
 
 use steel_macros::block_behavior;
+use steel_registry::DyeColor;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::loot_table::DyeColor;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -23,7 +23,7 @@ pub struct StainedGlassPaneBlock {
     #[json_arg(
         r#enum = "DyeColor",
         json = "color",
-        module = "steel_registry::loot_table"
+        module = "steel_registry::dye_color"
     )]
     #[expect(unused, reason = "Is needed for beacon beam")]
     color: DyeColor,

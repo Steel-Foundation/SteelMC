@@ -25,6 +25,7 @@ use crate::entity::{
     SharedEntity, WeakEntity,
 };
 use crate::physics::EntityPhysicsState;
+use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
 use crate::world::World;
 
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
@@ -865,15 +866,32 @@ pub struct EntityBaseLoad {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EntityLifecycleState {
     removal_reason: Option<RemovalReason>,
+    pending_world_change: Option<PendingWorldChangeToken>,
+    next_world_change_token: u64,
 }
 
 impl EntityLifecycleState {
     const fn new() -> Self {
         Self {
             removal_reason: None,
+            pending_world_change: None,
+            next_world_change_token: 1,
         }
     }
+
+    fn next_world_change_token(&mut self) -> PendingWorldChangeToken {
+        let token = PendingWorldChangeToken(self.next_world_change_token);
+        self.next_world_change_token = self.next_world_change_token.wrapping_add(1).max(1);
+        token
+    }
 }
+
+/// Runtime token for an in-flight world change request.
+///
+/// The token is intentionally not persisted. It protects async preparation jobs
+/// from completing or clearing a newer transition started by the same entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PendingWorldChangeToken(u64);
 
 /// Vanilla passenger and vehicle relationship state.
 ///
@@ -984,6 +1002,8 @@ pub struct EntityBase {
     lifecycle: SyncMutex<EntityLifecycleState>,
     /// Passenger, vehicle, and boarding-cooldown state.
     relationships: SyncMutex<EntityRelationshipState>,
+    /// Active vanilla portal timing state.
+    portal_process: SyncMutex<Option<PortalProcessor>>,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
 }
@@ -1043,6 +1063,7 @@ impl EntityBase {
             movement_trace: SyncMutex::new(EntityMovementTrace::default()),
             lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             relationships: SyncMutex::new(EntityRelationshipState::default()),
+            portal_process: SyncMutex::new(None),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
     }
@@ -1276,6 +1297,12 @@ impl EntityBase {
         self.portal_cooldown() > 0
     }
 
+    /// Returns the active vanilla portal process, if the entity is charging a portal.
+    #[inline]
+    pub fn portal_process(&self) -> Option<PortalProcessor> {
+        *self.portal_process.lock()
+    }
+
     /// Returns the shared vanilla `NoGravity` flag.
     #[inline]
     pub fn no_gravity(&self) -> bool {
@@ -1423,7 +1450,6 @@ impl EntityBase {
         self.set_old_rotation_to_current();
         self.compute_known_speed();
         self.decrement_boarding_cooldown();
-        self.process_portal_cooldown();
     }
 
     /// Clears vanilla `inBlockState` at the start of base tick.
@@ -1449,7 +1475,8 @@ impl EntityBase {
         }
     }
 
-    fn process_portal_cooldown(&self) {
+    /// Advances vanilla portal cooldown by one server tick.
+    pub fn process_portal_cooldown(&self) {
         let mut save_data = self.save_data.lock();
         if save_data.portal_cooldown > 0 {
             save_data.portal_cooldown -= 1;
@@ -1485,6 +1512,8 @@ impl EntityBase {
         }
 
         self.movement_trace.lock().reset();
+        *self.portal_process.lock() = None;
+        self.lifecycle.lock().pending_world_change = None;
 
         let mut save_data = self.save_data.lock();
         let tags = mem::take(&mut save_data.tags);
@@ -1493,8 +1522,41 @@ impl EntityBase {
     }
 
     /// Updates the world reference used by this entity.
-    pub fn set_world(&self, world: Weak<World>) {
+    pub(crate) fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
+    }
+
+    /// Marks this entity as waiting for a prepared world change.
+    pub fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
+        let mut lifecycle = self.lifecycle.lock();
+        if lifecycle.removal_reason.is_some() || lifecycle.pending_world_change.is_some() {
+            return None;
+        }
+        let token = lifecycle.next_world_change_token();
+        lifecycle.pending_world_change = Some(token);
+        Some(token)
+    }
+
+    /// Clears a pending world change if it still matches the provided token.
+    pub fn finish_pending_world_change(&self, token: PendingWorldChangeToken) -> bool {
+        let mut lifecycle = self.lifecycle.lock();
+        if lifecycle.pending_world_change != Some(token) {
+            return false;
+        }
+        lifecycle.pending_world_change = None;
+        true
+    }
+
+    /// Returns true while this entity is waiting for a prepared world change.
+    #[inline]
+    pub fn is_world_change_pending(&self) -> bool {
+        self.lifecycle.lock().pending_world_change.is_some()
+    }
+
+    /// Returns true if the given world-change token is still pending.
+    #[inline]
+    pub fn is_world_change_token_pending(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().pending_world_change == Some(token)
     }
 
     /// Returns true if the entity has been marked for removal.
@@ -1519,6 +1581,7 @@ impl EntityBase {
                 None
             } else {
                 lifecycle.removal_reason = Some(reason);
+                lifecycle.pending_world_change = None;
                 Some(self.level_callback.lock().clone())
             }
         };
@@ -1604,6 +1667,7 @@ impl EntityBase {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
+        lifecycle.pending_world_change = None;
         was_removed
     }
 
@@ -1692,6 +1756,11 @@ impl EntityBase {
     /// Removes the latest movement segment recorded this tick.
     pub fn remove_latest_movement_recording(&self) {
         self.movement_trace.lock().remove_latest_recording();
+    }
+
+    /// Clears movement segments recorded for the current tick.
+    pub fn clear_movement_this_tick(&self) {
+        self.movement_trace.lock().reset();
     }
 
     /// Takes and finalizes this tick's movement segments for block-contact effects.
@@ -1798,6 +1867,35 @@ impl EntityBase {
     /// Sets the vanilla portal cooldown in ticks.
     pub fn set_portal_cooldown(&self, portal_cooldown: i32) {
         self.save_data.lock().portal_cooldown = portal_cooldown;
+    }
+
+    /// Marks this entity as inside a vanilla portal during the current tick.
+    pub fn set_as_inside_portal(&self, portal: PortalKind, entry_position: BlockPos) {
+        let mut portal_process = self.portal_process.lock();
+        match portal_process.as_mut() {
+            Some(process) if process.is_same_portal(portal) => {
+                process.set_as_inside_portal(entry_position);
+            }
+            _ => {
+                *portal_process = Some(PortalProcessor::new(portal, entry_position));
+            }
+        }
+    }
+
+    /// Advances the active vanilla portal process, if one exists.
+    pub fn process_portal_teleportation(
+        &self,
+        allowed_to_teleport: bool,
+        transition_time: i32,
+    ) -> Option<PortalProcessResult> {
+        self.portal_process.lock().as_mut().map(|process| {
+            process.process_portal_teleportation(allowed_to_teleport, transition_time)
+        })
+    }
+
+    /// Clears the active vanilla portal process.
+    pub fn clear_portal_process(&self) {
+        *self.portal_process.lock() = None;
     }
 
     /// Sets the shared vanilla `NoGravity` flag.
@@ -2223,8 +2321,8 @@ mod tests {
         entity_type::EntityDimensions, entity_type::EntityTypeRef, test_support::init_test_registry,
     };
     use steel_registry::{vanilla_damage_types, vanilla_entities};
-    use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
+    use steel_utils::{BlockPos, WorldAabb};
     use text_components::TextComponent;
     use uuid::Uuid;
 
@@ -2233,6 +2331,7 @@ mod tests {
         Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
         entities::RawEntity,
     };
+    use crate::portal::PortalKind;
     use crate::world::World;
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -2294,6 +2393,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
     impl Entity for FallDamageTestEntity {
         fn base(&self) -> &EntityBase {
@@ -2494,16 +2595,49 @@ mod tests {
         base.set_level_callback(callback.clone());
 
         assert!(!base.is_removed());
+        let Some(pending_token) = base.begin_pending_world_change() else {
+            panic!("fresh entity should accept a pending world change");
+        };
+        assert!(base.is_world_change_token_pending(pending_token));
 
         base.set_removed(RemovalReason::Discarded);
         base.set_removed(RemovalReason::Killed);
         assert!(base.is_removed());
+        assert!(!base.is_world_change_pending());
         assert_eq!(base.removal_reason(), Some(RemovalReason::Discarded));
         assert_eq!(*callback.removals.lock(), vec![RemovalReason::Discarded]);
         assert!(base.clear_removed());
         assert!(!base.clear_removed());
         assert!(!base.is_removed());
         assert_eq!(base.removal_reason(), None);
+    }
+
+    #[test]
+    fn lifecycle_state_tracks_pending_world_change_tokens() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        let Some(first) = base.begin_pending_world_change() else {
+            panic!("fresh entity should accept a pending world change");
+        };
+        assert!(base.is_world_change_pending());
+        assert!(base.is_world_change_token_pending(first));
+        assert_eq!(base.begin_pending_world_change(), None);
+        assert!(base.finish_pending_world_change(first));
+        assert!(!base.is_world_change_pending());
+
+        let Some(second) = base.begin_pending_world_change() else {
+            panic!("entity should accept a second pending world change after finishing the first");
+        };
+        assert_ne!(first, second);
+        assert!(!base.finish_pending_world_change(first));
+        assert!(base.is_world_change_token_pending(second));
+        assert!(base.finish_pending_world_change(second));
+        assert!(!base.is_world_change_pending());
     }
 
     #[test]
@@ -2755,6 +2889,7 @@ mod tests {
         base.set_no_physics(true);
         base.set_air_supply(12);
         base.set_portal_cooldown(9);
+        base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
         base.set_no_gravity(true);
         base.set_invulnerable(true);
         base.set_custom_name(Some(TextComponent::plain("stale")));
@@ -2781,6 +2916,7 @@ mod tests {
             DVec3::new(3.0, 64.0, 1.0),
         ));
         base.set_position_local(DVec3::new(3.0, 64.0, 1.0));
+        assert!(base.begin_pending_world_change().is_some());
 
         let reset_dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
         base.reset_for_player_respawn(reset_dimensions);
@@ -2790,6 +2926,8 @@ mod tests {
         assert!(!base.no_physics());
         assert_eq!(base.air_supply(), DEFAULT_MAX_AIR_SUPPLY);
         assert_eq!(base.portal_cooldown(), 0);
+        assert_eq!(base.portal_process(), None);
+        assert!(!base.is_world_change_pending());
         assert!(!base.no_gravity());
         assert!(!base.invulnerable());
         assert_eq!(base.custom_name(), None);
@@ -3134,7 +3272,25 @@ mod tests {
     }
 
     #[test]
-    fn base_tick_state_decrements_portal_cooldown() {
+    fn portal_cooldown_tick_decrements_portal_cooldown() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_portal_cooldown(2);
+        base.process_portal_cooldown();
+        assert_eq!(base.portal_cooldown(), 1);
+        base.process_portal_cooldown();
+        assert_eq!(base.portal_cooldown(), 0);
+        base.process_portal_cooldown();
+        assert_eq!(base.portal_cooldown(), 0);
+    }
+
+    #[test]
+    fn base_tick_state_does_not_decrement_portal_cooldown() {
         let base = EntityBase::new(
             1,
             DVec3::ZERO,
@@ -3144,11 +3300,57 @@ mod tests {
 
         base.set_portal_cooldown(2);
         base.advance_base_tick_state();
-        assert_eq!(base.portal_cooldown(), 1);
-        base.advance_base_tick_state();
-        assert_eq!(base.portal_cooldown(), 0);
-        base.advance_base_tick_state();
-        assert_eq!(base.portal_cooldown(), 0);
+
+        assert_eq!(base.portal_cooldown(), 2);
+    }
+
+    #[test]
+    fn active_portal_process_reuses_same_portal_after_tick_is_consumed() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(1, 64, 1));
+        let mut process = base.portal_process().expect("portal process should exist");
+        assert_eq!(process.entry_position(), BlockPos::new(1, 64, 1));
+
+        base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
+        process = base
+            .portal_process()
+            .expect("portal process should still exist");
+        assert_eq!(process.entry_position(), BlockPos::new(1, 64, 1));
+
+        base.process_portal_teleportation(true, 80);
+        base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
+
+        assert_eq!(
+            base.portal_process()
+                .expect("portal process should still exist")
+                .entry_position(),
+            BlockPos::new(2, 64, 2)
+        );
+    }
+
+    #[test]
+    fn active_portal_process_restarts_for_different_portal_kind() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(1, 64, 1));
+        base.set_as_inside_portal(PortalKind::End, BlockPos::new(2, 70, 2));
+
+        let process = base.portal_process().expect("portal process should exist");
+        assert_eq!(process.portal(), PortalKind::End);
+        assert_eq!(process.entry_position(), BlockPos::new(2, 70, 2));
+        assert_eq!(process.portal_time(), 0);
+        assert!(process.is_inside_portal_this_tick());
     }
 
     #[test]

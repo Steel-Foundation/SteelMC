@@ -50,7 +50,7 @@ impl WriteTo for CAddEntity {
     }
 }
 
-/// Writes a velocity vector in LpVec3 format.
+/// Writes a velocity vector in `LpVec3` format.
 ///
 /// Mirrors vanilla's `LpVec3.write()`.
 ///
@@ -61,7 +61,7 @@ pub fn write_lp_vec3(writer: &mut impl std::io::Write, velocity: DVec3) -> std::
 }
 
 impl CAddEntity {
-    /// Creates a new CAddEntity packet for spawning a player.
+    /// Creates a new `CAddEntity` packet for spawning a player.
     #[must_use]
     pub const fn player(
         id: i32,

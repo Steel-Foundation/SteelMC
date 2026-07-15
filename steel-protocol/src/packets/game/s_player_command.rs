@@ -3,7 +3,7 @@ use steel_macros::{ReadFrom, ServerPacket};
 /// Action types for the player command packet.
 ///
 /// Maps to vanilla `ServerboundPlayerCommandPacket.Action` enum.
-/// Wire format: VarInt (0–6).
+/// Wire format: `VarInt` (0–6).
 #[derive(ReadFrom, Clone, Copy, Debug, PartialEq, Eq)]
 #[read(as = VarInt)]
 pub enum PlayerCommandAction {
@@ -34,7 +34,7 @@ pub struct SPlayerCommand {
     pub entity_id: i32,
     /// The action being performed.
     pub action: PlayerCommandAction,
-    /// Jump boost for StartRidingJump (0-100), otherwise 0.
+    /// Jump boost for `StartRidingJump` (0-100), otherwise 0.
     #[read(as = VarInt)]
     pub data: i32,
 }

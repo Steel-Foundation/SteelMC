@@ -11,7 +11,7 @@ use super::write_lp_vec3;
 
 /// Sent to update an entity's velocity on the client.
 ///
-/// Velocity is sent in LpVec3 format (same as spawn packet).
+/// Velocity is sent in `LpVec3` format (same as spawn packet).
 /// This is used for:
 /// - Items landing on ground (velocity zeroed)
 /// - Knockback effects
@@ -29,7 +29,7 @@ pub struct CSetEntityMotion {
 impl CSetEntityMotion {
     /// Creates a new set entity motion packet.
     #[must_use]
-    pub fn new(entity_id: i32, vel: DVec3) -> Self {
+    pub const fn new(entity_id: i32, vel: DVec3) -> Self {
         Self { entity_id, vel }
     }
 }

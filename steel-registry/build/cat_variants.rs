@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted cat variant data"
+)]
+
 use crate::generator_functions::{generate_identifier, generate_option, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};

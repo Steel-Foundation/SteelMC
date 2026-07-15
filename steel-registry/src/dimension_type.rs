@@ -4,6 +4,7 @@ use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 use crate::sound_event::SoundEventRef;
+use crate::world_clock::WorldClockRef;
 
 #[derive(Debug)]
 pub struct BedRule {
@@ -48,7 +49,7 @@ pub struct DimensionType {
     pub logical_height: i32,
     pub infiniburn: &'static str,
     pub ambient_light: f32,
-    pub default_clock: Option<&'static str>,
+    pub default_clock: Option<WorldClockRef>,
     pub timelines: Option<&'static str>,
     pub has_ender_dragon_fight: bool,
     pub monster_spawn_light_level: MonsterSpawnLightLevel,
@@ -86,6 +87,14 @@ pub struct DimensionType {
     pub background_music: Option<BackgroundMusic>,
 }
 
+impl DimensionType {
+    /// Returns vanilla `DimensionType.getTeleportationScale`.
+    #[must_use]
+    pub fn get_teleportation_scale(last_dimension_type: &Self, new_dimension_type: &Self) -> f64 {
+        last_dimension_type.coordinate_scale / new_dimension_type.coordinate_scale
+    }
+}
+
 /// Represents the complex structure for monster spawn light level.
 #[derive(Debug)]
 pub enum MonsterSpawnLightLevel {
@@ -116,7 +125,7 @@ impl ToNbtTag for &DimensionType {
         compound.insert("ambient_light", self.ambient_light);
         compound.insert("has_ender_dragon_fight", self.has_ender_dragon_fight);
         if let Some(clock) = self.default_clock {
-            compound.insert("default_clock", clock);
+            compound.insert("default_clock", clock.key.to_string().as_str());
         }
         if let Some(timelines) = self.timelines {
             compound.insert("timelines", timelines);
@@ -326,3 +335,25 @@ crate::impl_registry!(
     dimension_types_by_key,
     dimension_types
 );
+
+#[cfg(test)]
+mod tests {
+    use crate::dimension_type::DimensionType;
+    use crate::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
+
+    #[test]
+    fn teleportation_scale_matches_vanilla_coordinate_ratio() {
+        assert_eq!(
+            DimensionType::get_teleportation_scale(&OVERWORLD, &THE_NETHER),
+            0.125
+        );
+        assert_eq!(
+            DimensionType::get_teleportation_scale(&THE_NETHER, &OVERWORLD),
+            8.0
+        );
+        assert_eq!(
+            DimensionType::get_teleportation_scale(&THE_END, &THE_NETHER),
+            0.125
+        );
+    }
+}

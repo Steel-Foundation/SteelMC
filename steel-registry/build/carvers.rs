@@ -267,7 +267,7 @@ pub(crate) fn build() -> TokenStream {
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
         .collect();
     // Sort for deterministic output
-    files.sort_by_key(|e| e.file_name());
+    files.sort_by_key(std::fs::DirEntry::file_name);
 
     for entry in files {
         let path = entry.path();

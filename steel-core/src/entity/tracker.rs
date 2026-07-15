@@ -1008,6 +1008,8 @@ mod tests {
         }
     }
 
+    crate::entity::impl_test_downcast_type!(PairingTestEntity);
+
     impl Entity for PairingTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -1221,7 +1223,7 @@ mod tests {
         test_support::init_test_registry();
 
         let entity_typed = PairingTestEntity::new(1, Vec::new());
-        let stack = ItemStack::new(&vanilla_items::ITEMS.elytra);
+        let stack = ItemStack::new(&vanilla_items::ELYTRA);
         entity_typed.set_equipment(vec![EquipmentSlotItem {
             slot: EquipmentSlot::Chest,
             item_stack: stack.clone(),
@@ -1322,7 +1324,7 @@ mod tests {
         let entity: SharedEntity = entity_typed.clone();
         tracker.add(&entity, |_| Vec::new(), |_| None);
 
-        let stack = ItemStack::new(&vanilla_items::ITEMS.elytra);
+        let stack = ItemStack::new(&vanilla_items::ELYTRA);
         entity_typed.set_dirty_equipment(vec![EquipmentSlotItem {
             slot: EquipmentSlot::Chest,
             item_stack: stack.clone(),

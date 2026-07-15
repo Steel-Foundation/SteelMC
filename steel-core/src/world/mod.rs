@@ -1,8 +1,8 @@
 //! This module contains the `World` struct, which represents a world.
 
-use std::path::Path;
 use std::{
-    io,
+    io, mem,
+    path::Path,
     sync::{
         Arc, LazyLock, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -11,20 +11,24 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
+use crate::poi::OccupationStatus;
+use crate::portal::WorldChangeRequest;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
+use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
 
 use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CGameEvent, CInitializeBorder, CLevelEvent, CPlayerChat,
-    CPlayerInfoUpdate, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
-    CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
-    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
+    CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
+    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
+    CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
+    CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -36,30 +40,36 @@ use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
-    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, join_is_not_empty,
+    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_offset_shape_full_block,
+    is_shape_full_block, join_is_not_empty,
 };
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
-use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, GameRuleValueType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
-    BLOCK_DROPS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
+    BLOCK_DROPS, GLOBAL_SOUND_EVENTS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
 };
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
+use steel_registry::{
+    REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef,
+    world_clock::WorldClockRef,
+};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
-use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events};
+use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_poi_types};
+use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
+    Downcast as _,
     locks::{SyncMutex, SyncRwLock},
-    random::{RandomSource, legacy_random::LegacyRandom},
+    random::{Random as _, RandomSource, legacy_random::LegacyRandom},
 };
 use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
 
@@ -77,7 +87,8 @@ pub enum RaytraceAction {
 }
 
 use steel_utils::{
-    BlockLocalAabb, BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos, WorldAabb,
+    BlockLocalAabb, BlockPos, BlockStateId, ChunkPos, Identifier, PackedBlockPos, SectionPos,
+    WorldAabb,
     types::{Difficulty, GameType, UpdateFlags},
 };
 use tokio::{runtime::Runtime, time::Instant};
@@ -86,7 +97,7 @@ use crate::{
     ChunkMap,
     behavior::BlockStateBehaviorExt,
     behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, FLUID_BEHAVIORS},
-    block_entity::SharedBlockEntity,
+    block_entity::{SharedBlockEntity, entities::EndGatewayBlockEntity},
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
@@ -169,6 +180,7 @@ impl ClipHitResult {
 }
 
 mod border;
+pub(crate) mod clock;
 mod environment;
 pub mod game_event_context;
 pub mod game_event_listener;
@@ -211,6 +223,68 @@ const fn initialize_border_packet(snapshot: WorldBorderSnapshot) -> CInitializeB
     }
 }
 
+fn portal_candidate_distance_sqr(candidate: BlockPos, center: BlockPos) -> i64 {
+    let dx = i64::from(candidate.x()) - i64::from(center.x());
+    let dy = i64::from(candidate.y()) - i64::from(center.y());
+    let dz = i64::from(candidate.z()) - i64::from(center.z());
+    dx * dx + dy * dy + dz * dz
+}
+
+fn dist_to_origin_center_sqr(pos: BlockPos) -> f64 {
+    let x = f64::from(pos.x()) + 0.5;
+    let y = f64::from(pos.y()) + 0.5;
+    let z = f64::from(pos.z()) + 0.5;
+    x * x + y * y + z * z
+}
+
+fn closest_portal_candidate(
+    candidates: impl IntoIterator<Item = BlockPos>,
+    approximate_exit_pos: BlockPos,
+    is_valid: impl Fn(BlockPos) -> bool,
+) -> Option<BlockPos> {
+    candidates
+        .into_iter()
+        .filter(|pos| is_valid(*pos))
+        .min_by_key(|pos| {
+            (
+                portal_candidate_distance_sqr(*pos, approximate_exit_pos),
+                pos.y(),
+            )
+        })
+}
+
+const NETHER_PORTAL_CREATE_RADIUS: i32 = 16;
+const NETHER_PORTAL_FALLBACK_MIN_Y: i32 = 70;
+const NETHER_PORTAL_FALLBACK_MAX_Y_OFFSET: i32 = 9;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MissingPortalCreationChunk;
+
+const fn nether_portal_frame_offset_pos(
+    origin: BlockPos,
+    direction: Direction,
+    width: i32,
+    height: i32,
+    offset: i32,
+) -> BlockPos {
+    let clockwise = direction.rotate_y_clockwise();
+    let (direction_x, _, direction_z) = direction.offset();
+    let (clockwise_x, _, clockwise_z) = clockwise.offset();
+    origin.offset(
+        direction_x * width + clockwise_x * offset,
+        height,
+        direction_z * width + clockwise_z * offset,
+    )
+}
+
+fn nether_portal_creation_scan_origin(
+    column_pos: BlockPos,
+    direction: Direction,
+    height: i32,
+) -> BlockPos {
+    column_pos.relative(direction.opposite()).at_y(height)
+}
+
 const fn chunk_min_block_x(pos: ChunkPos) -> i32 {
     pos.0.x << 4
 }
@@ -237,10 +311,6 @@ pub struct WorldGameTickTimings {
     /// Time spent ticking entities.
     pub entity_tick: Duration,
 }
-
-/// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
-/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
-const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
 /// Configuration for creating a new world.
 #[derive(Clone)]
@@ -313,6 +383,8 @@ pub struct World {
     pub dimension_type: DimensionTypeRef,
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
+    /// Per-world saved data storage.
+    pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Server view distance (maximum chunk radius).
@@ -346,6 +418,8 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// Section-indexed listeners for vanilla game events.
     game_event_listeners: GameEventListenerStorage,
+    /// World-change requests queued by world-local ticks for server safe-point processing.
+    pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
 }
 
 impl World {
@@ -387,12 +461,17 @@ impl World {
         // Create or skip level data based on config
 
         let path = config.level_data_path.as_deref().map(Path::new);
+        let saved_data = SavedDataManager::new(path);
         let mut level_data =
             LevelDataManager::new(path, seed, config.difficulty, config.generation_settings)
                 .await?;
         if level_data.is_dirty() {
             level_data.save().await?;
         }
+        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
+            .load_or_default(saved_data_names::CHUNK_TICKETS)
+            .await?;
+        let timed_chunk_tickets = TimedChunkTickets::from_persistent(persistent_chunk_tickets);
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -414,7 +493,7 @@ impl World {
         }
 
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
-            let chunk_map = Arc::new(ChunkMap::new_with_storage(
+            let chunk_map = Arc::new(ChunkMap::new_with_storage_and_timed_tickets(
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
@@ -422,6 +501,7 @@ impl World {
                 storage,
                 config.generator,
                 generation_pool,
+                timed_chunk_tickets,
             ));
             chunk_map.start_generation_refill_loop();
 
@@ -432,6 +512,7 @@ impl World {
                 key,
                 dimension_type,
                 level_data: SyncRwLock::new(level_data),
+                saved_data,
                 world_border: SyncMutex::new(world_border),
                 view_distance,
                 simulation_distance,
@@ -447,6 +528,7 @@ impl World {
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
+                pending_world_changes: SyncMutex::new(Vec::new()),
             }
         }))
     }
@@ -461,6 +543,16 @@ impl World {
         match self.level_data.write().save().await {
             Ok(()) => log::info!("World {} level data saved successfully", self.key),
             Err(e) => log::error!("Failed to save world level data: {e}"),
+        }
+
+        let chunk_tickets = self.chunk_map.persistent_chunk_tickets();
+        match self
+            .saved_data
+            .save(saved_data_names::CHUNK_TICKETS, &chunk_tickets)
+            .await
+        {
+            Ok(()) => log::info!("World {} saved chunk ticket data successfully", self.key),
+            Err(e) => log::error!("Failed to save world chunk ticket data: {e}"),
         }
 
         match self.save_all_chunks().await {
@@ -480,6 +572,555 @@ impl World {
         self.world_border.lock().snapshot()
     }
 
+    /// Returns whether a block position is inside this world's vanilla world border.
+    #[must_use]
+    pub fn is_block_within_world_border(&self, pos: BlockPos) -> bool {
+        self.world_border_snapshot().is_block_within_bounds(pos)
+    }
+
+    /// Clamps a world-space position to this world's vanilla world border and floors it to a block position.
+    #[must_use]
+    pub fn clamp_to_world_border(&self, x: f64, y: f64, z: f64) -> BlockPos {
+        self.world_border_snapshot().clamp_to_bounds(x, y, z)
+    }
+
+    /// Finds the closest existing Nether portal POI using vanilla `PortalForcer` ordering.
+    ///
+    /// `to_nether` selects vanilla's 16-block Nether search radius; non-Nether targets use 128.
+    ///
+    /// # Panics
+    ///
+    /// Panics if vanilla POI registries were not initialized before portal lookup.
+    #[must_use]
+    pub fn find_closest_nether_portal_position(
+        &self,
+        approximate_exit_pos: BlockPos,
+        to_nether: bool,
+    ) -> Option<BlockPos> {
+        let radius = if to_nether { 16 } else { 128 };
+        let nether_portal_type = vanilla_poi_types::NETHER_PORTAL
+            .try_id()
+            .expect("vanilla nether portal POI type should be registered");
+        let candidates = self.poi_storage.lock().get_in_horizontal_square(
+            &|type_id| type_id == nether_portal_type,
+            approximate_exit_pos,
+            radius,
+            OccupationStatus::Any,
+        );
+
+        closest_portal_candidate(
+            candidates.into_iter().map(|(pos, _)| pos),
+            approximate_exit_pos,
+            |pos| {
+                self.is_block_within_world_border(pos)
+                    && self
+                        .get_block_state(pos)
+                        .try_get_value(&BlockStateProperties::HORIZONTAL_AXIS)
+                        .is_some()
+            },
+        )
+    }
+
+    /// Creates a Nether portal using vanilla `PortalForcer.createPortal` placement rules.
+    ///
+    /// The caller must keep the target search area loaded as full chunks before calling. Steel
+    /// returns `None` if any required chunk read or write is unavailable, rather than treating
+    /// unloaded chunks as replaceable air.
+    #[must_use]
+    pub fn create_nether_portal(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        portal_axis: Axis,
+    ) -> Option<FoundRectangle> {
+        if portal_axis == Axis::Y {
+            return None;
+        }
+
+        let direction = Direction::positive_for_axis(portal_axis);
+        let max_placeable_y = self
+            .get_max_y()
+            .min(self.get_min_y() + self.dimension_type.logical_height - 1);
+
+        let portal_origin =
+            match self.find_nether_portal_creation_position(origin, direction, max_placeable_y) {
+                Ok(Some(pos)) => pos,
+                Ok(None) => {
+                    let fallback =
+                        self.fallback_nether_portal_position(origin, direction, max_placeable_y)?;
+                    if !self.can_write_nether_portal_fallback_box(fallback, direction) {
+                        return None;
+                    }
+                    if !self.clear_nether_portal_fallback_box(fallback, direction) {
+                        return None;
+                    }
+                    fallback
+                }
+                Err(MissingPortalCreationChunk) => return None,
+            };
+
+        if !self.can_write_nether_portal_rectangle(portal_origin, direction) {
+            return None;
+        }
+        if !self.place_nether_portal_frame_and_blocks(portal_origin, direction, portal_axis) {
+            return None;
+        }
+
+        Some(FoundRectangle {
+            min_corner: portal_origin,
+            axis1_size: 2,
+            axis2_size: 3,
+        })
+    }
+
+    /// Adds or refreshes vanilla's portal chunk ticket for a post-teleport entity.
+    pub(crate) fn place_portal_ticket(&self, ticket_position: BlockPos) {
+        self.chunk_map.place_portal_ticket(ticket_position);
+    }
+
+    fn find_nether_portal_creation_position(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        max_placeable_y: i32,
+    ) -> Result<Option<BlockPos>, MissingPortalCreationChunk> {
+        let mut closest_full_position: Option<(i64, BlockPos)> = None;
+        let mut closest_partial_position: Option<(i64, BlockPos)> = None;
+        let border = self.world_border_snapshot();
+
+        for column_pos in BlockPos::spiral_around(
+            origin,
+            NETHER_PORTAL_CREATE_RADIUS,
+            Direction::East,
+            Direction::South,
+        ) {
+            let height = self
+                .height_at(
+                    HeightmapType::MotionBlocking,
+                    column_pos.x(),
+                    column_pos.z(),
+                )
+                .ok_or(MissingPortalCreationChunk)?
+                .min(max_placeable_y);
+            if !border.is_block_within_bounds(column_pos)
+                || !border.is_block_within_bounds(column_pos.relative(direction))
+            {
+                continue;
+            }
+
+            let mut column_pos = nether_portal_creation_scan_origin(column_pos, direction, height);
+            let mut y = height;
+            while y >= self.get_min_y() {
+                column_pos = column_pos.at_y(y);
+                if self.can_nether_portal_replace_block(column_pos)? {
+                    let first_empty_y = y;
+
+                    while y > self.get_min_y()
+                        && self.can_nether_portal_replace_block(column_pos.below())?
+                    {
+                        y -= 1;
+                        column_pos = column_pos.below();
+                    }
+
+                    if y + 4 <= max_placeable_y {
+                        let delta_y = first_empty_y - y;
+                        if (delta_y <= 0 || delta_y >= 3)
+                            && self.can_host_nether_portal_frame(column_pos, direction, 0)?
+                        {
+                            let distance = portal_candidate_distance_sqr(column_pos, origin);
+                            let full_frame = self
+                                .can_host_nether_portal_frame(column_pos, direction, -1)?
+                                && self.can_host_nether_portal_frame(column_pos, direction, 1)?;
+
+                            if full_frame
+                                && closest_full_position
+                                    .is_none_or(|(closest_distance, _)| closest_distance > distance)
+                            {
+                                closest_full_position = Some((distance, column_pos));
+                            }
+
+                            if closest_full_position.is_none()
+                                && closest_partial_position
+                                    .is_none_or(|(closest_distance, _)| closest_distance > distance)
+                            {
+                                closest_partial_position = Some((distance, column_pos));
+                            }
+                        }
+                    }
+                }
+
+                y -= 1;
+            }
+        }
+
+        if closest_full_position.is_none() {
+            closest_full_position = closest_partial_position;
+        }
+
+        Ok(closest_full_position.map(|(_, pos)| pos))
+    }
+
+    fn can_nether_portal_replace_block(
+        &self,
+        pos: BlockPos,
+    ) -> Result<bool, MissingPortalCreationChunk> {
+        let state = self
+            .loaded_block_state(pos)
+            .ok_or(MissingPortalCreationChunk)?;
+        Ok(state.is_replaceable() && state.get_fluid_state().is_empty())
+    }
+
+    fn can_host_nether_portal_frame(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        offset: i32,
+    ) -> Result<bool, MissingPortalCreationChunk> {
+        for width in -1..3 {
+            for height in -1..4 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, offset);
+                if height < 0 {
+                    let state = self
+                        .loaded_block_state(pos)
+                        .ok_or(MissingPortalCreationChunk)?;
+                    if !state.is_solid() {
+                        return Ok(false);
+                    }
+                } else if !self.can_nether_portal_replace_block(pos)? {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn loaded_block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        if !self.is_in_valid_bounds(pos) {
+            return Some(REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR));
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+    }
+
+    fn fallback_nether_portal_position(
+        &self,
+        origin: BlockPos,
+        direction: Direction,
+        max_placeable_y: i32,
+    ) -> Option<BlockPos> {
+        let min_start_y = (self.get_min_y() + 1).max(NETHER_PORTAL_FALLBACK_MIN_Y);
+        let max_start_y = max_placeable_y - NETHER_PORTAL_FALLBACK_MAX_Y_OFFSET;
+        if max_start_y < min_start_y {
+            return None;
+        }
+
+        let (direction_x, _, direction_z) = direction.offset();
+        let pos = BlockPos::new(
+            origin.x() - direction_x,
+            origin.y().clamp(min_start_y, max_start_y),
+            origin.z() - direction_z,
+        );
+
+        Some(self.world_border_snapshot().clamp_to_bounds(
+            f64::from(pos.x()),
+            f64::from(pos.y()),
+            f64::from(pos.z()),
+        ))
+    }
+
+    fn can_write_nether_portal_fallback_box(&self, origin: BlockPos, direction: Direction) -> bool {
+        for box_offset in -1..2 {
+            for width in 0..2 {
+                for height in -1..3 {
+                    let pos = nether_portal_frame_offset_pos(
+                        origin, direction, width, height, box_offset,
+                    );
+                    if !self.can_write_loaded_block(pos) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        self.can_write_nether_portal_rectangle(origin, direction)
+    }
+
+    fn can_write_nether_portal_rectangle(&self, origin: BlockPos, direction: Direction) -> bool {
+        for width in -1..3 {
+            for height in -1..4 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                if !self.can_write_loaded_block(pos) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn can_write_loaded_block(&self, pos: BlockPos) -> bool {
+        if !self.is_in_valid_bounds(pos) {
+            return false;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
+    }
+
+    /// Mirrors vanilla `EndPlatformFeature.createEndPlatform` for runtime End portal travel.
+    pub(crate) fn create_end_platform(self: &Arc<Self>, origin: BlockPos) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        for dz in -2..=2 {
+            for dx in -2..=2 {
+                for dy in -1..3 {
+                    let pos = origin.offset(dx, dy, dz);
+                    let state = if dy == -1 { obsidian } else { air };
+                    if self.get_block_state(pos).get_block() != state.get_block() {
+                        let _ = self.destroy_block(pos, true);
+                        if !self.set_block(pos, state, UpdateFlags::UPDATE_ALL) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.isChunkEmpty`.
+    pub(crate) fn is_end_gateway_chunk_empty(&self, chunk_pos: ChunkPos) -> Option<bool> {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            chunk
+                .as_full()
+                .is_some_and(|chunk| chunk.highest_filled_section_index().is_none())
+        })
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.findValidSpawnInChunk`.
+    pub(crate) fn find_end_gateway_valid_spawn_in_chunk(
+        &self,
+        chunk_pos: ChunkPos,
+    ) -> Option<BlockPos> {
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| {
+                let chunk = chunk.as_full()?;
+                let min_x = chunk_pos.0.x * 16;
+                let min_z = chunk_pos.0.y * 16;
+                let max_x = min_x + 15;
+                let max_z = min_z + 15;
+                let max_y = chunk.highest_section_position() + 16 - 1;
+                let min_y = 30.min(max_y);
+                let max_y = 30.max(max_y);
+                let mut closest = None;
+                let mut closest_dist = 0.0;
+
+                for z in min_z..=max_z {
+                    for y in min_y..=max_y {
+                        for x in min_x..=max_x {
+                            let pos = BlockPos::new(x, y, z);
+                            let state = chunk.get_block_state(pos);
+                            let above = pos.above();
+                            let above_two = pos.above_n(2);
+                            if state.get_block() != &vanilla_blocks::END_STONE
+                                || self.is_collision_shape_full_block_at(
+                                    above,
+                                    chunk.get_block_state(above),
+                                )
+                                || self.is_collision_shape_full_block_at(
+                                    above_two,
+                                    chunk.get_block_state(above_two),
+                                )
+                            {
+                                continue;
+                            }
+
+                            let dist = dist_to_origin_center_sqr(pos);
+                            if closest.is_none() || dist < closest_dist {
+                                closest = Some(pos);
+                                closest_dist = dist;
+                            }
+                        }
+                    }
+                }
+
+                closest
+            })
+            .flatten()
+    }
+
+    /// Mirrors vanilla `TheEndGatewayBlockEntity.findTallestBlock`.
+    pub(crate) fn find_end_gateway_tallest_block(
+        &self,
+        around: BlockPos,
+        dist: i32,
+        allow_bedrock: bool,
+    ) -> BlockPos {
+        let mut tallest = None;
+
+        for dx in -dist..=dist {
+            for dz in -dist..=dist {
+                if dx == 0 && dz == 0 && !allow_bedrock {
+                    continue;
+                }
+
+                let min_y = tallest.map_or(self.get_min_y(), |pos: BlockPos| pos.y());
+                for y in (min_y + 1..=self.get_max_y()).rev() {
+                    let pos = BlockPos::new(around.x() + dx, y, around.z() + dz);
+                    let state = self.get_block_state(pos);
+                    if self.is_collision_shape_full_block_at(pos, state)
+                        && (allow_bedrock || state.get_block() != &vanilla_blocks::BEDROCK)
+                    {
+                        tallest = Some(pos);
+                        break;
+                    }
+                }
+            }
+        }
+
+        tallest.unwrap_or(around)
+    }
+
+    fn is_collision_shape_full_block_at(&self, pos: BlockPos, state: BlockStateId) -> bool {
+        is_shape_full_block(self.block_collision_shape(pos, state))
+    }
+
+    /// Mirrors vanilla `EndIslandFeature.place` for runtime End gateway island creation.
+    pub(crate) fn create_end_island(self: &Arc<Self>, origin: BlockPos) -> bool {
+        let end_stone = vanilla_blocks::END_STONE.default_state();
+        let mut random = LegacyRandom::from_seed(PackedBlockPos::from(origin).as_raw() as u64);
+        let mut size = random.next_i32_bounded(3) as f32 + 4.0;
+        let mut y = 0;
+
+        while size > 0.5 {
+            let min = (-size).floor() as i32;
+            let max = size.ceil() as i32;
+            for x in min..=max {
+                for z in min..=max {
+                    if (x * x + z * z) as f32 <= (size + 1.0) * (size + 1.0)
+                        && !self.set_block(
+                            origin.offset(x, y, z),
+                            end_stone,
+                            UpdateFlags::UPDATE_CLIENTS,
+                        )
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            size -= random.next_i32_bounded(2) as f32 + 0.5;
+            y -= 1;
+        }
+
+        true
+    }
+
+    /// Mirrors vanilla `EndGatewayFeature.place` for runtime End gateway creation.
+    pub(crate) fn create_end_gateway_portal(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        exit: BlockPos,
+        exact: bool,
+    ) -> bool {
+        for dy in -2_i32..=2 {
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    let same_x = dx == 0;
+                    let same_y = dy == 0;
+                    let same_z = dz == 0;
+                    let end = dy.abs() == 2;
+                    let state = if same_x && same_y && same_z {
+                        vanilla_blocks::END_GATEWAY.default_state()
+                    } else if same_y {
+                        vanilla_blocks::AIR.default_state()
+                    } else if (end && same_x && same_z) || ((same_x || same_z) && !end) {
+                        vanilla_blocks::BEDROCK.default_state()
+                    } else {
+                        vanilla_blocks::AIR.default_state()
+                    };
+
+                    if !self.set_block(origin.offset(dx, dy, dz), state, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        let Some(block_entity) = self.get_block_entity(origin) else {
+            return false;
+        };
+        let mut block_entity = block_entity.lock();
+        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
+            return false;
+        };
+        gateway.set_exit_position(exit, exact);
+        true
+    }
+
+    fn clear_nether_portal_fallback_box(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        direction: Direction,
+    ) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
+        for box_offset in -1..2 {
+            for width in 0..2 {
+                for height in -1..3 {
+                    let state = if height < 0 { obsidian } else { air };
+                    let pos = nether_portal_frame_offset_pos(
+                        origin, direction, width, height, box_offset,
+                    );
+                    if !self.set_block(pos, state, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn place_nether_portal_frame_and_blocks(
+        self: &Arc<Self>,
+        origin: BlockPos,
+        direction: Direction,
+        portal_axis: Axis,
+    ) -> bool {
+        let obsidian = vanilla_blocks::OBSIDIAN.default_state();
+        for width in -1..3 {
+            for height in -1..4 {
+                if width == -1 || width == 2 || height == -1 || height == 3 {
+                    let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                    if !self.set_block(pos, obsidian, UpdateFlags::UPDATE_ALL) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        let portal_state = vanilla_blocks::NETHER_PORTAL
+            .default_state()
+            .set_value(&BlockStateProperties::HORIZONTAL_AXIS, portal_axis);
+        let portal_flags = UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE;
+        for width in 0..2 {
+            for height in 0..3 {
+                let pos = nether_portal_frame_offset_pos(origin, direction, width, height, 0);
+                if !self.set_block(pos, portal_state, portal_flags) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
     #[must_use]
     pub(crate) fn initialize_border_packet(&self) -> CInitializeBorder {
         initialize_border_packet(self.world_border_snapshot())
@@ -491,11 +1132,11 @@ impl World {
         respawn_data: RespawnData,
     ) -> RespawnData {
         let pos = respawn_data.pos();
-        let border = self.world_border_snapshot();
-        if border.is_within_bounds_with_margin(f64::from(pos.x()), f64::from(pos.z()), 0.0) {
+        if self.is_block_within_world_border(pos) {
             return respawn_data;
         }
 
+        let border = self.world_border_snapshot();
         let center_pos = BlockPos::containing(border.center_x, 0.0, border.center_z);
         let new_pos = self.heightmap_pos(HeightmapType::MotionBlocking, center_pos);
         RespawnData::of(
@@ -626,19 +1267,90 @@ impl World {
         }
     }
 
-    fn set_game_time(&self, tick_count: u64) {
-        let mut level_data = self.level_data.write();
-        level_data.data_mut().game_time = tick_count as i64;
-    }
-
     /// Returns vanilla level game time.
     pub fn game_time(&self) -> i64 {
         self.level_data.read().game_time()
     }
 
+    /// Returns the total ticks of one clock in this world.
+    pub(crate) fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+        self.level_data.read().world_clocks().total_ticks(clock)
+    }
+
+    /// Creates a full per-world time synchronization packet.
+    pub(crate) fn time_sync_packet(&self) -> CSetTime {
+        let level_data = self.level_data.read();
+        let advance_time = self.advance_time_with_guard(&level_data);
+        CSetTime::new(
+            level_data.game_time(),
+            level_data.world_clocks().network_updates(advance_time),
+        )
+    }
+
+    /// Broadcasts all clock states to players in this world.
+    pub(crate) fn broadcast_time_sync(&self) {
+        self.broadcast_to_all(self.time_sync_packet());
+    }
+
+    pub(crate) fn set_clock_total_ticks(
+        &self,
+        clock: WorldClockRef,
+        total_ticks: i64,
+    ) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_total_ticks(clock, total_ticks))
+    }
+
+    pub(crate) fn add_clock_ticks(&self, clock: WorldClockRef, ticks: i32) -> Option<i64> {
+        self.modify_clock(clock, |manager| manager.add_ticks(clock, ticks))
+    }
+
+    pub(crate) fn set_clock_paused(&self, clock: WorldClockRef, paused: bool) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_paused(clock, paused))
+    }
+
+    pub(crate) fn set_clock_rate(&self, clock: WorldClockRef, rate: f32) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_rate(clock, rate))
+    }
+
+    pub(crate) fn move_clock_to_time_marker(
+        &self,
+        clock: WorldClockRef,
+        marker: &Identifier,
+    ) -> Option<bool> {
+        self.modify_clock(clock, |manager| manager.move_to_time_marker(clock, marker))
+    }
+
+    fn modify_clock<R>(
+        &self,
+        clock: WorldClockRef,
+        action: impl FnOnce(&mut clock::WorldClockManager) -> Option<R>,
+    ) -> Option<R> {
+        let (result, packet) = {
+            let mut level_data = self.level_data.write();
+            let result = action(level_data.world_clocks_mut())?;
+            let advance_time = self.advance_time_with_guard(&level_data);
+            let update = level_data
+                .world_clocks()
+                .network_update(clock, advance_time)?;
+            (result, CSetTime::new(level_data.game_time(), vec![update]))
+        };
+        self.broadcast_to_all(packet);
+        Some(result)
+    }
+
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
+    }
+
+    /// Sets the level difficulty and broadcasts the new value to its players.
+    pub(crate) fn set_difficulty(&self, difficulty: Difficulty) {
+        let locked = {
+            let mut level_data = self.level_data.write();
+            level_data.data_mut().difficulty = difficulty;
+            level_data.data().difficulty_locked
+        };
+        self.broadcast_to_all(CChangeDifficulty { difficulty, locked });
     }
 
     /// Returns the total height of the world in blocks.
@@ -847,7 +1559,7 @@ impl World {
         None
     }
 
-    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
+    pub(crate) fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
         let chunk_pos = ChunkPos::new(
             SectionPos::block_to_section_coord(x),
             SectionPos::block_to_section_coord(z),
@@ -875,6 +1587,12 @@ impl World {
             self.level_height_at(heightmap_type, pos.x(), pos.z()),
             pos.z(),
         )
+    }
+
+    /// Mirrors vanilla `Entity.adjustSpawnLocation` for cross-world returns.
+    #[must_use]
+    pub(crate) fn adjust_spawn_location(&self, spawn_suggestion: BlockPos) -> BlockPos {
+        self.heightmap_pos(HeightmapType::MotionBlockingNoLeaves, spawn_suggestion)
     }
 
     fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
@@ -938,7 +1656,7 @@ impl World {
     /// WARNING: this function acquires a read lock on the level data.
     /// if you already have a write lock on level data, this will DEADLOCK
     #[must_use]
-    pub fn get_game_rule(&self, rule: GameRuleRef) -> GameRuleValue {
+    pub fn get_game_rule<T: GameRuleValueType>(&self, rule: &GameRule<T>) -> T {
         let guard = self.level_data.read();
         self.get_game_rule_with_guard(rule, &guard)
     }
@@ -946,37 +1664,72 @@ impl World {
     /// Gets the value of a game rule on the `LevelDataManager` guard being passed in.
     #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
-    pub fn get_game_rule_with_guard(
+    pub fn get_game_rule_with_guard<T: GameRuleValueType>(
         &self,
-        rule: GameRuleRef,
+        rule: &GameRule<T>,
         guard: &LevelDataManager,
-    ) -> GameRuleValue {
+    ) -> T {
         guard
             .data()
             .game_rules_values
             .get(rule, &REGISTRY.game_rules)
     }
 
+    /// Gets a type-erased value for a dynamically selected game rule.
+    #[must_use]
+    pub fn get_erased_game_rule(&self, rule: ErasedGameRuleRef) -> GameRuleValue {
+        self.level_data
+            .read()
+            .data()
+            .game_rules_values
+            .get_erased(rule, &REGISTRY.game_rules)
+            .clone()
+    }
+
     /// Sets the value of a game rule.
     /// WARNING: this function acquires a write lock on the level data.
     /// if you already have a read or write lock on level data, this will DEADLOCK
-    pub fn set_game_rule(&self, rule: GameRuleRef, value: GameRuleValue) -> bool {
-        let mut guard = self.level_data.write();
-        self.set_game_rule_with_guard(rule, value, &mut guard)
+    pub fn set_game_rule<T: GameRuleValueType>(&self, rule: &GameRule<T>, value: T) -> bool {
+        let updated = {
+            let mut guard = self.level_data.write();
+            self.set_game_rule_with_guard(rule, value, &mut guard)
+        };
+        if updated && rule.key() == ADVANCE_TIME.key() {
+            self.broadcast_time_sync();
+        }
+        updated
     }
 
     /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
     #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn set_game_rule_with_guard(
+    pub fn set_game_rule_with_guard<T: GameRuleValueType>(
         &self,
-        rule: GameRuleRef,
-        value: GameRuleValue,
+        rule: &GameRule<T>,
+        value: T,
         guard: &mut LevelDataManager,
     ) -> bool {
         guard
             .data_mut()
             .game_rules_values
             .set(rule, value, &REGISTRY.game_rules)
+    }
+
+    /// Sets a type-erased value for a dynamically selected game rule.
+    pub fn set_erased_game_rule(&self, rule: ErasedGameRuleRef, value: GameRuleValue) -> bool {
+        let updated = self
+            .level_data
+            .write()
+            .data_mut()
+            .game_rules_values
+            .set_erased(rule, value, &REGISTRY.game_rules);
+        if updated && rule.key() == ADVANCE_TIME.key() {
+            self.broadcast_time_sync();
+        }
+        updated
+    }
+
+    fn advance_time_with_guard(&self, guard: &LevelDataManager) -> bool {
+        self.get_game_rule_with_guard(&ADVANCE_TIME, guard)
     }
 
     /// Gets the world seed.
@@ -1006,17 +1759,28 @@ impl World {
 
     /// Gets the block state at the given position.
     ///
-    /// Returns the default block state (void air) if the position is out of bounds or the chunk is not loaded.
+    /// Returns void air out of bounds and air when the containing chunk is not loaded.
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    pub(crate) fn is_entity_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
+    pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
+            .is_some()
     }
 
     pub(crate) fn queue_light_change_after_block_set(
@@ -1161,8 +1925,10 @@ impl World {
         // Neighbor updates (when UPDATE_NEIGHBORS is set)
         if flags.contains(UpdateFlags::UPDATE_NEIGHBORS) {
             self.update_neighbors_at(pos, old_state.get_block());
-            // TODO: if block has analog output signal, update comparator neighbors
-            // via updateNeighborForOutputSignal
+            let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+            if behavior.has_analog_output_signal(block_state) {
+                self.update_neighbor_for_output_signal(pos, block_state.get_block());
+            }
         }
 
         // Shape updates (unless UPDATE_KNOWN_SHAPE is set)
@@ -1274,6 +2040,45 @@ impl World {
             let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
         }
+    }
+
+    /// Updates comparators that can read analog output from `pos`.
+    ///
+    /// Mirrors vanilla `Level.updateNeighbourForOutputSignal`.
+    pub(crate) fn update_neighbor_for_output_signal(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        changed_block: BlockRef,
+    ) {
+        for direction in Direction::HORIZONTAL {
+            let mut relative_pos = pos.relative(direction);
+            if !self.has_full_chunk(Self::chunk_pos_for_block(relative_pos)) {
+                continue;
+            }
+
+            let mut state = self.get_block_state(relative_pos);
+            if state.get_block() == &vanilla_blocks::COMPARATOR {
+                self.neighbor_changed(relative_pos, changed_block, false);
+                continue;
+            }
+
+            if !Self::is_redstone_conductor(state, relative_pos) {
+                continue;
+            }
+
+            relative_pos = relative_pos.relative(direction);
+            if !self.has_full_chunk(Self::chunk_pos_for_block(relative_pos)) {
+                continue;
+            }
+            state = self.get_block_state(relative_pos);
+            if state.get_block() == &vanilla_blocks::COMPARATOR {
+                self.neighbor_changed(relative_pos, changed_block, false);
+            }
+        }
+    }
+
+    fn is_redstone_conductor(state: BlockStateId, pos: BlockPos) -> bool {
+        is_offset_shape_full_block(state.get_collision_shape_at(pos))
     }
 
     /// Called when a neighbor's shape changes, to update this block's state.
@@ -1393,6 +2198,14 @@ impl World {
         self.mark_chunk_dirty(chunk_pos);
     }
 
+    /// Queues a same-state block update and its block-entity update packet.
+    ///
+    /// Mirrors vanilla `Level.sendBlockUpdated` for callers that changed only
+    /// block-entity data.
+    pub(crate) fn send_block_updated(&self, pos: BlockPos) {
+        self.chunk_map.block_changed(pos);
+    }
+
     /// Marks a chunk as dirty (unsaved) so it will be persisted to disk.
     ///
     /// Called when entities move, are added/removed, or when block entities change.
@@ -1418,7 +2231,6 @@ impl World {
         runs_normally: bool,
     ) -> WorldGameTickTimings {
         let world_start = Instant::now();
-        self.set_game_time(tick_count);
         self.set_tick_runs_normally(runs_normally);
         if runs_normally {
             self.tick_world_border();
@@ -1426,7 +2238,7 @@ impl World {
             self.tick_time();
         }
 
-        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
+        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED) as u32;
 
         let mut chunk_map_timings =
             self.chunk_map
@@ -1531,11 +2343,6 @@ impl World {
             );
         }
 
-        if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
-            let _span = tracing::trace_span!("broadcast_latency").entered();
-            self.broadcast_player_latency_updates();
-        }
-
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
@@ -1559,11 +2366,7 @@ impl World {
         {
             let mut level_data = self.level_data.write();
 
-            if self
-                .get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data)
-                .as_bool()
-                .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
-            {
+            if self.get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data) {
                 let clear_weather_time = level_data.clear_weather_time();
                 if clear_weather_time > 0 {
                     level_data.set_clear_weather_time(clear_weather_time - 1);
@@ -1678,6 +2481,25 @@ impl World {
         }
     }
 
+    /// Sets this world's weather timers and flags.
+    ///
+    /// Minecraft 26.2 owns this state at server scope. Steel intentionally owns
+    /// it per world so multiple worlds in one domain can have independent weather.
+    pub(crate) fn set_weather_parameters(
+        &self,
+        clear_time: i32,
+        rain_time: i32,
+        raining: bool,
+        thundering: bool,
+    ) {
+        let mut level_data = self.level_data.write();
+        level_data.set_clear_weather_time(clear_time);
+        level_data.set_rain_time(rain_time);
+        level_data.set_thunder_time(rain_time);
+        level_data.set_raining(raining);
+        level_data.set_thundering(thundering);
+    }
+
     /// Checks whether the rain level is high enough to be considered raining.
     /// Used for both visual rendering and gameplay logic (crop growth, fire, mob behavior).
     ///
@@ -1724,7 +2546,6 @@ impl World {
 
     /// Returns the current vanilla `SKY_LIGHT_LEVEL` environment attribute.
     pub fn sky_light_level(&self) -> f32 {
-        let day_time = self.level_data.read().day_time();
         let (rain_level, thunder_level) = if self.can_have_weather() {
             let weather = self.weather.lock();
             (weather.rain_level, weather.thunder_level)
@@ -1732,9 +2553,10 @@ impl World {
             (0.0, 0.0)
         };
 
+        let level_data = self.level_data.read();
         environment::sky_light_level(
             self.dimension_type,
-            day_time,
+            level_data.world_clocks(),
             rain_level,
             thunder_level,
             self.can_have_weather(),
@@ -1802,7 +2624,7 @@ impl World {
         let local_quart_x = (quart_x & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+        if let Some(Some(biome_id)) = self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             let sections = chunk.sections();
             let (section_index, local_quart_y) =
                 Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
@@ -1813,7 +2635,16 @@ impl World {
                     .biomes
                     .get(local_quart_x, local_quart_y, local_quart_z),
             )
-        })?
+        }) {
+            return Some(biome_id);
+        }
+
+        let biome = self
+            .chunk_map
+            .world_gen_context
+            .generator
+            .noise_biome(quart_x, quart_y, quart_z);
+        u16::try_from(biome.try_id()?).ok()
     }
 
     fn biome_quart_y_indices(
@@ -1960,49 +2791,19 @@ impl World {
             .unwrap_or(false)
     }
 
-    /// Advances the gametime and the daytime (if `ADVANCE_TIME` gamerule is true) by one tick, and
-    /// then sends an update to all clients in this world every 20th tick.
+    /// Advances game time and this world's clock instances, then periodically synchronizes game time.
     fn tick_time(&self) {
-        let advance_time = self
-            .get_game_rule(&ADVANCE_TIME)
-            .as_bool()
-            .expect("gamerule advance_time should always be a bool.");
-
-        let (game_time, day_time) = {
+        let game_time = {
             let mut lock = self.level_data.write();
-            let updated_game_time = lock.game_time() + 1;
+            let updated_game_time = lock.game_time().wrapping_add(1);
             lock.set_game_time(updated_game_time);
-            let current_day_time = lock.day_time();
-
-            if advance_time {
-                let updated_day_time = (current_day_time + 1) % 24000;
-                lock.set_day_time(updated_day_time);
-                (updated_game_time, updated_day_time)
-            } else {
-                (updated_game_time, current_day_time)
-            }
+            let advance_time = self.advance_time_with_guard(&lock);
+            lock.world_clocks_mut().tick(advance_time);
+            updated_game_time
         };
 
         if game_time % 20 == 0 {
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
-        }
-    }
-
-    /// Broadcasts latency updates for all players to all players.
-    /// This is called every `SEND_PLAYER_INFO_INTERVAL` ticks to update the ping display.
-    fn broadcast_player_latency_updates(&self) {
-        // Collect all player latencies
-        let mut latency_entries = Vec::new();
-        self.players.iter_players(|uuid, player| {
-            latency_entries.push((*uuid, player.connection.latency()));
-            true
-        });
-
-        // Only broadcast if there are players
-        if !latency_entries.is_empty() {
-            let packet = CPlayerInfoUpdate::update_latency(latency_entries);
-            self.broadcast_to_all(packet);
+            self.broadcast_to_all(CSetTime::new(game_time, Vec::new()));
         }
     }
 
@@ -2413,6 +3214,23 @@ impl World {
         self.broadcast_to_nearby(chunk, packet, None);
     }
 
+    /// Broadcasts the current block-entity update packet when that entity type
+    /// exposes client-visible update data.
+    pub(crate) fn broadcast_block_entity_if_needed(&self, pos: BlockPos) {
+        let Some(block_entity) = self.get_block_entity(pos) else {
+            return;
+        };
+        let update = {
+            let block_entity = block_entity.lock();
+            block_entity
+                .get_update_tag()
+                .map(|tag| (block_entity.get_type(), tag))
+        };
+        if let Some((block_entity_type, tag)) = update {
+            self.broadcast_block_entity_update(pos, block_entity_type, tag);
+        }
+    }
+
     /// Drops an item stack at the given position with scatter behavior.
     ///
     /// Mirrors vanilla's `Containers.dropItemStack`. Splits large stacks into
@@ -2679,7 +3497,7 @@ impl World {
         }
 
         if block == &vanilla_blocks::NETHER_PORTAL
-            && self.get_game_rule(&PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) == GameRuleValue::Int(0)
+            && self.get_game_rule(&PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) == 0
         {
             return VoxelShape::FULL_BLOCK;
         }
@@ -3139,14 +3957,19 @@ impl World {
 
     /// Broadcasts a global level event to all players in the world.
     ///
-    /// Unlike `level_event`, this sends the event to all players regardless of distance.
-    /// Used for events like the ender dragon death or wither spawn.
+    /// When `global_sound_events` is disabled, vanilla falls back to a normal
+    /// nearby level event with the packet's global flag unset.
     ///
     /// # Arguments
     /// * `event_type` - The event type ID from `steel_registry::level_events`
     /// * `pos` - The position where the event occurs
     /// * `data` - Event-specific data
     pub fn global_level_event(&self, event_type: i32, pos: BlockPos, data: i32) {
+        if !self.get_game_rule(&GLOBAL_SOUND_EVENTS) {
+            self.level_event(event_type, pos, data, None);
+            return;
+        }
+
         let packet = CLevelEvent::new(event_type, pos, data, true);
         self.players.iter_players(|_, player| {
             player.send_packet(packet.clone());
@@ -3321,9 +4144,9 @@ impl World {
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
     ///
-    /// The sound is sent to all players within 64 blocks of the position,
-    /// except for the excluded player (if any). The excluded player is typically
-    /// the one who triggered the sound, as they hear it client-side.
+    /// The sound is sent to players within its vanilla range, except for the
+    /// excluded player (if any). The excluded player is typically the one who
+    /// triggered the sound, as they hear it client-side.
     ///
     /// # Arguments
     /// * `sound` - The sound event to play
@@ -3365,8 +4188,6 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -3374,7 +4195,6 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-
         let packet = CSound::new(sound, source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -3383,7 +4203,7 @@ impl World {
             return;
         };
 
-        // Get players tracking this chunk, then filter by 64-block distance
+        // Get players tracking this chunk, then apply vanilla's strict range check.
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             // Skip excluded player (they hear the sound client-side)
             if exclude == Some(entity_id) {
@@ -3396,7 +4216,7 @@ impl World {
                 let dz = player_pos.z - pos.z;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if dist_sq <= MAX_DISTANCE_SQ {
+                if sound_is_within_range(sound, volume, dist_sq) {
                     player.connection.send_encoded(encoded.clone());
                 }
             }
@@ -3427,7 +4247,7 @@ impl World {
 
     /// Returns the runtime entity manager.
     #[must_use]
-    pub const fn entity_manager(&self) -> &WorldEntityManager {
+    pub(crate) const fn entity_manager(&self) -> &WorldEntityManager {
         &self.entity_manager
     }
 
@@ -3730,7 +4550,7 @@ impl World {
         }
 
         // Respect doTileDrops gamerule
-        if !self.get_game_rule(&BLOCK_DROPS).as_bool().unwrap_or(true) {
+        if !self.get_game_rule(&BLOCK_DROPS) {
             return None;
         }
 
@@ -3824,6 +4644,21 @@ impl World {
     #[must_use]
     pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
         self.entity_manager.get_by_id(id)
+    }
+
+    /// Returns true if this exact entity is live or retained for chunk-unload recovery.
+    pub(crate) fn contains_live_or_unloading_entity(&self, entity: &SharedEntity) -> bool {
+        self.entity_manager
+            .contains_live_or_unloading_entity(entity)
+    }
+
+    /// Queues a world change from world-local code for server safe-point processing.
+    pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {
+        self.pending_world_changes.lock().push((entity, request));
+    }
+
+    pub(crate) fn drain_world_changes(&self) -> Vec<(SharedEntity, WorldChangeRequest)> {
+        mem::take(&mut *self.pending_world_changes.lock())
     }
 
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.
@@ -4020,6 +4855,11 @@ fn nearest_player_distance_in_range(
     max_distance < 0.0 || distance_sqr < max_distance_sqr
 }
 
+fn sound_is_within_range(sound: SoundEventRef, volume: f32, distance_squared: f64) -> bool {
+    let range = f64::from(sound.range(volume));
+    distance_squared < range * range
+}
+
 impl LevelReader for World {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         Self::get_block_state(self, pos)
@@ -4139,15 +4979,74 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_fluids};
+    use steel_registry::{
+        sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
+    };
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
     use crate::entity::{EntityBase, entities::PigEntity};
+    use crate::test_support::test_world;
 
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    #[test]
+    fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
+        init_test_registry();
+        let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
+
+        assert!(sound_is_within_range(sound, 0.75, 255.0));
+        assert!(!sound_is_within_range(sound, 0.75, 256.0));
+    }
+
+    #[test]
+    fn closest_portal_candidate_filters_then_tiebreaks_by_y() {
+        let center = BlockPos::new(0, 64, 0);
+        let candidates = [
+            BlockPos::new(1, 64, 0),
+            BlockPos::new(0, 67, 0),
+            BlockPos::new(0, 61, 0),
+        ];
+
+        assert_eq!(
+            closest_portal_candidate(candidates, center, |pos| pos.x() != 1),
+            Some(BlockPos::new(0, 61, 0))
+        );
+    }
+
+    #[test]
+    fn nether_portal_frame_offsets_match_vanilla_create_portal_axes() {
+        let origin = BlockPos::new(10, 70, 20);
+
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::East, 1, 2, -1),
+            BlockPos::new(11, 72, 19)
+        );
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::South, 1, 2, -1),
+            BlockPos::new(11, 72, 21)
+        );
+        assert_eq!(
+            nether_portal_frame_offset_pos(origin, Direction::East, 0, -1, 1),
+            BlockPos::new(10, 69, 21)
+        );
+    }
+
+    #[test]
+    fn nether_portal_creation_scan_origin_matches_vanilla_column_shift() {
+        let column = BlockPos::new(10, 0, 20);
+
+        assert_eq!(
+            nether_portal_creation_scan_origin(column, Direction::East, 70),
+            BlockPos::new(9, 70, 20)
+        );
+        assert_eq!(
+            nether_portal_creation_scan_origin(column, Direction::South, 70),
+            BlockPos::new(10, 70, 19)
+        );
+    }
 
     struct TrackerTestEntity {
         base: EntityBase,
@@ -4166,6 +5065,8 @@ mod tests {
             })
         }
     }
+
+    crate::entity::impl_test_downcast_type!(TrackerTestEntity);
 
     impl Entity for TrackerTestEntity {
         fn base(&self) -> &EntityBase {
@@ -4215,6 +5116,21 @@ mod tests {
         assert!(!World::is_in_spawnable_bounds(BlockPos::new(
             0, 20_000_000, 0
         )));
+    }
+
+    #[test]
+    fn block_state_outside_world_bounds_is_void_air() {
+        init_test_registry();
+        let world = test_world();
+
+        assert_eq!(
+            world.get_block_state(BlockPos::new(0, world.get_min_y() - 1, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
+        assert_eq!(
+            world.get_block_state(BlockPos::new(BlockPos::MAX_HORIZONTAL_COORDINATE, 0, 0)),
+            vanilla_blocks::VOID_AIR.default_state()
+        );
     }
 
     #[test]

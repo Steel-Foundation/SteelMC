@@ -28,11 +28,11 @@ pub struct MobEffect {
 }
 
 impl MobEffect {
-    /// Returns the VarInt payload used by vanilla mob-effect holder-registry packets.
+    /// Returns the `VarInt` payload used by vanilla mob-effect holder-registry packets.
     #[must_use]
     pub fn packet_holder_id(&self) -> i32 {
         let id = crate::RegistryEntry::id(self);
-        debug_assert!(id <= i32::MAX as usize);
+        debug_assert!(i32::try_from(id).is_ok());
         id as i32
     }
 }
@@ -48,6 +48,7 @@ pub type MobEffectRef = &'static MobEffect;
 pub struct MobEffectRegistry {
     effects_by_id: Vec<MobEffectRef>,
     effects_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -63,6 +64,7 @@ impl MobEffectRegistry {
         Self {
             effects_by_id: Vec::new(),
             effects_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -92,3 +94,5 @@ crate::impl_registry!(
     effects_by_key,
     mob_effects
 );
+
+crate::impl_tagged_registry!(MobEffectRegistry, effects_by_key, "mob effect");

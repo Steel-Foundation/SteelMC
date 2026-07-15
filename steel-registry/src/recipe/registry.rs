@@ -9,7 +9,7 @@ use crate::item_stack::ItemStack;
 
 /// Registry for all recipes.
 pub struct RecipeRegistry {
-    /// All recipes in registration order (unified storage for RegistryExt).
+    /// All recipes in registration order (unified storage for `RegistryExt`).
     recipes_by_id: Vec<&'static CraftingRecipe>,
     /// Map from recipe key to index in `recipes_by_id`.
     recipes_by_key: FxHashMap<Identifier, usize>,
@@ -147,19 +147,19 @@ impl RecipeRegistry {
 
     /// Returns the number of shaped recipes.
     #[must_use]
-    pub fn shaped_count(&self) -> usize {
+    pub const fn shaped_count(&self) -> usize {
         self.shaped_recipes.len()
     }
 
     /// Returns the number of shapeless recipes.
     #[must_use]
-    pub fn shapeless_count(&self) -> usize {
+    pub const fn shapeless_count(&self) -> usize {
         self.shapeless_recipes.len()
     }
 
     /// Returns the number of furnace smelting recipes.
     #[must_use]
-    pub fn smelting_count(&self) -> usize {
+    pub const fn smelting_count(&self) -> usize {
         self.smelting_recipes.len()
     }
 

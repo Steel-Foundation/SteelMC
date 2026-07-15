@@ -1767,13 +1767,32 @@ dependencies = [
 
 [[package]]
 name = "phf"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
+dependencies = [
+ "phf_shared 0.11.3",
+]
+
+[[package]]
+name = "phf"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
 dependencies = [
  "phf_macros",
- "phf_shared",
+ "phf_shared 0.13.1",
  "serde",
+]
+
+[[package]]
+name = "phf_codegen"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aef8048c789fa5e851558d709946d6d79a8ff88c0440c587967f8e94bfb1216a"
+dependencies = [
+ "phf_generator 0.11.3",
+ "phf_shared 0.11.3",
 ]
 
 [[package]]
@@ -1782,8 +1801,18 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49aa7f9d80421bca176ca8dbfebe668cc7a2684708594ec9f3c0db0805d5d6e1"
 dependencies = [
- "phf_generator",
- "phf_shared",
+ "phf_generator 0.13.1",
+ "phf_shared 0.13.1",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
+dependencies = [
+ "phf_shared 0.11.3",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -1793,7 +1822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
 dependencies = [
  "fastrand",
- "phf_shared",
+ "phf_shared 0.13.1",
 ]
 
 [[package]]
@@ -1802,11 +1831,20 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
 dependencies = [
- "phf_generator",
- "phf_shared",
+ "phf_generator 0.13.1",
+ "phf_shared 0.13.1",
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
+dependencies = [
+ "siphasher",
 ]
 
 [[package]]
@@ -2046,11 +2084,22 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db2770f06117d490610c7488547d543617b21bfa07796d7a12f6f1bd53850d1"
 dependencies = [
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "rand_core 0.9.5",
 ]
 
@@ -2067,12 +2116,31 @@ dependencies = [
 
 [[package]]
 name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
 dependencies = [
  "ppv-lite86",
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom 0.2.17",
 ]
 
 [[package]]
@@ -2730,7 +2798,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "base64",
  "chrono",
@@ -2760,11 +2828,12 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "anyhow",
  "arc-swap",
  "bitflags",
+ "chrono",
  "criterion",
  "crossbeam",
  "enum_dispatch",
@@ -2780,6 +2849,7 @@ dependencies = [
  "quote",
  "rand 0.10.0",
  "rayon",
+ "reqwest 0.13.2",
  "rsa",
  "rustc-hash 2.1.2",
  "scc",
@@ -2810,7 +2880,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "base64",
  "log",
@@ -2825,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "base64",
  "crossbeam",
@@ -2849,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2858,11 +2928,11 @@ dependencies = [
 
 [[package]]
 name = "steel-math"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 
 [[package]]
 name = "steel-protocol"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
@@ -2885,7 +2955,7 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "flate2",
  "glam",
@@ -2906,7 +2976,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "bitflags",
  "crc32c",
@@ -2917,11 +2987,12 @@ dependencies = [
  "md5",
  "num-traits",
  "parking_lot",
- "phf",
- "phf_codegen",
+ "phf 0.13.1",
+ "phf_codegen 0.13.1",
  "proc-macro2",
  "quote",
  "rand 0.10.0",
+ "rayon",
  "reqwest 0.13.2",
  "rustc-hash 2.1.2",
  "serde",
@@ -2931,7 +3002,9 @@ dependencies = [
  "steel-macros",
  "text_components",
  "tokio",
+ "toml",
  "tracing",
+ "unicode_names2",
  "uuid",
  "wincode",
  "zip",
@@ -2939,12 +3012,13 @@ dependencies = [
 
 [[package]]
 name = "steel-worldgen"
-version = "0.12.2+mc26.2"
+version = "0.13.1+mc26.2"
 dependencies = [
  "criterion",
  "glam",
  "proc-macro2",
  "quote",
+ "rayon",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
@@ -2953,6 +3027,7 @@ dependencies = [
  "steel-registry",
  "steel-utils",
  "tracing",
+ "wincode",
 ]
 
 [[package]]
@@ -3016,7 +3091,7 @@ dependencies = [
 [[package]]
 name = "text_components"
 version = "0.1.7"
-source = "git+https://github.com/Steel-Foundation/TextComponents.git?rev=e058b936e66b496385ba162b2e20344d14572a6a#e058b936e66b496385ba162b2e20344d14572a6a"
+source = "git+https://github.com/Steel-Foundation/TextComponents.git?rev=04d60d0d9c65ab1cb05154105e184d5904e8990b#04d60d0d9c65ab1cb05154105e184d5904e8990b"
 dependencies = [
  "colored",
  "heck",
@@ -3445,6 +3520,26 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unicode_names2"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82c3e18d850bb6ebd57735e5654f0af65e572b05c2397e7b2b1a7c6a792cc29c"
+dependencies = [
+ "phf 0.11.3",
+ "unicode_names2_generator",
+]
+
+[[package]]
+name = "unicode_names2_generator"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "849744a58c479122ff24910d7ca57f312b62613ef0412dc327776ae6b235d16a"
+dependencies = [
+ "phf_codegen 0.11.3",
+ "rand 0.8.6",
+]
 
 [[package]]
 name = "untrusted"

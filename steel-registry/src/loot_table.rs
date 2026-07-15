@@ -1,7 +1,7 @@
-pub use crate::equipment::EquipmentSlotGroup;
+pub use crate::{DyeColor, equipment::EquipmentSlotGroup};
 use crate::{
     REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
-    item_stack::ItemStack,
+    instrument::InstrumentRef, item_stack::ItemStack,
 };
 use rand::RngExt;
 use rustc_hash::FxHashMap;
@@ -20,27 +20,6 @@ pub enum LootContextEntity {
     KillerPlayer,
     /// The entity interacting with a block/entity.
     Interacting,
-}
-
-/// Dye/banner color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DyeColor {
-    White,
-    Orange,
-    Magenta,
-    LightBlue,
-    Yellow,
-    Lime,
-    Pink,
-    Gray,
-    LightGray,
-    Cyan,
-    Purple,
-    Blue,
-    Brown,
-    Green,
-    Red,
-    Black,
 }
 
 /// The type of loot table, determining when/how it's used.
@@ -132,8 +111,7 @@ impl NumberProvider {
             }
             Self::EnchantmentLevel { enchantment } => ctx
                 .and_then(|c| c.tool)
-                .map(|t| t.get_enchantment_level(enchantment) as f32)
-                .unwrap_or(0.0),
+                .map_or(0.0, |t| t.get_enchantment_level(enchantment) as f32),
         }
     }
 
@@ -171,7 +149,7 @@ impl NumberProvider {
     }
 }
 
-/// A range for number comparisons (used in ValueCheck, TimeCheck, EntityScores).
+/// A range for number comparisons (used in `ValueCheck`, `TimeCheck`, `EntityScores`).
 #[derive(Debug, Clone)]
 pub struct NumberProviderRange {
     pub min: Option<NumberProvider>,
@@ -195,6 +173,7 @@ impl NumberProviderRange {
     }
 
     /// Create an exact match range.
+    #[must_use]
     pub const fn exact(value: f32) -> Self {
         Self {
             min: Some(NumberProvider::Constant(value)),
@@ -203,6 +182,7 @@ impl NumberProviderRange {
     }
 
     /// Create an at-least range.
+    #[must_use]
     pub const fn at_least(min: f32) -> Self {
         Self {
             min: Some(NumberProvider::Constant(min)),
@@ -211,6 +191,7 @@ impl NumberProviderRange {
     }
 
     /// Create an at-most range.
+    #[must_use]
     pub const fn at_most(max: f32) -> Self {
         Self {
             min: None,
@@ -219,6 +200,7 @@ impl NumberProviderRange {
     }
 
     /// Create a between range.
+    #[must_use]
     pub const fn between(min: f32, max: f32) -> Self {
         Self {
             min: Some(NumberProvider::Constant(min)),
@@ -253,14 +235,14 @@ pub struct LootContext<'a, R: rand::Rng> {
 
     /// World position where the loot is generated (block position or entity death location).
     pub origin: Option<(f64, f64, f64)>,
-    /// Current game time in ticks (for TimeCheck condition).
+    /// Current game time in ticks (for `TimeCheck` condition).
     pub game_time: Option<i64>,
     /// Current weather state.
     pub weather: Option<WeatherState>,
     /// The entity being looted (the killed mob, block entity owner, etc.).
     /// This is a type-erased pointer; actual entity data depends on game implementation.
     pub this_entity: Option<EntityRef<'a>>,
-    /// The entity that killed this_entity (for mob loot tables).
+    /// The entity that killed `this_entity` (for mob loot tables).
     pub killer_entity: Option<EntityRef<'a>>,
     /// The direct attacker entity (e.g., arrow, not the player who shot it).
     pub direct_killer_entity: Option<EntityRef<'a>>,
@@ -274,7 +256,7 @@ pub struct LootContext<'a, R: rand::Rng> {
     pub interacting_entity: Option<EntityRef<'a>>,
 }
 
-/// Weather state for WeatherCheck condition.
+/// Weather state for `WeatherCheck` condition.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WeatherState {
     pub raining: bool,
@@ -291,7 +273,7 @@ pub struct EntityRef<'a> {
     pub flags: EntityRefFlags,
     /// Equipment slots for equipment predicates.
     pub equipment: Option<&'a EntityEquipmentRef<'a>>,
-    /// Entity name (for copy_name function).
+    /// Entity name (for `copy_name` function).
     pub custom_name: Option<&'a str>,
 }
 
@@ -332,7 +314,7 @@ pub struct DamageSourceInfo<'a> {
 pub struct BlockEntityRef<'a> {
     /// The block entity type identifier.
     pub block_entity_type: Option<&'a Identifier>,
-    /// Custom name of the block entity (for copy_name).
+    /// Custom name of the block entity (for `copy_name`).
     pub custom_name: Option<&'a str>,
     /// Inventory contents (for dynamic/slots entries).
     pub inventory: Option<&'a [ItemStack]>,
@@ -340,7 +322,7 @@ pub struct BlockEntityRef<'a> {
 
 impl<'a, R: rand::Rng> LootContext<'a, R> {
     /// Create a new loot context with just an RNG.
-    pub fn new(rng: &'a mut R) -> Self {
+    pub const fn new(rng: &'a mut R) -> Self {
         Self {
             rng,
             luck: 0.0,
@@ -362,104 +344,120 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
     }
 
     /// Set the luck value.
-    pub fn with_luck(mut self, luck: f32) -> Self {
+    #[must_use]
+    pub const fn with_luck(mut self, luck: f32) -> Self {
         self.luck = luck;
         self
     }
 
     /// Set the block state.
-    pub fn with_block_state(mut self, state: BlockStateId) -> Self {
+    #[must_use]
+    pub const fn with_block_state(mut self, state: BlockStateId) -> Self {
         self.block_state = Some(state);
         self
     }
 
     /// Set the tool used.
-    pub fn with_tool(mut self, tool: &'a ItemStack) -> Self {
+    #[must_use]
+    pub const fn with_tool(mut self, tool: &'a ItemStack) -> Self {
         self.tool = Some(tool);
         self
     }
 
     /// Set the explosion radius.
-    pub fn with_explosion(mut self, radius: f32) -> Self {
+    #[must_use]
+    pub const fn with_explosion(mut self, radius: f32) -> Self {
         self.explosion_radius = Some(radius);
         self
     }
 
     /// Set whether killed by player.
-    pub fn with_killed_by_player(mut self, killed: bool) -> Self {
+    #[must_use]
+    pub const fn with_killed_by_player(mut self, killed: bool) -> Self {
         self.killed_by_player = killed;
         self
     }
 
     /// Set the world origin position.
-    pub fn with_origin(mut self, x: f64, y: f64, z: f64) -> Self {
+    #[must_use]
+    pub const fn with_origin(mut self, x: f64, y: f64, z: f64) -> Self {
         self.origin = Some((x, y, z));
         self
     }
 
     /// Set the game time.
-    pub fn with_game_time(mut self, time: i64) -> Self {
+    #[must_use]
+    pub const fn with_game_time(mut self, time: i64) -> Self {
         self.game_time = Some(time);
         self
     }
 
     /// Set the weather state.
-    pub fn with_weather(mut self, weather: WeatherState) -> Self {
+    #[must_use]
+    pub const fn with_weather(mut self, weather: WeatherState) -> Self {
         self.weather = Some(weather);
         self
     }
 
     /// Set the entity being looted.
-    pub fn with_this_entity(mut self, entity: EntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_this_entity(mut self, entity: EntityRef<'a>) -> Self {
         self.this_entity = Some(entity);
         self
     }
 
     /// Set the killer entity.
-    pub fn with_killer_entity(mut self, entity: EntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_killer_entity(mut self, entity: EntityRef<'a>) -> Self {
         self.killer_entity = Some(entity);
         self
     }
 
     /// Set the direct killer entity (e.g., projectile).
-    pub fn with_direct_killer_entity(mut self, entity: EntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_direct_killer_entity(mut self, entity: EntityRef<'a>) -> Self {
         self.direct_killer_entity = Some(entity);
         self
     }
 
     /// Set the player who dealt the final damage.
-    pub fn with_last_damage_player(mut self, entity: EntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_last_damage_player(mut self, entity: EntityRef<'a>) -> Self {
         self.last_damage_player = Some(entity);
         self
     }
 
     /// Set the damage source information.
-    pub fn with_damage_source(mut self, damage_source: DamageSourceInfo<'a>) -> Self {
+    #[must_use]
+    pub const fn with_damage_source(mut self, damage_source: DamageSourceInfo<'a>) -> Self {
         self.damage_source = Some(damage_source);
         self
     }
 
     /// Set the block entity reference.
-    pub fn with_block_entity(mut self, block_entity: BlockEntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_block_entity(mut self, block_entity: BlockEntityRef<'a>) -> Self {
         self.block_entity = Some(block_entity);
         self
     }
 
     /// Set the interacting entity (e.g., player opening a chest).
-    pub fn with_interacting_entity(mut self, entity: EntityRef<'a>) -> Self {
+    #[must_use]
+    pub const fn with_interacting_entity(mut self, entity: EntityRef<'a>) -> Self {
         self.interacting_entity = Some(entity);
         self
     }
 
     /// Get the level of an enchantment on the tool by identifier.
+    #[must_use]
     pub fn get_enchantment_level_by_id(&self, enchantment: &Identifier) -> i32 {
         self.tool
-            .map(|t| t.get_enchantment_level(enchantment))
-            .unwrap_or(0)
+            .map_or(0, |t| t.get_enchantment_level(enchantment))
     }
 
     /// Get an entity reference by target.
-    pub fn get_entity(&self, target: LootContextEntity) -> Option<EntityRef<'a>> {
+    #[must_use]
+    pub const fn get_entity(&self, target: LootContextEntity) -> Option<EntityRef<'a>> {
         match target {
             LootContextEntity::This => self.this_entity,
             LootContextEntity::Killer => self.killer_entity,
@@ -492,11 +490,11 @@ pub enum LootCondition {
     /// Simple random chance (0.0 to 1.0).
     RandomChance(f32),
     /// Random chance affected by an enchantment (e.g., looting).
-    /// Vanilla 1.21+: uses enchanted_chance which can be constant or linear.
+    /// Vanilla 1.21+: uses `enchanted_chance` which can be constant or linear.
     RandomChanceWithEnchantedBonus {
         enchantment: Identifier,
         unenchanted_chance: f32,
-        /// For linear formula: chance = base + per_level * (level - 1)
+        /// For linear formula: chance = base + `per_level` * (level - 1)
         enchanted_chance: EnchantedChance,
     },
     /// Match tool predicate - checks if the tool matches certain criteria.
@@ -563,7 +561,7 @@ pub enum LootCondition {
 pub enum EnchantedChance {
     /// Constant chance regardless of enchantment level.
     Constant(f32),
-    /// Linear formula: base + per_level_above_first * (level - 1)
+    /// Linear formula: base + `per_level_above_first` * (level - 1)
     Linear {
         base: f32,
         per_level_above_first: f32,
@@ -607,7 +605,7 @@ pub struct EntityPredicate {
     pub equipment: Option<EntityEquipment>,
 }
 
-/// Entity flags (is_on_fire, is_sneaking, etc.)
+/// Entity flags (`is_on_fire`, `is_sneaking`, etc.)
 #[derive(Debug, Clone)]
 pub struct EntityFlags {
     pub is_on_fire: Option<bool>,
@@ -778,6 +776,7 @@ impl LootCondition {
 
 impl ToolPredicate {
     /// Test if the tool matches this predicate.
+    #[must_use]
     pub fn test<R: rand::Rng>(&self, tool: &ItemStack, _ctx: &LootContext<'_, R>) -> bool {
         match self {
             ToolPredicate::Item(item_id) => tool.item.key == *item_id,
@@ -964,10 +963,35 @@ fn damage_source_has_tag(damage_source: DamageSourceInfo<'_>, tag: &Identifier) 
 /// Options for selecting enchantments - either a tag reference or explicit list.
 #[derive(Debug, Clone)]
 pub enum EnchantmentOptions {
-    /// Reference to an enchantment tag (e.g., "on_random_loot").
+    /// Reference to an enchantment tag (e.g., "`on_random_loot`").
     Tag(Identifier),
     /// Explicit list of enchantment IDs.
     List(&'static [Identifier]),
+}
+
+/// Options for selecting an instrument from a registry tag or explicit list.
+#[derive(Debug, Clone)]
+pub enum InstrumentOptions {
+    Tag(Identifier),
+    Direct(&'static [InstrumentRef]),
+}
+
+impl InstrumentOptions {
+    fn get_random<R: rand::Rng>(&self, rng: &mut R) -> Option<InstrumentRef> {
+        match self {
+            Self::Tag(tag) => {
+                let instruments = REGISTRY.instruments.get_tag(tag)?;
+                (!instruments.is_empty()).then(|| {
+                    let index = rng.random_range(0..instruments.len());
+                    instruments[index]
+                })
+            }
+            Self::Direct(instruments) => (!instruments.is_empty()).then(|| {
+                let index = rng.random_range(0..instruments.len());
+                instruments[index]
+            }),
+        }
+    }
 }
 
 /// A function with optional conditions.
@@ -1018,8 +1042,10 @@ pub enum LootFunction {
     },
     /// Set components on the item.
     SetComponents { components: &'static str },
-    /// Set custom NBT data on the item (merges with existing custom_data).
-    SetCustomData { tag: &'static str },
+    /// Set custom NBT data on the item (merges with existing `custom_data`).
+    SetCustomData {
+        tag: fn() -> crate::data_components::CustomData,
+    },
     /// Smelt the item (convert raw to cooked, ore to ingot, etc.).
     FurnaceSmelt { use_input_count: bool },
     /// Create an exploration map pointing to a structure.
@@ -1041,7 +1067,7 @@ pub enum LootFunction {
     /// Set the suspicious stew effects.
     SetStewEffect { effects: &'static [StewEffect] },
     /// Set the instrument for goat horns.
-    SetInstrument { options: Identifier },
+    SetInstrument { options: InstrumentOptions },
     /// Set enchantments on the item.
     SetEnchantments {
         enchantments: &'static [(Identifier, NumberProvider)],
@@ -1115,8 +1141,6 @@ pub enum LootFunction {
     ToggleTooltips {
         toggles: &'static [(Identifier, bool)],
     },
-    /// Set custom model data.
-    SetCustomModelData { value: NumberProvider },
     /// Discard/delete the item entirely.
     Discard,
     /// Reference to a named function in the registry.
@@ -1147,7 +1171,7 @@ pub enum ListOperation {
     Append,
 }
 
-/// An attribute modifier for SetAttributes function.
+/// An attribute modifier for `SetAttributes` function.
 #[derive(Debug, Clone)]
 pub struct AttributeModifier {
     pub attribute: Identifier,
@@ -1166,7 +1190,7 @@ pub enum AttributeOperation {
     AddMultipliedTotal,
 }
 
-/// Copy data operation for CopyCustomData.
+/// Copy data operation for `CopyCustomData`.
 #[derive(Debug, Clone)]
 pub struct CopyDataOperation {
     pub source_path: &'static str,
@@ -1209,7 +1233,7 @@ pub enum FireworkShape {
     Burst,
 }
 
-/// Formula types for apply_bonus function.
+/// Formula types for `apply_bonus` function.
 #[derive(Debug, Clone, Copy)]
 pub enum BonusFormula {
     /// Ore drops formula: count * (max(0, random(0..level+2) - 1) + 1)
@@ -1229,7 +1253,7 @@ pub enum CopySource {
     DirectAttacker,
 }
 
-/// Target for set_name function.
+/// Target for `set_name` function.
 #[derive(Debug, Clone, Copy)]
 pub enum NameTarget {
     CustomName,
@@ -1328,7 +1352,8 @@ pub enum SlotRange {
 
 impl LootEntry {
     /// Get the weight of this entry for random selection.
-    pub fn weight(&self) -> i32 {
+    #[must_use]
+    pub const fn weight(&self) -> i32 {
         match self {
             Self::Item { weight, .. } => *weight,
             Self::LootTableRef { weight, .. } => *weight,
@@ -1345,7 +1370,8 @@ impl LootEntry {
     }
 
     /// Get the quality modifier for luck-based weight adjustment.
-    pub fn quality(&self) -> i32 {
+    #[must_use]
+    pub const fn quality(&self) -> i32 {
         match self {
             Self::Item { quality, .. } => *quality,
             Self::LootTableRef { quality, .. } => *quality,
@@ -1362,6 +1388,7 @@ impl LootEntry {
 
     /// Get the effective weight adjusted for luck.
     /// Formula: max(floor(weight + quality * luck), 0)
+    #[must_use]
     pub fn effective_weight(&self, luck: f32) -> i32 {
         let base = self.weight() as f32;
         let quality = self.quality() as f32;
@@ -1369,7 +1396,8 @@ impl LootEntry {
     }
 
     /// Get the conditions for this entry.
-    pub fn conditions(&self) -> &'static [LootCondition] {
+    #[must_use]
+    pub const fn conditions(&self) -> &'static [LootCondition] {
         match self {
             Self::Item { conditions, .. } => conditions,
             Self::LootTableRef { conditions, .. } => conditions,
@@ -1385,7 +1413,8 @@ impl LootEntry {
     }
 
     /// Get the functions for this entry.
-    pub fn functions(&self) -> &'static [ConditionalLootFunction] {
+    #[must_use]
+    pub const fn functions(&self) -> &'static [ConditionalLootFunction] {
         match self {
             Self::Item { functions, .. } => functions,
             Self::LootTableRef { functions, .. } => functions,
@@ -1717,11 +1746,11 @@ impl LootFunction {
     /// Apply this function to modify the item stack.
     ///
     /// This modifies the item in place. Functions can change:
-    /// - Count (SetCount, ExplosionDecay, ApplyBonus, etc.)
-    /// - Damage/durability (SetDamage)
-    /// - Enchantments (EnchantRandomly, EnchantWithLevels, SetEnchantments)
-    /// - Components/NBT (CopyComponents, SetComponents, CopyState)
-    /// - Item type (FurnaceSmelt)
+    /// - Count (`SetCount`, `ExplosionDecay`, `ApplyBonus`, etc.)
+    /// - Damage/durability (`SetDamage`)
+    /// - Enchantments (`EnchantRandomly`, `EnchantWithLevels`, `SetEnchantments`)
+    /// - Components/NBT (`CopyComponents`, `SetComponents`, `CopyState`)
+    /// - Item type (`FurnaceSmelt`)
     /// - And more...
     pub fn apply<R: rand::Rng>(&self, item: &mut ItemStack, ctx: &mut LootContext<'_, R>) {
         match self {
@@ -1801,7 +1830,7 @@ impl LootFunction {
                 item.set_components_from_json(components);
             }
             LootFunction::SetCustomData { tag } => {
-                item.set_custom_data(tag);
+                item.set_custom_data(&tag());
             }
             LootFunction::FurnaceSmelt { use_input_count } => {
                 item.apply_furnace_smelt(*use_input_count);
@@ -1820,7 +1849,10 @@ impl LootFunction {
                 item.set_name(name, *target);
             }
             LootFunction::SetOminousBottleAmplifier { amplifier } => {
-                let amp = amplifier.get_int(ctx.rng);
+                let amp = amplifier.get_int(ctx.rng).clamp(
+                    crate::data_components::OminousBottleAmplifier::MIN_AMPLIFIER,
+                    crate::data_components::OminousBottleAmplifier::MAX_AMPLIFIER,
+                );
                 item.set_ominous_bottle_amplifier(amp);
             }
             LootFunction::SetPotion { id } => {
@@ -1830,7 +1862,14 @@ impl LootFunction {
                 item.set_stew_effects(effects, ctx.rng);
             }
             LootFunction::SetInstrument { options } => {
-                item.set_instrument(options, ctx.rng);
+                if let Some(instrument) = options.get_random(ctx.rng) {
+                    item.set(
+                        crate::data_components::vanilla_components::INSTRUMENT,
+                        crate::data_components::InstrumentComponent::new(
+                            crate::RegistryHolder::reference(instrument),
+                        ),
+                    );
+                }
             }
             LootFunction::SetEnchantments { enchantments, add } => {
                 let resolved: Vec<_> = enchantments
@@ -1899,9 +1938,6 @@ impl LootFunction {
             }
             LootFunction::ToggleTooltips { toggles } => {
                 item.toggle_tooltips(toggles);
-            }
-            LootFunction::SetCustomModelData { value } => {
-                item.set_custom_model_data(value.get_int(ctx.rng));
             }
             LootFunction::Discard => {
                 item.count = 0;
@@ -2020,6 +2056,9 @@ crate::impl_registry!(
 
 #[cfg(test)]
 mod tests {
+    use crate::data_components::vanilla_components::INSTRUMENT;
+    use crate::vanilla_instrument_tags::InstrumentTag;
+    use crate::vanilla_items;
     use crate::{test_support::init_test_registry, vanilla_loot_tables};
 
     use super::*;
@@ -2044,6 +2083,29 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].count, 1);
         assert_eq!(items[0].item.key, Identifier::vanilla_static("oak_log"));
+    }
+
+    #[test]
+    fn set_instrument_selects_from_the_configured_holder_set() {
+        init_test_registries();
+        let mut rng = test_rng();
+        let mut ctx = LootContext::new(&mut rng);
+        let mut goat_horn = ItemStack::new(&vanilla_items::GOAT_HORN);
+        let function = LootFunction::SetInstrument {
+            options: InstrumentOptions::Tag(InstrumentTag::REGULAR_GOAT_HORNS),
+        };
+
+        function.apply(&mut goat_horn, &mut ctx);
+
+        let selected = goat_horn
+            .get(INSTRUMENT)
+            .and_then(|component| component.instrument().as_reference())
+            .expect("set_instrument should select a registered instrument");
+        assert!(
+            REGISTRY
+                .instruments
+                .is_in_tag(selected, &InstrumentTag::REGULAR_GOAT_HORNS)
+        );
     }
 
     #[test]
@@ -2154,7 +2216,7 @@ mod tests {
         for seed in 0u64..100 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let mut ctx = LootContext::new(&mut rng).with_explosion(4.0);
-            let mut item = ItemStack::with_count(&crate::vanilla_items::ITEMS.stone, initial_count);
+            let mut item = ItemStack::with_count(&crate::vanilla_items::STONE, initial_count);
             cond_func.function.apply(&mut item, &mut ctx);
             total_survived += item.count;
         }
@@ -2164,9 +2226,30 @@ mod tests {
         // Allow for variance: 150-350 range
         assert!(
             total_survived > 150 && total_survived < 350,
-            "Expected ~250 items with explosion decay (25% of 1000), got {}",
-            total_survived
+            "Expected ~250 items with explosion decay (25% of 1000), got {total_survived}"
         );
+    }
+
+    #[test]
+    fn ominous_bottle_amplifier_function_clamps_to_persistent_range() {
+        use crate::data_components::vanilla_components::OMINOUS_BOTTLE_AMPLIFIER;
+
+        init_test_registries();
+        for (provided, expected) in [(-3.0, 0), (2.0, 2), (9.0, 4)] {
+            let mut rng = test_rng();
+            let mut context = LootContext::new(&mut rng);
+            let mut item = ItemStack::new(&crate::vanilla_items::OMINOUS_BOTTLE);
+            LootFunction::SetOminousBottleAmplifier {
+                amplifier: NumberProvider::Constant(provided),
+            }
+            .apply(&mut item, &mut context);
+
+            assert_eq!(
+                item.get(OMINOUS_BOTTLE_AMPLIFIER)
+                    .map(|amplifier| amplifier.value()),
+                Some(expected)
+            );
+        }
     }
 
     #[test]
@@ -2188,8 +2271,7 @@ mod tests {
         // With radius 4.0, ~25% should survive
         assert!(
             survived > 10 && survived < 50,
-            "Expected ~25% survival rate, got {}%",
-            survived
+            "Expected ~25% survival rate, got {survived}%"
         );
     }
 }

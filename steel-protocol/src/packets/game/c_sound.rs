@@ -3,7 +3,7 @@ use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_SOUND;
 use steel_registry::sound_event::SoundEventRef;
 
-/// Sound source categories (matches vanilla SoundSource enum order).
+/// Sound source categories (matches vanilla `SoundSource` enum order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SoundSource {
@@ -21,9 +21,9 @@ pub enum SoundSource {
 }
 
 impl SoundSource {
-    /// Returns the VarInt value for the enum.
+    /// Returns the `VarInt` value for the enum.
     #[must_use]
-    pub fn as_varint(self) -> i32 {
+    pub const fn as_varint(self) -> i32 {
         self as i32
     }
 }
@@ -35,13 +35,13 @@ impl SoundSource {
 #[derive(WriteTo, ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_SOUND)]
 pub struct CSound {
-    /// The holder-encoded sound event ID (VarInt).
+    /// The holder-encoded sound event ID (`VarInt`).
     ///
     /// Vanilla reserves `0` for direct sound events, so registered sound events
     /// are encoded as `registry_id + 1`.
     #[write(as = VarInt)]
     pub sound_id: i32,
-    /// The sound source category (VarInt).
+    /// The sound source category (`VarInt`).
     #[write(as = VarInt)]
     pub source: i32,
     /// X position multiplied by 8 (fixed-point).

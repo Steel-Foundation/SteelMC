@@ -7,7 +7,10 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use steel_utils::{Identifier, value_providers::IntProvider};
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "imported processor data contains variants not emitted by current vanilla assets"
+)]
 #[path = "../src/structure_processor/data.rs"]
 mod structure_processor_data;
 
@@ -23,7 +26,7 @@ fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
         .filter_map(Result::ok)
         .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
         .collect();
-    files.sort_by_key(|entry| entry.file_name());
+    files.sort_by_key(std::fs::DirEntry::file_name);
     files
 }
 
@@ -52,12 +55,11 @@ fn generate_identifier(identifier: &Identifier) -> TokenStream {
 }
 
 fn generate_option<T>(value: &Option<T>, f: impl Fn(&T) -> TokenStream) -> TokenStream {
-    match value {
-        Some(value) => {
-            let value = f(value);
-            quote! { Some(#value) }
-        }
-        None => quote! { None },
+    if let Some(value) = value {
+        let value = f(value);
+        quote! { Some(#value) }
+    } else {
+        quote! { None }
     }
 }
 

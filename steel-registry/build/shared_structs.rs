@@ -5,7 +5,6 @@ use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
 pub struct BlockStateData {
     #[serde(rename = "Name")]
     pub name: Identifier,
@@ -15,7 +14,6 @@ pub struct BlockStateData {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
 pub struct FluidStateData {
     #[serde(rename = "Name")]
     pub name: Identifier,
@@ -82,4 +80,6 @@ fn deserialize_biome_condition_target<'de, D: Deserializer<'de>>(
 #[derive(Deserialize, Debug)]
 pub struct TextComponentJson {
     pub(crate) translate: String,
+    #[serde(default)]
+    pub(crate) color: Option<String>,
 }

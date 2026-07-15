@@ -35,7 +35,7 @@ impl AttributeModifierOperation {
     }
 
     #[must_use]
-    pub fn by_name(name: &str) -> Option<Self> {
+    pub const fn by_name(name: &str) -> Option<Self> {
         match name {
             "add_value" => Some(Self::AddValue),
             "add_multiplied_base" => Some(Self::AddMultipliedBase),
@@ -84,7 +84,7 @@ pub struct Attribute {
 impl Attribute {
     /// Clamps a value to this attribute's valid range
     #[must_use]
-    pub fn sanitize_value(&self, value: f64) -> f64 {
+    pub const fn sanitize_value(&self, value: f64) -> f64 {
         value.clamp(self.min_value, self.max_value)
     }
 }
@@ -94,6 +94,7 @@ pub type AttributeRef = &'static Attribute;
 pub struct AttributeRegistry {
     attributes_by_id: Vec<AttributeRef>,
     attributes_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -109,6 +110,7 @@ impl AttributeRegistry {
         Self {
             attributes_by_id: Vec::new(),
             attributes_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -149,3 +151,4 @@ crate::impl_registry!(
     attributes_by_key,
     attributes
 );
+crate::impl_tagged_registry!(AttributeRegistry, attributes_by_key, "attribute");

@@ -164,10 +164,7 @@ impl BlockBehavior for FarmlandBlock {
         pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
-        let mob_griefing = world
-            .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-            .as_bool()
-            == Some(true);
+        let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING);
         let random_float = rand::random::<f32>();
         if Self::should_turn_to_dirt_on_fall(context, mob_griefing, random_float) {
             Self::turn_to_dirt(state, world, pos, context.source_entity());

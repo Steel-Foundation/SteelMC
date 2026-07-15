@@ -8,6 +8,7 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::damage_type::DamageTypeRef;
@@ -202,15 +203,22 @@ impl ToNbtTag for Weapon {
 impl FromNbtTag for Weapon {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
+        let item_damage_per_attack = match compound.get("item_damage_per_attack") {
+            Some(tag) => tag.codec_i32()?,
+            None => 1,
+        };
+        if item_damage_per_attack < 0 {
+            return None;
+        }
+        let disable_blocking_for_seconds = optional_ranged_f32(
+            compound.get("disable_blocking_for_seconds"),
+            0.0,
+            0.0,
+            f32::MAX,
+        )?;
         Some(Self {
-            item_damage_per_attack: compound
-                .get("item_damage_per_attack")
-                .and_then(|tag| tag.int())
-                .unwrap_or(1),
-            disable_blocking_for_seconds: compound
-                .get("disable_blocking_for_seconds")
-                .and_then(|tag| tag.float())
-                .unwrap_or(0.0),
+            item_damage_per_attack,
+            disable_blocking_for_seconds,
         })
     }
 }
@@ -246,30 +254,42 @@ impl FromNbtTag for AttackRange {
         let compound = tag.compound()?;
         let default = Self::default();
         Some(Self {
-            min_reach: compound
-                .get("min_reach")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.min_reach),
-            max_reach: compound
-                .get("max_reach")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.max_reach),
-            min_creative_reach: compound
-                .get("min_creative_reach")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.min_creative_reach),
-            max_creative_reach: compound
-                .get("max_creative_reach")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.max_creative_reach),
-            hitbox_margin: compound
-                .get("hitbox_margin")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.hitbox_margin),
-            mob_factor: compound
-                .get("mob_factor")
-                .and_then(|tag| tag.float())
-                .unwrap_or(default.mob_factor),
+            min_reach: optional_ranged_f32(
+                compound.get("min_reach"),
+                default.min_reach,
+                0.0,
+                64.0,
+            )?,
+            max_reach: optional_ranged_f32(
+                compound.get("max_reach"),
+                default.max_reach,
+                0.0,
+                64.0,
+            )?,
+            min_creative_reach: optional_ranged_f32(
+                compound.get("min_creative_reach"),
+                default.min_creative_reach,
+                0.0,
+                64.0,
+            )?,
+            max_creative_reach: optional_ranged_f32(
+                compound.get("max_creative_reach"),
+                default.max_creative_reach,
+                0.0,
+                64.0,
+            )?,
+            hitbox_margin: optional_ranged_f32(
+                compound.get("hitbox_margin"),
+                default.hitbox_margin,
+                0.0,
+                1.0,
+            )?,
+            mob_factor: optional_ranged_f32(
+                compound.get("mob_factor"),
+                default.mob_factor,
+                0.0,
+                2.0,
+            )?,
         })
     }
 }
@@ -296,20 +316,43 @@ impl ToNbtTag for PiercingWeapon {
 impl FromNbtTag for PiercingWeapon {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
+        let deals_knockback = match compound.get("deals_knockback") {
+            Some(tag) => tag.codec_bool()?,
+            None => true,
+        };
+        let dismounts = match compound.get("dismounts") {
+            Some(tag) => tag.codec_bool()?,
+            None => false,
+        };
+        let sound = match compound.get("sound") {
+            Some(tag) => Some(SoundEventHolder::from_nbt_tag(tag)?),
+            None => None,
+        };
+        let hit_sound = match compound.get("hit_sound") {
+            Some(tag) => Some(SoundEventHolder::from_nbt_tag(tag)?),
+            None => None,
+        };
         Some(Self {
-            deals_knockback: compound.get("deals_knockback").and_then(|tag| tag.byte()) != Some(0),
-            dismounts: compound
-                .get("dismounts")
-                .and_then(|tag| tag.byte())
-                .is_some_and(|value| value != 0),
-            sound: compound
-                .get("sound")
-                .and_then(SoundEventHolder::from_nbt_tag),
-            hit_sound: compound
-                .get("hit_sound")
-                .and_then(SoundEventHolder::from_nbt_tag),
+            deals_knockback,
+            dismounts,
+            sound,
+            hit_sound,
         })
     }
+}
+
+fn optional_ranged_f32(
+    tag: Option<simdnbt::borrow::NbtTag<'_, '_>>,
+    default: f32,
+    min: f32,
+    max: f32,
+) -> Option<f32> {
+    let value = match tag {
+        Some(tag) => tag.codec_f32()?,
+        None => default,
+    };
+    (value.is_finite() && !value.is_sign_negative() && value >= min && value <= max)
+        .then_some(value)
 }
 
 impl HashComponent for Weapon {
@@ -400,4 +443,44 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
     let mut value_hasher = ComponentHasher::new();
     value.hash_component(&mut value_hasher);
     entries.push(HashEntry::new(key_hasher, value_hasher));
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    use super::{AttackRange, Weapon};
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
+
+    #[test]
+    fn combat_components_coerce_numbers_but_reject_malformed_present_fields() {
+        let mut weapon = NbtCompound::new();
+        weapon.insert("item_damage_per_attack", 2_i8);
+        weapon.insert("disable_blocking_for_seconds", 5.5_f64);
+        let weapon = with_borrowed_tag(NbtTag::Compound(weapon), Weapon::from_nbt_tag)
+            .expect("valid weapon should parse");
+        assert_eq!(weapon.item_damage_per_attack, 2);
+        assert_eq!(weapon.disable_blocking_for_seconds, 5.5);
+
+        let mut malformed = NbtCompound::new();
+        malformed.insert("item_damage_per_attack", "two");
+        assert!(with_borrowed_tag(NbtTag::Compound(malformed), Weapon::from_nbt_tag).is_none());
+
+        let mut out_of_range = NbtCompound::new();
+        out_of_range.insert("hitbox_margin", 1.5_f64);
+        assert!(
+            with_borrowed_tag(NbtTag::Compound(out_of_range), AttackRange::from_nbt_tag).is_none()
+        );
+    }
 }

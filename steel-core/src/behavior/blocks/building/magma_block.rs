@@ -47,6 +47,7 @@ impl BlockBehavior for MagmaBlock {
             Self::step_damage_amount(entity.is_stepping_carefully(), entity.is_living_entity())
         {
             entity.hurt(
+                world,
                 &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR),
                 damage,
             );

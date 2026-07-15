@@ -1,38 +1,25 @@
 //! Equippable component for armor and equipment items.
 
-use std::io::{Cursor, Error, Result, Write};
+use std::io::{Cursor, Result, Write};
 use std::str::FromStr;
 
 use crate::{
-    REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt, entity_type::EntityTypeRef,
-    equipment::EquipmentSlot, sound_event::SoundEventHolder, sound_events,
+    RegistryHolderSet,
+    entity_type::{EntityType, EntityTypeRef},
+    equipment::EquipmentSlot,
+    sound_event::SoundEventHolder,
+    sound_events,
 };
 use steel_utils::{
     Identifier,
     codec::VarInt,
     hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries},
+    nbt::NbtNumeric as _,
     serial::{ReadFrom, WriteTo},
 };
 
 /// Entity types allowed to equip an item.
-#[derive(Debug, Clone, PartialEq)]
-pub enum EquippableAllowedEntities {
-    /// A tag of entity types, such as `minecraft:can_equip_saddle`.
-    Tag(Identifier),
-    /// Direct entity type references.
-    EntityTypes(Vec<EntityTypeRef>),
-}
-
-impl EquippableAllowedEntities {
-    /// Returns whether this holder set contains the entity type.
-    #[must_use]
-    pub fn contains(&self, entity_type: EntityTypeRef) -> bool {
-        match self {
-            Self::Tag(tag) => REGISTRY.entity_types.is_in_tag(entity_type, tag),
-            Self::EntityTypes(entity_types) => entity_types.contains(&entity_type),
-        }
-    }
-}
+pub type EquippableAllowedEntities = RegistryHolderSet<EntityType>;
 
 /// The equippable component data.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,7 +53,7 @@ impl WriteTo for Equippable {
         self.equip_sound.write(writer)?;
         self.asset_id.write(writer)?;
         self.camera_overlay.write(writer)?;
-        write_allowed_entities(writer, &self.allowed_entities)?;
+        self.allowed_entities.write(writer)?;
         self.dispensable.write(writer)?;
         self.swappable.write(writer)?;
         self.damage_on_hurt.write(writer)?;
@@ -85,7 +72,7 @@ impl ReadFrom for Equippable {
             equip_sound: SoundEventHolder::read(data)?,
             asset_id: Option::<Identifier>::read(data)?,
             camera_overlay: Option::<Identifier>::read(data)?,
-            allowed_entities: read_allowed_entities(data)?,
+            allowed_entities: Option::<EquippableAllowedEntities>::read(data)?,
             dispensable: bool::read(data)?,
             swappable: bool::read(data)?,
             damage_on_hurt: bool::read(data)?,
@@ -141,95 +128,6 @@ impl HashComponent for Equippable {
     }
 }
 
-impl HashComponent for EquippableAllowedEntities {
-    fn hash_component(&self, hasher: &mut ComponentHasher) {
-        match self {
-            Self::Tag(tag) => hasher.put_string(&format!("#{tag}")),
-            Self::EntityTypes(entity_types) => {
-                hasher.start_list();
-                for entity_type in entity_types {
-                    hasher.put_string(&entity_type.key.to_string());
-                }
-                hasher.end_list();
-            }
-        }
-    }
-}
-
-fn write_allowed_entities(
-    writer: &mut impl Write,
-    allowed_entities: &Option<EquippableAllowedEntities>,
-) -> Result<()> {
-    let Some(allowed_entities) = allowed_entities else {
-        return false.write(writer);
-    };
-
-    true.write(writer)?;
-    match allowed_entities {
-        EquippableAllowedEntities::Tag(tag) => {
-            VarInt(0).write(writer)?;
-            tag.write(writer)
-        }
-        EquippableAllowedEntities::EntityTypes(entity_types) => {
-            let len = i32::try_from(entity_types.len()).map_err(|_| {
-                Error::other(format!(
-                    "Allowed entity holder set too large: {}",
-                    entity_types.len()
-                ))
-            })?;
-            VarInt(len + 1).write(writer)?;
-            for entity_type in entity_types {
-                let id = entity_type.try_id().ok_or_else(|| {
-                    Error::other(format!("Unknown entity type: {}", entity_type.key))
-                })?;
-                let id = i32::try_from(id)
-                    .map_err(|_| Error::other(format!("Entity type id out of range: {id}")))?;
-                VarInt(id).write(writer)?;
-            }
-            Ok(())
-        }
-    }
-}
-
-fn read_allowed_entities(data: &mut Cursor<&[u8]>) -> Result<Option<EquippableAllowedEntities>> {
-    if !bool::read(data)? {
-        return Ok(None);
-    }
-
-    let encoded_count = VarInt::read(data)?.0;
-    if encoded_count == 0 {
-        return Ok(Some(EquippableAllowedEntities::Tag(Identifier::read(
-            data,
-        )?)));
-    }
-    if encoded_count < 0 {
-        return Err(Error::other(format!(
-            "Negative allowed entity holder set count: {encoded_count}"
-        )));
-    }
-
-    let count = encoded_count - 1;
-    if count > 4096 {
-        return Err(Error::other(format!(
-            "Allowed entity holder set count out of range: {count}"
-        )));
-    }
-
-    let mut entity_types = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let id = VarInt::read(data)?.0;
-        if id < 0 {
-            return Err(Error::other(format!("Negative entity type id: {id}")));
-        }
-        let entity_type = REGISTRY
-            .entity_types
-            .by_id(id as usize)
-            .ok_or_else(|| Error::other(format!("Unknown entity type id: {id}")))?;
-        entity_types.push(entity_type);
-    }
-    Ok(Some(EquippableAllowedEntities::EntityTypes(entity_types)))
-}
-
 fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key: &str, value: &T) {
     let mut key_hasher = ComponentHasher::new();
     key_hasher.put_string(key);
@@ -244,43 +142,35 @@ impl simdnbt::ToNbtTag for Equippable {
 
         let mut compound = NbtCompound::new();
         compound.insert("slot", self.slot.name());
-        compound.insert("equip_sound", self.equip_sound.to_nbt_tag());
+        if self.equip_sound != SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_GENERIC) {
+            compound.insert("equip_sound", self.equip_sound.to_nbt_tag());
+        }
         if let Some(asset_id) = self.asset_id {
             compound.insert("asset_id", asset_id.to_string());
         }
         if let Some(camera_overlay) = self.camera_overlay {
             compound.insert("camera_overlay", camera_overlay.to_string());
         }
-        compound.insert("dispensable", i8::from(self.dispensable));
-        compound.insert("swappable", i8::from(self.swappable));
-        compound.insert("damage_on_hurt", i8::from(self.damage_on_hurt));
-        compound.insert("equip_on_interact", i8::from(self.equip_on_interact));
-        compound.insert("can_be_sheared", i8::from(self.can_be_sheared));
-        compound.insert("shearing_sound", self.shearing_sound.to_nbt_tag());
+        if !self.dispensable {
+            compound.insert("dispensable", i8::from(self.dispensable));
+        }
+        if !self.swappable {
+            compound.insert("swappable", i8::from(self.swappable));
+        }
+        if !self.damage_on_hurt {
+            compound.insert("damage_on_hurt", i8::from(self.damage_on_hurt));
+        }
+        if self.equip_on_interact {
+            compound.insert("equip_on_interact", i8::from(self.equip_on_interact));
+        }
+        if self.can_be_sheared {
+            compound.insert("can_be_sheared", i8::from(self.can_be_sheared));
+        }
+        if self.shearing_sound != SoundEventHolder::registry(&sound_events::ITEM_SHEARS_SNIP) {
+            compound.insert("shearing_sound", self.shearing_sound.to_nbt_tag());
+        }
         if let Some(allowed_entities) = self.allowed_entities {
-            match allowed_entities {
-                EquippableAllowedEntities::Tag(tag) => {
-                    compound.insert("allowed_entities", format!("#{tag}"));
-                }
-                EquippableAllowedEntities::EntityTypes(entity_types) => {
-                    let values: Vec<NbtTag> = entity_types
-                        .into_iter()
-                        .map(|entity_type| NbtTag::String(entity_type.key.to_string().into()))
-                        .collect();
-                    compound.insert(
-                        "allowed_entities",
-                        simdnbt::owned::NbtList::String(
-                            values
-                                .into_iter()
-                                .filter_map(|value| match value {
-                                    NbtTag::String(value) => Some(value),
-                                    _ => None,
-                                })
-                                .collect(),
-                        ),
-                    );
-                }
-            }
+            compound.insert("allowed_entities", allowed_entities.to_nbt_tag());
         }
         NbtTag::Compound(compound)
     }
@@ -291,46 +181,31 @@ impl simdnbt::FromNbtTag for Equippable {
         let compound = tag.compound()?;
         let slot_str = compound.get("slot")?.string()?.to_str();
         let slot = EquipmentSlot::by_name(&slot_str)?;
-        let equip_sound = compound
-            .get("equip_sound")
-            .and_then(SoundEventHolder::from_nbt_tag)
-            .unwrap_or_else(|| SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_GENERIC));
-        let asset_id = compound.get("asset_id").and_then(parse_identifier_nbt);
-        let camera_overlay = compound
-            .get("camera_overlay")
-            .and_then(parse_identifier_nbt);
-        let allowed_entities = compound
-            .get("allowed_entities")
-            .and_then(parse_allowed_entities_nbt);
-        let dispensable = compound
-            .get("dispensable")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
-        let swappable = compound
-            .get("swappable")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
-        let damage_on_hurt = compound
-            .get("damage_on_hurt")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(true);
-        let equip_on_interact = compound
-            .get("equip_on_interact")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(false);
-        let can_be_sheared = compound
-            .get("can_be_sheared")
-            .and_then(|tag| tag.byte())
-            .map(|value| value != 0)
-            .unwrap_or(false);
-        let shearing_sound = compound
-            .get("shearing_sound")
-            .and_then(SoundEventHolder::from_nbt_tag)
-            .unwrap_or_else(|| SoundEventHolder::registry(&sound_events::ITEM_SHEARS_SNIP));
+        let equip_sound = match compound.get("equip_sound") {
+            Some(tag) => SoundEventHolder::from_nbt_tag(tag)?,
+            None => SoundEventHolder::registry(&sound_events::ITEM_ARMOR_EQUIP_GENERIC),
+        };
+        let asset_id = match compound.get("asset_id") {
+            Some(tag) => Some(parse_identifier_nbt(tag)?),
+            None => None,
+        };
+        let camera_overlay = match compound.get("camera_overlay") {
+            Some(tag) => Some(parse_identifier_nbt(tag)?),
+            None => None,
+        };
+        let allowed_entities = match compound.get("allowed_entities") {
+            Some(tag) => Some(EquippableAllowedEntities::from_nbt_tag(tag)?),
+            None => None,
+        };
+        let dispensable = optional_bool(compound.get("dispensable"), true)?;
+        let swappable = optional_bool(compound.get("swappable"), true)?;
+        let damage_on_hurt = optional_bool(compound.get("damage_on_hurt"), true)?;
+        let equip_on_interact = optional_bool(compound.get("equip_on_interact"), false)?;
+        let can_be_sheared = optional_bool(compound.get("can_be_sheared"), false)?;
+        let shearing_sound = match compound.get("shearing_sound") {
+            Some(tag) => SoundEventHolder::from_nbt_tag(tag)?,
+            None => SoundEventHolder::registry(&sound_events::ITEM_SHEARS_SNIP),
+        };
 
         Some(Self {
             slot,
@@ -352,32 +227,11 @@ fn parse_identifier_nbt(tag: simdnbt::borrow::NbtTag) -> Option<Identifier> {
     Identifier::from_str(&tag.string()?.to_str()).ok()
 }
 
-fn parse_allowed_entities_nbt(tag: simdnbt::borrow::NbtTag) -> Option<EquippableAllowedEntities> {
-    if let Some(value) = tag.string() {
-        return parse_allowed_entities_string(&value.to_str());
+fn optional_bool(tag: Option<simdnbt::borrow::NbtTag<'_, '_>>, default: bool) -> Option<bool> {
+    match tag {
+        Some(tag) => tag.codec_bool(),
+        None => Some(default),
     }
-
-    let list = tag.list()?;
-    let strings = list.strings()?;
-    let mut entity_types = Vec::new();
-    for value in strings {
-        let id = Identifier::from_str(&value.to_str()).ok()?;
-        entity_types.push(REGISTRY.entity_types.by_key(&id)?);
-    }
-
-    Some(EquippableAllowedEntities::EntityTypes(entity_types))
-}
-
-fn parse_allowed_entities_string(value: &str) -> Option<EquippableAllowedEntities> {
-    if let Some(tag) = value.strip_prefix('#') {
-        return Identifier::from_str(tag)
-            .ok()
-            .map(EquippableAllowedEntities::Tag);
-    }
-
-    let id = Identifier::from_str(value).ok()?;
-    let entity_type = REGISTRY.entity_types.by_key(&id)?;
-    Some(EquippableAllowedEntities::EntityTypes(vec![entity_type]))
 }
 
 #[cfg(test)]
@@ -385,16 +239,28 @@ mod tests {
     use std::io::Cursor;
 
     use super::{Equippable, EquippableAllowedEntities};
-    use crate::data_components::ComponentData;
+    use crate::data_components::{ComponentData, vanilla_components::EQUIPPABLE};
     use crate::item_stack::ItemStack;
     use crate::sound_event::SoundEventHolder;
     use crate::sound_events;
     use crate::test_support::init_test_registry;
     use crate::vanilla_entities::{LLAMA, PIG, PLAYER, WOLF};
     use crate::vanilla_entity_type_tags::EntityTypeTag;
-    use crate::vanilla_items::ITEMS;
+    use crate::vanilla_items;
+    use crate::{REGISTRY, RegistryExt};
+    use simdnbt::FromNbtTag;
+    use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
+    use simdnbt::owned::{NbtCompound, NbtTag};
     use steel_utils::Identifier;
     use steel_utils::serial::{ReadFrom, WriteTo};
+
+    fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
+        let mut bytes = Vec::new();
+        tag.write(&mut bytes);
+        let borrowed =
+            read_tag(&mut Cursor::new(bytes.as_slice())).expect("owned test tag should parse");
+        visitor(borrowed.as_tag())
+    }
 
     fn round_trip_equippable(equippable: &Equippable) -> Equippable {
         let mut bytes = Vec::new();
@@ -408,7 +274,7 @@ mod tests {
     fn extracted_equippable_fields_gate_swapping_and_entity_types() {
         init_test_registry();
 
-        let pumpkin = ItemStack::new(&ITEMS.carved_pumpkin);
+        let pumpkin = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         let Some(pumpkin_equippable) = pumpkin.get_equippable() else {
             panic!("carved pumpkin should have equippable data");
         };
@@ -419,7 +285,7 @@ mod tests {
             Some(&Identifier::vanilla_static("misc/pumpkinblur"))
         );
 
-        let helmet = ItemStack::new(&ITEMS.diamond_helmet);
+        let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         let Some(helmet_equippable) = helmet.get_equippable() else {
             panic!("diamond helmet should have equippable data");
         };
@@ -437,7 +303,7 @@ mod tests {
         );
         assert!(helmet_equippable.can_be_equipped_by(&PLAYER));
 
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
         let Some(saddle_equippable) = saddle.get_equippable() else {
             panic!("saddle should have equippable data");
         };
@@ -459,7 +325,7 @@ mod tests {
             ))
         );
 
-        let carpet = ItemStack::new(&ITEMS.white_carpet);
+        let carpet = ItemStack::new(&vanilla_items::WHITE_CARPET);
         let Some(carpet_equippable) = carpet.get_equippable() else {
             panic!("carpet should have equippable data");
         };
@@ -472,7 +338,7 @@ mod tests {
         assert!(!carpet_equippable.can_be_equipped_by(&PIG));
         assert!(!carpet_equippable.can_be_equipped_by(&PLAYER));
 
-        let wolf_armor = ItemStack::new(&ITEMS.wolf_armor);
+        let wolf_armor = ItemStack::new(&vanilla_items::WOLF_ARMOR);
         let Some(wolf_armor_equippable) = wolf_armor.get_equippable() else {
             panic!("wolf armor should have equippable data");
         };
@@ -484,13 +350,13 @@ mod tests {
     fn equippable_network_round_trips_tag_and_direct_holder_sets() {
         init_test_registry();
 
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
         let Some(saddle_equippable) = saddle.get_equippable() else {
             panic!("saddle should have equippable data");
         };
         assert_eq!(&round_trip_equippable(saddle_equippable), saddle_equippable);
 
-        let carpet = ItemStack::new(&ITEMS.white_carpet);
+        let carpet = ItemStack::new(&vanilla_items::WHITE_CARPET);
         let Some(carpet_equippable) = carpet.get_equippable() else {
             panic!("carpet should have equippable data");
         };
@@ -501,17 +367,49 @@ mod tests {
     fn equippable_hash_includes_vanilla_codec_fields() {
         init_test_registry();
 
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
         let Some(saddle_equippable) = saddle.get_equippable() else {
             panic!("saddle should have equippable data");
         };
-        let helmet = ItemStack::new(&ITEMS.diamond_helmet);
+        let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         let Some(helmet_equippable) = helmet.get_equippable() else {
             panic!("diamond helmet should have equippable data");
         };
 
-        let saddle_hash = ComponentData::Equippable(saddle_equippable.clone()).compute_hash();
-        let helmet_hash = ComponentData::Equippable(helmet_equippable.clone()).compute_hash();
+        let component_type = REGISTRY
+            .data_components
+            .by_key(&EQUIPPABLE.key)
+            .expect("equippable component should be registered");
+        let saddle_hash = component_type
+            .compute_hash(&ComponentData::new(saddle_equippable.clone()))
+            .expect("equippable should have a persistent hash codec");
+        let helmet_hash = component_type
+            .compute_hash(&ComponentData::new(helmet_equippable.clone()))
+            .expect("equippable should have a persistent hash codec");
         assert_ne!(saddle_hash, helmet_hash);
+    }
+
+    #[test]
+    fn equippable_nbt_defaults_only_missing_fields() {
+        init_test_registry();
+        let mut compound = NbtCompound::new();
+        compound.insert("slot", "head");
+        compound.insert("dispensable", 0_i32);
+        let equippable = with_borrowed_tag(NbtTag::Compound(compound), Equippable::from_nbt_tag)
+            .expect("numeric boolean should parse");
+        assert!(!equippable.dispensable);
+        assert!(equippable.swappable);
+
+        let mut malformed = NbtCompound::new();
+        malformed.insert("slot", "head");
+        malformed.insert("camera_overlay", 1);
+        assert!(with_borrowed_tag(NbtTag::Compound(malformed), Equippable::from_nbt_tag).is_none());
+
+        let mut unknown_tag = NbtCompound::new();
+        unknown_tag.insert("slot", "head");
+        unknown_tag.insert("allowed_entities", "#minecraft:not_a_tag");
+        assert!(
+            with_borrowed_tag(NbtTag::Compound(unknown_tag), Equippable::from_nbt_tag).is_none()
+        );
     }
 }

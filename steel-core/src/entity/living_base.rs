@@ -9,6 +9,7 @@ use std::{array, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
@@ -141,6 +142,38 @@ impl MobEffectInstance {
     #[must_use]
     pub const fn is_infinite_duration(&self) -> bool {
         self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Serializes this effect with vanilla's `MobEffectInstance.CODEC` shape.
+    #[must_use]
+    pub(crate) fn to_vanilla_nbt(&self) -> NbtCompound {
+        let mut nbt = self.details_to_vanilla_nbt();
+        nbt.insert("id", self.effect.key.to_string());
+        nbt
+    }
+
+    fn details_to_vanilla_nbt(&self) -> NbtCompound {
+        let mut nbt = NbtCompound::new();
+        if self.amplifier != 0 {
+            nbt.insert("amplifier", NbtTag::Byte(self.amplifier as i8));
+        }
+        if self.duration != 0 {
+            nbt.insert("duration", self.duration);
+        }
+        if self.ambient {
+            nbt.insert("ambient", NbtTag::Byte(1));
+        }
+        if !self.visible {
+            nbt.insert("show_particles", NbtTag::Byte(0));
+        }
+        nbt.insert("show_icon", NbtTag::Byte(i8::from(self.show_icon)));
+        if let Some(hidden_effect) = self.hidden_effect.as_deref() {
+            nbt.insert(
+                "hidden_effect",
+                NbtTag::Compound(hidden_effect.details_to_vanilla_nbt()),
+            );
+        }
+        nbt
     }
 
     #[must_use]
@@ -1020,7 +1053,7 @@ impl LivingEntityBase {
                     amount: modifier.amount * f64::from(effect.amplifier + 1),
                     operation: modifier.operation,
                 },
-                true,
+                false,
             );
         }
     }
@@ -1041,7 +1074,8 @@ impl LivingEntityBase {
         self.dirty_mob_effects.lock().push(change);
     }
 
-    fn mark_effects_dirty(&self) {
+    /// Marks synchronized effect visibility data for recomputation.
+    pub(crate) fn mark_effects_dirty(&self) {
         self.state.lock().effects_dirty = true;
     }
 
@@ -1096,6 +1130,12 @@ impl LivingEntityBase {
     #[must_use]
     pub fn current_impulse_impact_pos(&self) -> Option<DVec3> {
         self.state.lock().current_impulse_impact_pos
+    }
+
+    /// Returns vanilla `LivingEntity.currentImpulseContextResetGraceTime`.
+    #[must_use]
+    pub fn current_impulse_context_reset_grace_time(&self) -> i32 {
+        self.state.lock().current_impulse_context_reset_grace_time
     }
 
     /// Returns vanilla `LivingEntity.isIgnoringFallDamageFromCurrentImpulse`.
@@ -1452,6 +1492,12 @@ impl LivingEntityBase {
         state.death_time
     }
 
+    /// Returns vanilla `LivingEntity.deathTime`.
+    #[must_use]
+    pub fn death_time(&self) -> i32 {
+        self.state.lock().death_time
+    }
+
     /// Resets all death-related state back to alive defaults.
     #[inline]
     pub fn reset_death_state(&self) {
@@ -1801,16 +1847,15 @@ mod tests {
 
         assert!(base.equipment().lock().is_empty());
 
-        base.equipment().lock().set(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        base.equipment()
+            .lock()
+            .set(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
 
         assert!(
             base.equipment()
                 .lock()
                 .get_ref(EquipmentSlot::Chest)
-                .is(&vanilla_items::ITEMS.elytra)
+                .is(&vanilla_items::ELYTRA)
         );
     }
 

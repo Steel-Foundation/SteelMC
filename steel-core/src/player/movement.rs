@@ -5,10 +5,9 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CMoveVehicle, CPlayerPosition, PlayerCommandAction, SAcceptTeleportation, SMovePlayer,
-    SMoveVehicle, SPlayerCommand, SPlayerInput,
+    CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
+    SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::vanilla_mob_effects;
 use steel_utils::translations;
@@ -52,7 +51,7 @@ pub fn clamp_vertical(value: f64) -> f64 {
 }
 
 #[must_use]
-fn wrap_degrees(mut degrees: f32) -> f32 {
+pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
     degrees %= 360.0;
     if degrees >= 180.0 {
         degrees -= 360.0;
@@ -169,13 +168,13 @@ impl Player {
     /// Returns `true` if movement should be validated, `false` to skip validation.
     fn should_validate_movement(world: &World, is_fall_flying: bool) -> bool {
         let player_check = world.get_game_rule(&PLAYER_MOVEMENT_CHECK);
-        if player_check != GameRuleValue::Bool(true) {
+        if !player_check {
             return false;
         }
 
         if is_fall_flying {
             let elytra_check = world.get_game_rule(&ELYTRA_MOVEMENT_CHECK);
-            return elytra_check == GameRuleValue::Bool(true);
+            return elytra_check;
         }
 
         true
@@ -202,6 +201,13 @@ impl Player {
             packet.get_y_rot(0.0),
         ) {
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            return;
+        }
+        if self.has_won_game() {
+            return;
+        }
+
+        if self.is_world_change_pending() {
             return;
         }
 
@@ -441,6 +447,10 @@ impl Player {
             return;
         }
 
+        if self.is_world_change_pending() {
+            return;
+        }
+
         if self.update_awaiting_teleport() || !self.has_client_loaded() {
             return;
         }
@@ -448,6 +458,9 @@ impl Player {
         let Some(vehicle) = self.root_vehicle() else {
             return;
         };
+        if vehicle.is_world_change_pending() {
+            return;
+        }
         let controlled_by_player = vehicle
             .controlling_passenger()
             .is_some_and(|controller| controller.id() == self.id());
@@ -728,12 +741,50 @@ impl Player {
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.teleport()`.
     pub fn teleport(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity(pos, DVec3::ZERO, yaw, pitch)
+    }
+
+    /// Sends a `CPlayerPosition` packet with explicit delta movement for vanilla
+    /// `ServerPlayer.teleport(TeleportTransition)` paths.
+    pub(crate) fn teleport_with_velocity(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), EntityMoveError> {
+        self.teleport_with_velocity_packet(
+            pos,
+            velocity,
+            (yaw, pitch),
+            pos,
+            velocity,
+            (yaw, pitch),
+            RelativeMovement::NONE,
+        )
+    }
+
+    /// Commits resolved server state while sending vanilla packet-relative values.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "packet-relative teleports must keep resolved and protocol values separate"
+    )]
+    pub(crate) fn teleport_with_velocity_packet(
+        &self,
+        pos: DVec3,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        packet_pos: DVec3,
+        packet_velocity: DVec3,
+        packet_rotation: (f32, f32),
+        relatives: RelativeMovement,
+    ) -> Result<(), EntityMoveError> {
         let world = self.get_world();
         self.try_set_position(pos)?;
         if world.entity_manager().get_by_id(self.id()).is_some() {
             world.chunk_map.update_player_status(self);
         }
-        self.set_velocity(DVec3::ZERO);
+        self.set_velocity(velocity);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -743,14 +794,21 @@ impl Player {
             id
         };
 
-        self.set_rotation((yaw, pitch));
+        self.set_rotation(rotation);
         self.set_old_position_to_current();
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();
         }
 
-        self.send_packet(CPlayerPosition::absolute(new_id, pos, yaw, pitch));
+        self.send_packet(CPlayerPosition::new(
+            new_id,
+            packet_pos,
+            packet_velocity,
+            packet_rotation.0,
+            packet_rotation.1,
+            relatives,
+        ));
         Ok(())
     }
 

@@ -15,7 +15,10 @@ use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
 struct EntityEntry {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "extracted entity data keeps vanilla ids for validation context"
+    )]
     id: i32,
     name: String,
     synched_data: SynchedData,
@@ -23,18 +26,30 @@ struct EntityEntry {
 
 #[derive(Deserialize, Debug)]
 struct SynchedData {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     java_class: String,
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     class_hierarchy: Vec<ClassEntry>,
     layers: Vec<SynchedDataLayer>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ClassEntry {
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     java_class: String,
-    #[expect(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "class metadata is kept from the extractor for future validation"
+    )]
     simple_name: String,
 }
 
@@ -64,7 +79,7 @@ struct LayerDefinition {
     fields: Vec<SynchedDataEntry>,
 }
 
-/// Maps a serializer name to (Rust type, EntityData variant, vanilla serializer ID).
+/// Maps a serializer name to (Rust type, `EntityData` variant, vanilla serializer ID).
 fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str, i32)> {
     Some(match serializer {
         "byte" => ("i8", "Byte", 0),
@@ -128,11 +143,6 @@ fn minecraft_path<'a>(key: &'a str, serializer: &str) -> &'a str {
 fn key_ident(default: &Value, serializer: &str) -> Ident {
     let path = minecraft_path(required_string(default, serializer), serializer);
     Ident::new(&path.to_shouty_snake_case(), Span::call_site())
-}
-
-fn key_field_ident(default: &Value, serializer: &str) -> Ident {
-    let path = minecraft_path(required_string(default, serializer), serializer);
-    Ident::new(&path.to_snake_case(), Span::call_site())
 }
 
 fn required_i64(default: &Value, serializer: &str) -> i64 {
@@ -284,7 +294,7 @@ fn item_stack_default_expr(default: &Value) -> TokenStream {
         "Expected item_stack default with only item/count, got {default}"
     );
 
-    let item_ident = key_field_ident(required_field(object, "item_stack", "item"), "item_stack");
+    let item_ident = key_ident(required_field(object, "item_stack", "item"), "item_stack");
     let count = required_object_i32(object, "item_stack", "count");
     assert!(
         count > 0,
@@ -292,7 +302,7 @@ fn item_stack_default_expr(default: &Value) -> TokenStream {
     );
 
     quote! {
-        ItemStack::with_count(&crate::vanilla_items::ITEMS.#item_ident, #count)
+        ItemStack::with_count(&*crate::vanilla_items::#item_ident, #count)
     }
 }
 
@@ -553,7 +563,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
     }
 }
 
-/// Generate the EntityData conversion expression for packing.
+/// Generate the `EntityData` conversion expression for packing.
 fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
     let (_, variant, _) = serializer_info(serializer)
         .unwrap_or_else(|| panic!("Unknown entity data serializer: {serializer}"));

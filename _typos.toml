@@ -15,6 +15,10 @@ interruptable = "interruptable"
 neighbour = "neighbour"
 # Vanilla stronghold piece-type IDs (shs, shsd, shrc, ...).
 shs = "shs"
+# Vanilla carver tag name (minecraft:overworld_carver_replaceables).
+replaceables = "replaceables"
+# Mojang's shipped translation key (snbt.parser.undescore_not_allowed).
+undescore = "undescore"
 
 [default]
 locale = "en-us"

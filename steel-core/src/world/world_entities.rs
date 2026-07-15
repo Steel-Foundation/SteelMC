@@ -1,9 +1,7 @@
 //! This module contains the implementation of the world's entity-related methods.
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{
-    CGameEvent, CPlayerInfoUpdate, CRemovePlayerInfo, GameEventType,
-};
+use steel_protocol::packets::game::{CGameEvent, GameEventType};
 use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
 use tokio::time::Instant;
@@ -15,7 +13,6 @@ use crate::{
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
-    player::player_data_storage::GlobalPlayerData,
     player::{Player, ResetReason},
     world::World,
 };
@@ -104,14 +101,17 @@ impl World {
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
         let Some(player) = self.players.remove_player(&player).await else {
+            if player.has_won_game() {
+                self.remove_detached_end_credits_player(player).await;
+            }
             return;
         };
-        let uuid = player.gameprofile.id;
         let entity_id = player.id();
         let domain = self.domain().to_owned();
         let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);
+        player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -124,38 +124,40 @@ impl World {
 
         // Save after world indexes are cleared so a fast reconnect cannot collide
         // with this player's stale entity ID/UUID cache entries.
-        let server = player.server();
-        if let Err(e) = server
-            .player_data_storage
-            .save_domain_data(&domain, uuid, &player_data)
-            .await
-        {
-            log::error!("Failed to save player domain data for {uuid}: {e}");
-        }
-        if let Err(e) = server
-            .player_data_storage
-            .save_global(
-                uuid,
-                &GlobalPlayerData {
-                    last_active_domain: domain,
-                },
-            )
-            .await
-        {
-            log::error!("Failed to save global player data for {uuid}: {e}");
-        }
+        player
+            .server()
+            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
+            .await;
+        log::info!(
+            "Player {} removed in {:?}",
+            player.gameprofile.id,
+            start.elapsed()
+        );
+    }
 
-        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
+    async fn remove_detached_end_credits_player(self: &Arc<Self>, player: Arc<Player>) {
+        let domain = self.domain().to_owned();
+        let player_data = PersistentPlayerData::from_player(&player);
+        let start = Instant::now();
 
-        player.cleanup();
-        log::info!("Player {uuid} removed in {:?}", start.elapsed());
+        player.store_ender_pearls_with_player();
+
+        player
+            .server()
+            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
+            .await;
+        log::info!(
+            "Detached End credits player {} removed in {:?}",
+            player.gameprofile.id,
+            start.elapsed()
+        );
     }
 
     /// Removes a player from the world during a world change.
     ///
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
-    pub fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
         let Some(player) = self.players.remove_player_sync(player) else {
             return;
         };
@@ -171,13 +173,14 @@ impl World {
 
     /// Removes a player during a domain switch after the caller has saved
     /// the player's current-domain data.
-    pub fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
         let Some(player) = self.players.remove_player_sync(player) else {
             return;
         };
         let entity_id = player.id();
 
         self.unride_player_for_removal(&player, true);
+        player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
@@ -190,16 +193,10 @@ impl World {
     /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     #[must_use]
-    pub fn add_player(self: &Arc<Self>, player: Arc<Player>, reason: ResetReason) -> bool {
+    pub(crate) fn add_player(self: &Arc<Self>, player: Arc<Player>, _reason: ResetReason) -> bool {
         if !self.players.insert(player.clone()) {
             player.connection.close();
             return false;
-        }
-
-        // Tab-list sync only needs the initial login path; world changes keep
-        // the player in the global tab list.
-        if reason == ResetReason::InitialJoin {
-            self.sync_tab_list(&player);
         }
 
         self.register_player_entity(&player);
@@ -216,56 +213,5 @@ impl World {
         });
 
         true
-    }
-
-    /// Sends full tab list synchronization for a newly joined player.
-    ///
-    /// Sends all existing players' info to the new player, then broadcasts the
-    /// new player's info to everyone. Entity spawn pairing is owned by
-    /// `EntityTracker`, matching vanilla `ChunkMap`.
-    fn sync_tab_list(self: &Arc<Self>, player: &Arc<Player>) {
-        // Send existing players to the new player.
-        self.players.iter_players(|_, existing_player| {
-            if existing_player.gameprofile.id == player.gameprofile.id {
-                return true;
-            }
-
-            // Add to tab list with full player info
-            let add_existing = CPlayerInfoUpdate::create_player_initializing(
-                existing_player.gameprofile.id,
-                existing_player.gameprofile.name.clone(),
-                existing_player.gameprofile.properties.clone(),
-                existing_player.game_mode().into(),
-                existing_player.connection.latency(),
-                None, // display_name
-                true, // show_hat
-            );
-            player.send_packet(add_existing);
-
-            // Send chat session if available
-            if let Some(session) = existing_player.chat_session()
-                && let Ok(protocol_data) = session.as_data().to_protocol_data()
-            {
-                let session_packet = CPlayerInfoUpdate::update_chat_session(
-                    existing_player.gameprofile.id,
-                    protocol_data,
-                );
-                player.send_packet(session_packet);
-            }
-
-            true
-        });
-
-        // Broadcast new player's tab list entry to all players
-        let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
-            player.gameprofile.id,
-            player.gameprofile.name.clone(),
-            player.gameprofile.properties.clone(),
-            player.game_mode().into(),
-            player.connection.latency(),
-            None, // display_name
-            true, // show_hat
-        );
-        self.broadcast_to_all(player_info_packet);
     }
 }

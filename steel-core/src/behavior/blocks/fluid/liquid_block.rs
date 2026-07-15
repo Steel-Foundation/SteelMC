@@ -11,6 +11,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluid_tags::FluidTag;
@@ -259,9 +260,9 @@ impl BlockBehavior for LiquidBlock {
         world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
         let bucket = if is_water_fluid(self.fluid) {
-            &vanilla_items::ITEMS.water_bucket
+            &vanilla_items::WATER_BUCKET
         } else {
-            &vanilla_items::ITEMS.lava_bucket
+            &vanilla_items::LAVA_BUCKET
         };
 
         let sound = if is_water_fluid(self.fluid) {
@@ -271,7 +272,7 @@ impl BlockBehavior for LiquidBlock {
         };
 
         Some(PickupResult {
-            filled_bucket: bucket,
+            filled_bucket: ItemStack::new(bucket),
             sound: Some(sound),
         })
     }

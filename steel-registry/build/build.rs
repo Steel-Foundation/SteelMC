@@ -1,3 +1,29 @@
+#![expect(
+    missing_docs,
+    reason = "registry build-script helpers are internal code generation plumbing"
+)]
+#![expect(
+    clippy::absolute_paths,
+    clippy::allow_attributes_without_reason,
+    clippy::collapsible_match,
+    clippy::float_cmp,
+    clippy::items_after_statements,
+    clippy::manual_let_else,
+    clippy::many_single_char_names,
+    clippy::match_same_arms,
+    clippy::match_wild_err_arm,
+    clippy::nonminimal_bool,
+    clippy::redundant_else,
+    clippy::ref_option,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unnecessary_debug_formatting,
+    clippy::unreadable_literal,
+    clippy::unwrap_used,
+    reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
+)]
+
 use std::{env, fs, path::Path, process::Command};
 
 mod attributes;
@@ -34,6 +60,7 @@ mod items;
 mod jukebox_songs;
 mod level_events;
 mod loot_tables;
+mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
 mod packets;
@@ -42,6 +69,7 @@ mod particle_types;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
+mod potions;
 mod recipes;
 mod sound_events;
 mod sound_types;
@@ -70,6 +98,7 @@ mod generator_functions;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;
+mod potion_tags;
 mod shared_structs;
 mod tag_utils;
 
@@ -116,6 +145,9 @@ const DIALOGS: &str = "dialogs";
 const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const MOB_EFFECTS: &str = "mob_effects";
+const MAP_DECORATION_TYPES: &str = "map_decoration_types";
+const POTIONS: &str = "potions";
+const POTION_TAGS: &str = "potion_tags";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
@@ -196,6 +228,8 @@ pub fn main() {
         (dialog_tags::build(), DIALOG_TAGS),
         (menu_types::build(), MENU_TYPES),
         (mob_effects::build(), MOB_EFFECTS),
+        (map_decoration_types::build(), MAP_DECORATION_TYPES),
+        (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
         (timeline_tags::build(), TIMELINE_TAGS),
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),
@@ -223,6 +257,7 @@ pub fn main() {
         (instrument_tags::build(), INSTRUMENT_TAGS),
         (painting_variant_tags::build(), PAINTING_VARIANT_TAGS),
         (poi_type_tags::build(), POI_TYPE_TAGS),
+        (potion_tags::build(), POTION_TAGS),
         (enchantment_tags::build(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),

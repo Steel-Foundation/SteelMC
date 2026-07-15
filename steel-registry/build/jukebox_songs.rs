@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "build script must fail immediately on invalid extracted jukebox song data"
+)]
+
 use std::fs;
 
 use crate::generator_functions::{generate_sound_event_ref, generate_text_component};
@@ -30,7 +35,7 @@ pub(crate) fn build() -> TokenStream {
             let jukebox_song_name = path.file_stem().unwrap().to_str().unwrap().to_string();
             let content = fs::read_to_string(&path).unwrap();
             let jukebox_song: JukeboxSongJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", jukebox_song_name, e));
+                .unwrap_or_else(|e| panic!("Failed to parse {jukebox_song_name}: {e}"));
 
             jukebox_songs.push((jukebox_song_name, jukebox_song));
         }
@@ -40,7 +45,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::jukebox_song::{
-            JukeboxSong, JukeboxSongRegistry,
+            JukeboxSong, JukeboxSongRegistry, JukeboxSongValue,
         };
         use steel_utils::Identifier;
         use text_components::{TextComponent, translation::TranslatedMessage};
@@ -67,13 +72,15 @@ pub(crate) fn build() -> TokenStream {
         let comparator_output = jukebox_song.comparator_output;
 
         stream.extend(quote! {
-            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong {
-                key: #key,
-                sound_event: #sound_event,
-                description: #description,
-                length_in_seconds: #length_in_seconds,
-                comparator_output: #comparator_output,
-            };
+            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong::new(
+                #key,
+                JukeboxSongValue {
+                    sound_event: crate::sound_event::SoundEventHolder::registry(#sound_event),
+                    description: #description,
+                    length_in_seconds: #length_in_seconds,
+                    comparator_output: #comparator_output,
+                },
+            );
         });
 
         register_stream.extend(quote! {
