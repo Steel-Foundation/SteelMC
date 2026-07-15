@@ -2,8 +2,14 @@
 //!
 use std::sync::Arc;
 
+use rand::Rng;
+
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
+        blocks::vegetation::bonemealable::Bonemealable,
+    },
+    fluid::fluid_state_to_block,
     world::{LevelReader, ScheduledTickAccess, World},
 };
 use steel_macros::block_behavior;
@@ -13,11 +19,12 @@ use steel_registry::{
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, BoolProperty, Direction, IntProperty},
     },
-    fluid::FluidStateExt,
     vanilla_block_tags::BlockTag,
-    vanilla_blocks, vanilla_fluids,
+    vanilla_fluids,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+
+use super::MangrovePropaguleBlock;
 
 const DISTANCE: IntProperty = BlockStateProperties::DISTANCE;
 const PERSISTENT: BoolProperty = BlockStateProperties::PERSISTENT;
@@ -37,6 +44,11 @@ impl LeavesBlock {
     fn decaying(state: BlockStateId) -> bool {
         !state.get_value(&PERSISTENT) && state.get_value(&DISTANCE) == 7
     }
+
+    fn decayed_replacement(state: BlockStateId) -> BlockStateId {
+        fluid_state_to_block(state.get_fluid_state())
+    }
+
     fn update_distance(
         state: BlockStateId,
         level: &dyn LevelReader,
@@ -76,10 +88,9 @@ impl BlockBehavior for LeavesBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if Self::decaying(state) {
             world.drop_resources(state, pos);
-            //TODO: we should probably call level.removeBlock instead
             world.set_block(
                 pos,
-                vanilla_blocks::AIR.default_state(),
+                Self::decayed_replacement(state),
                 UpdateFlags::UPDATE_ALL,
             );
         }
@@ -111,23 +122,19 @@ impl BlockBehavior for LeavesBlock {
         state
     }
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let replaced_fluid_state = context
-            .world
-            .get_block_state(context.get_clicked_pos())
-            .get_fluid_state();
         let state = self
             .block
             .default_state()
             .set_value(&PERSISTENT, true)
-            .set_value(&WATERLOGGED, replaced_fluid_state.is_water());
+            .set_value(&WATERLOGGED, context.is_water_source());
         Some(Self::update_distance(
             state,
             context.world,
-            context.get_clicked_pos(),
+            context.place_pos(),
         ))
     }
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        Self::decaying(state)
     }
 }
 /// Used for cherry tree leaves.
@@ -171,8 +178,8 @@ impl BlockBehavior for UntintedParticleLeavesBlock {
         self.leaves()
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        self.leaves().is_randomly_ticking(state)
     }
 }
 /// Used for oak, spruce, jungle... tree leaves.
@@ -217,7 +224,162 @@ impl BlockBehavior for TintedParticleLeavesBlock {
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        self.leaves().is_randomly_ticking(state)
+    }
+}
+
+/// Mangrove leaves behavior, including hanging propagule growth.
+#[block_behavior]
+pub struct MangroveLeavesBlock {
+    block: BlockRef,
+}
+
+impl MangroveLeavesBlock {
+    /// Creates new `MangroveLeavesBlock` behavior.
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self { block }
+    }
+
+    const fn leaves(&self) -> LeavesBlock {
+        LeavesBlock::new(self.block)
+    }
+}
+
+impl BlockBehavior for MangroveLeavesBlock {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.leaves().random_tick(state, world, pos);
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.leaves().tick(state, world, pos);
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        self.leaves().get_state_for_placement(context)
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.leaves()
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+    }
+
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        self.leaves().is_randomly_ticking(state)
+    }
+
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
+    }
+}
+
+impl Bonemealable for MangroveLeavesBlock {
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        world.get_block_state(pos.below()).is_air()
+    }
+
+    fn perform_bonemeal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
+        world.set_block(
+            pos.below(),
+            MangrovePropaguleBlock::create_new_hanging_propagule(),
+            UpdateFlags::UPDATE_CLIENTS,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use crate::{
+        behavior::{BLOCK_BEHAVIORS, init_behaviors},
+        test_support::TestLevel,
+    };
+
+    use super::*;
+
+    #[test]
+    fn leaves_only_randomly_tick_while_decaying() {
+        init_test_registry();
+        let behavior = LeavesBlock::new(&vanilla_blocks::OAK_LEAVES);
+        let decaying = vanilla_blocks::OAK_LEAVES.default_state();
+
+        assert!(behavior.is_randomly_ticking(decaying));
+        assert!(!behavior.is_randomly_ticking(decaying.set_value(&DISTANCE, 6)));
+        assert!(!behavior.is_randomly_ticking(decaying.set_value(&PERSISTENT, true)));
+    }
+
+    #[test]
+    fn waterlogged_leaves_decay_into_water() {
+        init_test_registry();
+        init_behaviors();
+        let state = vanilla_blocks::OAK_LEAVES
+            .default_state()
+            .set_value(&WATERLOGGED, true);
+
+        let replacement = LeavesBlock::decayed_replacement(state);
+
+        assert_eq!(replacement.get_block(), &vanilla_blocks::WATER);
+    }
+
+    #[test]
+    fn distance_updates_from_decay_preventing_blocks() {
+        init_test_registry();
+        let level = TestLevel::default().with_block(
+            BlockPos::ZERO.relative(Direction::East),
+            vanilla_blocks::OAK_LOG.default_state(),
+        );
+
+        let updated = LeavesBlock::update_distance(
+            vanilla_blocks::OAK_LEAVES.default_state(),
+            &level,
+            BlockPos::ZERO,
+        );
+
+        assert_eq!(updated.get_value(&DISTANCE), 1);
+    }
+
+    #[test]
+    fn mangrove_leaves_register_bonemeal_behavior() {
+        init_test_registry();
+        init_behaviors();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::MANGROVE_LEAVES);
+
+        assert!(behavior.as_bonemealable().is_some());
+    }
+
+    #[test]
+    fn mangrove_leaves_require_air_below_for_bonemeal() {
+        init_test_registry();
+        let behavior = MangroveLeavesBlock::new(&vanilla_blocks::MANGROVE_LEAVES);
+        let state = vanilla_blocks::MANGROVE_LEAVES.default_state();
+        let empty_level = TestLevel::default();
+        assert!(behavior.is_valid_bonemeal_target(state, &empty_level, BlockPos::ZERO));
+
+        let blocked_level = TestLevel::default().with_block(
+            BlockPos::ZERO.below(),
+            vanilla_blocks::STONE.default_state(),
+        );
+        assert!(!behavior.is_valid_bonemeal_target(state, &blocked_level, BlockPos::ZERO));
     }
 }

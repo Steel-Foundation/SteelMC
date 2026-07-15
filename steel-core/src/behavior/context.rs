@@ -309,11 +309,6 @@ impl<'a> BlockPlaceContext<'a> {
     pub fn get_nearest_looking_direction(&self) -> Direction {
         self.get_nearest_looking_directions()[0]
     }
-    /// Equivalent to vanilla `getClickedPos()`
-    #[must_use]
-    pub const fn get_clicked_pos(&self) -> BlockPos {
-        self.place_pos
-    }
 
     /// Returns the vertical direction the player is looking toward.
     ///

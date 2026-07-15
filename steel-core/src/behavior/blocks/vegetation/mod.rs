@@ -112,8 +112,9 @@ pub use hanging_roots_block::HangingRootsBlock;
 pub use kelp_block::KelpBlock;
 pub use kelp_plant_block::KelpPlantBlock;
 pub use leaf_litter_block::LeafLitterBlock;
-pub use leaves_block::TintedParticleLeavesBlock;
-pub use leaves_block::UntintedParticleLeavesBlock;
+pub use leaves_block::{
+    MangroveLeavesBlock, TintedParticleLeavesBlock, UntintedParticleLeavesBlock,
+};
 pub use lily_pad_block::LilyPadBlock;
 pub use mangrove_propagule_block::MangrovePropaguleBlock;
 pub use mossy_carpet_block::MossyCarpetBlock;
