@@ -31,17 +31,6 @@ impl CoralBlock {
 }
 
 impl BlockBehavior for CoralBlock {
-    fn on_place(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        _old_state: BlockStateId,
-        _moved_by_piston: bool,
-    ) {
-        schedule_coral_die_tick(state, world, pos, self.block);
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
