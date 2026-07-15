@@ -62,7 +62,7 @@ struct EnchantmentEffectsJson {
     #[serde(rename = "minecraft:projectile_piercing", default)]
     projectile_piercing: Vec<ConditionalValueEffectJson>,
     #[serde(rename = "minecraft:projectile_spawned", default)]
-    projectile_spawned: Vec<serde_json::Value>,
+    projectile_spawned: Vec<ConditionalEntityEffectJson>,
     #[serde(rename = "minecraft:projectile_spread", default)]
     projectile_spread: Vec<ConditionalValueEffectJson>,
     #[serde(rename = "minecraft:projectile_count", default)]
@@ -2074,6 +2074,12 @@ fn generate_enchantment_effects(
         statics,
         counter,
     );
+    let projectile_spawned = generate_conditional_entity_effects(
+        &format!("{prefix}_PROJECTILE_SPAWNED"),
+        &effects.projectile_spawned,
+        statics,
+        counter,
+    );
     let projectile_spread = generate_conditional_value_effects(
         &format!("{prefix}_PROJECTILE_SPREAD"),
         &effects.projectile_spread,
@@ -2147,7 +2153,6 @@ fn generate_enchantment_effects(
     let hit_block = !effects.hit_block.is_empty();
     let location_changed = !effects.location_changed.is_empty();
     let tick = !effects.tick.is_empty();
-    let projectile_spawned = !effects.projectile_spawned.is_empty();
     let prevent_equipment_drop = effects.prevent_equipment_drop.is_some();
     let prevent_armor_change = effects.prevent_armor_change.is_some();
 

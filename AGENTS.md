@@ -55,8 +55,8 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Currently this project is in early development, we don't need to provide migrations.
 
 **Particle routing**
-- `Level.addParticle`/`playLocalSound` in shared ticks are client-local; omit them from Steel and mark non-obvious omissions `VANILLA CLIENT-LOCAL`.
-- Port `ServerLevel.sendParticles` through `World::send_particles`; use the existing level/entity event packet when vanilla does.
+- In Vanilla, `Level.addParticle` and `playLocalSound` calls from shared ticks are client-local, so Steel generally has no server-side work to perform for them. An explanatory comment can still be useful when an omission would otherwise look accidental.
+- Vanilla `ServerLevel.sendParticles` corresponds to `World::send_particles`; level and entity events continue to use their existing packets.
 
 **Testing**
  - Add tests for advanced systems, code using unsafe (always use `// SAFETY:` comments), or code that needs to match vanilla determinism (ItemComponent hashing or worldgen).

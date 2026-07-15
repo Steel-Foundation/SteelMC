@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn projectile_chime_pitch_matches_vanilla_range() {
-        assert_eq!(AmethystBlock::projectile_hit_pitch(0.0), 0.5);
+        assert!((AmethystBlock::projectile_hit_pitch(0.0) - 0.5).abs() < f32::EPSILON);
         assert!(AmethystBlock::projectile_hit_pitch(0.999_999) < 1.7);
     }
 }

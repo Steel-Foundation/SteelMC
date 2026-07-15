@@ -490,7 +490,7 @@ pub struct EnchantmentEffects {
     pub tick: bool,
     pub ammo_use: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub projectile_piercing: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
-    pub projectile_spawned: bool,
+    pub projectile_spawned: &'static [ConditionalEnchantmentEffect<EnchantmentEntityEffect>],
     pub projectile_spread: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub projectile_count: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub trident_return_acceleration:
@@ -526,7 +526,7 @@ impl EnchantmentEffects {
         tick: false,
         ammo_use: &[],
         projectile_piercing: &[],
-        projectile_spawned: false,
+        projectile_spawned: &[],
         projectile_spread: &[],
         projectile_count: &[],
         trident_return_acceleration: &[],
@@ -564,7 +564,7 @@ impl EnchantmentEffects {
             EnchantmentEffectComponent::Tick => self.tick,
             EnchantmentEffectComponent::AmmoUse => !self.ammo_use.is_empty(),
             EnchantmentEffectComponent::ProjectilePiercing => !self.projectile_piercing.is_empty(),
-            EnchantmentEffectComponent::ProjectileSpawned => self.projectile_spawned,
+            EnchantmentEffectComponent::ProjectileSpawned => !self.projectile_spawned.is_empty(),
             EnchantmentEffectComponent::ProjectileSpread => !self.projectile_spread.is_empty(),
             EnchantmentEffectComponent::ProjectileCount => !self.projectile_count.is_empty(),
             EnchantmentEffectComponent::TridentReturnAcceleration => {

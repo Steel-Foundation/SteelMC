@@ -13,6 +13,7 @@ use steel_utils::Direction;
 
 use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
 use crate::behavior::item::ItemBehavior;
+use crate::enchantment_helper;
 use crate::entity::entities::FireworkRocketEntity;
 use crate::entity::{Entity, Projectile, SharedEntity, next_entity_id};
 use crate::world::World;
@@ -24,12 +25,12 @@ const ROCKET_PLACEMENT_OFFSET: f64 = 0.15;
 pub struct FireworkRocketItem;
 
 impl FireworkRocketItem {
-    fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) {
+    fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) -> SharedEntity {
         let entity: SharedEntity = Arc::new(rocket);
-        if let Err(error) = world.try_add_entity(entity) {
+        if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
             log::debug!("failed to spawn firework rocket: {error}");
         }
-        // TODO: Apply `projectile_spawned` enchantment effects once their payloads are extracted.
+        entity
     }
 
     fn placement_position(click_location: DVec3, direction: Direction) -> DVec3 {
@@ -60,8 +61,16 @@ impl ItemBehavior for FireworkRocketItem {
             source_item,
         );
         rocket.set_owner_uuid(Some(context.player.uuid()));
-        Self::add_rocket(context.world, rocket);
-        context.inv.with_item(|item| item.shrink(1));
+        let rocket = Self::add_rocket(context.world, rocket);
+        context.inv.with_item(|item| {
+            enchantment_helper::on_projectile_spawned(
+                context.world,
+                item,
+                rocket.as_ref(),
+                Some(context.player),
+            );
+            item.shrink(1);
+        });
 
         InteractionResult::Success
     }
@@ -90,8 +99,16 @@ impl ItemBehavior for FireworkRocketItem {
             source_item,
             context.player,
         );
-        Self::add_rocket(context.world, rocket);
-        context.inv.with_item(|item| item.shrink(1));
+        let rocket = Self::add_rocket(context.world, rocket);
+        context.inv.with_item(|item| {
+            enchantment_helper::on_projectile_spawned(
+                context.world,
+                item,
+                rocket.as_ref(),
+                Some(context.player),
+            );
+            item.shrink(1);
+        });
         // TODO: Award `Stats.ITEM_USED` once Steel has a statistics foundation.
 
         InteractionResult::Success

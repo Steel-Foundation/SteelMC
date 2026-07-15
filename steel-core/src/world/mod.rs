@@ -105,7 +105,7 @@ use crate::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
         InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
-        WorldEntityManager, entities::ItemEntity,
+        WorldEntityManager, entities::ItemEntity, entity_loot_ref,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, RespawnData, WorldBorderData, WorldGenerationSettings},
@@ -4193,8 +4193,8 @@ impl World {
         }
 
         if drop_items {
-            self.drop_resources(state, pos);
-            // TODO: block entity and entity drops
+            self.drop_resources_with_entity(state, pos, entity);
+            // TODO: block entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -4220,24 +4220,43 @@ impl World {
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
     // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
+        self.drop_resources_with_entity(state, pos, None);
+    }
+
+    fn drop_resources_with_entity(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        entity: Option<&dyn Entity>,
+    ) {
+        for item in Self::block_drops(state, pos, entity) {
+            if !item.is_empty() {
+                self.pop_resource(pos, item);
+            }
+        }
+    }
+
+    fn block_drops(
+        state: BlockStateId,
+        pos: BlockPos,
+        entity: Option<&dyn Entity>,
+    ) -> Vec<ItemStack> {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
 
         let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
-            return;
+            return Vec::new();
         };
 
         let mut rng = rand::rng();
         let mut ctx = LootContext::new(&mut rng)
             .with_block_state(state)
             .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-
-        let drops = loot_table.get_random_items(&mut ctx);
-        for item in drops {
-            if !item.is_empty() {
-                self.pop_resource(pos, item);
-            }
+        if let Some(entity) = entity {
+            ctx = ctx.with_this_entity(entity_loot_ref(entity));
         }
+
+        loot_table.get_random_items(&mut ctx)
     }
 
     /// Broadcasts a block event to nearby players within 64 blocks.
@@ -5128,6 +5147,7 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
         sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
+        vanilla_items,
     };
     use uuid::Uuid;
 
@@ -5223,6 +5243,21 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
+    }
+
+    #[test]
+    fn entity_breaker_is_available_to_chorus_flower_loot() {
+        init_test_registry();
+
+        let state = vanilla_blocks::CHORUS_FLOWER.default_state();
+        let pos = BlockPos::new(1_312, 64, 1_312);
+        let breaker = TrackerTestEntity::shared(987_654);
+        let drops = World::block_drops(state, pos, Some(breaker.as_ref()));
+
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
+        assert_eq!(drops[0].count(), 1);
+        assert!(World::block_drops(state, pos, None).is_empty());
     }
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {

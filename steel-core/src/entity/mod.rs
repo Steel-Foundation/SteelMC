@@ -793,8 +793,8 @@ pub use movement_sync::{
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
 pub use projectile::{
-    EntityHitResult, Projectile, ProjectileBase, ProjectileHit, ThrowableItemProjectile,
-    ThrowableProjectile, compute_margin,
+    EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
+    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, compute_margin,
 };
 #[cfg(test)]
 pub(crate) use registry::init_test_entities;
@@ -1919,6 +1919,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     /// Mirrors vanilla `Entity.canBeHitByProjectile`.
     fn can_be_hit_by_projectile(&self) -> bool {
         !self.is_removed() && self.is_pickable()
+    }
+
+    /// Returns this entity's Vanilla projectile deflection behavior.
+    fn deflection(&self, _projectile: &dyn Projectile) -> ProjectileDeflection {
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::DEFLECTS_PROJECTILES)
+        {
+            ProjectileDeflection::Reverse
+        } else {
+            ProjectileDeflection::None
+        }
     }
 
     /// Gets the vehicle this entity is riding, if present.
@@ -7690,7 +7702,7 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
     }
 }
 
-fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
+pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
     let living_entity = entity.as_living_entity();
     EntityRef {
         entity_type: Some(&entity.entity_type().key),

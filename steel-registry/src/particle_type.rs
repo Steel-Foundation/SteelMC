@@ -12,7 +12,7 @@ use steel_utils::{
 
 use crate::item_stack_template::ItemStackTemplate;
 use crate::position_source::PositionSource;
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::{REGISTRY, RegistryExt};
 
 /// Concrete network payload behavior for a registered particle type.
 pub trait ParticleOptions:
@@ -139,15 +139,21 @@ impl PartialEq for ParticleData {
 
 impl WriteTo for ParticleData {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        let id = self.particle_type.try_id().ok_or_else(|| {
-            Error::other(format!("Unknown particle type: {}", self.particle_type.key))
-        })?;
+        let (id, particle_type) = REGISTRY
+            .particle_types
+            .registered_entry_with_id(self.particle_type)
+            .ok_or_else(|| {
+                Error::other(format!(
+                    "Particle type is not the registered value for key: {}",
+                    self.particle_type.key
+                ))
+            })?;
         let id = i32::try_from(id)
             .map_err(|_| Error::other(format!("Particle type id out of range: {id}")))?;
         VarInt(id).write(writer)?;
 
         let mut payload = Vec::new();
-        (self.particle_type.network_writer)(self.options.as_ref(), &mut payload)?;
+        (particle_type.network_writer)(self.options.as_ref(), &mut payload)?;
         writer.write_all(&payload)
     }
 }
@@ -184,6 +190,16 @@ impl ParticleTypeRegistry {
             allows_registering: true,
         }
     }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "network dispatch requires exact registered particle type identity"
+    )]
+    fn registered_entry_with_id(&self, entry: ParticleTypeRef) -> Option<(usize, ParticleTypeRef)> {
+        let id = self.particle_types_by_key.get(&entry.key).copied()?;
+        let registered = self.particle_types_by_id.get(id).copied()?;
+        std::ptr::eq(registered, entry).then_some((id, registered))
+    }
 }
 
 crate::impl_standard_methods!(
@@ -191,7 +207,8 @@ crate::impl_standard_methods!(
     ParticleTypeRef,
     particle_types_by_id,
     particle_types_by_key,
-    allows_registering
+    allows_registering,
+    "Cannot register duplicate particle type key: {}"
 );
 
 crate::impl_registry!(
@@ -244,10 +261,23 @@ unsafe impl DowncastType for BlockParticleOption {
 
 impl ParticleOptions for BlockParticleOption {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::new(BlockStateId::read(data)?))
+        let id = VarInt::read(data)?.0;
+        let id = u16::try_from(id)
+            .map_err(|_| Error::other(format!("Block state id out of range: {id}")))?;
+        let state = BlockStateId(id);
+        if REGISTRY.blocks.by_state_id(state).is_none() {
+            return Err(Error::other(format!("Unknown block state id: {id}")));
+        }
+        Ok(Self::new(state))
     }
 
     fn write_network(&self, writer: &mut Vec<u8>) -> Result<()> {
+        if REGISTRY.blocks.by_state_id(self.state).is_none() {
+            return Err(Error::other(format!(
+                "Unknown block state id: {}",
+                self.state.0
+            )));
+        }
         self.state.write(writer)
     }
 }
@@ -745,22 +775,27 @@ mod tests {
     use std::io::Cursor;
 
     use glam::DVec3;
+    use steel_utils::codec::VarInt;
     use steel_utils::serial::{ReadFrom, WriteTo};
-    use steel_utils::{ArgbColor, BlockPos, BlockStateId, RgbColor};
+    use steel_utils::{ArgbColor, BlockPos, BlockStateId, Identifier, RgbColor};
 
     use crate::item_stack_template::ItemStackTemplate;
     use crate::position_source::{BlockPositionSource, EntityPositionSource, PositionSource};
     use crate::{
-        test_support::init_test_registry, vanilla_items, vanilla_particle_types,
+        REGISTRY, test_support::init_test_registry, vanilla_items, vanilla_particle_types,
         vanilla_position_source_types,
     };
 
     use super::{
         BlockParticleOption, ColorParticleOption, DustColorTransitionOptions, DustParticleOptions,
         GeyserBaseParticleOptions, GeyserParticleOptions, ItemParticleOption, ParticleData,
-        PowerParticleOption, SculkChargeParticleOptions, ShriekParticleOption, SpellParticleOption,
-        TrailParticleOption, VibrationParticleOption,
+        ParticleOptions, ParticleType, ParticleTypeRegistry, PowerParticleOption,
+        SculkChargeParticleOptions, ShriekParticleOption, SpellParticleOption, TrailParticleOption,
+        VibrationParticleOption,
     };
+
+    static FORGED_FLAME: ParticleType =
+        ParticleType::of::<BlockParticleOption>(Identifier::vanilla_static("flame"), false);
 
     fn assert_round_trip(particle: ParticleData) {
         let expected = particle.clone();
@@ -850,6 +885,52 @@ mod tests {
                 22,
             ),
         ));
+    }
+
+    #[test]
+    fn particle_write_rejects_noncanonical_same_key_codec() {
+        init_test_registry();
+
+        let particle = ParticleData::new(
+            &FORGED_FLAME,
+            BlockParticleOption::new(BlockStateId::default()),
+        );
+        let mut encoded = Vec::new();
+        let result = particle.write(&mut encoded);
+
+        assert!(result.is_err());
+        assert!(encoded.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot register duplicate particle type key")]
+    fn particle_type_registry_rejects_duplicate_keys() {
+        let mut registry = ParticleTypeRegistry::new();
+        registry.register(&vanilla_particle_types::FLAME);
+        registry.register(&FORGED_FLAME);
+    }
+
+    #[test]
+    fn block_particle_network_codec_rejects_invalid_state_ids() {
+        init_test_registry();
+
+        for id in [-1, i32::from(u16::MAX) + 1, i32::from(u16::MAX)] {
+            let mut encoded = Vec::new();
+            let encoded_result = VarInt(id).write(&mut encoded);
+            assert!(encoded_result.is_ok());
+
+            let mut cursor = Cursor::new(encoded.as_slice());
+            let decoded = BlockParticleOption::read_network(&mut cursor);
+            assert!(decoded.is_err(), "accepted invalid block state id {id}");
+        }
+
+        let invalid_state = BlockStateId(u16::MAX);
+        assert!(REGISTRY.blocks.by_state_id(invalid_state).is_none());
+
+        let mut encoded = Vec::new();
+        let result = BlockParticleOption::new(invalid_state).write_network(&mut encoded);
+        assert!(result.is_err());
+        assert!(encoded.is_empty());
     }
 
     #[test]

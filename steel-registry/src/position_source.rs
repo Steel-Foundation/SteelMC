@@ -6,7 +6,7 @@ use steel_utils::codec::VarInt;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier};
 
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::{REGISTRY, RegistryExt};
 
 /// Concrete network payload behavior for a registered position-source type.
 pub trait PositionSourceCodec:
@@ -124,18 +124,21 @@ impl PartialEq for PositionSource {
 
 impl WriteTo for PositionSource {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        let id = self.source_type.try_id().ok_or_else(|| {
-            Error::other(format!(
-                "Unknown position source type: {}",
-                self.source_type.key
-            ))
-        })?;
+        let (id, source_type) = REGISTRY
+            .position_source_types
+            .registered_entry_with_id(self.source_type)
+            .ok_or_else(|| {
+                Error::other(format!(
+                    "Position source type is not the registered value for key: {}",
+                    self.source_type.key
+                ))
+            })?;
         let id = i32::try_from(id)
             .map_err(|_| Error::other(format!("Position source type id out of range: {id}")))?;
         VarInt(id).write(writer)?;
 
         let mut payload = Vec::new();
-        (self.source_type.network_writer)(self.value.as_ref(), &mut payload)?;
+        (source_type.network_writer)(self.value.as_ref(), &mut payload)?;
         writer.write_all(&payload)
     }
 }
@@ -169,6 +172,19 @@ impl PositionSourceTypeRegistry {
             allows_registering: true,
         }
     }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "network dispatch requires exact registered position source type identity"
+    )]
+    fn registered_entry_with_id(
+        &self,
+        entry: PositionSourceTypeRef,
+    ) -> Option<(usize, PositionSourceTypeRef)> {
+        let id = self.types_by_key.get(&entry.key).copied()?;
+        let registered = self.types_by_id.get(id).copied()?;
+        std::ptr::eq(registered, entry).then_some((id, registered))
+    }
 }
 
 crate::impl_standard_methods!(
@@ -176,7 +192,8 @@ crate::impl_standard_methods!(
     PositionSourceTypeRef,
     types_by_id,
     types_by_key,
-    allows_registering
+    allows_registering,
+    "Cannot register duplicate position source type key: {}"
 );
 crate::impl_registry!(
     PositionSourceTypeRegistry,
@@ -277,4 +294,40 @@ fn write_network<T: PositionSourceCodec>(
         ))
     })?;
     value.write_network(writer)
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::Identifier;
+    use steel_utils::serial::WriteTo;
+
+    use crate::{test_support::init_test_registry, vanilla_position_source_types};
+
+    use super::{
+        EntityPositionSource, PositionSource, PositionSourceType, PositionSourceTypeRegistry,
+    };
+
+    static FORGED_BLOCK_SOURCE: PositionSourceType =
+        PositionSourceType::of::<EntityPositionSource>(Identifier::vanilla_static("block"));
+
+    #[test]
+    fn position_source_write_rejects_noncanonical_same_key_codec() {
+        init_test_registry();
+
+        let source =
+            PositionSource::new(&FORGED_BLOCK_SOURCE, EntityPositionSource::new(1234, 1.5));
+        let mut encoded = Vec::new();
+        let result = source.write(&mut encoded);
+
+        assert!(result.is_err());
+        assert!(encoded.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot register duplicate position source type key")]
+    fn position_source_type_registry_rejects_duplicate_keys() {
+        let mut registry = PositionSourceTypeRegistry::new();
+        registry.register(&vanilla_position_source_types::BLOCK);
+        registry.register(&FORGED_BLOCK_SOURCE);
+    }
 }
