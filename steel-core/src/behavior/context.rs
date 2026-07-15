@@ -119,8 +119,9 @@ impl BlockPlaceContext<'_> {
     pub fn get_nearest_looking_direction(&self) -> Direction {
         self.get_nearest_looking_directions()[0]
     }
+    /// Equivalent to vanilla `getClickedPos()`
     #[must_use]
-    pub fn get_clicked_pos(&self) -> BlockPos {
+    pub const fn get_clicked_pos(&self) -> BlockPos {
         self.place_pos
     }
 
