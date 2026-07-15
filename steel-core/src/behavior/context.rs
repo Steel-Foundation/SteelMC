@@ -2,13 +2,13 @@
 
 use glam::DVec3;
 use std::sync::Arc;
-use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::BlockStateBehaviorExt;
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
@@ -105,6 +105,10 @@ pub struct BlockPlaceContext<'a> {
     pub pitch: f32,
     /// Whether the player is using the secondary action, normally sneaking.
     pub is_secondary_use_active: bool,
+    /// The item held when this placement context was created.
+    pub item_in_hand: ItemRef,
+    /// Whether the held stack was empty when this placement context was created.
+    pub item_in_hand_is_empty: bool,
     /// The world where the block is being placed.
     pub world: &'a Arc<World>,
 }
@@ -257,57 +261,42 @@ impl<'a> UseOnContext<'a> {
     pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
         let hit_pos = self.hit_result.block_pos;
         let hit_state = self.world.get_block_state(hit_pos);
-        let held_item = self.inv.with_item(|item| item.item);
-        let is_secondary_use_active = self.player.is_secondary_use_active();
-        let hit_block_replaceable = REGISTRY.blocks.by_state_id(hit_state).is_some_and(|block| {
-            BLOCK_BEHAVIORS.get_behavior(block).can_be_replaced(
-                hit_state,
-                held_item,
-                is_secondary_use_active,
-            )
-        });
-
-        let (place_pos, replaces_clicked_block) = if hit_block_replaceable {
-            (hit_pos, true)
-        } else {
-            (self.hit_result.direction.relative(hit_pos), false)
-        };
-
-        if !self.world.is_in_valid_bounds(place_pos) {
-            return None;
-        }
-
-        let existing_state = self.world.get_block_state(place_pos);
-        let existing_block_replaceable =
-            REGISTRY
-                .blocks
-                .by_state_id(existing_state)
-                .is_some_and(|block| {
-                    BLOCK_BEHAVIORS.get_behavior(block).can_be_replaced(
-                        existing_state,
-                        held_item,
-                        is_secondary_use_active,
-                    )
-                });
-        if !existing_block_replaceable {
-            return None;
-        }
-
+        let (item_in_hand, item_in_hand_is_empty) =
+            self.inv.with_item(|item| (item.item(), item.is_empty()));
         let (yaw, pitch) = self.player.rotation();
-
-        Some(BlockPlaceContext {
+        let mut place_context = BlockPlaceContext {
             hit_pos,
             clicked_face: self.hit_result.direction,
             click_location: self.hit_result.location,
             inside: self.hit_result.inside,
-            place_pos,
-            replaces_clicked_block,
+            place_pos: hit_pos,
+            replaces_clicked_block: true,
             horizontal_direction: Direction::from_yaw(yaw),
             rotation: yaw,
             pitch,
             is_secondary_use_active: self.player.is_secondary_use_active(),
+            item_in_hand,
+            item_in_hand_is_empty,
             world: self.world,
-        })
+        };
+
+        place_context.replaces_clicked_block = hit_state.can_be_replaced(&place_context);
+        if !place_context.replaces_clicked_block {
+            place_context.place_pos = self.hit_result.direction.relative(hit_pos);
+        }
+
+        if !self.world.is_in_valid_bounds(place_context.place_pos) {
+            return None;
+        }
+
+        if !place_context.replaces_clicked_block {
+            let existing_state = self.world.get_block_state(place_context.place_pos);
+            if !existing_state.can_be_replaced(&place_context) {
+                return None;
+            }
+        }
+
+        Some(place_context)
     }
 }
 

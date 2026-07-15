@@ -1,120 +1,168 @@
+use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, IntProperty};
-use steel_registry::item_stack::ItemStack;
-use steel_registry::items::ItemRef;
-use steel_registry::vanilla_blocks;
-use steel_registry::{REGISTRY, RegistryExt};
-use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockStateId, Direction};
 
-use std::sync::Arc;
-
-use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess};
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::behavior::{BlockPlaceContext, block::default_can_be_replaced};
+use crate::world::LevelReader;
 
 pub const MAX_SEGMENT_AMOUNT: u8 = 4;
 const FACING_PROPERTY: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
-pub fn segmentable_update_shape(
-    block: &dyn BlockBehavior,
-    state: BlockStateId,
-    world: &dyn ScheduledTickAccess,
-    pos: BlockPos,
-) -> BlockStateId {
-    if block.can_survive(state, world, pos) {
-        state
-    } else {
-        vanilla_blocks::AIR.default_state()
-    }
-}
-
-pub fn segmentable_use_item_on(
-    segment_property: &IntProperty,
-    state: BlockStateId,
-    world: &Arc<World>,
-    pos: BlockPos,
-    inv: &mut InventoryAccess,
-) -> InteractionResult {
-    if inv.with_item(|item_stack| item_stack.item().key == state.get_block().key) {
-        let current_amount = state.get_value(segment_property);
-
-        if current_amount < MAX_SEGMENT_AMOUNT {
-            let block_state = state.set_value(segment_property, current_amount + 1);
-            world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
-
-            return InteractionResult::Consume;
-        }
-    }
-
-    // Non-matching items should fall through to item behaviors (e.g. bonemeal).
-    InteractionResult::Pass
-}
-
 pub fn segmentable_get_state_for_placement(
-    block: &dyn BlockBehavior,
     block_ref: BlockRef,
     segment_property: &IntProperty,
     context: &BlockPlaceContext<'_>,
-) -> Option<BlockStateId> {
-    for direction in context.get_nearest_looking_directions() {
-        if !direction.is_horizontal() {
-            continue;
-        }
-
-        let existing_state = context.world.get_block_state(context.place_pos);
-        let state = block_ref
-            .default_state()
-            .set_value(&FACING_PROPERTY, direction.opposite());
-
-        if existing_state.get_block() == block_ref {
-            let current_amount = existing_state.get_value(segment_property);
-            if current_amount < MAX_SEGMENT_AMOUNT {
-                let new_state = existing_state.set_value(segment_property, current_amount + 1);
-                return Some(new_state);
-            }
-            return None;
-        }
-
-        if block.can_survive(state, context.world, context.place_pos) {
-            return Some(state);
-        }
-    }
-
-    None
+) -> BlockStateId {
+    let existing_state = context.world.get_block_state(context.place_pos);
+    segmentable_placement_state(
+        block_ref,
+        segment_property,
+        existing_state,
+        context.horizontal_direction,
+    )
 }
 
 pub fn segmentable_can_be_replaced(
     segment_property: &IntProperty,
     state: BlockStateId,
-    held_item: ItemRef,
-    is_secondary_use_active: bool,
+    context: &BlockPlaceContext<'_>,
 ) -> bool {
-    if !is_secondary_use_active && held_item.key == state.get_block().key {
-        let current_amount = state.get_value(segment_property);
-        return current_amount < MAX_SEGMENT_AMOUNT;
-    }
-
-    state.get_block().config.replaceable
+    (!context.is_secondary_use_active
+        && context.item_in_hand == REGISTRY.items.by_block(state.get_block())
+        && state.get_value(segment_property) < MAX_SEGMENT_AMOUNT)
+        || default_can_be_replaced(state, context)
 }
 
-pub fn segmentable_is_valid_bonemeal_target(_block: &dyn BlockBehavior) -> bool {
-    true
-}
-
-pub fn segmentable_perform_bonemeal(
+fn segmentable_placement_state(
     block_ref: BlockRef,
     segment_property: &IntProperty,
-    state: BlockStateId,
-    world: &Arc<World>,
-    pos: BlockPos,
-) {
-    let current_amount = state.get_value(segment_property);
+    existing_state: BlockStateId,
+    horizontal_direction: Direction,
+) -> BlockStateId {
+    if existing_state.get_block() == block_ref {
+        let amount = (existing_state.get_value(segment_property) + 1).min(MAX_SEGMENT_AMOUNT);
+        existing_state.set_value(segment_property, amount)
+    } else {
+        block_ref
+            .default_state()
+            .set_value(&FACING_PROPERTY, horizontal_direction.opposite())
+    }
+}
 
-    if current_amount < MAX_SEGMENT_AMOUNT {
-        let block_state = state.set_value(segment_property, current_amount + 1);
-        world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
-    } else if let Some(item) = REGISTRY.items.by_key(&block_ref.key) {
-        world.pop_resource(pos, ItemStack::new(item));
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+    use steel_registry::{
+        items::ItemRef, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+    };
+    use steel_utils::BlockPos;
+
+    use super::*;
+    use crate::{
+        behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, init_behaviors},
+        test_support::test_world,
+    };
+
+    fn place_context(
+        item_in_hand: ItemRef,
+        item_in_hand_is_empty: bool,
+        is_secondary_use_active: bool,
+    ) -> BlockPlaceContext<'static> {
+        BlockPlaceContext {
+            hit_pos: BlockPos::ZERO,
+            clicked_face: Direction::Up,
+            click_location: DVec3::ZERO,
+            inside: false,
+            place_pos: BlockPos::ZERO,
+            replaces_clicked_block: true,
+            horizontal_direction: Direction::South,
+            rotation: 0.0,
+            pitch: 0.0,
+            is_secondary_use_active,
+            item_in_hand,
+            item_in_hand_is_empty,
+            world: test_world(),
+        }
+    }
+
+    #[test]
+    fn placement_uses_horizontal_direction_and_preserves_existing_facing() {
+        init_test_registry();
+
+        let placed = segmentable_placement_state(
+            &vanilla_blocks::LEAF_LITTER,
+            &BlockStateProperties::SEGMENT_AMOUNT,
+            vanilla_blocks::AIR.default_state(),
+            Direction::East,
+        );
+        assert_eq!(
+            placed.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+            Direction::West
+        );
+
+        let existing = vanilla_blocks::LEAF_LITTER
+            .default_state()
+            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::North)
+            .set_value(&BlockStateProperties::SEGMENT_AMOUNT, 2);
+        let stacked = segmentable_placement_state(
+            &vanilla_blocks::LEAF_LITTER,
+            &BlockStateProperties::SEGMENT_AMOUNT,
+            existing,
+            Direction::East,
+        );
+        assert_eq!(
+            stacked.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+            Direction::North
+        );
+        assert_eq!(stacked.get_value(&BlockStateProperties::SEGMENT_AMOUNT), 3);
+    }
+
+    #[test]
+    fn replacement_matches_vanilla_segmentable_and_default_rules() {
+        init_test_registry();
+        init_behaviors();
+
+        let leaf_litter = vanilla_blocks::LEAF_LITTER.default_state();
+        assert!(leaf_litter.can_be_replaced(&place_context(
+            &vanilla_items::LEAF_LITTER,
+            false,
+            false,
+        )));
+        assert!(!leaf_litter.can_be_replaced(&place_context(
+            &vanilla_items::LEAF_LITTER,
+            false,
+            true,
+        )));
+
+        let full_leaf_litter =
+            leaf_litter.set_value(&BlockStateProperties::SEGMENT_AMOUNT, MAX_SEGMENT_AMOUNT);
+        assert!(!full_leaf_litter.can_be_replaced(&place_context(
+            &vanilla_items::LEAF_LITTER,
+            false,
+            false,
+        )));
+        assert!(leaf_litter.can_be_replaced(&place_context(&vanilla_items::STONE, false, false,)));
+        assert!(leaf_litter.can_be_replaced(&place_context(&vanilla_items::AIR, true, false,)));
+    }
+
+    #[test]
+    fn only_flower_beds_are_bonemealable() {
+        init_test_registry();
+        init_behaviors();
+
+        assert!(
+            BLOCK_BEHAVIORS
+                .get_behavior(&vanilla_blocks::LEAF_LITTER)
+                .as_bonemealable()
+                .is_none()
+        );
+        assert!(
+            BLOCK_BEHAVIORS
+                .get_behavior(&vanilla_blocks::PINK_PETALS)
+                .as_bonemealable()
+                .is_some()
+        );
     }
 }

@@ -12,7 +12,6 @@ use steel_registry::blocks::shapes::{
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
@@ -32,6 +31,16 @@ use crate::physics::collide;
 use crate::player::Player;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
+
+/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
+pub(crate) fn default_can_be_replaced(
+    state: BlockStateId,
+    context: &BlockPlaceContext<'_>,
+) -> bool {
+    state.is_replaceable()
+        && (context.item_in_hand_is_empty
+            || context.item_in_hand != REGISTRY.items.by_block(state.get_block()))
+}
 
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
@@ -549,15 +558,9 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Vanilla parity: `BlockState.canBeReplaced(BlockPlaceContext)`.
     ///
-    /// Default behavior mirrors prior Steel behavior and only checks the
-    /// block config's `replaceable` flag.
-    fn can_be_replaced(
-        &self,
-        state: BlockStateId,
-        _held_item: ItemRef,
-        _is_secondary_use_active: bool,
-    ) -> bool {
-        state.get_block().config.replaceable
+    /// Default behavior mirrors `BlockBehaviour.canBeReplaced`.
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        default_can_be_replaced(state, context)
     }
 
     /// Returns the block state to use when placing this block.

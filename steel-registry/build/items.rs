@@ -27,6 +27,8 @@ pub struct Item {
     #[serde(default)]
     pub block_item: Option<String>,
     #[serde(default)]
+    pub wall_block: Option<String>,
+    #[serde(default)]
     pub is_double: bool,
     #[serde(default)]
     pub is_scaffolding: bool,
@@ -2075,6 +2077,19 @@ pub(crate) fn build() -> TokenStream {
         register_stream.extend(quote! {
             registry.register(&#item_ident);
         });
+        if let Some(block_name) = &item.block_item {
+            let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
+            register_stream.extend(quote! {
+                registry.register_block_item(&vanilla_blocks::#block_ident, &#item_ident);
+            });
+        }
+        if let Some(wall_block_name) = &item.wall_block {
+            let wall_block_ident =
+                Ident::new(&wall_block_name.to_shouty_snake_case(), Span::call_site());
+            register_stream.extend(quote! {
+                registry.register_block_item(&vanilla_blocks::#wall_block_ident, &#item_ident);
+            });
+        }
     }
 
     quote! {
